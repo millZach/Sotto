@@ -35,6 +35,15 @@ extension WatcherPhoneState {
     var watched: [WatchedThread] { watchedThreads.filter(\.watched) }
     var noLongerWatched: [WatchedThread] { watchedThreads.filter { !$0.watched } }
     func isWatched(_ ref: ThreadRef) -> Bool { watchedThreads.contains { $0.watched && $0.target.ref == ref } }
+    /// The standing watch on this thread: Watcher keeps it going until the user stops it (ADR-0073, amended October 13,
+    /// 2026). Nil from a computer that keeps none.
+    func standingWatch(_ ref: ThreadRef) -> StandingWatch? { standingWatches?.first { $0.target.ref == ref } }
+    /// The mark for a reply in which Watcher changed files itself, as its computer read it from the provider's own record
+    /// of file changes in that turn.
+    func ownChange(for replyID: String) -> OwnChange? { ownChanges?.first { $0.replyMessageId == replyID } }
+    /// What Watcher may do without asking: the choice its computer keeps for Watcher, which a new Watcher starts on, or
+    /// from a computer that keeps none, the current Watcher's own. The first Watcher ever asks first.
+    var permission: String { runtimeMode ?? current?.runtimeMode ?? WatcherPermissions.first }
     /// The card, if it is still waiting.
     func card(_ ref: ThreadRef, requestID: String) -> RequestCard? {
         needsYou.first { $0.target.ref == ref && $0.request.id == requestID }
@@ -138,11 +147,28 @@ struct WatcherSummary: Equatable, Sendable {
     let working: Bool
     let waiting: [ThreadRef]
     let watched: Set<String>
+    /// Watched threads where the user's own turn runs, so Watcher waits until it ends.
+    let paused: Set<String>
     init(_ page: WatcherPage) {
         working = page.working
         waiting = page.needsYou.map(\.target.ref)
         watched = Set(page.watched.map(\.target.ref.id))
+        paused = Set(page.watched.filter { $0.paused == true }.map(\.target.ref.id))
     }
+}
+
+/// What the last Watch or Stop watching press did, said for a few seconds with Undo (watch B). Nothing was asked first.
+struct WatchNotice: Equatable, Sendable {
+    let id: UUID
+    /// The computer whose Watcher took the press.
+    let hostID: String
+    let target: ThreadRef
+    let title: String
+    /// What the press asked for: watched, or no longer.
+    let watched: Bool
+    var words: String { WatcherWords.watching(title, watched) }
+    /// What Undo does, for VoiceOver.
+    var undo: String { watched ? "Undo: stop watching \(title)" : "Undo: watch \(title) again" }
 }
 
 /// What the Watcher tab says on its icon: a dot while Watcher works, and a count of what needs the user that only
@@ -167,21 +193,25 @@ struct WatcherTabState: Equatable {
 
 // MARK: - The conversation
 
-/// A message in Watcher's conversation, or what Watcher did for one of its replies.
+/// A message in Watcher's conversation, what Watcher did for one of its replies, or the line saying it changed files
+/// itself in one.
 enum WatcherItem: Identifiable, Equatable {
     case message(Message)
     case receipts(WatcherPage.ReceiptGroup, attached: Bool)
+    case ownChange(WatcherPage.OwnChange)
     var id: String {
         switch self {
         case .message(let message): return "message/" + message.id
         case .receipts(let group, _): return "receipts/" + group.key
+        case .ownChange(let change): return "own/" + change.replyMessageId
         }
     }
 }
 
 enum WatcherConversation {
-    /// Messages in order, each reply followed by what Watcher did for it (2B). A group whose reply isn't in the
-    /// conversation is never attached to another reply: it stands alone, placed by when it happened.
+    /// Messages in order, each reply followed by what Watcher did for it (2B), then by the line saying it changed files
+    /// itself, when it did (mark B). A group whose reply isn't in the conversation is never attached to another reply: it
+    /// stands alone, placed by when it happened. A mark whose reply isn't there is left out: it says nothing on its own.
     static func items(_ page: WatcherPage) -> [WatcherItem] {
         let messages = page.conversation.messages
         let ids = Set(messages.map(\.id))
@@ -211,6 +241,9 @@ enum WatcherConversation {
         for (index, message) in messages.enumerated() {
             items.append(.message(message))
             items += (attached[message.id] ?? []).map { .receipts($0, attached: true) }
+            if message.role == "assistant", let change = page.ownChange(for: message.id), max(change.fileCount, change.files.count) > 0 {
+                items.append(.ownChange(change))
+            }
             items += (after[index] ?? []).map { .receipts($0, attached: false) }
         }
         return items + trailing.map { .receipts($0, attached: false) }
@@ -279,6 +312,109 @@ enum WatcherWords {
         }
         return "Stopped \(done.count) of \(results.count). " + rest.joined(separator: " ")
     }
+
+    // Watching (watch B, Zach's pick on October 13, 2026): a thread stays watched until the user stops it, with no limit.
+
+    /// The line over Watched's cards, from a computer whose watches last until the user stops them.
+    static func watchedLead(_ count: Int) -> String {
+        switch count {
+        case 0: return "Watcher watches no threads yet. Watch one here or from its page, and Watcher keeps it going until you stop it."
+        case 1: return "Watcher keeps this thread going on its own and brings you its questions and permissions. It stays watched until you stop it."
+        default: return "Watcher keeps these \(count) threads going on its own and brings you their questions and permissions. Each stays watched until you stop it."
+        }
+    }
+    /// What Watcher last did with a watched thread, from its computer's own records and never from anyone's words: waiting
+    /// while the user's own turn runs, its latest action and how that went, or how long it has watched with nothing sent.
+    static func doing(_ thread: WatcherPage.WatchedThread, in page: WatcherPage) -> String? {
+        if thread.paused == true { return "You sent here yourself. Watcher waits until that turn ends." }
+        let rows = page.receiptGroups.flatMap(\.rows).filter { $0.target == thread.target }
+        if let last = rows.max(by: { (Stamp.date($0.updatedAt) ?? .distantPast) < (Stamp.date($1.updatedAt) ?? .distantPast) }) {
+            let at = clock(last.updatedAt).map { " at " + $0 } ?? ""
+            switch last.deliveryState {
+            case "accepted": return "Watcher \(verb(last.action))\(at)."
+            case "failed": return "Watcher’s last try\(at) didn’t reach it."
+            case "uncertain": return "Watcher’s last try\(at) isn’t confirmed."
+            default: return "Watcher is sending to it now."
+            }
+        }
+        guard let watch = page.standingWatch(thread.target.ref) else { return nil }
+        return (clock(watch.createdAt).map { "Watching since \($0)." } ?? "Watching.") + " Nothing sent yet."
+    }
+    private static func verb(_ action: String) -> String {
+        switch action {
+        case "start": return "started it"
+        case "send": return "last sent to it"
+        case "stop": return "stopped it"
+        case "settle": return "settled it"
+        default: return "last changed it"
+        }
+    }
+    /// "10:15 AM", in this iPhone's own format.
+    static func clock(_ stamp: String) -> String? { Stamp.date(stamp)?.formatted(date: .omitted, time: .shortened) }
+    /// What a Watch or Stop watching press did.
+    static func watching(_ title: String, _ watched: Bool) -> String {
+        watched ? "Watcher is watching \(title)." : "Watcher stopped watching \(title)."
+    }
+    static func watchUnconfirmed(_ title: String, watched: Bool, computer: String) -> String {
+        (watched ? "\(computer) didn’t confirm that Watcher is watching \(title)." : "\(computer) didn’t confirm that Watcher stopped watching \(title).")
+            + " Check Watched before you try again."
+    }
+    static func permissionUnconfirmed(_ computer: String) -> String {
+        "\(computer) didn’t confirm the change to Watcher’s permissions. Check what they say before you change them again."
+    }
+
+    // Watcher's own changes (mark B): Sotto's count of what the provider changed, and Watcher's reason in its own words.
+
+    static func files(_ count: Int) -> String { count == 1 ? "1 file" : "\(count) files" }
+    static func ownChangeHeadline(_ count: Int) -> String { "Watcher changed \(files(count)) itself." }
+    /// The press that shows the file names, and folds them again.
+    static func ownChangeToggle(_ count: Int, open: Bool) -> String {
+        let what = count == 1 ? "the file" : "the \(files(count))"
+        return (open ? "Hide " : "Show ") + what
+    }
+}
+
+/// What Watcher may do without asking (control A, Zach's pick on October 13, 2026): the four modes a thread has, with the
+/// names this iPhone's new-thread sheet gives them and a line for each. The computer that runs Watcher keeps the choice,
+/// and a new Watcher starts on it. Lasting grants stay refused in every mode.
+enum WatcherPermissions {
+    /// What the first Watcher ever starts on.
+    static let first = "approval-required"
+    static let modes = ["approval-required", "auto-accept-edits", "auto", "full-access"]
+    static let title = "What Watcher may do without asking"
+    /// What stays true in every mode, under the list.
+    static let foot = "When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread."
+    static func name(_ mode: String) -> String {
+        switch mode {
+        case "approval-required": return "Ask before actions"
+        case "auto-accept-edits": return "Allow edits"
+        case "auto": return "Allow actions"
+        case "full-access": return "Full access"
+        default: return mode
+        }
+    }
+    /// What Watcher does under a mode, in one line. Under Allow actions the provider decides, so the line names it.
+    static func line(_ mode: String, provider: String, computer: String) -> String {
+        switch mode {
+        case "auto-accept-edits": return "Edits files without asking. Asks before a command that changes something."
+        case "auto": return "\(provider) decides what to ask you about."
+        case "full-access": return "Edits files and runs any command without asking, anywhere on \(computer)."
+        default: return "Asks you before it edits a file or runs a command that changes something."
+        }
+    }
+    /// Whether a mode lets Watcher act without asking, which only an iPhone that may answer there can choose.
+    static func grants(_ mode: String) -> Bool { mode != first }
+    /// The modes Watcher's model offers, in Sotto's order; a model that names none, or no model yet, offers all four.
+    static func offered(_ model: ThreadModel?) -> [String] {
+        let listed = (model?.runtimeModes ?? []).filter { modes.contains($0) }
+        return listed.isEmpty ? modes : modes.filter { listed.contains($0) }
+    }
+    /// What stays in force while Watcher's provider hasn't confirmed the mode just chosen.
+    static func inForce(_ mode: String, provider: String) -> String { "\(provider) stays on \(name(mode)) until it confirms." }
+    /// Why the wider modes can't be chosen from this iPhone.
+    static func asksOnly(_ computer: String) -> String {
+        "This iPhone can’t answer on \(computer), so it can only keep Watcher asking first."
+    }
 }
 
 // MARK: - Alerts
@@ -320,8 +456,13 @@ struct WatcherWatch: Sendable {
 /// The words a watched thread carries, shared by its rows, cards and reply box.
 enum WatchedWords {
     static let label = "Watched by Watcher"
-    /// What a watched thread's reply box says, word for word as on the desktop.
+    /// What a watched thread's reply box says on a computer whose watching a send takes over: one that keeps no
+    /// standing watches.
     static let takeover = "Watched by Watcher. If you send here, Watcher stops sending to it."
+    /// What it says where Watcher keeps the thread watched until the user stops it, word for word as on the desktop, and
+    /// while the user's own turn there runs.
+    static let standing = "Watched by Watcher. It keeps this thread going and brings you its questions and permissions."
+    static let paused = "Watched by Watcher. It waits while your own turn here runs, then keeps this thread going."
     /// The words a row or card adds for VoiceOver after where the thread runs.
     static func spoken(_ watched: Bool) -> String { watched ? ", watched by Watcher" : "" }
 }

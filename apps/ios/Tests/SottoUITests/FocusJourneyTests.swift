@@ -750,9 +750,11 @@ import XCTest
         let top = (header.exists ? header.frame.maxY : app.windows.firstMatch.frame.minY) + 16
         let tabs = app.tabBars.firstMatch
         var bottom = tabs.exists ? tabs.frame.minY : app.windows.firstMatch.frame.maxY
-        // The box's glass starts above its text; a held line or a message sits above the box.
+        // The box's glass starts above its text; a held line, a message or Watcher's permissions sit above the box, and
+        // on Watched, what a Stop watching press did sits over the tab bar.
         let dock: [(XCUIElement, CGFloat)] = [(byID("watcher-reply"), 20), (byID("watcher-send-held"), 8),
-                                              (app.buttons["Dismiss message"].firstMatch, 8)]
+                                              (app.buttons["Dismiss message"].firstMatch, 8), (app.buttons["watcher-permissions"], 8),
+                                              (byID("watch-toast"), 8)]
         for (element, gap) in dock where element.exists { bottom = min(bottom, element.frame.minY - gap) }
         return (top, bottom)
     }
@@ -879,8 +881,8 @@ import XCTest
         XCTAssertEqual(XCTWaiter.wait(for: [working], timeout: 10), .completed, "VoiceOver hears the working dot as Working")
     }
 
-    /// A row in what Watcher did opens its thread, with the provider's logo and the owl under its title and the takeover
-    /// line in its reply box.
+    /// A row in what Watcher did opens its thread, with the provider's logo and the owl under its title, Watch on, and
+    /// the line saying what watching means in its reply box.
     func testAReceiptRowOpensItsThread() {
         launch(Self.watcher)
         for appearance in ["dark", "light"] {
@@ -893,9 +895,11 @@ import XCTest
             XCTAssertTrue(title.waitForExistence(timeout: 10), "The row opens its thread")
             XCTAssertEqual(title.label, "Babysit #845 release notes")
             XCTAssertTrue(text("Codex on Laptop · Sotto, watched by Watcher").exists, "The owl follows the provider's logo")
-            let takeover = byID("watched-takeover")
-            XCTAssertTrue(takeover.waitForExistence(timeout: 5))
-            XCTAssertEqual(takeover.label, "Watched by Watcher. If you send here, Watcher stops sending to it.")
+            let watched = byID("watched-takeover")
+            XCTAssertTrue(watched.waitForExistence(timeout: 5))
+            XCTAssertEqual(watched.label, "Watched by Watcher. It keeps this thread going and brings you its questions and permissions.",
+                           "Watcher keeps a watched thread going until the user stops it; a send here doesn't end that")
+            XCTAssertEqual(app.buttons["thread-watch"].value as? String, "On", "Its Watch is on")
             capture("watcher-receipt-thread-" + appearance)
             back()
             XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Back returns to Watcher's page")
@@ -993,6 +997,27 @@ import XCTest
         XCTAssertTrue(own.label.contains("Watcher asks each time. It can’t be given lasting permission."))
         XCTAssertTrue(byID("watcher-send-held").exists, "Watcher waits for its own request before it takes more")
         capture("watcher-cannot-answer-dark")
+        // Watcher's permissions can only stay asking first from a phone that can't answer there.
+        let permissions = app.buttons["watcher-permissions"]
+        XCTAssertTrue(permissions.waitForExistence(timeout: 5))
+        XCTAssertEqual(permissions.value as? String, "Ask before actions")
+        permissions.tap()
+        XCTAssertTrue(byID("watcher-permissions-asks-only").waitForExistence(timeout: 5), "The list says why")
+        XCTAssertEqual(byID("watcher-permissions-asks-only").label, "This iPhone can’t answer on Laptop, so it can only keep Watcher asking first.")
+        for mode in ["auto-accept-edits", "auto", "full-access"] {
+            let option = app.buttons["watcher-permission-\(mode)"]
+            reveal(option)
+            XCTAssertFalse(option.isEnabled, "\(mode) can't be chosen from here")
+        }
+        let asking = app.buttons["watcher-permission-approval-required"]
+        reveal(asking, swipingDown: true)
+        XCTAssertTrue(asking.isEnabled)
+        XCTAssertTrue(asking.isSelected)
+        capture("watcher-permissions-asks-only-dark")
+        // Pressing the chosen mode closes the list and changes nothing.
+        asking.tap()
+        XCTAssertTrue(waitUntilGone(asking))
+        XCTAssertEqual(permissions.value as? String, "Ask before actions")
         let review = app.buttons["watcher-card-review"].firstMatch
         revealInWatcher(review)
         review.tap()
@@ -1011,19 +1036,23 @@ import XCTest
         XCTAssertEqual(XCTWaiter.wait(for: [badged], timeout: 10), .completed, "VoiceOver hears Watcher's own request on its tab")
     }
 
-    /// Watched shows how many threads Watcher works with of how many it may, and Stop all asks first: cancelling stops
-    /// nothing, and confirming stops only the threads Watcher started.
+    /// Watched says what watching means, with a card for each watched thread and no count to fill, and Stop all asks
+    /// first: cancelling stops nothing, and confirming stops only the threads Watcher started.
     func testStopAllAsksFirst() {
         launch(Self.watcher)
         openWatcher()
         app.buttons["watcher-section-watched"].tap()
-        let meter = byID("watcher-meter")
-        XCTAssertTrue(meter.waitForExistence(timeout: 5))
-        XCTAssertEqual(meter.value as? String, "3 of 4 watched")
+        let lead = byID("watcher-watched-lead")
+        XCTAssertTrue(lead.waitForExistence(timeout: 5))
+        let three = "Watcher keeps these 3 threads going on its own and brings you their questions and permissions. Each stays watched until you stop it."
+        XCTAssertEqual(lead.label, three)
+        XCTAssertFalse(byID("watcher-meter").exists, "Watching has no limit, so there is no count of how many it may")
         XCTAssertTrue(app.buttons["watched-\(laptop)/login"].exists, "Each watched thread opens from its card")
+        XCTAssertTrue(app.buttons["watched-stop-\(laptop)/login"].exists, "And has Stop watching")
         XCTAssertTrue(text("No longer watched").exists)
         capture("watcher-watched-dark")
         let stopAll = app.buttons["watcher-stop-all"]
+        revealInWatcher(stopAll)
         stopAll.tap()
         // An alert, named by its question, so its Cancel is always there to press (iOS 26 leaves a confirmation
         // dialog's out).
@@ -1036,19 +1065,173 @@ import XCTest
         capture("watcher-stop-all-dark")
         question.buttons["Cancel"].tap()
         XCTAssertTrue(waitUntilGone(question))
-        XCTAssertEqual(meter.value as? String, "3 of 4 watched", "Cancelling stops nothing")
+        XCTAssertEqual(lead.label, three, "Cancelling stops nothing")
         stopAll.tap()
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         confirm.tap()
         XCTAssertTrue(labelled("Stopped 3 threads Watcher started.").waitForExistence(timeout: 10))
-        let stopped = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0 of 4 watched"), object: meter)
+        let none = "Watcher watches no threads yet. Watch one here or from its page, and Watcher keeps it going until you stop it."
+        let stopped = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", none), object: lead)
         XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 5), .completed)
         XCTAssertFalse(stopAll.exists, "With nothing watched, there is nothing to stop")
         capture("watcher-stopped-dark")
         watcherInLight()
         app.buttons["watcher-section-watched"].tap()
-        XCTAssertTrue(meter.waitForExistence(timeout: 5))
+        XCTAssertTrue(lead.waitForExistence(timeout: 5))
         capture("watcher-stopped-light")
+    }
+
+    /// Watcher's permissions sit over its box in this iPhone's own words (control A): the chip opens the four modes, a
+    /// choice shows at once, and until Watcher's provider confirms it the chip says what is still in force.
+    func testWatchersPermissionsChangeFromItsBox() {
+        launch(Self.watcher + ["--ui-watcher-can-answer"])
+        openWatcher()
+        let permissions = app.buttons["watcher-permissions"]
+        XCTAssertTrue(permissions.waitForExistence(timeout: 5), "Watcher's permissions sit over its box")
+        XCTAssertEqual(permissions.label, "Watcher’s permissions")
+        XCTAssertEqual(permissions.value as? String, "Ask before actions")
+        capture("watcher-permissions-dark")
+        permissions.tap()
+        XCTAssertTrue(text("What Watcher may do without asking").waitForExistence(timeout: 5))
+        let asking = app.buttons["watcher-permission-approval-required"]
+        XCTAssertTrue(asking.isSelected, "The mode in force is ticked")
+        XCTAssertTrue(asking.label.contains("Asks you before it edits a file or runs a command that changes something."),
+                      "Each mode says what Watcher does under it")
+        let edits = app.buttons["watcher-permission-auto-accept-edits"]
+        reveal(edits)
+        XCTAssertTrue(edits.isEnabled, "With Can answer, a wider mode can be chosen")
+        XCTAssertFalse(byID("watcher-permissions-asks-only").exists)
+        capture("watcher-permissions-sheet-dark")
+        edits.tap()
+        XCTAssertTrue(waitUntilGone(edits), "Choosing closes the list")
+        let chosen = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Allow edits"), object: permissions)
+        XCTAssertEqual(XCTWaiter.wait(for: [chosen], timeout: 5), .completed, "The chip says the choice at once")
+        let inForce = byID("watcher-permissions-in-force")
+        XCTAssertTrue(inForce.waitForExistence(timeout: 5), "Until Codex confirms it, the chip says what is still in force")
+        XCTAssertEqual(inForce.label, "Codex stays on Ask before actions until it confirms.")
+        capture("watcher-permissions-pending-dark")
+        XCTAssertTrue(waitUntilGone(inForce), "Once Codex confirms it, nothing more is said")
+        XCTAssertEqual(permissions.value as? String, "Allow edits")
+        watcherInLight()
+        XCTAssertTrue(permissions.waitForExistence(timeout: 5))
+        capture("watcher-permissions-light")
+        permissions.tap()
+        let picked = app.buttons["watcher-permission-auto-accept-edits"]
+        XCTAssertTrue(picked.waitForExistence(timeout: 5))
+        reveal(picked)
+        XCTAssertTrue(picked.isSelected)
+        capture("watcher-permissions-sheet-light")
+        // Pressing the chosen mode closes the list and changes nothing.
+        picked.tap()
+        XCTAssertTrue(waitUntilGone(picked))
+        XCTAssertEqual(permissions.value as? String, "Allow edits")
+    }
+
+    /// A reply in which Watcher changed files itself carries one quiet line under it (mark B): how many, its reason or that
+    /// it gave none, and the files on request.
+    func testAReplyWhereWatcherChangedFilesItselfSaysSo() {
+        launch(Self.watcher)
+        openWatcher()
+        let line = byID("watcher-own-change")
+        XCTAssertTrue(line.waitForExistence(timeout: 5), "The line sits under the reply")
+        revealInWatcher(line)
+        XCTAssertTrue(line.label.contains("Watcher changed 2 files itself."), "Sotto's own count of what Watcher changed")
+        XCTAssertTrue(line.label.contains("Its reason: “A one-word typo in two files is smaller than briefing a thread.”"),
+                      "And Watcher's reason, as its claim")
+        let files = app.buttons["watcher-own-change-files"]
+        revealInWatcher(files)
+        XCTAssertEqual(files.label, "Show the 2 files")
+        XCTAssertFalse(labelled("docs/guide.md").exists, "The file names wait until asked for")
+        capture("watcher-own-change-dark")
+        files.tap()
+        XCTAssertTrue(labelled("docs/guide.md").waitForExistence(timeout: 5), "The files show on request")
+        XCTAssertTrue(labelled("README.md").exists)
+        XCTAssertEqual(files.label, "Hide the 2 files")
+        revealInWatcher(labelled("docs/guide.md"))
+        capture("watcher-own-change-files-dark")
+        watcherInLight()
+        revealInWatcher(line)
+        capture("watcher-own-change-light")
+        // A reply that gave no reason says so, in the needs-you ink.
+        launch(Self.watcher + ["--ui-watcher-no-reason"])
+        openWatcher()
+        XCTAssertTrue(line.waitForExistence(timeout: 5))
+        revealInWatcher(line)
+        XCTAssertTrue(line.label.contains("Watcher changed 2 files itself. It gave no reason."), "Watcher's reply said nothing of it")
+        capture("watcher-own-change-no-reason-dark")
+    }
+
+    /// Watch on a thread's page watches it at once, with Undo, and the owl follows its logo (watch B). Stop watching on
+    /// Watched stops it, and Watch a thread watches it again.
+    func testWatchAThreadFromItsPageAndStopWatchingFromWatched() {
+        launch(Self.watcher)
+        let thread = row("shortcuts")
+        reveal(thread)
+        thread.tap()
+        let title = byID("thread-title")
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        XCTAssertEqual(title.label, "Add keyboard shortcuts")
+        let watch = app.buttons["thread-watch"]
+        XCTAssertTrue(watch.waitForExistence(timeout: 5), "A thread's page offers Watch where a computer runs Watcher")
+        XCTAssertEqual(watch.label, "Watch")
+        XCTAssertEqual(watch.value as? String, "Off")
+        XCTAssertFalse(byID("watched-takeover").exists)
+        watch.tap()
+        let toast = byID("watch-toast")
+        XCTAssertTrue(toast.waitForExistence(timeout: 5), "What the press did is said at once")
+        XCTAssertTrue(text("Watcher is watching Add keyboard shortcuts.").exists)
+        let on = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "On"), object: watch)
+        XCTAssertEqual(XCTWaiter.wait(for: [on], timeout: 5), .completed, "Watch is on")
+        XCTAssertTrue(text("Codex on Laptop · Sotto, watched by Watcher").exists, "The owl follows the provider's logo")
+        capture("watch-thread-page-dark")
+        // Undo takes it back.
+        let undo = app.buttons["watch-undo"]
+        XCTAssertEqual(undo.label, "Undo: stop watching Add keyboard shortcuts")
+        undo.tap()
+        let off = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Off"), object: watch)
+        XCTAssertEqual(XCTWaiter.wait(for: [off], timeout: 5), .completed, "Undo stops watching it")
+        XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 5))
+        watch.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [on], timeout: 5), .completed)
+        // Once the toast goes, the box says what watching means.
+        let line = byID("watched-takeover")
+        XCTAssertTrue(line.waitForExistence(timeout: 20))
+        XCTAssertEqual(line.label, "Watched by Watcher. It keeps this thread going and brings you its questions and permissions.")
+        capture("watch-thread-page-watched-dark")
+        back()
+
+        openWatcher()
+        app.buttons["watcher-section-watched"].tap()
+        let card = app.buttons["watched-\(laptop)/shortcuts"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5), "The thread has a card on Watched")
+        XCTAssertTrue(card.label.contains("Watching since"), "With how long Watcher has watched it with nothing sent")
+        let stop = app.buttons["watched-stop-\(laptop)/shortcuts"]
+        revealInWatcher(stop)
+        XCTAssertEqual(stop.label, "Stop watching Add keyboard shortcuts")
+        capture("watcher-watched-card-dark")
+        stop.tap()
+        XCTAssertTrue(waitUntilGone(stop), "Stop watching takes its card off Watched")
+        XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["watch-undo"].exists, "With Undo")
+        capture("watcher-watched-stopped-dark")
+        // Watch a thread offers it again.
+        let add = app.buttons["watcher-watch-a-thread"]
+        revealInWatcher(add)
+        add.tap()
+        let pick = app.buttons["watch-pick-\(laptop)/shortcuts"]
+        XCTAssertTrue(pick.waitForExistence(timeout: 5), "Watch a thread lists the threads Watcher could watch")
+        XCTAssertFalse(app.buttons["watch-pick-\(laptop)/login"].exists, "Not one it watches already")
+        reveal(pick)
+        XCTAssertEqual(pick.label, "Watch Add keyboard shortcuts")
+        capture("watcher-watch-a-thread-dark")
+        pick.tap()
+        XCTAssertTrue(waitUntilGone(pick), "Choosing one closes the list")
+        XCTAssertTrue(card.waitForExistence(timeout: 5), "And Watcher watches it")
+        XCTAssertTrue(text("Watcher is watching Add keyboard shortcuts.").exists)
+        watcherInLight()
+        app.buttons["watcher-section-watched"].tap()
+        revealInWatcher(app.buttons["watched-stop-\(laptop)/shortcuts"])
+        capture("watcher-watched-card-light")
     }
 
     /// Settings on this iPhone: the look, alerts off until turned on, another theme, light, compact and larger text.
