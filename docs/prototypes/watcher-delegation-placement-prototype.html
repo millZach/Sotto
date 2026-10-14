@@ -1,0 +1,1368 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not shipped, not tested, not wired to anything.
+
+  Question (E6 #1029 with E9 #1032): how does Zach see, and change, which machine and which thread each worker
+  belongs to: Watcher's workers, and workers a thread delegated?
+
+  Surfaces (switch at the top):
+    Settings -> Watcher   "Where new workers start" and each machine's own Threads in flight limit (1 to 8, default 4).
+    Watcher's room        the per-machine limit line, receipts that record the machine and Watcher's reason, a full
+                          machine refusing, a machine with no copy of the project, low free memory as a fact.
+    Delegation            an ordinary thread that delegated: its children, their machine and outcome, the wait and its
+                          timeout, "Delegated by", your turn in a child pausing the parent's sends, Stop cascading,
+                          the permission ceiling refusing a wider child.
+
+  Variants (?variant=A|B|C, the bottom switcher, or the arrow keys):
+    A  In place.     Machines are words where the work already is: a row per machine in Settings, a limit line under
+                     Watcher's header, a machine line in each receipt, delegation cards in the parent's transcript and
+                     children indented under the parent in the sidebar.
+    B  Machines.     Machines are things on screen: a tile per machine in Settings where you pick the default, a strip
+                     of machine chips with meters under Watcher's header (each opens what runs there), and a Delegated
+                     panel beside the parent grouped by machine.
+    C  Thread tree.  Who works for whom comes first: one machines table in Settings, a Workers tab in the room that
+                     draws Watcher and each delegating thread with their workers under them, and a tree in the sidebar
+                     with a breadcrumb in the child's header.
+
+  Settled before this prototype (plan.md, Zach, October 14, 2026): delegation is one level deep and shares the
+  starts-only limit; the default is This computer, so nothing moves until you choose; your words override it for one
+  request; a machine with no copy is refused, never cloned; an older host's facts read "unknown", never guessed.
+
+  Every number is computed from one model: change a limit in Settings and the room, the refusals and the readout follow.
+  ?shot=1 hides the prototype's own bars for screenshots. Other params: surface, theme, size, machines, room, deleg,
+  pane, child, tab, placement, lowmem, open, l_local, l_forge, l_studio.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Sotto: where workers start and who they work for, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+
+/* Theme roles: the Sotto palette's two halves, copied from src/shared/themes/palettes.ts. */
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --r-canvas: oklch(0.115 0.008 265);
+  --r-surface: oklch(0.145 0.008 265);
+  --r-raised: oklch(0.185 0.008 265);
+  --r-overlay: oklch(0.215 0.008 265);
+  --r-text: oklch(0.985 0.005 280);
+  --r-muted-fg: oklch(0.72 0.014 265);
+  --r-placeholder: oklch(0.675 0.012 270);
+  --r-border: oklch(0.305 0.02 265);
+  --r-input: oklch(0.375 0.024 265);
+  --r-accent: oklch(0.714403 0.104089 183.092);
+  --r-accent-fg: oklch(0.16 0.012 190);
+  --r-accent-surface: oklch(0.32 0.05 185);
+  --r-update-fg: oklch(0.83 0.08 183);
+  --r-warning-fg: oklch(0.829017 0.171221 81.038);
+  --r-error-fg: oklch(0.702184 0.189226 22.228);
+  --r-error-surface: oklch(0.29 0.04 20);
+  --r-message: oklch(0.205 0.014 265);
+  --r-secondary: oklch(0.155 0.008 265);
+  --r-sidebar: oklch(0.235 0.003 265);
+  --r-sidebar-control: oklch(0.295 0.003 265);
+  --r-sidebar-hover: oklch(0.28 0.003 265);
+  --r-sidebar-selected: oklch(0.355 0.035 188);
+  --r-sidebar-border: oklch(0.355 0.012 265);
+  --r-sidebar-muted: oklch(0.72 0.014 265);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+}
+html[data-theme='light'] {
+  color-scheme: light;
+  --r-canvas: oklch(0.978 0.004 85);
+  --r-surface: oklch(0.99 0.003 85);
+  --r-raised: oklch(0.955 0.006 85);
+  --r-overlay: oklch(0.945 0.007 85);
+  --r-text: oklch(0.235 0.014 75);
+  --r-muted-fg: oklch(0.5 0.014 75);
+  --r-placeholder: oklch(0.525 0.015 78);
+  --r-border: oklch(0.86 0.012 80);
+  --r-input: oklch(0.8 0.016 80);
+  --r-accent: oklch(0.53 0.095 186);
+  --r-accent-fg: oklch(0.99 0.003 85);
+  --r-accent-surface: oklch(0.92 0.03 186);
+  --r-update-fg: oklch(0.43 0.08 186);
+  --r-warning-fg: oklch(0.530927 0.155556 45.359);
+  --r-error-fg: oklch(0.509494 0.208583 28.513);
+  --r-error-surface: oklch(0.94 0.02 25);
+  --r-message: oklch(0.93 0.012 85);
+  --r-secondary: oklch(0.93 0.01 85);
+  --r-sidebar: oklch(0.955 0.008 85);
+  --r-sidebar-control: oklch(0.995 0.002 85);
+  --r-sidebar-hover: oklch(0.93 0.01 85);
+  --r-sidebar-selected: oklch(0.895 0.028 188);
+  --r-sidebar-border: oklch(0.87 0.012 82);
+  --r-sidebar-muted: oklch(0.5 0.014 75);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+}
+/* --tt-* tokens, derived from the roles the way src/renderer/src/styles/tokens.css does at 100% contrast. */
+html {
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-canvas: var(--r-canvas);
+  --tt-surface: var(--r-surface);
+  --tt-surface-elevated: var(--r-raised);
+  --tt-surface-overlay: var(--r-overlay);
+  --tt-field: var(--r-surface);
+  --tt-text: var(--r-text);
+  --tt-text-2: color-mix(in oklab, var(--r-text) 55%, var(--r-muted-fg));
+  --tt-text-muted: color-mix(in oklab, var(--r-muted-fg) 85%, var(--r-text));
+  --tt-hairline: var(--r-border);
+  --tt-field-border: var(--r-input);
+  --tt-accent: var(--r-accent);
+  --tt-accent-text: var(--r-update-fg);
+  --tt-on-accent: var(--r-accent-fg);
+  --tt-accent-surface: var(--r-accent-surface);
+  --tt-accent-border: color-mix(in srgb, var(--r-accent) 45%, var(--r-input));
+  --tt-accent-wash: color-mix(in srgb, var(--r-accent) 14%, transparent);
+  --tt-hover: color-mix(in srgb, var(--r-accent-surface) 70%, transparent);
+  --tt-track: color-mix(in srgb, var(--r-text) 12%, transparent);
+  --tt-bubble: var(--r-message);
+  --tt-warning: var(--r-warning-fg);
+  --tt-warning-on-tint: color-mix(in oklab, var(--r-warning-fg) 90%, var(--r-text));
+  --tt-error: var(--r-error-fg);
+  --tt-error-surface: var(--r-error-surface);
+  --tt-sidebar: var(--r-sidebar);
+  --tt-sidebar-text: var(--r-text);
+  --tt-sidebar-text-muted: var(--r-sidebar-muted);
+  --tt-sidebar-control: var(--r-sidebar-control);
+  --tt-sidebar-row-hover: var(--r-sidebar-hover);
+  --tt-sidebar-row-selected: var(--r-sidebar-selected);
+  --tt-sidebar-border: var(--r-sidebar-border);
+  --tt-secondary: var(--r-secondary);
+  --tt-focus-ring: var(--r-accent);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: #1b1b1e; font-family: var(--tt-font); }
+body.shot { background: var(--tt-canvas); overflow: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.ic { display: block; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.pm { display: block; flex: none; fill: currentColor; color: var(--tt-text-2); }
+.owl { display: block; flex: none; fill: currentColor; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.grow { flex: 1 1 auto; min-width: 0; }
+.muted { color: var(--tt-text-muted); }
+.warn { color: var(--tt-warning); }
+.err { color: var(--tt-error); }
+
+.stage { display: flex; justify-content: center; padding: 92px 12px 96px; }
+body.shot .stage { padding: 0; }
+.win { position: relative; flex: none; width: var(--w); height: var(--h); zoom: var(--fit, 1); overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font-size: 14px; line-height: 1.45; border: 1px solid #000; }
+body.shot .win { border: 0; }
+
+/* Window controls: drawn, not live. */
+.wctl { position: absolute; top: 0; right: 0; z-index: 40; display: flex; align-items: center; height: 42px; padding: 0 6px; color: var(--tt-text-2); pointer-events: none; }
+.wctl span { display: grid; place-items: center; width: 34px; height: 30px; }
+
+/* Shared bits */
+.tile { display: inline-grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 7px; background: var(--tt-accent); color: var(--tt-on-accent); }
+.link { display: inline; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-text); font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; cursor: pointer; text-align: left; }
+.link:hover { text-decoration-color: currentColor; }
+.link--accent { color: var(--tt-accent-text); }
+.iconbtn { display: inline-grid; place-items: center; flex: none; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); }
+.iconbtn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font-size: 13px; white-space: nowrap; }
+.pill:hover { background: var(--tt-hover); }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font-size: 13px; white-space: nowrap; }
+.chip .ic { color: var(--tt-text-muted); }
+.tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; background: var(--tt-accent-surface); color: var(--tt-text); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+.hbadge { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 120px; padding: 0 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-muted); font-size: 11px; font-weight: 500; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hbadge[data-kind='remote'] .ic { color: var(--tt-accent-text); }
+.mach { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.mach[data-kind='remote'] .ic { color: var(--tt-accent-text); }
+
+/* Rings and outcome words, as the room's rows draw them. */
+.ring { display: block; flex: none; width: 10px; height: 10px; border: 1.5px solid var(--tt-hairline); border-radius: 50%; }
+.ring[data-o='working'], .ring[data-o='background'] { border-color: var(--tt-accent-text); border-right-color: transparent; }
+.ring[data-o='paused'] { border-color: var(--tt-text-2); border-style: dotted; }
+.ring[data-o='failed'], .ring[data-o='refused'] { border-color: var(--tt-error); }
+.ring[data-o='unknown'] { border-color: var(--tt-warning); border-style: dashed; }
+.ring[data-o='answered'] { border-color: var(--tt-text-muted); background: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); }
+.ring[data-o='stopped'] { border-color: var(--tt-text-muted); border-radius: 2px; width: 9px; height: 9px; }
+@media (prefers-reduced-motion: no-preference) {
+  .ring[data-o='working'], .ring[data-o='background'] { animation: spin 1.1s linear infinite; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.ow { white-space: nowrap; }
+.ow[data-o='working'], .ow[data-o='background'] { color: var(--tt-accent-text); }
+.ow[data-o='answered'], .ow[data-o='stopped'] { color: var(--tt-text-muted); }
+.ow[data-o='paused'] { color: var(--tt-text-2); }
+.ow[data-o='failed'], .ow[data-o='refused'] { color: var(--tt-error); }
+.ow[data-o='unknown'] { color: var(--tt-warning); }
+.dot { color: var(--tt-text-muted); }
+
+/* Popovers (More Watcher actions, a machine chip, the Delegated panel at the minimum). */
+.pop { position: absolute; z-index: 30; width: min(340px, calc(100vw - 24px)); padding: 14px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); color: var(--tt-text); font-size: 13px; line-height: 1.5; }
+.pop h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.pop p { margin: 0 0 8px; color: var(--tt-text-2); }
+.pop__close { position: absolute; top: 8px; right: 8px; }
+.pop__list { display: grid; gap: 2px; margin: 8px 0 10px; padding: 0; list-style: none; }
+.pop__list li { display: grid; grid-template-columns: 10px minmax(0, 1fr); column-gap: 9px; align-items: center; padding: 5px 0; }
+.pop__list .sub { grid-column: 2; color: var(--tt-text-muted); font-size: 12px; }
+.pop__foot { display: flex; justify-content: flex-start; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
+
+/* ===== Settings ===== */
+.set { display: grid; grid-template-columns: 264px minmax(0, 1fr); height: 100%; }
+.win[data-size='s'] .set { grid-template-columns: 196px minmax(0, 1fr); }
+.snav { display: flex; flex-direction: column; min-height: 0; padding: 22px 10px 10px; background: var(--tt-sidebar); color: var(--tt-sidebar-text); }
+.snav__brand { display: flex; align-items: center; gap: 9px; padding: 0 12px; font-size: 15px; font-weight: 600; }
+.snav__title { margin: 20px 12px 14px; font-size: 26px; font-weight: 600; letter-spacing: -0.6px; }
+.win[data-size='s'] .snav__title { margin: 14px 12px 8px; font-size: 22px; }
+.snav__list { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.snav__item { display: flex; align-items: center; gap: 12px; width: 100%; height: 40px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-sidebar-text-muted); font-size: 14px; text-align: left; }
+.win[data-size='s'] .snav__item { height: 34px; }
+.snav__item:hover { background: var(--tt-sidebar-row-hover); color: var(--tt-sidebar-text); }
+.snav__item[aria-current='page'] { background: var(--tt-sidebar-row-selected); color: var(--tt-sidebar-text); }
+.snav__item[aria-current='page']::after { content: '›'; margin-left: auto; font-size: 18px; }
+.snav hr { margin: 8px 12px; border: 0; border-top: 1px solid var(--tt-sidebar-border); }
+.sfoot { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--tt-sidebar-border); }
+.switch3 { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; height: 36px; padding: 3px; border-radius: 10px; background: var(--tt-sidebar-control); }
+.switch3 button { height: 30px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-sidebar-text); font-size: 13px; }
+.switch3 button[aria-current='page'] { background: var(--tt-canvas); }
+.switch3 .owlbtn { display: grid; place-items: center; width: 34px; padding: 0; }
+.iconrow { display: flex; align-items: center; gap: 2px; }
+.iconrow .iconbtn { width: 28px; height: 28px; color: var(--tt-sidebar-text-muted); }
+.iconrow .iconbtn[aria-current='page'] { background: var(--tt-sidebar-row-selected); color: var(--tt-sidebar-text); }
+
+.smain { position: relative; min-height: 0; overflow-y: auto; padding: 44px 56px 64px; scrollbar-width: thin; }
+.win[data-size='s'] .smain { padding: 26px 26px 48px; }
+.spage { max-width: 790px; margin: 0 auto; }
+.sh2 { margin: 0 0 10px; font-size: 28px; font-weight: 500; letter-spacing: -1px; line-height: 1.2; }
+.ssub { margin: 0; padding-bottom: 20px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 16px; }
+.win[data-size='s'] .sh2 { font-size: 24px; margin-bottom: 6px; }
+.win[data-size='s'] .ssub { font-size: 14px; padding-bottom: 14px; }
+.group-h { margin: 28px 0 4px; font-size: 15px; font-weight: 600; }
+.group-p { max-width: 68ch; margin: 0 0 10px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.55; }
+.srow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 24px; padding: 16px 0; border-top: 1px solid var(--tt-hairline); }
+.srow__label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; }
+.srow__label .ic { color: var(--tt-text-2); }
+.srow__desc { margin-top: 3px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.srow__note { grid-column: 1 / -1; margin: 0; padding: 8px 12px; border-left: 2px solid var(--tt-warning); background: var(--tt-surface); color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.sel { position: relative; display: inline-flex; }
+.sel select { appearance: none; height: 38px; min-width: 210px; padding: 0 34px 0 12px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font-size: 14px; }
+.sel select:disabled { color: var(--tt-text-muted); cursor: not-allowed; }
+.sel--narrow select { min-width: 76px; }
+.sel .ic { position: absolute; top: 50%; right: 11px; transform: translateY(-50%); color: var(--tt-text-muted); pointer-events: none; }
+.smainwrap { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+.saved { margin: 0; padding: 6px 18px 10px; color: var(--tt-text-muted); font-size: 12px; text-align: right; }
+.pointer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 16px 0; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 13.5px; }
+
+/* B: machine tiles */
+.mtiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; margin: 6px 0 0; }
+.win[data-size='s'] .mtiles { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+fieldset.plain { margin: 0; padding: 0; border: 0; min-width: 0; }
+fieldset.plain legend { padding: 0; }
+.mtile { display: grid; align-content: start; gap: 9px; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface); }
+.mtile[data-chosen='true'] { border-color: var(--tt-accent-border); box-shadow: inset 0 0 0 1px var(--tt-accent-border); }
+.mtile[data-off='true'] { background: transparent; border-style: dashed; }
+.mtile__head { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.mtile__head input { width: 16px; height: 16px; margin: 0; accent-color: var(--tt-accent); }
+.mtile__head input:disabled + * { opacity: 0.7; }
+.mtile__head .tag { margin-left: auto; }
+.mtile__facts { color: var(--tt-text-muted); font-size: 13px; }
+.mtile__stat { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; align-items: center; gap: 10px; color: var(--tt-text-2); font-size: 13px; }
+.mtile__stat > span:first-child { color: var(--tt-text-muted); }
+.mtile__limit { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 9px; border-top: 1px solid var(--tt-hairline); font-size: 13.5px; }
+.membar { display: block; height: 6px; overflow: hidden; border-radius: 3px; background: var(--tt-track); }
+.membar i { display: block; height: 100%; border-radius: 3px; background: var(--tt-text-muted); }
+.membar[data-low='true'] i { background: var(--tt-warning); }
+.meter { display: inline-flex; gap: 3px; }
+.meter i { display: block; width: 6px; height: 13px; border: 1.5px solid var(--tt-text-muted); border-radius: 2px; }
+.meter i.on { border-color: var(--tt-accent-text); background: var(--tt-accent-text); }
+.meter[data-full='true'] i.on { border-color: var(--tt-warning); background: var(--tt-warning); }
+.step { display: inline-flex; align-items: center; border: 1px solid var(--tt-field-border); border-radius: 999px; }
+.step button { display: grid; place-items: center; width: 32px; height: 30px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--tt-text); }
+.step button:hover:not(:disabled) { background: var(--tt-hover); }
+.step button:disabled { color: var(--tt-text-muted); opacity: .55; cursor: not-allowed; }
+.step output { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* C: machines table */
+.ctable { width: 100%; margin-top: 6px; border-collapse: collapse; font-size: 14px; }
+.ctable th { padding: 8px 10px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12.5px; font-weight: 500; text-align: left; white-space: nowrap; }
+.ctable td { padding: 12px 10px; border-bottom: 1px solid var(--tt-hairline); vertical-align: middle; }
+.ctable td:first-child, .ctable th:first-child { width: 56px; text-align: center; }
+.ctable input[type='radio'] { width: 16px; height: 16px; margin: 0; accent-color: var(--tt-accent); }
+.ctable .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ctable .name { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+.ctable .name .ic { color: var(--tt-text-2); }
+.ctable .sub { margin-top: 2px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.ctable tr[data-chosen='true'] td { background: var(--tt-accent-wash); }
+.ctable tr[data-off='true'] td { color: var(--tt-text-muted); }
+.ctable tr[data-chosen='true'] .warn, .mtile[data-chosen='true'] .warn, .mchip[aria-expanded='true'] .warn { color: var(--tt-warning-on-tint); }
+.win[data-size='s'] .ctable td, .win[data-size='s'] .ctable th { padding-left: 6px; padding-right: 6px; }
+.win[data-size='s'] .ctable td:first-child, .win[data-size='s'] .ctable th:first-child { width: 44px; }
+
+/* ===== Watcher's room ===== */
+.room { position: relative; display: grid; grid-template-rows: 44px auto minmax(0, 1fr) auto 62px; height: 100%; }
+.sky { position: absolute; top: 0; left: 0; width: 520px; max-width: 100%; height: 110px; pointer-events: none; background: radial-gradient(90% 100% at 0 0, color-mix(in srgb, var(--tt-accent-surface) 75%, transparent), transparent 72%); }
+.sky i { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: var(--tt-text-muted); opacity: .6; }
+.rhead { position: relative; z-index: 2; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 130px 0 14px; }
+.rhead__name { margin: 0 6px 0 4px; font-size: 15px; font-weight: 600; }
+.hbtn { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; }
+.hbtn:hover { background: var(--tt-hover); }
+.tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; padding: 2px; border: 1px solid var(--tt-hairline); border-radius: 9px; }
+.tabs button { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.tabs button[aria-selected='true'] { background: var(--tt-surface-overlay); color: var(--tt-text); }
+.tabs .n { color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
+.morewrap { position: relative; }
+.morewrap .pop { top: calc(100% + 4px); right: 0; }
+.col { width: min(760px, calc(100% - 48px)); margin: 0 auto; }
+.glance { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0 max(24px, calc((100% - 760px) / 2)); padding: 3px 0 10px; box-shadow: inset 0 -1px 0 var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; }
+.mline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 0; }
+.mline b { color: var(--tt-text-2); font-weight: 500; }
+.mline .sep { color: var(--tt-text-muted); }
+.rscroll { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.rscroll .col { padding: 6px 0 14px; }
+.msg { margin: 18px 0; }
+.msg__meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg__meta b { color: var(--tt-text); font-weight: 600; }
+.msg p { margin: 0; font-size: 14.5px; line-height: 1.6; }
+.msg--you { width: fit-content; max-width: 80%; margin-left: auto; padding: 12px 18px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-bubble); }
+.msg--from { width: fit-content; max-width: 86%; margin-left: auto; padding: 12px 18px; border: 1px dashed var(--tt-field-border); border-radius: 12px; background: var(--tt-surface); }
+.sysline { display: flex; align-items: center; gap: 8px; margin: 16px 0; color: var(--tt-text-muted); font-size: 13px; }
+.sysline::before, .sysline::after { content: ''; flex: 1 1 auto; border-top: 1px solid var(--tt-hairline); }
+.sysline span { flex: 0 1 auto; text-align: center; }
+.cards { display: grid; gap: 8px; margin-top: 12px; }
+.tcard { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 3px; padding: 10px 8px 10px 14px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface); }
+.tcard__title { min-width: 0; overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.tcard__meta { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; color: var(--tt-text-muted); font-size: 12.5px; }
+.tcard__note { grid-column: 2 / -1; margin-top: 2px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.tcard__note .said { color: var(--tt-text-muted); }
+.tcard__act { grid-column: 2 / -1; margin-top: 6px; }
+.tcard--refused { border-color: color-mix(in oklab, var(--tt-error) 45%, var(--tt-hairline)); }
+.tcard--refused .tcard__icon { color: var(--tt-error); }
+.tcard--refused .tcard__title { white-space: normal; }
+.mini { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border: 1px solid var(--tt-field-border); border-radius: 999px; color: var(--tt-text); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.mini[data-kind='remote'] .ic { color: var(--tt-accent-text); }
+.rcomp { padding-bottom: 6px; }
+.composer { display: flex; flex-direction: column; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface); }
+.composer textarea { min-height: 62px; padding: 14px 16px 4px; border: 0; border-radius: 14px; background: transparent; color: var(--tt-text); font-size: 14.5px; resize: none; outline: none; }
+.composer:focus-within { border-color: var(--tt-accent-border); }
+.composer textarea::placeholder { color: var(--tt-text-muted); }
+.win[data-size='s'] .composer textarea { min-height: 44px; padding-top: 10px; }
+.composer__row { display: flex; align-items: center; gap: 8px; padding: 0 10px 10px; }
+.send { display: grid; place-items: center; flex: none; width: 30px; height: 30px; margin-left: auto; padding: 0; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--tt-accent) 55%, var(--tt-surface)); color: var(--tt-on-accent); }
+.send--stop { background: var(--tt-accent); }
+.send--stop i { display: block; width: 10px; height: 10px; border-radius: 2px; background: var(--tt-on-accent); }
+.under { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; padding: 7px 6px 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
+.under .ic, .under .owl { color: var(--tt-text-muted); }
+.under > span { flex: 1 1 0; min-width: 0; }
+.dock { display: flex; align-items: flex-start; justify-content: center; padding: 6px 8px 0; }
+.dock__pill { display: flex; align-items: center; gap: 2px; height: 42px; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 999px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px -10px var(--tt-shadow-color); }
+.dock__sep { width: 1px; height: 18px; margin: 0 5px; background: var(--tt-hairline); }
+.dock__switch { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; width: 236px; height: 34px; padding: 2px; border-radius: 999px; background: var(--tt-surface); }
+.dock__switch button { height: 30px; border: 0; border-radius: 999px; background: transparent; color: var(--tt-text-2); font-size: 13px; }
+.dock__switch button[aria-current='page'] { display: grid; place-items: center; width: 44px; background: var(--tt-surface-overlay); color: var(--tt-text); }
+
+/* A: More Watcher actions panel */
+.pop--more { width: 300px; }
+
+/* B: machines strip */
+.mstrip { position: relative; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 max(24px, calc((100% - 760px) / 2)); padding: 4px 0 10px; box-shadow: inset 0 -1px 0 var(--tt-hairline); }
+.mchipwrap { position: relative; }
+.mchip { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font-size: 13px; white-space: nowrap; }
+.mchip:hover { background: var(--tt-hover); }
+.mchip[aria-expanded='true'] { background: var(--tt-accent-wash); border-color: var(--tt-accent-border); }
+.mchip[data-off='true'] { border-style: dashed; color: var(--tt-text-muted); }
+.mchip[data-kind='remote'] > .ic { color: var(--tt-accent-text); }
+.mchip .def { color: var(--tt-accent-text); font-size: 12px; }
+.mchipwrap .pop { top: calc(100% + 6px); left: 0; }
+.mstrip__lead { color: var(--tt-text-muted); font-size: 12.5px; }
+
+/* C: Workers tab */
+.wsum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 8px 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; }
+.wsum__lead { color: var(--tt-text-2); font-weight: 600; }
+.tree, .tree ul { margin: 0; padding: 0; list-style: none; }
+.tree > li { margin-bottom: 14px; }
+.tree ul > li { position: relative; padding-left: 26px; }
+.tree ul > li::before { content: ''; position: absolute; top: 0; bottom: 0; left: 9px; border-left: 1px solid var(--tt-field-border); }
+.tree ul > li:last-child::before { bottom: auto; height: 21px; }
+.tree ul > li::after { content: ''; position: absolute; top: 21px; left: 9px; width: 11px; border-top: 1px solid var(--tt-field-border); }
+.troot { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 14px; }
+.troot b { font-weight: 600; }
+.troot .owl, .troot .pm { color: var(--tt-text-2); }
+.tnode { display: grid; grid-template-columns: 12px minmax(0, 1fr); align-items: center; column-gap: 9px; row-gap: 2px; padding: 8px 10px; border-radius: 8px; }
+.tnode:hover { background: color-mix(in srgb, var(--tt-hover) 50%, transparent); }
+.tnode__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.tnode__meta { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; color: var(--tt-text-muted); font-size: 12.5px; }
+.tnode__note { grid-column: 2; color: var(--tt-text-2); font-size: 12.5px; }
+.tnode__note .said { color: var(--tt-text-muted); }
+.empty { margin: 40px auto; max-width: 52ch; color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; text-align: center; }
+.empty .owl { margin: 0 auto 12px; color: var(--tt-text-2); }
+
+/* ===== Threads page (delegation) ===== */
+.tp { display: grid; grid-template-columns: 320px minmax(0, 1fr); height: 100%; }
+.win[data-size='s'] .tp { grid-template-columns: 278px minmax(0, 1fr); }
+.win[data-size='l'] .tp { grid-template-columns: 340px minmax(0, 1fr); }
+.tside { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--tt-sidebar-border); background: var(--tt-sidebar); color: var(--tt-sidebar-text); }
+.tside__top { display: flex; align-items: center; gap: 2px; height: 44px; padding: 0 8px 0 12px; }
+.tside__top .iconbtn { width: 30px; height: 30px; color: var(--tt-sidebar-text-muted); }
+.tside__top .iconbtn[aria-pressed='true'] { background: var(--tt-sidebar-control); color: var(--tt-sidebar-text); }
+.tside__search { position: relative; margin: 2px 8px 8px; }
+.tside__search input { width: 100%; height: 32px; padding: 0 10px 0 32px; border: 1px solid var(--tt-sidebar-border); border-radius: 8px; background: var(--tt-sidebar-control); color: var(--tt-sidebar-text); font-size: 13px; }
+.tside__search input::placeholder { color: var(--tt-sidebar-text-muted); }
+.tside__search .ic { position: absolute; top: 50%; left: 10px; transform: translateY(-50%); color: var(--tt-sidebar-text-muted); }
+.tside__list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 0 8px; scrollbar-width: thin; }
+.proj { display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 16px 0 12px; color: var(--tt-sidebar-text); font-size: 14px; font-weight: 600; }
+.proj .ic { color: var(--tt-sidebar-text-muted); }
+.proj .n { margin-left: auto; color: var(--tt-sidebar-text-muted); font-size: 12.5px; font-weight: 400; }
+.rowwrap { position: relative; }
+.trow { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 9px; row-gap: 4px; width: calc(100% - 12px); margin: 1px 6px; padding: 8px 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-sidebar-text); text-align: left; }
+.trow:hover { background: var(--tt-sidebar-row-hover); }
+.trow[aria-current='true'] { background: var(--tt-sidebar-row-selected); border-color: var(--tt-accent-border); }
+.trow__title { min-width: 0; overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.trow__time { color: var(--tt-sidebar-text-muted); font-size: 12.5px; white-space: nowrap; }
+.trow[aria-current='true'] .trow__time, .trow[aria-current='true'] .trow__status.ow[data-o='answered'], .trow[aria-current='true'] .trow__status.ow[data-o='stopped'] { color: var(--tt-text-2); }
+.trow__marks { grid-column: 2; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.trow__marks .pm, .trow__marks .owl { color: var(--tt-sidebar-text-muted); }
+.trow__status { grid-column: 3; font-size: 12.5px; white-space: nowrap; color: var(--tt-sidebar-text-muted); }
+.trow__status.ow[data-o='working'], .trow__status.ow[data-o='background'] { color: var(--tt-accent-text); }
+.trow__status.ow[data-o='failed'] { color: var(--tt-error); }
+.trow__status.ow[data-o='unknown'] { color: var(--tt-warning); }
+/* A: children indented under the parent, with a guide */
+.kids { position: relative; }
+.kids::before { content: ''; position: absolute; top: 2px; bottom: 6px; left: 22px; border-left: 1px solid var(--tt-sidebar-border); }
+.kids .trow { width: calc(100% - 36px); margin-left: 30px; padding-top: 6px; padding-bottom: 6px; }
+.kids .trow__title { font-size: 13.5px; font-weight: 400; }
+/* C: a tree with connectors and a disclosure */
+.ckids { margin: 0; padding: 0; list-style: none; }
+.ckids > li { position: relative; padding-left: 30px; }
+.ckids > li::before { content: ''; position: absolute; top: 0; bottom: 0; left: 22px; border-left: 1px solid var(--tt-sidebar-border); }
+.ckids > li:last-child::before { bottom: auto; height: 22px; }
+.ckids > li::after { content: ''; position: absolute; top: 22px; left: 22px; width: 8px; border-top: 1px solid var(--tt-sidebar-border); }
+.ckids .trow { width: calc(100% - 6px); margin-left: 0; padding-top: 6px; padding-bottom: 6px; }
+.ckids .trow__title { font-size: 13.5px; font-weight: 400; }
+.disclose { display: inline-flex; align-items: center; gap: 4px; height: 22px; margin: -2px 0 2px 34px; padding: 0 8px 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-sidebar-text-muted); font-size: 12px; }
+.disclose:hover { background: var(--tt-sidebar-row-hover); color: var(--tt-sidebar-text); }
+.disclose .ic { transition: transform 120ms ease; }
+.disclose[aria-expanded='true'] .ic { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .disclose .ic { transition: none; } }
+.settled { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 16px 0 18px; color: var(--tt-sidebar-text); font-size: 13.5px; }
+.tside__foot { display: grid; gap: 8px; padding: 8px 10px 10px; border-top: 1px solid var(--tt-sidebar-border); }
+
+.pane { position: relative; display: grid; grid-template-rows: 44px auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
+.phead { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 128px 0 16px; }
+.phead__title { min-width: 0; overflow: hidden; font-size: 15px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.phead__proj { flex: none; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
+.phead .chip { height: 26px; font-size: 12.5px; }
+.phead .hbadge, .phead .pill, .phead .chip { flex: none; }
+.phead .pill { height: 28px; }
+.crumb { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--tt-text-muted); font-size: 14px; }
+.crumb .link { max-width: 220px; overflow: hidden; color: var(--tt-text-2); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.win[data-size='s'] .crumb .link { max-width: 96px; }
+.byline { display: flex; align-items: center; gap: 8px; margin: 0 max(24px, calc((100% - 760px) / 2)); padding: 2px 0 10px; box-shadow: inset 0 -1px 0 var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; }
+.byline .ic { color: var(--tt-text-muted); }
+.pbody { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+.pbody--panel { grid-template-columns: minmax(0, 1fr) 300px; }
+.pscroll { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.pscroll .col { padding: 4px 0 14px; }
+.pcomp { padding: 0 0 12px; }
+.chips { display: flex; align-items: center; gap: 6px; min-width: 0; }
+
+/* A: delegation cards */
+.dcard { display: grid; gap: 4px; padding: 11px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface); }
+.dcard__top { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; }
+.dcard__top > .ic { color: var(--tt-text-muted); }
+.dcard__lead { flex: none; color: var(--tt-text-muted); }
+.dcard__top .link { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcard__out { display: inline-flex; flex: none; align-items: center; gap: 6px; margin-left: auto; font-size: 13px; }
+.dcard__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; padding-left: 24px; color: var(--tt-text-muted); font-size: 12.5px; }
+.dcard__wait { padding-left: 24px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.dcard--refused { border-color: color-mix(in oklab, var(--tt-error) 45%, var(--tt-hairline)); }
+.dcard--refused .dcard__top > .ic { color: var(--tt-error); }
+
+/* B: the Delegated panel */
+.dpanel { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: 4px 16px 16px; border-left: 1px solid var(--tt-hairline); scrollbar-width: thin; }
+.dpanel h2 { display: flex; align-items: center; gap: 8px; margin: 6px 0 4px; font-size: 14px; font-weight: 600; }
+.dpanel h2 .n { color: var(--tt-text-muted); font-weight: 400; }
+.dpanel__lead { margin: 0 0 10px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.5; }
+.dgroup { margin: 0 0 12px; }
+.dgroup h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; padding: 6px 0 4px; border-bottom: 1px solid var(--tt-hairline); font-size: 13px; font-weight: 600; }
+.dgroup h3 .muted { margin-left: auto; font-weight: 400; font-size: 12px; }
+.dgroup[data-kind='remote'] h3 > .ic { color: var(--tt-accent-text); }
+.drow { display: grid; grid-template-columns: 10px minmax(0, 1fr); align-items: center; column-gap: 9px; row-gap: 2px; padding: 7px 0; }
+.drow .link { min-width: 0; overflow: hidden; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.drow__meta, .drow__wait { grid-column: 2; color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
+.drow__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.drow__wait { color: var(--tt-text-2); }
+.dpanel__foot { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
+.dline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; margin-top: 8px; color: var(--tt-text-2); font-size: 13px; }
+.dline > .ic { color: var(--tt-text-muted); }
+.pop--panel { top: 44px; right: 12px; width: min(330px, calc(100% - 24px)); max-height: calc(100% - 60px); overflow-y: auto; padding: 4px 14px 14px; }
+.pop--panel .dpanel__foot { margin-top: 6px; }
+
+/* C: one-line activity rows */
+.arow { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; padding: 5px 0; color: var(--tt-text-2); font-size: 13.5px; }
+.arow > .ic { color: var(--tt-text-muted); }
+.arow .link { font-weight: 500; }
+.arows { margin-top: 10px; padding: 4px 0 4px 12px; border-left: 1px solid var(--tt-hairline); }
+
+/* The prototype's own bars: deliberately not Sotto's look. */
+.proto-top { position: fixed; top: 8px; left: 50%; z-index: 100; display: grid; gap: 6px; width: min(1180px, calc(100vw - 16px)); padding: 8px 12px; border-radius: 14px; background: #fff; color: #111; box-shadow: 0 8px 30px rgb(0 0 0 / 45%); transform: translateX(-50%); font: 12.5px/1.3 ui-sans-serif, system-ui, sans-serif; }
+.pt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.proto-top button, .proto-top select { padding: 3px 9px; border: 1px solid #bbb; border-radius: 999px; background: #f4f4f4; color: #111; color-scheme: light; font: inherit; }
+.proto-top button[aria-pressed='true'] { background: #111; border-color: #111; color: #fff; }
+.proto-top label { display: inline-flex; align-items: center; gap: 5px; }
+.pt-state { color: #444; }
+.proto-switch { position: fixed; bottom: 16px; left: 50%; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 999px; background: #fff; color: #111; box-shadow: 0 8px 30px rgb(0 0 0 / 50%); transform: translateX(-50%); font: 13px/1.2 ui-sans-serif, system-ui, sans-serif; }
+.proto-switch button { padding: 4px 11px; border: 1px solid #bbb; border-radius: 999px; background: #f4f4f4; color: #111; font: inherit; }
+.proto-switch .label { min-width: 230px; font-weight: 700; text-align: center; }
+body.shot .proto-top, body.shot .proto-switch { display: none; }
+</style>
+</head>
+<body>
+<div class="proto-top" role="region" aria-label="Prototype controls, not part of the design">
+  <div class="pt-row">
+    <strong>Prototype</strong>
+    <span role="group" aria-label="Surface" id="pt-surface">
+      <button type="button" data-surface="settings">Settings → Watcher</button>
+      <button type="button" data-surface="room">Watcher's room</button>
+      <button type="button" data-surface="delegation">Delegation</button>
+    </span>
+    <label>Machines
+      <select id="pt-machines">
+        <option value="studio-off">This computer, forge, studio not connected</option>
+        <option value="studio-old">This computer, forge, studio on an older host</option>
+        <option value="two">This computer and forge</option>
+        <option value="alone">This computer only</option>
+      </select>
+    </label>
+    <label id="pt-room-l">Room
+      <select id="pt-room">
+        <option value="started">Two workers started</option>
+        <option value="full">Forge is full</option>
+        <option value="nocopy">No copy on forge</option>
+        <option value="lowmem">Low memory here</option>
+        <option value="empty">No workers yet</option>
+      </select>
+    </label>
+    <label id="pt-deleg-l">Delegation
+      <select id="pt-deleg">
+        <option value="running">Working, one answered</option>
+        <option value="later">Later: background work, one failed</option>
+        <option value="yourturn">Your turn in a child</option>
+        <option value="stopped">After Stop on the parent</option>
+        <option value="restart">After a restart</option>
+        <option value="refused">A wider child refused</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="pt-low"> Low memory here</label>
+    <label>Size
+      <select id="pt-size"><option value="1280">1280×800</option><option value="820">820×560</option><option value="1600">1600×1000</option></select>
+    </label>
+    <button type="button" id="pt-theme"></button>
+  </div>
+  <div class="pt-state" id="pt-state" aria-live="polite"></div>
+</div>
+<div class="stage"><div class="win" id="win"></div></div>
+<div class="proto-switch" role="group" aria-label="Variant, prototype only">
+  <button type="button" id="pv-prev" aria-label="Previous variant">←</button>
+  <span class="label" id="pv-label" aria-live="polite"></span>
+  <button type="button" id="pv-next" aria-label="Next variant">→</button>
+</div>
+<script>
+(() => {
+'use strict';
+const P = new URLSearchParams(location.search);
+const pick = (v, allowed, d) => allowed.includes(v) ? v : d;
+const S = {
+  variant: pick(P.get('variant'), ['A', 'B', 'C'], 'A'),
+  surface: pick(P.get('surface'), ['settings', 'room', 'delegation'], 'settings'),
+  theme: P.get('theme') === 'light' ? 'light' : 'dark',
+  size: pick(P.get('size'), ['1280', '820', '1600'], '1280'),
+  machines: pick(P.get('machines'), ['studio-off', 'studio-old', 'two', 'alone'], 'studio-off'),
+  lowmem: P.get('lowmem') === '1',
+  room: pick(P.get('room'), ['started', 'full', 'nocopy', 'lowmem', 'empty'], 'started'),
+  deleg: pick(P.get('deleg'), ['running', 'later', 'yourturn', 'stopped', 'restart', 'refused'], 'running'),
+  pane: pick(P.get('pane'), ['parent', 'child'], 'parent'),
+  child: pick(P.get('child'), ['d1', 'd2', 'd3'], 'd2'),
+  tab: pick(P.get('tab'), ['conversation', 'watched', 'workers'], 'conversation'),
+  placement: pick(P.get('placement'), ['watcher', 'local', 'forge', 'studio'], 'local'),
+  limits: { local: +(P.get('l_local') || 4), forge: +(P.get('l_forge') || 4), studio: +(P.get('l_studio') || 4) },
+  open: P.get('open') || null,
+  kids: P.get('kids') !== '0',
+  shot: P.get('shot') === '1',
+};
+if (S.deleg === 'yourturn' && !P.get('pane')) S.pane = 'child';
+
+const VARIANTS = { A: 'In place', B: 'Machines', C: 'Thread tree' };
+const SIZES = { '1280': [1280, 800, 'm'], '820': [820, 560, 's'], '1600': [1600, 1000, 'l'] };
+const PROV = { claude: 'Claude', codex: 'Codex', grok: 'Grok' };
+const MODEL = { claude: 'Opus 4.6', codex: 'GPT-5.4', grok: 'Grok 4.6' };
+const OUT = { working: 'Working', background: 'Background work', answered: 'Answered', failed: 'Failed', stopped: 'Stopped', paused: 'Paused', unknown: 'Unknown' };
+const INFLIGHT = new Set(['working', 'background', 'paused', 'unknown']);
+const PARENT = 'Tailnet reconnect fix';
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+/* ---------- icons ---------- */
+const I = {
+  laptop: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+  down: '<path d="m6 9 6 6 6-6"/>',
+  right: '<path d="m9 18 6-6-6-6"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  list: '<path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/>',
+  open: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+  fork: '<circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9M12 12v3"/>',
+  clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  up: '<path d="m5 12 7-7 7 7M12 19V5"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  chart: '<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>',
+  gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/>',
+  wave: '<path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/>',
+  spark: '<path d="M9.94 14.06 4 20M14 4l1.5 3.5L19 9l-3.5 1.5L14 14l-1.5-3.5L9 9l3.5-1.5z"/>',
+  cmd: '<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>',
+  phone: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+  cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>',
+  flow: '<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
+  out: '<path d="M7 17 17 7M7 7h10v10"/>',
+  palette: '<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.56-2.5 5.56-5.55C21.97 6.01 17.46 2 12 2z"/>',
+  sliders: '<path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+  branch: '<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  chat: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2zM18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>',
+  term: '<path d="m7 11 2-2-2-2M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/>',
+  fplus: '<path d="M12 10v6M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  pen: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 1 1 3 3L12 15l-4 1 1-4Z"/>',
+  panel: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+  panelR: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
+  panelB: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  min: '<path d="M5 12h14"/>',
+  max: '<rect width="14" height="14" x="5" y="5" rx="1"/>',
+  minus: '<path d="M5 12h14"/>',
+  plus: '<path d="M5 12h14M12 5v14"/>',
+  back: '<path d="m15 18-6-6 6-6"/>',
+};
+const ic = (n, s = 16) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${I[n]}</svg>`;
+const OWL_PATH = 'M1.27 4.8C0.84 3.93 0.73 2.31 1.49 1.22C1.63 0.95 1.93 0.68 2.06 1.22C2.12 2.03 2.71 2.9 3.93 2.9C5.83 2.2 10.17 1.76 12.94 3.34C13.69 3.28 14.4 2.71 14.45 1.82C14.51 1.57 14.73 1.57 14.83 1.98C15.32 2.58 15.54 4.26 14.94 5.56C15.38 6.1 15.7 7.46 15.7 9.63C15.76 12.12 15.29 13.37 13.97 14.24C12.75 15.19 10.17 15.24 8 15.24C5.8 15.24 3.23 15.19 2.01 14.24C0.68 13.37 0.22 12.12 0.27 9.63C0.24 7.19 0.52 5.83 1.27 4.8ZM1.84 8.95C1.82 7.05 2.25 6.07 3.66 6.07C5.34 6.02 6.75 6.21 6.73 8.54C6.73 10.44 6.1 11.31 4.34 11.31C2.58 11.34 1.82 10.58 1.84 8.95ZM9.33 9.22C9.33 8.14 9.63 7.67 10.44 7.46L13.1 6.92C13.8 6.78 14.13 7.46 14.13 8.81C14.16 10.71 13.69 11.34 11.66 11.34C10.17 11.34 9.33 10.71 9.33 9.22Z';
+const owl = (s = 16) => `<svg class="owl" width="${s}" height="${s}" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="${OWL_PATH}" fill-rule="evenodd"/><circle cx="5.29" cy="8.22" r="1.19"/><circle cx="10.79" cy="8.87" r="1.19"/></svg>`;
+const MARKS = {
+  codex: ['0 0 256 260', 'M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z'],
+  claude: ['0 0 256 257', 'm50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z'],
+  grok: ['0 0 24 24', 'M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257'],
+};
+const pm = (p, s = 14) => `<svg class="pm" width="${s}" height="${s}" viewBox="${MARKS[p][0]}" aria-hidden="true" focusable="false"><path d="${MARKS[p][1]}"/></svg>`;
+
+/* ---------- the one model ---------- */
+function machines() {
+  const low = S.lowmem || S.room === 'lowmem';
+  const list = [{ id: 'local', name: 'This computer', kind: 'local', connected: true, facts: true, os: 'Windows 11', arch: 'x64', cpus: 16, total: 32, free: low ? 1.2 : 9.8, low }];
+  if (S.machines !== 'alone') list.push({ id: 'forge', name: 'forge', kind: 'remote', connected: true, facts: true, os: 'Omarchy', arch: 'x64', cpus: 24, total: 64, free: 41.2, low: false });
+  if (S.machines === 'studio-off') list.push({ id: 'studio', name: 'studio', kind: 'remote', connected: false, facts: false });
+  if (S.machines === 'studio-old') list.push({ id: 'studio', name: 'studio', kind: 'remote', connected: true, facts: false });
+  return list;
+}
+const M = id => machines().find(m => m.id === id);
+const live = id => { const m = M(id); return !!m && m.connected; };
+const place = w => live(w.on) ? w : { ...w, on: 'local' };
+const limit = id => S.limits[id];
+const name = id => (M(id) || { name: id }).name;
+const prose = id => id === 'local' ? 'this computer' : name(id);
+
+function baseWatcher() {
+  if (S.room === 'empty') return [];
+  const l = [{ id: 'w3', title: 'Omarchy capture check', prov: 'claude', on: 'forge', forgeOnly: true, outcome: 'background', reason: 'Omarchy runs on forge, so its captures are checked there.' }];
+  if (S.room === 'full') l.push({ id: 'w4', title: 'Waybar layout check', prov: 'grok', on: 'forge', forgeOnly: true, outcome: 'working', reason: 'Waybar runs on forge.' });
+  l.push({ id: 'w2', title: 'Paste journeys on Hyprland', prov: 'grok', on: 'forge', outcome: 'working', reason: 'Linux journeys are checked on forge, as the project’s notes say.' });
+  l.push({ id: 'w1', title: 'Windows installer tests', prov: 'codex', on: 'local', outcome: 'working', reason: 'Windows tests run on this computer.' });
+  if (S.room === 'lowmem' && live('forge')) l.push({ id: 'w5', title: 'Unit suite for the paste fix', prov: 'codex', on: 'forge', outcome: 'working', reason: 'This computer has 1.2 GB of its 32 GB free.' });
+  return l.filter(w => !w.forgeOnly || live('forge')).map(place);
+}
+function delegated() {
+  if (S.surface !== 'delegation' && S.room === 'empty') return [];
+  const d = [
+    { id: 'd1', title: 'Review the reconnect diff', prov: 'codex', on: 'local', outcome: 'answered', wait: 'answered' },
+    { id: 'd2', title: 'Linux journeys for the fix', prov: 'grok', on: 'forge', outcome: 'working', wait: 'waiting' },
+    { id: 'd3', title: 'Windows e2e for the fix', prov: 'codex', on: 'local', outcome: 'working', wait: 'timeout' },
+  ];
+  if (S.deleg === 'later') { d[1].outcome = 'background'; d[1].wait = 'timeout'; d[2].outcome = 'failed'; }
+  if (S.deleg === 'yourturn') { d[1].outcome = 'paused'; }
+  if (S.deleg === 'stopped') { d[1].outcome = 'stopped'; d[2].outcome = 'stopped'; }
+  if (S.deleg === 'restart') { d[1].outcome = 'unknown'; d[1].wait = 'timeout'; d[2].outcome = 'unknown'; }
+  return d.map(place);
+}
+const countOn = (id, list) => list.filter(w => w.on === id && INFLIGHT.has(w.outcome)).length;
+const forgeIsFull = () => countOn('forge', [...baseWatcher(), ...delegated()]) >= limit('forge');
+function watcherWorkers() {
+  const l = baseWatcher();
+  if (S.room === 'full' && live('forge') && !forgeIsFull()) l.push({ id: 'w6', title: 'Paste timing check', prov: 'grok', on: 'forge', outcome: 'working', reason: 'Linux journeys are checked on forge, as the project’s notes say.' });
+  return l;
+}
+const everyone = () => [...watcherWorkers(), ...delegated()];
+const count = id => countOn(id, everyone());
+const workingKids = () => delegated().filter(w => INFLIGHT.has(w.outcome) && w.outcome !== 'paused').length;
+function roomOn(except) {
+  return machines().filter(m => m.connected && m.id !== except && count(m.id) < limit(m.id));
+}
+function roomWords(except) {
+  const r = roomOn(except);
+  if (!r.length) return 'No machine has room now. Workers start again as others finish.';
+  return 'Room on ' + r.map(m => `${prose(m.id)}, ${count(m.id)} of ${limit(m.id)}`).join(', and ') + '.';
+}
+function placeNote(w) {
+  if (S.placement === 'watcher') return { lead: `Watcher chose ${prose(w.on)}.`, reason: w.reason };
+  if (S.placement === w.on || !live(S.placement) && w.on === 'local') return null;
+  return { lead: `Started on ${prose(w.on)} instead of your default, ${prose(S.placement)}.`, reason: w.reason };
+}
+function parentOutcome() {
+  return { running: 'working', later: 'answered', yourturn: 'working', stopped: 'stopped', restart: 'answered', refused: 'working' }[S.deleg];
+}
+function waitWords(w) {
+  if (w.outcome === 'stopped') return `Stopped with ${PARENT} at 12:47 pm.`;
+  if (w.outcome === 'unknown') return 'Sotto restarted while it worked. Nothing was resent. Open it to see where it got to.';
+  if (w.outcome === 'paused') return 'You sent to it at 12:46 pm. This thread sends it nothing more until your turn there ends.';
+  if (w.outcome === 'failed') return 'Its last turn failed. This thread was told by wake-up. Open it to see why.';
+  if (w.outcome === 'background') return 'Its turn ended with background work still running. This thread hears when it settles.';
+  if (w.wait === 'answered') return 'Answered in 1 min 40 s, while this thread waited for it.';
+  if (w.wait === 'waiting') return 'This thread waits up to 5 min for it. 1 min 12 s so far.';
+  return 'This thread waited 5 min, then went on. The answer comes back as a wake-up.';
+}
+const mi = (m, s = 13) => ic(m && m.kind === 'remote' ? 'server' : 'laptop', s);
+const machSpan = (id, s = 12) => { const m = M(id); return `<span class="mach" data-kind="${m.kind}">${mi(m, s)}${m.name}</span>`; };
+const hbadge = id => { const m = M(id); return `<span class="hbadge" data-kind="${m.kind}" title="On ${m.name}">${mi(m, 11)}<span>${m.name}</span></span>`; };
+const ring = o => `<span class="ring" data-o="${o}" aria-hidden="true"></span>`;
+const ow = o => `<span class="ow" data-o="${o}">${OUT[o]}</span>`;
+const D = ' <span class="dot" aria-hidden="true">·</span> ';
+
+/* ---------- shared chrome ---------- */
+const wctl = () => `<div class="wctl" aria-hidden="true"><span>${ic('min')}</span><span>${ic('max', 14)}</span><span>${ic('x')}</span></div>`;
+function switch3(current, cls = 'switch3') {
+  return `<div class="${cls}" role="group" aria-label="Rooms">
+    <button type="button" data-k="sw-dictate" ${current === 'dictate' ? 'aria-current="page"' : ''}>Dictate</button>
+    <button type="button" class="owlbtn" data-k="sw-room" data-go="room" aria-label="Watcher's room" ${current === 'room' ? 'aria-current="page"' : ''}>${owl(17)}</button>
+    <button type="button" data-k="sw-threads" data-go="delegation" ${current === 'threads' ? 'aria-current="page"' : ''}>Threads</button>
+  </div>`;
+}
+function iconrow(current) {
+  const b = (k, icn, label, go) => `<button type="button" class="iconbtn" data-k="ir-${k}" aria-label="${label}" ${go ? `data-go="${go}"` : ''} ${current === k ? 'aria-current="page"' : ''}>${ic(icn)}</button>`;
+  return `<div class="iconrow">${b('history', 'clock', 'History')}${b('usage', 'chart', 'Usage')}${b('settings', 'gear', 'Settings', 'settings')}${b('help', 'help', 'Help')}<span class="grow"></span>${b('update', 'refresh', 'Check for updates')}</div>`;
+}
+
+/* ---------- Settings ---------- */
+function renderSettings() {
+  const nav = [
+    ['mic', 'Dictation'], ['wave', 'Transcription'], ['spark', 'Cleanup'], null,
+    ['cmd', 'Providers'], ['server', 'Hosts'], ['phone', 'Phones'], ['cloud', 'Cloud iPhone'], null,
+    ['flow', 'Agents'], ['owl', 'Watcher'], ['out', 'Output'], null,
+    ['palette', 'Appearance'], ['sliders', 'Application'], ['branch', 'Git'],
+  ];
+  const items = nav.map(n => n === null ? '<hr>' : `<button type="button" class="snav__item" data-k="nav-${n[1]}" ${n[1] === 'Watcher' ? 'aria-current="page"' : ''}>${n[0] === 'owl' ? owl(16) : ic(n[0])}${n[1]}</button>`).join('');
+  const body = { A: settingsA, B: settingsB, C: settingsC }[S.variant]();
+  return `<div class="set">
+    <nav class="snav" aria-label="Settings">
+      <div class="snav__brand"><span class="tile">${owl(15)}</span>Sotto</div>
+      <h1 class="snav__title">Settings</h1>
+      <div class="snav__list">${items}</div>
+      <div class="sfoot">${switch3('')}${iconrow('settings')}</div>
+    </nav>
+    <div class="smainwrap"><main class="smain" data-scroll="smain">
+      <div class="spage">
+        <h2 class="sh2">Watcher</h2>
+        <p class="ssub">Where workers start, and how many each machine runs</p>
+        ${body}
+      </div>
+    </main>
+    <p class="saved">Changes save as you make them.</p></div>
+  </div>`;
+}
+function placeDesc() {
+  if (machines().length === 1) return 'Only this computer is connected, so workers start here. Add a host to start them elsewhere.';
+  if (S.placement === 'watcher') return 'Watcher, or the thread that delegates, picks a machine from each one’s facts and the project’s notes on where checks run, and says why.';
+  return `On ${prose(S.placement)}, unless your message names another machine for that request.`;
+}
+function placeWarn() {
+  if (S.placement === 'watcher' || live(S.placement)) return '';
+  const m = M(S.placement);
+  if (!m) return '';
+  return `<p class="srow__note">${cap(m.name)} is not connected. Until it is, a new worker starts only where your message names a machine. Nothing already working moves.</p>`;
+}
+function placeOptions() {
+  const ms = machines();
+  return `<option value="watcher" ${S.placement === 'watcher' ? 'selected' : ''}>Let Watcher choose</option>` +
+    ms.map(m => `<option value="${m.id}" ${S.placement === m.id ? 'selected' : ''} ${m.connected ? '' : 'disabled'}>${m.name}${m.connected ? '' : ', not connected'}</option>`).join('');
+}
+function factsLine(m) {
+  if (!m.connected) return 'Not connected. Its limit applies when it connects.';
+  if (!m.facts) return 'Facts unknown. This host is older and does not report them; update it in Hosts to see them.';
+  const mem = m.low ? `<span class="warn">${m.free} of ${m.total} GB free, low</span>` : `${m.free} of ${m.total} GB free`;
+  return `${m.os}${D}${m.arch}${D}${m.cpus} CPUs${D}${mem}`;
+}
+function workingLine(m) {
+  if (!m.connected) return '';
+  const n = count(m.id), L = limit(m.id);
+  if (n > L) return `<span class="warn">${n} working, over its limit of ${L}.</span> Nothing stops; it starts no more until fewer than ${L} work there.`;
+  if (n === L) return `<span class="warn">${n} working, full.</span>`;
+  return n === 0 ? 'Nothing working now.' : `${n} working now.`;
+}
+function limitSelect(m) {
+  const opts = [1, 2, 3, 4, 5, 6, 7, 8].map(v => `<option ${v === limit(m.id) ? 'selected' : ''}>${v}</option>`).join('');
+  return `<span class="sel sel--narrow"><select data-act="limit" data-m="${m.id}" data-k="lim-${m.id}" aria-label="Threads in flight on ${m.name}">${opts}</select>${ic('down', 14)}</span>`;
+}
+function hostsPointer() {
+  return `<div class="pointer"><span>Workers can start on any machine connected to this computer. Add one in Hosts.</span><button type="button" class="link link--accent" data-k="to-hosts">Open Hosts</button></div>`;
+}
+
+function settingsA() {
+  const ms = machines(), alone = ms.length === 1;
+  return `
+  <h3 class="group-h">New workers</h3>
+  <p class="group-p">Workers are threads Watcher starts and threads another thread delegates. Name a machine in your message to start one somewhere else for that request.</p>
+  <div class="srow">
+    <div><div class="srow__label" id="lbl-place">Where new workers start</div><div class="srow__desc">${placeDesc()}</div></div>
+    <span class="sel"><select data-act="place" data-k="place" aria-labelledby="lbl-place" ${alone ? 'disabled' : ''}>${alone ? '<option>This computer</option>' : placeOptions()}</select>${ic('down', 14)}</span>
+    ${placeWarn()}
+  </div>
+  <h3 class="group-h">Threads in flight</h3>
+  <p class="group-p">A machine starts new work only while fewer than its limit are working there for Watcher or for a thread that delegates. Watching has no limit, and lowering one stops nothing.</p>
+  ${ms.map(m => `<div class="srow">
+     <div><div class="srow__label">${mi(m, 15)}${m.name}${S.placement === m.id ? '<span class="tag">Default</span>' : ''}</div>
+       <div class="srow__desc">${factsLine(m)}</div>
+       ${workingLine(m) ? `<div class="srow__desc">${workingLine(m)}</div>` : ''}</div>
+     ${limitSelect(m)}
+   </div>`).join('')}
+  ${alone ? hostsPointer() : ''}`;
+}
+
+function stepper(m) {
+  const L = limit(m.id);
+  return `<span class="step" role="group" aria-label="Threads in flight on ${m.name}">
+    <button type="button" data-act="step" data-m="${m.id}" data-d="-1" data-k="dn-${m.id}" aria-label="Lower ${m.name}’s limit to ${L - 1}" ${L <= 1 ? 'disabled' : ''}>${ic('minus', 14)}</button>
+    <output aria-live="polite">${L}</output>
+    <button type="button" data-act="step" data-m="${m.id}" data-d="1" data-k="up-${m.id}" aria-label="Raise ${m.name}’s limit to ${L + 1}" ${L >= 8 ? 'disabled' : ''}>${ic('plus', 14)}</button>
+  </span>`;
+}
+function meter(n, L) {
+  const full = n >= L;
+  return `<span class="meter" data-full="${full}" aria-hidden="true">${Array.from({ length: Math.max(L, n) }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
+}
+function settingsB() {
+  const ms = machines(), alone = ms.length === 1;
+  const choose = alone ? '' : `<label class="mtile" data-chosen="${S.placement === 'watcher'}">
+      <span class="mtile__head"><input type="radio" name="place" value="watcher" data-act="place" data-k="pl-watcher" ${S.placement === 'watcher' ? 'checked' : ''}><span>${owl(15)}</span><span>Let Watcher choose</span>${S.placement === 'watcher' ? '<span class="tag">New workers start here</span>' : ''}</span>
+      <span class="mtile__facts">Watcher, or the thread that delegates, picks a machine from the facts on these tiles and the project’s notes, and says why.</span>
+    </label>`;
+  const tiles = ms.map(m => {
+    const chosen = S.placement === m.id;
+    const n = count(m.id), L = limit(m.id);
+    const used = m.facts ? Math.round((1 - m.free / m.total) * 100) : 0;
+    return `<div class="mtile" data-chosen="${chosen}" data-off="${!m.connected}">
+      <label class="mtile__head"><input type="radio" name="place" value="${m.id}" data-act="place" data-k="pl-${m.id}" ${chosen ? 'checked' : ''} ${m.connected && !alone ? '' : 'disabled'} aria-describedby="facts-${m.id}"><span>${mi(m, 15)}</span><span>${m.name}</span>${chosen ? '<span class="tag">New workers start here</span>' : ''}</label>
+      <span class="mtile__facts" id="facts-${m.id}">${!m.connected ? 'Not connected. Connect it in Hosts to start work there. Its limit applies when it connects.' : m.facts ? `${m.os}${D}${m.arch}${D}${m.cpus} CPUs` : 'Facts unknown. This host is older and does not report them. Update it in Hosts.'}</span>
+      ${m.connected ? `<span class="mtile__stat"><span>Memory</span>${m.facts ? `<span class="membar" data-low="${m.low}"><i style="width:${used}%"></i></span><span class="${m.low ? 'warn' : ''}">${m.free} of ${m.total} GB free${m.low ? ', low' : ''}</span>` : '<span class="muted">unknown</span><span></span>'}</span>
+      <span class="mtile__stat"><span>Working</span>${meter(n, L)}<span class="${n >= L ? 'warn' : ''}">${n} of ${L}${n > L ? ', over' : n === L ? ', full' : ''}</span></span>` : ''}
+      <span class="mtile__limit"><span>Threads in flight</span>${stepper(m)}</span>
+    </div>`;
+  }).join('');
+  return `
+  <fieldset class="plain">
+    <legend class="group-h">Where new workers start</legend>
+    <p class="group-p">Workers are threads Watcher starts and threads another thread delegates. Name a machine in your message to start one somewhere else for that request. Each machine starts new work only while fewer than its limit work there; watching has no limit, and lowering one stops nothing.</p>
+    ${placeWarn() ? `<div style="margin:0 0 10px">${placeWarn()}</div>` : ''}
+    <div class="mtiles">${choose}${tiles}</div>
+  </fieldset>
+  ${alone ? `<div style="margin-top:18px">${hostsPointer()}</div>` : ''}`;
+}
+
+function settingsC() {
+  const ms = machines(), alone = ms.length === 1;
+  const rows = ms.map(m => {
+    const n = count(m.id), L = limit(m.id), chosen = S.placement === m.id;
+    return `<tr data-chosen="${chosen}" data-off="${!m.connected}">
+      <td><input type="radio" name="place" value="${m.id}" data-act="place" data-k="pl-${m.id}" ${chosen ? 'checked' : ''} ${m.connected && !alone ? '' : 'disabled'} aria-label="Start new workers on ${m.name}"></td>
+      <td><div class="name">${mi(m, 14)}${m.name}</div><div class="sub">${!m.connected ? 'Not connected' : m.facts ? `${m.os}${D}${m.arch}${D}${m.cpus} CPUs` : 'Older host: facts unknown'}</div></td>
+      <td class="num">${!m.connected ? '<span class="muted">-</span>' : m.facts ? `<span class="${m.low ? 'warn' : ''}">${m.free} of ${m.total} GB${m.low ? ', low' : ''}</span>` : '<span class="muted">unknown</span>'}</td>
+      <td class="num">${!m.connected ? '<span class="muted">-</span>' : `<span class="${n >= L ? 'warn' : ''}">${n}${n > L ? ', over' : n === L ? ', full' : ''}</span>`}</td>
+      <td>${limitSelect(m)}</td>
+    </tr>`;
+  }).join('');
+  return `
+  <h3 class="group-h">Machines</h3>
+  <p class="group-p">Workers are threads Watcher starts and threads another thread delegates. Choose where new ones start, and how many may work on each machine at once. Name a machine in your message to start one somewhere else for that request.</p>
+  ${placeWarn() ? `<div style="margin:0 0 6px">${placeWarn()}</div>` : ''}
+  <table class="ctable">
+    <caption class="sr-only">Machines: where new workers start, each one’s facts, how many work there now, and its limit</caption>
+    <thead><tr><th scope="col">Default</th><th scope="col">Machine</th><th scope="col">Free memory</th><th scope="col">Working</th><th scope="col">Limit</th></tr></thead>
+    <tbody>
+      ${alone ? '' : `<tr data-chosen="${S.placement === 'watcher'}"><td><input type="radio" name="place" value="watcher" data-act="place" data-k="pl-watcher" ${S.placement === 'watcher' ? 'checked' : ''} aria-label="Let Watcher choose where new workers start"></td>
+      <td colspan="4"><div class="name">${owl(14)}Let Watcher choose</div><div class="sub">Watcher, or the thread that delegates, picks from these facts and the project’s notes, and says why.</div></td></tr>`}
+      ${rows}
+    </tbody>
+  </table>
+  <p class="group-p" style="margin-top:12px">Working counts threads working for Watcher or a delegating thread. Watching has no limit, and lowering one stops nothing. Facts come from each machine; an older host’s read unknown, never guessed.</p>
+  ${alone ? hostsPointer() : ''}`;
+}
+
+/* ---------- Watcher's room ---------- */
+function limitItems() {
+  return machines().map(m => {
+    if (!m.connected) return `<span class="lim muted">${m.name} not connected</span>`;
+    const n = count(m.id), L = limit(m.id);
+    let extra = '';
+    if (n >= L) extra += `<span class="warn">, full</span>`;
+    if (!m.facts) extra += `<span>, facts unknown</span>`;
+    if (m.low) extra += `<span class="warn">, ${m.free} GB free</span>`;
+    return `<span class="lim"><b>${m.name}</b> ${n} of ${L}${extra}</span>`;
+  }).join('<span class="sep" aria-hidden="true">·</span>');
+}
+const you = (t, text) => `<div class="msg msg--you"><div class="msg__meta"><b>You</b><span>${t}</span></div><p>${text}</p></div>`;
+const said = (who, mark, t, text, extra = '') => `<div class="msg"><div class="msg__meta">${mark}<b>${who}</b><span>${t}</span></div><p>${text}</p>${extra}</div>`;
+
+function receipt(w) {
+  const n = placeNote(w);
+  if (S.variant === 'B') {
+    return `<div class="tcard">${ring(w.outcome)}<span class="tcard__title">${w.title}</span>
+      <button type="button" class="iconbtn" data-k="open-${w.id}" aria-label="Open ${w.title} beside Watcher">${ic('open', 14)}</button>
+      <span class="tcard__meta">Started on <span class="mini" data-kind="${M(w.on).kind}">${mi(M(w.on), 12)}${name(w.on)}</span>${D}${pm(w.prov, 12)}${PROV[w.prov]}${D}${ow(w.outcome)}</span>
+      ${n ? `<span class="tcard__note">${S.placement === 'watcher' ? 'Watcher chose it.' : `Your default is ${prose(S.placement)}.`} <span class="said">Watcher’s reason: “${n.reason}”</span></span>` : ''}</div>`;
+  }
+  return `<div class="tcard">${ring(w.outcome)}<span class="tcard__title">${w.title}</span>
+    <button type="button" class="iconbtn" data-k="open-${w.id}" aria-label="Open ${w.title} beside Watcher">${ic('open', 14)}</button>
+    <span class="tcard__meta">${pm(w.prov, 12)}${PROV[w.prov]}${D}sotto${D}${machSpan(w.on)}${D}${ow(w.outcome)}</span>
+    ${n ? `<span class="tcard__note">${n.lead} <span class="said">Watcher’s reason: “${n.reason}”</span></span>` : ''}</div>`;
+}
+function refusal(title, words, action = '') {
+  return `<div class="tcard tcard--refused" role="note"><span class="tcard__icon">${ic('alert', 14)}</span><span class="tcard__title">Not started: ${title}</span><span></span>
+    <span class="tcard__note">${words}</span>${action ? `<span class="tcard__act">${action}</span>` : ''}</div>`;
+}
+const cards = list => `<div class="cards">${list.join('')}</div>`;
+const W_MARK = owl(14);
+
+function roomConversation() {
+  const W = Object.fromEntries(watcherWorkers().map(w => [w.id, w]));
+  if (S.room === 'empty') {
+    return you('12:29 pm', 'Is anything working for you?') +
+      said('Watcher', W_MARK, '12:29 pm', 'Nothing is working for me now. Tell me what to start, and on which machine if it matters.');
+  }
+  const forge = live('forge');
+  let out = '';
+  if (forge) {
+    out += you('11:58 am', S.room === 'full' ? 'Check the Omarchy captures and the Waybar layout after the theme change.' : 'Check the Omarchy captures still match after the theme change.');
+    out += said('Watcher', W_MARK, '11:59 am', S.room === 'full' ? 'Started both on forge.' : 'Started the capture check on forge.', cards([receipt(W.w3), ...(W.w4 ? [receipt(W.w4)] : [])]));
+  }
+  out += you('12:29 pm', 'Fix the paste on Hyprland, then run the Linux journeys and the Windows installer tests on it.');
+  out += said('Watcher', W_MARK, '12:31 pm', forge ? 'Started both. The journeys run on forge and the installer tests here. I will bring you anything that needs you.' : 'Started both here. Only this computer is connected, so the Linux journeys run on it too.', cards([receipt(W.w2), receipt(W.w1)]));
+  if (S.room === 'full' && forge) {
+    out += you('12:40 pm', 'Start one more Linux check on forge, for the paste timing.');
+    if (W.w6) out += said('Watcher', W_MARK, '12:40 pm', 'Started the paste timing check on forge.', cards([receipt(W.w6)]));
+    else out += said('Watcher', W_MARK, '12:40 pm', 'Forge is full, so I started nothing. This computer has room. Say so and I will start it there.',
+      cards([refusal('Paste timing check', `Forge is full: ${count('forge')} of ${limit('forge')} working. Nothing was sent. ${roomWords('forge')}`)]));
+  }
+  if (S.room === 'nocopy' && forge) {
+    out += you('12:40 pm', 'Run the footer link check for sotto-site on forge.');
+    out += said('Watcher', W_MARK, '12:40 pm', 'Forge has no copy of sotto-site, so I started nothing. Add the project on forge, or I can run the check here.',
+      cards([refusal('Footer link check', 'Forge has no copy of sotto-site. Add the project on forge first. Nothing was sent.', `<button type="button" class="pill" data-k="add-proj">${ic('fplus', 14)}Add sotto-site on forge</button>`)]));
+  }
+  if (S.room === 'lowmem') {
+    out += you('12:40 pm', 'Start a worker for the unit suite.');
+    if (W.w5) out += said('Watcher', W_MARK, '12:41 pm', 'This computer has 1.2 GB of memory free, so I started the unit suite on forge.', cards([receipt(W.w5)]));
+    else out += said('Watcher', W_MARK, '12:41 pm', 'Only this computer is connected, and it has 1.2 GB of memory free. I started nothing. Say so and I will start it here anyway.');
+  }
+  return out;
+}
+
+function morePanel() {
+  return `<div class="pop pop--more" role="dialog" aria-label="More Watcher actions" data-pop>
+    <h2>Machines and limits</h2>
+    <p>Where new workers start, and each machine’s Threads in flight, are in Settings, under Watcher.</p>
+    <div class="pop__foot"><button type="button" class="pill" data-go="settings" data-k="more-settings">${ic('gear', 14)}Open Watcher settings</button></div>
+  </div>`;
+}
+function moreBtn() {
+  const open = S.open === 'more';
+  return `<div class="morewrap"><button type="button" class="iconbtn" data-act="toggle" data-open="more" data-k="more" aria-label="More Watcher actions" aria-haspopup="dialog" aria-expanded="${open}">${ic('more')}</button>${open ? morePanel() : ''}</div>`;
+}
+function tabs() {
+  const t = (id, label, n) => `<button type="button" role="tab" data-act="tab" data-tab="${id}" data-k="tab-${id}" aria-selected="${S.tab === id}" tabindex="${S.tab === id ? 0 : -1}">${label}${n !== undefined ? `<span class="n">${n}</span>` : ''}</button>`;
+  const workers = S.variant === 'C' ? t('workers', 'Workers', everyone().filter(w => INFLIGHT.has(w.outcome)).length) : '';
+  return `<div class="tabs" role="tablist" aria-label="Watcher's views">${t('conversation', 'Conversation')}${t('watched', 'Watched', 1)}${workers}</div>`;
+}
+
+function popMachine(m) {
+  const here = everyone().filter(w => w.on === m.id && INFLIGHT.has(w.outcome));
+  const by = w => w.id.startsWith('d') ? `delegated by ${PARENT}` : 'Watcher';
+  let body;
+  if (!m.connected) body = `<p>${cap(m.name)} is not connected. Its limit, ${limit(m.id)}, applies when it connects. Connect it in Settings, under Hosts.</p>`;
+  else body = `<p>${m.facts ? `${m.os}${D}${m.arch}${D}${m.cpus} CPUs<br><span class="${m.low ? 'warn' : ''}">${m.free} of ${m.total} GB free${m.low ? ', low' : ''}</span>${m.low ? '<br>Watcher is told, and places new work elsewhere when it can.' : ''}` : 'This host is older and does not report its facts, so its memory and load read unknown. Update it in Hosts.'}</p>
+    <p><b>${here.length} of ${limit(m.id)} working</b>${S.placement === m.id ? '. New workers start here.' : ''}</p>
+    ${here.length ? `<ul class="pop__list">${here.map(w => `<li>${ring(w.outcome)}<span>${w.title}</span><span class="sub">${PROV[w.prov]}${D}${by(w)}${D}${OUT[w.outcome]}</span></li>`).join('')}</ul>` : '<p class="muted">Nothing works here now.</p>'}`;
+  return `<div class="pop" role="dialog" aria-label="${m.name}" data-pop>
+    <h2>${mi(m, 15)}${m.name}</h2>
+    <button type="button" class="iconbtn pop__close" data-act="close" data-k="pop-close" aria-label="Close ${m.name}">${ic('x', 14)}</button>
+    ${body}
+    <div class="pop__foot"><button type="button" class="link link--accent" data-go="settings" data-k="pop-settings">Change where workers start and each limit in Settings</button></div>
+  </div>`;
+}
+function stripB() {
+  const chips = machines().map(m => {
+    const key = 'mchip:' + m.id, open = S.open === key;
+    if (!m.connected) return `<div class="mchipwrap"><button type="button" class="mchip" data-off="true" data-kind="${m.kind}" data-act="toggle" data-open="${key}" data-k="${key}" aria-haspopup="dialog" aria-expanded="${open}">${mi(m, 14)}${m.name}<span>not connected</span></button>${open ? popMachine(m) : ''}</div>`;
+    const n = count(m.id), L = limit(m.id);
+    return `<div class="mchipwrap"><button type="button" class="mchip" data-kind="${m.kind}" data-act="toggle" data-open="${key}" data-k="${key}" aria-haspopup="dialog" aria-expanded="${open}" aria-label="${m.name}, ${n} of ${L} working${n >= L ? ', full' : ''}${m.low ? `, ${m.free} gigabytes free` : ''}${S.placement === m.id ? ', new workers start here' : ''}. Show what runs there.">
+      ${mi(m, 14)}<b>${m.name}</b>${meter(n, L)}<span class="${n >= L ? 'warn' : ''}">${n} of ${L}${n >= L ? ', full' : ''}</span>${m.low ? `<span class="warn">${m.free} GB free</span>` : ''}${!m.facts ? '<span class="muted">facts unknown</span>' : ''}${S.placement === m.id ? '<span class="def">default</span>' : ''}</button>${open ? popMachine(m) : ''}</div>`;
+  }).join('');
+  return `<div class="mstrip" role="group" aria-label="Machines">${chips}${S.placement === 'watcher' ? `<span class="mstrip__lead">Watcher chooses where new workers start</span>` : ''}</div>`;
+}
+function nodeC(w) {
+  const n = w.id.startsWith('w') ? placeNote(w) : null;
+  return `<li><div class="tnode">${ring(w.outcome)}<span class="tnode__title">${w.id.startsWith('d') ? `<button type="button" class="link" data-go="child:${w.id}" data-k="tree-${w.id}">${w.title}</button>` : w.title}</span>
+    <span class="tnode__meta">${pm(w.prov, 12)}${PROV[w.prov]}${D}${machSpan(w.on)}${D}${ow(w.outcome)}</span>
+    ${n ? `<span class="tnode__note">${n.lead} <span class="said">Watcher’s reason: “${n.reason}”</span></span>` : ''}</div></li>`;
+}
+function workersC() {
+  const W = watcherWorkers(), Dl = delegated();
+  if (!W.length && !Dl.length) {
+    return `<div class="wsum"><span class="wsum__lead">Working now</span><span class="mline">${limitItems()}</span></div>
+      <div class="empty">${owl(28)}Watcher has started no workers, and no thread has delegated. Threads they start appear here under whoever started them, each with the machine it runs on.</div>`;
+  }
+  return `<div class="wsum"><span class="wsum__lead">Working now</span><span class="mline">${limitItems()}</span></div>
+    <ul class="tree" aria-label="Who works for whom">
+      ${W.length ? `<li><div class="troot">${owl(15)}<b>Watcher</b><span class="muted">started ${W.length}</span></div><ul>${W.map(nodeC).join('')}</ul></li>` : ''}
+      ${Dl.length ? `<li><div class="troot">${pm('claude', 14)}<button type="button" class="link" data-go="parent" data-k="tree-parent">${PARENT}</button><span class="muted">your thread, delegated ${Dl.length}</span></div><ul>${Dl.map(nodeC).join('')}</ul></li>` : ''}
+    </ul>
+    <p class="group-p">A thread counts toward its machine’s limit while it works. Answered, failed and stopped ones do not. <button type="button" class="link link--accent" data-go="settings" data-k="tree-settings">Change the limits in Settings</button></p>`;
+}
+function renderRoom() {
+  const v = S.variant;
+  let body;
+  if (S.tab === 'watched') body = `<div class="empty">${owl(28)}Watched is as it is today. This prototype does not change it.</div>`;
+  else if (S.tab === 'workers' && v === 'C') body = workersC();
+  else body = roomConversation();
+  const stars = [[40, 18], [90, 8], [150, 30], [210, 12], [300, 22], [70, 40]].map(([x, y]) => `<i style="left:${x}px;top:${y}px"></i>`).join('');
+  return `<div class="room">
+    <div class="sky" aria-hidden="true">${stars}</div>
+    <header class="rhead">
+      <span class="tile">${owl(15)}</span>
+      <h1 class="rhead__name">Watcher</h1>
+      <button type="button" class="hbtn" data-k="all" aria-label="All threads, 9">${ic('list', 15)}All threads <span class="muted">9</span>${ic('down', 14)}</button>
+      ${tabs()}
+      <span class="grow"></span>
+      ${moreBtn()}
+    </header>
+    ${v === 'A' ? `<div class="glance"><p class="mline" aria-label="Threads working on each machine, out of its limit">${limitItems()}</p></div>` : v === 'B' ? stripB() : '<div></div>'}
+    <div class="rscroll" data-scroll="room" ${S.tab === 'conversation' ? 'data-bottom' : ''}><div class="col">${body}</div></div>
+    <div class="col rcomp">
+      <div class="composer">
+        <label class="sr-only" for="wmsg">Watcher message</label>
+        <textarea id="wmsg" data-k="wmsg" placeholder="Ask about your threads, or say what to start or send"></textarea>
+        <div class="composer__row">
+          <button type="button" class="iconbtn" data-k="wattach" aria-label="Attach a file">${ic('clip', 15)}</button>
+          <button type="button" class="chip" data-k="wmodel" aria-label="Model, GPT-5.4">${pm('codex', 13)}GPT-5.4${ic('down', 13)}</button>
+          <button type="button" class="chip" data-k="wperm" aria-label="Watcher's permissions, Ask for approval">Ask for approval${ic('down', 13)}</button>
+          <button type="button" class="send" data-k="wsend" aria-label="Send to Watcher">${ic('up', 15)}</button>
+        </div>
+      </div>
+    </div>
+    <nav class="dock" aria-label="Pages"><div class="dock__pill">
+      <button type="button" class="iconbtn" data-k="d-history" aria-label="History">${ic('clock')}</button>
+      <button type="button" class="iconbtn" data-k="d-usage" aria-label="Usage">${ic('chart')}</button>
+      <button type="button" class="iconbtn" data-k="d-settings" data-go="settings" aria-label="Settings">${ic('gear')}</button>
+      <button type="button" class="iconbtn" data-k="d-help" aria-label="Help">${ic('help')}</button>
+      <span class="dock__sep"></span>
+      ${switch3('room', 'dock__switch')}
+      <span class="dock__sep"></span>
+      <button type="button" class="iconbtn" data-k="d-update" aria-label="Check for updates">${ic('refresh')}</button>
+    </div></nav>
+  </div>`;
+}
+
+/* ---------- Threads page: delegation ---------- */
+function trow({ id, title, prov, time, o, status, current, host, watched, go }) {
+  return `<button type="button" class="trow" data-go="${go}" data-k="row-${id}" ${current ? 'aria-current="true"' : ''} aria-label="${title}, ${PROV[prov]}${host ? `, on ${name(host)}` : ''}, ${status}">
+    ${ring(o)}<span class="trow__title">${title}</span><span class="trow__time">${time}</span>
+    <span class="trow__marks">${pm(prov, 14)}${watched ? owl(14) : ''}${host ? hbadge(host) : ''}</span>
+    <span class="trow__status ow" data-o="${o}">${status}</span>
+  </button>`;
+}
+function sidebar() {
+  const v = S.variant, kids = delegated();
+  const po = parentOutcome();
+  const parentRow = trow({ id: 'p1', title: PARENT, prov: 'claude', time: '12:44 pm', o: po, status: po === 'working' ? 'Working' : po === 'stopped' ? 'Stopped' : 'Done', current: S.pane === 'parent', host: v === 'B' ? 'local' : null, go: 'parent' });
+  const kid = w => trow({ id: w.id, title: w.title, prov: w.prov, time: w.outcome === 'answered' ? '12:43 pm' : '', o: w.outcome, status: OUT[w.outcome], current: S.pane === 'child' && S.child === w.id, host: w.on, go: 'child:' + w.id });
+  let fam;
+  if (v === 'C') {
+    fam = `${parentRow}<button type="button" class="disclose" data-act="kids" data-k="kids" aria-expanded="${S.kids}" aria-label="${S.kids ? 'Hide' : 'Show'} the ${kids.length} threads ${PARENT} delegated">${ic('right', 13)}${kids.length} delegated</button>
+      ${S.kids ? `<ul class="ckids" aria-label="Delegated by ${PARENT}">${kids.map(w => `<li>${kid(w)}</li>`).join('')}</ul>` : ''}`;
+  } else {
+    fam = `${parentRow}<div class="kids" role="group" aria-label="Delegated by ${PARENT}">${kids.map(kid).join('')}</div>`;
+  }
+  return `<div class="tside__top">
+      <span class="tile">${owl(15)}</span><span class="grow"></span>
+      <button type="button" class="iconbtn" aria-pressed="true" data-k="sb-threads" aria-label="Threads">${ic('chat')}</button>
+      <button type="button" class="iconbtn" data-k="sb-term" aria-label="Terminals">${ic('term')}</button>
+      <button type="button" class="iconbtn" data-k="sb-add" aria-label="Add project">${ic('fplus')}</button>
+      <button type="button" class="iconbtn" data-k="sb-new" aria-label="New thread">${ic('pen')}</button>
+      <button type="button" class="iconbtn" data-k="sb-hide" aria-label="Hide the sidebar">${ic('panel')}</button>
+    </div>
+    <div class="tside__search">${ic('search', 14)}<input type="search" data-k="sb-search" placeholder="Search threads" aria-label="Search threads"></div>
+    <div class="tside__list">
+      <div class="proj">${ic('down', 14)}${ic('folder', 15)}sotto<span class="n">2</span></div>
+      <div class="rowwrap">${fam}</div>
+      ${trow({ id: 'p2', title: 'Visual gate flake', prov: 'claude', time: '11:20 am', o: 'answered', status: 'Done', host: v === 'B' ? 'local' : null, go: 'none' })}
+      <div class="proj">${ic('down', 14)}${ic('folder', 15)}sotto-site<span class="n">1</span></div>
+      ${trow({ id: 'p3', title: 'Footer links', prov: 'codex', time: '3m 00s', o: 'working', status: 'Working', watched: true, host: v === 'B' ? 'local' : null, go: 'none' })}
+      <div class="settled">${ic('right', 14)}Settled</div>
+    </div>
+    <div class="tside__foot">${switch3('threads')}${iconrow('')}</div>`;
+}
+function dcardA(w) {
+  return `<div class="dcard"><div class="dcard__top">${ic('fork', 15)}<span class="dcard__lead">Delegated to</span><button type="button" class="link" data-go="child:${w.id}" data-k="card-${w.id}">${w.title}</button><span class="dcard__out">${ring(w.outcome)}${ow(w.outcome)}</span></div>
+    <div class="dcard__meta">${pm(w.prov, 12)}${PROV[w.prov]}${D}${machSpan(w.on)}</div>
+    <div class="dcard__wait">${waitWords(w)}</div></div>`;
+}
+const CEIL_WORDS = 'It asked for Full access, more than this thread’s Allow edits. A delegated thread gets no more than the thread that delegates it. Nothing was started. To give it more, raise this thread’s permissions first.';
+function dcardRefusedA() {
+  return `<div class="dcard dcard--refused" role="note"><div class="dcard__top">${ic('alert', 15)}<span class="dcard__lead">Not delegated:</span><span>Release notes draft</span></div>
+    <div class="dcard__meta">${pm('codex', 12)}Codex${D}${machSpan('local')}</div>
+    <div class="dcard__wait">${CEIL_WORDS}</div></div>`;
+}
+function dpanelBody(asPop) {
+  const kids = delegated();
+  const groups = machines().filter(m => kids.some(w => w.on === m.id));
+  const g = groups.map(m => `<div class="dgroup" data-kind="${m.kind}"><h3>${mi(m, 14)}${m.name}<span class="muted">${count(m.id)} of ${limit(m.id)} working</span></h3>
+    ${kids.filter(w => w.on === m.id).map(w => `<div class="drow">${ring(w.outcome)}<button type="button" class="link" data-go="child:${w.id}" data-k="dp-${w.id}">${w.title}</button>
+      <span class="drow__meta">${pm(w.prov, 12)}${PROV[w.prov]}${D}${ow(w.outcome)}</span><span class="drow__wait">${waitWords(w)}</span></div>`).join('')}</div>`).join('');
+  const refused = S.deleg === 'refused' ? `<div class="dgroup"><h3>${ic('alert', 14)}Not started</h3><div class="drow">${ring('refused')}<span>Release notes draft</span><span class="drow__wait">${CEIL_WORDS}</span></div></div>` : '';
+  return `<h2 id="dp-h">${ic('fork', 15)}Delegated<span class="n">${kids.length}</span></h2>
+    ${asPop ? `<button type="button" class="iconbtn pop__close" data-act="close" data-k="pop-close" aria-label="Close Delegated">${ic('x', 14)}</button>` : ''}
+    <p class="dpanel__lead">Threads this one handed work to, by the machine each runs on. Each counts toward that machine’s limit while it works.</p>
+    ${g}${refused}
+    <p class="dpanel__foot">Stop on this thread stops these too. A delegated thread cannot delegate in turn.</p>`;
+}
+function parentPane() {
+  const v = S.variant, kids = delegated(), po = parentOutcome();
+  const n = workingKids();
+  const small = S.size === '820';
+  let extra = '';
+  if (v === 'A') extra = `<div class="cards">${kids.map(dcardA).join('')}</div>`;
+  if (v === 'B') extra = kids.map(w => `<div class="dline">${ic('fork', 14)}Delegated <button type="button" class="link" data-go="child:${w.id}" data-k="dl-${w.id}">${w.title}</button> to ${PROV[w.prov]} on ${prose(w.on)}.</div>`).join('');
+  if (v === 'C') extra = `<div class="arows">${kids.map(w => `<div class="arow">${ic('fork', 14)}Delegated <button type="button" class="link" data-go="child:${w.id}" data-k="ar-${w.id}">${w.title}</button><span class="muted">to ${PROV[w.prov]} on ${prose(w.on)}</span>${D}${ow(w.outcome)}<span class="muted">${w.wait === 'answered' && w.outcome === 'answered' ? 'after 1 min 40 s' : w.outcome === 'working' && w.wait === 'waiting' ? 'waiting, 1 min 12 s of 5 min' : w.outcome === 'working' ? 'wait ended at 5 min; answer comes as a wake-up' : ''}</span></div>`).join('')}</div>`;
+  let t = you('12:40 pm', 'Fix the tailnet reconnect flake. Have Codex review the diff, and run the Linux journeys and the Windows e2e on the fix.');
+  t += said('Claude', pm('claude', 14), '12:44 pm', 'Fixed: the reconnect timer now resets when the tailnet drops. I handed the review to Codex here, the Linux journeys to Grok on forge, and the Windows e2e to Codex here.', extra);
+  if (S.deleg === 'refused') {
+    const r = v === 'A' ? `<div class="cards">${dcardRefusedA()}</div>` : `<div class="${v === 'C' ? 'arows' : ''}"><div class="${v === 'C' ? 'arow' : 'dline'}"><span class="err">${ic('alert', 14)}</span><span class="err">Not delegated: Release notes draft.</span> ${CEIL_WORDS}</div></div>`;
+    t += said('Claude', pm('claude', 14), '12:46 pm', 'I also tried to hand the release notes draft to Codex with Full access. Sotto refused it.', r);
+  }
+  if (S.deleg === 'stopped') t += `<div class="sysline"><span>You stopped this thread at 12:47 pm. Sotto stopped the 2 threads it delegated that were still working.</span></div>`;
+  if (S.deleg === 'restart') t += `<div class="sysline"><span>Sotto restarted at 12:52 pm.</span></div>` + said('Claude', pm('claude', 14), '12:53 pm', 'The review is in. I cannot tell how far the other two got; Sotto has not resent anything to them.');
+  if (S.deleg === 'later') t += said('Claude', pm('claude', 14), '12:58 pm', 'The Windows e2e failed on the second reconnect. The Linux journeys are still running in the background.');
+  const panelOpen = S.open === 'dpanel';
+  const showPanel = v === 'B' && !small;
+  const working = po === 'working';
+  return `<header class="phead">${pm('claude', 15)}<span class="phead__title">${PARENT}</span><span class="phead__proj">/ sotto</span>
+      ${!small ? `<span class="chip" aria-label="Project folder">${ic('folder', 13)}Project folder</span>` : ''}
+      <span class="grow"></span>
+      ${v === 'B' && small ? `<button type="button" class="pill" data-act="toggle" data-open="dpanel" data-k="dp-btn" aria-haspopup="dialog" aria-expanded="${panelOpen}">${ic('fork', 14)}Delegated ${kids.length}</button>` : ''}
+      <button type="button" class="pill" data-k="watch" aria-pressed="false" aria-label="Watch ${PARENT}">${owl(14)}${small ? '' : 'Watch'}</button>
+      <button type="button" class="iconbtn" data-k="ph-more" aria-label="More thread actions">${ic('more')}</button>
+    </header>
+    <div></div>
+    <div class="pbody ${showPanel ? 'pbody--panel' : ''}">
+      <div class="pscroll" data-scroll="pane" data-bottom><div class="col">${t}</div></div>
+      ${showPanel ? `<aside class="dpanel" aria-labelledby="dp-h">${dpanelBody(false)}</aside>` : ''}
+    </div>
+    <div class="col pcomp">
+      <div class="composer">
+        <label class="sr-only" for="pmsg">Message ${PARENT}</label>
+        <textarea id="pmsg" data-k="pmsg" placeholder="${working ? 'Claude is working. Write a follow-up to queue it.' : 'Ask for follow-up changes'}"></textarea>
+        <div class="composer__row">
+          <button type="button" class="iconbtn" data-k="pattach" aria-label="Attach a file">${ic('clip', 15)}</button>
+          <div class="chips"><button type="button" class="chip" data-k="pmodel">${pm('claude', 13)}${MODEL.claude}${ic('down', 13)}</button>
+          <button type="button" class="chip" data-k="peffort">High${ic('down', 13)}</button>
+          <button type="button" class="chip" data-k="pperm">Allow edits${ic('down', 13)}</button></div>
+          ${working ? `<button type="button" class="send send--stop" data-k="pstop" aria-label="Stop ${PARENT}${n ? ` and the ${n} threads it delegated that are working` : ''}"><i></i></button>` : `<button type="button" class="send" data-k="psend" aria-label="Send">${ic('up', 15)}</button>`}
+        </div>
+      </div>
+      ${working && n ? `<p class="under">${ic('fork', 13)}<span>Stop also stops the ${n} threads it delegated that are working.</span></p>` : ''}
+    </div>
+    ${v === 'B' && small && panelOpen ? `<div class="pop pop--panel" role="dialog" aria-labelledby="dp-h" data-pop>${dpanelBody(true)}</div>` : ''}`;
+}
+function childPane() {
+  const v = S.variant, w = delegated().find(k => k.id === S.child);
+  const small = S.size === '820';
+  const m = M(w.on);
+  let t = `<div class="msg msg--from"><div class="msg__meta">${ic('fork', 13)}<b>${PARENT}</b><span>delegated${D}12:44 pm</span></div><p>${w.id === 'd1' ? 'Review the diff on sotto/tailnet-reconnect. Say what blocks a merge and what does not.' : w.id === 'd2' ? 'Run the Linux journeys against the reconnect fix on sotto/tailnet-reconnect and report which fail.' : 'Run the Windows e2e against the reconnect fix on sotto/tailnet-reconnect and report which fail.'}</p></div>`;
+  t += said(PROV[w.prov], pm(w.prov, 14), '12:45 pm', w.id === 'd2' ? 'Running the 14 Linux journeys on forge. 9 have passed so far.' : w.id === 'd1' ? 'Two small nits and nothing that blocks a merge.' : 'Running the Windows e2e. The reconnect journeys are first.');
+  if (w.outcome === 'paused') t += you('12:46 pm', 'Also run the paste journey while you are there.') + said(PROV[w.prov], pm(w.prov, 14), '12:46 pm', 'Adding the paste journey to the run.');
+  if (w.outcome === 'stopped') t += `<div class="sysline"><span>Stopped with ${PARENT} at 12:47 pm.</span></div>`;
+  if (w.outcome === 'unknown') t += `<div class="sysline"><span>Sotto restarted at 12:52 pm while this thread worked. Nothing was resent.</span></div>`;
+  if (w.outcome === 'failed') t += said(PROV[w.prov], pm(w.prov, 14), '12:57 pm', 'The second reconnect journey failed: the window lost its tailnet address and did not get it back.');
+  const working = INFLIGHT.has(w.outcome) && w.outcome !== 'unknown';
+  const parentLink = `<button type="button" class="link" data-go="parent" data-k="by-parent">${PARENT}</button>`;
+  const head = v === 'C'
+    ? `<span class="crumb">${pm('claude', 13)}${parentLink}${ic('right', 13)}</span>${pm(w.prov, 15)}<span class="phead__title">${w.title}</span>`
+    : `${pm(w.prov, 15)}<span class="phead__title">${w.title}</span><span class="phead__proj">/ sotto</span>`;
+  const chipsB = v === 'B' ? `<button type="button" class="pill" data-go="parent" data-k="from-chip" aria-label="Delegated by ${PARENT}. Open it.">${ic('fork', 13)}${small ? '' : `From ${PARENT}`}</button><span class="chip" aria-label="Runs on ${m.name}">${mi(m, 13)}${m.name}</span>` : `<span class="hbadge" data-kind="${m.kind}">${mi(m, 11)}<span>${m.name}</span></span>`;
+  const note = w.outcome === 'paused'
+    ? `Your turn is running. ${PARENT} sends nothing here until it ends.`
+    : working ? `If you send here, ${PARENT} sends nothing more until your turn ends.` : `${PARENT} cannot send here while you have a turn running.`;
+  return `<header class="phead">${head}${chipsB}<span class="grow"></span>
+      <button type="button" class="pill" data-k="watch" aria-pressed="false" aria-label="Watch ${w.title}">${owl(14)}${small ? '' : 'Watch'}</button>
+      <button type="button" class="iconbtn" data-k="ph-more" aria-label="More thread actions">${ic('more')}</button>
+    </header>
+    ${v === 'A' ? `<div class="byline">${ic('fork', 14)}<span>Delegated by ${parentLink}${D}${ow(w.outcome)}</span></div>` : '<div></div>'}
+    <div class="pbody"><div class="pscroll" data-scroll="pane" data-bottom><div class="col">${t}</div></div></div>
+    <div class="col pcomp">
+      <div class="composer">
+        <label class="sr-only" for="cmsg">Message ${w.title}</label>
+        <textarea id="cmsg" data-k="cmsg" placeholder="${working ? `${PROV[w.prov]} is working. Write a follow-up to queue it.` : 'Ask for follow-up changes'}"></textarea>
+        <div class="composer__row">
+          <button type="button" class="iconbtn" data-k="cattach" aria-label="Attach a file">${ic('clip', 15)}</button>
+          <div class="chips"><button type="button" class="chip" data-k="cmodel">${pm(w.prov, 13)}${MODEL[w.prov]}${ic('down', 13)}</button>
+          <button type="button" class="chip" data-k="cperm">Allow edits${ic('down', 13)}</button></div>
+          ${working ? `<button type="button" class="send send--stop" data-k="cstop" aria-label="Stop ${w.title}"><i></i></button>` : `<button type="button" class="send" data-k="csend" aria-label="Send">${ic('up', 15)}</button>`}
+        </div>
+      </div>
+      <p class="under">${ic('fork', 13)}<span>${v === 'A' ? '' : `Delegated by ${PARENT}. `}${note}</span></p>
+    </div>`;
+}
+function renderThreads() {
+  return `<div class="tp"><aside class="tside" aria-label="Threads">${sidebar()}</aside><section class="pane" aria-label="${S.pane === 'parent' ? PARENT : delegated().find(k => k.id === S.child).title}">${S.pane === 'child' ? childPane() : parentPane()}</section></div>`;
+}
+
+/* ---------- render, focus and state ---------- */
+const win = document.getElementById('win');
+let lastSurfaceKey = '';
+function render() {
+  if (S.surface !== 'room' && S.tab === 'workers' && S.variant !== 'C') S.tab = 'conversation';
+  if (S.variant !== 'C' && S.tab === 'workers') S.tab = 'conversation';
+  const active = document.activeElement && document.activeElement.closest ? document.activeElement.closest('[data-k]') : null;
+  const k = active && win.contains(active) ? active.dataset.k : null;
+  const keep = {};
+  win.querySelectorAll('[data-scroll]').forEach(el => { keep[el.dataset.scroll] = el.scrollTop; });
+  const [w, h, sz] = SIZES[S.size];
+  document.documentElement.dataset.theme = S.theme;
+  document.body.classList.toggle('shot', S.shot);
+  win.dataset.size = sz;
+  win.style.setProperty('--w', w + 'px');
+  win.style.setProperty('--h', h + 'px');
+  win.style.setProperty('--fit', S.shot ? 1 : Math.min(1, (innerWidth - 24) / w));
+  if (S.shot) { win.style.setProperty('--w', '100vw'); win.style.setProperty('--h', '100vh'); }
+  const surface = { settings: renderSettings, room: renderRoom, delegation: renderThreads }[S.surface]();
+  win.innerHTML = surface + wctl();
+  const key = [S.surface, S.variant, S.room, S.deleg, S.pane, S.child, S.tab].join('|');
+  win.querySelectorAll('[data-scroll]').forEach(el => {
+    if (key === lastSurfaceKey && keep[el.dataset.scroll] !== undefined) el.scrollTop = keep[el.dataset.scroll];
+    else if (el.hasAttribute('data-bottom')) el.scrollTop = el.scrollHeight;
+  });
+  lastSurfaceKey = key;
+  if (S.justOpened) {
+    const pop = win.querySelector('[data-pop]');
+    const first = pop && pop.querySelector('button, select, input, a[href]');
+    if (first) first.focus();
+    S.justOpened = false;
+  } else if (k) {
+    const el = win.querySelector(`[data-k="${CSS.escape(k)}"]`);
+    if (el) el.focus();
+  }
+  syncBars();
+  syncURL();
+  if (!S.shot) document.querySelector('.stage').style.paddingTop = (document.querySelector('.proto-top').offsetHeight + 20) + 'px';
+}
+function syncBars() {
+  document.querySelectorAll('#pt-surface button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.surface === S.surface)));
+  document.getElementById('pt-machines').value = S.machines;
+  document.getElementById('pt-room').value = S.room;
+  document.getElementById('pt-deleg').value = S.deleg;
+  document.getElementById('pt-size').value = S.size;
+  document.getElementById('pt-low').checked = S.lowmem || S.room === 'lowmem';
+  document.getElementById('pt-low').disabled = S.room === 'lowmem';
+  document.getElementById('pt-room-l').style.display = S.surface === 'room' ? '' : 'none';
+  document.getElementById('pt-deleg-l').style.display = S.surface === 'delegation' ? '' : 'none';
+  document.getElementById('pt-theme').textContent = S.theme === 'dark' ? 'Light' : 'Dark';
+  document.getElementById('pv-label').textContent = `${S.variant}: ${VARIANTS[S.variant]}`;
+  const lines = machines().map(m => !m.connected ? `${m.name} not connected` : `${m.name} ${count(m.id)} of ${limit(m.id)}${m.facts ? `, ${m.free} GB free` : ', facts unknown'}`).join(' · ');
+  const kids = delegated().map(w => `${w.title}: ${OUT[w.outcome]} on ${name(w.on)}`).join(' · ');
+  document.getElementById('pt-state').textContent = `Default: ${S.placement === 'watcher' ? 'Let Watcher choose' : name(S.placement)}${S.placement !== 'watcher' && !live(S.placement) ? ' (not connected)' : ''}  |  ${lines}  |  Delegated by ${PARENT}: ${kids || 'none'}`;
+}
+function syncURL() {
+  const q = new URLSearchParams({ variant: S.variant, surface: S.surface, theme: S.theme, size: S.size, machines: S.machines, room: S.room, deleg: S.deleg, pane: S.pane, child: S.child, tab: S.tab, placement: S.placement });
+  if (S.lowmem) q.set('lowmem', '1');
+  for (const id of ['local', 'forge', 'studio']) if (S.limits[id] !== 4) q.set('l_' + id, S.limits[id]);
+  if (!S.kids) q.set('kids', '0');
+  if (S.shot) q.set('shot', '1');
+  history.replaceState(null, '', '?' + q.toString());
+}
+function navigate(go) {
+  S.open = null;
+  if (go === 'settings' || go === 'room' || go === 'delegation') { S.surface = go; if (go === 'room') S.tab = 'conversation'; }
+  else if (go === 'parent') { S.surface = 'delegation'; S.pane = 'parent'; }
+  else if (go.startsWith('child:')) { S.surface = 'delegation'; S.pane = 'child'; S.child = go.slice(6); }
+  else return;
+  render();
+  const focusTarget = win.querySelector(S.surface === 'settings' ? '.snav__item[aria-current]' : S.surface === 'room' ? '#wmsg' : '.trow[aria-current]');
+  if (focusTarget) focusTarget.focus();
+}
+win.addEventListener('click', e => {
+  const t = e.target.closest('[data-act], [data-go]');
+  if (!t) {
+    if (S.open && !e.target.closest('[data-pop]')) { S.open = null; render(); }
+    return;
+  }
+  if (t.dataset.go) { if (t.dataset.go !== 'none') navigate(t.dataset.go); else if (t.closest('.trow')) { /* other threads are not drawn */ } return; }
+  const act = t.dataset.act;
+  if (act === 'toggle') { const next = S.open === t.dataset.open ? null : t.dataset.open; S.open = next; S.justOpened = !!next; S.opener = t.dataset.k; render(); }
+  else if (act === 'close') closePop();
+  else if (act === 'tab') { S.tab = t.dataset.tab; render(); }
+  else if (act === 'kids') { S.kids = !S.kids; render(); }
+  else if (act === 'step') { S.limits[t.dataset.m] = Math.min(8, Math.max(1, S.limits[t.dataset.m] + Number(t.dataset.d))); render(); }
+});
+win.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.act === 'place') { S.placement = t.value; render(); }
+  if (t.dataset.act === 'limit') { S.limits[t.dataset.m] = Number(t.value); render(); }
+});
+function closePop() {
+  const opener = S.opener;
+  S.open = null; render();
+  const el = opener && win.querySelector(`[data-k="${CSS.escape(opener)}"]`);
+  if (el) el.focus();
+}
+function cycle(d) {
+  const keys = Object.keys(VARIANTS);
+  S.variant = keys[(keys.indexOf(S.variant) + d + keys.length) % keys.length];
+  S.open = null; render();
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.open) { e.preventDefault(); closePop(); return; }
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const tl = e.target.closest && e.target.closest('[role="tablist"]');
+  if (tl) {
+    const tabsEls = [...tl.querySelectorAll('[role="tab"]')];
+    const i = tabsEls.indexOf(e.target.closest('[role="tab"]'));
+    const next = tabsEls[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabsEls.length) % tabsEls.length];
+    S.tab = next.dataset.tab; render(); e.preventDefault();
+    const now = win.querySelector(`[data-k="tab-${S.tab}"]`); if (now) now.focus();
+    return;
+  }
+  if (e.target.closest && e.target.closest('input, select, textarea, [contenteditable], [role="radiogroup"], fieldset, table, .step')) return;
+  e.preventDefault(); cycle(e.key === 'ArrowRight' ? 1 : -1);
+});
+document.getElementById('pv-prev').addEventListener('click', () => cycle(-1));
+document.getElementById('pv-next').addEventListener('click', () => cycle(1));
+document.querySelectorAll('#pt-surface button').forEach(b => b.addEventListener('click', () => { S.surface = b.dataset.surface; S.open = null; render(); }));
+document.getElementById('pt-machines').addEventListener('change', e => { S.machines = e.target.value; render(); });
+document.getElementById('pt-room').addEventListener('change', e => { S.room = e.target.value; render(); });
+document.getElementById('pt-deleg').addEventListener('change', e => { S.deleg = e.target.value; S.pane = S.deleg === 'yourturn' ? 'child' : S.pane; S.child = S.deleg === 'yourturn' ? 'd2' : S.child; render(); });
+document.getElementById('pt-low').addEventListener('change', e => { S.lowmem = e.target.checked; render(); });
+document.getElementById('pt-size').addEventListener('change', e => { S.size = e.target.value; render(); });
+document.getElementById('pt-theme').addEventListener('click', () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; render(); });
+addEventListener('resize', () => render());
+if (S.open) S.opener = S.open.startsWith('mchip:') ? S.open : S.open === 'dpanel' ? 'dp-btn' : 'more';
+render();
+})();
+</script>
+</body>
+</html>
