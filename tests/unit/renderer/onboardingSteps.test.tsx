@@ -394,6 +394,7 @@ describe('PhoneStep', () => {
     render(<PhoneStep heading={<div />} phoneAccess={false} onUpdateSettings={vi.fn(async () => true)} onOpenLink={onOpenLink} bridge={bridge} />)
     await user.click(screen.getByRole('button', { name: 'Get the iPhone beta' }))
     expect(await screen.findByText(/Your browser did not open/)).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent('On your iPhone, go to testflight.apple.com/join/dJFTeyzp instead.')
   })
 
   it('patches phoneAccess from the toggle', async () => {

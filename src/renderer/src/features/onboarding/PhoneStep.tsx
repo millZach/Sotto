@@ -86,7 +86,7 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
             <strong>Install the beta</strong>
             <span>Opens Apple's TestFlight page in your browser. Install TestFlight on the iPhone first.</span>
             {beta === 'opened' ? <span className="onboarding-ready" role="status"><Check aria-hidden="true" size={15} />Opened in your browser</span> : null}
-            {beta === 'failed' ? <span className="onboarding-recovery" role="alert">Your browser did not open. Go to testflight.apple.com on your iPhone instead.</span> : null}
+            {beta === 'failed' ? <span className="onboarding-recovery" role="alert">Your browser did not open. On your iPhone, go to {IPHONE_BETA_URL.replace(/^https:\/\//u, '')} instead.</span> : null}
           </div>
           <Button variant={beta === 'opened' ? 'secondary' : 'primary'} onClick={() => void openBeta()}>
             <ExternalLink aria-hidden="true" size={15} />

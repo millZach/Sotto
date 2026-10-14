@@ -6,6 +6,10 @@ Accepted September 26, 2026, by the owner's choice. The owner develops on Window
 
 The archive step signed the app with an Apple Development certificate. A fresh runner holds none, so Xcode made a new one on every run, and on October 8 the account reached Apple's limit and the next archive was refused ("Your account has reached the maximum number of certificates"). `testflight.sh` now archives with signing turned off, and the export signs the build with the team's cloud-managed distribution certificate, which is made once and reused. The app has no entitlements, so an unsigned archive loses nothing the export needs. The development certificates the earlier runs made can be revoked under Certificates, Identifiers & Profiles; nothing uses them.
 
+## October 14 amendment: external testing is open
+
+The owner opened external testing and gave it a public link, `https://testflight.apple.com/join/dJFTeyzp`. First-run setup's **Get the iPhone beta** opens it (ADR-0063). Anyone with TestFlight can join through it while the external group has a build that passed Apple's Beta App Review and the link is turned on. The decision below that external testing is separate is now made. The App Store is still not set up.
+
 ## Considered options
 
 **Rewrite the app with Expo.** Expo Go shows a React Native app on the phone within minutes without signing, but it throws away the SwiftUI client that compiles and passes its tests, reverses ADR-0025's choice of SwiftUI, and an installed build still needs EAS, which uploads the source to Expo's build servers. Rejected by the owner.
