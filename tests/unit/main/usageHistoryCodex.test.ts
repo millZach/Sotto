@@ -217,6 +217,42 @@ describe('Codex history reader', () => {
     await scan(root, sink)
     expect(sink.sum('input')).toBe(180)
   })
+  it('counts a copy once across passes when the subagent it copied hangs off a fork of the named parent', async () => {
+    const top = codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } })
+    const forked = codexTokenCount({ at: t(6), total: { input: 150, output: 15 }, last: { input: 50, output: 5 } })
+    const sub = codexTokenCount({ at: t(8), total: { input: 170, output: 17 }, last: { input: 20, output: 2 } })
+    const root = await home()
+    await writeFile(rollout(root, '2026-09-20T10-00-00-fk-top'), jsonl([codexMeta({ id: 'fk-top', originator: 'Codex Desktop', at: t(0) }), top]))
+    await writeFile(rollout(root, '2026-09-20T10-05-00-fk-fork'), jsonl([codexMeta({ id: 'fk-fork', originator: 'Codex Desktop', at: t(5), forkedFrom: 'fk-top' }), top, forked]))
+    await writeFile(rollout(root, '2026-09-20T10-07-00-fk-sub'), jsonl([
+      codexMeta({ id: 'fk-sub', originator: 'Codex Desktop', at: t(7), parent: 'fk-fork', threadSource: 'subagent' }), top, forked, sub]))
+    const sink = memorySink()
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(170)
+    await writeFile(rollout(root, '2026-09-20T10-10-00-fk-new'), jsonl([
+      codexMeta({ id: 'fk-new', originator: 'Codex Desktop', at: t(10), parent: 'fk-top', threadSource: 'subagent' }), top, forked, sub,
+      codexTokenCount({ at: t(11), total: { input: 180, output: 18 }, last: { input: 10, output: 1 } })]))
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(180)
+  })
+  it('counts a copy once across passes from a subagent any number of generations down', async () => {
+    const counts = Array.from({ length: 11 }, (_, index) => codexTokenCount({ at: t(20 + index),
+      total: { input: 100 + 10 * index, output: 10 + index }, last: index === 0 ? { input: 100, output: 10 } : { input: 10, output: 1 } }))
+    const root = await home()
+    await writeFile(rollout(root, '2026-09-20T10-00-00-gen-0'), jsonl([codexMeta({ id: 'gen-0', originator: 'Codex Desktop', at: t(0) }), counts[0]!]))
+    for (let generation = 1; generation <= 9; generation++) {
+      await writeFile(rollout(root, `2026-09-20T10-0${generation}-00-gen-${generation}`), jsonl([
+        codexMeta({ id: `gen-${generation}`, originator: 'Codex Desktop', at: t(generation), parent: `gen-${generation - 1}`, threadSource: 'subagent' }),
+        ...counts.slice(0, generation + 1)]))
+    }
+    const sink = memorySink()
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(190)
+    await writeFile(rollout(root, '2026-09-20T10-30-00-gen-new'), jsonl([
+      codexMeta({ id: 'gen-new', originator: 'Codex Desktop', at: t(30), parent: 'gen-0', threadSource: 'subagent' }), ...counts]))
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(200)
+  })
   it('keeps every later request of a subagent when another session has a request with the same figures', async () => {
     const top = codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } })
     const shared = { total: { input: 180, output: 18 }, last: { input: 30, output: 3 } }

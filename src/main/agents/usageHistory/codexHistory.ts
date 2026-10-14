@@ -80,7 +80,8 @@ const tuple = (total: unknown, last: unknown): string => JSON.stringify([fields(
 
 interface WaitingTurn { readonly turn: string; readonly at: string; readonly session: Session }
 interface FileState {
-  own: ({ id: Session } & SessionMeta) | undefined
+  /** The file's own session, and the session it was forked from when it names one. */
+  own: ({ id: Session; from?: Session } & SessionMeta) | undefined
   /** The sessions whose copied history this file is in, innermost last, until its own work begins. */
   copied: Session[]
   /** The current turn's own ID. It is never saved: a resumed reading reads again from the line that opened it. */
@@ -110,7 +111,7 @@ const stateSchemaVersion = 2
 /** What a cursor keeps between passes: hashed sessions, numbers and a model name, never a native ID. */
 interface SavedState {
   readonly v: number
-  readonly own: { readonly id: Session; readonly client: UsageClient; readonly sub: boolean; readonly parent?: Session }
+  readonly own: { readonly id: Session; readonly client: UsageClient; readonly sub: boolean; readonly parent?: Session; readonly from?: Session }
   readonly copied?: Session[]
   readonly derived?: boolean
   readonly after?: string
@@ -118,7 +119,7 @@ interface SavedState {
   readonly model?: string
 }
 function savedState(state: FileState, own: NonNullable<FileState['own']>, lines: number): SavedState {
-  return { v: stateSchemaVersion, own: { id: own.id, client: own.client, sub: own.subAgent, ...(own.parent ? { parent: own.parent } : {}) },
+  return { v: stateSchemaVersion, own: { id: own.id, client: own.client, sub: own.subAgent, ...(own.parent ? { parent: own.parent } : {}), ...(own.from ? { from: own.from } : {}) },
     ...(state.copied.length > 0 ? { copied: [...state.copied] } : {}), ...(state.derived ? { derived: true } : {}),
     ...(state.afterRecord !== undefined ? { after: state.afterRecord } : {}), ...(state.lastCount !== undefined ? { last: state.lastCount } : {}), lines, ...(state.model ? { model: state.model } : {}) }
 }
@@ -193,7 +194,8 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         const own = object(value.own)
         if (value.v === stateSchemaVersion && typeof own.id === 'string' && own.id.length > 0) {
           const client = typeof own.client === 'string' && (USAGE_CLIENTS as readonly string[]).includes(own.client) ? own.client as UsageClient : 'other'
-          state.own = { id: own.id, client, subAgent: own.sub === true, ...(typeof own.parent === 'string' ? { parent: own.parent } : {}) }
+          state.own = { id: own.id, client, subAgent: own.sub === true, ...(typeof own.parent === 'string' ? { parent: own.parent } : {}),
+            ...(typeof own.from === 'string' ? { from: own.from } : {}) }
           if (!memory.metas.has(state.own.id)) memory.metas.set(state.own.id, state.own)
           // The first readers saved one copied session as a string.
           const copied: unknown[] = typeof value.copied === 'string' ? [value.copied] : Array.isArray(value.copied) ? value.copied : []
@@ -218,13 +220,14 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         const meta = sessionMeta(payload)
         if (!memory.metas.has(id)) memory.metas.set(id, meta)
         if (state.own === undefined) {
-          state.own = { id, ...meta }
+          const forked = identity(payload.forked_from_id) ? sessionOf(payload.forked_from_id) : undefined
+          state.own = { id, ...meta, ...(forked !== undefined && forked !== id ? { from: forked } : {}) }
           // Read from its first line to its last in this pass, before any other file.
           if (state.fresh && line === 0) memory.loaded.add(id)
           // A fork or subagent rollout begins with a copy of the session it came from, whether or not that session's
           // own header is copied too (older rollouts leave it out). The copy ends at the first running total that
           // session never had, so a child that copied nothing leaves it at its first count.
-          const source = identity(payload.forked_from_id) ? sessionOf(payload.forked_from_id) : meta.parent
+          const source = forked ?? meta.parent
           state.derived = source !== undefined && source !== id
           if (state.derived && state.fresh && line === 0) state.copied = [source!]
         } else if (id === state.own.id) state.copied = []
@@ -298,8 +301,8 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         // thread at the top), so in a forked or spawned rollout a total some other session read this pass already
         // holds is a copy of that session. Equal totals are the only sign of a copy a line leaves, since a copied line
         // gets a new timestamp and often a new turn ID; two subagents' own requests equal in every figure would read as
-        // one. On the checked laptop 2 of 137,613 running totals were shared by unrelated sessions. Unrelated sessions
-        // with equal figures are never forks of each other, so both count.
+        // one. Siblings can't be measured for that, but on the checked laptop unrelated sessions shared 2 of 137,613
+        // running totals. Unrelated sessions with equal figures are never forks of each other, so both count.
         const holder = memory.holders.get(key)
         if (state.derived && state.copied.length === 0) {
           if (holder !== undefined && holder !== session) { holdsCopy(own.id, key); return }
@@ -386,13 +389,13 @@ async function rolloutHead(path: string): Promise<RolloutHead | undefined> {
   } catch { return undefined } finally { await handle.close() }
 }
 
-/** The session a saved cursor state belongs to and the parent it names. */
-function savedOwn(saved: string | undefined): { readonly id: Session; readonly parent: Session | undefined } | undefined {
+/** The session a saved cursor state belongs to, and the sessions it names as its parent or as the one it was forked from. */
+function savedOwn(saved: string | undefined): { readonly id: Session; readonly parents: readonly Session[] } | undefined {
   if (saved === undefined) return undefined
   try {
     const own = object(object(JSON.parse(saved)).own)
     if (typeof own.id !== 'string' || own.id.length === 0) return undefined
-    return { id: own.id, parent: typeof own.parent === 'string' && own.parent.length > 0 ? own.parent : undefined }
+    return { id: own.id, parents: [own.parent, own.from].filter((session): session is Session => typeof session === 'string' && session.length > 0 && session !== own.id) }
   } catch { return undefined }
 }
 interface FamilyMember { readonly file: HistoryFile; readonly index: number; readonly id: Session }
@@ -410,7 +413,7 @@ const discard: UsageHistorySink = { tokens: () => undefined, prompts: () => unde
 class ForkParents {
   private readonly tried = new Set<Session>()
   private readonly learn: HistoryFileReader<FileState>
-  /** Earlier passes' rollouts by the parent each names, from their saved cursors; built when first needed. */
+  /** Earlier passes' rollouts by the parent or fork source each names, from their saved cursors; built when first needed. */
   private families: Map<Session, FamilyMember[]> | undefined
   constructor(private readonly files: readonly HistoryFile[], options: CodexHistoryOptions, private readonly memory: PassMemory, private readonly signal: AbortSignal,
     private readonly cursor: (file: HistoryFile) => UsageHistoryCursor | undefined) {
@@ -429,11 +432,12 @@ class ForkParents {
     const head = await rolloutHead(file.path)
     if (head === undefined) return
     for (const parent of head.parents) await this.load(parent, 0)
-    // Each generation in turn, so a descendant's own copy is read after the rollouts it copied.
+    // Each generation in turn, so a descendant's own copy is read after the rollouts it copied. Every rollout is visited
+    // once, so a cycle ends; the depth is bounded only by the rollouts there are.
     const before = this.files.indexOf(file)
     const visited = new Set<Session>()
     let generation = head.parents.map(sessionOf)
-    for (let depth = 0; generation.length > 0 && depth < PARENT_DEPTH_MAX; depth++) {
+    while (generation.length > 0) {
       const next: Session[] = []
       for (const parent of generation) {
         for (const member of this.family(parent)) {
@@ -462,7 +466,7 @@ class ForkParents {
       const families = new Map<Session, FamilyMember[]>()
       this.files.forEach((file, index) => {
         const own = savedOwn(this.cursor(file)?.state)
-        if (own?.parent !== undefined) families.set(own.parent, [...(families.get(own.parent) ?? []), { file, index, id: own.id }])
+        for (const parent of new Set(own?.parents ?? [])) families.set(parent, [...(families.get(parent) ?? []), { file, index, id: own!.id }])
       })
       this.families = families
     }
