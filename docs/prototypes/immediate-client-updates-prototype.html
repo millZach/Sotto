@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototype — explicit client updates</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#111314;color:#eceeed}
+*{box-sizing:border-box}body{max-width:780px;margin:0 auto;padding:36px 24px;line-height:1.5}
+h1{font-size:25px;font-weight:600}p{color:#bac2bf}button{font:inherit;background:#25322f;color:inherit;border:1px solid #55645e;border-radius:9px;padding:9px 14px;cursor:pointer}
+button:focus-visible{outline:2px solid #7dcbb7;outline-offset:3px}.actions,.tabs{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:13px 8px;border-bottom:1px solid #343b38}code{white-space:pre-wrap;overflow-wrap:anywhere;color:#8bd0bd}
+#state{padding:18px 0}#state p{margin:7px 0}.tabs button[aria-selected=true]{background:#37594e}
+</style>
+<h1>Update means update</h1>
+<p>Throwaway behavior prototype. Should Update all install newly published clients on every connected computer immediately? Zach chose yes: every explicit Update press bypasses mise’s release-age delay.</p>
+<table><thead><tr><th>Computer</th><th>Claude Code</th><th>Result</th></tr></thead><tbody id="machines"></tbody></table>
+<div id="state" aria-live="polite"></div>
+<div class="actions"><button data-action="check">Check again</button><button data-action="one">Update on forge</button><button data-action="all">Update all</button><button data-action="finish">Finish installs</button><button data-action="reset">Reset</button></div>
+<div class="tabs" role="tablist" aria-label="Walkthroughs"><button role="tab" data-scenario="fresh" aria-selected="true">New release</button><button role="tab" data-scenario="failure" aria-selected="false">One download fails</button><button role="tab" data-scenario="offline" aria-selected="false">One host is offline</button></div>
+<p id="scenario"></p><button id="next">1. Check again</button>
+<script>
+const installed='2.1.296', published='2.1.299';
+const initial = scenario => ({scenario, machines:['This computer','forge','Mac'].map(name=>({name,connected:scenario!=='offline'||name!=='Mac',version:installed,result:'Ready'})),event:'Nothing installed. Working threads carry on.'});
+function reduce(state, action){
+  if(action==='reset')return initial(state.scenario);
+  if(action==='check')return {...state,event:'New release found. A check installs nothing.'};
+  if(action==='one'||action==='all')return {...state,machines:state.machines.map(m=>({...m,result:m.connected&&(action==='all'||m.name==='forge')?'Installing now':m.result})),event:'The Update press removes the release-age delay for this install only.'};
+  if(action==='finish')return {...state,machines:state.machines.map(m=>m.result!=='Installing now'?m:state.scenario==='failure'&&m.name==='forge'?{...m,result:'Download failed. Try again.'}:{...m,version:published,result:'Updated'}),event:'Each computer reports its own result. A failed download does not stop the others.'};
+  return state;
+}
+let state=initial('fresh'),step=0;
+const steps=['check','all','finish'], labels=['Check again','Update all','Finish installs'];
+const descriptions={fresh:'A release is less than 24 hours old. Check again reads it; Update all installs it immediately.',failure:'Forge’s download fails. The other computers still update, and forge keeps its installed client.',offline:'The Mac is offline. Update all reaches this computer and forge; the Mac can update after it reconnects.'};
+function render(){
+  document.querySelector('#machines').innerHTML=state.machines.map(m=>`<tr><td>${m.name}${m.connected?'':' · Offline'}</td><td>${m.version}</td><td>${m.result}</td></tr>`).join('');
+  document.querySelector('#state').innerHTML=`<p>${state.event}</p><p>Published: ${published} · Release age: 1 hour · Threads: working</p><code>mise upgrade claude --minimum-release-age 0s</code>`;
+  document.querySelector('#scenario').textContent=descriptions[state.scenario];
+  document.querySelector('#next').textContent=step<steps.length?`${step+1}. ${labels[step]}`:'Restart walkthrough';
+}
+document.querySelectorAll('[data-action]').forEach(button=>button.onclick=()=>{state=reduce(state,button.dataset.action);render()});
+document.querySelectorAll('[data-scenario]').forEach(button=>button.onclick=()=>{state=initial(button.dataset.scenario);step=0;document.querySelectorAll('[data-scenario]').forEach(tab=>tab.setAttribute('aria-selected',String(tab===button)));render()});
+document.querySelector('#next').onclick=()=>{if(step===steps.length){state=initial(state.scenario);step=0}else state=reduce(state,steps[step++]);render()};
+render();
+</script>
+</html>
