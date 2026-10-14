@@ -276,7 +276,7 @@ jobs:
       - name: Build and verify the unpacked Windows app
         run: npm run package:dir
 
-  # Trial only (#899): exercise the built app on the hosted desktop without publishing or becoming a required check.
+  # Exercise the built app on the hosted desktop without publishing (#899). The ruleset requires Desktop result, not this job.
   desktop:
     name: Desktop check (Windows)
     needs: changes
@@ -343,8 +343,8 @@ jobs:
           if [ "$WANTED" = "true" ] && [ "$PACKAGE" != "success" ]; then echo "Package (Windows) was needed and ended $PACKAGE."; exit 1; fi
           echo "Package (Windows) needed: $WANTED. Result: $PACKAGE."
 
-  # The owner can require this guard after the desktop trial: a skipped Desktop check (Windows) alone would
-  # count as passing even if Changed areas failed. Keep the packaging guard's independent contract.
+  # The ruleset requires this guard because a skipped Desktop check (Windows) alone would count as passing even
+  # if Changed areas failed. Keep the packaging guard's independent contract.
   desktop-result:
     name: Desktop result
     needs: [changes, desktop]
