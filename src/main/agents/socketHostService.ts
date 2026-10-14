@@ -1012,7 +1012,10 @@ export class SocketHostService implements HostService {
   get supportsUsage(): boolean { return this.features.includes('usage-dashboard') }
   async usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')
-    return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-read', query: usageLocalQuerySchema.parse(query) }, undefined, undefined, 15000))
+    // A host from before history import refuses the place and window filters its strict query does not know (ADR-0080).
+    const { sources, since, ...older } = usageLocalQuerySchema.parse(query)
+    const sent = this.features.includes('usage-history') ? { ...older, ...(sources ? { sources } : {}), ...(since ? { since } : {}) } : older
+    return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-read', query: sent }, undefined, undefined, 15000))
   }
   async usageRefresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')

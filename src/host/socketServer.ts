@@ -196,6 +196,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
     && (feature !== 'client-updates' || options.clientUpdates === true)
     && (feature !== 'usage-dashboard' || (service.supportsUsage === true && service.usageRead !== undefined && service.usageRefresh !== undefined && service.usageClear !== undefined))
+    // Usage's place and window filters (ADR-0080) arrived with history import: an older host's strict query refuses them.
+    && (feature !== 'usage-history' || (service.supportsUsage === true && service.usageRead !== undefined))
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true))
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => (peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature)))
