@@ -87,6 +87,7 @@ const participation = z.object({ requestId: z.uuid(), startedBy: z.enum(['watche
 const pr = z.object({ number: z.number().int().positive(), url: z.string().max(2_048), title: z.string().max(512),
   state: z.enum(['open', 'closed', 'merged']), draft: z.boolean() }).strict()
 const row = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX), projectId: entityId,
+  standingWatch: watcherStandingWatchSchema.omit({ remoteOrigin: true }).optional(),
   provider: providerIdSchema, modelId: entityId, reasoningEffort: z.string().max(64).optional(), status: z.enum(['idle', 'running', 'error']),
   group: watcherGroupSchema, waitsOn: z.array(pending).max(100), branch: z.string().max(512).nullable(),
   workingCopy: workingCopy.nullable(), pullRequests: z.array(pr).max(50), evidence: z.array(watcherEvidenceSchema).max(100),
@@ -183,7 +184,11 @@ export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThr
   state: z.enum(['active', 'stopped', 'closed']), createdAt: time, closedAt: time.nullable(),
   userFollowups: z.array(z.object({ draftId: z.uuid(), messageId: id.optional() }).strict()).max(1_000).optional(),
   participants: z.array(watcherParticipantSchema).max(1_000) }).strict()
+export const watcherPromptTurnSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, createdAt: time,
+  rootUserMessageId: id.optional(), nativeTurnId: id.optional(), previousNativeTurnId: id.optional() }).strict()
 export const watcherOperationSchema = z.object({ id: z.uuid(), requestId: z.uuid(), retryKey: z.uuid(), digest: z.string().regex(/^[a-f0-9]{64}$/u),
+  promptTurnId: z.uuid().optional(), promptRefunded: z.literal(true).optional(),
+  standingWatchId: z.uuid().optional(),
   // The caller's original choices, before fitting defaults. Retries never resolve new defaults or dispatch again.
   inputDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   action: z.enum(['start', 'send', 'stop', 'settle']), target: watcherThreadTargetSchema, generation: counter,
@@ -193,8 +198,9 @@ export const watcherOperationSchema = z.object({ id: z.uuid(), requestId: z.uuid
   confirmedStop: z.literal(true).optional(),
   creationUncertain: z.literal(true).optional(), refusalCode: watcherRefusalCodeSchema.optional() }).strict().refine(item => !item.confirmedStop || item.action === 'stop', 'Only an explicit confirmed Stop can carry this marker.')
 export const watcherRecordSchema = z.object({ version: z.literal(1), current: watcherIdentitySchema.nullable(),
+  promptTurns: z.array(watcherPromptTurnSchema).max(10_000).optional(),
   lastRuntimeMode: agentRuntimeModeSchema.optional(), watches: z.array(watcherStandingWatchSchema).optional(),
-  watchFences: z.array(z.object({ id: z.uuid(), remoteOrigin: z.object({ clientId: id, masterHostId: z.uuid(), masterCreationOperationId: z.uuid().optional(), masterCreatedAt: time.optional() }).strict() }).strict()).optional(),
+  watchFences: z.array(z.object({ id: z.uuid(), target: watcherThreadTargetSchema.optional(), remoteOrigin: z.object({ clientId: id, masterHostId: z.uuid(), masterCreationOperationId: z.uuid().optional(), masterCreatedAt: time.optional() }).strict() }).strict()).optional(),
   remoteMasters: z.array(z.object({ clientId: id, masterHostId: z.uuid(), creationOperationId: z.uuid(), createdAt: time }).strict()).max(1_000).optional(),
   creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
@@ -211,6 +217,7 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
   const unique = (values: string[]) => new Set(values).size === values.length
   if (!unique(record.requests.map(request => request.id)) || !unique(record.operations.map(operation => operation.id))
+    || !unique((record.promptTurns ?? []).map(turn => turn.id))
     || !unique((record.watches ?? []).map(watch => key(watch.target))) || !unique((record.watches ?? []).map(watch => watch.id))
     || !unique((record.remoteMasters ?? []).map(master => JSON.stringify([master.clientId, master.masterHostId])))
     || !unique(record.requests.map(request => JSON.stringify([key(request.watcher), request.rootUserMessageId])))
@@ -235,14 +242,17 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
     context.addIssue({ code: 'custom', message: 'Request state and participation must agree with their retained fences.' })
   }
   const requests = new Set(record.requests.map(request => request.id))
+  const promptTurns = new Set((record.promptTurns ?? []).map(turn => turn.id))
   const operations = new Set(record.operations.map(operation => operation.id))
   if (record.operations.some(operation => !requests.has(operation.requestId))
+    || record.operations.some(operation => operation.promptTurnId && !promptTurns.has(operation.promptTurnId))
     || record.reservations.some(reservation => !requests.has(reservation.requestId) || !operations.has(reservation.operationId))) {
     context.addIssue({ code: 'custom', message: 'Control references must name retained requests and operations.' })
   }
 })
 export type WatcherIdentity = z.infer<typeof watcherIdentitySchema>
 export type WatcherRequest = z.infer<typeof watcherRequestSchema>
+export type WatcherPromptTurn = z.infer<typeof watcherPromptTurnSchema>
 export type WatcherOperation = z.infer<typeof watcherOperationSchema>
 export type WatcherRecord = z.infer<typeof watcherRecordSchema>
 export function emptyWatcherRecord(): WatcherRecord {

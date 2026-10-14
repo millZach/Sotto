@@ -124,6 +124,8 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
     request.state = 'active'; request.closedAt = null
     const participant = request.participants[0]!
     participant.state = 'participating'; delete participant.automationStopped
+    // Revive the stale assignment generation as well, so the master's new guard cannot hide the owner's refusal.
+    participant.generation = record.watches!.find(watch => watch.target.threadId === first.target.threadId)!.generation
   })
   const writes = vi.spyOn(f.socket, 'watcherControl')
   expect(await f.call('send_to_thread', afterSettlement)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })

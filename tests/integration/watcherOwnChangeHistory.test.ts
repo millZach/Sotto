@@ -35,10 +35,10 @@ async function fixture(events = false, history = true) {
   const id = provider.state.threads[0]!.id
   const closed = new Set<WorkspaceHost>()
   const close = async (host: WorkspaceHost) => { if (!closed.has(host)) { await host.close(); closed.add(host) } }
-  const open = async () => {
+  const open = async (observed = true) => {
     const host = new WorkspaceHost(provider, directory, () => history, undefined, true)
     cleanup.push(() => close(host))
-    await host.initialize(); await host.connect(); host.observeThreads([id])
+    await host.initialize(); await host.connect(); host.observeThreads(observed ? [id] : [])
     return host
   }
   const host = await open()
@@ -121,6 +121,65 @@ it.each([false, true])('keeps early edits when a running turn exceeds the activi
   await f.close(resumed)
   const reopened = await f.open()
   expect(reopened.threadMessages(f.id).find(message => message.id === 'reply')?.watcherOwnChange).toMatchObject({ files: [privatePath, secondPath], fileCount: 2 })
+})
+
+it.each([false, true])('accumulates background edits while the message window is unloaded through eviction and restart (events: %s)', async events => {
+  const f = await fixture(events)
+  f.host.observeThreads([])
+  const native = f.provider.state.threads[0]!
+  native.lastTurn = { id: 'native-turn', status: 'running' }
+  const working = f.activities.map(activity => activity.kind === 'turn' ? { ...activity, status: 'running' as const } : activity)
+  const started = await f.send([f.messages[0]!], working, 'running')
+  expect(started.messages).toEqual([])
+  expect(f.host.threadMessages(f.id)[0]?.watcherObservedChanges).toEqual([{ turnId: 'native-turn', files: [privatePath] }])
+  const later: AgentActivity[] = Array.from({ length: MAX_AGENT_ACTIVITIES }, (_, index) => ({ id: `background-${index}`, turnId: 'native-turn', sequence: index,
+    afterMessageId: 'user', kind: 'tool', status: 'completed', title: 'Read' }))
+  const afterEviction = await f.send([f.messages[0]!], later, 'running')
+  expect(afterEviction.messages).toEqual([])
+  expect(afterEviction.activities?.some(activity => activity.kind === 'file-change')).toBe(false)
+  await f.close(f.host)
+  const resumed = await f.open(false)
+  expect(resumed.workspaceSnapshot().threads.find(thread => thread.id === f.id)?.messages).toEqual([])
+  expect(resumed.threadMessages(f.id)[0]?.watcherObservedChanges).toEqual([{ turnId: 'native-turn', files: [privatePath] }])
+  native.lastTurn.status = 'completed'
+  const finished = await f.send(f.messages, [], 'idle', resumed)
+  expect(finished.messages).toEqual([])
+  expect(resumed.threadMessages(f.id).find(message => message.id === 'reply')?.watcherOwnChange).toMatchObject({ files: [privatePath], fileCount: 1, reason: privateReason })
+  await f.close(resumed)
+  const reopened = await f.open()
+  expect(reopened.workspaceSnapshot().threads.find(thread => thread.id === f.id)?.messages.find(message => message.id === 'reply')?.watcherOwnChange)
+    .toMatchObject({ files: [privatePath], fileCount: 1, reason: privateReason })
+})
+
+it.each([false, true])('keeps background observations out of durable files while history is off (events: %s)', async events => {
+  const f = await fixture(events, false)
+  f.host.observeThreads([])
+  const snapshot = await f.send(f.messages, f.activities)
+  expect(snapshot.messages).toEqual([])
+  expect(f.host.threadMessages(f.id).find(message => message.id === 'reply')?.watcherOwnChange).toMatchObject({ files: [privatePath], reason: privateReason })
+  await f.close(f.host)
+  const disk = (await Promise.all((await readdir(f.directory)).map(name => readFile(join(f.directory, name), 'latin1').catch(() => '')))).join(' ')
+  expect(disk).not.toContain(privatePath)
+  expect(disk).not.toContain(privateReason)
+})
+
+it('accumulates each background source update before later updates evict edits ahead of publication', async () => {
+  const f = await fixture(true)
+  f.host.observeThreads([])
+  const provider = f.provider as EventProvider
+  const native = provider.state.threads[0]!
+  native.lastTurn = { id: 'native-turn', status: 'running' }; native.status = 'running'; native.messages = [f.messages[0]!]
+  native.activities = f.activities.map(activity => activity.kind === 'turn' ? { ...activity, status: 'running' as const } : activity)
+  provider.log.set(f.id, native.messages); provider.emit()
+  native.activities = Array.from({ length: MAX_AGENT_ACTIVITIES }, (_, index) => ({ id: `burst-${index}`, turnId: 'native-turn', sequence: index,
+    afterMessageId: 'user', kind: 'tool', status: 'completed', title: 'Read' }))
+  provider.emit()
+  native.lastTurn.status = 'completed'; native.status = 'idle'; native.messages = f.messages
+  provider.log.set(f.id, native.messages); provider.emit()
+  const snapshot = await f.host.snapshot()
+  expect(snapshot.threads.find(thread => thread.id === f.id)?.messages).toEqual([])
+  expect(f.host.threadMessages(f.id).find(message => message.id === 'reply')?.watcherOwnChange)
+    .toMatchObject({ files: [privatePath], fileCount: 1, reason: privateReason })
 })
 
 it('records a mark-only message update and preserves the mark through native log refresh', () => {

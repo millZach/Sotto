@@ -118,12 +118,18 @@ export class WatcherPhoneService {
   async manage(action: 'permission' | 'watch' | 'unwatch', request: WatcherSetPermissionRequest | WatcherWatchThreadRequest,
     client: ClientIdentity, guard: () => void, mayAnswer: () => boolean): Promise<WatcherPhoneResult> {
     if (client.transport !== 'socket') return watcherRefusal('INVALID_INPUT', 'Watcher phone controls need a paired phone connection.')
+    const permissionGrant = action === 'permission' && (request as WatcherSetPermissionRequest).runtimeMode !== 'approval-required'
     guard()
+    if (permissionGrant && !mayAnswer()) return watcherRefusal('PERMISSION_TOO_WIDE', 'This phone needs Can answer to let Watcher act without asking. Nothing changed.')
+    const check = () => {
+      guard()
+      if (permissionGrant && !mayAnswer()) throw new Error('This phone no longer has permission to change what Watcher may do without asking.')
+    }
     const result = action === 'permission'
-      ? await this.watcher.setPermission(request as WatcherSetPermissionRequest, guard)
-      : action === 'watch' ? await this.watcher.watchThread(request as WatcherWatchThreadRequest, guard)
-        : await this.watcher.unwatchThread(request as WatcherWatchThreadRequest, guard)
-    guard()
+      ? await this.watcher.setPermission(request as WatcherSetPermissionRequest, check)
+      : action === 'watch' ? await this.watcher.watchThread(request as WatcherWatchThreadRequest, check)
+        : await this.watcher.unwatchThread(request as WatcherWatchThreadRequest, check)
+    check()
     return result.status === 'refused' ? result : this.get(mayAnswer())
   }
   subscribe(listener: () => void): () => void { return this.watcher.subscribe(listener) }

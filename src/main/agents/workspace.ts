@@ -1856,17 +1856,21 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     this.markWatcherReplies()
   }
-  /** Attach observed changes only after pending native events have supplied the reply window. */
+  /** Retain observed changes from history even while no pane holds Watcher's message window. */
   private markWatcherReplies(): void {
     if (!this.eventSourced || !this.watcherEnabled) return
     let changed = false
     for (const thread of this.state.snapshot.threads) if (thread.kind === 'watcher') {
-      const annotated = annotateWatcherOwnChanges(thread)
-      for (const [index, message] of annotated.entries()) if (message !== thread.messages[index]) {
+      // Pane visibility cannot decide whether early edits survive the activity window. This temporary
+      // history read includes the current user turn without putting a background transcript in the shell.
+      const messages = thread.messages.length ? thread.messages : this.readWindow(thread.id, FIRST_WINDOW_TURNS)?.messages
+      if (!messages?.length) continue
+      const annotated = annotateWatcherOwnChanges({ ...thread, messages })
+      for (const [index, message] of annotated.entries()) if (message !== messages[index]) {
         this.recordEvent(thread.id, { kind: 'message-replaced', at: new Date().toISOString(), message })
         changed = true
       }
-      thread.messages = annotated
+      if (thread.messages.length) thread.messages = annotated
     }
     if (changed) this.writeEvents()
   }
@@ -2510,6 +2514,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     this.heldForInput.clear()
     this.dirty = true
+    // Capture each Watcher observation before another source update can evict an early edit, or a save
+    // can release idle activity. Native events supply its turn anchor even when no pane is observing it.
+    if (this.eventSourced && this.watcherEnabled && this.state.snapshot.threads.some(thread => {
+      if (thread.kind !== 'watcher') return false
+      const old = previousThreads.get(thread.id)
+      return this.pendingEvents.has(thread.id) || thread.activities !== old?.activities || thread.status !== old?.status
+        || thread.lastTurn?.id !== old?.lastTurn?.id || thread.lastTurn?.status !== old?.lastTurn?.status
+    })) this.applyEvents()
   }
   /** Queues one trailing re-read of this thread's worktree; a burst of records still reads the folder once. */
   private scheduleWorktreeRefresh(threadId: string): void {

@@ -121,7 +121,7 @@ it('enforces distinct target capacity from the current main setting and four pro
     .toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
 })
 
-it('opens an unchanged busy Watcher and keeps a queued user follow-up in its original request budget', async () => {
+it('opens an unchanged busy Watcher and keeps a queued user follow-up in its original request with a new turn budget', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   expect(await f.service.open({ provider: 'codex', modelId: f.model.id })).toMatchObject({ status: 'ok' })
@@ -134,7 +134,7 @@ it('opens an unchanged busy Watcher and keeps a queued user follow-up in its ori
   expect(f.service.state().requests[0]).toMatchObject({ id: f.requestId, userFollowups: [{ draftId, messageId: expect.any(String) }] })
   await f.finish(first.target.threadId)
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic continuation to worker' }))
-    .toMatchObject({ status: 'ok', limits: { promptCount: 2 } })
+    .toMatchObject({ status: 'ok', limits: { promptCount: 1 } })
 })
 
 it('refuses pending requests for all delivery modes, refuses wider permissions and never offers answers', async () => {

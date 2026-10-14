@@ -381,13 +381,18 @@ it('negotiates Watcher management separately and replays outcomes without undoin
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   const change = { op: 'watcher-phone-set-permission', request: { runtimeMode: 'auto-accept-edits' } }
   expect(await old.call('old-mode', change)).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  expect(await peer.call('mode-denied', change)).toMatchObject({ ok: true, result: { status: 'refused', code: 'PERMISSION_TOO_WIDE' } })
+  expect(f.watcher.state().runtimeMode).toBe('approval-required')
+  f.canAnswer(true)
   expect(await peer.call('mode', change)).toMatchObject({ ok: true, result: { status: 'ok', state: { runtimeMode: 'auto-accept-edits', current: { runtimeMode: 'auto-accept-edits' } } } })
+  f.canAnswer(false)
   expect(await peer.call('narrow', { op: 'watcher-phone-set-permission', request: { runtimeMode: 'approval-required' } })).toMatchObject({ ok: true, result: { status: 'ok' } })
   peer.messages.splice(peer.messages.findIndex(message => message.id === 'mode'), 1)
   expect(await peer.call('mode', change)).toMatchObject({ ok: true, result: { status: 'ok', state: { runtimeMode: 'approval-required' } } })
   peer.messages.splice(peer.messages.findIndex(message => message.id === 'mode'), 1)
   expect(await peer.call('mode', { ...change, request: { runtimeMode: 'auto' } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
   expect(hostReceiptSchema.parse((await peer.call('mode-receipt', { op: 'receipt', commandId: 'mode' })).result)).toMatchObject({ status: 'completed', watcherManage: { status: 'ok' } })
+  expect(await peer.call('full-denied', { ...change, request: { runtimeMode: 'full-access' } })).toMatchObject({ ok: true, result: { status: 'refused', code: 'PERMISSION_TOO_WIDE' } })
   expect(await peer.call('grant', { op: 'watcher-phone-set-permission', request: { runtimeMode: 'always' } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
   await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
   const watch = { op: 'watcher-phone-watch', request: { target: worker } }
@@ -414,4 +419,23 @@ it('keeps own-change metadata attached to the Watcher reply in the phone project
   f.native(f.target.threadId).messages.push({ id: ownChange.replyMessageId, role: 'assistant', text: 'Changed a file.', createdAt: new Date().toISOString(), watcherOwnChange: ownChange })
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(f.phone.state(false).ownChanges).toContainEqual(ownChange)
+})
+
+it('rechecks phone permission authority after an await before the native writer', async () => {
+  const f = await fixture(), peer = await f.pair(['watcher-phone', 'watcher-phone-manage'])
+  f.workspace.adapters.codex.state.models[0]!.runtimeModes = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  f.canAnswer(true)
+  const entered = deferred<void>(), proceed = deferred<void>()
+  const original = f.control.commandForWatcherRoom.bind(f.control)
+  const spy = vi.spyOn(f.control, 'commandForWatcherRoom').mockImplementation(async (command, guard) => {
+    entered.resolve(); await proceed.promise; guard?.(); return original(command, guard)
+  })
+  const before = f.workspace.adapters.codex.commands.length
+  const pending = peer.call('revoked-mode', { op: 'watcher-phone-set-permission', request: { runtimeMode: 'full-access' } })
+  await entered.promise; f.canAnswer(false); proceed.resolve()
+  expect(await pending).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+  expect(f.watcher.state().runtimeMode).toBe('approval-required')
+  expect(f.workspace.adapters.codex.commands).toHaveLength(before)
+  spy.mockRestore()
 })

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -71,12 +71,20 @@ it('watches without sending, survives request closure and process-state restart,
   const watch = f.service.state().standingWatches![0]!
   await f.restart()
   expect(f.service.state().standingWatches).toEqual([watch])
+  const roster = await f.call('list_threads', {})
+  expect(roster.status === 'ok' && roster.rows.find(row => row.target.threadId === target.threadId)?.standingWatch?.id).toBe(watch.id)
+  // Real adapters publish the native head even when the master has no open message window.
+  const master = f.native(f.watcherId())
+  master.lastUserMessageId = master.messages.findLast(message => message.role === 'user')?.id
   const native = f.native(target.threadId)
   native.requests = [{ id: 'synthetic-card', kind: 'question', text: 'Synthetic question', options: [] }]
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   const news = f.service.state().news!.find(event => event.kind === 'needs-user')!
   expect(news).toMatchObject({ requestId: watch.id, target })
   expect(f.service.wakeDue(news)).toBe(true)
+  await f.control.deliverWakeUp(f.watcherId(), { source: 'watcher', watcher: f.service.state().current!.target, events: [news], omitted: 0 }, { tool: false })
+  expect(f.service.wakeReady()).toBe(true)
+  await expect.poll(() => f.native(f.watcherId()).messages.findLast(message => message.role === 'user')?.text).toContain(`Use requestId ${watch.id}`)
   expect(await f.call('unwatch_thread', { target })).toMatchObject({ status: 'ok', watched: false })
   expect(f.service.wakeDue(news)).toBe(false)
   expect(f.service.state().news).toEqual([])
@@ -118,6 +126,99 @@ it('bounds standing prompts by Watcher turn, retains retries across turns, and n
   const renewed = await f.call('send_to_thread', { ...first, retryKey: randomUUID() })
   expect(renewed, JSON.stringify(renewed)).toMatchObject({ status: 'ok', limits: { promptCount: 1 } })
   expect(f.service.state().requests.find(request => request.id === scope.id)?.state).toBe('stopped')
+})
+
+it('shares four prompts across ordinary and standing origins without renewing for steer, late turn IDs or restart', async () => {
+  const f = await fixture(), requestId = await f.request(), target = await f.create()
+  await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  const inputs = []
+  for (let count = 1; count <= 4; count++) {
+    const input = { requestId: count % 2 ? requestId : watch.id, retryKey: randomUUID(), target, text: 'Synthetic mixed-origin prompt', delivery: 'now' }
+    inputs.push(input)
+    expect(await f.call('send_to_thread', input)).toMatchObject({ status: 'ok' })
+    await f.finish(target.threadId)
+  }
+  const master = f.native(f.watcherId())
+  master.lastTurn = { id: 'synthetic-late-master-turn', status: 'running' }
+  master.messages.push({ id: randomUUID(), role: 'user', text: 'Synthetic master steer', createdAt: new Date().toISOString() })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const originalBudget = f.control.watcherRecord().operations[0]!.promptTurnId
+  master.lastTurn = { id: 'synthetic-replacement-master-turn', status: 'running' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.control.watcherRecord().promptTurns!.at(-1)!.id).toBe(originalBudget)
+  await f.restart()
+  for (const origin of [requestId, watch.id]) expect(await f.call('send_to_thread', { ...inputs[0], requestId: origin, retryKey: randomUUID() }))
+    .toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
+  expect(await f.call('send_to_thread', inputs[0])).toMatchObject({ status: 'ok' })
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text === 'Synthetic mixed-origin prompt')).toHaveLength(4)
+  await f.finish(f.watcherId()); await f.request()
+  expect(await f.call('send_to_thread', { ...inputs[0], retryKey: randomUUID() })).toMatchObject({ status: 'ok', limits: { promptCount: 1 } })
+})
+
+it('keeps a queued user continuation on its original request after a standing automation scope exists', async () => {
+  const f = await fixture(), requestId = await f.request(), target = await f.create(), draftId = randomUUID()
+  await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic standing scope', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  const scopeId = f.service.state().requests.find(request => request.standingWatchId === watch.id)!.id
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId(), draftId, text: 'Synthetic original continuation' })).error).toBeNull()
+  expect(f.service.state().requests.find(request => request.id === requestId)?.userFollowups).toEqual([{ draftId }])
+  expect(f.service.state().requests.find(request => request.id === scopeId)?.userFollowups).toBeUndefined()
+  await f.finish(f.watcherId())
+  await expect.poll(() => f.native(f.watcherId()).messages.at(-1)?.text.startsWith('Synthetic original continuation')).toBe(true)
+  expect(f.service.state().requests.find(request => request.id === requestId)?.userFollowups).toMatchObject([{ draftId, messageId: expect.any(String) }])
+})
+
+it('refuses delayed original-request delivery after owning-host unwatch, including a legacy packet without an assignment ID', async () => {
+  const master = await fixture(), worker = await fixture(true), target = await worker.create(), clientId = randomUUID(), requestId = await master.request()
+  const entered = deferred<void>(), release = deferred<void>()
+  let delayed: WatcherHostControl | undefined
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId: target.hostId, connected: true, reads: true, control: true, standingWatch: true, permissionCeiling: 'approval-required' }],
+    snapshot: () => worker.control.watcherSnapshot(),
+    read: (_hostId, request) => worker.service.readRemote(request, clientId, () => undefined),
+    control: async (_hostId, request) => { delayed = request; entered.resolve(); await release.promise; return worker.service.admitRemote(request, clientId, () => undefined) },
+    subscribe: () => () => undefined,
+  }
+  master.service.useRemoteHosts(remote)
+  await master.service.watchThread({ target })
+  const sending = master.call('send_to_thread', { requestId, retryKey: randomUUID(), target, text: 'Synthetic delayed original request', delivery: 'now' })
+  await entered.promise
+  expect(delayed!.request.standingWatchId).toBeUndefined()
+  expect(delayed!.operation.standingWatchId).toBe(master.service.state().standingWatches![0]!.id)
+  expect(await master.service.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+  release.resolve()
+  expect(await sending).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  const legacy = structuredClone(delayed!); delete legacy.operation.standingWatchId
+  expect(await worker.service.admitRemote(legacy, clientId, () => undefined)).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(worker.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text === 'Synthetic delayed original request')).toHaveLength(0)
+})
+
+it('enforces the same mixed-origin turn budget at the owning host before a fifth packet can dispatch', async () => {
+  const master = await fixture(), worker = await fixture(true), target = await worker.create(), clientId = randomUUID(), requestId = await master.request()
+  const packets: WatcherHostControl[] = []
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId: target.hostId, connected: true, reads: true, control: true, standingWatch: true, permissionCeiling: 'approval-required' }],
+    snapshot: () => worker.control.watcherSnapshot(),
+    read: (_hostId, request) => worker.service.readRemote(request, clientId, () => undefined),
+    control: (_hostId, request) => { packets.push(structuredClone(request)); return worker.service.admitRemote(request, clientId, () => undefined) },
+    subscribe: () => () => undefined,
+  }
+  master.service.useRemoteHosts(remote); await master.service.watchThread({ target })
+  const watch = master.service.state().standingWatches![0]!
+  for (let count = 1; count <= 4; count++) {
+    expect(await master.call('send_to_thread', { requestId: count % 2 ? requestId : watch.id, retryKey: randomUUID(), target, text: 'Synthetic owning mixed budget', delivery: 'now' }))
+      .toMatchObject({ status: 'ok', limits: { promptCount: count } })
+    await worker.finish(target.threadId)
+  }
+  expect(new Set(packets.map(packet => packet.operation.promptTurnId)).size).toBe(1)
+  const fifth = structuredClone(packets[0]!), retryKey = randomUUID()
+  fifth.call.input.retryKey = retryKey
+  Object.assign(fifth.operation, { id: randomUUID(), retryKey, draftId: randomUUID(), messageId: randomUUID(), receiptId: randomUUID(), cardId: randomUUID(),
+    digest: createHash('sha256').update(JSON.stringify([fifth.call.name, fifth.call.input])).digest('hex') })
+  expect(await worker.service.admitRemote(fifth, clientId, () => undefined)).toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
+  expect(worker.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text === 'Synthetic owning mixed budget')).toHaveLength(4)
 })
 
 it.each(['desktop', 'native'] as const)('keeps watching through a %s user turn and blocks now, queue and steer through restart', async origin => {
