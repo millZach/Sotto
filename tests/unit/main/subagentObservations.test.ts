@@ -99,6 +99,31 @@ describe('observational subagent roster metadata', () => {
     thread.activities.forEach(row => agentActivitySchema.parse(row))
   })
 
+  it('starts a new Codex v2 assignment after a late repeat of the item that started a finished one', () => {
+    const projection = new CodexActivityProjection(() => 1_000)
+    const thread = { id: 'sotto', messages: [], activities: [] as AgentActivity[] }
+    const activity = (id: string, kind: string) => codexItemSchema.parse({ id, type: 'subAgentActivity', kind, agentThreadId: 'native-child', agentPath: '/root/review_tests' })
+    projection.item(thread, activity('call-spawn', 'started'), { turnId: 'turn', phase: 'started' })
+    projection.item(thread, activity('subagent-completed-1', 'completed'), { turnId: 'turn', phase: 'completed' })
+    projection.item(thread, activity('call-spawn', 'started'), { turnId: 'turn', phase: 'completed' })
+    projection.item(thread, activity('call-followup', 'interacted'), { turnId: 'turn', phase: 'completed' })
+    expect(thread.activities.map(record => record.agents![0]!.status)).toEqual(['completed', 'running'])
+  })
+
+  it('keeps each Codex v2 assignment\'s observed times when history is read again', () => {
+    let now = 1_000
+    const projection = new CodexActivityProjection(() => now)
+    const thread = { id: 'sotto', messages: [], activities: [] as AgentActivity[] }
+    const items = [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted'], ['subagent-completed-2', 'completed']] as const
+    const activity = ([id, kind]: readonly [string, string]) => codexItemSchema.parse({ id, type: 'subAgentActivity', kind, agentThreadId: 'native-child', agentPath: '/root/review_tests' })
+    for (const item of items) { projection.item(thread, activity(item), { turnId: 'turn', phase: 'completed' }); now += 2_000 }
+    const times = () => thread.activities.map(record => [record.agents![0]!.startedAt, record.agents![0]!.completedAt])
+    const observed = times()
+    expect(observed).toEqual([[new Date(1_000).toISOString(), new Date(3_000).toISOString()], [new Date(5_000).toISOString(), new Date(7_000).toISOString()]])
+    for (const item of items) projection.item(thread, activity(item), { turnId: 'turn', phase: 'history' })
+    expect(times()).toEqual(observed)
+  })
+
   it('unifies Claude launch/task rows, records only reported models, and preserves the background child after launch acknowledgement', () => {
     const projection = new ClaudeActivity()
     let rows = projection.apply([], claudeTool('launch', { description: 'Review tests', prompt: 'Check assertions', model: 'sonnet', run_in_background: true }), 'turn', 'message', '/p')

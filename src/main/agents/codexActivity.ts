@@ -269,19 +269,24 @@ export class CodexActivityProjection {
     const paths = this.paths.get(thread) ?? new Map<string, string>()
     paths.set(path, child); this.paths.set(thread, paths)
     const prior = this.children.get(child)?.agent
-    const own = codexActivityId(context.turnId, item.id)
+    const itemActivityId = codexActivityId(context.turnId, item.id)
+    const priorFinished = !!prior && isTerminalActivity(mappedStatus(prior.status, 'unknown'))
+    // The same item reported again, started and then completed, is the same assignment. Arriving after the agent
+    // finished, it cannot make the agent working again, or the work handed to it next would not read as new.
+    if (prior?.assignmentId === itemActivityId && status === 'running' && priorFinished) return
     // A start, or work handed to an agent that had finished, is a new assignment; a message to a working agent is not.
-    // The same item reported again, started and then completed, is the same assignment.
-    const assignment = prior?.assignmentId !== own && (item.kind === 'started' || status === 'running' && (!prior?.assignmentId || isTerminalActivity(mappedStatus(prior.status, 'unknown'))))
-    const assignmentId = assignment || !prior?.assignmentId ? own : prior.assignmentId
+    const assignment = prior?.assignmentId !== itemActivityId && (item.kind === 'started' || status === 'running' && (!prior?.assignmentId || priorFinished))
+    const assignmentId = assignment || !prior?.assignmentId ? itemActivityId : prior.assignmentId
     const record = thread.activities?.find(activity => activity.id === assignmentId)
     // An assignment whose record left the bounded window still reports, under a record of its own.
-    const id = record || !this.seen.get(thread)?.has(assignmentId) ? assignmentId : own
-    const observedAt = context.phase === 'history' ? prior?.observedAt : iso(this.now())
+    const id = record || !this.seen.get(thread)?.has(assignmentId) ? assignmentId : itemActivityId
+    // History names no times. A reread keeps the times this assignment's record already holds, not the agent's latest.
+    const recorded = record?.agents?.find(agent => agent.id === agentId(child))
+    const observedAt = context.phase === 'history' ? undefined : iso(this.now())
     const parent = paths.get(parentPath(path))
     const title = path.slice(path.lastIndexOf('/') + 1)
     const model = item.model ?? prior?.model
-    const agent: ObservedAgent = { ...(assignment ? {} : prior), id: agentId(child), status, title, assignmentId,
+    const agent: ObservedAgent = { ...(recorded ?? (assignment ? {} : prior)), id: agentId(child), status, title, assignmentId,
       ...(parent ? { parentId: agentId(parent) } : {}),
       ...(model ? { model } : {}),
       ...(observedAt ? { observedAt } : {}),
@@ -291,7 +296,7 @@ export class CodexActivityProjection {
     this.children.set(child, { thread, turnId: context.turnId, activityId: id, agent: compactAgentIdentity(agent), path })
     this.put(thread, { id, turnId: record?.turnId ?? context.turnId, sequence: 0, kind: 'subagent', title, status,
       ...(context.afterMessageId ? { afterMessageId: context.afterMessageId } : {}),
-      ...(observedAt && (assignment || !record) ? { startedAt: observedAt, timingSource: 'observed' as const } : {}),
+      ...(observedAt && !record ? { startedAt: observedAt, timingSource: 'observed' as const } : {}),
       ...(isTerminalActivity(status) && observedAt ? { completedAt: observedAt } : {}),
       agents: [agent] })
   }
