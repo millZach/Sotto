@@ -70,7 +70,9 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
     state: {
       current: options.current ? identity : null,
       currentOptions: options.current ? { modelId: 'codex:gpt', reasoningEffort: null, runtimeMode: 'approval-required', status: 'idle', connected: true } : null,
-      history: [], runtimeMode: 'approval-required', standingWatches: [], ownChanges: [...options.ownChanges ?? []],
+      // Watcher started both, so main keeps a standing watch on each.
+      history: [], runtimeMode: 'approval-required', ownChanges: [...options.ownChanges ?? []],
+      standingWatches: options.current ? WATCHED.map(threadId => ({ id: randomUUID(), target: target(threadId), createdAt: at(12), generation: 0 })) : [],
       requests: options.current ? [{ id: requestId, watcher: identity.target, rootUserMessageId: 'watcher-ask', state: 'active', createdAt: at(12), closedAt: null, participants }] : [],
       watchedThreads: options.current ? participants.map(part => ({ target: part.target, title: part.target.threadId, watched: true, paused: false, status: 'running' as const, connected: true,
         settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [part] })) : [],
