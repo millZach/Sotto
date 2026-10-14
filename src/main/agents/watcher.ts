@@ -37,6 +37,16 @@ export function watcherRefusal(code: WatcherRefusal['code'], message: string, re
 class Refusal extends Error {
   constructor(readonly result: WatcherRefusal) { super(result.message) }
 }
+/**
+ * A standing watch's automation scope for one Watcher turn: the one the record keeps, or a new active one, which the
+ * caller keeps. A stopped or closed scope is returned as it is, never revived.
+ */
+function standingScope(record: WatcherRecord, watcher: WatcherThreadTarget, watchId: string, turnId: string): { scope: WatcherRecord['requests'][number]; created: boolean } {
+  const rootUserMessageId = `standing:${watchId}:${turnId}`
+  const kept = record.requests.find(request => request.standingWatchId === watchId && request.rootUserMessageId === rootUserMessageId)
+  return kept ? { scope: kept, created: false } : { scope: { id: randomUUID(), watcher, standingWatchId: watchId, rootUserMessageId,
+    state: 'active', createdAt: now(), closedAt: null, participants: [] }, created: true }
+}
 function refuse(code: WatcherRefusal['code'], message: string, retryable = false): never { throw new Refusal({ ...watcherRefusal(code, message, retryable), ...(code === 'CURSOR_EXPIRED' ? { restartCursor: 'restart' } : {}) }) }
 
 /** One main-owned admission transaction; provider work always runs after this lane is released. */
@@ -417,13 +427,8 @@ export class WatcherService implements WatcherControlHooks {
     if (!watch || !current || this.options.workerHost) return
     const master = this.options.control.watcherSnapshot().threads.find(thread => thread.id === current.target.threadId)
     if (!master) return
-    const rootUserMessageId = `standing:${watch.id}:${this.promptTurn(record, current.target).id}`
-    let scope = record.requests.find(request => request.standingWatchId === watch.id && request.rootUserMessageId === rootUserMessageId)
-    if (!scope) {
-      scope = { id: randomUUID(), watcher: current.target, standingWatchId: watch.id, rootUserMessageId,
-        state: 'active', createdAt: now(), closedAt: null, participants: [] }
-      record.requests.push(scope)
-    }
+    const { scope, created } = standingScope(record, current.target, watch.id, this.promptTurn(record, current.target).id)
+    if (created) record.requests.push(scope)
     let participant = scope.participants.find(item => key(item.target) === key(target))
     if (!participant) {
       participant = { requestId: scope.id, target, startedBy: record.requests.some(request => request.participants.some(item => key(item.target) === key(target) && item.startedBy === 'watcher')) ? 'watcher' : 'user',
@@ -867,10 +872,9 @@ export class WatcherService implements WatcherControlHooks {
           return { operation: retry, retry: true }
         }
         // Four prompts per Watcher turn and assignment. A stopped scope stays stopped; a later turn gets a new scope.
-        const rootUserMessageId = `standing:${offeredWatch.id}:${turn!.id}`
-        request = record.requests.find(item => item.standingWatchId === offeredWatch.id && item.rootUserMessageId === rootUserMessageId)
-        if (!request) { request = { id: randomUUID(), watcher: record.current!.target, standingWatchId: offeredWatch.id,
-          rootUserMessageId, state: 'active', createdAt: now(), closedAt: null, participants: [] }; newStandingRequest = request }
+        const standing = standingScope(record, record.current!.target, offeredWatch.id, turn!.id)
+        request = standing.scope
+        if (standing.created) newStandingRequest = request
         else {
           const participant = request.participants.find(item => key(item.target) === key(offeredWatch.target))
           // A human turn fences this scope; subsequent automation requires a later Watcher turn.
