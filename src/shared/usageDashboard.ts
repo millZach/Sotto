@@ -12,6 +12,8 @@ export const USAGE_DAILY_BUCKETS_MAX = 366
 export const USAGE_HOURLY_CELLS_MAX = 168
 export const USAGE_HOSTS_MAX = 100
 export const USAGE_QUOTA_WINDOWS_MAX = 8
+export const USAGE_CLIENT_ROWS_MAX = 64
+export const USAGE_HISTORY_BATCH_MAX = 2_048
 
 const providers = ['codex', 'claude', 'grok', 'devin'] as const satisfies readonly ProviderId[]
 export const usageProviderIdSchema = z.enum(providers)
@@ -20,6 +22,18 @@ export type UsageProviderId = z.infer<typeof usageProviderIdSchema>
 export function isUsageProviderId(value: unknown): value is UsageProviderId {
   return usageProviderIdSchema.safeParse(value).success
 }
+
+/** Where the work ran: a Sotto thread, or the same provider client used outside Sotto on this computer. */
+export const USAGE_SOURCES = ['sotto', 'elsewhere'] as const
+export const usageSourceSchema = z.enum(USAGE_SOURCES)
+export type UsageSource = z.infer<typeof usageSourceSchema>
+/**
+ * The app that sent the work, read from the provider's own local records (Codex's session originator,
+ * Claude Code's session ownership). Sotto never guesses one from content.
+ */
+export const USAGE_CLIENTS = ['sotto', 'claude-code', 'codex-app', 'codex-cli', 'codex-exec', 'codex-ide', 't3-code', 'codex-in-claude-code', 'other'] as const
+export const usageClientSchema = z.enum(USAGE_CLIENTS)
+export type UsageClient = z.infer<typeof usageClientSchema>
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 const identity = z.string().min(1).max(256).regex(/^[^\s\p{Cc}]+$/u)
 const modelId = z.string().min(1).max(6_144).regex(/^[^\p{Cc}]+$/u)
@@ -44,7 +58,17 @@ export const usageTokenObservationSchema = z.object({
   groupRecordsHash: hash.optional(),
   /** Adapter proof of a new native group beginning live, not an observation-time guess. */
   liveNewGroup: z.boolean().optional(),
-}).strict().refine(value => value.liveNewGroup !== true || (value.phase === 'live' && value.groupKey !== undefined), {
+  /** Absent means a Sotto thread through the Sotto client, as every observation before history import was. */
+  source: usageSourceSchema.optional(), client: usageClientSchema.optional(),
+  /** Work a sub-agent did for the session, counted in tokens and never as a prompt. */
+  subAgent: z.boolean().optional(),
+  /** Read from the provider's own local record by the history importer rather than observed by an adapter. */
+  origin: z.enum(['adapter', 'history']).optional(),
+}).strict().refine(value => (value.source ?? 'sotto') === 'sotto' ? (value.client ?? 'sotto') === 'sotto' : value.client !== undefined && value.client !== 'sotto', {
+  message: 'Sotto work uses the Sotto client and work elsewhere names its own client',
+}).refine(value => value.origin !== 'history' || value.at !== undefined, {
+  message: 'Imported history carries the instant its provider recorded',
+}).refine(value => value.liveNewGroup !== true || (value.phase === 'live' && value.groupKey !== undefined), {
   message: 'Live new-group evidence requires a live observation and group key',
 }).refine(value => value.groupRecordsHash === undefined || (value.providerId === 'grok' && value.removed === true && value.groupKey !== undefined), {
   message: 'Group membership evidence requires a retired Grok aggregate and group key',
@@ -62,10 +86,35 @@ export type UsagePromptSubmission = z.infer<typeof usagePromptSubmissionSchema>
 export const usagePromptIdentitySchema = z.object({ threadId: identity, messageId: identity }).strict()
 export type UsagePromptIdentity = z.infer<typeof usagePromptIdentitySchema>
 
+/**
+ * A prompt read from a provider's own local records or from Sotto's thread store. It skips the
+ * pending-then-echo path because the record already proves the provider received it.
+ */
+export const usageHistoryPromptSchema = z.object({
+  providerId: usageProviderIdSchema, threadId: identity, messageId: identity, modelId, at: timestamp,
+  kind: z.enum(['user', 'watcher', 'wake-up']), source: usageSourceSchema, client: usageClientSchema,
+}).strict().refine(value => value.source === 'sotto' ? value.client === 'sotto' : value.client !== 'sotto', {
+  message: 'Sotto work uses the Sotto client and work elsewhere names its own client',
+})
+export type UsageHistoryPrompt = z.infer<typeof usageHistoryPromptSchema>
+/** Where the importer stopped in one provider file. `state` is the reader's own numeric resume state, never text. */
+export const usageHistoryCursorSchema = z.object({
+  size: count, mtimeMs: count, offset: count, state: z.string().max(65_536).optional(),
+}).strict()
+export type UsageHistoryCursor = z.infer<typeof usageHistoryCursorSchema>
+export const usageHistoryStatusSchema = z.object({
+  status: z.enum(['scanning', 'complete', 'unavailable']), earliestAt: timestamp.optional(), scannedAt: timestamp.optional(),
+}).strict()
+export type UsageHistoryStatus = z.infer<typeof usageHistoryStatusSchema>
+
 const localQueryShape = {
   from: day.optional(), to: day.optional(), timeZone: usageTimeZoneSchema.optional(),
   providerIds: z.array(usageProviderIdSchema).max(providers.length).optional(),
+  /** Served models, by canonical ID. */
   modelIds: z.array(modelId).max(USAGE_MODEL_ROWS_MAX).optional(), includeDaily: z.boolean().optional(),
+  sources: z.array(usageSourceSchema).max(USAGE_SOURCES.length).optional(),
+  /** Exact lower bound, applied with any calendar range: the start of a subscription window. */
+  since: timestamp.optional(),
 }
 const validRange = (value: { from?: string | undefined; to?: string | undefined }): boolean => value.from === undefined || value.to === undefined || value.from <= value.to
 export const usageLocalQuerySchema = z.object(localQueryShape).strict().refine(validRange, 'Date range ends before it begins')
@@ -92,11 +141,16 @@ export const usagePromptTotalsSchema = z.object({ user: count, watcher: count, w
 export type UsagePromptTotals = z.infer<typeof usagePromptTotalsSchema>
 export const usageActivityAggregateSchema = z.object({
   tokens: usageTokenTotalsSchema, prompts: usagePromptTotalsSchema,
+  /** Threads in Sotto, sessions elsewhere: each distinct place the work ran. */
   tokenRecords: count, partialTokenRecords: count, undatedTokenRecords: count, activeThreads: count, activeDays: count,
+  /** The latest calendar day with activity, in the query's time zone. */
+  lastDay: day.optional(),
 }).strict()
 export type UsageActivityAggregate = z.infer<typeof usageActivityAggregateSchema>
 export const usageMetadataSchema = z.object({
   startedAt: timestamp, revision: count, generation: count, clearedAt: timestamp.optional(), legacySeedCompleted: z.boolean(),
+  /** Absent from hosts that predate history import. */
+  history: usageHistoryStatusSchema.optional(),
 }).strict()
 export type UsageMetadata = z.infer<typeof usageMetadataSchema>
 export const usageWriteResultSchema = z.object({ status: z.enum(['written', 'unchanged', 'suppressed']), revision: count }).strict()
@@ -106,9 +160,17 @@ export type UsagePromptAcceptanceResult = z.infer<typeof usagePromptAcceptanceRe
 
 export const usageProviderAggregateSchema = usageActivityAggregateSchema.extend({ providerId: usageProviderIdSchema }).strict()
 export type UsageProviderAggregate = z.infer<typeof usageProviderAggregateSchema>
-/** Token model is observed natively; prompt model is the selection at send. They are distinct dimensions. */
+/**
+ * One row per served model, by canonical ID. A prompt counts under the model that served it: the first
+ * token report after it in the same thread or session, else its selection at send.
+ */
 export const usageModelAggregateSchema = usageProviderAggregateSchema.extend({ modelId }).strict()
 export type UsageModelAggregate = z.infer<typeof usageModelAggregateSchema>
+/** Activity grouped by where it ran and the app that sent it. Sub-agent work has its own row. */
+export const usageClientAggregateSchema = usageActivityAggregateSchema.extend({
+  source: usageSourceSchema, clientId: usageClientSchema, subAgent: z.boolean(),
+}).strict()
+export type UsageClientAggregate = z.infer<typeof usageClientAggregateSchema>
 export const usageDailyAggregateSchema = usageActivityAggregateSchema.extend({ day }).strict()
 export type UsageDailyAggregate = z.infer<typeof usageDailyAggregateSchema>
 /** Monday is 0 and Sunday is 6. Repeated fall-back hours share one cell. */
@@ -123,6 +185,8 @@ export const usageLocalReadSchema = z.object({
   daily: z.array(usageDailyAggregateSchema).max(USAGE_DAILY_BUCKETS_MAX),
   dailyCoverage: z.enum(['complete', 'omitted-range', 'not-requested']),
   hourly: z.array(usageHourlyAggregateSchema).max(USAGE_HOURLY_CELLS_MAX),
+  /** Absent from hosts that predate history import. */
+  clients: z.array(usageClientAggregateSchema).max(USAGE_CLIENT_ROWS_MAX).optional(),
 }).strict()
 export type UsageLocalRead = z.infer<typeof usageLocalReadSchema>
 
