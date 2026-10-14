@@ -34,11 +34,12 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
     finally { await seeding.stop() }
     const f = await stack(root, false, streamCount, true); stop = f.stop
     const { adapters, control, workspace, registry } = f
-    watcher = new WatcherService({ directory: root, control, host: workspace, limit: () => 8, historyEnabled: () => true })
+    watcher = new WatcherService({ directory: root, control, host: workspace, limit: () => 8, historyEnabled: () => true, streamingPublishCost: enabled })
     const service = new LocalHostService({ control, events: workspace })
-    const router = new DesktopHostRouter(() => emptyDesktopState(control.hostId()))
+    const router = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: true, streamingPublishCost: enabled })
     router.add({ hostId: control.hostId()!, name: 'This computer', kind: 'local', service,
       detail: id => control.threadDetail(id), preview: request => control.attachmentPreview(request), subscribeDetail: listener => control.subscribeThreadDetail(listener) })
+    watcher.useRemoteHosts(router.watcherHosts())
     const broadcaster = new AgentStateBroadcaster({ streamingPublishCost: true })
     const shellPublisher = coalesceAgentStatePublishes(state => broadcaster.send(state, payload => { window.webContents.send('shell', payload); return true }))
     const detailPublisher = coalesceAgentThreadDetailPublishes(detail => window.webContents.send('detail', detail), { beforeOpening: () => shellPublisher.flush() })
