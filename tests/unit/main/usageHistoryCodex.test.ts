@@ -144,6 +144,41 @@ describe('Codex history reader', () => {
       expect([...sink.rows().values()].filter(row => row.subAgent).map(row => row.tokens.input)).toEqual([40])
     }
   })
+  it('counts copied history once through nested subagents that carry no parent headers', async () => {
+    // A Codex app subagent can start its own subagent; each copies all the history before it.
+    const top = [
+      codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } }),
+    ]
+    const middle = [
+      codexTokenCount({ at: t(6), total: { input: 150, output: 15 }, last: { input: 50, output: 5 } }),
+    ]
+    const root = await home()
+    await writeFile(rollout(root, '2026-09-20T10-00-00-nest-top'), jsonl([codexMeta({ id: 'nest-top', originator: 'Codex Desktop', at: t(0) }),
+      codexTaskStarted({ turn: 'nt-turn', at: t(1) }), ...top]))
+    await writeFile(rollout(root, '2026-09-20T10-05-00-nest-middle'), jsonl([codexMeta({ id: 'nest-middle', originator: 'Codex Desktop', at: t(5), parent: 'nest-top', threadSource: 'subagent' }),
+      ...top, ...middle]))
+    await writeFile(rollout(root, '2026-09-20T10-10-00-nest-bottom'), jsonl([codexMeta({ id: 'nest-bottom', originator: 'Codex Desktop', at: t(10), parent: 'nest-middle', threadSource: 'subagent' }),
+      ...top, ...middle, codexTokenCount({ at: t(11), total: { input: 170, output: 17 }, last: { input: 20, output: 2 } })]))
+    const sink = memorySink()
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(170)
+    expect([...sink.rows().values()].map(row => row.tokens.input).sort((a, b) => a! - b!)).toEqual([20, 50, 100])
+  })
+  it('counts the copy of a nested subagent once when it names the top thread rather than the subagent it copied', async () => {
+    const top = codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } })
+    const middle = codexTokenCount({ at: t(6), total: { input: 150, output: 15 }, last: { input: 50, output: 5 } })
+    const root = await home()
+    await writeFile(rollout(root, '2026-09-20T10-00-00-named-top'), jsonl([codexMeta({ id: 'named-top', originator: 'Codex Desktop', at: t(0) }), top]))
+    await writeFile(rollout(root, '2026-09-20T10-05-00-named-middle'), jsonl([
+      codexMeta({ id: 'named-middle', originator: 'Codex Desktop', at: t(5), parent: 'named-top', threadSource: 'subagent' }), top, middle]))
+    // The bottom subagent names the top thread, yet begins with the middle subagent's history.
+    await writeFile(rollout(root, '2026-09-20T10-10-00-named-bottom'), jsonl([
+      codexMeta({ id: 'named-bottom', originator: 'Codex Desktop', at: t(10), parent: 'named-top', threadSource: 'subagent' }), top, middle,
+      codexTokenCount({ at: t(11), total: { input: 170, output: 17 }, last: { input: 20, output: 2 } })]))
+    const sink = memorySink()
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(170)
+  })
   it('attributes a fork read in a later pass to its parent, so the store counts the copy once', async () => {
     const root = await home()
     const parentLines = [
@@ -168,7 +203,7 @@ describe('Codex history reader', () => {
     expect([...sink.uniquePrompts().values()].find(prompt => prompt.messageId === turn('f-turn'))?.client).toBe('codex-app')
   })
 
-  it('uses the copied-history ordinal for an old rollout forked after its parent was read', async () => {
+  it('counts an old rollout forked after its parent was read once, whatever its history ordinal says', async () => {
     const root = await home()
     const parentLines = [
       codexMeta({ id: 'old-parent', originator: 'codex-tui', at: t(0) }),

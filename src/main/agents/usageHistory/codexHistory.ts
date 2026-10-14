@@ -11,11 +11,12 @@ import { usageHistoryCursorKey, usageHistoryMessageId, usageHistoryRecordKey, us
  * `archived_sessions` (ADR-0080). Each line is parsed, its numbers, instant, served model and client kept, and the
  * line dropped.
  *
- * Forked and sub-agent rollouts begin with a copy of their parent's history, the parent's own `session_meta`
- * included. Every record is attributed to the session that produced it (the copied meta, a usage record's own
- * `thread_id`), so a copy is the parent's row under the parent's identity and counts once. Without a
- * `subagent_history_start_ordinal`, the copy ends at the first running total its parent never had; a parent the
- * pass has not read is read for its running totals first, numbers only.
+ * Forked and sub-agent rollouts begin with a copy of their parent's history, with or without the parent's own
+ * `session_meta`. Every record is attributed to the session that produced it (the parent the rollout names, a copied
+ * meta, a usage record's own `thread_id`), so a copy is the parent's row under the parent's identity and counts once.
+ * The copy ends at the first running total its parent never had; a parent the pass has not read is read for its
+ * running totals first, numbers only. `subagent_history_start_ordinal` is not that boundary: on the checked laptop it
+ * equalled each rollout's whole line count while its copy ended far sooner.
  *
  * Newer rollouts report each request twice: a `token_usage_record` and, just after it, a `token_count` with the same
  * request figures. That `token_count` is skipped; every other one (a session's history from before Codex wrote
@@ -82,7 +83,6 @@ interface FileState {
   own: ({ id: Session } & SessionMeta) | undefined
   /** The sessions whose copied history this file is in, innermost last, until its own work begins. */
   copied: Session[]
-  ordinal: number | undefined
   /** The current turn's own ID. It is never saved: a resumed reading reads again from the line that opened it. */
   turn: string | undefined
   /** This state's saved form just before the line that opened the current turn, and that line's first byte. */
@@ -94,7 +94,9 @@ interface FileState {
   lastCount: string | undefined
   /** This reading began at the file's first line. */
   fresh: boolean
-  /** Lines before this reading's start, for the copied-history ordinal. */
+  /** The rollout names a session it was forked or spawned from, so it may begin with that session's history. */
+  derived: boolean
+  /** Lines before this reading's start. */
   base: number
   readonly turnModels: Map<string, string>
   readonly turnOwners: Map<string, Session>
@@ -107,14 +109,14 @@ interface SavedState {
   readonly v: number
   readonly own: { readonly id: Session; readonly client: UsageClient; readonly sub: boolean; readonly parent?: Session }
   readonly copied?: Session[]
-  readonly ordinal?: number
+  readonly derived?: boolean
   readonly after?: string
   readonly lines: number
   readonly model?: string
 }
 function savedState(state: FileState, own: NonNullable<FileState['own']>, lines: number): SavedState {
   return { v: stateSchemaVersion, own: { id: own.id, client: own.client, sub: own.subAgent, ...(own.parent ? { parent: own.parent } : {}) },
-    ...(state.copied.length > 0 ? { copied: [...state.copied] } : {}), ...(state.ordinal !== undefined ? { ordinal: state.ordinal } : {}),
+    ...(state.copied.length > 0 ? { copied: [...state.copied] } : {}), ...(state.derived ? { derived: true } : {}),
     ...(state.afterRecord !== undefined ? { after: state.afterRecord } : {}), ...(state.lastCount !== undefined ? { last: state.lastCount } : {}), lines, ...(state.model ? { model: state.model } : {}) }
 }
 
@@ -132,8 +134,10 @@ class PassMemory {
     readonly totals = new Map<Session, Map<string, boolean>>(),
     /** Sessions whose whole rollout this pass has read, so every running total they have is in `totals`. */
     readonly loaded = new Set<Session>(),
+    /** The session each running total met this pass belongs to, whichever file it was read in. */
+    readonly holders = new Map<string, Session>(),
   ) {}
-  learner(): PassMemory { return new PassMemory(true, this.metas, this.totals, this.loaded) }
+  learner(): PassMemory { return new PassMemory(true, this.metas, this.totals, this.loaded, this.holders) }
   totalsOf(session: Session): Map<string, boolean> {
     let found = this.totals.get(session)
     if (!found) { found = new Map(); this.totals.set(session, found) }
@@ -176,8 +180,8 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
   return {
     needles: [Buffer.from('"session_meta"'), Buffer.from('"turn_context"'), Buffer.from('token_usage_record'), Buffer.from('"token_count"'), Buffer.from('"task_started"')],
     start(_file, saved): FileState {
-      const state: FileState = { own: undefined, copied: [], ordinal: undefined, turn: undefined, mark: undefined, model: undefined, afterRecord: undefined, lastCount: undefined,
-        fresh: saved === undefined, base: 0, turnModels: new Map(), turnOwners: new Map(), waiting: [] }
+      const state: FileState = { own: undefined, copied: [], turn: undefined, mark: undefined, model: undefined, afterRecord: undefined, lastCount: undefined,
+        fresh: saved === undefined, derived: false, base: 0, turnModels: new Map(), turnOwners: new Map(), waiting: [] }
       try {
         const value = object(saved === undefined ? undefined : JSON.parse(saved))
         const own = object(value.own)
@@ -188,7 +192,7 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
           // The first readers saved one copied session as a string.
           const copied: unknown[] = typeof value.copied === 'string' ? [value.copied] : Array.isArray(value.copied) ? value.copied : []
           state.copied = copied.filter((session): session is string => typeof session === 'string' && session.length > 0).slice(-PARENT_DEPTH_MAX)
-          state.ordinal = count(value.ordinal); state.base = count(value.lines) ?? 0
+          state.base = count(value.lines) ?? 0; state.derived = value.derived === true
           if (typeof value.after === 'string' && value.after.length <= 256) state.afterRecord = value.after
           if (typeof value.last === 'string' && value.last.length <= 512) state.lastCount = value.last
           if (typeof value.model === 'string' && value.model.length > 0) state.model = value.model
@@ -201,7 +205,6 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
       try { frame = object(JSON.parse(text)) } catch { return }
       const payload = object(frame.payload)
       const line = state.base + index
-      if (state.copied.length > 0 && state.ordinal !== undefined && line > state.ordinal) state.copied = []
       if (frame.type === 'session_meta') {
         const nativeId = identity(payload.id) ? payload.id : identity(payload.session_id) ? payload.session_id : undefined
         if (nativeId === undefined) return
@@ -210,15 +213,14 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         if (!memory.metas.has(id)) memory.metas.set(id, meta)
         if (state.own === undefined) {
           state.own = { id, ...meta }
-          const ordinal = count(payload.subagent_history_start_ordinal)
-          if (ordinal !== undefined) state.ordinal = ordinal
           // Read from its first line to its last in this pass, before any other file.
           if (state.fresh && line === 0) memory.loaded.add(id)
           // A fork or subagent rollout begins with a copy of the session it came from, whether or not that session's
-          // own header is copied too (older rollouts leave it out). The copy ends at the ordinal, or else at the first
-          // running total that session never had, so a child that copied nothing leaves it at its first count.
+          // own header is copied too (older rollouts leave it out). The copy ends at the first running total that
+          // session never had, so a child that copied nothing leaves it at its first count.
           const source = identity(payload.forked_from_id) ? sessionOf(payload.forked_from_id) : meta.parent
-          if (source !== undefined && source !== id && state.fresh && line === 0) state.copied = [source]
+          state.derived = source !== undefined && source !== id
+          if (state.derived && state.fresh && line === 0) state.copied = [source!]
         } else if (id === state.own.id) state.copied = []
         else if (!state.copied.includes(id) && state.copied.length < PARENT_DEPTH_MAX) state.copied.push(id)
         return
@@ -281,15 +283,25 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         state.lastCount = key
         const paired = state.afterRecord !== undefined && state.afterRecord === figures(info.last_token_usage)
         state.afterRecord = undefined
-        // Without an ordinal, a running total the copied session never had is the end of its copy.
-        if (state.ordinal === undefined) {
-          while (state.copied.length > 0 && memory.totals.get(state.copied.at(-1)!)?.has(key) !== true) state.copied.pop()
-        }
+        // A running total the copied session never had is the end of its copy.
+        while (state.copied.length > 0 && memory.totals.get(state.copied.at(-1)!)?.has(key) !== true) state.copied.pop()
         const session = current(state)
         if (session === undefined) return
         if (state.turn !== undefined && !state.turnOwners.has(state.turn)) state.turnOwners.set(state.turn, session)
+        // A subagent's named parent is not always the session its history came from (a nested subagent can name the
+        // thread at the top), so in a forked or spawned rollout a total some other session read this pass already
+        // holds is a copy of that session. Unrelated sessions with equal figures are never forks of each other.
+        const holder = memory.holders.get(key)
+        if (state.derived && state.copied.length === 0 && holder !== undefined && holder !== session) {
+          const mine = memory.totalsOf(own.id); if (!mine.has(key)) mine.set(key, false)
+          return
+        }
+        if (holder === undefined) memory.holders.set(key, session)
         const totals = memory.totalsOf(session)
         const seen = totals.get(key)
+        // A total this file holds as a copy is part of its own history too, counted elsewhere, so a subagent of this
+        // session that copies it in turn still knows it for a copy (Codex app subagents nest).
+        if (session !== own.id) { const mine = memory.totalsOf(own.id); if (!mine.has(key)) mine.set(key, false) }
         if (memory.learning) { if (seen === undefined) totals.set(key, false); return }
         // Counted already in this pass, or a copy of a session whose own reading counts it.
         if (seen === true || (seen === false && state.copied.length > 0)) return
@@ -337,8 +349,8 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
   }
 }
 
-/** A rollout's first line, if it is its session's meta: the session, the sessions it was copied from, and its ordinal. */
-interface RolloutHead { readonly id: string; readonly parents: readonly string[]; readonly ordinal: number | undefined }
+/** A rollout's first line, if it is its session's meta: the session and the sessions it was copied from. */
+interface RolloutHead { readonly id: string; readonly parents: readonly string[] }
 async function rolloutHead(path: string): Promise<RolloutHead | undefined> {
   let handle
   try { handle = await open(path, 'r') } catch { return undefined }
@@ -361,7 +373,7 @@ async function rolloutHead(path: string): Promise<RolloutHead | undefined> {
     const id = identity(payload.id) ? payload.id : identity(payload.session_id) ? payload.session_id : undefined
     if (id === undefined) return undefined
     const parents = [...new Set([payload.forked_from_id, payload.parent_thread_id].filter(identity))].filter(parent => parent !== id)
-    return { id, parents, ordinal: count(payload.subagent_history_start_ordinal) }
+    return { id, parents }
   } catch { return undefined } finally { await handle.close() }
 }
 
@@ -369,7 +381,7 @@ async function rolloutHead(path: string): Promise<RolloutHead | undefined> {
 const discard: UsageHistorySink = { tokens: () => undefined, prompts: () => undefined, cursor: () => undefined, setCursors: () => undefined }
 
 /**
- * Before a fork or sub-agent rollout with no copied-history ordinal is read from its start, its parent's running
+ * Before a fork or sub-agent rollout is read from its start, its parent's running
  * totals must be in the pass's memory, or the copy would look like the fork's own work. A parent this pass has not
  * read whole is read for those totals alone, through the same reader, counting nothing.
  */
@@ -390,7 +402,7 @@ class ForkParents {
       } catch { return }
     }
     const head = await rolloutHead(file.path)
-    if (head === undefined || head.ordinal !== undefined) return
+    if (head === undefined) return
     for (const parent of head.parents) await this.load(parent, 0)
   }
 
@@ -400,7 +412,7 @@ class ForkParents {
     this.tried.add(session)
     const found = await this.find(nativeId)
     if (found === undefined) return
-    if (found.head.ordinal === undefined) for (const parent of found.head.parents) await this.load(parent, depth + 1)
+    for (const parent of found.head.parents) await this.load(parent, depth + 1)
     if (await readHistoryFile('codex', found.file, this.learn, discard, this.signal)) this.memory.loaded.add(session)
   }
 
