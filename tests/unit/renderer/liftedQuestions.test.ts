@@ -34,6 +34,35 @@ describe('questions a reply asked on the way', () => {
     expect(questionsIn(reply)).toEqual([])
   })
 
+  it('reads a question wrapped over several lines as the one sentence the transcript draws', () => {
+    expect(questionsIn('Would you like me to\ncontinue?')).toEqual(['Would you like me to continue?'])
+    expect(questionsIn('Should I keep this change\nor revert it?')).toEqual(['Should I keep this change or revert it?'])
+  })
+
+  it('leaves the blocks Markdown makes of other line shapes alone', () => {
+    const reply = [
+      'Done with the parser.',
+      '',
+      '    const answer = ready ? "Should I ship it now?" : null',
+      '',
+      'Should the setext heading be lifted?',
+      '-------------------------------------',
+      '',
+      '> You asked whether this',
+      'should be lifted at all?',
+      '',
+      'Question | Lifted?',
+      '--- | ---',
+      'Is a table row a question? | no',
+    ].join('\n')
+    expect(questionsIn(reply)).toEqual([])
+  })
+
+  it('takes a question mark inside inline code as the code’s', () => {
+    expect(questionsIn('The prompt reads `Should I continue?`')).toEqual([])
+    expect(questionsIn('The prompt is `Should I continue?` and nothing else.')).toEqual([])
+  })
+
   it('does not end a sentence at an abbreviation', () => {
     expect(questionsIn('Should I keep the old names, e.g. Room left, or use the new ones?'))
       .toEqual(['Should I keep the old names, e.g. Room left, or use the new ones?'])
