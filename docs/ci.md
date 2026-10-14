@@ -322,6 +322,13 @@ nothing: the 2 MB rollout read in `tests/unit/main/codexTargetLog.test.ts` and t
 comparison in `tests/unit/renderer/streamingMarkdown.test.tsx`, and the 1005-file directory enumeration
 in `tests/unit/main/files.test.ts` each allow 60 s.
 
+The SSH readiness, password and host-update journeys use a 150 s test deadline.
+Their real child processes retain their own operation budgets; in particular, an update
+starts a host, fetches and unpacks its archive, then stops and starts it again. The default
+15 s test deadline must not end that journey during a valid 30 s host start. This is a
+failure bound, not a latency assertion; production timeouts and the global test deadline
+are unchanged. See [the SSH test evidence](verification/ssh-readiness-test-budget.md).
+
 `vitest.config.ts` gives a test 15 s and an `expect.poll` 5 s, rather than vitest's 5 s and 1 s, and
 `tests/setup.ts` gives Testing Library's `findBy` and `waitFor` the same 5 s rather than their 1 s. Waiting
 is not the assertion: a runner takes several times longer over a provider round trip or a child process
