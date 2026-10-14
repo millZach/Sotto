@@ -1158,9 +1158,9 @@ import XCTest
         XCTAssertTrue(inForce.waitForExistence(timeout: 5), "Until Codex confirms it, the chip says what is still in force")
         XCTAssertEqual(inForce.label, "Codex stays on Ask before actions until it confirms.")
         capture("watcher-permissions-pending-dark")
-        // The fixture's Codex confirms eight seconds after the choice, about when this wait starts. On CI's SE each look for
-        // the caption on Watcher's long page took eight seconds or more, so twenty seconds held only three looks and ran out
-        // with the caption already gone from the screen. A deadline that is never reached costs nothing.
+        // The fixture's Codex confirms fifteen seconds after the choice. On CI's SE each look for the caption on Watcher's
+        // long page took eight seconds or more, so twenty seconds held only three looks, and once ran out with the caption
+        // already gone from the screen. A deadline that is never reached costs nothing.
         XCTAssertTrue(waitUntilGone(inForce, timeout: 60), "Once Codex confirms it, nothing more is said")
         XCTAssertEqual(permissions.value as? String, "Allow edits")
         watcherInLight()

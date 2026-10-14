@@ -1614,13 +1614,14 @@ struct HeldDetail {
             showWatcher(decoded, on: hostID)
         }
     }
-    /// The laptop keeps the mode for Watcher a moment after it is chosen, and Watcher's provider confirms it a moment later,
-    /// so the chip says what is still in force between the two.
+    /// The laptop keeps the mode for Watcher a moment after it is chosen, and Watcher's provider confirms it a while later,
+    /// so the chip says what is still in force between the two. The while is long enough for CI's SE, where one look at
+    /// Watcher's page can take eight seconds, to find the caption before it goes.
     private func setFixtureWatcherPermission(_ mode: String, on hostID: String) async {
         try? await Task.sleep(nanoseconds: 300_000_000)
         changeFixtureWatcher(on: hostID) { $0["runtimeMode"] = mode }
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
             self?.changeFixtureWatcher(on: hostID) { page in
                 guard var current = page["current"] as? [String: Any] else { return }
                 current["runtimeMode"] = page["runtimeMode"]
