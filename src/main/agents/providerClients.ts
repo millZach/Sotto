@@ -238,7 +238,7 @@ export function byHandFor(provider: ProviderId, install: ClientInstall): readonl
     case 'self-update': return provider === 'claude' || provider === 'grok' ? [`${provider} update`] : undefined
     case 'mise': {
       if (!install.miseTool) return undefined
-      const upgrade = `mise upgrade ${install.miseTool}`
+      const upgrade = `mise upgrade ${install.miseTool} --minimum-release-age 0s`
       // Checked on forge on September 29, 2026: the package's install step, run in the folder mise installed it in.
       return needsInstallStep(provider, install.miseTool) && packageName
         ? [upgrade, `cd "$(mise where ${install.miseTool})/node_modules/${packageName}"`, GROK_INSTALL_STEP] : [upgrade]
@@ -286,7 +286,10 @@ export async function updateActionFor(provider: ProviderId, install: ClientChann
     const mise = await misePath()
     if (!mise) return undefined
     const packageName = CLIENT_PACKAGES[provider]
-    return { command: byHand[0]!, byHand, executable: mise, args: ['upgrade', found.miseTool], cwd: homedir(),
+    // Update is an explicit request to install now. mise's default 24-hour release-age delay can otherwise
+    // exit successfully without changing the client, even though Sotto shows a newer published version.
+    // Override the delay for this command only, on desktops and hosts alike; leave mise's saved policy alone.
+    return { command: byHand[0]!, byHand, executable: mise, args: ['upgrade', found.miseTool, '--minimum-release-age', '0s'], cwd: homedir(),
       ...(needsInstallStep(provider, found.miseTool) && packageName ? { installStep: { mise, tool: found.miseTool, packageName } } : {}) }
   }
   return undefined

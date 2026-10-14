@@ -59,6 +59,10 @@ export function clientUpdateHost(directory: string, home: string) {
     if (args[0] === 'where') return { ok: true, stdout: join(installs, FOLDERS.grok, INSTALLED.grok) }
     if (args[0] === 'upgrade') {
       const id = (Object.keys(TOOLS) as (keyof typeof TOOLS)[]).find(key => TOOLS[key] === args[1])!
+      // A release less than 24 hours old is held back with exit 0 unless this explicit update removes the delay.
+      if (!args.includes('--minimum-release-age') || args[args.indexOf('--minimum-release-age') + 1] !== '0s') {
+        return { ok: true, stdout: 'mise All tools are up to date' }
+      }
       await wait(700)
       if (id === 'codex' && existsSync(join(directory, 'codex.fail'))) {
         rmSync(join(directory, 'codex.fail'))

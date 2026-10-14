@@ -135,7 +135,7 @@ test('a host’s client updates show on its tiles and run there, one at a time, 
     // The failed tile keeps one line; Details has the rest, the command to run by hand, and what mise printed.
     await tile('Codex').getByText('Details').click()
     await expect(tile('Codex')).toContainText('Or run this on forge:')
-    await expect(tile('Codex').locator('code')).toHaveText('mise upgrade codex')
+    await expect(tile('Codex').locator('code')).toHaveText('mise upgrade codex --minimum-release-age 0s')
     await tile('Codex').getByText('What mise printed').click()
     await expect(tile('Codex')).toContainText('mise ERROR …: exit status 1')
     await expect(tile('Codex')).toContainText('…: The process cannot access the file. connection reset by peer')
