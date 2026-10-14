@@ -46,7 +46,7 @@ import { resolveFilesBinding } from '../files/binding'
 import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
 import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './sottoRequests'
-import { watcherMessagesAsTyped } from './watcherRequestNote'
+import { watcherMessageRequests, watcherMessagesAsTyped } from './watcherRequestNote'
 import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
@@ -634,7 +634,7 @@ export class AgentControl {
       snapshot = { ...snapshot, threads: snapshot.threads.filter(thread => this.watcherAvailable(thread.id)) }
     }
     // Without a line Sotto put after them, in Watcher's pane, Copy and the phone alike.
-    snapshot = watcherMessagesAsTyped(snapshot)
+    snapshot = watcherMessagesAsTyped(snapshot, watcherMessageRequests(this.watcher.requests))
     return this.sottoRequests ? withSottoRequests(snapshot, this.sottoRequests.requests()) : snapshot
   }
   /**

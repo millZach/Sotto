@@ -254,7 +254,7 @@ it('gives a Grok Watcher its request note as one Sotto line after the user’s w
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId })
   f.host.useBrowserTools!({ call: async () => ({ content: [] }), definitions: [], mcpServer: async () => ({ name: 'sotto_browser', type: 'http', url: 'http://127.0.0.1:12345/mcp', headers: [] }) })
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: ordinary, projectId: f.projectId, title: 'Ordinary', modelId: f.modelId })
-  const typed = 'Synthetic instruction to Watcher', note = watcherRequestNote(randomUUID(), randomUUID())
+  const typed = 'Synthetic instruction to Watcher', request = { requestId: randomUUID(), hostId: randomUUID() }, note = watcherRequestNote(request.requestId, request.hostId)
   for (const threadId of [id, ordinary]) {
     expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: typed, watcherRequestNote: note })).accepted).toBe(true)
   }
@@ -262,7 +262,7 @@ it('gives a Grok Watcher its request note as one Sotto line after the user’s w
   // The line lists no projects and is the only addition; an ordinary thread is sent the words alone.
   expect(prompts).toEqual([[{ type: 'text', text: typed + watcherRequestLine(note) }], [{ type: 'text', text: typed }]])
   // Grok's own echo is what Sotto reads back, so the coordinator's snapshot is where the line comes off (see watcherRequestNote.test.ts).
-  expect(watcherTextAsTyped((await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.find(message => message.role === 'user')!.text)).toBe(typed)
+  expect(watcherTextAsTyped((await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.find(message => message.role === 'user')!.text, request)).toBe(typed)
 })
 
 it('keeps Devin unavailable because its adapter cannot attach a scoped Sotto server', async () => {

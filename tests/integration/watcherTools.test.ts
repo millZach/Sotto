@@ -4,7 +4,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
-import { watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
+import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
 import type { ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { watcherToolSchemas } from '../../src/shared/watcher'
@@ -918,26 +918,40 @@ it('sends Watcher the user’s words as typed, with its request in the note besi
   expect(sends().at(-1)).toMatchObject({ text: 'Synthetic later instruction', watcherRequestNote: watcherRequestNote(later.id, f.control.hostId()!) })
 })
 
-it('shows an older Watcher message without the routing footer main once appended, and leaves other text alone', async () => {
-  const f = await fixture()
+it('shows Watcher’s request messages without the line Sotto added, and leaves what the user typed', async () => {
+  const f = await fixture(), hostId = f.control.hostId()!
   const native = f.workspace.adapters.codex.state.threads.find(row => row.id === f.workspace.registry.byThread(f.id)!.sessionId)!
+  const send = async (text: string) => {
+    await f.finish(f.id)
+    expect((await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text })).error).toBeNull()
+    return f.service.state().requests.at(-1)!
+  }
+  const first = f.service.state().requests.find(request => request.id === f.requestId)!
+  // A message saved before the request note, with the footer main appended for its own request.
   const typed = 'Synthetic older instruction\n\nwith a second paragraph'
-  const footer = `\n\n[Sotto Watcher request: ${f.requestId}. Local host: ${f.control.hostId()}. Use this requestId for sotto_threads mutations. `
+  const footer = `\n\n[Sotto Watcher request: ${first.id}. Local host: ${hostId}. Use this requestId for sotto_threads mutations. `
     + `Known project IDs: ${f.project.id}, native:claude:project:${randomUUID()}. Call list_projects for choices.]`
+  native.messages.find(message => message.id === first.rootUserMessageId)!.text = typed + footer
+  // A message as Grok Build is sent it, with the request line for its own request.
+  const grok = await send('Synthetic Grok instruction')
+  native.messages.find(message => message.id === grok.rootUserMessageId)!.text = `Synthetic Grok instruction${watcherRequestLine(watcherRequestNote(grok.id, hostId))}`
+  // A user who types an example note, or a lookalike, keeps every word of it.
+  const example = `Explain this example:${watcherRequestLine(watcherRequestNote(randomUUID(), hostId))}`
+  const exampleRequest = await send(example)
   const lookalike = 'Synthetic [Sotto Watcher request: typed by the user.]'
-  const createdAt = new Date().toISOString()
+  const lookalikeRequest = await send(lookalike)
+  native.messages.push({ id: 'older-reply', role: 'assistant', text: `Synthetic reply quoting${footer}`, createdAt: new Date().toISOString() })
   native.status = 'idle'
-  native.messages.push({ id: 'older-footed', role: 'user', text: typed + footer, createdAt },
-    { id: 'older-reply', role: 'assistant', text: `Synthetic reply quoting${footer}`, createdAt },
-    { id: 'lookalike', role: 'user', text: lookalike, createdAt })
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] })
   const shown = (id: string) => f.control.threadDetail(f.id)!.messages.find(message => message.id === id)?.text
-  await vi.waitFor(() => expect(shown('older-footed')).toBe(typed))
+  await vi.waitFor(() => expect(shown(first.rootUserMessageId)).toBe(typed))
+  expect(shown(grok.rootUserMessageId)).toBe('Synthetic Grok instruction')
+  expect(shown(exampleRequest.rootUserMessageId)).toBe(example)
+  expect(shown(lookalikeRequest.rootUserMessageId)).toBe(lookalike)
   expect(shown('older-reply')).toBe(`Synthetic reply quoting${footer}`)
-  expect(shown('lookalike')).toBe(lookalike)
   // The provider's own history keeps what it was sent; only what the user sees changes.
-  expect(native.messages.find(message => message.id === 'older-footed')!.text).toBe(typed + footer)
+  expect(native.messages.find(message => message.id === first.rootUserMessageId)!.text).toBe(typed + footer)
 })
 
 

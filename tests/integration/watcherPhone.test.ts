@@ -98,22 +98,28 @@ it('admits a paired phone origin without Can answer, keeps the computer defaults
   expect(await peer.call('generic', { op: 'command', command: { type: 'manual-send', threadId: f.target.threadId, text: 'Synthetic forged generic' } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
 })
 
-it('shows an older phone instruction as typed, without the routing footer main once appended', async () => {
-  const f = await fixture(), peer = await f.pair(), packet = f.send(peer.paired.clientId)
-  await peer.call('send', packet); await f.finish(f.target.threadId)
-  const request = f.watcher.state().requests.at(-1)!
-  const footer = `\n\n[Sotto Watcher request: ${request.id}. Local host: ${f.target.hostId}. Use this requestId for sotto_threads mutations. `
+it('shows phone instructions as typed: without the footer main once appended, and with a note the user typed', async () => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); await f.finish(f.target.threadId)
+  const older = f.watcher.state().requests.at(-1)!
+  // An instruction saved before the request note, with the footer main appended for its own request.
+  const footer = `\n\n[Sotto Watcher request: ${older.id}. Local host: ${f.target.hostId}. Use this requestId for sotto_threads mutations. `
     + `Known project IDs: native:claude:project:${randomUUID()}. Call list_projects for choices.]`
   const typed = 'Synthetic older phone instruction'
-  f.native(f.target.threadId).messages.push({ id: 'older-footed', role: 'user', text: typed + footer, createdAt: new Date(Date.now() + 1_000).toISOString() })
+  f.native(f.target.threadId).messages.find(row => row.id === older.rootUserMessageId)!.text = typed + footer
+  // A later instruction in which the user typed an example note of their own.
+  const example = `Explain this example:\n\n[Sotto Watcher request: ${randomUUID()}. Local host: ${f.target.hostId}. Use this requestId for sotto_threads changes made for this message.]`
+  await peer.call('send-example', f.send(peer.paired.clientId, randomUUID(), example)); await f.finish(f.target.threadId)
+  const later = f.watcher.state().requests.at(-1)!
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  await vi.waitFor(() => expect(f.phone.state(false).conversation.messages.find(row => row.id === 'older-footed')?.text).toBe(typed))
+  const text = (id: string) => f.phone.state(false).conversation.messages.find(row => row.id === id)?.text
+  await vi.waitFor(() => expect(text(older.rootUserMessageId)).toBe(typed))
+  expect(text(later.rootUserMessageId)).toBe(example)
   const read = await peer.call('read', { op: 'watcher-phone-read' })
   expect(watcherPhoneResultSchema.parse(read.result)).toMatchObject({ status: 'ok', state: { conversation: { messages: expect.arrayContaining([
-    expect.objectContaining({ id: 'older-footed', text: typed })]) } } })
-  expect(JSON.stringify(read.result)).not.toContain('Sotto Watcher request')
+    expect.objectContaining({ id: older.rootUserMessageId, text: typed }), expect.objectContaining({ id: later.rootUserMessageId, text: example })]) } } })
+  expect(JSON.stringify(read.result)).not.toContain('Use this requestId for sotto_threads mutations')
 })
-
 it('does not attach an old receipt to an assistant reply after a later user instruction', async () => {
   const f = await fixture(), peer = await f.pair(); await peer.call('first', f.send(peer.paired.clientId)); await f.start()
   const firstRequest = f.watcher.state().requests.at(-1)!.id
