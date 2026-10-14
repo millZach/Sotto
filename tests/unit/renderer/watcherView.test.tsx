@@ -71,6 +71,9 @@ function fakeBridge(state: WatcherRoomState) {
     get: vi.fn(async () => ok(state)),
     open: vi.fn(async () => ok({ ...state, current: identity })),
     setLimit: vi.fn(async ({ limit }: { limit: number }) => ok({ ...state, inFlightLimit: limit })),
+    setPermission: vi.fn(async ({ runtimeMode }: { runtimeMode: WatcherRoomState['runtimeMode'] }) => ok({ ...state, runtimeMode })),
+    watchThread: vi.fn(async () => ok(state)),
+    unwatchThread: vi.fn(async () => ok(state)),
     prepareStopAll: vi.fn(),
     stopAll: vi.fn(),
     onChanged: vi.fn((listener: (next: WatcherRoomState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }),
@@ -105,10 +108,10 @@ function renderRoom(state: AgentState, room: WatcherRoomState, watcherEnabled = 
 
 /** Waits for Watcher's own pane: until then the room shows its header over a status line, which the pane's header replaces. */
 async function paneReady(): Promise<void> {
-  await screen.findByRole('meter', { name: 'Watched threads' })
+  await screen.findByRole('tab', { name: /^Watched, / })
 }
 
-beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); localStorage.clear(); roomView.set({ besideId: null, share: 0.5 }); firstMessage.clear() })
+beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); localStorage.clear(); roomView.set({ besideId: null, share: 0.5, tab: 'conversation' }); firstMessage.clear() })
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
 
 describe("Watcher's room", () => {
@@ -116,12 +119,13 @@ describe("Watcher's room", () => {
     const { bridge, command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
     expect(await screen.findByRole('heading', { level: 2, name: 'Start Watcher' })).toBeInTheDocument()
     expect(screen.getByText(/only you answer a thread’s questions and permissions/)).toBeInTheDocument()
-    // No meter or actions before Watcher runs.
-    expect(screen.queryByRole('meter', { name: 'Watched threads' })).toBeNull()
+    // No tabs or actions before Watcher runs.
+    expect(screen.queryByRole('tablist', { name: 'Watcher’s view' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'More Watcher actions' })).toBeNull()
     const chosen = screen.getByRole('group', { name: 'Watcher’s model' })
     expect(within(chosen).getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Sonnet 4.5')
-    expect(within(chosen).getByText('Ask before changes')).toBeInTheDocument()
+    // What it may do without asking is chosen here too, and a new Watcher starts on Ask for approval.
+    expect(within(chosen).getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveTextContent('Ask for approval')
     expect(screen.getByText('Your first message starts Watcher on Sonnet 4.5, with your own Claude Code account.')).toBeInTheDocument()
     const send = screen.getByRole('button', { name: 'Start Watcher and send' })
     expect(send).toBeDisabled()
@@ -207,7 +211,7 @@ describe("Watcher's room", () => {
     expect(screen.queryByRole('button', { name: 'Start Watcher and send' })).toBeNull()
   })
 
-  it('shows Watcher’s own pane under the Sotto Owl tile, with its meter and pinned asking mode and none of a thread’s Git, menu or permissions controls', async () => {
+  it('shows Watcher’s own pane under the Sotto Owl tile, with its tabs and its own permissions and none of a thread’s Git, menu or permissions controls', async () => {
     const { command } = renderRoom(stateWithWatcher(), roomState())
     const pane = await screen.findByRole('region', { name: 'Watcher' })
     expect(within(pane).getByRole('heading', { level: 1, name: 'Watcher' })).toBeInTheDocument()
@@ -215,13 +219,15 @@ describe("Watcher's room", () => {
     // The tile is the owl in the corner; the small owl that sat before Watcher's name is gone, and so is the sidebar.
     expect(pane.querySelector('.watcher-head .watcher-owl')).toBeNull()
     expect(screen.queryByRole('complementary')).toBeNull()
-    expect(within(pane).getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '2 of 4 watched')
+    expect(within(pane).getByRole('tab', { name: 'Conversation' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(pane).getByRole('tab', { name: 'Watched, 1 thread' })).toHaveAttribute('aria-selected', 'false')
+    expect(within(pane).queryByRole('meter')).toBeNull()
     expect(within(pane).getByText('Watching Footer links.')).toBeInTheDocument()
     // Watcher's replies are signed Watcher, whatever provider it runs on.
     expect(within(pane).getByText('Watcher', { selector: '.thread-message__who' })).toBeInTheDocument()
     expect(within(pane).queryByText('Codex', { selector: '.thread-message__who' })).toBeNull()
     expect(within(pane).getByRole('textbox', { name: 'Watcher message' })).toBeInTheDocument()
-    expect(within(pane).getByText('Ask before changes')).toBeInTheDocument()
+    expect(within(pane).getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveTextContent('Ask for approval')
     expect(within(pane).queryByRole('combobox', { name: 'Thread permissions' })).toBeNull()
     expect(within(pane).queryByRole('button', { name: 'More actions' })).toBeNull()
     // Watcher's history is read while the room shows it; nothing selects it on the Threads page.
@@ -351,7 +357,7 @@ describe("Watcher's room", () => {
     fireEvent.click(within(pane).getByRole('combobox', { name: 'Thread model' }))
     const picker = screen.getByRole('dialog', { name: 'Choose model' })
     expect(within(picker).getAllByRole('option').map(option => option.textContent)).toEqual([expect.stringContaining('GPT-5.4')])
-    expect(within(pane).getByText('Ask before changes')).toBeInTheDocument()
+    expect(within(pane).getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveTextContent('Ask for approval')
   })
 
   it('names each thread that needs the user and why, under the header', async () => {
@@ -578,16 +584,17 @@ describe("Watcher's room", () => {
     const limit = within(panel).getByRole('combobox', { name: 'Threads in flight' })
     expect(limit).toHaveFocus()
     expect(limit).toHaveValue('4')
-    expect(limit).toHaveAccessibleDescription(/Lowering it stops nothing/)
+    // It limits new starts, not watching.
+    expect(limit).toHaveAccessibleDescription(/It watches any number, and lowering this stops nothing/)
     fireEvent.change(limit, { target: { value: '3' } })
     await waitFor(() => expect(bridge.setLimit).toHaveBeenCalledWith({ limit: 3 }))
-    await waitFor(() => expect(screen.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '2 of 3 watched'))
+    await waitFor(() => expect(limit).toHaveValue('3'))
     fireEvent.keyDown(limit, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'Watcher settings' })).toBeNull()
     expect(more).toHaveFocus()
-    // A lower limit than the threads in flight stops nothing; the meter says so.
+    // A lower limit than the threads in flight stops nothing, and the watched count is not the limit's.
     act(() => publish(roomState({ inFlightLimit: 1, observedAt: new Date(NOW + 1_000).toISOString() })))
-    expect(screen.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '2 of 1 watched')
+    expect(screen.getByRole('tab', { name: 'Watched, 1 thread' })).toBeInTheDocument()
   })
 
   /** A window whose Sotto browser opens `footer-links`' pages, and whose system browser opens anything. */
@@ -662,7 +669,7 @@ describe("Watcher's room", () => {
     fireEvent.click(await screen.findByRole('button', { name: 'More Watcher actions' }))
     fireEvent.change(screen.getByRole('combobox', { name: 'Threads in flight' }), { target: { value: '7' } })
     expect(await screen.findByRole('alert')).toHaveTextContent('The limit was not saved. It is still 4.')
-    expect(screen.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '2 of 4 watched')
+    expect(screen.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('4')
   })
 })
 
@@ -733,7 +740,7 @@ describe('a watched thread', () => {
     return bridge
   }
 
-  it('shows the owl after its provider logo in its row and its pane, and says what a send does', async () => {
+  it('shows the owl after its provider logo in its row and its pane, and says what watching does, with Stop watching', async () => {
     renderThreadsPage(true)
     const sidebar = within(screen.getByRole('complementary', { name: 'Thread sidebar' }))
     const row = await sidebar.findByRole('button', { name: 'Footer links' })
@@ -742,7 +749,9 @@ describe('a watched thread', () => {
     const pane = screen.getByRole('region', { name: 'Footer links' })
     expect(within(pane).getByRole('img', { name: 'Watched by Watcher' })).toBeInTheDocument()
     expect(within(pane).queryByRole('button', { name: 'Watched by Watcher' })).toBeNull()
-    expect(within(pane).getByText('Watched by Watcher. If you send here, Watcher stops sending to it.')).toBeInTheDocument()
+    expect(within(pane).getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeInTheDocument()
+    expect(within(pane).getByRole('button', { name: 'Stop watching Footer links' })).toBeInTheDocument()
+    expect(within(pane).getByRole('button', { name: 'Watch Footer links' })).toHaveAttribute('aria-pressed', 'true')
     // Watcher itself lives in its room, not in the Threads list.
     expect(sidebar.queryByRole('button', { name: 'Watcher' })).toBeNull()
     expect(within(sidebar.getByRole('button', { name: 'Weekly note' })).queryByRole('img', { name: 'Watched by Watcher' })).toBeNull()
@@ -751,7 +760,8 @@ describe('a watched thread', () => {
   it('shows nothing of Watcher with the gate off, and never asks main', () => {
     const bridge = renderThreadsPage(false)
     expect(screen.queryAllByRole('img', { name: 'Watched by Watcher' })).toEqual([])
-    expect(screen.queryByText(/If you send here, Watcher stops sending to it/)).toBeNull()
+    expect(screen.queryByText(/Watched by Watcher/)).toBeNull()
+    expect(screen.queryAllByRole('button', { name: /^Watch |^Stop watching/ })).toEqual([])
     expect(bridge.get).not.toHaveBeenCalled()
     expect(bridge.onChanged).not.toHaveBeenCalled()
   })
