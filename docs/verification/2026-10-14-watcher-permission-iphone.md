@@ -26,6 +26,12 @@ SottoAppModel (`WatcherModelTests`): the permission goes through the wire and th
 
 Focus journeys: `testWatchersPermissionsChangeFromItsBox`, `testAReplyWhereWatcherChangedFilesItselfSaysSo` and `testWatchAThreadFromItsPageAndStopWatchingFromWatched` are new. `testAPhoneWithoutCanAnswerSaysSoInWatchersPage` now opens the permissions without Can answer, `testStopAllAsksFirst` reads the lead instead of the meter, and `testAReceiptRowOpensItsThread` reads the new reply-box line. Watcher's scroll band now ends above the chip and the toast. Screenshots to read once the job runs: `watcher-permissions-*`, `watcher-own-change-*`, `watch-thread-page-*`, `watcher-watched-card-*`, `watcher-watched-stopped-dark`, `watcher-watch-a-thread-dark` and `watcher-permissions-asks-only-dark`.
 
+## The first Native iOS run
+
+[Run 38644565116](https://github.com/millZach/Sotto/actions/runs/38644565116) built the app and passed every SottoCore and SottoAppModel test on the SE. Four Focus journeys failed there; each cause was read from the run's `ios-focus-journeys` screenshots, hierarchies and screen recordings, and none of the fixes was compiled or run here.
+
+- **`testWatchAThreadFromItsPageAndStopWatchingFromWatched`** waited twice on one expectation for Watch reading On, and XCTest throws on the second wait. The app had done its part: Watch, the toast, Undo and the toast after it all passed. Each wait for Watch's value now makes its own expectation.
+
 ## Judgement calls
 
 - **Labels.** The iPhone's own names for the four modes, as the approved phone frames use, rather than the desktop's Ask for approval and Auto. Full access's line names the computer instead of "this computer", which on a phone would mean the phone.

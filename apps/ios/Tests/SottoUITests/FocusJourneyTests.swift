@@ -1189,23 +1189,26 @@ import XCTest
         XCTAssertEqual(watch.label, "Watch")
         XCTAssertEqual(watch.value as? String, "Off")
         XCTAssertFalse(byID("watched-takeover").exists)
+        // XCTest lets an expectation be waited on only once, so each wait for Watch's value makes its own.
+        func watchReads(_ value: String) -> XCTWaiter.Result {
+            let reads = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: watch)
+            return XCTWaiter.wait(for: [reads], timeout: 5)
+        }
         watch.tap()
         let toast = byID("watch-toast")
         XCTAssertTrue(toast.waitForExistence(timeout: 5), "What the press did is said at once")
         XCTAssertTrue(text("Watcher is watching Add keyboard shortcuts.").exists)
-        let on = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "On"), object: watch)
-        XCTAssertEqual(XCTWaiter.wait(for: [on], timeout: 5), .completed, "Watch is on")
+        XCTAssertEqual(watchReads("On"), .completed, "Watch is on")
         XCTAssertTrue(text("Codex on Laptop · Sotto, watched by Watcher").exists, "The owl follows the provider's logo")
         capture("watch-thread-page-dark")
         // Undo takes it back.
         let undo = app.buttons["watch-undo"]
         XCTAssertEqual(undo.label, "Undo: stop watching Add keyboard shortcuts")
         undo.tap()
-        let off = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Off"), object: watch)
-        XCTAssertEqual(XCTWaiter.wait(for: [off], timeout: 5), .completed, "Undo stops watching it")
+        XCTAssertEqual(watchReads("Off"), .completed, "Undo stops watching it")
         XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 5))
         watch.tap()
-        XCTAssertEqual(XCTWaiter.wait(for: [on], timeout: 5), .completed)
+        XCTAssertEqual(watchReads("On"), .completed, "Watch watches it again")
         // Once the toast goes, the box says what watching means.
         let line = byID("watched-takeover")
         XCTAssertTrue(line.waitForExistence(timeout: 20))
