@@ -705,9 +705,14 @@ export class UsageStore {
     }
     db.exec(`
       CREATE INDEX IF NOT EXISTS token_rows_date ON token_rows(day);
-      CREATE INDEX IF NOT EXISTS token_rows_model ON token_rows(provider, model_id);
-      CREATE INDEX IF NOT EXISTS token_rows_group ON token_rows(provider, thread_id, group_key);
-      CREATE INDEX IF NOT EXISTS token_rows_served ON token_rows(provider, thread_id, sub_agent, at);
+      -- Every client's history makes hundreds of thousands of rows (ADR-0080), so each index covers only the rows its
+      -- lookups reach: grouped rows for group checks, dated main-chain rows for the served-model join. Queries read
+      -- token_buckets, so no index by model is kept. An older build that reopens the store recreates its own.
+      DROP INDEX IF EXISTS token_rows_model;
+      DROP INDEX IF EXISTS token_rows_group;
+      DROP INDEX IF EXISTS token_rows_served;
+      CREATE INDEX IF NOT EXISTS token_rows_grouped ON token_rows(provider, thread_id, group_key) WHERE group_key IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS token_rows_served_main ON token_rows(provider, thread_id, at) WHERE sub_agent=0 AND at IS NOT NULL;
       CREATE INDEX IF NOT EXISTS prompt_rows_date ON prompt_rows(day);
       CREATE INDEX IF NOT EXISTS prompt_rows_model ON prompt_rows(provider, model_id);
       CREATE TABLE IF NOT EXISTS usage_history (
