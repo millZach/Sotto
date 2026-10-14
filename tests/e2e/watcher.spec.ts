@@ -9,6 +9,7 @@ import { E2E_THREADS_NOW } from '../../src/shared/e2e'
 import { contrastRatio, parseThemeRgb } from '../../src/shared/themes/color'
 import { WATCHER_STAND_IN_KEY, type WatcherStandInSeed } from '../../src/renderer/src/e2e/watcherStandIn'
 import type { WatcherOwnChange } from '../../src/shared/watcher'
+import type { WatcherRoomState } from '../../src/shared/watcherRoom'
 import type { AgentMessage } from '../../src/shared/agents'
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
@@ -25,8 +26,9 @@ import { resizeContentWindow } from './support/sottoWindow'
  * October 11, 2026: the first entry by sending, the needs-you line, the Overview over the room on All threads, a thread
  * opened beside Watcher, the floating switch and the badges, on the Sotto Owl track, with stable showing none of it.
  * Main's Watcher side is stood in for by a seeded projection (src/renderer/src/e2e/watcherStandIn.ts), so these runs
- * check the room on a fixed picture, except one journey that seeds nothing and runs against main's own Watcher over
- * the fake Codex app server. Run after `npm run build`. Captures go to disposable run evidence;
+ * check the room on a fixed picture, except the journeys that seed nothing and run against main's own Watcher over
+ * the fake Codex app server: its start, and its permissions, Watch and Stop watching and own-change line through main's
+ * own calls and projection. Run after `npm run build`. Captures go to disposable run evidence;
  * `SOTTO_E2E_EVIDENCE=publish` writes artifacts/watcher-room.
  */
 const evidenceRoot = evidenceDirectory('artifacts/watcher-room')
@@ -194,6 +196,71 @@ async function captureNote(launched: LaunchedSotto, name: string): Promise<void>
   await settle(launched.page)
   await holdOwlSky(launched.page)
   await captureWindow(launched.app, resolve(permissionEvidence, name))
+}
+
+/**
+ * Sotto Owl over the fake Codex app server the integration tests use, with nothing seeded, so the room reads main's own
+ * bridge (preload's `window.sotto.watcher`, main's WatcherService). `script` is what the fake Codex does on every turn
+ * until a journey rewrites `<root>/codex/script.json`; `<root>/worker` is a folder for a worker project.
+ */
+async function withMainWatcher(prefix: string, script: Readonly<Record<string, unknown>>, run: (launched: LaunchedSotto, root: string) => Promise<void>): Promise<void> {
+  const profile = (await ownedE2EProfile({ prefix })).directory
+  const root = join(profile, 'native-fixture')
+  for (const folder of ['claude', 'codex', 'worker']) await mkdir(join(root, folder), { recursive: true })
+  await writeFile(join(root, 'codex', 'script.json'), JSON.stringify(script))
+  const previous = { root: process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT, executable: process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE }
+  process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = root
+  process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = process.execPath
+  try {
+    await onReleaseTrack('owl', async () => {
+      const launched = await launchSotto('success', profile)
+      try {
+        const { page } = launched
+        await page.evaluate(async () => {
+          await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
+          const agents = window.sotto!.agents!
+          await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
+          await agents.command({ type: 'connect', provider: 'codex' })
+        })
+        await page.reload()
+        await openThreads(page)
+        // Main's bridge, not a stand-in: nothing is seeded, and main answers that no Watcher exists yet.
+        expect(await page.evaluate(key => localStorage.getItem(key), WATCHER_STAND_IN_KEY)).toBeNull()
+        expect(await page.evaluate(async () => (await window.sotto!.watcher!.get()))).toMatchObject({ status: 'ok', state: { current: null } })
+        await run(launched, root)
+      } finally { await closeSotto(launched) }
+    })
+  } finally {
+    if (previous.root === undefined) delete process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT
+    else process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = previous.root
+    if (previous.executable === undefined) delete process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE
+    else process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = previous.executable
+    await removeOwnedE2EProfile(profile)
+  }
+}
+
+/** Main's projection of Watcher, read through the preload as the room reads it. */
+async function mainRoom(page: Page): Promise<WatcherRoomState> {
+  const read = await page.evaluate(async () => window.sotto!.watcher!.get())
+  if (read.status !== 'ok') throw new Error(read.message)
+  return read.state
+}
+
+/** A thread on Codex in a project of its own, made through main and given nothing to do; its window ID and main's address. */
+async function createWorker(page: Page, folder: string, title: string): Promise<{ readonly id: string; readonly target: { readonly hostId: string; readonly threadId: string } }> {
+  const id = await page.evaluate(async ({ path, title }) => {
+    const agents = window.sotto!.agents!
+    const opened = await agents.command({ type: 'create-project', title: 'Watch without sending', path, useExisting: true, provider: 'codex' })
+    if (opened.error || !opened.activeProjectId) throw new Error('Could not create the test worker project.')
+    const room = await window.sotto!.watcher!.get()
+    if (room.status !== 'ok' || !room.state.currentOptions) throw new Error('Watcher is unavailable.')
+    const created = await agents.command({ type: 'create-thread', projectId: opened.activeProjectId, modelId: room.state.currentOptions.modelId,
+      title, workingCopy: 'shared', runtimeMode: 'approval-required' })
+    if (created.error || !created.activeThreadId) throw new Error('Could not create the test worker.')
+    return created.activeThreadId
+  }, { path: folder, title })
+  const hostId = (await mainRoom(page)).current!.target.hostId
+  return { id, target: { hostId, threadId: parseHostEntityKey(id)?.id ?? id } }
 }
 
 /** Every reading in the room on or above 4.5:1, recorded under `key`. */
@@ -921,98 +988,138 @@ test.describe("Watcher's room on the built app", () => {
   })
 
   /**
-   * The one journey here with no stand-in: the room reads main's own bridge (preload's `window.sotto.watcher`, main's
-   * WatcherService) over the fake Codex app server the integration tests use, so starting Watcher is main's real `open`
-   * and the first message is a real send to a real Watcher thread.
+   * Journeys with no stand-in: the room reads main's own bridge over the fake Codex app server (`withMainWatcher`), so
+   * starting Watcher is main's real `open` and the first message is a real send to a real Watcher thread.
    */
   test('against main’s own Watcher, the first message starts Watcher on Codex and reaches it', async () => {
     test.setTimeout(3 * 60_000)
-    const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-watcher-main-' })).directory
-    const root = join(profile, 'native-fixture')
-    for (const folder of ['claude', 'codex', 'worker']) await mkdir(join(root, folder), { recursive: true })
-    await writeFile(join(root, 'codex', 'script.json'), JSON.stringify({ reply: 'Watcher here. I will look at the release notes.' }))
-    const previous = { root: process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT, executable: process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE }
-    process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = root
-    process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = process.execPath
-    try {
-      await onReleaseTrack('owl', async () => {
-        const launched = await launchSotto('success', profile)
-        try {
-          const { page } = launched
-          await page.evaluate(async () => {
-            await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
-            const agents = window.sotto!.agents!
-            await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
-            await agents.command({ type: 'connect', provider: 'codex' })
-          })
-          await page.reload()
-          await openThreads(page)
-          // Main's bridge, not a stand-in: nothing is seeded, and main answers that no Watcher exists yet.
-          expect(await page.evaluate(key => localStorage.getItem(key), WATCHER_STAND_IN_KEY)).toBeNull()
-          expect(await page.evaluate(async () => (await window.sotto!.watcher!.get()))).toMatchObject({ status: 'ok', state: { current: null } })
-          await resizeContentWindow(launched, 1280, 800)
-          await openRoom(page)
-          await expect(page.getByRole('heading', { level: 2, name: 'Start Watcher' })).toBeVisible()
-          await expect(page.getByRole('group', { name: 'Watcher’s model' }).getByRole('combobox', { name: 'Thread model' })).toBeVisible()
-          await page.getByRole('textbox', { name: 'Watcher message' }).click()
-          await page.keyboard.type('Check the release notes and tell me what is missing.')
-          await page.getByRole('button', { name: 'Start Watcher and send' }).click()
-          // Main created Watcher on Codex: its own pane, its tabs, the message and the provider's reply.
-          const pane = watcherPane(page)
-          await expect(pane.getByRole('tab', { name: 'Watched, 0 threads' })).toBeVisible()
-          // Ask for approval, as a chip where main takes the choice and as a fact where it does not yet.
-          await expect(pane.locator('.thread-prompt__footer')).toContainText('Ask for approval')
-          await expect(pane.locator('[data-role="user"]')).toContainText('Check the release notes and tell me what is missing.')
-          await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. I will look at the release notes.')
-          await expect(pane.locator('[data-role="user"]')).toHaveCount(1)
-          const record = await page.evaluate(async () => (await window.sotto!.watcher!.get()))
-          expect(record).toMatchObject({ status: 'ok', state: { current: { provider: 'codex' } } })
-          // Exercise the new core bridge in the built app. The separate UI lane owns the controls.
-          expect(await page.evaluate(async () => window.sotto!.watcher!.setPermission!({ runtimeMode: 'full-access' })))
-            .toMatchObject({ status: 'ok', state: { runtimeMode: 'full-access', currentOptions: { runtimeMode: 'full-access' } } })
-          expect(await page.evaluate(async () => window.sotto!.watcher!.setPermission!({ runtimeMode: 'approval-required' })))
-            .toMatchObject({ status: 'ok', state: { runtimeMode: 'approval-required', currentOptions: { runtimeMode: 'approval-required' } } })
-          const workerId = await page.evaluate(async path => {
-            const agents = window.sotto!.agents!
-            const opened = await agents.command({ type: 'create-project', title: 'Watch without sending', path, useExisting: true, provider: 'codex' })
-            if (opened.error || !opened.activeProjectId) throw new Error('Could not create the test worker project.')
-            const room = await window.sotto!.watcher!.get()
-            if (room.status !== 'ok' || !room.state.currentOptions) throw new Error('Watcher is unavailable.')
-            const created = await agents.command({ type: 'create-thread', projectId: opened.activeProjectId, modelId: room.state.currentOptions.modelId,
-              title: 'Standing watch worker', workingCopy: 'shared', runtimeMode: 'approval-required' })
-            if (created.error || !created.activeThreadId) throw new Error('Could not create the test worker.')
-            return created.activeThreadId
-          }, join(root, 'worker'))
-          const target = { hostId: record.status === 'ok' ? record.state.current!.target.hostId : '', threadId: parseHostEntityKey(workerId)?.id ?? workerId }
-          expect(await page.evaluate(async target => window.sotto!.watcher!.watchThread!({ target }), target))
-            .toMatchObject({ status: 'ok', state: { inFlight: 0, standingWatches: [expect.objectContaining({ target })] } })
-          const detail = await page.evaluate(async threadId => window.sotto!.agents!.threadDetail!(threadId), workerId)
-          expect(detail?.messages).toHaveLength(0)
-          expect(await page.evaluate(async target => window.sotto!.watcher!.unwatchThread!({ target }), target))
-            .toMatchObject({ status: 'ok', state: { standingWatches: [] } })
-          // Watcher is its room's: not listed on the Threads page, and nothing there was selected for it.
-          await switchTab(page, 'Threads').click()
-          await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
-          await expect(page.getByRole('complementary', { name: 'Thread sidebar' }).getByText('Watcher', { exact: true })).toHaveCount(0)
-          // Threads in flight saves through main's own setLimit.
-          await switchTab(page, 'Watcher').click()
-          await page.getByRole('button', { name: 'More Watcher actions' }).click()
-          await page.getByRole('combobox', { name: 'Threads in flight' }).selectOption('3')
-          await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('3')
-          await expect.poll(async () => (await page.evaluate(() => window.sotto!.getSettings())).watcherInFlightLimit).toBe(3)
-          await page.keyboard.press('Escape')
-          await settle(page)
-          expect(await pageBoundProblems(page)).toEqual([])
-          await capture(launched, 'room-main-sotto-dark-1280x800.png')
-        } finally { await closeSotto(launched) }
-      })
-    } finally {
-      if (previous.root === undefined) delete process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT
-      else process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = previous.root
-      if (previous.executable === undefined) delete process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE
-      else process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = previous.executable
-      await removeOwnedE2EProfile(profile)
-    }
+    await withMainWatcher('sotto-e2e-watcher-main-', { reply: 'Watcher here. I will look at the release notes.' }, async (launched, root) => {
+      const { page } = launched
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      await expect(page.getByRole('heading', { level: 2, name: 'Start Watcher' })).toBeVisible()
+      await expect(page.getByRole('group', { name: 'Watcher’s model' }).getByRole('combobox', { name: 'Thread model' })).toBeVisible()
+      await page.getByRole('textbox', { name: 'Watcher message' }).click()
+      await page.keyboard.type('Check the release notes and tell me what is missing.')
+      await page.getByRole('button', { name: 'Start Watcher and send' }).click()
+      // Main created Watcher on Codex: its own pane, its tabs, the message and the provider's reply.
+      const pane = watcherPane(page)
+      await expect(pane.getByRole('tab', { name: 'Watched, 0 threads' })).toBeVisible()
+      // Main takes the choice, so Watcher's permissions is the chip, on Ask for approval the first time.
+      await expect(pane.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveText('Ask for approval')
+      await expect(pane.locator('[data-role="user"]')).toContainText('Check the release notes and tell me what is missing.')
+      await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. I will look at the release notes.')
+      await expect(pane.locator('[data-role="user"]')).toHaveCount(1)
+      expect(await mainRoom(page)).toMatchObject({ current: { provider: 'codex' } })
+      // The bridge itself, as a paired phone's management reaches the same calls.
+      expect(await page.evaluate(async () => window.sotto!.watcher!.setPermission!({ runtimeMode: 'full-access' })))
+        .toMatchObject({ status: 'ok', state: { runtimeMode: 'full-access', currentOptions: { runtimeMode: 'full-access' } } })
+      expect(await page.evaluate(async () => window.sotto!.watcher!.setPermission!({ runtimeMode: 'approval-required' })))
+        .toMatchObject({ status: 'ok', state: { runtimeMode: 'approval-required', currentOptions: { runtimeMode: 'approval-required' } } })
+      const worker = await createWorker(page, join(root, 'worker'), 'Standing watch worker')
+      expect(await page.evaluate(async target => window.sotto!.watcher!.watchThread!({ target }), worker.target))
+        .toMatchObject({ status: 'ok', state: { inFlight: 0, standingWatches: [expect.objectContaining({ target: worker.target })] } })
+      const detail = await page.evaluate(async threadId => window.sotto!.agents!.threadDetail!(threadId), worker.id)
+      expect(detail?.messages).toHaveLength(0)
+      expect(await page.evaluate(async target => window.sotto!.watcher!.unwatchThread!({ target }), worker.target))
+        .toMatchObject({ status: 'ok', state: { standingWatches: [] } })
+      // Watcher is its room's: not listed on the Threads page, and nothing there was selected for it.
+      await switchTab(page, 'Threads').click()
+      await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
+      await expect(page.getByRole('complementary', { name: 'Thread sidebar' }).getByText('Watcher', { exact: true })).toHaveCount(0)
+      // Threads in flight saves through main's own setLimit.
+      await switchTab(page, 'Watcher').click()
+      await page.getByRole('button', { name: 'More Watcher actions' }).click()
+      await page.getByRole('combobox', { name: 'Threads in flight' }).selectOption('3')
+      await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('3')
+      await expect.poll(async () => (await page.evaluate(() => window.sotto!.getSettings())).watcherInFlightLimit).toBe(3)
+      await page.keyboard.press('Escape')
+      await settle(page)
+      expect(await pageBoundProblems(page)).toEqual([])
+      await capture(launched, 'room-main-sotto-dark-1280x800.png')
+    })
+  })
+
+  test('against main’s own Watcher, its permissions, Watch and Stop watching and its own changes go through main', async () => {
+    test.setTimeout(4 * 60_000)
+    await withMainWatcher('sotto-e2e-watcher-manage-', { reply: 'Watcher here.' }, async (launched, root) => {
+      const { page } = launched
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      await page.getByRole('textbox', { name: 'Watcher message' }).click()
+      await page.keyboard.type('Keep an eye on my threads.')
+      await page.getByRole('button', { name: 'Start Watcher and send' }).click()
+      const pane = watcherPane(page)
+      await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here.')
+
+      // Watcher's permissions: a press is main's setPermission, Codex confirms it, and the chip settles on it.
+      const chip = pane.getByRole('combobox', { name: 'Watcher’s permissions' })
+      await expect(chip).toHaveText('Ask for approval')
+      await chip.click()
+      const list = page.getByRole('listbox', { name: 'Watcher’s permissions' })
+      await expect(list.getByRole('option')).toHaveText([/^Ask for approval/, /^Allow edits/, /^Auto/, /^Full access/])
+      await list.getByRole('option', { name: /^Full access/ }).click()
+      await expect(chip).toHaveText('Full access')
+      await expect.poll(async () => { const state = await mainRoom(page); return [state.runtimeMode, state.currentOptions?.runtimeMode] }).toEqual(['full-access', 'full-access'])
+      await expect(chip).not.toHaveAttribute('data-pending', 'true')
+      // Narrowing goes the same way, from the keyboard.
+      await chip.focus()
+      await page.keyboard.press('Enter')
+      await expect(list.getByRole('option', { name: /^Full access/ })).toBeFocused()
+      for (let step = 0; step < 3; step++) await page.keyboard.press('ArrowUp')
+      await page.keyboard.press('Enter')
+      await expect(chip).toHaveText('Ask for approval')
+      await expect.poll(async () => { const state = await mainRoom(page); return [state.runtimeMode, state.currentOptions?.runtimeMode] }).toEqual(['approval-required', 'approval-required'])
+
+      // Watch in a thread's pane header is main's watchThread: the room counts it, and nothing is sent to it.
+      const worker = await createWorker(page, join(root, 'worker'), 'Weekly worker')
+      await switchTab(page, 'Threads').click()
+      const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
+      await sidebar.getByRole('button', { name: 'Weekly worker', exact: true }).click()
+      const workerPane = page.getByRole('region', { name: 'Weekly worker' })
+      const watch = workerPane.getByRole('button', { name: 'Watch Weekly worker', exact: true })
+      await expect(watch).toHaveAttribute('aria-pressed', 'false')
+      await watch.click()
+      await expect(watch).toHaveAttribute('aria-pressed', 'true')
+      await expect(page.locator('.watch-toast')).toHaveText(/Watcher is watching Weekly worker\./)
+      await expect(workerPane.getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeVisible()
+      await expect(sidebar.getByRole('button', { name: 'Watch Weekly worker', exact: true })).toHaveAttribute('aria-pressed', 'true')
+      expect((await mainRoom(page)).standingWatches).toEqual([expect.objectContaining({ target: worker.target })])
+      expect((await mainRoom(page)).watchedThreads.find(row => row.target.threadId === worker.target.threadId)).toMatchObject({ watched: true, paused: false })
+      expect((await page.evaluate(async threadId => window.sotto!.agents!.threadDetail!(threadId), worker.id))?.messages).toHaveLength(0)
+      await switchTab(page, 'Watcher').click()
+      const watchedTab = pane.getByRole('tab', { name: 'Watched, 1 thread' })
+      await expect(watchedTab).toBeVisible()
+      await watchedTab.click()
+      const panel = pane.getByRole('tabpanel')
+      await expect(panel.getByRole('button', { name: 'Open Weekly worker beside Watcher' })).toBeVisible()
+      await expect(panel.getByText(/^Watching since .+\. Nothing sent yet\.$/)).toBeVisible()
+      await settle(page)
+      expect(await pageBoundProblems(page)).toEqual([])
+      await captureNote(launched, 'room-main-watched-dark-1280x800.png')
+      // Stop watching on its card is main's unwatchThread, and the count follows.
+      await panel.getByRole('button', { name: 'Stop watching Weekly worker', exact: true }).click()
+      await expect(pane.getByRole('tab', { name: 'Watched, 0 threads' })).toBeVisible()
+      await expect.poll(async () => (await mainRoom(page)).standingWatches).toEqual([])
+      await pane.getByRole('tab', { name: 'Conversation' }).click()
+
+      // A reply in which Watcher changed a file itself: main's own projection draws the line, with the reason line's words.
+      const reason = 'A one-word typo is smaller than briefing a thread.'
+      await writeFile(join(root, 'codex', 'script.json'), JSON.stringify({ reply: `I fixed the typo in README.md myself.\nWatcher change reason: ${reason}`, fileChanges: ['README.md'] }))
+      await pane.getByRole('textbox', { name: 'Watcher message' }).click()
+      await page.keyboard.type('Fix the README typo.')
+      await page.keyboard.press('Enter')
+      const line = pane.locator('.watcher-own')
+      await expect(line).toHaveText(`Watcher changed 1 file itself. Its reason: “${reason}”Show the file`)
+      expect((await mainRoom(page)).ownChanges).toEqual([expect.objectContaining({ fileCount: 1, reason, source: 'provider-file-change', files: [expect.stringMatching(/README\.md$/)] })])
+      // Captured folded: the file's full path names the disposable profile's folder.
+      await line.scrollIntoViewIfNeeded()
+      await settle(page)
+      expect(await pageBoundProblems(page)).toEqual([])
+      await captureNote(launched, 'room-main-own-change-dark-1280x800.png')
+      await line.getByRole('button', { name: 'Show the file' }).click()
+      await expect(line.getByRole('list', { name: 'Files Watcher changed' }).getByRole('listitem')).toHaveText([/README\.md$/])
+    })
   })
 
   test('stable shows nothing of Watcher, even with a projection seeded', async () => {

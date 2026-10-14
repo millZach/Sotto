@@ -472,6 +472,8 @@ artifacts/watcher-permission/*
 !artifacts/watcher-permission/threads-watch-dark-1280x800.png
 !artifacts/watcher-permission/threads-watch-dark-820x560.png
 !artifacts/watcher-permission/threads-watch-light-1280x800.png
+!artifacts/watcher-permission/room-main-watched-dark-1280x800.png
+!artifacts/watcher-permission/room-main-own-change-dark-1280x800.png
 # Omarchy muted-text proof; retain only the cited captures and measurements.
 artifacts/omarchy-muted/*
 !artifacts/omarchy-muted/changes-tokyo-night.png

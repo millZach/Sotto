@@ -1,6 +1,6 @@
 # Watcher's permissions, own changes and watching in the room, October 14, 2026
 
-On October 13, 2026 Zach picked from the [permission and watching mock-up](C:/Users/zache/AppData/Local/zstack-scratch/watcher-permission/index.html), which stays outside the repository: control A (Watcher's composer gets the Threads composer's permission chip), mark B (one quiet line under a reply in which Watcher changed files itself) and watch B (a Watch toggle in a thread's pane header, an owl toggle on each thread row, and a Watched view in the room like the phone's Watched tab). Watching lasts until it is stopped and has no limit. This note says what the desktop room now shows, what I worked out where the mock-up did not reach, how it was checked on the built app, and what waits on main. It is Owl only: stable shows and reads none of it.
+On October 13, 2026 Zach picked from the [permission and watching mock-up](C:/Users/zache/AppData/Local/zstack-scratch/watcher-permission/index.html), which stays outside the repository: control A (Watcher's composer gets the Threads composer's permission chip), mark B (one quiet line under a reply in which Watcher changed files itself) and watch B (a Watch toggle in a thread's pane header, an owl toggle on each thread row, and a Watched view in the room like the phone's Watched tab). Watching lasts until it is stopped and has no limit. This note says what the desktop room now shows, what I worked out where the mock-up did not reach, and how it was checked on the built app, against a seeded stand-in and against main's own Watcher. It is Owl only: stable shows and reads none of it.
 
 ## What an Owl build shows
 
@@ -16,8 +16,8 @@ On October 13, 2026 Zach picked from the [permission and watching mock-up](C:/Us
 
 - `src/renderer/src/watcher/WatcherPermissionChip.tsx` is the chip, built on `ChoiceChip` in `agents/ThreadOptions.tsx`, which gains an optional `foot` line kept outside the listbox. `threadChips.css` generalises the list's rules to a listbox inside a panel; the Threads chip draws as before.
 - `src/renderer/src/watcher/WatcherOwnChange.tsx` is the line; `ThreadTranscript.tsx` draws it in Watcher's own replies only, from a context only Watcher's pane provides.
-- `src/renderer/src/watcher/WatchControls.tsx` holds the toggles, the composer note and the toast; `watchNotice.ts` the toast's store; `WatcherWatched.tsx` the Watched view. `watcherRoom.tsx` offers `setPermission`, `watchThread`, `unwatchThread` and stable watch actions when the bridge has them, and reads who is watched from main's `watched` mark. `WatcherBeside.tsx`'s room view remembers the tab.
-- `src/renderer/src/e2e/watcherStandIn.ts` answers the three calls as the contract says main does.
+- `src/renderer/src/watcher/WatchControls.tsx` holds the toggles, the composer note and the toast; `watchNotice.ts` the toast's store; `WatcherWatched.tsx` the Watched view. `watcherRoom.tsx` offers `setPermission`, `watchThread`, `unwatchThread` and stable watch actions when the bridge has them, and reads who is watched from main's `watched` mark through `isWatchedRow` in `src/shared/watcherRoom.ts`, the same answer the phone's projection gives: a standing watch, or taking part in an active Watcher request. `WatcherBeside.tsx`'s room view remembers the tab.
+- `src/renderer/src/e2e/watcherStandIn.ts` answers the three calls as main does, for the journeys that need a fixed picture. Without a seed the room uses the preload's own bridge.
 - Styles are in `watcher.css`, on the `owned` list `themeTokens.test.ts` checks.
 
 ## What I worked out
@@ -34,7 +34,7 @@ On October 13, 2026 Zach picked from the [permission and watching mock-up](C:/Us
 
 ## How it was checked
 
-On the built app with `npx playwright test tests/e2e/watcher.spec.ts tests/e2e/watcher-gate.spec.ts`, against the seeded stand-in, and once against main's own Watcher over the fake Codex app server (where main's bridge offers neither call yet, so the room says the mode as a fact and offers no owl):
+On the built app with `npx playwright test tests/e2e/watcher.spec.ts tests/e2e/watcher-gate.spec.ts`, against the seeded stand-in, and in two journeys against main's own Watcher over the fake Codex app server (below):
 
 - The chip from the keyboard: Enter opens the list on the mode in force, the arrows move, Escape closes it back to the chip choosing nothing, Enter chooses and leaves focus on the chip, which is dashed with the caption until confirmed.
 - The own-change line with and without a reason, the files shown and folded from the keyboard, nothing on other replies.
@@ -49,6 +49,13 @@ Unit tests are in `tests/unit/renderer/watcherPermissionWatch.test.tsx`, with th
 
 In `artifacts/watcher-permission/`: `permissions-open-{dark,light}-1280x800.png`, `permissions-open-dark-1600x1000.png`, `permissions-open-{dark,light}-820x560.png`, `permissions-open-light-1280x800-reduced-motion.png`, `permissions-pending-dark-1280x800.png`, `permissions-pending-light-820x560.png`; `own-changes-{dark,light}-1280x800.png`, `own-changes-dark-820x560.png`; `threads-watch-{dark,light}-1280x800.png`, `threads-watch-dark-820x560.png`, `threads-row-owl-dark-1280x800.png`; `room-watched-dark-1600x1000.png`, `room-watched-{dark,light}-1280x800.png`, `room-watched-{dark,light}-820x560.png`, `room-watched-beside-dark-820x560.png`; `list-watch-{dark,light}-1280x800.png`; and `readings.json`. Set side by side with the mock-up's `1-A-dark-open`, `1-A-dark-pending`, `1-mark-B-dark-reason`, `2-B-dark-undo`, `2-B-dark-overview`, `2-B-dark-room` and `2-B-dark-room-820`, they differ in the fixture's threads and words, the absent effort chip (the fixture's model offers no efforts) and the missing per-file Show change.
 
-## What waits on main
+## Against main's own Watcher
 
-Sol's runtime branch implements `setPermission`, `watchThread` and `unwatchThread` in preload and main, and supplies `runtimeMode`, `currentOptions.runtimeMode`, the rows' `watched` and `paused`, `standingWatches` and `ownChanges`. Until it lands the room offers the chip and the owls only against the stand-in. At this branch's base, the contract commit leaves `npm run typecheck` failing in `src/main/agents/watcherTools.ts`, `src/main/index.ts` and `src/preload/index.ts`, which that branch fixes; nothing here touches them. The guide's runtime paragraph on in-flight capacity and takeover is left for that branch's ADR.
+Merged with the runtime branch, the room drives main's own calls. Two journeys seed nothing and run over the fake Codex app server: the room reads the preload's bridge and main's `WatcherService`.
+
+- The first message starts Watcher on Codex, and its composer offers **Watcher's permissions** as the chip, on Ask for approval.
+- A press on Full access in the chip is main's `setPermission`: main's projection then says `full-access` both as the remembered choice and as the current Watcher's mode, and the chip settles undashed. Back to Ask for approval from the keyboard does the same.
+- **Watch** in a worker's pane header on Threads is main's `watchThread`: main records a standing watch on that thread, its row is marked watched and not paused, the sidebar row's owl is pressed too, the composer note appears, and the worker is sent nothing. Watcher's header then reads **Watched 1**, and Watched shows its card, "Watching since" its time, "Nothing sent yet." **Stop watching** there is main's `unwatchThread`: main drops the watch and the header reads **Watched 0**.
+- With the fake Codex told to edit `README.md` in Watcher's next turn and to end its reply with `Watcher change reason: A one-word typo is smaller than briefing a thread.`, the own-change line under that reply comes from main's projection: "Watcher changed 1 file itself. Its reason: “A one-word typo is smaller than briefing a thread.”", and **Show the file** lists the file's full path. Main's `ownChanges` has the same count and reason, from the provider's file-change record.
+
+`room-main-watched-dark-1280x800.png` and `room-main-own-change-dark-1280x800.png` in `artifacts/watcher-permission/` are those two moments. Two things show there that this branch does not change: Watcher's user message still carries its routing line, and the reply itself still shows its `Watcher change reason:` line above the own-change line, since the reply is drawn as the provider wrote it.
