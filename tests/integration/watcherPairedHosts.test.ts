@@ -718,8 +718,11 @@ it('uses a fresh scoped connection for an admitted queue without renewing a rest
   await native.driver.completeTurn(nativeId, 'Synthetic reconnect completion')
   await socket.command({ type: 'refresh', provider: 'codex' })
   await vi.waitFor(async () => expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(2))
-  const receipt = await socket.watcherRead({ master: f.control.watcherRecord().current!, call: { name: 'read_operation', input: { operationId: queued.receipt!.operationId } } })
-  expect(receipt).toMatchObject({ receipt: { deliveryState: 'accepted' } })
+  // Seeing turn/start proves the send began, not that its acknowledgement has reached the receipt store.
+  await vi.waitFor(async () => {
+    const receipt = await socket.watcherRead({ master: f.control.watcherRecord().current!, call: { name: 'read_operation', input: { operationId: queued.receipt!.operationId } } })
+    expect(receipt).toMatchObject({ receipt: { deliveryState: 'accepted' } })
+  })
   await vi.waitFor(() => expect((worker as unknown as { remoteGuards: Map<string, unknown> }).remoteGuards.size).toBe(0))
 })
 
