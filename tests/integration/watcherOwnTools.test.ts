@@ -183,15 +183,21 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
   })
 })
 
-it('gives a Codex Watcher its request note as the turn’s application context and sends the user’s words as typed', async () => {
-  const f = await codexFixture(undefined, false, 10_000); cleanups.push(f.cleanup)
+/** A Watcher thread and an ordinary thread beside it on one provider, for the request note checks. */
+async function watcherBesideOrdinary(f: { host: AgentHost; root: string; projectId: string; modelId: string }, provider: 'codex' | 'claude' | 'grok') {
   const id = randomUUID(), ordinary = randomUUID()
-  await attach(f.host, f.root, id, f.projectId, 'codex')
+  await attach(f.host, f.root, id, f.projectId, provider)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId })
+  // Watcher refuses Sotto's browser tools; an ordinary thread is started with them.
   f.host.useBrowserTools!({ call: async () => ({ content: [] }), definitions: [], mcpServer: async () => ({ name: 'sotto_browser', type: 'http', url: 'http://127.0.0.1:12345/mcp', headers: [] }) })
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: ordinary, projectId: f.projectId, title: 'Ordinary', modelId: f.modelId })
+  return { id, ordinary }
+}
+it('gives a Codex Watcher its request note as the turn’s application context and sends the user’s words as typed', async () => {
+  const f = await codexFixture(undefined, false, 10_000); cleanups.push(f.cleanup)
+  const { id, ordinary } = await watcherBesideOrdinary(f, 'codex')
   const typed = 'Synthetic instruction to Watcher', note = watcherRequestNote(randomUUID(), randomUUID())
   for (const threadId of [id, ordinary]) {
     await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: typed, watcherRequestNote: note })
@@ -208,11 +214,7 @@ it('gives a Codex Watcher its request note as the turn’s application context a
 
 it('gives a Claude Watcher its request note through its own UserPromptSubmit hook and sends the user’s words as typed', async () => {
   const f = await claudeFixture(undefined, 10_000); cleanups.push(f.cleanup)
-  const id = randomUUID(), ordinary = randomUUID()
-  await attach(f.host, f.root, id, f.projectId, 'claude')
-  await f.host.connect()
-  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
-  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId })
+  const { id, ordinary } = await watcherBesideOrdinary(f, 'claude')
   const typed = 'Synthetic instruction to Watcher', first = watcherRequestNote(randomUUID(), randomUUID()), second = watcherRequestNote(randomUUID(), randomUUID())
   expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: typed, watcherRequestNote: first })).accepted).toBe(true)
   await f.driver.completeTurn(id, 'Synthetic complete')
@@ -225,8 +227,6 @@ it('gives a Claude Watcher its request note through its own UserPromptSubmit hoo
   const foreign = '<task-notification>Synthetic background task finished</task-notification>'
   await writeFile(join(f.root, 'script.json'), JSON.stringify({ foreignHookPrompt: foreign }))
   expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: typed, watcherRequestNote: second })).accepted).toBe(true)
-  f.host.useBrowserTools!({ call: async () => ({ content: [] }), definitions: [], mcpServer: async () => ({ name: 'sotto_browser', type: 'http', url: 'http://127.0.0.1:12345/mcp', headers: [] }) })
-  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: ordinary, projectId: f.projectId, title: 'Ordinary', modelId: f.modelId })
   expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: ordinary, messageId: randomUUID(), text: typed, watcherRequestNote: first })).accepted).toBe(true)
   const records = await f.driver.requests()
   type Frame = { request?: { hooks?: Record<string, unknown> }; message?: { content?: unknown }; additionalContext?: string | null; prompt?: string }
@@ -247,13 +247,7 @@ it('gives a Claude Watcher its request note through its own UserPromptSubmit hoo
 
 it('gives a Grok Watcher its request note as one Sotto line after the user’s words, its only prompt channel', async () => {
   const f = await grokFixture(undefined, 10_000); cleanups.push(f.cleanup)
-  const id = randomUUID(), ordinary = randomUUID()
-  await attach(f.host, f.root, id, f.projectId, 'grok')
-  await f.host.connect()
-  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
-  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId })
-  f.host.useBrowserTools!({ call: async () => ({ content: [] }), definitions: [], mcpServer: async () => ({ name: 'sotto_browser', type: 'http', url: 'http://127.0.0.1:12345/mcp', headers: [] }) })
-  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: ordinary, projectId: f.projectId, title: 'Ordinary', modelId: f.modelId })
+  const { id, ordinary } = await watcherBesideOrdinary(f, 'grok')
   const typed = 'Synthetic instruction to Watcher', request = { requestId: randomUUID(), hostId: randomUUID() }, note = watcherRequestNote(request.requestId, request.hostId)
   for (const threadId of [id, ordinary]) {
     expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: typed, watcherRequestNote: note })).accepted).toBe(true)
