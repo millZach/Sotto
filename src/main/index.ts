@@ -227,6 +227,8 @@ import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
 import { removeRetiredVoiceCache } from './agents/retiredVoiceCache'
 import { E2EAgentHost, e2eAgentReasoner } from './e2e/agentEffects'
+import { isImmutableActivities } from './agents/activitySnapshots'
+import type { AgentActivity } from '../shared/agentActivity'
 import { installRemoteHostE2E } from './e2e/remoteHost'
 import { installBabysitPassE2E } from './e2e/babysitPass'
 import { openRuntimeMemory } from './memory/runtime'
@@ -1586,14 +1588,30 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         const parsed = e2eAgentEventSchema.parse(payload)
         testAgentHost?.event(parsed)
       })
+      const observedCertifiedDetails = new Map<string, readonly AgentActivity[]>()
       ipcMain.handle(E2E_SNAPSHOT_CHANNEL, (event) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {
           throw new Error('E2E_SENDER_REJECTED')
         }
+        let certifiedDetail: { trackedThreads: number; ownedThreads: number; reusedRecords: number } | undefined
+        if (nativeFixtureRoot && process.env['SOTTO_E2E_CERTIFIED_DETAIL_OBSERVATION'] === '1') {
+          // The native test observes the real private tracker, never a renderer copy or a fixture
+          // certificate. No production accessor or diagnostic channel is introduced.
+          const tracked = (agentControl as unknown as { certifiedDetailRevisions: ReadonlyMap<string, { activities: readonly AgentActivity[] }> }).certifiedDetailRevisions
+          let ownedThreads = 0, reusedRecords = 0
+          for (const [threadId, detail] of tracked) {
+            if (isImmutableActivities(detail.activities)) ownedThreads++
+            const previous = new Set(observedCertifiedDetails.get(threadId))
+            reusedRecords += detail.activities.filter(record => previous.has(record)).length
+            observedCertifiedDetails.set(threadId, detail.activities)
+          }
+          for (const id of observedCertifiedDetails.keys()) if (!tracked.has(id)) observedCertifiedDetails.delete(id)
+          certifiedDetail = { trackedThreads: tracked.size, ownedThreads, reusedRecords }
+        }
         return { ...snapshotE2EState(
           e2eState,
           BrowserWindow.getAllWindows().some((candidate) => candidate.getTitle() === buildName && candidate.isVisible()),
-        ), openedThreadFolder, openedExternalLink }
+        ), openedThreadFolder, openedExternalLink, ...(certifiedDetail ? { certifiedDetail } : {}) }
       })
       ipcMain.handle(E2E_TRIGGER_SHORTCUT_CHANNEL, (event) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {

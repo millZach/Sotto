@@ -4,7 +4,7 @@ import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, REASONING_SUMMARY_TITLE, compa
 import type { AgentThread } from '../../shared/agents'
 type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'> & { runtimeMode?: AgentThread['runtimeMode'] }
 
-// Display fields selected from installed codex-cli 0.154.0's generated schema.
+// Display fields selected from installed codex-cli 0.154.0's generated schema; `subAgentActivity` from 0.162.1's.
 // Only displayable fields survive this
 // boundary; reasoning.content, encrypted content and raw protocol objects do not.
 const displayFields: Readonly<Record<string, readonly string[]>> = {
@@ -13,6 +13,7 @@ const displayFields: Readonly<Record<string, readonly string[]>> = {
   fileChange: ['changes'], mcpToolCall: ['server', 'tool', 'result', 'error'],
   dynamicToolCall: ['tool', 'contentItems'], reasoning: ['summary'], plan: ['text'],
   collabAgentToolCall: ['tool', 'prompt', 'model', 'senderThreadId', 'receiverThreadIds', 'agentsStates'],
+  subAgentActivity: ['kind', 'agentThreadId', 'agentPath', 'model'],
   webSearch: ['query'], contextCompaction: [],
 }
 /**
@@ -61,12 +62,16 @@ export const codexItemSchema = z.preprocess(value => {
   result: z.object({ content: z.array(z.unknown()).optional() }).nullish(),
   contentItems: z.array(z.unknown()).nullish(), error: z.object({ message: z.string() }).nullish(),
   query: z.string().optional(), computerUse: z.literal(true).optional(),
+  kind: z.string().optional(), agentThreadId: z.string().optional(), agentPath: z.string().optional(),
 }))
 type Item = z.infer<typeof codexItemSchema>
 type Context = { turnId: string; afterMessageId?: string | undefined; phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; terminal?: boolean | undefined }
 const opaque = (...parts: string[]): string => createHash('sha256').update(JSON.stringify(parts)).digest('hex')
 const codexActivityId = (turnId: string, itemId: string): string => `codex-activity-${opaque(turnId, itemId)}`
 const agentId = (id: string): string => `codex-agent-${opaque(id)}`
+/** Multi-agent v2 addresses agents by path: `/root` is the thread Sotto drives and `/root/review/tests` a child of `review`. */
+const ROOT_PATH = '/root'
+const parentPath = (path: string): string => path.slice(0, path.lastIndexOf('/')) || ROOT_PATH
 const iso = (ms: number | undefined): string | undefined => ms !== undefined && Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? new Date(ms).toISOString() : undefined
 const mappedStatus = (status: string | undefined, fallback: AgentActivity['status']): AgentActivity['status'] =>
   status === 'inProgress' || status === 'running' || status === 'pendingInit' ? 'running'
@@ -83,7 +88,9 @@ const contentText = (value: unknown[] | null | undefined): string | undefined =>
 /** Observational native activity. Never sends commands, reads child transcripts or creates threads. */
 export class CodexActivityProjection {
   private readonly summaries = new Map<string, Map<number, string>>()
-  private readonly children = new Map<string, { thread: ActivityConversation; turnId: string; activityId: string; agent: ObservedAgent }>()
+  private readonly children = new Map<string, { thread: ActivityConversation; turnId: string; activityId: string; agent: ObservedAgent; path?: string }>()
+  /** Multi-agent v2 agent paths to native child thread IDs, per conversation, so a nested agent finds its parent. */
+  private readonly paths = new WeakMap<ActivityConversation, Map<string, string>>()
   private readonly terminalTurns = new WeakMap<ActivityConversation, Set<string>>()
   private readonly seen = new WeakMap<ActivityConversation, Set<string>>()
   private readonly turnAnchors = new WeakMap<ActivityConversation, Map<string, string>>()
@@ -165,7 +172,8 @@ export class CodexActivityProjection {
     return bounded
   }
 
-  item(thread: ActivityConversation, item: Item, context: Context): void {
+  item(thread: ActivityConversation, item: Item, context: Context, senderPath = ROOT_PATH): void {
+    if (item.type === 'subAgentActivity') { this.subAgentActivity(thread, item, context, senderPath); return }
     const kinds: Record<string, [AgentActivity['kind'], string]> = {
       commandExecution: ['command', 'Command'], fileChange: ['file-change', 'File changes'],
       mcpToolCall: ['tool', item.computerUse ? 'Computer Use' : [item.server, item.tool].filter(Boolean).join(' / ') || 'Tool'],
@@ -245,6 +253,54 @@ export class CodexActivityProjection {
     if (isTerminalActivity(status)) this.summaries.delete(id)
   }
 
+  /**
+   * Multi-agent v2 (codex-cli 0.162) reports each agent's life as `subAgentActivity` items instead of spawn and wait
+   * tool calls: `started` once, then `interacted` when an agent sends it a message or a follow-up task, and `completed`
+   * or `interrupted` each time it finishes. Every item for one assignment folds into one record in the turn the
+   * assignment began, so a busy agent does not fill the bounded activity window. The task name the parent gave it is
+   * its title; its task words reach Codex encrypted and are never seen. Items naming the reporting agent or one of its
+   * ancestors are its own replies upward, not work it started.
+   */
+  private subAgentActivity(thread: ActivityConversation, item: Item, context: Context, senderPath: string): void {
+    const child = item.agentThreadId, path = item.agentPath
+    if (!child || !path || !path.startsWith(`${ROOT_PATH}/`) || `${senderPath}/`.startsWith(`${path}/`)) return
+    const status = item.kind === 'started' || item.kind === 'interacted' ? 'running' : item.kind === 'completed' ? 'completed' : item.kind === 'interrupted' ? 'interrupted' : undefined
+    if (!status) return
+    const paths = this.paths.get(thread) ?? new Map<string, string>()
+    paths.set(path, child); this.paths.set(thread, paths)
+    const prior = this.children.get(child)?.agent
+    const itemActivityId = codexActivityId(context.turnId, item.id)
+    const priorFinished = !!prior && isTerminalActivity(mappedStatus(prior.status, 'unknown'))
+    // The same item reported again, started and then completed, is the same assignment. Arriving after the agent
+    // finished, it cannot make the agent working again, or the work handed to it next would not read as new.
+    if (prior?.assignmentId === itemActivityId && status === 'running' && priorFinished) return
+    // A start, or work handed to an agent that had finished, is a new assignment; a message to a working agent is not.
+    const assignment = prior?.assignmentId !== itemActivityId && (item.kind === 'started' || status === 'running' && (!prior?.assignmentId || priorFinished))
+    const assignmentId = assignment || !prior?.assignmentId ? itemActivityId : prior.assignmentId
+    const record = thread.activities?.find(activity => activity.id === assignmentId)
+    // An assignment whose record left the bounded window still reports, under a record of its own.
+    const id = record || !this.seen.get(thread)?.has(assignmentId) ? assignmentId : itemActivityId
+    // History names no times. A reread keeps the times this assignment's record already holds, not the agent's latest.
+    const recorded = record?.agents?.find(agent => agent.id === agentId(child))
+    const observedAt = context.phase === 'history' ? undefined : iso(this.now())
+    const parent = paths.get(parentPath(path))
+    const title = path.slice(path.lastIndexOf('/') + 1)
+    const model = item.model ?? prior?.model
+    const agent: ObservedAgent = { ...(recorded ?? (assignment ? {} : prior)), id: agentId(child), status, title, assignmentId,
+      ...(parent ? { parentId: agentId(parent) } : {}),
+      ...(model ? { model } : {}),
+      ...(observedAt ? { observedAt } : {}),
+      ...(assignment && observedAt ? { startedAt: observedAt, timingSource: 'observed' as const } : {}),
+      ...(isTerminalActivity(status) && observedAt ? { completedAt: !assignment && prior?.completedAt ? prior.completedAt : observedAt } : {}),
+    }
+    this.children.set(child, { thread, turnId: context.turnId, activityId: id, agent: compactAgentIdentity(agent), path })
+    this.put(thread, { id, turnId: record?.turnId ?? context.turnId, sequence: 0, kind: 'subagent', title, status,
+      ...(context.afterMessageId ? { afterMessageId: context.afterMessageId } : {}),
+      ...(observedAt && !record ? { startedAt: observedAt, timingSource: 'observed' as const } : {}),
+      ...(isTerminalActivity(status) && observedAt ? { completedAt: observedAt } : {}),
+      agents: [agent] })
+  }
+
   delta(thread: ActivityConversation, method: string, params: { turnId?: string | undefined; itemId?: string | undefined; delta?: string | undefined; summaryIndex?: number | undefined; message?: string | undefined }): void {
     if (!params.turnId || !params.itemId) return
     if (this.terminalTurns.get(thread)?.has(params.turnId)) return
@@ -310,9 +366,9 @@ export class CodexActivityProjection {
     if (!owner) return undefined
     if (method === 'item/started' || method === 'item/completed') {
       const nested = z.object({ turnId: z.string(), item: codexItemSchema, startedAtMs: z.number().nullish(), completedAtMs: z.number().nullish() }).safeParse(params)
-      if (!nested.success || nested.data.item.type !== 'collabAgentToolCall') return undefined
+      if (!nested.success || nested.data.item.type !== 'collabAgentToolCall' && nested.data.item.type !== 'subAgentActivity') return undefined
       this.item(owner.thread, { ...nested.data.item, senderThreadId: child }, { turnId: nested.data.turnId,
-        phase: method === 'item/started' ? 'started' : 'completed', startedAtMs: nested.data.startedAtMs ?? undefined, completedAtMs: nested.data.completedAtMs ?? undefined })
+        phase: method === 'item/started' ? 'started' : 'completed', startedAtMs: nested.data.startedAtMs ?? undefined, completedAtMs: nested.data.completedAtMs ?? undefined }, owner.path)
       return owner.thread
     }
     const payload = z.object({ turn: z.object({ id: z.string().optional(), status: z.string(), startedAt: z.number().nullish(), completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string() }).nullish() }).optional(), status: z.object({ type: z.string() }).optional() }).safeParse(params)

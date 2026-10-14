@@ -5,7 +5,7 @@ import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextW
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
-import { isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
+import { immutableActivities, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
@@ -422,6 +422,10 @@ export class AgentControl {
   /** Per thread: the signature of the messages last handed out, and the revision that stands for them. */
   private readonly activityDetailSignatures = new WeakMap<readonly AgentActivity[], string>()
   private readonly detailRevisions = new Map<string, { signature: string; revision: number }>()
+  private readonly certifiedDetailSignatures = new WeakMap<AgentActivity, string>()
+  private readonly certifiedDetailRevisions = new Map<string, { messages: string; activities: readonly AgentActivity[]; revision: number }>()
+  /** Clients may retain a closed pane's detail. Releasing its words never resets their revision. */
+  private readonly certifiedDetailCounters = new Map<string, number>()
   /** The message count a thread's first exchange was last looked for at, so it is looked for once per arrival. */
   private readonly titleChecked = new Map<string, number>()
   private readonly publishedDetail = new Map<string, number>()
@@ -445,6 +449,7 @@ export class AgentControl {
     watcherEnabled?: boolean
     /** Immutable provider gate; absent fails closed while retaining Owl's saved choices. */
     museEnabled?: boolean
+    streamingPublishCost?: boolean
     /** Numeric-only Owl history. It never gates or retries a provider send. */
     usage?: UsagePromptRecorder
     observeActiveThread?: boolean
@@ -823,7 +828,8 @@ export class AgentControl {
     // The snapshot is the undecorated history: decoration is a fact about the preview store rather than
     // about the thread, and diffing decorated against live would report every image message as changed.
     this.detailSnapshots.set(threadId, { threadId, revision, messages: structuredClone([...presented]),
-      ...(activities === undefined ? {} : { activities }) })
+      ...(activities === undefined ? {} : { activities: this.dependencies.streamingPublishCost === true
+        ? immutableActivities(pane!) : activities }) })
     this.publishedDetail.set(threadId, revision)
     this.attachmentPreviews.decorate({ ...this.state.host, threads: [{ ...thread, messages }] })
     return { threadId, revision, messages, ...(activities === undefined ? {} : { activities }),
@@ -859,20 +865,47 @@ export class AgentControl {
    */
   private detailRevision(thread: AgentThread): number {
     const activities = this.paneActivities(thread)
+    const presented = this.presentedMessages(thread)
+    const messages = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
+      .map((message, index) => `${message.id}:${message.text.length}:${presented[index]!.text.length}:${message.attachments?.length ?? 0}`).join(',')
+    if (this.dependencies.streamingPublishCost === true && isImmutableActivities(activities)) {
+      const held = this.certifiedDetailRevisions.get(thread.id)
+      if (held && held.messages === messages && held.activities.length === activities!.length
+        && held.activities.every((record, index) => record === activities![index]
+          || (record.id === activities![index]!.id && this.certifiedActivitySignature(record) === this.certifiedActivitySignature(activities![index]!)))) return held.revision
+      // Retain the legacy signature only across a certified/mutable transition. Ordinary certified
+      // publishes compare the owned record identities, without rebuilding a history-sized string.
+      const legacy = this.detailRevisions.get(thread.id)
+      const unchanged = !held && legacy?.signature === messages + '|' + activities!.map(record => `${record.id}:${this.certifiedActivitySignature(record)}`).join(',')
+      const revision = (held?.revision ?? legacy?.revision ?? this.certifiedDetailCounters.get(thread.id) ?? 0) + (unchanged ? 0 : 1)
+      this.certifiedDetailRevisions.set(thread.id, { messages, activities: activities!, revision })
+      this.certifiedDetailCounters.set(thread.id, revision)
+      return revision
+    }
+    const certified = this.certifiedDetailRevisions.get(thread.id)
+    if (certified) {
+      this.detailRevisions.set(thread.id, { revision: certified.revision,
+        signature: certified.messages + '|' + certified.activities.map(record => `${record.id}:${this.certifiedActivitySignature(record)}`).join(',') })
+      this.certifiedDetailRevisions.delete(thread.id)
+    }
     let activitySignature = activities && this.activityDetailSignatures.get(activities)
     if (activitySignature === undefined) {
       activitySignature = (activities ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')
       if (activities && isImmutableActivities(activities)) this.activityDetailSignatures.set(activities, activitySignature)
     }
-    const presented = this.presentedMessages(thread)
-    const signature = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
-      .map((message, index) => `${message.id}:${message.text.length}:${presented[index]!.text.length}:${message.attachments?.length ?? 0}`).join(',')
-      + `|${activitySignature}`
+    const signature = messages + `|${activitySignature}`
     const held = this.detailRevisions.get(thread.id)
     if (held && held.signature === signature) return held.revision
-    const revision = (held?.revision ?? 0) + 1
+    const revision = (held?.revision ?? (this.dependencies.streamingPublishCost === true ? this.certifiedDetailCounters.get(thread.id) : undefined) ?? 0) + 1
     this.detailRevisions.set(thread.id, { signature, revision })
+    if (this.dependencies.streamingPublishCost === true) this.certifiedDetailCounters.set(thread.id, revision)
     return revision
+  }
+  private certifiedActivitySignature = (record: AgentActivity): string => {
+    if (!isImmutableActivity(record)) return agentActivitySignature(record)
+    let signature = this.certifiedDetailSignatures.get(record)
+    if (signature === undefined) { signature = agentActivitySignature(record); this.certifiedDetailSignatures.set(record, signature) }
+    return signature
   }
   subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void {
     this.detailListeners.add(listener)
@@ -1089,6 +1122,7 @@ export class AgentControl {
     // Forget what every window holds: the next broadcast sends whole details, without the markers.
     this.publishedDetail.clear()
     this.detailSnapshots.clear()
+    if (this.dependencies.streamingPublishCost === true) { this.certifiedDetailRevisions.clear(); this.detailRevisions.clear() }
     // A failed store must not prevent the remaining stores from honoring the
     // privacy change. Preserve the failure for the caller after every cleanup runs.
     const cleanup = [
@@ -1245,12 +1279,17 @@ export class AgentControl {
    * window is diffed once, at the end, because the diff is taken here rather than as each event lands.
    */
   private broadcastDetail(): void {
-    if (!this.detailListeners.size && !this.watcherMessageDisplay) return
+    if (!this.detailListeners.size && !this.watcherMessageDisplay && this.dependencies.streamingPublishCost !== true) return
     const targets = this.detailTargets()
     this.watcherMessageDisplay?.retain(this.state.host.hostId, targets)
-    if (!this.detailListeners.size) return
+    if (!this.detailListeners.size && this.dependencies.streamingPublishCost !== true) return
     for (const threadId of this.publishedDetail.keys()) if (!targets.includes(threadId)) this.publishedDetail.delete(threadId)
     for (const threadId of this.detailSnapshots.keys()) if (!targets.includes(threadId)) this.detailSnapshots.delete(threadId)
+    if (this.dependencies.streamingPublishCost === true) {
+      for (const threadId of this.certifiedDetailRevisions.keys()) if (!targets.includes(threadId)) this.certifiedDetailRevisions.delete(threadId)
+      for (const threadId of this.detailRevisions.keys()) if (!targets.includes(threadId)) this.detailRevisions.delete(threadId)
+    }
+    if (!this.detailListeners.size) return
     for (const threadId of targets) {
       const thread = this.state.host.threads.find(item => item.id === threadId)!
       const revision = this.detailRevision(thread)
@@ -1263,9 +1302,11 @@ export class AgentControl {
   private detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate | null {
     const held = this.detailSnapshots.get(thread.id)
     if (held !== undefined) {
-      const delta = diffAgentThreadDetail(held, { messages: this.presentedMessages(thread), activities: this.paneActivities(thread) }, revision)
+      const delta = diffAgentThreadDetail(held, { messages: this.presentedMessages(thread), activities: this.paneActivities(thread) }, revision,
+        this.dependencies.streamingPublishCost === true ? this.certifiedActivitySignature : undefined)
       const advanced = delta === null ? null : applyAgentThreadDetailDelta(held, delta)
       if (delta !== null && advanced !== null) {
+        if (this.dependencies.streamingPublishCost === true && advanced.activities) advanced.activities = immutableActivities(advanced.activities)
         this.detailSnapshots.set(thread.id, advanced)
         this.publishedDetail.set(thread.id, revision)
         return this.decorateDetailDelta(thread, delta)
@@ -3841,6 +3882,8 @@ export class AgentControl {
     this.detailListeners.clear()
     this.detailSnapshots.clear()
     this.watcherMessageDisplay?.retain(undefined, [])
+    this.certifiedDetailRevisions.clear()
+    this.certifiedDetailCounters.clear()
   }
 }
 

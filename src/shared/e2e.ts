@@ -52,6 +52,8 @@ export const e2eScenarioSchema = z.enum([
 ])
 
 export const e2eSnapshotSchema = z.object({
+  /** Text-free proof from the coordinator's actual owned detail tracker; native fixture runs only. */
+  certifiedDetail: z.object({ trackedThreads: z.number().int().nonnegative(), ownedThreads: z.number().int().nonnegative(), reusedRecords: z.number().int().nonnegative() }).optional(),
   openedThreadFolder: z.string().nullable().optional(),
   /** The page Open approval page would have opened in the browser; an end-to-end run opens none. */
   openedExternalLink: z.string().nullable().optional(),
