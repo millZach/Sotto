@@ -11,7 +11,7 @@ import { Subscriptions } from './UsageSubscriptions'
 import type { UsagePage, UsageTab, UsageWhere } from './usagePage'
 import {
   PROVIDER_ACCOUNTS, PROVIDER_NAMES, USAGE_PROVIDERS, addDays, calendarDay, daysBetween, isEmptyActivity, predatesHistory, presentUsage, providerLimits,
-  midSentence, rangeBounds, rangeLabel, scopeHost,
+  joinNames, midSentence, rangeBounds, rangeLabel, scopeHost,
 } from './usagePresentation'
 import { EVERY_HOST, useUsageRead } from './useUsageRead'
 import './usage.css'
@@ -38,7 +38,6 @@ export interface UsageViewProps {
 const withoutHistory = (host: UsageHostRead): boolean => host.status === 'unsupported'
   || (host.status === 'ready' && (host.activity === undefined || (predatesHistory(host.activity) && host.activity.metadata.history === undefined && isEmptyActivity(host.activity.totals) && host.activity.metadata.clearedAt === undefined)))
 
-const joinNames = (names: readonly string[]): string => names.length <= 1 ? names[0] ?? '' : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
 
 export function UsageView({ bridge = window.sotto?.usage, computers, now = currentDate, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone }: UsageViewProps): ReactNode {
   const agents = useOptionalAgents()
@@ -229,7 +228,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   else if (usage.read === null) body = <p className="usage-loading" role="status">Reading usage…</p>
   else if (invalidRange) body = null
   else if (tab === 'subscriptions') body = <Subscriptions page={page} refreshing={refreshing} onReadAgain={providerId => void readAgain(providerId)} />
-  else if (noHistory) body = <>{tab === 'overview' ? <Glance page={page} /> : null}<NoHistory name={joinNames(read.hosts.map(host => hostName(host.hostId)))} /></>
+  else if (noHistory) body = <>{tab === 'overview' ? <Glance page={page} /> : null}<NoHistory names={read.hosts.map(host => hostName(host.hostId))} /></>
   else if (tab === 'models') body = <Models page={page} />
   // As the approved design has it, a cleared computer with nothing new replaces the index; an empty range keeps it.
   else if (page.cleared && isEmptyActivity(summary.totals)) body = <><Glance page={page} /><EmptyUsage title="Nothing recorded yet" detail="Usage starts counting again with your next prompt." /></>
@@ -268,7 +267,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
         withoutHistory(host) ? `${hostName(host.hostId)}'s history appears after its Owl host update.`
           : host.status === 'offline' ? `${hostName(host.hostId)} is offline. Its figures appear when it reconnects.`
             : `Usage could not be read from ${midSentence(hostName(host.hostId))}. Nothing was changed. Try again in a moment.`}</p>)}
-      {pendingNames.length > 0 ? <p className="usage-notice usage-notice--quiet" role="status">Still reading {joinNames(pendingNames)}…</p> : null}
+      {pendingNames.length > 0 ? <p className="usage-notice usage-notice--quiet" role="status">Still reading {joinNames(pendingNames.map(midSentence))}…</p> : null}
       {scanning.length > 0 && tab !== 'subscriptions' ? <p className="usage-notice usage-notice--quiet">Still reading {joinNames(scanning.map(name => `${midSentence(name)}'s`))} history. The figures fill in as it reads.</p> : null}
     </div>
     <div id={`${id}-panel`} className="usage-panel" role="tabpanel" aria-labelledby={`${id}-${tab}`} aria-busy={usage.loading || undefined}>

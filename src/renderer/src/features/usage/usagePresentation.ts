@@ -68,6 +68,14 @@ export function cacheShare(tokens: UsageTokenTotals): string | undefined {
   const { cached, input } = tokens
   return cached.value === undefined || input.value === undefined || cached.partial || input.partial ? undefined : share(cached.value, input.value)
 }
+/** One token figure as a share of another: undefined when either is unknown, and "about" when either is incomplete. */
+export function fieldShare(part: UsageFieldTotal, whole: UsageFieldTotal): string | undefined {
+  if (part.value === undefined || whole.value === undefined || whole.value <= 0) return undefined
+  const figure = share(part.value, whole.value)
+  return (part.partial || whole.partial) && !figure.startsWith('under') ? `about ${figure}` : figure
+}
+/** Names in a sentence: "forge", "forge and mac", "forge, mac and studio". */
+export const joinNames = (names: readonly string[]): string => names.length <= 1 ? names[0] ?? '' : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
 export function formatField(field: UsageFieldTotal): string {
   if (field.value === undefined) return '—'
   return `${field.partial ? '≥ ' : ''}${fmtInt(field.value)}`
@@ -153,7 +161,11 @@ export interface UsageSummary {
   readonly modelsTruncated: boolean
   readonly lastDay: string | undefined
   readonly sottoTokens: number
+  /** Sotto's tokens as reported: unknown or incomplete stay so. */
+  readonly sottoField: UsageFieldTotal
   readonly sottoPrompts: number
+  /** Every model ID each joined row was read under, by `provider:model`, so a detail read reaches older hosts' spellings. */
+  readonly modelIds: ReadonlyMap<string, readonly string[]>
   readonly subAgentTokens: number
 }
 
@@ -167,8 +179,13 @@ export function presentUsage(read: UsageDashboardRead): UsageSummary {
     .sort((a, b) => USAGE_PROVIDERS.indexOf(a.providerId) - USAGE_PROVIDERS.indexOf(b.providerId))
   // A host from before ADR-0080 names models by their public ID; the canonical spelling joins its rows to an updated host's.
   const served = (row: UsageModelAggregate): string => canonicalModelId(row.providerId, row.modelId)
+  const modelIds = new Map<string, string[]>()
   const models: UsageModelAggregate[] = grouped(activity.flatMap(row => row.models), row => JSON.stringify([row.providerId, served(row)]))
-    .map(rows => ({ ...sumActivity(rows), providerId: rows[0]!.providerId, modelId: served(rows[0]!) }))
+    .map(rows => {
+      const row = { ...sumActivity(rows), providerId: rows[0]!.providerId, modelId: served(rows[0]!) }
+      modelIds.set(`${row.providerId}:${row.modelId}`, [...new Set(rows.map(item => item.modelId))])
+      return row
+    })
     .sort((a, b) => b.prompts.total - a.prompts.total || fieldValue(b.tokens.total) - fieldValue(a.tokens.total) || a.modelId.localeCompare(b.modelId))
   // A host without a place split counts only Sotto threads; it reads as one Sotto row.
   const clientRows = activity.flatMap(row => row.clients ?? (isEmptyActivity(row.totals) ? [] : [{ ...row.totals, source: 'sotto' as const, clientId: 'sotto' as const, subAgent: false }]))
@@ -185,7 +202,7 @@ export function presentUsage(read: UsageDashboardRead): UsageSummary {
   if (dailyComplete) totals.activeDays = daily.filter(row => !isEmptyActivity(row)).length
   const busiest = hourly.filter(row => row.prompts.user > 0).sort((a, b) => b.prompts.user - a.prompts.user || a.weekday - b.weekday || a.hour - b.hour)[0]
   const cacheShare = totals.tokens.cached.value !== undefined && totals.tokens.input.value !== undefined
-    && !totals.tokens.cached.partial && totals.tokens.input.value > 0
+    && !totals.tokens.cached.partial && !totals.tokens.input.partial && totals.tokens.input.value > 0
     ? totals.tokens.cached.value / totals.tokens.input.value : undefined
   const sotto = clients.filter(row => row.source === 'sotto')
   return {
@@ -194,6 +211,8 @@ export function presentUsage(read: UsageDashboardRead): UsageSummary {
     modelsTruncated: activity.some(row => row.modelsTruncated),
     lastDay: laterDay(totals.lastDay, daily.filter(row => !isEmptyActivity(row)).at(-1)?.day),
     sottoTokens: add(sotto.map(row => fieldValue(row.tokens.total))),
+    sottoField: sumFields(sotto.map(row => row.tokens.total)),
+    modelIds,
     sottoPrompts: add(sotto.map(row => row.prompts.total)),
     subAgentTokens: add(clients.filter(row => row.subAgent).map(row => fieldValue(row.tokens.total))),
   }

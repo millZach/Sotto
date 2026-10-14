@@ -6,7 +6,7 @@ import { roomKeyTarget } from '../../components/AppShell'
 import { DailyChart, Dash, HourGrid, Ring, Spark, TokenBar, dismissDisclosure, type DayValue } from './UsageCharts'
 import type { UsagePage } from './usagePage'
 import {
-  PROVIDER_ORDER, LOW_LEFT, NO_TOKENS, cacheShare, nounFor, PROVIDER_NAMES, CLIENT_NAMES, fieldTokens, fieldValue, fmtInt, fmtTok, hourLabel, longDay, midSentence, pct, readAge, resetLong, resetShort, sentFrom, share,
+  PROVIDER_ORDER, LOW_LEFT, NO_TOKENS, cacheShare, nounFor, PROVIDER_NAMES, CLIENT_NAMES, fieldShare, fieldTokens, fieldValue, fmtInt, fmtTok, hourLabel, joinNames, longDay, midSentence, pct, readAge, resetLong, resetShort, sentFrom, share,
   shortDay, usagePlaces, WEEKDAYS_PLURAL, WEEKDAYS_SHORT, type UsageProviderLimits,
 } from './usagePresentation'
 
@@ -64,6 +64,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
   const topModel = summary.modelsTruncated ? undefined : summary.models.filter(named)[0]
   const busiest = summary.busiest
   const series = daySeries(page)
+  const sottoShare = fieldShare(summary.sottoField, totals.tokens.total) ?? '—'
   const items: Record<Focus, { value: ReactNode; text: string; note: string; viz?: ReactNode; low?: boolean; words?: boolean }> = {
     room: {
       value: lowest === undefined ? '—' : `${lowest.primary.tightest!.left}%`, text: lowest === undefined ? '—' : `${lowest.primary.tightest!.left}%`,
@@ -74,7 +75,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
     prompts: { value: fmtInt(prompts), text: fmtInt(prompts), note: page.rangeLabel, viz: series === null ? undefined : <Spark values={series.map(row => row.prompts)} /> },
     tokens: { value: fieldTokens(totals.tokens.total), text: fieldTokens(totals.tokens.total), note: 'input + output' },
     where: tokenTotal > 0
-      ? { value: <>{share(summary.sottoTokens, tokenTotal)}<span className="usage-index__unit">in Sotto</span></>, text: `${share(summary.sottoTokens, tokenTotal)} in Sotto`,
+      ? { value: <>{sottoShare}<span className="usage-index__unit">in Sotto</span></>, text: `${sottoShare} in Sotto`,
         note: `of tokens · ${share(summary.sottoPrompts, prompts)} of prompts`,
         viz: <span className="usage-mini-split" aria-hidden="true"><i className="usage-where--sotto" style={{ flexGrow: summary.sottoTokens }} /><i className="usage-where--outside" style={{ flexGrow: Math.max(0, tokenTotal - summary.sottoTokens) }} /></span> }
       : { value: '—', text: '—', note: 'No tokens in this range' },
@@ -100,7 +101,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
     else return
     event.preventDefault(); event.stopPropagation(); setHover(null); setPin(current)
     const row = current === null ? undefined : series.find(item => item.day === current)
-    const amount = current === null ? (metric === 'tokens' ? fmtTok(tokenTotal) : fmtInt(prompts)) : (metric === 'tokens' ? dayTokens(row!) : fmtInt(row!.prompts))
+    const amount = current === null ? (metric === 'tokens' ? fieldTokens(totals.tokens.total) : fmtInt(prompts)) : (metric === 'tokens' ? dayTokens(row!) : fmtInt(row!.prompts))
     page.announce(`${current === null ? 'Whole range' : longDay(current, page.today)}: ${amount} ${metric === 'tokens' ? 'tokens' : 'prompts'}`)
   }
   const chart = (metric: 'prompts' | 'tokens', label: string): ReactNode => series === null
@@ -132,8 +133,8 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
           </TokenBar>}
         <div className="usage-stage__sub">
           <div className="usage-chart-head"><h3>Per day</h3><span className="usage-legend"><span><i className="usage-kind--input" />Input</span><span><i className="usage-kind--out" />Output</span></span></div>
-          <p className="usage-when">{day !== null ? (() => { const row = series!.find(item => item.day === day)!; return <><b>{longDay(day, page.today)}</b> · {!row.tokensKnown ? 'tokens not reported' : row.input + row.output > 0 ? `${row.tokensPartial ? 'at least ' : ''}${fmtTok(row.input)} input, ${fmtTok(row.output)} output` : 'no token counts'}</> })()
-            : prompts > 0 && tokenTotal > 0 ? <>About <b>{fmtTok(tokenTotal / prompts)}</b> tokens per prompt</> : null}</p>
+          <p className="usage-when">{day !== null ? (() => { const row = series!.find(item => item.day === day)!; return <><b>{longDay(day, page.today)}</b> · {!row.tokensKnown ? 'tokens not reported' : row.input + row.output > 0 || row.tokensPartial ? `${row.tokensPartial ? 'at least ' : ''}${fmtTok(row.input)} input, ${fmtTok(row.output)} output` : 'no tokens'}</> })()
+            : prompts > 0 && tokenTotal > 0 ? <>{totals.tokens.total.partial ? 'At least' : 'About'} <b>{fmtTok(tokenTotal / prompts)}</b> tokens per prompt</> : null}</p>
           {chart('tokens', `Tokens per day, ${page.rangeLabel}.`)}
         </div>
       </>
@@ -148,13 +149,13 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
         : place.inSotto && page.where === 'sotto' ? summary.providers.filter(row => row.prompts.total > 0 || fieldValue(row.tokens.total) > 0).map(row => row.providerId) : []
       stage = <>
         {head('Where you work')}
-        <p className="usage-when">{tokenTotal > 0 ? <><b>{share(summary.sottoTokens, tokenTotal)}</b> of tokens and <b>{share(summary.sottoPrompts, prompts)}</b> of prompts were in Sotto.</> : 'No tokens in this range.'}</p>
+        <p className="usage-when">{tokenTotal > 0 ? <><b>{sottoShare}</b> of tokens and <b>{share(summary.sottoPrompts, prompts)}</b> of prompts were in Sotto.</> : 'No tokens in this range.'}</p>
         {places.length === 0 ? <p className="usage-none">Nothing in this range.</p> : <ol className="usage-shares usage-shares--where">{places.map(place => {
           const line = place.subAgent ? 'No prompts of their own. Your Sotto threads started them.'
             : `${fmtInt(place.prompts)} prompt${place.prompts === 1 ? '' : 's'}${place.wakeUps > 0 ? `, ${fmtInt(place.wakeUps)} of them wake-ups` : ''}${place.subAgentTokens > 0 ? ` · ${fieldTokens(place.subAgentField)} of the tokens from subagents` : ''}`
           return <li key={place.key} className="usage-share">
             <span className="usage-share__name"><ProviderMarks providers={marks(place)} /><span>{place.name}</span></span>
-            <span className="usage-share__value">{place.tokens > 0 ? share(place.tokens, tokenTotal) : <Dash />}<small>{fieldTokens(place.tokenField)} tokens</small></span>
+            <span className="usage-share__value">{fieldShare(place.tokenField, totals.tokens.total) ?? <Dash />}<small>{fieldTokens(place.tokenField)} tokens</small></span>
             <span className="usage-share__bar"><i className={`usage-grow${place.inSotto ? '' : ' usage-share__fill--outside'}`} style={{ '--usage-w': (place.tokens / top).toFixed(3) } as React.CSSProperties} /></span>
             <span className="usage-share__note">{line}</span>
           </li>
@@ -169,7 +170,9 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       const shown = [...reported].sort((a, b) => fieldValue(b.tokens.input) - fieldValue(a.tokens.input)).slice(0, 8)
         .sort((a, b) => fieldValue(b.tokens.cached) / fieldValue(b.tokens.input) - fieldValue(a.tokens.cached) / fieldValue(a.tokens.input))
       const rest = reported.length - shown.length
-      stage = summary.cacheShare === undefined ? <>{head('Cache reads')}<p className="usage-none">No token counts in this range.</p></> : <>
+      const unshared = totals.tokens.input.value !== undefined && totals.tokens.input.value > 0
+        ? "Some input in this range wasn't reported in full, so its share from cache can't be worked out." : 'No token counts in this range.'
+      stage = summary.cacheShare === undefined ? <>{head('Cache reads')}<p className="usage-none">{unshared}</p></> : <>
         {head('Cache reads')}
         <div className="usage-cache">
           <div className="usage-ring-figure usage-ring-figure--large"><Ring size={156} parts={[{ left: summary.cacheShare * 100, width: 10, inset: 0 }]} lowAware={false} /><span><b>{pct(summary.cacheShare)}</b><small>of input</small></span></div>
@@ -350,8 +353,9 @@ export function EmptyUsage({ title, detail, bars = [8, 14, 10, 22, 16, 6, 18] }:
   </div>
 }
 
-export function NoHistory({ name }: { readonly name: string }): ReactNode {
-  return <EmptyUsage title={`No history from ${midSentence(name)} yet`} detail={`${name}'s history appears after its Owl host update.`} />
+export function NoHistory({ names }: { readonly names: readonly string[] }): ReactNode {
+  const name = joinNames(names)
+  return <EmptyUsage title={`No history from ${joinNames(names.map(midSentence))} yet`} detail={`${name}'s history appears after its Owl host update.`} />
 }
 
 export function About({ page }: { readonly page: UsagePage }): ReactNode {

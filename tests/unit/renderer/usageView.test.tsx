@@ -330,6 +330,16 @@ describe('Usage page', () => {
     await waitFor(() => expect(bridge.reads.some(query => query.modelIds?.includes('native:codex:model:gpt-6.1-sol'))).toBe(true))
     expect(bridge.reads.find(query => query.modelIds !== undefined)?.modelIds).toEqual(['gpt-6.1-sol', 'native:codex:model:gpt-6.1-sol'])
   })
+  it('asks an older host for a model by the dated spelling it stored as well as the served one', async () => {
+    const host = localHost()
+    host.activity = { ...host.activity!, models: host.activity!.models.map(row => row.modelId === 'claude-haiku-4-5' ? { ...row, modelId: 'native:claude:model:claude-haiku-4-5-20251001' } : row) }
+    const { bridge, user } = await open(dashboard(host))
+    await user.click(screen.getByRole('tab', { name: 'Models' }))
+    await user.click(await screen.findByRole('button', { name: /Claude Haiku 4\.5/u }))
+    await waitFor(() => expect(bridge.reads.some(query => query.modelIds !== undefined)).toBe(true))
+    expect(bridge.reads.find(query => query.modelIds !== undefined)?.modelIds)
+      .toEqual(['claude-haiku-4-5', 'native:claude:model:claude-haiku-4-5', 'native:claude:model:claude-haiku-4-5-20251001'])
+  })
   it('clears usage from the … menu with a confirmation, and asks again when figures changed', async () => {
     const { bridge, user } = await open()
     const clear = vi.spyOn(bridge, 'clear').mockResolvedValueOnce([{ hostId: 'laptop', status: 'stale' }])

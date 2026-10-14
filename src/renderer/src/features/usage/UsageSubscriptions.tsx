@@ -5,7 +5,7 @@ import { ProviderMark } from '../../agents/ProviderMark'
 import { Ring } from './UsageCharts'
 import type { UsagePage } from './usagePage'
 import {
-  LOW_LEFT, PROVIDER_NAMES, READ_OUTSIDE_SOTTO, fieldTokens, nounFor, sumFields, fieldValue, fmtInt, limitsMissing, midSentence, predatesHistory, readAge, resetLong,
+  LOW_LEFT, PROVIDER_NAMES, READ_OUTSIDE_SOTTO, fieldTokens, nounFor, sumFields, fmtInt, limitsMissing, midSentence, predatesHistory, readAge, resetLong,
   unknownUseNote, type UsageProviderLimits, type UsageWindowView,
 } from './usagePresentation'
 
@@ -74,7 +74,7 @@ function Provider({ limits, page, busy, onReadAgain, since }: {
     const tokens = since.totals.tokens.total
     if (!READ_OUTSIDE_SOTTO.has(providerId)) {
       activity = <p className="usage-sub__activity">{prompts > 0 ? <>Since this window began: <b>{fmtInt(prompts)}</b> {nounFor(prompts, 'prompt')} in Sotto.</> : 'Since this window began: no prompts in Sotto.'} Sotto doesn't read {name}'s use outside Sotto.</p>
-    } else if (prompts === 0 && fieldValue(tokens) === 0) activity = <p className="usage-sub__activity">Since this window began: nothing {onComputer}.</p>
+    } else if (prompts === 0 && (tokens.rows === 0 || (tokens.value === 0 && !tokens.partial))) activity = <p className="usage-sub__activity">Since this window began: nothing {onComputer}.</p>
     else activity = <p className="usage-sub__activity">Since this window began: <b>{fmtInt(prompts)}</b> {nounFor(prompts, 'prompt')} and <b>{fieldTokens(tokens)}</b> tokens {onComputer}, <b>{fieldTokens(since.sottoTokens)}</b> of them in Sotto.</p>
   }
   return <section className="usage-sub" id={`usage-sub-${providerId}`} aria-labelledby={heading}>
@@ -82,7 +82,7 @@ function Provider({ limits, page, busy, onReadAgain, since }: {
       <div className="usage-sub__name"><ProviderMark provider={providerId} name={name} size={22} /><div><h2 id={heading} tabIndex={-1}>{name}</h2><p className="usage-sub__account">{page.providerAccount(providerId, primary.hostId)}</p></div></div>
       {read ? <span className="usage-sub__fresh" data-stale={primary.stale || undefined}><Clock size={13} aria-hidden="true" />{readAge(primary.observedAt, page.now)}{sharedHosts ? ` · ${page.hostName(primary.hostId)}` : ''}</span> : null}
       {refreshable ? <button type="button" className="usage-button tt-focusable" aria-disabled={busy || undefined} aria-label={busy ? `Reading ${name} limits` : `Read ${name} limits again`} onClick={() => { if (!busy) onReadAgain(providerId) }}>{busy ? 'Reading…' : 'Read again'}</button> : null}
-      {limits.others.map(other => <p key={other.hostId} className="usage-sub__other">On {page.hostName(other.hostId)}: <b>{other.tightest!.left}%</b> left, {other.tightest!.label.toLowerCase()} · {readAge(other.observedAt, page.now).toLowerCase()}</p>)}
+      {limits.others.map(other => <p key={other.hostId} className="usage-sub__other">On {midSentence(page.hostName(other.hostId))}: <b>{other.tightest!.left}%</b> left, {other.tightest!.label.toLowerCase()} · {readAge(other.observedAt, page.now).toLowerCase()}</p>)}
     </div>
     <div className="usage-sub__body">
       {primary.windows.length > 0

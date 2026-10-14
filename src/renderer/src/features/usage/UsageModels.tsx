@@ -33,7 +33,6 @@ export function Models({ page }: { readonly page: UsagePage }): ReactNode {
   }
   const maximum = Math.max(1, ...rows.filter(reported).map(row => fieldValue(row.tokens.total)))
   const totals = summary.totals
-  const tokenTotal = totals.tokens.total.value
   const onSortKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
     const target = roomKeyTarget(event.key, index, SORTS.length)
     if (target === null) return
@@ -42,7 +41,7 @@ export function Models({ page }: { readonly page: UsagePage }): ReactNode {
   }
   return <>
     <div className="usage-models-head">
-      <p className="usage-models-summary"><b>{fmtInt(rows.length)}</b> model{rows.length === 1 ? '' : 's'} · <b>{fmtInt(totals.prompts.total)}</b> {nounFor(totals.prompts.total, 'prompt')} · <b>{tokenTotal === undefined ? '—' : fmtTok(tokenTotal)}</b> tokens · {page.rangeLabel}</p>
+      <p className="usage-models-summary"><b>{fmtInt(rows.length)}</b> model{rows.length === 1 ? '' : 's'} · <b>{fmtInt(totals.prompts.total)}</b> {nounFor(totals.prompts.total, 'prompt')} · <b>{fieldTokens(totals.tokens.total)}</b> tokens · {page.rangeLabel}</p>
       <div className="usage-sort"><span id={label}>Sort by</span>
         <div ref={sorts} className="usage-seg usage-seg--small" role="radiogroup" aria-labelledby={label}>{SORTS.map(([key, name], index) => <button key={key} type="button" role="radio" className="tt-focusable"
           aria-checked={sort === key} tabIndex={sort === key ? 0 : -1} onClick={() => setSort(key)} onKeyDown={event => onSortKey(event, index)}>{name}</button>)}</div>
@@ -74,7 +73,7 @@ export function Models({ page }: { readonly page: UsagePage }): ReactNode {
         </li>
       })}</ul>
       <div className="usage-table__total"><span>All models</span><span className="usage-row__bar" /><span className="usage-row__n">{fmtInt(totals.prompts.total)}</span>
-        <span className="usage-row__n">{tokenTotal === undefined ? <Dash /> : fmtTok(tokenTotal)}</span><span className="usage-row__n usage-row__cache">{summary.cacheShare === undefined ? <Dash /> : pct(summary.cacheShare)}</span></div>
+        <span className="usage-row__n">{totals.tokens.total.value === undefined ? <Dash /> : fieldTokens(totals.tokens.total)}</span><span className="usage-row__n usage-row__cache">{summary.cacheShare === undefined ? <Dash /> : pct(summary.cacheShare)}</span></div>
     </div>
     <p className="usage-legend usage-legend--table"><span><i className="usage-kind--read" />Cache read</span><span><i className="usage-kind--write" />Cache write</span><span><i className="usage-kind--new" />Uncached input</span><span><i className="usage-kind--out" />Output</span><span>— not reported</span></p>
     <About page={page} />
@@ -85,11 +84,13 @@ export function Models({ page }: { readonly page: UsagePage }): ReactNode {
 function useModelDaily(page: UsagePage, row: UsageModelAggregate | undefined): UsageDailyAggregate[] | undefined {
   const [found, setFound] = useState<{ key: string; daily: UsageDailyAggregate[] } | undefined>(undefined)
   const { bridge, query, hostIds } = page
-  const key = row === undefined ? null : JSON.stringify([keyOf(row), query, hostIds])
+  // An older host filters by the spelling it stored, which may be a public or dated ID the row was joined from.
+  const modelIds = row === undefined ? [] : [...new Set([row.modelId, publicProviderEntityId(row.providerId, 'model', row.modelId), ...(page.summary.modelIds.get(keyOf(row)) ?? [])])]
+  const key = row === undefined ? null : JSON.stringify([keyOf(row), modelIds, query, hostIds])
   useEffect(() => {
     if (bridge === undefined || row === undefined || key === null) return
     let current = true
-    bridge.read({ ...query, includeDaily: true, providerIds: [row.providerId], modelIds: [row.modelId, publicProviderEntityId(row.providerId, 'model', row.modelId)], ...(hostIds.length > 0 ? { hostIds: [...hostIds] } : {}) }).then(result => {
+    bridge.read({ ...query, includeDaily: true, providerIds: [row.providerId], modelIds, ...(hostIds.length > 0 ? { hostIds: [...hostIds] } : {}) }).then(result => {
       if (!current) return
       const rows = result.hosts.flatMap(host => host.status === 'ready' ? host.activity?.daily ?? [] : [])
       const days = new Map<string, UsageDailyAggregate[]>()

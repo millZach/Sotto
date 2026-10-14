@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  fmtTok, formatField, limitsMissing, longDay, pct, presentUsage, providerLimits, rangeBounds, rangeLabel, readAge, relativeDay, resetLong, resetShort, scopeHost, sentFrom,
+  fieldShare, fmtTok, formatField, joinNames, limitsMissing, longDay, pct, presentUsage, providerLimits, rangeBounds, rangeLabel, readAge, relativeDay, resetLong, resetShort, scopeHost, sentFrom,
   nounFor, sumFields, tokenParts, usagePlaces, windowView,
 } from '../../../src/renderer/src/features/usage/usagePresentation'
 import { servedModelName } from '../../../src/shared/modelCatalog'
@@ -28,6 +28,8 @@ describe('Usage numbers in words', () => {
     const rows = presentUsage(dashboard(updated, older)).models.filter(row => row.providerId === 'claude' && row.modelId === 'claude-opus-5-5')
     expect(rows).toHaveLength(1)
     expect(presentUsage(dashboard(updated, older)).models.some(row => row.modelId.startsWith('native:'))).toBe(false)
+    // Each joined row keeps the spellings it was read under, so a detail read reaches the older host's own.
+    expect(presentUsage(dashboard(updated, older)).modelIds.get('claude:claude-opus-5-5')).toEqual(['claude-opus-5-5', 'native:claude:model:claude-opus-5-5'])
   })
 
   it('keeps the incomplete tokens of a place as a lower bound, and uncached input unknown while cache writes are', () => {
@@ -36,6 +38,25 @@ describe('Usage numbers in words', () => {
     const parts = tokenParts({ ...localHost().activity!.totals.tokens, cacheWrite: { knownRows: 0, rows: 4, partial: true } })
     expect(parts.uncached.known).toBe(false)
     expect(tokenParts(localHost().activity!.totals.tokens).uncached).toMatchObject({ known: true, value: 41_000_000 - 36_000_000 - 900_000 })
+  })
+  it('says about for a share worked out from incomplete figures, and nothing for one from unknown figures', () => {
+    const exact = { value: 250, knownRows: 1, rows: 1, partial: false }
+    const partial = { value: 250, knownRows: 1, rows: 2, partial: true }
+    const whole = { value: 500, knownRows: 2, rows: 2, partial: false }
+    expect([fieldShare(exact, whole), fieldShare(partial, whole), fieldShare(exact, { ...whole, partial: true })]).toEqual(['50%', 'about 50%', 'about 50%'])
+    expect(fieldShare({ value: 1, knownRows: 1, rows: 2, partial: true }, { value: 1_000, knownRows: 1, rows: 1, partial: false })).toBe('under 1%')
+    expect([fieldShare({ knownRows: 0, rows: 1, partial: true }, whole), fieldShare(exact, { value: 0, knownRows: 1, rows: 1, partial: false })]).toEqual([undefined, undefined])
+    expect(['forge', 'forge,mac', 'forge,mac,studio'].map(names => joinNames(names.split(',')))).toEqual(['forge', 'forge and mac', 'forge, mac and studio'])
+  })
+  it('leaves the cache share out when input was not reported in full, and keeps the Sotto share incomplete', () => {
+    const host = localHost()
+    const activity = host.activity!
+    host.activity = { ...activity, totals: { ...activity.totals, tokens: { ...activity.totals.tokens, input: { ...activity.totals.tokens.input, rows: 2, partial: true } } },
+      clients: activity.clients!.map((row, index) => index === 0 ? { ...row, tokens: { ...row.tokens, total: { ...row.tokens.total, rows: 2, partial: true } } } : row) }
+    const summary = presentUsage(dashboard(host))
+    expect(summary.cacheShare).toBeUndefined()
+    expect(summary.sottoField).toMatchObject({ value: 10_000_000 + 20_000_000, partial: true })
+    expect(fieldShare(summary.sottoField, summary.totals.tokens.total)).toBe('about 71%')
   })
   it('names every served model in words the same way on every computer, never as an ID', () => {
     // A client catalog names some Claude models with "Claude" and some without, and differs between versions, so Usage
