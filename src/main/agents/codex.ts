@@ -43,6 +43,7 @@ import { markSendStage } from './sendStages'
 import type { WatcherLaunchProfile, ThreadLaunchProfiles } from './host'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
+import { questionInstructions } from './questionInstructions'
 import { probeWatcherCodexSandbox } from './watcherCodexSandbox'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 
@@ -76,7 +77,7 @@ async function threadConfig(tools: BrowserAgentTools | undefined, threadId: stri
   }
   return { config }
 }
-const questionInstructions = 'Ask actionable clarification questions through request_user_input so Sotto can show its question panel. Use it for questions with choices and free-text questions, including while continuing independent work. Do not leave questions that need a user answer only in commentary or a final message. A suggested choice is not an answer. If an answer is required before an action, wait for the user before that action. Permission requests still use the native approval flow.'
+const codexQuestions = questionInstructions('request_user_input', true)
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), itemId: z.string().optional(), turnId: z.string().optional(), clientIdentity: z.boolean().optional(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(),
   compaction: compactionSchema.optional(), compactTurnId: z.string().optional(),
@@ -797,7 +798,7 @@ export class CodexAppServerHost implements AgentHost {
         instructions = parsed.success ? parsed.data.config.developer_instructions ?? '' : undefined
       })
       if (typeof instructions !== 'string') throw new Error('Invalid native instructions')
-      return [instructions, questionInstructions, ...(id && this.watcherProfiles.has(id) ? [WATCHER_SYSTEM_PROMPT] : [])].filter(Boolean).join('\n\n')
+      return [instructions, codexQuestions, ...(id && this.watcherProfiles.has(id) ? [WATCHER_SYSTEM_PROMPT] : [])].filter(Boolean).join('\n\n')
     } catch {
       throw new Error('Codex settings could not be read. No new work was sent. Reconnect and try again.')
     }

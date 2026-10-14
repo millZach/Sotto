@@ -17,6 +17,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
+import { questionInstructions } from './questionInstructions'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { GrokSubscriptionClient, sweepLeftoverSessions } from './subscriptionGrok'
@@ -53,6 +54,8 @@ function grokRuntimeMode(mode: AgentRuntimeMode): GrokRuntimeMode {
   if (!parsed.success) throw new Error('That permission mode is not supported by this provider.')
   return parsed.data
 }
+/** Grok Build's question tool is `ask_user_question` (`_x.ai/ask_user_question` on the wire). */
+const GROK_QUESTIONS = questionInstructions('ask_user_question', false)
 /** Both flags are always explicit; a missing mode keeps the original approval-required policy. */
 function sessionPolicy(mode: GrokRuntimeMode | undefined): { yoloMode: boolean; autoMode: boolean } {
   return { yoloMode: mode === 'full-access', autoMode: mode === 'auto' }
@@ -1069,7 +1072,9 @@ export class GrokAcpHost implements AgentHost {
           this.assertGeneration(generation)
           if (this.processes.get(command.threadId) !== entry) throw new GrokUncertain('Grok thread process changed before its session could start.')
           watcherGuard?.()
-          await rpc.request('session/new', { cwd: alias.cwd, mcpServers, _meta: meta }, async value => {
+          // Rules are appended to Grok's own system text, taken only at creation and kept through every later load
+          // (ADR-0080). Watcher's override replaces that text whole, so its launch stays exactly as ADR-0073 pins it.
+          await rpc.request('session/new', { cwd: alias.cwd, mcpServers, _meta: 'systemPromptOverride' in meta ? meta : { ...meta, rules: GROK_QUESTIONS } }, async value => {
             const response = z.object({ sessionId: z.string().uuid(), models: catalogSchema }).parse(value)
             alias.grokSessionId = response.sessionId; alias.nativeModelId = response.models.currentModelId; await this.persist(); this.thread(command.threadId).status = 'error'; this.emit()
           })

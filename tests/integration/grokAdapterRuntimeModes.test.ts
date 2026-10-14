@@ -34,7 +34,8 @@ it('advertises only the Grok permission modes it can apply per session', async (
 it.each([undefined, 'approval-required', 'auto', 'full-access'] as const)('creates and resumes a %s thread with the matching native session policy', async runtimeMode => {
   const id = await setup(runtimeMode); const mode = runtimeMode ?? 'approval-required'
   const created = (await f!.driver.requests()).find(request => request.method === 'session/new')!
-  expect((created.params as { _meta: unknown })._meta).toEqual(policy[mode])
+  // The question guidance rides creation only: Grok keeps a session's rules through every later load (ADR-0080).
+  expect((created.params as { _meta: unknown })._meta).toEqual({ ...policy[mode], rules: expect.stringContaining('through ask_user_question') })
   expect(await effective(id)).toBe(nativeMode[mode])
   expect((await f!.host.snapshot()).threads[0]).toMatchObject({ runtimeMode: mode, status: 'idle' })
   if (runtimeMode) expect((await aliases())[id]).toMatchObject({ runtimeMode })
