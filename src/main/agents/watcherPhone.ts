@@ -1,7 +1,7 @@
 import type { AgentCommand, AgentThread } from '../../shared/agents'
 import { watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend, type WatcherPhoneResult,
   type WatcherPhoneSendResult, type WatcherPhonePrepareStopResult, type WatcherPhoneStopResult } from '../../shared/watcherPhone'
-import { watcherRefusal, watcherGuidancePrefix, WATCHER_GUIDANCE_SUFFIX, type WatcherService } from './watcher'
+import { watcherRefusal, type WatcherService } from './watcher'
 import type { AgentControl } from './control'
 import type { ClientIdentity } from './hostService'
 
@@ -14,17 +14,8 @@ export class WatcherPhoneService {
       (row.hostId ?? snapshot.hostId) === target.hostId && row.id === target.threadId)
     const current = room.current && thread(room.current.target)
     const detail = current ? this.control.threadDetail(current.id) : null
-    const messages = (detail?.messages ?? []).slice(-200).map(message => {
-      const request = message.role === 'user' ? room.requests.find(row => row.rootUserMessageId === message.id
-        || row.userFollowups?.some(followup => followup.messageId === message.id)) : undefined
-      const proof = request?.rootUserMessageId === message.id ? request.displayPrompt
-        : request?.userFollowups?.find(followup => followup.messageId === message.id)?.displayPrompt
-      // Older phone records retain their existing exact-ID/prefix/suffix projection. A present proof,
-      // even one that no longer matches, must never strip the original a second time or guess a boundary.
-      const footer = request && proof === undefined ? message.text.lastIndexOf(`\n\n${watcherGuidancePrefix(request.id, request.watcher.hostId)}`) : -1
-      const text = footer >= 0 && message.text.endsWith(WATCHER_GUIDANCE_SUFFIX) ? message.text.slice(0, footer) : message.text
-      return { id: message.id, role: message.role, text, createdAt: message.createdAt }
-    })
+    // The coordinator's detail already shows Watcher's messages as typed: an older one's routing footer is off it.
+    const messages = (detail?.messages ?? []).slice(-200).map(message => ({ id: message.id, role: message.role, text: message.text, createdAt: message.createdAt }))
     const receiptGroups: WatcherPhoneState['receiptGroups'] = []
     for (const operation of room.receipts.slice(-500)) {
       const request = room.requests.find(row => row.id === operation.requestId)
