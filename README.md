@@ -50,6 +50,8 @@ Standalone Chats, including Talk and Generate prompt, has been removed. With **K
 After you type in the Claude CLI, the next send from Sotto resumes the updated native history, even if the restart stops background work.
 
 If a Claude Code answer is unconfirmed, **Check again** checks the request without sending anything. A delayed write keeps your original choice; another answer is allowed only after the write fails outright or the client is gone.
+
+Codex, Claude Code and new Grok Build threads are asked to put a question for you through their own question tool. When a model writes a question into a reply instead and keeps working, the finished turn quotes it under its **Worked for** line, with **Show where it asked**.
 Pressing the dictation shortcut again while the microphone is connecting cancels the session as soon as it is ready. No audio is kept or transcribed.
 
 Settings → Application sets the working-copy default for new threads. Expand **Project defaults** to choose a different default for one project. Previously saved project choices are kept when Sotto updates.

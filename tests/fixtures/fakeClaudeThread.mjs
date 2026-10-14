@@ -33,7 +33,8 @@ if (args.includes('--no-session-persistence') && value('--output-format') === 'j
 }
 const metadata = args.includes('--no-session-persistence')
 const session = metadata ? 'metadata' : value(args.includes('--resume') ? '--resume' : '--session-id')
-const watcher = args.includes('--append-system-prompt')
+// Every thread process appends Sotto's question guidance; only Watcher's appends Watcher's prompt as well.
+const watcher = args.includes('--append-system-prompt') && value('--append-system-prompt').includes("You are Sotto's Watcher.")
 const mcpConfig = args.includes('--mcp-config') ? JSON.parse(readFileSync(value('--mcp-config'), 'utf8')) : { mcpServers: {} }
 const position = args.indexOf('--allowedTools')
 const following = position < 0 ? [] : args.slice(position + 1)
