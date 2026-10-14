@@ -1258,7 +1258,16 @@ export class WatcherService implements WatcherControlHooks {
             digest: digest(['stop_thread', input]), action: 'stop', target, generation: participant.generation, deliveryState: 'queued',
             createdAt: stamp, updatedAt: stamp, receiptId: randomUUID(), cardId: randomUUID(), anchorMessageId: request.rootUserMessageId, confirmedStop: true }
           await this.options.control.updateWatcher(record => record.operations.push(operation))
-          const result = await this.executeRemote('stop_thread', operation, input, guard) as { status: string }
+          const running = this.executeRemote('stop_thread', operation, input, guard)
+          this.active.set(operation.id, running)
+          let result: { status: string }
+          try { result = await running as { status: string } }
+          finally {
+            this.active.delete(operation.id)
+            this.dispatchRefusals.delete(operation.id)
+            this.pruneRemoteGuards()
+            if (this.record().operations.find(item => item.id === operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(target.hostId, true)
+          }
           const state = this.operationState(target)
           results.push({ target, status: result.status === 'refused' ? 'uncertain' : state.stopped ? 'stopped' : 'requested', message: result.status === 'refused' ? 'The stop was not confirmed. Reconnect and check this thread.' : 'Stop requested.' })
           continue
