@@ -32,6 +32,66 @@ function transport() {
 }
 
 describe('thread shell page lifecycle and command ordering', () => {
+  it.each([[true, true], [true, false], [false, true], [false, false]])('recovers around a successful worktree preview, command first: %s, read first: %s', async (commandFirst, readFirst) => {
+    const h = transport(), page = h.page(), delivered: AgentState[] = [], order: string[] = []
+    h.state.notice = 'Old shell'
+    page.onState(state => { delivered.push(state); if (state.notice === 'Current shell') order.push('shell') })
+    h.send()
+    h.state.host.threads[0]!.title = 'Latest'
+    h.state.notice = 'Current shell'
+    h.broadcaster.send(h.state, () => true)
+    const held = deferred<AgentState>(), command = deferred<Awaited<ReturnType<AgentWireBridge['command']>>>()
+    h.get.mockImplementationOnce(() => { h.broadcaster.resetThreadDelivery(); return held.promise })
+    h.command.mockReturnValue(command.promise)
+    let answer: ReturnType<typeof page.command>
+    if (commandFirst) { answer = page.command({ type: 'preview-reclaim-thread-worktree', threadId: 'a' }); h.send() }
+    else { h.send(); answer = page.command({ type: 'preview-reclaim-thread-worktree', threadId: 'a' }) }
+    if (readFirst) {
+      held.resolve(structuredClone(h.state))
+      for (let i = 0; i < 12; i++) await Promise.resolve()
+      // A read begun after the command began is current evidence and need not wait for it.
+      expect(delivered.map(state => state.notice)).toEqual(commandFirst ? ['Old shell', 'Current shell'] : ['Old shell'])
+    }
+    const own = h.broadcaster.encodeReceipt(h.state)
+    own.notice = 'Own preview outcome'
+    own.worktreeReclaimPreview = { path: 'C:/synthetic-worktree', branch: 'main', dirty: false, ignored: [], items: [], repositories: [], untracked: [] }
+    command.resolve(own)
+    expect(await answer!).toMatchObject({ notice: own.notice, worktreeReclaimPreview: own.worktreeReclaimPreview })
+    order.push('receipt')
+    if (!readFirst) held.resolve(structuredClone(h.state))
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    expect(delivered.map(state => state.notice)).toEqual(['Old shell', 'Current shell'])
+    expect(delivered.at(-1)?.host.threads[0]?.title).toBe('Latest')
+    expect(h.get).toHaveBeenCalledTimes(commandFirst && readFirst ? 1 : 2)
+    expect(order).toEqual(commandFirst && readFirst ? ['shell', 'receipt'] : ['receipt', 'shell'])
+  })
+  it.each(['fresh read', 'new full'] as const)('makes %s progress while another command stays pending', async progress => {
+    const h = transport(), page = h.page(), delivered: AgentState[] = []
+    page.onState(state => delivered.push(state))
+    h.send()
+    h.state.host.threads[0]!.title = 'Latest'
+    h.broadcaster.send(h.state, () => true)
+    const held = deferred<AgentState>()
+    h.get.mockImplementationOnce(() => { h.broadcaster.resetThreadDelivery(); return held.promise })
+    h.send()
+    const first = deferred<Awaited<ReturnType<AgentWireBridge['command']>>>(), second = deferred<Awaited<ReturnType<AgentWireBridge['command']>>>()
+    h.command.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    const firstAnswer = page.command({ type: 'preview-reclaim-thread-worktree', threadId: 'a' })
+    const secondAnswer = page.command({ type: 'preview-reclaim-thread-worktree', threadId: 'b' })
+    first.resolve(h.broadcaster.encodeReceipt(h.state))
+    await firstAnswer
+    if (progress === 'new full') h.send()
+    held.resolve(structuredClone(h.state))
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    expect(delivered.at(-1)?.host.threads[0]?.title).toBe('Latest')
+    expect(h.get).toHaveBeenCalledTimes(progress === 'fresh read' ? 2 : 1)
+    const own = h.broadcaster.encodeReceipt(h.state)
+    own.notice = 'Second command outcome'
+    second.resolve(own)
+    expect((await secondAnswer).notice).toBe(own.notice)
+    for (let i = 0; i < 12; i++) await Promise.resolve()
+    expect(h.get).toHaveBeenCalledTimes(progress === 'fresh read' ? 2 : 1)
+  })
   it.each(['newer full', 'newer receipt', 'unsubscribe', 'failed fresh read'] as const)('fences a fresh rejection read after %s', async outcome => {
     const h = transport(), page = h.page(), delivered: AgentState[] = []
     h.state.notice = 'Before command'
@@ -40,18 +100,18 @@ describe('thread shell page lifecycle and command ordering', () => {
     h.state.host.models = [...h.state.host.models, { id: 'new-model', name: 'New model', provider: 'codex', ready: true }]
     h.broadcaster.send(h.state, () => true)
     h.broadcaster.resetThreadDelivery()
-    const original = deferred<AgentState>()
+    const original = deferred<AgentState>(), originalState = structuredClone(h.state)
     h.get.mockImplementationOnce(() => { h.broadcaster.resetThreadDelivery(); return original.promise })
     h.send()
     h.state.activeThreadId = 'b'; h.state.notice = 'Successful command'
     h.command.mockResolvedValueOnce(h.broadcaster.encodeReceipt(h.state))
     await page.command({ type: 'select-thread', threadId: 'b' })
-    original.resolve(structuredClone(h.state))
-    for (let i = 0; i < 12; i++) await Promise.resolve()
     const fresh = deferred<AgentState>(), older = structuredClone(h.state)
     h.get.mockImplementationOnce(() => { h.broadcaster.resetThreadDelivery(); return fresh.promise })
     h.command.mockRejectedValueOnce(new Error('Host disconnected'))
     await expect(page.command({ type: 'refresh' })).rejects.toThrow('Host disconnected')
+    original.resolve(originalState)
+    for (let i = 0; i < 20; i++) await Promise.resolve()
     expect(h.get).toHaveBeenCalledTimes(3)
     if (outcome === 'unsubscribe') off()
     else if (outcome === 'newer full') { h.state.notice = 'Newest push'; h.send() }
@@ -64,12 +124,12 @@ describe('thread shell page lifecycle and command ordering', () => {
     if (outcome === 'failed fresh read') fresh.reject(new Error('Read failed'))
     else fresh.resolve(older)
     for (let i = 0; i < 20; i++) await Promise.resolve()
-    expect(delivered.map(state => state.notice)).toEqual(outcome === 'newer full' ? ['Before command', 'Newest push'] : ['Before command'])
-    expect(h.get).toHaveBeenCalledTimes(outcome === 'newer receipt' ? 4 : 3)
+    expect(delivered.map(state => state.notice)).toEqual(outcome === 'newer full' ? ['Before command', 'Newest push'] : outcome === 'newer receipt' ? ['Before command', 'Newest receipt'] : ['Before command'])
+    expect(h.get).toHaveBeenCalledTimes(outcome === 'newer receipt' ? 5 : 3)
     h.send()
     if (outcome !== 'unsubscribe') expect(delivered.at(-1)).toEqual(h.state)
     else expect(delivered).toHaveLength(1)
-    expect(h.get).toHaveBeenCalledTimes(outcome === 'newer receipt' ? 4 : 3)
+    expect(h.get).toHaveBeenCalledTimes(outcome === 'newer receipt' ? 5 : 3)
   })
   it.each([[true, false], [false, false], [true, true], [false, true]])('reads fresh after receipt recovery, read finished: %s, queued old broadcast: %s', async (finishFirst, queueRaw) => {
     const h = transport(), page = h.page(), delivered: AgentState[] = []
@@ -219,7 +279,7 @@ describe('thread shell page lifecycle and command ordering', () => {
     h.command.mockReturnValue(command.promise)
     const answer = page.command({ type: 'select-thread', threadId: 'b' })
     const recovery = deferred<AgentState>()
-    h.get.mockImplementation(() => { h.broadcaster.resetThreadDelivery(); return recovery.promise })
+    h.get.mockImplementationOnce(() => { h.broadcaster.resetThreadDelivery(); return recovery.promise })
     const old = structuredClone(h.state)
     // This subscriber did not receive the prior successful push: its first warm shell must recover.
     const cold: AgentState[] = []
@@ -230,20 +290,20 @@ describe('thread shell page lifecycle and command ordering', () => {
     own.notice = 'Selection saved'
     own.activeThreadId = 'b'
     own.threadDraftPersistence = [{ threadId: 'b', draftId: 'aaaaaaaa-0000-4000-8000-000000000000', status: 'saved' }]
+    h.state.activeThreadId = 'b'
     command.resolve(h.broadcaster.encodeReceipt(own))
     expect(await answer).toMatchObject({ notice: own.notice, activeThreadId: 'b', threadDraftPersistence: own.threadDraftPersistence })
     recovery.resolve(old)
     await recovery.promise
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(cold).toEqual([])
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    expect(cold).toEqual([h.state])
     h.state.activeThreadId = 'b'
     h.state.notice = 'Newer broadcast'
     h.state.host.threads[1]!.finishedUnread = true
     h.send()
     expect(cold.at(-1)).toEqual(h.state)
     expect(delivered.at(-1)).toEqual(h.state)
-    expect(h.get).toHaveBeenCalledTimes(1)
+    expect(h.get).toHaveBeenCalledTimes(2)
   })
 
   it('keeps receipt evidence and newer thread state when catalog recovery finishes late', async () => {

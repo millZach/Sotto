@@ -88,15 +88,15 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
       try {
         const reply = await bridge.command(request)
         observation++
-        const completed = await completeReceipt(reply)
+        return await completeReceipt(reply)
+      } finally {
         observation++
-        return completed
-      } catch (error) {
-        observation++
-        // A rejected command supplies no receipt. A read it overtook must recover again,
-        // rather than leave the subscriber empty until an unrelated broadcast arrives.
-        if (threadRecoveries) for (const recovery of threadRecoveries) recovery.retry()
-        throw error
+        // Some successful commands supply a preview rather than an applied state or push.
+        // Let the caller receive its own result before unresolved subscribers read fresh.
+        const recoveries = threadRecoveries
+        if (recoveries?.size) queueMicrotask(() => {
+          for (const recovery of recoveries) recovery.retry()
+        })
       }
     },
   }
@@ -108,6 +108,7 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
 function createThreadReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, listener: (state: AgentState) => void, observation: () => number): ((raw: unknown) => void) & { dispose: () => void; retry: () => void } {
   const threads = new AgentThreadShell()
   let recovering = false
+  let recoveryObservation: number | undefined
   let pending: { raw: unknown; observation: number } | null = null
   let unresolved: unknown = null
   let retryRequested = false
@@ -132,9 +133,10 @@ function createThreadReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: Cat
   const recover = (raw?: AgentState): void => {
     recovering = true
     const started = observation()
+    recoveryObservation = started
     bridge.get().then(full => {
       if (!active || observation() !== started) return
-      // A get has no thread revision: never seed the thread cache. A command-failure retry
+      // A get has no thread revision: never seed the thread cache. A command-settlement retry
       // also has no current catalog revision to assign; its old envelope is only a need to read.
       if (raw) rememberRecovered(catalogs, raw, full)
       unresolved = null
@@ -142,6 +144,7 @@ function createThreadReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: Cat
       listener(full)
     }).catch(() => undefined).finally(() => {
       recovering = false
+      recoveryObservation = undefined
       if (!active) return
       const retry = retryRequested
       retryRequested = false
@@ -160,7 +163,9 @@ function createThreadReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: Cat
     if (!active || unresolved === null) return
     // Reprocessing an old envelope could become possible after a receipt fills its catalog,
     // but would replay old selection/draft/notice facts. Always request a fresh complete read.
-    if (recovering) retryRequested = true
+    if (recovering) {
+      if (recoveryObservation !== observation()) retryRequested = true
+    }
     else recover()
   }
   receive.dispose = (): void => { active = false; pending = null; unresolved = null; retryRequested = false; threads.clear() }
