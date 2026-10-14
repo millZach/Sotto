@@ -79,3 +79,14 @@ tests/e2e/new-thread-settings.spec.ts tests/e2e/hosts.spec.ts tests/e2e/thread-a
 --workers=1` was run once against the combined branch: 11 passed, 2 failed
 (`agents.spec.ts:19` and `agents.spec.ts:160`), both already on the nine-case list above.
 `agents.spec.ts:81` passed. Nothing in this run failed that the base commit does not already fail.
+
+
+## October 13, 2026: thread recovery under the Owl switch
+
+The array-broadcast catalog recovery described above remains unchanged. With
+`streaming-publish-cost` enabled, desktop thread envelopes use a combined page
+receiver that can resume an unresolved complete read when a command settles,
+including rejection and a successful preview that publishes nothing. It never
+replays old envelope facts after a newer receipt fills the catalog. See the
+[thread recovery proof](2026-10-13-window-thread-shell.md) and the October 13
+amendment to [ADR-0028](../adr/0028-agent-state-broadcast-omits-an-unchanged-catalog.md).
