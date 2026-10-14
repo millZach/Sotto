@@ -769,9 +769,11 @@ export class WatcherService implements WatcherControlHooks {
         this.recordRemoteRefusal(record, operation.id, parsed.code)
       })
       else {
+        // Control may already have reached the host; an unverified reply cannot prove that it failed.
         if (!receipt || receipt.operationId !== operation.id || receipt.requestId !== operation.requestId
-          || key(receipt.target) !== key(operation.target)) refuse('INVALID_INPUT', 'The host returned another operation receipt. Nothing was reconciled.')
-        await this.options.control.updateWatcher(record => this.copyRemoteReceipt(record, record.operations.find(item => item.id === operation.id)!, { ...receipt, updatedAt: now() }))
+          || key(receipt.target) !== key(operation.target)) throw new Error('The host returned another operation receipt. Nothing was reconciled.')
+        await this.options.control.updateWatcher(record => this.copyRemoteReceipt(record, record.operations.find(item => item.id === operation.id)!,
+          { ...receipt, ...(parsed.status === 'refused' && receipt.deliveryState === 'failed' ? { refusalCode: parsed.code } : {}), updatedAt: now() }))
         await this.reconcileRemote(operation.target.hostId).catch(() => {
           this.recoveryNotice = 'The host confirmed the operation, but its latest state could not be read. Reconnect to refresh it.'
         })
@@ -798,9 +800,12 @@ export class WatcherService implements WatcherControlHooks {
     record.reservations = record.reservations.filter(item => item.operationId !== operationId)
   }
   private copyRemoteReceipt(record: WatcherRecord, own: WatcherOperation, receipt: Pick<WatcherOperation, 'deliveryState' | 'refusalCode' | 'commandId' | 'itemId' | 'updatedAt' | 'creationUncertain'>): void {
+    // A read started before the control reply can arrive afterward. Definitive outcomes cannot become pending again.
+    if ((own.deliveryState === 'accepted' || own.deliveryState === 'failed') && receipt.deliveryState !== own.deliveryState) return
     const wasFailed = own.deliveryState === 'failed'
     if (own.deliveryState !== 'accepted') own.deliveryState = receipt.deliveryState
-    if (receipt.refusalCode) own.refusalCode = receipt.refusalCode
+    if (own.deliveryState === 'accepted') delete own.refusalCode
+    else if (receipt.refusalCode) own.refusalCode = receipt.refusalCode
     if (receipt.commandId) own.commandId = receipt.commandId
     if (receipt.itemId) own.itemId = receipt.itemId
     if (receipt.creationUncertain) own.creationUncertain = true
