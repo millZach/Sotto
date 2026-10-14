@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
@@ -686,10 +686,10 @@ test.describe("Watcher's room on the built app", () => {
           const record = await page.evaluate(async () => (await window.sotto!.watcher!.get()))
           expect(record).toMatchObject({ status: 'ok', state: { current: { provider: 'codex' } } })
           if (record.status !== 'ok') throw new Error('Main did not return the Watcher room')
-          // The note names the request the message started, and nothing was appended, so there is no display proof to keep.
+          // The note names the request the message started, and its display proof records that the words went as typed.
           const request = record.state.requests.at(-1)!
           expect(note!.value).toContain(`Sotto Watcher request: ${request.id}. Local host: ${request.watcher.hostId}.`)
-          expect(request.displayPrompt).toBeUndefined()
+          expect(request.displayPrompt).toEqual({ originalLength: original.length, wireDigest: createHash('sha256').update(original).digest('hex') })
           // Watcher is its room's: not listed on the Threads page, and nothing there was selected for it.
           await switchTab(page, 'Threads').click()
           await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
