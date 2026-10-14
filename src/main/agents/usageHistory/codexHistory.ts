@@ -94,7 +94,10 @@ interface FileState {
   lastCount: string | undefined
   /** This reading began at the file's first line. */
   fresh: boolean
-  /** The rollout names a session it was forked or spawned from, so it may begin with that session's history. */
+  /**
+   * The rollout names a session it was forked or spawned from, so it may begin with that session's history. Cleared
+   * at its first running total no other session holds, where its own work begins.
+   */
   derived: boolean
   /** Lines before this reading's start. */
   base: number
@@ -165,6 +168,9 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
     return { threadId: session, client: meta?.client ?? own?.client ?? 'other', subAgent: meta?.subAgent ?? false }
   }
   const current = (state: FileState): Session | undefined => state.copied.at(-1) ?? state.own?.id
+  // A total a file holds as a copy is part of its own history too, counted under another session, so a subagent of
+  // that file's session that copies it in turn still knows it for a copy (Codex app subagents nest).
+  const holdsCopy = (own: Session, key: string): void => { const mine = memory.totalsOf(own); if (!mine.has(key)) mine.set(key, false) }
   const observation = (who: Owner, entry: string, turn: string | undefined, model: string | undefined, tokens: UsageTokens, at: string): UsageTokenObservation => {
     const partial = tokens.input === undefined || tokens.output === undefined
     const base = { providerId: 'codex' as const, modelId: model ?? 'unknown', tokens: { ...tokens }, at, phase: 'replay' as const, partial, origin: 'history' as const,
@@ -292,16 +298,16 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         // thread at the top), so in a forked or spawned rollout a total some other session read this pass already
         // holds is a copy of that session. Unrelated sessions with equal figures are never forks of each other.
         const holder = memory.holders.get(key)
-        if (state.derived && state.copied.length === 0 && holder !== undefined && holder !== session) {
-          const mine = memory.totalsOf(own.id); if (!mine.has(key)) mine.set(key, false)
-          return
+        if (state.derived && state.copied.length === 0) {
+          if (holder !== undefined && holder !== session) { holdsCopy(own.id, key); return }
+          // Its first total no other session holds is its own work, and nothing after is a copy: two sessions' later
+          // requests can share figures without either copying the other.
+          state.derived = false
         }
         if (holder === undefined) memory.holders.set(key, session)
         const totals = memory.totalsOf(session)
         const seen = totals.get(key)
-        // A total this file holds as a copy is part of its own history too, counted elsewhere, so a subagent of this
-        // session that copies it in turn still knows it for a copy (Codex app subagents nest).
-        if (session !== own.id) { const mine = memory.totalsOf(own.id); if (!mine.has(key)) mine.set(key, false) }
+        if (session !== own.id) holdsCopy(own.id, key)
         if (memory.learning) { if (seen === undefined) totals.set(key, false); return }
         // Counted already in this pass, or a copy of a session whose own reading counts it.
         if (seen === true || (seen === false && state.copied.length > 0)) return
@@ -377,25 +383,41 @@ async function rolloutHead(path: string): Promise<RolloutHead | undefined> {
   } catch { return undefined } finally { await handle.close() }
 }
 
+/** The session a saved cursor state belongs to and the parent it names. */
+function savedOwn(saved: string | undefined): { readonly id: Session; readonly parent: Session | undefined } | undefined {
+  if (saved === undefined) return undefined
+  try {
+    const own = object(object(JSON.parse(saved)).own)
+    if (typeof own.id !== 'string' || own.id.length === 0) return undefined
+    return { id: own.id, parent: typeof own.parent === 'string' && own.parent.length > 0 ? own.parent : undefined }
+  } catch { return undefined }
+}
+interface FamilyMember { readonly file: HistoryFile; readonly index: number; readonly id: Session }
+
 /** A sink that keeps nothing: a parent read for its running totals alone. */
 const discard: UsageHistorySink = { tokens: () => undefined, prompts: () => undefined, cursor: () => undefined, setCursors: () => undefined }
 
 /**
- * Before a fork or sub-agent rollout is read from its start, its parent's running
+ * Before a fork or sub-agent rollout's copied history is read, its parent's running
  * totals must be in the pass's memory, or the copy would look like the fork's own work. A parent this pass has not
- * read whole is read for those totals alone, through the same reader, counting nothing.
+ * read whole is read for those totals alone, through the same reader, counting nothing. So are the earlier rollouts
+ * naming the same parent: a nested subagent can name the thread at the top while its history is a copy of another
+ * subagent under it, whose rollout an earlier pass read and this one may not.
  */
 class ForkParents {
   private readonly tried = new Set<Session>()
   private readonly learn: HistoryFileReader<FileState>
-  constructor(private readonly files: readonly HistoryFile[], options: CodexHistoryOptions, private readonly memory: PassMemory, private readonly signal: AbortSignal) {
+  /** Earlier passes' rollouts by the parent each names, from their saved cursors; built when first needed. */
+  private families: Map<Session, FamilyMember[]> | undefined
+  constructor(private readonly files: readonly HistoryFile[], options: CodexHistoryOptions, private readonly memory: PassMemory, private readonly signal: AbortSignal,
+    private readonly cursor: (file: HistoryFile) => UsageHistoryCursor | undefined) {
     this.learn = reader(options, memory.learner())
   }
 
   async prepare(file: HistoryFile, cursor: UsageHistoryCursor | undefined): Promise<void> {
     if (cursor !== undefined) {
       // A file already read past its copy, or not changed since, needs nothing.
-      if (cursor.state === undefined || !cursor.state.includes('"copied"')) return
+      if (cursor.state === undefined || (!cursor.state.includes('"copied"') && !cursor.state.includes('"derived"'))) return
       try {
         const info = await stat(file.path)
         if (info.size === cursor.size && Math.max(0, Math.floor(info.mtimeMs)) === cursor.mtimeMs && cursor.offset >= info.size) return
@@ -404,6 +426,26 @@ class ForkParents {
     const head = await rolloutHead(file.path)
     if (head === undefined) return
     for (const parent of head.parents) await this.load(parent, 0)
+    const before = this.files.indexOf(file)
+    for (const parent of head.parents) {
+      for (const member of this.family(sessionOf(parent))) {
+        if (member.index >= before || this.memory.loaded.has(member.id) || this.tried.has(member.id) || this.signal.aborted) continue
+        this.tried.add(member.id)
+        if (await readHistoryFile('codex', member.file, this.learn, discard, this.signal)) this.memory.loaded.add(member.id)
+      }
+    }
+  }
+
+  private family(parent: Session): readonly FamilyMember[] {
+    if (this.families === undefined) {
+      const families = new Map<Session, FamilyMember[]>()
+      this.files.forEach((file, index) => {
+        const own = savedOwn(this.cursor(file)?.state)
+        if (own?.parent !== undefined) families.set(own.parent, [...(families.get(own.parent) ?? []), { file, index, id: own.id }])
+      })
+      this.families = families
+    }
+    return this.families.get(parent) ?? []
   }
 
   private async load(nativeId: string, depth: number): Promise<void> {
@@ -439,10 +481,11 @@ export async function scanCodexHistory(options: CodexHistoryOptions, sink: Usage
   files.sort(byFileName)
   const memory = new PassMemory()
   const read = reader(options, memory)
-  const parents = new ForkParents(files, options, memory, signal)
+  const cursorOf = (file: HistoryFile): UsageHistoryCursor | undefined => sink.cursor(usageHistoryCursorKey('codex', file.relativePath))
+  const parents = new ForkParents(files, options, memory, signal, cursorOf)
   for (const file of files) {
     if (signal.aborted) return
-    await parents.prepare(file, sink.cursor(usageHistoryCursorKey('codex', file.relativePath)))
+    await parents.prepare(file, cursorOf(file))
     if (!await readHistoryFile('codex', file, read, sink, signal)) return
   }
 }

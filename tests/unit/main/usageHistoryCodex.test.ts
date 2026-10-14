@@ -179,6 +179,40 @@ describe('Codex history reader', () => {
     await scan(root, sink)
     expect(sink.sum('input')).toBe(170)
   })
+  it('counts the copy of a nested subagent once when an earlier pass read the subagent it copied', async () => {
+    const top = codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } })
+    const middle = codexTokenCount({ at: t(6), total: { input: 150, output: 15 }, last: { input: 50, output: 5 } })
+    const root = await home()
+    await writeFile(rollout(root, '2026-09-20T10-00-00-pass-top'), jsonl([codexMeta({ id: 'pass-top', originator: 'Codex Desktop', at: t(0) }), top]))
+    await writeFile(rollout(root, '2026-09-20T10-05-00-pass-middle'), jsonl([
+      codexMeta({ id: 'pass-middle', originator: 'Codex Desktop', at: t(5), parent: 'pass-top', threadSource: 'subagent' }), top, middle]))
+    const sink = memorySink()
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(150)
+    // The next pass finds a new subagent naming the top thread, whose history is a copy of the unchanged middle one.
+    await writeFile(rollout(root, '2026-09-20T10-10-00-pass-bottom'), jsonl([
+      codexMeta({ id: 'pass-bottom', originator: 'Codex Desktop', at: t(10), parent: 'pass-top', threadSource: 'subagent' }), top, middle,
+      codexTokenCount({ at: t(11), total: { input: 170, output: 17 }, last: { input: 20, output: 2 } })]))
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(170)
+    expect([...sink.rows().values()].filter(row => row.threadId === usageHistoryThreadId('codex', 'pass-bottom')).map(row => row.tokens.input)).toEqual([20])
+  })
+  it('keeps every later request of a subagent when another session has a request with the same figures', async () => {
+    const top = codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } })
+    const shared = { total: { input: 180, output: 18 }, last: { input: 30, output: 3 } }
+    const root = await home()
+    await writeFile(rollout(root, '2026-09-20T10-00-00-same-top'), jsonl([codexMeta({ id: 'same-top', originator: 'Codex Desktop', at: t(0) }), top]))
+    await writeFile(rollout(root, '2026-09-20T10-02-00-same-other'), jsonl([
+      codexMeta({ id: 'same-other', originator: 'codex-tui', at: t(2) }), codexTokenCount({ at: t(3), ...shared })]))
+    await writeFile(rollout(root, '2026-09-20T10-05-00-same-sub'), jsonl([
+      codexMeta({ id: 'same-sub', originator: 'Codex Desktop', at: t(5), parent: 'same-top', threadSource: 'subagent' }), top,
+      codexTokenCount({ at: t(6), total: { input: 150, output: 15 }, last: { input: 50, output: 5 } }),
+      codexTokenCount({ at: t(7), ...shared })]))
+    const sink = memorySink()
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(210)
+    expect([...sink.rows().values()].filter(row => row.threadId === usageHistoryThreadId('codex', 'same-sub')).map(row => row.tokens.input)).toEqual([50, 30])
+  })
   it('attributes a fork read in a later pass to its parent, so the store counts the copy once', async () => {
     const root = await home()
     const parentLines = [
