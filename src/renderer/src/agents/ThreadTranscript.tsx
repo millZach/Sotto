@@ -61,9 +61,16 @@ interface LiftedReply { readonly message: AgentMessage; readonly questions: read
 /** How long a reply reached by Show where it asked stays marked. */
 const SOUGHT_MS = 1_600
 
+/** Each marked reply's own clearing, so a second press while it is marked keeps the mark for the full time again. */
+const soughtTimers = new WeakMap<HTMLElement, number>()
 const seekWithoutTranscript = (message: HTMLElement): void => {
   message.scrollIntoView?.({ block: 'center' })
   message.focus({ preventScroll: true })
+}
+
+/** A lifted question's words, with the code it quoted between backticks drawn as code. */
+function QuestionWords({ text }: { readonly text: string }): ReactNode {
+  return text.split(/`([^`]+)`/u).map((part, index) => index % 2 ? <code key={index}>{part}</code> : part)
 }
 
 /**
@@ -90,7 +97,8 @@ function TurnWork({ headline, error, failed, changes, onDisclosure, onSeek, lift
     message.tabIndex = -1
     message.dataset.sought = ''
     ;(onSeek ?? seekWithoutTranscript)(message)
-    window.setTimeout(() => { delete message.dataset.sought }, SOUGHT_MS)
+    window.clearTimeout(soughtTimers.get(message))
+    soughtTimers.set(message, window.setTimeout(() => { delete message.dataset.sought; soughtTimers.delete(message) }, SOUGHT_MS))
   }
   return <>
     <section className="thread-work" data-expanded={open || undefined} data-turn-outcome={failed ? 'failed' : undefined} aria-label={headline}
@@ -109,7 +117,7 @@ function TurnWork({ headline, error, failed, changes, onDisclosure, onSeek, lift
       const more = questions.length - MOST_LIFTED
       return <section key={message.id} className="thread-lifted" aria-labelledby={`${liftedId}-${message.id}`}>
         <p className="thread-lifted__who" id={`${liftedId}-${message.id}`}>{who} asked while working · <time dateTime={message.createdAt}>{time}</time></p>
-        <blockquote className="thread-lifted__questions">{questions.slice(0, MOST_LIFTED).map(question => <p key={question}>{question}</p>)}</blockquote>
+        <blockquote className="thread-lifted__questions">{questions.slice(0, MOST_LIFTED).map(question => <p key={question}><QuestionWords text={question} /></p>)}</blockquote>
         {more > 0 ? <p className="thread-lifted__more">{more === 1 ? 'One more question in that reply.' : `${more} more questions in that reply.`}</p> : null}
         <button type="button" className="thread-lifted__where tt-focusable" aria-label={`Show where it asked, at ${time}`} onClick={() => seek(message.id)}>Show where it asked</button>
       </section>

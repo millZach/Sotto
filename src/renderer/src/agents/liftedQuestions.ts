@@ -22,8 +22,9 @@ const markdown = unified().use(remarkParse).use(remarkGfm)
 /** Blocks whose words are not the reply talking to the user: code, headings, tables, quotes and raw HTML. */
 const NOT_PROSE = new Set<Nodes['type']>(['code', 'heading', 'table', 'blockquote', 'html'])
 /** Where a span of inline code was set aside, marked with private-use characters no reply writes. */
-const CODE_MARK = /(\d+)/gu
-const SENTENCE_END = /(?<=[.!?…]["'”’)\]]*)\s+/u
+const CODE_MARK = /\uE000(\d+)\uE000/gu
+/** A sentence ends at its mark and any closing quote or bracket, unless what follows goes on in lower case, as after an aside ("(should I?) and then"). */
+const SENTENCE_END = /(?<=[.!?…]["'”’)\]]*)\s+(?!\p{Ll})/u
 const ABBREVIATION = /(?:^|\s)(?:e\.g|i\.e|etc|vs|cf|approx)\.$/iu
 const ASKS = /\?["'”’)\]]*$/u
 
@@ -38,7 +39,7 @@ function prose(nodes: readonly PhrasingContent[], code: string[]): string {
   return nodes.map(node => {
     switch (node.type) {
       case 'text': return node.value
-      case 'inlineCode': return `${code.push(node.value.trim()) - 1}`
+      case 'inlineCode': return `\uE000${code.push(node.value.trim()) - 1}\uE000`
       case 'break': return ' '
       case 'image': return node.alt ?? ''
       default: return 'children' in node ? prose(node.children as PhrasingContent[], code) : ''
@@ -60,7 +61,8 @@ export function questionsIn(text: string): string[] {
     for (const sentence of sentences) {
       // A question mark inside code is the code's, so the sentence is judged before its code is put back.
       if (!ASKS.test(sentence)) continue
-      const words = sentence.replace(CODE_MARK, (_, index: string) => code[Number(index)] ?? '').trim()
+      // Code goes back between backticks, so the fold can draw it as code.
+      const words = sentence.replace(CODE_MARK, (_, index: string) => code[Number(index)] ? `\`${code[Number(index)]}\`` : '').trim()
       if (words.split(' ').length < FEWEST_WORDS) continue
       const quoted = words.length > LONGEST ? `${words.slice(0, LONGEST - 1).trimEnd()}…` : words
       if (!found.includes(quoted)) found.push(quoted)

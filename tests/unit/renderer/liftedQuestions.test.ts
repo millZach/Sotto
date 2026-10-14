@@ -13,9 +13,16 @@ describe('questions a reply asked on the way', () => {
     expect(questionsIn(reply)).toEqual(['Should the rings be per provider?', 'Do you want the Read again link kept?'])
   })
 
-  it('reads links as their words and code as its text', () => {
+  it('reads links as their words and keeps code between backticks', () => {
     expect(questionsIn('Should I rename `usageRows` as [the plan](https://example.com/plan?x=1) says?'))
-      .toEqual(['Should I rename usageRows as the plan says?'])
+      .toEqual(['Should I rename `usageRows` as the plan says?'])
+  })
+
+  it('does not end a sentence at a question in an aside the sentence goes on from', () => {
+    expect(questionsIn('I could do it (should I use the old one?) and move on now.')).toEqual([])
+    expect(questionsIn('He said "is it fine?" and then left the room.')).toEqual([])
+    expect(questionsIn('Use [which one?] and continue the work.')).toEqual([])
+    expect(questionsIn('The old one is gone. (Should I bring it back?) The new one works.')).toEqual(['(Should I bring it back?)'])
   })
 
   it('leaves code, headings, tables and quotes alone', () => {

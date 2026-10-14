@@ -198,6 +198,27 @@ describe('questions a folded reply asked (#1019)', () => {
     expect(sought[0]).toHaveTextContent('Three investigators are tracing it.')
   })
 
+  it('draws the code a question quotes as code', () => {
+    show([turn[0]!, { ...turn[1]!, text: 'Done. Should I run `npm test` before pushing?' }, turn[3]!])
+    const [lifted] = screen.getAllByRole('region', { name: /asked while working/u })
+    expect(lifted!.querySelector('blockquote code')).toHaveTextContent('npm test')
+    expect(lifted).toHaveTextContent('Should I run npm test before pushing?')
+  })
+
+  it('keeps the mark for its full time when Show where it asked is pressed again', () => {
+    vi.useFakeTimers()
+    show(turn, false, { ...finished, onSeek: () => undefined })
+    const where = screen.getAllByRole('button', { name: /^Show where it asked, at /u })[0]!
+    fireEvent.click(where)
+    const asking = document.querySelector('.thread-message[data-message-id="a1"]')!
+    act(() => { vi.advanceTimersByTime(1_000) })
+    fireEvent.click(where)
+    act(() => { vi.advanceTimersByTime(1_000) })
+    expect(asking).toHaveAttribute('data-sought')
+    act(() => { vi.advanceTimersByTime(700) })
+    expect(asking).not.toHaveAttribute('data-sought')
+  })
+
   it('lifts nothing while the turn runs, because nothing is folded', () => {
     show(turn, true, { ...finished, liveTurn: 'u', running: true })
     expect(screen.queryByRole('region', { name: /asked while working/u })).not.toBeInTheDocument()
