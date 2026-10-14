@@ -337,6 +337,27 @@ describe('watching a thread', () => {
     expect(bridge.unwatchThread).toHaveBeenCalledWith({ target: target('footer-links') })
     await waitFor(() => expect(watch).toHaveAttribute('aria-pressed', 'false'))
     expect(document.querySelector('.watch-toast')).toHaveTextContent('Watcher stopped watching Footer links.')
+    // Undo went with its toast; the composer under it keeps the keyboard, and the new toast does not take it.
+    const prompt = within(pane).getByRole('textbox', { name: 'Prompt' })
+    expect(prompt).toHaveFocus()
+  })
+
+  it('keeps the keyboard in the composer when Stop watching or a toast’s Dismiss goes away', async () => {
+    const user = userEvent.setup()
+    const { bridge } = renderThreads(roomState())
+    const pane = await screen.findByRole('region', { name: 'Footer links' })
+    const prompt = within(pane).getByRole('textbox', { name: 'Prompt' })
+    await user.click(await within(pane).findByRole('button', { name: 'Stop watching Footer links' }))
+    await waitFor(() => expect(within(pane).queryByRole('button', { name: 'Stop watching Footer links' })).toBeNull())
+    expect(prompt).toHaveFocus()
+    // A refused press says why, with Dismiss; Dismiss takes the toast away and hands the keyboard back to the composer.
+    bridge.watchThread.mockResolvedValueOnce({ status: 'refused', code: 'HOST_DISCONNECTED', message: 'Sotto Site’s host is not connected, so Footer links is not watched.', retryable: true })
+    await user.click(within(pane).getByRole('button', { name: 'Watch Footer links' }))
+    const dismiss = await screen.findByRole('button', { name: 'Dismiss' })
+    dismiss.focus()
+    await user.keyboard('{Enter}')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(prompt).toHaveFocus()
   })
 
   it('stops watching from under the composer, and says a refusal in main’s words', async () => {
@@ -433,6 +454,11 @@ describe('watching a thread', () => {
     await user.click(within(footer).getByRole('button', { name: 'Stop watching Footer links' }))
     expect(bridge.unwatchThread).toHaveBeenCalledWith({ target: target('footer-links') })
     await waitFor(() => expect(within(pane).getByRole('tab', { name: 'Watched, 1 thread' })).toBeInTheDocument())
+    // Its card went with the button; the keyboard goes on to the card before it, the last one left.
+    expect(within(panel).getByRole('button', { name: 'Stop watching Visual gate flake' })).toHaveFocus()
+    await user.click(within(panel).getByRole('button', { name: 'Stop watching Visual gate flake' }))
+    await waitFor(() => expect(within(pane).getByRole('tab', { name: 'Watched, 0 threads' })).toBeInTheDocument())
+    expect(within(pane).getByRole('button', { name: 'Watch a thread' })).toHaveFocus()
     // Watch a thread opens All threads, where the owl watches one.
     await user.click(within(pane).getByRole('button', { name: 'Watch a thread' }))
     expect(screen.getByRole('dialog', { name: 'All threads' })).toBeInTheDocument()

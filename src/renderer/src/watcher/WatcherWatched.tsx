@@ -1,4 +1,4 @@
-import React, { useId, type ReactNode } from 'react'
+import React, { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
 import type { AgentState } from '../../../shared/agents'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
 import { WATCHER_GROUPS, type WatcherGroup } from '../../../shared/watcherOverview'
@@ -67,7 +67,9 @@ function unlistedStatus(row: WatchedRow): string {
   return row.status === 'running' ? 'Working' : row.status === 'error' ? 'Last turn failed' : 'Idle'
 }
 
-function Card({ card, room, onOpen }: { readonly card: WatchedCard; readonly room: WatcherRoomState; readonly onOpen: OpenThread }): ReactNode {
+function Card({ card, room, onOpen, onStopping }: { readonly card: WatchedCard; readonly room: WatcherRoomState; readonly onOpen: OpenThread
+  /** Stop watching was pressed on this card, which goes with it. */
+  readonly onStopping: (control: HTMLElement) => void }): ReactNode {
   const actions = useWatchActions()
   const describedBy = useId()
   const { row, threadId, entry, group } = card
@@ -87,7 +89,7 @@ function Card({ card, room, onOpen }: { readonly card: WatchedCard; readonly roo
       {kind !== null && threadId !== null ? <button type="button" className="watcher-answer tt-focusable" aria-label={openAtRequestLabel(title, kind)} {...threadPress(onOpen, threadId, true)}>
         {kind === 'failed' ? 'Open' : 'Open to answer'}</button> : null}
       {actions === null ? null : <button type="button" className="watched-card__stop tt-focusable" aria-label={`Stop watching ${title}`}
-        onClick={() => void actions.set(row.target, title, false)}>Stop watching</button>}
+        onClick={event => { onStopping(event.currentTarget); void actions.set(row.target, title, false) }}>Stop watching</button>}
     </span>
     <span className="watched-card__meta" aria-hidden="true">
       {entry === undefined ? <WatchedBadge size={13} /> : <span className="watcher-row__marks">
@@ -128,7 +130,26 @@ export function WatcherWatchedView({ room, state, groups, labelledBy, id, onOpen
     return { row, threadId: entry === undefined ? null : threadId, entry, group: entry?.overview.group ?? 'Idle' }
   })
   const lead = projection === null ? watchedLead(0, 0) : watchedLead(cards.length, cards.filter(card => hasStandingWatch(projection, card.row.target)).length)
-  return <div id={id} className="thread-workspace__transcript watcher-watched" role="tabpanel" aria-labelledby={labelledBy} tabIndex={0}>
+  // Stop watching takes its card away with the button. The keyboard goes on to the next card's Stop watching, or the
+  // one before it, then Watch a thread, then the panel itself, unless it went somewhere else meanwhile.
+  const panel = useRef<HTMLDivElement>(null)
+  const stopping = useRef<{ readonly control: HTMLElement; readonly next: HTMLElement | null } | null>(null)
+  const cardKeys = cards.map(card => `${card.row.target.hostId}:${card.row.target.threadId}`).join('|')
+  useLayoutEffect(() => {
+    const press = stopping.current
+    if (press === null || press.control.isConnected) return
+    stopping.current = null
+    const active = document.activeElement
+    if (active !== null && active !== document.body) return
+    const next = press.next?.isConnected ? press.next : panel.current?.querySelector<HTMLElement>('.watched-card__stop, .watcher-watched__add') ?? panel.current
+    next?.focus()
+  }, [cardKeys])
+  const onStopping = (control: HTMLElement): void => {
+    const stops = [...panel.current?.querySelectorAll<HTMLElement>('.watched-card__stop') ?? []]
+    const at = stops.indexOf(control)
+    stopping.current = { control, next: stops[at + 1] ?? stops[at - 1] ?? null }
+  }
+  return <div ref={panel} id={id} className="thread-workspace__transcript watcher-watched" role="tabpanel" aria-labelledby={labelledBy} tabIndex={0}>
     <div className="watcher-watched__lead">
       <p>{lead}</p>
       {actions === null ? null : <button type="button" className="watcher-watched__add tt-focusable" aria-haspopup="dialog" onClick={event => onShowAll(event.currentTarget)}>
@@ -139,7 +160,7 @@ export function WatcherWatchedView({ room, state, groups, labelledBy, id, onOpen
       if (shown.length === 0) return null
       return <section key={group} className="watcher-watched__group" data-tone={TONES[group]} aria-label={`${group}, ${plural(shown.length, 'thread')}`}>
         <h3 className="watcher-watched__label" aria-hidden="true"><span>{group}</span><span className="watcher-group__count">{shown.length}</span></h3>
-        <ul className="watcher-watched__cards">{shown.map(card => <Card key={`${card.row.target.hostId}:${card.row.target.threadId}`} card={card} room={projection} onOpen={onOpen} />)}</ul>
+        <ul className="watcher-watched__cards">{shown.map(card => <Card key={`${card.row.target.hostId}:${card.row.target.threadId}`} card={card} room={projection} onOpen={onOpen} onStopping={onStopping} />)}</ul>
       </section>
     })}
   </div>

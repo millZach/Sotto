@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react'
+import React, { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { useStandingWatch, useWatchActions, useWatchedThread, useWatchPaused } from './watcherRoom'
 import { watchNotices, useWatchNotice } from './watchNotice'
@@ -59,14 +59,41 @@ export function WatchedNote({ threadId, title }: { readonly threadId: string; re
   const watched = useWatchedThread(threadId)
   const paused = useWatchPaused(threadId)
   const standing = useStandingWatch(threadId)
+  // Stop watching takes the note away with its own button: the composer just above it keeps the keyboard.
+  const landing = useFocusLanding(watched)
   if (!watched) return null
   return <p className="watched-note">
     <WatcherOwl size={13} />
     <span>{!standing ? WATCHED_FOR_A_REQUEST : paused ? `${WATCHED_BY_WATCHER}. It waits while your own turn here runs, then keeps this thread going.`
       : `${WATCHED_BY_WATCHER}. It keeps this thread going and brings you its questions and permissions.`}</span>
     {actions === null ? null : <button type="button" className="watched-note__stop tt-focusable" aria-label={`Stop watching ${title}`}
-      onClick={() => void actions.setThread(threadId, false)}>Stop watching</button>}
+      onClick={event => { landing.from(event.currentTarget); void actions.setThread(threadId, false) }}>Stop watching</button>}
   </p>
+}
+
+/** The composer field of the pane whose compose area this is, which keeps the keyboard when a control by it goes away. */
+const composerIn = (compose: Element): HTMLElement | null => compose.querySelector<HTMLElement>('[role="textbox"]')
+
+/**
+ * Keeps the keyboard when a press takes away the control it was on. Once `shown` changes after the press, and focus
+ * fell to the page rather than going somewhere else meanwhile, it goes to what `land` finds in the pane's compose area:
+ * by default the composer, which sits beside every control here.
+ */
+export function useFocusLanding(shown: unknown, land: (compose: Element) => HTMLElement | null = composerIn) {
+  const pressed = useRef<{ readonly control: HTMLElement; readonly compose: Element } | null>(null)
+  useLayoutEffect(() => {
+    const press = pressed.current
+    if (press === null || press.control.isConnected) return
+    pressed.current = null
+    const active = document.activeElement
+    if (active === null || active === document.body) land(press.compose)?.focus()
+  }, [shown])
+  return {
+    from: (control: HTMLElement): void => {
+      const compose = control.closest('.thread-workspace__compose')
+      pressed.current = compose === null ? null : { control, compose }
+    },
+  }
 }
 
 /**
@@ -77,16 +104,20 @@ export function WatchedNote({ threadId, title }: { readonly threadId: string; re
 export function WatchToast(): ReactNode {
   const actions = useWatchActions()
   const notice = useWatchNotice()
+  // Dismiss and Undo take the toast away with their own button; the composer under it keeps the keyboard, and the
+  // toast Undo brings never takes it.
+  const landing = useFocusLanding(notice?.id ?? null)
   if (actions === null || notice === null) return null
   const { id, target, title, watched, refusal } = notice
   if (refusal !== null) return <div className="watch-toast-anchor"><div className="watch-toast" data-tone="refused" role="alert">
     <WatcherOwl size={15} /><span>{refusal}</span>
-    <button type="button" className="watch-toast__dismiss tt-focusable" aria-label="Dismiss" title="Dismiss" onClick={() => watchNotices.dismiss(id)}><X size={14} aria-hidden="true" /></button>
+    <button type="button" className="watch-toast__dismiss tt-focusable" aria-label="Dismiss" title="Dismiss"
+      onClick={event => { landing.from(event.currentTarget); watchNotices.dismiss(id) }}><X size={14} aria-hidden="true" /></button>
   </div></div>
   return <div className="watch-toast-anchor"><div className="watch-toast" role="status">
     <WatcherOwl size={15} />
     <span>{watched ? <>Watcher is watching <strong>{title}</strong>.</> : <>Watcher stopped watching <strong>{title}</strong>.</>}</span>
     <button type="button" className="watch-toast__undo tt-focusable" aria-label={watched ? `Undo: stop watching ${title}` : `Undo: watch ${title} again`}
-      onClick={() => { watchNotices.dismiss(id); void actions.set(target, title, !watched) }}>Undo</button>
+      onClick={event => { landing.from(event.currentTarget); watchNotices.dismiss(id); void actions.set(target, title, !watched) }}>Undo</button>
   </div></div>
 }
