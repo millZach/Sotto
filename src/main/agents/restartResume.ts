@@ -35,6 +35,8 @@ export interface RestartResumeOptions {
   readonly enabled: () => boolean
   /** Whether the thread has Sotto's pull request tools, for babysitting news a note may be folded with. */
   readonly tool: (threadId: string) => boolean
+  /** A gated thread keeps its saved record unchanged until the owning feature is available again. */
+  readonly preservesDormantThread?: (threadId: string) => boolean
   readonly now?: () => number
 }
 
@@ -73,6 +75,8 @@ export class RestartResume {
     const resume = this.options.enabled()
     const oldest = this.now() - RESUME_RECORD_MAX_AGE_MS
     for (const item of file.working) {
+      // A hidden provider is parked, not stopped, expired or deleted by this build.
+      if (this.dormant(item.threadId)) { this.working.set(item.threadId, item); continue }
       if (!resume || !(Date.parse(item.since) >= oldest)) continue
       if (item.queued) { this.working.set(item.threadId, item); continue }
       // A fourth stop in a row leaves the thread for the user.
@@ -100,11 +104,14 @@ export class RestartResume {
 
   /** The coordinator is sending this thread's resume note now: the turn that starts next is the resumed one. */
   noteSending(threadId: string): void {
+    if (this.dormant(threadId)) return
     const record = this.working.get(threadId)
     if (!this.frozen && record?.queued) this.sending.set(threadId, record.resumes)
   }
   /** The note did not go after all; the next turn is not its own. */
-  noteUnsent(threadId: string): void { this.sending.delete(threadId) }
+  noteUnsent(threadId: string): void { if (!this.dormant(threadId)) this.sending.delete(threadId) }
+
+  private dormant(threadId: string): boolean { return this.options.preservesDormantThread?.(threadId) === true }
 
   private observe(state: AgentState): void {
     if (this.frozen) return
@@ -114,11 +121,12 @@ export class RestartResume {
     if (host.connected) {
       const listed = new Set(host.threads.map(thread => thread.id))
       for (const id of [...this.working.keys()]) {
-        if (listed.has(id) || this.delivering.has(id)) continue
+        if (this.dormant(id) || listed.has(id) || this.delivering.has(id)) continue
         this.working.delete(id); this.pending.delete(id); this.sending.delete(id); changed = true
       }
     }
     for (const thread of host.threads) {
+      if (this.dormant(thread.id)) continue
       const connected = host.connected && isThreadProviderConnected(host, thread)
       // Native idle can come before the turn's completion, so a turn still reported running counts as working.
       const running = connected && (thread.status === 'running' || thread.lastTurn?.status === 'running')
@@ -149,7 +157,7 @@ export class RestartResume {
 
   /** Hands the thread its resume note, unless it was settled or archived while Sotto was closed. */
   private deliver(thread: AgentThread, state: AgentState): void {
-    if (this.delivering.has(thread.id)) return
+    if (this.dormant(thread.id) || this.delivering.has(thread.id)) return
     const record = this.working.get(thread.id)
     const project = state.host.projects.find(item => item.id === thread.projectId)
     if (!record || isThreadClosed(thread) || isWorkspaceThreadSettled(thread, project)) {
@@ -159,19 +167,29 @@ export class RestartResume {
     const news: RestartNews = { source: 'restart', since: record.since, resumes: record.resumes + 1 }
     this.delivering.add(thread.id)
     const handing: Promise<void> = this.options.control.deliverWakeUp(thread.id, news, { tool: this.options.tool(thread.id) }).then(
-      () => { this.working.set(thread.id, { threadId: thread.id, since: record.since, resumes: news.resumes, queued: true }) },
+      () => { if (!this.dormant(thread.id)) this.working.set(thread.id, { threadId: thread.id, since: record.since, resumes: news.resumes, queued: true }) },
       // Nothing was queued. A thread that went is dropped; one Sotto closed on is kept for the next start.
-      () => { if (!this.frozen) this.working.delete(thread.id) },
+      () => { if (!this.frozen && !this.dormant(thread.id)) this.working.delete(thread.id) },
     ).finally(() => { this.pending.delete(thread.id); this.delivering.delete(thread.id); this.handing.delete(handing); this.save() })
     this.handing.add(handing)
   }
 
+  /** Dormant records keep their places in the bound; this build's newest ordinary records fill what remains. */
+  private savedWorking(): Working[] {
+    const working = [...this.working.values()]
+    const dormant = new Set(working.filter(item => this.dormant(item.threadId)))
+    const room = WORKING_MAX - dormant.size
+    const ordinary = room > 0 ? working.filter(item => !dormant.has(item)).slice(-room) : []
+    const kept = new Set([...dormant, ...ordinary])
+    return working.filter(item => kept.has(item))
+  }
+
   private save(): void {
-    const working = [...this.working.values()].slice(-WORKING_MAX)
+    const working = this.savedWorking()
     const next = JSON.stringify(working)
     if (next === this.saved) return
     this.saved = next
     // A write that fails is tried again at the next change, and at the latest when Sotto closes.
-    this.writing = this.store.writeLatest(() => ({ version: 1, working: [...this.working.values()].slice(-WORKING_MAX) })).catch(() => { this.saved = '' })
+    this.writing = this.store.writeLatest(() => ({ version: 1, working: this.savedWorking() })).catch(() => { this.saved = '' })
   }
 }

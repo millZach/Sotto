@@ -156,8 +156,9 @@ jobs:
 
       # Two workers keeps the jsdom and child-process heavy suites inside the
       # runner's memory and matches the timing the suite's deadlines assume.
+      # Keep per-test completions when an otherwise quiet file stalls on a hosted runner.
       - name: Unit and integration tests
-        run: npm test -- --maxWorkers=2 --shard=${{ matrix.shard }}/6
+        run: npm test -- --maxWorkers=2 --shard=${{ matrix.shard }}/6 --reporter=verbose
 
   # Six shards keep the Linux suite near the Windows shards' duration without changing those jobs.
   # This uses the full-suite decision, not the host filter that skips renderer and preload changes.

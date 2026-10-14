@@ -324,6 +324,9 @@ describe('native Grok billing metadata', () => {
 })
 
 describe('quota read states and boundaries', () => {
+  it('refuses an unsupported public provider before building a four-provider quota result', () => {
+    expect(() => unavailableProviderQuota('muse', 'unsupported')).toThrow('Usage is not available for this provider.')
+  })
   it('keeps unsupported, disconnected, refresh-unavailable and read-failed distinct from fresh zero', () => {
     expect(unavailableProviderQuota('devin', 'unsupported')).toMatchObject({ status: 'unavailable', reason: 'unsupported', windows: [], refreshable: false })
     expect(unavailableProviderQuota('grok', 'not-connected')).toMatchObject({ status: 'unavailable', reason: 'not-connected' })

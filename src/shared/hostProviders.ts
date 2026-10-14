@@ -26,12 +26,18 @@ export type ProviderSignInShape = z.infer<typeof providerSignInShapeSchema>
 export const providerSignInStageSchema = z.enum(['starting', 'waiting', 'finishing', 'connected', 'refused', 'failed', 'ended'])
 export type ProviderSignInStage = z.infer<typeof providerSignInStageSchema>
 
-/** Which providers sign in from this computer, and how. Devin's sign-in needs a terminal, so its tile shows the command. */
+/** Which providers sign in from this computer, and how. Devin's and Muse's sign-ins run on the host itself, so their tiles show the command. */
 export const PROVIDER_SIGN_IN_SHAPES: Readonly<Record<ProviderId, ProviderSignInShape | null>> = {
-  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null,
+  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null,
 }
 /** What Devin's tile says to run on the host: its sign-in for a machine reached over SSH, where a browser cannot come back to it. */
 export const DEVIN_SIGN_IN_COMMAND = 'devin auth login --force-manual-token-flow'
+/** What Muse's tile says to run on the host: its sign-in approves a code in the browser on that machine's account. */
+export const MUSE_SIGN_IN_COMMAND = 'muse login'
+/** The sign-in command a host tile shows for a provider that signs in on the host itself. Absent for the rest. */
+export const PROVIDER_SIGN_IN_COMMANDS: Readonly<Partial<Record<ProviderId, string>>> = {
+  devin: DEVIN_SIGN_IN_COMMAND, muse: MUSE_SIGN_IN_COMMAND,
+}
 
 /**
  * Each provider's install page as its maker publishes it, the same pages the host's install brief cites
@@ -43,6 +49,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
   claude: 'https://code.claude.com/docs/en/setup',
   grok: 'https://docs.x.ai/build/overview',
   devin: 'https://docs.devin.ai/cli',
+  muse: 'https://dev.meta.ai/docs/muse-code',
 }
 
 /**
@@ -52,7 +59,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
  * versions printed on `claude.ai`. A page anywhere else is not opened, and the sign-in says to finish it on the host.
  */
 export const PROVIDER_SIGN_IN_PAGES: Readonly<Record<ProviderId, readonly string[]>> = {
-  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [],
+  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [],
 }
 export function isProviderSignInPage(provider: ProviderId, value: string): boolean {
   if (value.length > 4096 || /\s/u.test(value)) return false
@@ -163,7 +170,7 @@ export interface HostProviderJobState {
  * how each goes. `id` is the saved host's.
  */
 export const hostClientUpdateRequestSchema = z.object({
-  id: z.uuid(), action: z.enum(['update', 'cancel']), providers: z.array(providerIdSchema).min(1).max(4),
+  id: z.uuid(), action: z.enum(['update', 'cancel']), providers: z.array(providerIdSchema).min(1).max(5),
 }).strict()
 export type HostClientUpdateRequest = z.infer<typeof hostClientUpdateRequestSchema>
 

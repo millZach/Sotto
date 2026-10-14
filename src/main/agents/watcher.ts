@@ -19,6 +19,7 @@ import { WatcherWakeUp, watcherProgressFingerprint } from './watcherWakeUp'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
+import { watcherDisplayPrompt } from './watcherMessageDisplay'
 import { watcherHostControlSchema, watcherHostReadSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts } from '../../shared/watcherHost'
 
 const now = () => new Date().toISOString()
@@ -386,12 +387,20 @@ export class WatcherService implements WatcherControlHooks {
       const created = request
       this.options.control.mutateWatcher(next => { next.requests.push(created) })
     }
-    const followup = request.userFollowups?.find(item => item.draftId === _draftId)
-    if (followup) this.options.control.mutateWatcher(next => {
-      next.requests.find(item => item.id === request!.id)!.userFollowups!.find(item => item.draftId === _draftId)!.messageId = command.messageId
-    })
     const projects = this.options.control.watcherSnapshot().projects.filter(item => item.id !== record.current?.projectId)
-    return { ...command, text: `${command.text}\n\n${watcherGuidancePrefix(request.id, this.hostId())}${projects.slice(0, 100).map(item => item.id).join(', ')}${WATCHER_GUIDANCE_SUFFIX}` }
+    const text = `${command.text}\n\n${watcherGuidancePrefix(request.id, this.hostId())}${projects.slice(0, 100).map(item => item.id).join(', ')}${WATCHER_GUIDANCE_SUFFIX}`
+    const displayPrompt = watcherDisplayPrompt(command.text, text)
+    const followup = request.userFollowups?.find(item => item.draftId === _draftId)
+    this.options.control.mutateWatcher(next => {
+      const saved = next.requests.find(item => item.id === request!.id)!
+      if (followup) {
+        const delivered = saved.userFollowups!.find(item => item.draftId === _draftId)!
+        const sameMessage = delivered.messageId === command.messageId
+        delivered.messageId = command.messageId
+        if (!sameMessage || delivered.displayPrompt === undefined) delivered.displayPrompt = displayPrompt
+      } else if (saved.rootUserMessageId === command.messageId && saved.displayPrompt === undefined) saved.displayPrompt = displayPrompt
+    })
+    return { ...command, text }
   }
   observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void {
     const record = this.record()

@@ -29,6 +29,16 @@ Without a sidebar, Watcher and a thread fit side by side even at the 820 by 560 
 
 ## Provider tools and pinned permissions
 
+### October 13, 2026: show the user's own Watcher message
+
+Zach chose **Original message only** after the desktop transcript showed the routing footer main adds to a Watcher instruction. The [display prototype](https://github.com/millZach/Sotto/blob/9f60ca5ebfef627426cb5fd16e3bf0eae2257003/docs/prototypes/watcher-message-display.prototype.html), retained under `prototype/watcher-message-display-973`, checks owned, literal, changed and restored messages without changing the room's layout.
+
+Before dispatch, main retains the original message's UTF-16 length and the complete wire message's SHA-256 digest on the owning Watcher request or delivered user follow-up. These optional fields contain no prompt words. Desktop details and deltas, and the phone's conversation, show the original prefix only for that host, thread and user-message identity when the complete text matches the saved digest. Native history, dispatch text, delivery evidence and permissions remain whole. A literal lookalike, another thread's message or changed native text stays whole.
+
+Saved proof survives reopening and retirement. Older desktop records have no reliable original boundary and stay whole; guessing from a footer could remove text the user wrote. The phone retains its existing legacy matcher only when no proof exists. Presentation grants no authority and starts no provider work.
+
+The display index keeps text-free proof independently of pane lifetime. Only held detail windows retain verified message text; closing or unobserving one releases that text, and an offscreen read verifies transiently. Unchanged messages in held windows share verification across assistant updates.
+
 Watcher is a native thread launched as an ordinary thread of its provider, on the user's account, with native tools, settings, instructions, skills, plugins, hooks and user-configured tool servers. It uses no second key or OpenRouter reasoning account. Its neutral Sotto-owned folder is separate from registered projects; it can read and search anything the provider can normally read. There is no Sotto project-file broker or promise of project containment or secret filtering. Paired hosts get workers, not another Watcher.
 
 Its native permission mode is pinned to asking before changes. Main and each adapter refuse changes that widen that mode, in plain words; model and effort changes remain allowed. Native one-time approvals remain available; remembered session/always grants are refused because they widen future permission. Working-copy changes remain refused. Watcher's own edit, writing-command and network permission requests are ordinary request cards. They do not stop or revoke its scoped server, and the user alone answers them.

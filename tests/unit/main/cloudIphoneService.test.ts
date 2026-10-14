@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, open, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -10,7 +10,7 @@ import type { CloudDeviceProvider, CloudInteraction } from '../../../src/main/to
 import { FilesService } from '../../../src/main/files/service'
 import { CLOUD_IPHONE_MAX_BUILD_BYTES, CLOUD_IPHONE_REQUEST_MS, type CloudEvent } from '../../../src/shared/cloudIphone'
 import { testCredentials } from '../../fixtures/testCredentials'
-import { deferred } from '../../fixtures/deferred'
+import { deferred, heldOperation } from '../../fixtures/deferred'
 
 // The service mounts a viewer view only when asked; these tests never call mount.
 vi.mock('electron', () => ({
@@ -76,7 +76,7 @@ function fakeProvider(): FakeProvider {
 const cleanup: (() => Promise<void> | void)[] = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
 
-async function setup(options: { capMinutes?: number; idleMinutes?: number; onProvider?: (provider: FakeProvider) => void } = {}) {
+async function setup(options: { capMinutes?: number; idleMinutes?: number; onProvider?: (provider: FakeProvider) => void; onEvent?: (event: CloudEvent) => void } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'cloud-iphone-service-'))
   cleanup.push(() => rm(root, { recursive: true, force: true }))
   const credentials = await testCredentials(root, { mode: 'plain' })
@@ -94,7 +94,7 @@ async function setup(options: { capMinutes?: number; idleMinutes?: number; onPro
     settings: () => settingsState,
     threadTitle: () => 'Test thread',
     getWindow: () => null,
-    emit: event => { events.push(event) },
+    emit: event => { events.push(event); options.onEvent?.(event) },
     provider: () => { const provider = fakeProvider(); options.onProvider?.(provider); providers.push(provider); return provider },
     now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer,
   }
@@ -465,26 +465,63 @@ describe('CloudIphoneService', () => {
   })
 
   it('a shared tick ends every active session across threads once the cap is reached, and a lowered cap mid-session is enforced', async () => {
-    const { service, files, root, credentials, clock, setCap } = await setup({ capMinutes: 10 })
+    const expected = new Set<string>(), observed = new Set<string>(), capped = deferred()
+    const { service, files, root, credentials, clock, setCap, ledger, providers } = await setup({ capMinutes: 10, onEvent: event => {
+      if (event.type === 'session' && event.session.status === 'ended' && event.session.endReason === 'cap' && expected.has(event.session.id)) {
+        observed.add(event.session.id)
+        if (observed.size === expected.size) capped.resolve()
+      }
+    } })
     await credentials.set('runcloud', 'rc_live_key')
     const first = await openSession(service, files, root, { threadId: 'thread-1', buildPath: await makeBuild(root, 'a.zip') })
     const second = await openSession(service, files, root, { threadId: 'thread-2', buildPath: await makeBuild(root, 'b.zip') })
+    expected.add(first.session.id); expected.add(second.session.id)
     await service.answer({ threadId: first.threadId, workspaceId: first.workspaceId, sessionId: first.session.id, allow: true })
     await service.answer({ threadId: second.threadId, workspaceId: second.workspaceId, sessionId: second.session.id, allow: true })
     await waitActive(service, clock, first.threadId)
     await waitActive(service, clock, second.threadId)
-    setCap(1) // Lowered below what the two sessions already use together.
-    await clock.advance(60_000)
-    await vi.waitFor(async () => {
+    const blockedUpdate = heldOperation(), originalUpdate = ledger.updateMinutes.bind(ledger)
+    let held: Promise<void> | undefined
+    const update = vi.spyOn(ledger, 'updateMinutes').mockImplementation((id, minutes) => {
+      const actual = originalUpdate(id, minutes)
+      if (id === first.session.id && minutes === 1 && !held) {
+        held = actual.then(() => blockedUpdate.wait())
+        return held
+      }
+      return actual
+    })
+    try {
+      setCap(1) // Lowered below what the two sessions already use together.
+      await clock.advance(60_000)
+      const tickAt = clock.now()
+      await blockedUpdate.entered
+      expect(ledger.monthMinutes(clock.now())).toBe(2)
+      expect(observed.size).toBe(0)
+      // Advancing the clock starts a tick; its real writes still have to complete before the cap sweep.
+      blockedUpdate.release()
+      await capped.promise
       const a = await service.sessions({ threadId: first.threadId })
       const b = await service.sessions({ threadId: second.threadId })
       expect(a.ok && a.value[0]?.status).toBe('ended')
       expect(b.ok && b.value[0]?.status).toBe('ended')
-    })
-    const a = await service.sessions({ threadId: first.threadId })
-    const b = await service.sessions({ threadId: second.threadId })
-    expect(a.ok && a.value[0]?.endReason).toBe('cap')
-    expect(b.ok && b.value[0]?.endReason).toBe('cap')
+      expect(a.ok && a.value[0]?.endReason).toBe('cap')
+      expect(b.ok && b.value[0]?.endReason).toBe('cap')
+      expect([...observed].sort()).toEqual([...expected].sort())
+      expect(providers).toHaveLength(2)
+      for (const provider of providers) {
+        expect(provider.release).toHaveBeenCalledExactlyOnceWith('runcloud-session-1')
+        expect(provider.deleteAsset).toHaveBeenCalledExactlyOnceWith('asset-1')
+      }
+      const saved = JSON.parse(await readFile(join(root, 'cloud-iphone-usage.json'), 'utf8'))
+      expect(saved.sessions.map((entry: { id: string }) => entry.id).sort()).toEqual([...expected].sort())
+      expect(saved.sessions.every((entry: { endedAt: number; minutes: number }) => entry.endedAt === tickAt && entry.minutes === 1)).toBe(true)
+      expect(Object.values(saved.months)).toEqual([2])
+      expect(ledger.monthMinutes(clock.now())).toBe(2)
+      expect(clock.now()).toBe(tickAt)
+    } finally {
+      blockedUpdate.release()
+      try { await held } finally { update.mockRestore() }
+    }
   })
 
   it('revalidates the build immediately before upload and refuses, uploading nothing, if it changed since asking', async () => {

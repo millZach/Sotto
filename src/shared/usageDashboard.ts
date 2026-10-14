@@ -15,6 +15,11 @@ export const USAGE_QUOTA_WINDOWS_MAX = 8
 
 const providers = ['codex', 'claude', 'grok', 'devin'] as const satisfies readonly ProviderId[]
 export const usageProviderIdSchema = z.enum(providers)
+export type UsageProviderId = z.infer<typeof usageProviderIdSchema>
+/** Numeric collection and native quotas are verified only for these providers. */
+export function isUsageProviderId(value: unknown): value is UsageProviderId {
+  return usageProviderIdSchema.safeParse(value).success
+}
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 const identity = z.string().min(1).max(256).regex(/^[^\s\p{Cc}]+$/u)
 const modelId = z.string().min(1).max(6_144).regex(/^[^\p{Cc}]+$/u)

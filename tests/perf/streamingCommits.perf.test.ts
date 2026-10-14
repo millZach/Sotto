@@ -86,7 +86,7 @@ async function measure(threads: number): Promise<Record<string, number>> {
     threads: ids.map((id): AgentThread => ({ id, projectId: 'project', title: id, modelId: 'fake:model', status: 'running', messages: [], requests: [] })),
   }
   const adapter = new StreamingAdapter(state)
-  const workspace = new WorkspaceHost(adapter, root, () => true, undefined, false, true)
+  const workspace = new WorkspaceHost(adapter, root, () => true, undefined, false, false, true)
   await workspace.initialize()
   await workspace.connect()
   // The coordinator's subscription is what makes a publish apply events and read windows back.

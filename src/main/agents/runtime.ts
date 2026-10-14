@@ -9,6 +9,7 @@ import { CodexAppServerHost } from './codex'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './claude'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
+import { MuseDisabledHost, MuseMspHost } from './muse'
 import { ConfiguredProviderHost } from './providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from './threads'
 import { WorkspaceHost } from './workspace'
@@ -44,6 +45,8 @@ export interface AgentRuntimeOptions {
   directory: string
   /** Immutable release-track gate, read once by the process owner. Absent fails closed. */
   watcherEnabled?: boolean
+  /** Immutable Muse-provider Owl gate, read once by the process owner (ADR-0079). Absent fails closed. */
+  museEnabled?: boolean
   /** Immutable Owl feature answer; absent fails closed and leaves saved usage untouched. */
   usageEnabled?: boolean
   /** The Owl list's answer for resuming threads after a restart (ADR-0076), read once by the process owner. Absent fails closed. */
@@ -108,6 +111,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}) }),
     grok: options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true }),
     devin: options.providers?.devin ?? new DevinAcpHost(directory),
+    muse: options.museEnabled === true ? options.providers?.muse ?? new MuseMspHost(directory) : new MuseDisabledHost(),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -116,11 +120,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       claude: new SottoThreadHost('claude', providers.claude!, threadRegistry!),
       grok: new SottoThreadHost('grok', providers.grok!, threadRegistry!),
       devin: new SottoThreadHost('devin', providers.devin!, threadRegistry!),
+      muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
     },
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
-  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false, options.streamingPublishCost ?? false)
+  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false, options.museEnabled ?? false, options.streamingPublishCost ?? false)
   const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()
@@ -163,7 +168,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       grok: new GrokSubscriptionClient(join(directory, 'reasoning', 'grok')),
     })
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
+    directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
+    museEnabled: options.museEnabled ?? false, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     historyEnabled: options.historyEnabled,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
@@ -227,7 +233,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Resuming after a restart (ADR-0076): what was working is read before the coordinator starts, and recorded from then
   // on, so the threads this process's close stops are sent the resume note when it next starts.
   const restartResume = options.resumeAfterRestart === true
-    ? new RestartResume({ directory, control: agentControl, enabled: () => options.settings().resumeThreadsAfterRestart, tool: babysitTool }) : undefined
+    ? new RestartResume({ directory, control: agentControl, enabled: () => options.settings().resumeThreadsAfterRestart,
+      tool: babysitTool, preservesDormantThread: id => agentHost.preservesDormantThread(id) }) : undefined
   // A note already waiting in a queue goes only while both are still on; without the feature, none goes.
   if (restartResume) agentControl.useRestartResume({ due: () => options.settings().resumeThreadsAfterRestart,
     sending: threadId => restartResume.noteSending(threadId), unsent: threadId => restartResume.noteUnsent(threadId) })
@@ -290,6 +297,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // desktop ends it again whenever the switch is saved off.
   const switchedOff = babysitter && options.babysitting?.agentTool?.() === false ? babysitter : undefined
   try {
+    if (restartResume) await agentHost.initialize()
     await restartResume?.start()
     await agentControl.start(switchedOff ? { beforeConnect: async () => { await switchedOff.stop({ startedBy: 'agent' }, 'switch').catch(() => 0) } } : {})
   } catch (error) {

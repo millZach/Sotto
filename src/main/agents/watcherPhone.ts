@@ -17,7 +17,11 @@ export class WatcherPhoneService {
     const messages = (detail?.messages ?? []).slice(-200).map(message => {
       const request = message.role === 'user' ? room.requests.find(row => row.rootUserMessageId === message.id
         || row.userFollowups?.some(followup => followup.messageId === message.id)) : undefined
-      const footer = request ? message.text.lastIndexOf(`\n\n${watcherGuidancePrefix(request.id, request.watcher.hostId)}`) : -1
+      const proof = request?.rootUserMessageId === message.id ? request.displayPrompt
+        : request?.userFollowups?.find(followup => followup.messageId === message.id)?.displayPrompt
+      // Older phone records retain their existing exact-ID/prefix/suffix projection. A present proof,
+      // even one that no longer matches, must never strip the original a second time or guess a boundary.
+      const footer = request && proof === undefined ? message.text.lastIndexOf(`\n\n${watcherGuidancePrefix(request.id, request.watcher.hostId)}`) : -1
       const text = footer >= 0 && message.text.endsWith(WATCHER_GUIDANCE_SUFFIX) ? message.text.slice(0, footer) : message.text
       return { id: message.id, role: message.role, text, createdAt: message.createdAt }
     })

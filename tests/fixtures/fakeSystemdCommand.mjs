@@ -11,11 +11,12 @@
 // default) runs the host, `failed` lands failed, `crash-loop` keeps restarting with its runs failing, `retry-once` fails once and then runs the
 // host, and `lost-lock` has another host take the folder's lock while the unit's host gives up with exit code 75. With
 // `once` set, `afterStart` holds for the next start alone.
-import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import process from 'node:process'
 import { setTimeout as delay } from 'node:timers/promises'
+import { installFakeHostSignalCleanup } from './fakeHostSignalCleanup.mjs'
 
 const [command, ...args] = process.argv.slice(2)
 const statePath = process.env.FAKE_SYSTEMD_STATE
@@ -50,24 +51,13 @@ function runUnit(mark = 'boot') {
 async function stopUnit(state) {
   if (state.mainPid && alive(state.mainPid)) {
     const pid = state.mainPid, lock = state.data ? join(state.data, 'host-listener.lock') : undefined
-    let ownedLease, terminated = false
-    if (process.platform === 'win32' && lock) {
-      try {
-        const lease = readFileSync(lock, 'utf8'), owner = JSON.parse(lease)
-        if (owner.pid === pid && typeof owner.nonce === 'string') ownedLease = lease
-      } catch { /* No published lease of this unit's host. */ }
-    }
-    try { process.kill(pid, 'SIGTERM'); terminated = true } catch { /* already gone */ }
-    for (let tries = 0; tries < 200 && alive(pid); tries++) await delay(50)
+    try { process.kill(pid, 'SIGTERM') } catch { /* already gone */ }
+    // Replace before native liveness confirms exit, so the shared signal helper must preserve this new lease.
     if (state.stopLeaseReplacement && lock) {
       writeFileSync(lock, JSON.stringify(state.stopLeaseReplacement))
       delete state.stopLeaseReplacement
     }
-    // The Linux fake's graceful SIGTERM releases this lease. Windows force-terminates it without the handler;
-    // model that cleanup using the exact captured instance, never a PID that Windows may have reused meanwhile.
-    if (terminated && ownedLease && lock) {
-      try { if (readFileSync(lock, 'utf8') === ownedLease) rmSync(lock) } catch { /* Gone or replaced. */ }
-    }
+    for (let tries = 0; tries < 200 && alive(pid); tries++) await delay(50)
     // What a test reads instead of probing the PID afterwards, which Windows may already have handed to another process.
     record({ stopped: pid, exited: !alive(pid) })
   }
@@ -114,6 +104,10 @@ async function systemctl(state, words) {
     if (state.startExit) { process.stderr.write('Job for sotto-host.service failed.\n'); return state.startExit }
     if (state.unit?.ActiveState === 'failed' && state.unit.Result === 'start-limit-hit') { process.stderr.write('Start request repeated too quickly.\n'); return 1 }
     if (state.mainPid && alive(state.mainPid)) return 0
+    if (state.startBarrier) {
+      writeFileSync(state.startBarrier.entered, JSON.stringify({ pid: process.pid }))
+      while (!existsSync(state.startBarrier.release)) await delay(10)
+    }
     const after = state.afterStart
     // `once`: the script holds for this start alone, and the unit runs the host from the next one on.
     if (state.once) { state.afterStart = 'run'; delete state.once }
@@ -154,6 +148,7 @@ function loginctl(state, words) {
 }
 
 const state = read()
+if (typeof state.data === 'string') installFakeHostSignalCleanup(state.data)
 record({ command, args })
 const code = command === 'systemctl' ? await systemctl(state, args) : command === 'loginctl' ? loginctl(state, args) : 127
 write(state)

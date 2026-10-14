@@ -6,6 +6,15 @@ import { ProviderMark } from '../../../src/renderer/src/agents/ProviderMark'
 afterEach(cleanup)
 
 describe('ProviderMark', () => {
+  it('draws the Muse product squiggle rather than an initial or the SDK documentation badge', () => {
+    const { container } = render(<ProviderMark provider="muse" name="Muse" size={21} />)
+    const svg = container.querySelector('svg[data-provider="muse"]')!
+    expect(svg).toHaveAttribute('viewBox', '0 0 100 100')
+    expect(svg).toHaveAttribute('aria-hidden', 'true')
+    expect(svg.querySelector('path')?.getAttribute('d')).toMatch(/^M24\.6257 16\.1214C28\.2365/)
+    expect(container.querySelector('.provider-mark--initial')).toBeNull()
+    expect(svg.querySelector('rect')).toBeNull()
+  })
   it("draws Devin's devin.ai product mark as one path in a box cropped to it", () => {
     // The owner chose the devin.ai header mark over the Devin app's session icon; the box and the path's opening
     // move are what tell the two apart, so a swap back to the older art fails here rather than in a screenshot.

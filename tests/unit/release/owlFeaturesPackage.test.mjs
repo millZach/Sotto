@@ -39,6 +39,9 @@ describe('packaged Owl feature protection', () => {
       expect(() => assertPackagedFeatureStatus({ ...realStatus, owlFeatures: incorrect, watcherEnabled: incorrect.watcher }, track)).toThrow(problem)
     }
   })
+  it('refuses a Muse leak in the real stable list', () => {
+    expect(() => assertPackagedFeatureStatus({ releaseTrack: 'stable', owlFeatures: { watcher: false, muse: true, usage: false, 'resume-after-restart': false, 'update-all': false }, watcherEnabled: false }, 'stable')).toThrow('Muse provider must be off')
+  })
   it('runs only during stable and Owl release packaging, leaving the directory and Linux commands alone', async () => {
     const stable = await readFile(new URL('../../../scripts/package-stable.mjs', import.meta.url), 'utf8')
     const owl = await readFile(new URL('../../../scripts/package-owl.mjs', import.meta.url), 'utf8')

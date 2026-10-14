@@ -38,7 +38,7 @@ async function fixture(streamingPublishCost = true) {
     await rm(directory, { recursive: true, force: true })
   })
   const adapter = new EventProvider()
-  const host = new WorkspaceHost(adapter, directory, () => true, undefined, false, streamingPublishCost)
+  const host = new WorkspaceHost(adapter, directory, () => true, undefined, false, false, streamingPublishCost)
   cleanup.push(async () => { host.disconnect(); host.dispose() })
   await host.initialize()
   await host.connect()

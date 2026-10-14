@@ -28,7 +28,7 @@ export const AGENT_ATTACHMENT_CONTENT = 'sotto:agents:attachment-content'
 export const AGENT_THREAD_DETAIL = 'sotto:agents:thread-detail'
 /** Asked for by the window when it opens a thread whose detail it has not been sent. */
 export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
-export const providerIdSchema = z.enum(['codex', 'claude', 'grok', 'devin'])
+export const providerIdSchema = z.enum(['codex', 'claude', 'grok', 'devin', 'muse'])
 export type ProviderId = z.infer<typeof providerIdSchema>
 /** Absent on older live snapshots; ordinary threads have the project kind. */
 export const agentThreadKindSchema = z.enum(['project', 'watcher', 'watcher-history'])
@@ -475,7 +475,7 @@ export type ClientUpdateRun = z.infer<typeof clientUpdateRunSchema>
 export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.boolean(), models: z.array(agentModelSchema),
   capabilities: agentCapabilitiesSchema, providers: z.array(agentProviderStatusSchema).optional(),
   /** The host's client updates and its update line, sent only from a host that offers `client-updates` (ADR-0042). */
-  clientUpdates: z.array(providerClientUpdateSchema).max(4).optional(), clientUpdateRun: clientUpdateRunSchema.optional(),
+  clientUpdates: z.array(providerClientUpdateSchema).max(5).optional(), clientUpdateRun: clientUpdateRunSchema.optional(),
   /** The host lists `pull-request-babysit`: the Pull request surface offers Babysit pull request on its threads (ADR-0061 decision 11). */
   pullRequestBabysit: z.literal(true).optional(),
   /** Where a new project goes on this host, in its own format, for Settings → Agents' row per computer (ADR-0074). */
@@ -540,7 +540,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -558,14 +558,14 @@ export function providerIdOfLabel(label: string): ProviderId | undefined {
 }
 export const agentConfigurationSchema = z.object({
   provider: providerIdSchema.default('codex'),
-  enabledProviders: z.array(providerIdSchema).max(4).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
+  enabledProviders: z.array(providerIdSchema).max(5).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
   /**
    * The providers the user turned off: each one disconnected by name, or left out of a changed enabled set, and not
    * connected again since. A headless host connects every other provider that is installed and signed in when it
    * starts, so this is what keeps a turned-off one off across restarts; `enabledProviders` alone cannot tell
    * "never asked" from "turned off" (ADR-0036). Absent until the user turns one off.
    */
-  disconnectedProviders: z.array(providerIdSchema).max(4).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
+  disconnectedProviders: z.array(providerIdSchema).max(5).refine(ids => new Set(ids).size === ids.length, 'Choose each provider once.').optional(),
   enabled: z.boolean(),
   projectsDirectory: z.string().max(4_096),
   defaultModelId: z.string().max(6_144),
@@ -637,7 +637,7 @@ export const agentStateSchema = z.object({
   configuration: agentConfigurationSchema,
   skillCatalogs: z.array(agentSkillCatalogSchema).optional(),
   providerUpgrade: providerUpgradeSchema.nullable().optional(),
-  clientUpdates: z.array(providerClientUpdateSchema).max(4).optional(),
+  clientUpdates: z.array(providerClientUpdateSchema).max(5).optional(),
   clientUpdateRun: clientUpdateRunSchema.optional(),
   /** The card stays down until the next check finds something else. */
   clientUpdatesDismissedAt: z.string().optional(),
@@ -645,7 +645,7 @@ export const agentStateSchema = z.object({
    * The thread clients the last Connect providers press found installed on this machine: presence only, no sign-in.
    * Absent until a press looks, and on a machine that cannot look. Setup reads it to tell Not installed from off.
    */
-  installedProviders: z.array(providerIdSchema).max(4).optional(),
+  installedProviders: z.array(providerIdSchema).max(5).optional(),
   connection: z.enum(['disconnected', 'connecting', 'connected', 'error']),
   host: agentHostSnapshotSchema,
   activeThreadId: z.string().nullable(), activeProjectId: z.string().nullable(),
@@ -846,10 +846,15 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
- * list, so a Devin thread keeps its first-message title or stand-in and is offered no Regenerate that could do nothing.
+ * list; Muse cannot yet disable every tool in one (ADR-0079). Those threads keep their first-message title
+ * or stand-in and are offered no Regenerate that could do nothing.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
-  return providerId !== 'devin'
+  return providerId !== 'devin' && providerId !== 'muse'
+}
+/** Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. */
+export function providerTakesSottoTools(providerId: ProviderId | undefined): boolean {
+  return providerId !== 'devin' && providerId !== 'muse'
 }
 /** The same facts, from the summary the shell carries or from the history a full state holds. */
 export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>): AgentThreadSummary {
@@ -889,9 +894,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * `hostId` names the machine for Update all (ADR-0077), which need not be the selected one; the desktop's router reads it
    * and never sends it on.
    */
-  z.object({ type: z.literal('queue-client-updates'), providers: z.array(providerIdSchema).min(1).max(4), hostId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('queue-client-updates'), providers: z.array(providerIdSchema).min(1).max(5), hostId: z.uuid().optional() }).strict(),
   /** Takes clients that are still waiting out of the update line. One already running is left to finish. */
-  z.object({ type: z.literal('cancel-client-updates'), providers: z.array(providerIdSchema).min(1).max(4) }).strict(),
+  z.object({ type: z.literal('cancel-client-updates'), providers: z.array(providerIdSchema).min(1).max(5) }).strict(),
   z.object({ type: z.literal('dismiss-client-updates') }).strict(),
   z.object({ type: z.literal('compose'), threadId: id.optional(), draftId: z.uuid().optional(), text, attachments: agentAttachmentHandlesSchema.optional() }).strict(),
   z.object({ type: z.literal('save-thread-draft'), threadId: id, draftId: z.uuid(), expectedDraftId: z.uuid().nullable().optional(), text,
@@ -1039,7 +1044,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = ['codex', 'claude', 'grok', 'devin'] as const
+const INSTALLED_PROVIDER_ORDER = ['codex', 'claude', 'grok', 'devin', 'muse'] as const
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays

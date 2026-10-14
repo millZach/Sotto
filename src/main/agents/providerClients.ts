@@ -8,6 +8,8 @@ import { PROVIDER_LABELS, type ClientChannel, type ClientUpdateFailure, type Pro
 import { compareClientVersions, isComparableVersion } from './clientVersions'
 import { installerDetail, installerOutput } from './installerDetail'
 import { findDevinExecutable } from './devinRpc'
+import { findMuseExecutable } from './museRpc'
+import { compareMuseVersions, installMuseClient, museByHand, museInstallForExecutable, musePublishedVersion, museReleaseChannel, museResponseText, MUSE_FEED_BYTES, type MuseChannel, type MuseMakerInstall } from './museClientInstall'
 import { findGrokExecutable } from './grokRpc'
 import { findClaudeExecutable } from './subscriptionClaude'
 import { findCli, miseDataFolder, withCliPath } from './cliLookup'
@@ -30,7 +32,13 @@ export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
  * `stdout` is what it answered, for a run that is asked something (`mise where`).
  */
 export interface RunResult { readonly ok: boolean; readonly detail?: string; readonly printed?: string; readonly stdout?: string }
-export interface RunOptions { readonly cwd?: string; readonly env?: Readonly<NodeJS.ProcessEnv> }
+export interface RunOptions {
+  readonly cwd?: string
+  /** A complete child environment, including an installer's restricted allowlist. */
+  readonly environment?: NodeJS.ProcessEnv
+  /** Overrides scoped to this command, applied to its child environment. */
+  readonly env?: Readonly<NodeJS.ProcessEnv>
+}
 export type RunLike = (executable: string, args: readonly string[], asNode?: boolean, options?: RunOptions) => Promise<RunResult>
 
 
@@ -188,7 +196,7 @@ export async function miseToolOf(provider: ProviderId, executable: string, envir
 }
 
 /** The channel that owns an install, and for mise the tool it is installed as. */
-export interface ClientInstall { readonly channel: ClientChannel; readonly miseTool?: string }
+export interface ClientInstall { readonly channel: ClientChannel; readonly miseTool?: string; readonly muse?: MuseMakerInstall }
 
 /**
  * Which channel owns this install, from the path it was found at and from what is installed where.
@@ -214,6 +222,12 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
     if (miseTool) return { channel: 'mise', miseTool }
   }
   if (MANAGED_ELSEWHERE.some(marker => lower.includes(marker))) return { channel: 'unknown' }
+  if (provider === 'muse') {
+    const real = await realpath(executable).catch(() => executable)
+    if (MANAGED_ELSEWHERE.some(marker => real.toLowerCase().includes(marker))) return { channel: 'unknown' }
+    const muse = await museInstallForExecutable(executable, process.platform, environment)
+    return muse ? { channel: 'self-update', muse } : { channel: 'unknown' }
+  }
   if (lower.split(sep).includes('node_modules')) return { channel: 'npm' }
   if (packageName && await npmOwns(packageName, executable, environment)) return { channel: 'npm' }
   if (inOwnHome) {
@@ -236,7 +250,7 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
   const packageName = CLIENT_PACKAGES[provider]
   switch (install.channel) {
     case 'npm': return packageName ? [`npm install -g --allow-scripts=${packageName} ${packageName}@latest`] : undefined
-    case 'self-update': return provider === 'claude' || provider === 'grok' ? [`${provider} update`] : undefined
+    case 'self-update': return provider === 'muse' && install.muse ? museByHand(install.muse) : provider === 'claude' || provider === 'grok' ? [`${provider} update`] : undefined
     case 'mise': {
       if (!install.miseTool) return undefined
       const command = `mise upgrade ${install.miseTool}${releaseAgeFlag ? ' --minimum-release-age 0s' : ''}`
@@ -288,7 +302,7 @@ export async function updateActionFor(provider: ProviderId, install: ClientChann
     if (!cli) return undefined
     return { command: byHand[0]!, byHand, executable: process.execPath, args: [cli, 'install', '-g', allowScripts, `${packageName}@latest`], asNode: true }
   }
-  if (found.channel === 'self-update' && executable && byHand) return { command: byHand[0]!, byHand, executable, args: ['update'] }
+  if (found.channel === 'self-update' && provider !== 'muse' && executable && byHand) return { command: byHand[0]!, byHand, executable, args: ['update'] }
   if (found.channel === 'mise' && found.miseTool && byHand) {
     const mise = await misePath()
     if (!mise) return undefined
@@ -356,7 +370,8 @@ const RUN_OUTPUT_BYTES = 1024 * 1024
 const defaultRun: RunLike = (executable, args, asNode, options) => new Promise(resolve => {
   // ELECTRON_RUN_AS_NODE turns this app's own binary into the Node that runs npm's CLI.
   // A client's own updater gets the PATH the CLI lookup gave the client (ADR-0036): a wrapper may need its manager.
-  const env = { ...(asNode ? { ...process.env, ELECTRON_RUN_AS_NODE: '1' } : withCliPath(process.env, executable)), ...options?.env }
+  const environment = options?.environment ?? (asNode ? { ...process.env, ELECTRON_RUN_AS_NODE: '1' } : withCliPath(process.env, executable))
+  const env = { ...environment, ...options?.env }
   execFile(executable, [...args], { env, windowsHide: true, shell: false, timeout: UPDATE_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: RUN_OUTPUT_BYTES, encoding: 'utf8',
     ...(options?.cwd ? { cwd: options.cwd } : {}) },
     (error, stdout, stderr) => {
@@ -415,7 +430,8 @@ export class ProviderClients {
   }
 
   /** The published version, or undefined when the registry cannot be read. A failed check is not a finding. */
-  async publishedVersion(provider: ProviderId): Promise<string | undefined> {
+  async publishedVersion(provider: ProviderId, museChannel: MuseChannel = 'muse-stable'): Promise<string | undefined> {
+    if (provider === 'muse') return this.publishedMuseVersion(museChannel)
     const packageName = CLIENT_PACKAGES[provider]
     if (!packageName) return undefined
     const cached = this.cache.get(packageName)
@@ -435,19 +451,38 @@ export class ProviderClients {
     } catch { return undefined }
   }
 
+  private async publishedMuseVersion(channel: MuseChannel): Promise<string | undefined> {
+    // Even an untyped caller cannot turn a channel response or a setting into another endpoint.
+    if (channel !== 'muse-stable' && channel !== 'muse-canary') return undefined
+    const key = `muse:${channel}`, cached = this.cache.get(key)
+    if (cached && cached.expiresAt > this.now()) return cached.version
+    try {
+      const response = await this.fetchImpl(`https://api.meta.ai/muse-code/channels/${channel}`, {
+        redirect: 'error', signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS), headers: { accept: 'application/json' },
+      })
+      const body = await museResponseText(response, MUSE_FEED_BYTES)
+      const version = body === undefined ? undefined : musePublishedVersion(body, channel)
+      if (version) this.cache.set(key, { version, expiresAt: this.now() + PUBLISHED_CACHE_MS })
+      return version
+    } catch { return undefined }
+  }
+
   /** One client's reading. `installed` is the version the adapter connected to; without one nothing is claimed. */
   async check(provider: ProviderId, installed: string, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env): Promise<ProviderClientUpdate> {
     const install = await detectClientInstall(provider, executable, environment)
     const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath, this.miseReleaseAgeFlag)
     const byHand = action?.byHand ?? byHandFor(provider, install)
-    const latest = install.channel === 'devin-app' ? undefined : await this.publishedVersion(provider)
-    const behind = Boolean(installed && latest && isComparableVersion(installed) && isComparableVersion(latest)
-      && compareClientVersions(installed, latest) < 0)
+    const museChannel = provider === 'muse' ? await museReleaseChannel(executable, environment) : undefined
+    const latest = install.channel === 'devin-app' || provider === 'muse' && museChannel === undefined ? undefined : await this.publishedVersion(provider, museChannel)
+    const behind = provider === 'muse'
+      ? Boolean(latest && (compareMuseVersions(installed, latest) ?? 0) < 0)
+      : Boolean(installed && latest && isComparableVersion(installed) && isComparableVersion(latest) && compareClientVersions(installed, latest) < 0)
+    const makerUpdate = provider === 'muse' && Boolean(install.muse)
     return {
       id: provider, installed, ...(latest ? { published: latest } : {}), behind, channel: install.channel,
-      ...(action ? { command: action.command, steps: action.installStep ? 2 : 1 } : byHand ? { command: byHand[0]! } : {}),
-      ...(byHand ? { byHand: [...byHand] } : {}), canInstall: Boolean(action && behind),
+      ...(makerUpdate ? { steps: 1 } : action ? { command: action.command, steps: action.installStep ? 2 : 1 } : byHand ? { command: byHand[0]! } : {}),
+      ...(byHand ? { byHand: [...byHand] } : {}), canInstall: Boolean((action || makerUpdate) && behind),
       checkedAt: new Date(this.now()).toISOString(), state: 'idle',
     }
   }
@@ -459,6 +494,14 @@ export class ProviderClients {
   async install(provider: ProviderId, executable: string | undefined,
     environment: NodeJS.ProcessEnv = process.env, onStep?: (step: number) => void): Promise<InstallResult> {
     const install = await detectClientInstall(provider, executable, environment)
+    if (provider === 'muse' && install.muse) {
+      onStep?.(1)
+      const updated = await installMuseClient(install.muse, environment, {
+        fetchImpl: this.fetchImpl,
+        run: (runner, args, updateEnvironment) => this.run(runner, args, false, { environment: updateEnvironment }),
+      })
+      return updated.ok ? updated : { ...updated, step: 1, failure: updated.failure ?? (DOWNLOAD_FAILED.test(updated.printed ?? updated.detail ?? '') ? 'download' : 'installer') }
+    }
     const action = await updateActionFor(provider, install, executable, this.npmPath, this.misePath, this.miseReleaseAgeFlag)
     if (!action) {
       return { ok: false, detail: install.channel === 'devin-app'
@@ -509,5 +552,6 @@ export async function locateClient(provider: ProviderId): Promise<string | undef
     case 'codex': return (await findCodexExecutable()) ?? undefined
     case 'grok': return findGrokExecutable()
     case 'devin': return findDevinExecutable()
+    case 'muse': return findMuseExecutable()
   }
 }

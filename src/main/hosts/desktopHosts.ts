@@ -224,7 +224,7 @@ export class DesktopHosts {
   private writing: Promise<void> = Promise.resolve()
   constructor(private readonly options: {
     directory: string; credentials: AgentCredentials; router: DesktopHostRouter;
-    watcherEnabled?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
+    watcherEnabled?: boolean; museEnabled?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
     localHostRunning: boolean; localHostEnabled: () => boolean; restart: () => void;
     launcher?: () => SshHostLauncher;
     retryDelayMs?: (attempt: number) => number;
@@ -240,7 +240,7 @@ export class DesktopHosts {
     /** The clock that times the tailnet-only first minute of retries; the system clock unless a test moves it. */
     now?: () => number;
   }) {
-    this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true })
+    this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true, museEnabled: options.museEnabled === true })
     this.store = new AtomicJsonStore(join(options.directory, 'remote-hosts.json'), z.array(savedHostSchema).max(20).parse, () => [])
     this.tailnet = new TailnetStore(options.directory)
     this.admins = new AdminConnections({ ...(options.launcher ? { launcher: options.launcher } : {}), report: (id, report) => this.adminSignIn(id, report),
@@ -1171,7 +1171,7 @@ export class DesktopHosts {
     let connected = false, pushError: string | undefined
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
-    const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
+    const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, museEnabled: this.options.museEnabled === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null

@@ -100,6 +100,6 @@ public struct ThreadWatch: Sendable {
 /// An agent's name as Sotto shows it, from its provider ID.
 public enum AgentNames {
     public static func name(_ providerID: String?) -> String {
-        ["claude": "Claude Code", "codex": "Codex", "grok": "Grok Build", "devin": "Devin"][providerID ?? ""] ?? "The agent"
+        ["claude": "Claude Code", "codex": "Codex", "grok": "Grok Build", "devin": "Devin", "muse": "Muse"][providerID ?? ""] ?? "The agent"
     }
 }

@@ -81,7 +81,7 @@ describe('Claude transcript catch-up', () => {
     const sottoId = randomUUID()
     registry.reserve(sottoId, 'claude', id, f.projectId)
     await registry.flush()
-    const workspace = new WorkspaceHost(new SottoThreadHost('claude', f.host, registry), join(f.root, 'workspace'), () => true, undefined, false, true)
+    const workspace = new WorkspaceHost(new SottoThreadHost('claude', f.host, registry), join(f.root, 'workspace'), () => true, undefined, false, false, true)
     await workspace.connect()
     try {
       const failing = vi.spyOn(ThreadStore.prototype, 'appendBatches')

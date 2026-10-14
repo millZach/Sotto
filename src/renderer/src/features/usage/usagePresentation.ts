@@ -4,10 +4,10 @@ import {
   USAGE_TOKEN_FIELDS,
   type UsageActivityAggregate, type UsageDashboardRead, type UsageDailyAggregate,
   type UsageFieldTotal, type UsageHourlyAggregate, type UsageModelAggregate, type UsageProviderAggregate,
-  type UsageTokenTotals,
+  type UsageTokenTotals, type UsageProviderId,
 } from '../../../../shared/usageDashboard'
 
-export const PROVIDER_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin' }
+export const PROVIDER_NAMES: Record<UsageProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin' }
 const counts = new Intl.NumberFormat(undefined)
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
 export const formatCount = (value: number): string => counts.format(value)

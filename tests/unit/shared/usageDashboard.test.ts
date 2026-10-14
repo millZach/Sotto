@@ -14,7 +14,13 @@ describe('usage dashboard boundaries', () => {
   it('accepts known zeros and keeps missing fields unknown without loading provider runtime code', () => {
     const parsed = usageTokenObservationSchema.parse(observation)
     expect(parsed.tokens).toEqual({ input: 0, cached: 0 })
-    expect(usageProviderIdSchema.options).toEqual(providerIdSchema.options)
+    expect(usageProviderIdSchema.options).toEqual(['codex', 'claude', 'grok', 'devin'])
+    expect(providerIdSchema.options).toContain('muse')
+    expect(usageProviderIdSchema.safeParse('muse').success).toBe(false)
+    expect(usageTokenObservationSchema.safeParse({ ...observation, providerId: 'muse' }).success).toBe(false)
+    expect(usageQuerySchema.safeParse({ providerIds: ['muse'] }).success).toBe(false)
+    expect(usagePromptSubmissionSchema.safeParse({ providerId: 'muse', threadId: 'sotto-thread', messageId: 'message',
+      modelId: 'muse-model', at: '2026-10-12T12:00:00.000Z', kind: 'user', inputKind: 'send' }).success).toBe(false)
   })
 
   it.each([

@@ -18,7 +18,7 @@ import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
 import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
-import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
+import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
 
 type RequestAnswerCheckRefusalReason = 'stale-question' | 'provider-disconnected' | 'forbidden' | 'unsupported' | 'answer-in-progress' | 'answer-changed'
 const requestAnswerCheckRefusals: Record<RequestAnswerCheckRefusalReason, { code: HostErrorCode; message: string }> = {
@@ -140,7 +140,7 @@ export interface ThreadEventSource {
 /** A numeric archive and cached native allowance reads, without provider handles or message text. */
 export interface HostUsageReads {
   read(query: UsageLocalQuery): Promise<UsageLocalHostRead>
-  refresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead>
+  refresh(providerIds?: UsageProviderId[]): Promise<UsageLocalHostRead>
   clear(request: UsageLocalClearRequest): Promise<UsageLocalClearResult>
 }
 
