@@ -71,3 +71,16 @@ A hidden, process-scoped system-only wake request protects the remaining checks,
 permanent power settings or keeping the display awake. The owning process is recorded in the run
 status and will be stopped at the end or on pause. Final exact CI gates run on the settled source
 and are reported in the PR; this interruption is not counted as one.
+
+## Final settled-source gates
+
+At source `d716973a8`, exact `npm run typecheck`, `npm run lint` and
+`npm run notices:verify` passed (189 notice components). The exact
+`npm test -- --maxWorkers=2` completed with native exit code 0: 818 files and
+10,385 tests passed; 68 files and 321 tests skipped, in 1,727.04 seconds.
+The run started at 19:06:20 and ended at 19:35:08 local time on October 13.
+Its owner, source, command, worktree and exit code are preserved in
+`.zstack/perf-991-remaining/tests-settled-owner.json`, `tests-settled.log` and
+`tests-settled-exit.json`; static checks have separate `*-settled` logs and exit JSON.
+No source or fixture changed while those gates ran. The earlier interrupted suite
+remains a separate nonpassing attempt.
