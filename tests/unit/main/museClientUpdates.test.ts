@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { ChildProcess, type ExecFileOptions } from 'node:child_process'
+import { ChildProcess, execFile, type ExecFileOptions } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -14,8 +14,7 @@ const { execFileFixture } = vi.hoisted(() => ({
 vi.mock('node:child_process', async importOriginal => {
   const actual = await importOriginal<typeof import('node:child_process')>()
   return { ...actual, execFile: new Proxy(actual.execFile, {
-    apply: (target, thisArg, args) => execFileFixture.run
-      ? execFileFixture.run(...args) : Reflect.apply(target, thisArg, args),
+    apply: (target, thisArg, args) => execFileFixture.run?.(...args) ?? Reflect.apply(target, thisArg, args),
   }) }
 })
 
@@ -167,8 +166,12 @@ describe('Muse maker updates', () => {
     let observed: Record<string, unknown> | undefined
     for (const [key, value] of Object.entries(parent)) vi.stubEnv(key, value)
     execFileFixture.run = (executable, args, options, callback) => {
+      const launchOptions = options as ExecFileOptions | undefined
+      if (!Array.isArray(args) || typeof args.at(-1) !== 'string'
+        || basename(args.at(-1) as string) !== (process.platform === 'win32' ? 'install.ps1' : 'install.sh')
+        || launchOptions?.env?.MUSE_INSTALL_DIR !== install.directory) return undefined
       launches += 1
-      const commandArgs = args as string[], launchOptions = options as ExecFileOptions
+      const commandArgs = args as string[]
       const env = launchOptions.env ?? {}
       file = commandArgs.at(-1)!
       // Keep only selected non-secret observations, even if a broken runner revives ambient keys.
@@ -186,6 +189,11 @@ describe('Muse maker updates', () => {
       return new ChildProcess()
     }
     try {
+      const unrelatedCode = await new Promise<string | number | undefined>(resolve => {
+        execFile(join(root, 'unrelated-missing-client'), [], error => resolve(error?.code))
+      })
+      expect(unrelatedCode).toBe('ENOENT')
+      expect(launches).toBe(0)
       const result = await new ProviderClients({ fetchImpl }).install('muse', install.executable, environment)
       expect(result).toEqual({ ok: true, stdout: 'fixture completed' })
       expect(fetchImpl).toHaveBeenCalledOnce()
