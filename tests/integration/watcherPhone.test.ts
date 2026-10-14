@@ -284,6 +284,31 @@ it('keeps standing watches through stopped and closed requests until explicit un
   expect(watched()).toBe(false)
 })
 
+it('marks a thread taking part in an active request watched in the room, the phone page and the phone shell alike', async () => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  // As on a paired host without standing watches: the thread takes part in the request and has no watch of its own.
+  await f.control.updateWatcher(record => { record.watches = (record.watches ?? []).filter(watch => watch.target.threadId !== worker.threadId) })
+  expect(f.watcher.state().standingWatches?.some(watch => watch.target.threadId === worker.threadId)).toBe(false)
+  const room = () => f.watcher.state().watchedThreads.find(row => row.target.threadId === worker.threadId)
+  const page = () => f.phone.state(false).watchedThreads.find(row => row.target.threadId === worker.threadId)
+  const shell = async (id: string) => ((await peer.call(id, { op: 'shell' })).result as { host: { threads: { id: string; watchedByWatcher?: boolean }[] } })
+    .host.threads.find(row => row.id === worker.threadId)?.watchedByWatcher
+  expect(room()).toMatchObject({ watched: true, paused: false })
+  expect(page()).toMatchObject({ watched: true, takenOver: false })
+  expect(await shell('request-only')).toBe(true)
+  f.native(worker.threadId).requests = [{ id: 'request-only-card', kind: 'question', text: 'Synthetic question', options: [] }]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.phone.state(false).needsYou.some(row => row.target.threadId === worker.threadId)).toBe(true)
+  f.native(worker.threadId).requests = []
+  // The user's own send takes over a thread watched only through a request: it leaves Watched on every surface.
+  await f.finish(worker.threadId)
+  expect(await peer.call('direct', { op: 'command', command: { type: 'manual-send', threadId: worker.threadId, draftId: randomUUID(), text: 'Synthetic direct user input' } })).toMatchObject({ ok: true })
+  expect(room()?.watched).toBe(false)
+  expect(page()).toMatchObject({ watched: false, takenOver: true })
+  expect(await shell('taken-over')).toBe(false)
+})
+
 it('keeps a phone Stop all preview valid when another phone opens many previews', async () => {
   const f = await fixture(), first = await f.pair(), other = await f.pair()
   await first.call('send', f.send(first.paired.clientId)); const worker = await f.start()

@@ -63,6 +63,24 @@ export type WatcherSetPermissionRequest = z.infer<typeof watcherSetPermissionReq
 export type WatcherWatchThreadRequest = z.infer<typeof watcherWatchThreadRequestSchema>
 
 export type WatcherRoomState = z.infer<typeof watcherRoomStateSchema>
+type WatcherRoomRow = WatcherRoomState['watchedThreads'][number]
+
+/**
+ * Whether Watcher takes part in a thread through one of `activeRequestIds`, and neither the user has taken the thread
+ * over nor Watcher stopped. With a standing watch, this is what makes a thread watched.
+ */
+export function takesPartInActiveRequest(participation: WatcherRoomRow['participation'], activeRequestIds: ReadonlySet<string>): boolean {
+  return participation.some(part => activeRequestIds.has(part.requestId) && part.state === 'participating' && !part.automationStopped)
+}
+
+/**
+ * Whether Watcher watches a row's thread. Main marks every row `watched`: under a standing watch, or taking part in an
+ * active Watcher request. A projection from before standing watches has no mark, and there participation decides.
+ * The room, the Threads page and the iPhone's projection all ask this, so there is one answer.
+ */
+export function isWatchedRow(row: WatcherRoomRow, requests: WatcherRoomState['requests']): boolean {
+  return row.watched ?? takesPartInActiveRequest(row.participation, new Set(requests.filter(request => request.state === 'active').map(request => request.id)))
+}
 export type WatcherOpenRequest = z.infer<typeof watcherOpenRequestSchema>
 export type WatcherRoomResult = z.infer<typeof watcherRoomResultSchema>
 export type WatcherPrepareStopAllResult = z.infer<typeof watcherPrepareStopAllResultSchema>

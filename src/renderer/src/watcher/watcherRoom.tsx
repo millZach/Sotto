@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { parseHostEntityKey } from '../../../shared/clientIdentity'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
-import type { WatcherBridge, WatcherRoomResult, WatcherRoomState } from '../../../shared/watcherRoom'
+import { isWatchedRow, type WatcherBridge, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { useFirstMessageDelivery } from './watcherFirstMessage'
@@ -75,14 +75,11 @@ export function targetForThread(state: AgentState, thread: AgentThread): Watcher
 }
 
 /**
- * The threads Watcher watches. Main marks each row `watched`, standing watches included, and that is the answer; a
- * projection from before standing watches has no mark, and there a thread is watched while it takes part in an active
- * Watcher request and the user has not taken it over.
+ * The threads Watcher watches, by main's `watched` mark: under a standing watch, or taking part in an active Watcher
+ * request. The iPhone's projection reads the same mark, so the room, the Threads page and the phone agree.
  */
 export function watchedRows(room: WatcherRoomState): WatcherRoomState['watchedThreads'] {
-  const active = new Map(room.requests.map(request => [request.id, request.state === 'active'] as const))
-  return room.watchedThreads.filter(entry => entry.watched
-    ?? entry.participation.some(part => part.state === 'participating' && active.get(part.requestId) !== false))
+  return room.watchedThreads.filter(entry => isWatchedRow(entry, room.requests))
 }
 export function watchedTargets(room: WatcherRoomState): WatcherThreadTarget[] {
   return watchedRows(room).map(entry => entry.target)

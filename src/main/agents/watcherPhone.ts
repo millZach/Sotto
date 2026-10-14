@@ -4,7 +4,7 @@ import { watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend,
 import { watcherRefusal, watcherGuidancePrefix, WATCHER_GUIDANCE_SUFFIX, type WatcherService } from './watcher'
 import type { AgentControl } from './control'
 import type { ClientIdentity } from './hostService'
-import type { WatcherSetPermissionRequest, WatcherWatchThreadRequest } from '../../shared/watcherRoom'
+import { isWatchedRow, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest } from '../../shared/watcherRoom'
 
 /** A phone reads the room, never the persisted control record or the desktop's aggregate shell. */
 export class WatcherPhoneService {
@@ -47,16 +47,13 @@ export class WatcherPhoneService {
         createdAt: operation.createdAt, updatedAt: operation.updatedAt,
         ...(operation.delivery ? { delivery: operation.delivery } : {}), ...(operation.refusalCode ? { refusalCode: operation.refusalCode } : {}) })
     }
-    const activeRequests = new Set(room.requests.filter(request => request.state === 'active'
-      && request.watcher.hostId === room.current?.target.hostId && request.watcher.threadId === room.current?.target.threadId).map(request => request.id))
+    // Main's own mark, as the room and the Threads page read it: a standing watch, or taking part in an active request.
     const watchedThreads = room.watchedThreads.map(row => ({ target: row.target, title: row.title,
       provider: thread(row.target)?.providerId ?? null, status: row.status, connected: row.connected,
-      watched: row.watched ?? row.participation.some(part => activeRequests.has(part.requestId) && part.state === 'participating' && !part.automationStopped),
-      paused: row.paused,
+      watched: isWatchedRow(row, room.requests), paused: row.paused,
       takenOver: row.participation.some(part => part.state === 'taken-over'), backgroundWorkCount: row.backgroundWorkCount }))
-    const targets = [...room.watchedThreads.filter(row => row.watched || row.participation.some(part =>
-      activeRequests.has(part.requestId) && part.state === 'participating' && !part.automationStopped)).map(row => row.target),
-    ...room.current ? [room.current.target] : []]
+    const targets = [...room.watchedThreads.filter(row => isWatchedRow(row, room.requests)).map(row => row.target),
+      ...room.current ? [room.current.target] : []]
     const needsYou = targets.flatMap(target => {
       const owner = thread(target), connected = Boolean(owner?.clientConnected)
       return (owner?.requests ?? []).map(request => ({ target, title: owner!.title, provider: owner?.providerId ?? null,

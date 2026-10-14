@@ -10,7 +10,7 @@ import { watcherOverview, type WatcherObservation } from '../../shared/watcherOv
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherRecord, type WatcherRefusal, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName } from '../../shared/watcher'
-import { watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
+import { takesPartInActiveRequest, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
   type WatcherPrepareStopAllResult, type WatcherStopAllResult } from '../../shared/watcherRoom'
 import type { AgentHostCommand } from './host'
@@ -230,6 +230,9 @@ export class WatcherService implements WatcherControlHooks {
     const current = this.options.control.watcherSnapshot().threads.find(item => item.id === record.current?.target.threadId)
     const watches = record.watches ?? [], targets = new Map([...record.requests.flatMap(request => request.participants.map(item => [key(item.target), item.target] as const)),
       ...watches.map(watch => [key(watch.target), watch.target] as const)])
+    // The requests Watcher acts for: the current Watcher's, and a paired master's on the threads this host owns.
+    const acting = new Set(record.requests.filter(request => request.state === 'active'
+      && (request.remoteOrigin || record.current && key(request.watcher) === key(record.current.target))).map(request => request.id))
     return { current: record.current, currentOptions: current ? { modelId: current.modelId, reasoningEffort: current.reasoningEffort ?? null,
       runtimeMode: current.runtimeMode ?? 'approval-required', status: current.status, connected: this.connected(current) } : null,
       runtimeMode: record.lastRuntimeMode ?? current?.runtimeMode ?? 'approval-required', standingWatches: watches,
@@ -237,13 +240,15 @@ export class WatcherService implements WatcherControlHooks {
       watchedThreads: [...targets.values()].map(target => {
         const thread = this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)
         const watch = watches.find(item => key(item.target) === key(target))
-        return { target, watched: Boolean(watch), paused: Boolean(watch?.pausedByUserMessageId), title: thread?.title ?? 'Unavailable thread', status: thread?.status ?? 'unavailable', connected: Boolean(thread && this.connected(thread)),
+        const participation = record.requests.flatMap(request => request.participants.filter(item => key(item.target) === key(target)))
+        // One definition of watched for every surface: a standing watch, or taking part in an active request.
+        return { target, watched: Boolean(watch) || takesPartInActiveRequest(participation, acting), paused: Boolean(watch?.pausedByUserMessageId), title: thread?.title ?? 'Unavailable thread', status: thread?.status ?? 'unavailable', connected: Boolean(thread && this.connected(thread)),
           settled: Boolean(thread && isWorkspaceThreadSettled(thread, this.owningSnapshot(target.hostId)?.projects.find(item => item.id === thread.projectId))),
           backgroundWorkCount: (thread?.backgroundWork?.length ?? 0) + (thread?.monitoring?.length ?? 0),
           evidence: this.wakes.evidence.read(target, Boolean(thread && this.connected(thread))),
           ...(thread && this.wakes.observations.get(JSON.stringify([thread.hostId ?? null, thread.id])) ? { observation: this.roomObservation(this.wakes.observations.get(JSON.stringify([thread.hostId ?? null, thread.id]))!) } : {}),
           waitsOn: thread?.requests.map(request => ({ id: request.id, kind: request.kind, openTarget: target })) ?? [],
-          participation: record.requests.flatMap(request => request.participants.filter(item => key(item.target) === key(target))) }
+          participation }
       }), inFlight: this.inFlight(record), inFlightLimit: this.options.limit(), receipts: record.operations,
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now() }
   }
