@@ -76,12 +76,12 @@ describe('usage dashboard boundaries', () => {
   it('keeps where work ran and the app that sent it consistent on every token observation', () => {
     expect(usageTokenObservationSchema.safeParse(observation).success).toBe(true)
     expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'sotto', client: 'sotto', subAgent: true, origin: 'adapter' }).success).toBe(true)
-    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'elsewhere', client: 'codex-exec' }).success).toBe(true)
-    // Sotto work is the Sotto client; work elsewhere names its own client.
+    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'outside', client: 'codex-exec' }).success).toBe(true)
+    // Sotto work is the Sotto client; work outside Sotto names its own client.
     expect(usageTokenObservationSchema.safeParse({ ...observation, client: 'claude-code' }).success).toBe(false)
-    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'elsewhere' }).success).toBe(false)
-    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'elsewhere', client: 'sotto' }).success).toBe(false)
-    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'elsewhere', client: 'codex-unknown' }).success).toBe(false)
+    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'outside' }).success).toBe(false)
+    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'outside', client: 'sotto' }).success).toBe(false)
+    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'outside', client: 'codex-unknown' }).success).toBe(false)
     // Imported history always carries the instant its provider recorded.
     expect(usageTokenObservationSchema.safeParse({ ...observation, origin: 'history' }).success).toBe(false)
     expect(usageTokenObservationSchema.safeParse({ ...observation, origin: 'history', at: '2026-10-12T00:00:00Z' }).success).toBe(true)
@@ -90,7 +90,7 @@ describe('usage dashboard boundaries', () => {
 
   it('accepts imported prompts, cursors and history status as numbers and identities alone', () => {
     const prompt = { providerId: 'codex', threadId: 'session-hash', messageId: 'turn-1', modelId: 'gpt-6-astra', at: '2026-10-12T00:00:00.000Z',
-      kind: 'user', source: 'elsewhere', client: 'codex-exec' }
+      kind: 'user', source: 'outside', client: 'codex-exec' }
     expect(usageHistoryPromptSchema.safeParse(prompt).success).toBe(true)
     expect(usageHistoryPromptSchema.safeParse({ ...prompt, client: 'sotto' }).success).toBe(false)
     expect(usageHistoryPromptSchema.safeParse({ ...prompt, source: 'sotto' }).success).toBe(false)
@@ -106,11 +106,11 @@ describe('usage dashboard boundaries', () => {
   })
 
   it('bounds the new query filters and keeps every new read field optional for older hosts', () => {
-    expect(usageLocalQuerySchema.safeParse({ sources: ['sotto', 'elsewhere'], since: '2026-10-12T05:00:00-07:00' }).success).toBe(true)
-    expect(usageLocalQuerySchema.safeParse({ sources: ['sotto', 'elsewhere', 'sotto'] }).success).toBe(false)
+    expect(usageLocalQuerySchema.safeParse({ sources: ['sotto', 'outside'], since: '2026-10-12T05:00:00-07:00' }).success).toBe(true)
+    expect(usageLocalQuerySchema.safeParse({ sources: ['sotto', 'outside', 'sotto'] }).success).toBe(false)
     expect(usageLocalQuerySchema.safeParse({ sources: ['remote'] }).success).toBe(false)
     expect(usageLocalQuerySchema.safeParse({ since: '2026-10-12' }).success).toBe(false)
-    expect(usageQuerySchema.safeParse({ hostIds: ['computer-1'], sources: ['elsewhere'], since: '2026-10-12T00:00:00Z' }).success).toBe(true)
+    expect(usageQuerySchema.safeParse({ hostIds: ['computer-1'], sources: ['outside'], since: '2026-10-12T00:00:00Z' }).success).toBe(true)
     const prompts = { user: 0, watcher: 0, wakeUp: 0, total: 0, steered: 0 }
     const field = { knownRows: 0, rows: 0, partial: false }
     const empty = { tokens: Object.fromEntries(['input', 'output', 'cached', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h', 'total'].map(name => [name, field])),
@@ -119,7 +119,7 @@ describe('usage dashboard boundaries', () => {
       totals: empty, timeZone: 'UTC', providers: [], models: [], modelCount: 0, modelsTruncated: false, daily: [], dailyCoverage: 'complete', hourly: [] }
     expect(usageLocalReadSchema.safeParse(read).success).toBe(true)
     expect(usageLocalReadSchema.safeParse({ ...read, totals: { ...empty, lastDay: '2026-10-12' },
-      clients: [{ ...empty, source: 'elsewhere', clientId: 'claude-code', subAgent: true }],
+      clients: [{ ...empty, source: 'outside', clientId: 'claude-code', subAgent: true }],
       metadata: { ...read.metadata, history: { status: 'scanning' } } }).success).toBe(true)
     expect(usageLocalReadSchema.safeParse({ ...read, clients: Array.from({ length: USAGE_CLIENT_ROWS_MAX + 1 }, () => ({ ...empty, source: 'sotto', clientId: 'sotto', subAgent: false })) }).success).toBe(false)
     expect(usageLocalReadSchema.safeParse({ ...read, totals: { ...empty, lastDay: '2026-02-30' } }).success).toBe(false)

@@ -277,8 +277,8 @@ describe('host usage history import', () => {
     expect(dated.totals.tokens.total.value).toBe(120)
     expect(store.query().totals).toMatchObject({ tokenRecords: 1, undatedTokenRecords: 0 })
     expect((await service.clear({ expectedRevision: store.metadata().revision })).status).toBe('cleared')
-    rows = [{ ...undated, recordKey: hash('older-history'), at: '2026-09-21T10:00:00.000Z', phase: 'replay', origin: 'history', source: 'elsewhere', client: 'codex-cli' },
-      { ...undated, recordKey: hash('newer-history'), at: '2026-10-13T10:00:00.000Z', phase: 'replay', origin: 'history', source: 'elsewhere', client: 'codex-cli' }]
+    rows = [{ ...undated, recordKey: hash('older-history'), at: '2026-09-21T10:00:00.000Z', phase: 'replay', origin: 'history', source: 'outside', client: 'codex-cli' },
+      { ...undated, recordKey: hash('newer-history'), at: '2026-10-13T10:00:00.000Z', phase: 'replay', origin: 'history', source: 'outside', client: 'codex-cli' }]
     // A read starts another pass once the last one is a minute old.
     const later = Date.now() + 60_000
     vi.spyOn(Date, 'now').mockReturnValue(later)

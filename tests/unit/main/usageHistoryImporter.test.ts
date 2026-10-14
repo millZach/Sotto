@@ -19,7 +19,7 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const startedAt = '2026-10-14T01:31:52.000Z'
 const history = (patch: Partial<UsageTokenObservation> = {}): UsageTokenObservation => ({ providerId: 'claude', threadId: usageHistoryThreadId('claude', 'native'),
   recordKey: hash('row'), modelId: 'claude-opus-5-5', tokens: { input: 10, output: 2 }, at: '2026-09-20T10:00:00.000Z', phase: 'replay', partial: false,
-  origin: 'history', source: 'elsewhere', client: 'claude-code', ...patch })
+  origin: 'history', source: 'outside', client: 'claude-code', ...patch })
 
 function fakeStore() {
   const tokens: UsageTokenObservation[][] = []
@@ -156,7 +156,7 @@ describe('Sotto thread host history translation', () => {
       const inner: AgentHost = new FakeProviderHost()
       inner.scanUsageHistory = async sink => {
         sink.tokens([history({ threadId: 'adapter-thread-1', source: undefined, client: undefined }), history({ threadId: 'adapter-unbound', source: undefined, client: undefined }), history()])
-        sink.prompts([{ providerId: 'claude', threadId: usageHistoryThreadId('claude', 'native'), messageId: 'u-1', modelId: 'm', at: startedAt, kind: 'user', source: 'elsewhere', client: 'claude-code' }])
+        sink.prompts([{ providerId: 'claude', threadId: usageHistoryThreadId('claude', 'native'), messageId: 'u-1', modelId: 'm', at: startedAt, kind: 'user', source: 'outside', client: 'claude-code' }])
         sink.setCursors([{ key: 'k', cursor: { size: 1, mtimeMs: 1, offset: 1 } }])
       }
       const host = new SottoThreadHost('claude', inner, registry)

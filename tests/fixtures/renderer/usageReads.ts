@@ -15,7 +15,7 @@ export function tokens(input?: number, output?: number, cached?: number, write?:
 export function activityRow(user: number, wakeUp: number, watcher: number, totals: UsageTokenTotals, extra: Partial<UsageActivityAggregate> = {}): UsageActivityAggregate {
   return { tokens: totals, prompts: { user, watcher, wakeUp, total: user + watcher + wakeUp, steered: 0 }, tokenRecords: totals.total.value === undefined ? 0 : 10, partialTokenRecords: 0, undatedTokenRecords: 0, activeThreads: 4, activeDays: 3, ...extra }
 }
-const client = (source: 'sotto' | 'elsewhere', clientId: UsageClientAggregate['clientId'], subAgent: boolean, row: UsageActivityAggregate): UsageClientAggregate => ({ ...row, source, clientId, subAgent })
+const client = (source: 'sotto' | 'outside', clientId: UsageClientAggregate['clientId'], subAgent: boolean, row: UsageActivityAggregate): UsageClientAggregate => ({ ...row, source, clientId, subAgent })
 
 /** This computer: Sotto threads, their subagents, Claude Code itself and codex exec runs over the last week. */
 export function localActivity(revision = 7): UsageLocalRead {
@@ -44,9 +44,9 @@ export function localActivity(revision = 7): UsageLocalRead {
     clients: [
       client('sotto', 'sotto', false, activityRow(120, 10, 0, tokens(9_500_000, 500_000, 8_000_000, 400_000))),
       client('sotto', 'sotto', true, activityRow(0, 0, 0, tokens(19_800_000, 200_000, 18_000_000, 300_000))),
-      client('elsewhere', 'claude-code', false, activityRow(40, 0, 0, tokens(5_900_000, 100_000, 5_000_000, 200_000))),
-      client('elsewhere', 'claude-code', true, activityRow(0, 0, 0, tokens(1_950_000, 50_000, 1_500_000))),
-      client('elsewhere', 'codex-exec', false, activityRow(30, 0, 0, tokens(3_850_000, 150_000, 3_500_000))),
+      client('outside', 'claude-code', false, activityRow(40, 0, 0, tokens(5_900_000, 100_000, 5_000_000, 200_000))),
+      client('outside', 'claude-code', true, activityRow(0, 0, 0, tokens(1_950_000, 50_000, 1_500_000))),
+      client('outside', 'codex-exec', false, activityRow(30, 0, 0, tokens(3_850_000, 150_000, 3_500_000))),
     ],
   }
 }

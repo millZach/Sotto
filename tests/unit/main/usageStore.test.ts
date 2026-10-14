@@ -669,11 +669,11 @@ describe('history import and served models', () => {
 
   it('imports prompts idempotently and keeps exclusions, Clear and pending intent', async () => {
     const f = await fixture()
-    const elsewhere = imported({ providerId: 'codex', threadId: 'codex-session-1', messageId: 'turn-1', modelId: 'gpt-6-astra', source: 'elsewhere', client: 'codex-exec' })
-    expect(f.store.importPrompts([imported(), imported({ messageId: 'history-2', kind: 'wake-up' }), elsewhere])).toEqual({ status: 'written', revision: 1 })
-    expect(f.store.importPrompts([imported(), elsewhere])).toEqual({ status: 'unchanged', revision: 1 })
+    const outside = imported({ providerId: 'codex', threadId: 'codex-session-1', messageId: 'turn-1', modelId: 'gpt-6-astra', source: 'outside', client: 'codex-exec' })
+    expect(f.store.importPrompts([imported(), imported({ messageId: 'history-2', kind: 'wake-up' }), outside])).toEqual({ status: 'written', revision: 1 })
+    expect(f.store.importPrompts([imported(), outside])).toEqual({ status: 'unchanged', revision: 1 })
     expect(f.store.query().totals.prompts).toEqual({ user: 2, watcher: 0, wakeUp: 1, total: 3, steered: 0 })
-    expect(f.store.query({ sources: ['elsewhere'] }).totals.prompts.total).toBe(1)
+    expect(f.store.query({ sources: ['outside'] }).totals.prompts.total).toBe(1)
     // A recorded message settles a waiting intent under its original selection.
     f.store.submitPrompt(prompt({ messageId: 'pending', modelId: 'original-selection', kind: 'watcher', inputKind: 'steer' }))
     expect(f.store.importPrompts([imported({ messageId: 'pending', modelId: 'later-selection' })]).status).toBe('written')
@@ -686,7 +686,7 @@ describe('history import and served models', () => {
     expect(f.store.importPrompts([imported({ at: '2026-10-12T12:00:00.000Z' }), imported({ messageId: 'before-clear' })])).toEqual({ status: 'suppressed', revision: cleared })
     expect(f.store.importPrompts([imported({ messageId: 'after-clear', at: '2026-10-12T12:00:00.000Z' })])).toEqual({ status: 'written', revision: cleared + 1 })
     expect(f.store.query().totals.prompts.total).toBe(1)
-    expect(() => f.store.importPrompts([{ ...imported(), source: 'elsewhere' }])).toThrow()
+    expect(() => f.store.importPrompts([{ ...imported(), source: 'outside' }])).toThrow()
     expect(() => f.store.importPrompts(Array.from({ length: USAGE_HISTORY_BATCH_MAX + 1 }, () => imported()))).toThrow(RangeError)
   })
 
@@ -731,33 +731,33 @@ describe('history import and served models', () => {
     const f = await fixture()
     f.store.observeTokens(token({ recordKey: hash('sotto'), at: '2026-10-12T10:00:00.000Z' }))
     f.store.observeTokens(token({ recordKey: hash('sotto-sub'), at: '2026-10-12T10:20:00.000Z', subAgent: true }))
-    const elsewhere = { providerId: 'codex', modelId: 'gpt-6-astra', source: 'elsewhere', client: 'codex-exec' } as const
+    const outside = { providerId: 'codex', modelId: 'gpt-6-astra', source: 'outside', client: 'codex-exec' } as const
     f.store.observeTokenBatch([
-      history({ ...elsewhere, threadId: 'session-a', recordKey: hash('exec'), at: '2026-10-12T10:07:29.999Z' }),
-      history({ ...elsewhere, threadId: 'session-a', recordKey: hash('exec-2'), at: '2026-10-12T10:07:30.000Z' }),
-      history({ ...elsewhere, threadId: 'session-b', recordKey: hash('app'), at: '2026-10-13T08:00:00.000Z', client: 'codex-app' }),
+      history({ ...outside, threadId: 'session-a', recordKey: hash('exec'), at: '2026-10-12T10:07:29.999Z' }),
+      history({ ...outside, threadId: 'session-a', recordKey: hash('exec-2'), at: '2026-10-12T10:07:30.000Z' }),
+      history({ ...outside, threadId: 'session-b', recordKey: hash('app'), at: '2026-10-13T08:00:00.000Z', client: 'codex-app' }),
     ])
     f.store.observeTokens(token({ recordKey: hash('undated'), at: undefined, phase: 'seed' }))
-    f.store.importPrompts([imported({ ...elsewhere, threadId: 'session-a', messageId: 'turn', at: '2026-10-12T10:07:00.000Z' })])
+    f.store.importPrompts([imported({ ...outside, threadId: 'session-a', messageId: 'turn', at: '2026-10-12T10:07:00.000Z' })])
     const all = f.store.query()
     expect(all.clients?.map(row => [row.source, row.clientId, row.subAgent, row.tokenRecords, row.prompts.total, row.lastDay])).toEqual([
       ['sotto', 'sotto', false, 2, 0, '2026-10-12'],
       ['sotto', 'sotto', true, 1, 0, '2026-10-12'],
-      ['elsewhere', 'codex-app', false, 1, 0, '2026-10-13'],
-      ['elsewhere', 'codex-exec', false, 2, 1, '2026-10-12'],
+      ['outside', 'codex-app', false, 1, 0, '2026-10-13'],
+      ['outside', 'codex-exec', false, 2, 1, '2026-10-12'],
     ])
     // Each place names the providers whose work it holds, so Sotto's rows can show their marks.
     expect(all.clients?.map(row => row.providerIds)).toEqual([['claude'], ['claude'], ['codex'], ['codex']])
     expect(all.totals.lastDay).toBe('2026-10-13')
     expect(all.providers.map(row => [row.providerId, row.lastDay])).toEqual([['claude', '2026-10-12'], ['codex', '2026-10-13']])
     expect(f.store.query({ sources: ['sotto'] }).totals).toMatchObject({ tokenRecords: 3, undatedTokenRecords: 1, prompts: { total: 0 } })
-    expect(f.store.query({ sources: ['elsewhere'] }).totals).toMatchObject({ tokenRecords: 3, activeThreads: 2, prompts: { total: 1 } })
+    expect(f.store.query({ sources: ['outside'] }).totals).toMatchObject({ tokenRecords: 3, activeThreads: 2, prompts: { total: 1 } })
     expect(f.store.query({ sources: [] }).totals.tokenRecords).toBe(0)
     // `since` is exact, splits a 15-minute bucket, drops undated rows and combines with a calendar range.
     expect(f.store.query({ since: '2026-10-12T10:07:30.000Z' }).totals).toMatchObject({ tokenRecords: 3, undatedTokenRecords: 0, prompts: { total: 0 } })
     expect(f.store.query({ since: '2026-10-12T10:07:29.999Z' }).totals.tokenRecords).toBe(4)
     expect(f.store.query({ since: '2026-10-12T10:00:00.000Z' }).totals).toMatchObject({ tokenRecords: 5, prompts: { total: 1 } })
-    expect(f.store.query({ since: '2026-10-12T03:07:30.000-07:00', sources: ['elsewhere'] }).totals.tokenRecords).toBe(2)
+    expect(f.store.query({ since: '2026-10-12T03:07:30.000-07:00', sources: ['outside'] }).totals.tokenRecords).toBe(2)
     expect(f.store.query({ since: '2026-10-12T10:00:00.001Z', to: '2026-10-12' }).totals.tokenRecords).toBe(3)
     expect(f.store.query({ since: '2026-10-14T00:00:00.000Z' }).totals).toMatchObject({ tokenRecords: 0 })
     expect(usageLocalReadSchema.safeParse(all).success).toBe(true)

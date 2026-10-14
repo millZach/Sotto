@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { NativeUsage } from '../../../src/main/agents/nativeUsage'
 import { codexClient, scanCodexHistory } from '../../../src/main/agents/usageHistory/codexHistory'
-import { usageHistoryThreadId } from '../../../src/main/agents/usageHistory/sink'
+import { usageHistoryMessageId, usageHistoryThreadId } from '../../../src/main/agents/usageHistory/sink'
 import { usageHistoryPromptSchema, usageTokenObservationSchema, type UsageTokenObservation } from '../../../src/shared/usageDashboard'
 import { codexMeta, codexRecord, codexTaskStarted, codexTokenCount, codexTurnContext, codexUserMessage, jsonl, SECRET } from '../../fixtures/usageHistory/lines'
 import { memorySink } from '../../fixtures/usageHistory/sink'
@@ -27,6 +27,8 @@ const rollout = (root: string, name: string): string => join(root, 'sessions', '
 const scan = (root: string, sink: ReturnType<typeof memorySink>, owned = new Map<string, string>()) =>
   scanCodexHistory({ home: root, owned }, sink.sink, new AbortController().signal)
 const t = (minute: number): string => new Date(Date.UTC(2026, 8, 20, 10, minute)).toISOString()
+/** A prompt's identity: a hash of its turn, never the turn's own ID. */
+const turn = (id: string): string => usageHistoryMessageId('codex', id)
 
 describe('Codex history reader', () => {
   it('names each client from the session originator', () => {
@@ -56,10 +58,10 @@ describe('Codex history reader', () => {
     expect(sink.sum('output')).toBe(31)
     for (const row of sink.tokens) {
       expect(usageTokenObservationSchema.safeParse(row).success).toBe(true)
-      expect(row).toMatchObject({ providerId: 'codex', threadId: thread, modelId: 'gpt-6-astra', source: 'elsewhere', client: 'codex-exec', origin: 'history' })
+      expect(row).toMatchObject({ providerId: 'codex', threadId: thread, modelId: 'gpt-6-astra', source: 'outside', client: 'codex-exec', origin: 'history' })
     }
     expect(sink.prompts.map(prompt => [prompt.messageId, prompt.at, prompt.client, prompt.threadId])).toEqual([
-      ['turn-1', t(1), 'codex-exec', thread], ['turn-2', t(5), 'codex-exec', thread]])
+      [turn('turn-1'), t(1), 'codex-exec', thread], [turn('turn-2'), t(5), 'codex-exec', thread]])
     for (const prompt of sink.prompts) expect(usageHistoryPromptSchema.safeParse(prompt).success).toBe(true)
   })
 
@@ -83,7 +85,7 @@ describe('Codex history reader', () => {
     expect(sink.rows().size).toBe(2)
     expect(sink.sum('input')).toBe(180)
     expect(sink.tokens.every(row => row.client === 'codex-app' && row.modelId === 'gpt-6.1-sol')).toBe(true)
-    expect(sink.prompts.map(prompt => prompt.messageId)).toEqual(['turn-a'])
+    expect(sink.prompts.map(prompt => prompt.messageId)).toEqual([turn('turn-a')])
   })
 
   it('skips the parent history a forked sub-agent rollout begins with', async () => {
@@ -108,7 +110,7 @@ describe('Codex history reader', () => {
     expect(sink.sum('input')).toBe(340)
     const child = [...sink.rows().values()].filter(row => row.subAgent)
     expect(child.map(row => [row.threadId, row.modelId, row.tokens.input])).toEqual([[usageHistoryThreadId('codex', 'child'), 'gpt-6.1-sol', 40]])
-    expect(sink.prompts.map(prompt => prompt.messageId)).toEqual(['p-turn'])
+    expect(sink.prompts.map(prompt => prompt.messageId)).toEqual([turn('p-turn')])
   })
 
   it('attributes a fork read in a later pass to its parent, so the store counts the copy once', async () => {
@@ -132,7 +134,7 @@ describe('Codex history reader', () => {
     await scan(root, sink)
     expect(sink.sum('input')).toBe(150)
     expect(sink.uniquePrompts().size).toBe(2)
-    expect([...sink.uniquePrompts().values()].find(prompt => prompt.messageId === 'f-turn')?.client).toBe('codex-app')
+    expect([...sink.uniquePrompts().values()].find(prompt => prompt.messageId === turn('f-turn'))?.client).toBe('codex-app')
   })
 
   it('uses the copied-history ordinal for an old rollout forked after its parent was read', async () => {
@@ -207,7 +209,7 @@ describe('Codex history reader', () => {
       codexRecord({ at: t(2), thread: 'native-owned', turn: 'o-turn', response: 'resp-1', total: { input: 90, cached: 50, output: 9 }, last: { input: 100, cached: 60, output: 10 } }),
       codexTokenCount({ at: t(2), total: { input: 100, cached: 60, output: 10 }, last: { input: 100, cached: 60, output: 10 } }),
     ]))
-    await writeFile(rollout(root, '2026-09-20T10-01-00-elsewhere-records'), jsonl([
+    await writeFile(rollout(root, '2026-09-20T10-01-00-outside-records'), jsonl([
       codexMeta({ id: 'native-app', originator: 'Codex Desktop', at: t(0) }),
       codexTaskStarted({ turn: 'a-turn', at: t(1) }),
       codexRecord({ at: t(2), thread: 'native-app', turn: 'a-turn', response: 'resp-2', total: { input: 40, output: 4 }, last: { input: 40, output: 4 } }),
@@ -280,7 +282,7 @@ describe('Codex history reader', () => {
     const fork = [...sink.rows().values()].filter(row => row.threadId === usageHistoryThreadId('codex', 'fork-child'))
     expect(fork.map(row => [row.tokens.input, row.modelId, row.client])).toEqual([[50, 'gpt-6.1-sol', 'codex-app']])
     expect([...sink.uniquePrompts().values()].map(prompt => [prompt.messageId, prompt.threadId])).toEqual([
-      ['p-turn', usageHistoryThreadId('codex', 'fork-parent')], ['f-turn', usageHistoryThreadId('codex', 'fork-child')]])
+      [turn('p-turn'), usageHistoryThreadId('codex', 'fork-parent')], [turn('f-turn'), usageHistoryThreadId('codex', 'fork-child')]])
   })
 
   it('keeps a session\'s token_count history from before Codex wrote records, in one pass or two', async () => {
@@ -335,10 +337,79 @@ describe('Codex history reader', () => {
     await scan(root, sink)
     await appendFile(file, jsonl([codexTokenCount({ at: t(3), total: { input: 30, output: 3 }, last: { input: 20, output: 2 } })]))
     await scan(root, sink)
-    expect(sink.tokens.map(row => [row.threadId, row.modelId, row.client, row.tokens.input])).toEqual([
+    // The second pass reads the open turn again from its first line; a row read twice is the same row.
+    expect([...sink.rows().values()].map(row => [row.threadId, row.modelId, row.client, row.tokens.input])).toEqual([
       [usageHistoryThreadId('codex', 'session-cli'), 'gpt-6-astra', 'codex-cli', 10],
       [usageHistoryThreadId('codex', 'session-cli'), 'gpt-6-astra', 'codex-cli', 20]])
+    expect(sink.uniquePrompts().size).toBe(1)
+    // Nothing new: nothing read.
+    const before = sink.tokens.length
+    await scan(root, sink)
+    expect(sink.tokens).toHaveLength(before)
+  })
+
+  it('keeps no turn ID in a prompt or a cursor, and a Sotto thread resumed mid-turn keeps the live ledger keys', async () => {
+    const root = await home()
+    const ownedTurn = '019a0000-7f3a-7000-8000-00000000c0de'
+    const outsideTurn = '019a0000-7f3a-7000-8000-00000000beef'
+    const owned = rollout(root, '2026-09-20T10-00-00-owned-resume')
+    const outside = rollout(root, '2026-09-20T10-01-00-outside-resume')
+    await writeFile(owned, jsonl([
+      codexMeta({ id: 'native-owned', originator: 'sotto', at: t(0) }),
+      codexTaskStarted({ turn: ownedTurn, at: t(1) }),
+      codexTurnContext({ turn: ownedTurn, model: 'gpt-6-astra', at: t(1) }),
+      codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } }),
+    ]))
+    await writeFile(outside, jsonl([
+      codexMeta({ id: 'native-cli', originator: 'codex-tui', at: t(0) }),
+      codexTaskStarted({ turn: outsideTurn, at: t(1) }),
+      codexTurnContext({ turn: outsideTurn, model: 'gpt-6-astra', at: t(1) }),
+      codexTokenCount({ at: t(2), total: { input: 10, output: 1 }, last: { input: 10, output: 1 } }),
+    ]))
+    const sink = memorySink()
+    const threads = new Map([['native-owned', 'adapter-thread-9']])
+    await scan(root, sink, threads)
+    const leaks = (): string => JSON.stringify([sink.prompts, [...sink.cursors]])
     expect(sink.prompts).toHaveLength(1)
+    for (const forbidden of [ownedTurn, outsideTurn, 'native-owned', 'native-cli']) expect(leaks()).not.toContain(forbidden)
+    // Both files stop inside a turn, so the next pass learns each turn again from its opening line.
+    await appendFile(owned, jsonl([codexTokenCount({ at: t(3), total: { input: 250, output: 30 }, last: { input: 150, output: 20 } })]))
+    await appendFile(outside, jsonl([codexTokenCount({ at: t(3), total: { input: 30, output: 3 }, last: { input: 20, output: 2 } })]))
+    await scan(root, sink, threads)
+    for (const forbidden of [ownedTurn, outsideTurn, 'native-owned', 'native-cli']) expect(leaks()).not.toContain(forbidden)
+    expect(sink.uniquePrompts().size).toBe(1)
+    const live: UsageTokenObservation[] = []
+    const ledger = new NativeUsage(root, 'codex', true)
+    ledger.subscribeUsage(record => live.push(record))
+    ledger.codex('adapter-thread-9', 'gpt-6-astra', { turnId: ownedTurn, tokenUsage: {
+      total: { inputTokens: 100, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0, totalTokens: 110 },
+      last: { inputTokens: 100, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0, totalTokens: 110 } } })
+    ledger.codex('adapter-thread-9', 'gpt-6-astra', { turnId: ownedTurn, tokenUsage: {
+      total: { inputTokens: 250, cachedInputTokens: 0, outputTokens: 30, reasoningOutputTokens: 0, totalTokens: 280 },
+      last: { inputTokens: 150, cachedInputTokens: 0, outputTokens: 20, reasoningOutputTokens: 0, totalTokens: 170 } } })
+    const ownedRows = [...sink.rows().values()].filter(row => row.threadId === 'adapter-thread-9')
+    expect(ownedRows.map(row => [row.recordKey, row.groupKey, row.tokens.input])).toEqual(live.map(row => [row.recordKey, row.groupKey, row.tokens.input]))
+    expect(ownedRows).toHaveLength(2)
+    expect([...sink.rows().values()].filter(row => row.threadId === usageHistoryThreadId('codex', 'native-cli')).map(row => row.tokens.input)).toEqual([10, 20])
+    await ledger.flushed()
+  })
+
+  it('reads a rollout again from its start when its cursor was saved by the reader that kept the turn ID', async () => {
+    const root = await home()
+    const file = rollout(root, '2026-09-20T10-00-00-old-cursor')
+    await writeFile(file, jsonl([
+      codexMeta({ id: 'session-old', originator: 'codex-tui', at: t(0) }),
+      codexTaskStarted({ turn: 'turn-old', at: t(1) }),
+      codexTokenCount({ at: t(2), total: { input: 10, output: 1 }, last: { input: 10, output: 1 } }),
+    ]))
+    const sink = memorySink()
+    await scan(root, sink)
+    const [key, cursor] = [...sink.cursors][0]!
+    const saved = JSON.parse(cursor.state!) as Record<string, unknown>
+    sink.cursors.set(key, { ...cursor, mtimeMs: cursor.mtimeMs - 1, state: JSON.stringify({ ...saved, v: 1, turn: 'turn-old' }) })
+    await scan(root, sink)
+    expect(sink.cursors.get(key)?.state).not.toContain('turn-old')
+    expect(sink.rows().size).toBe(1)
   })
 
   it('reads archived rollouts too and never passes on words or native IDs', async () => {

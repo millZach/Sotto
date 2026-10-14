@@ -25,7 +25,7 @@ function random(seed: number): () => number {
 
 /**
  * About the shape of the development laptop's history once imported: sessions that work in bursts a few seconds to
- * a minute apart, a third in Sotto and the rest elsewhere, half of them sub-agents, and a few thousand prompts.
+ * a minute apart, a third in Sotto and the rest outside it, half of them sub-agents, and a few thousand prompts.
  */
 function seed(path: string, sparse: boolean): void {
   const db = new DatabaseSync(path)
@@ -41,10 +41,10 @@ function seed(path: string, sparse: boolean): void {
     let prompts = 0
     for (let session = 0; row < ROWS; session++) {
       const provider = session % 2 ? 'claude' : 'codex'
-      const elsewhere = session % 3 !== 0
-      const client = !elsewhere ? 'sotto' : provider === 'claude' ? 'claude-code' : ['codex-exec', 'codex-app', 'codex-cli'][session % 3]!
+      const outside = session % 3 !== 0
+      const client = !outside ? 'sotto' : provider === 'claude' ? 'claude-code' : ['codex-exec', 'codex-app', 'codex-cli'][session % 3]!
       const subAgent = session % 4 >= 2 ? 1 : 0
-      const thread = `${elsewhere ? 'elsewhere' : 'thread'}-${session}`
+      const thread = `${outside ? 'outside' : 'thread'}-${session}`
       const length = sparse ? 200 : 20 + Math.floor(next() * 100)
       let at = START + Math.floor(next() * SPAN)
       for (let index = 0; index < length && row < ROWS; index++, row++) {
@@ -53,10 +53,10 @@ function seed(path: string, sparse: boolean): void {
         if (!subAgent && index % 12 === 0 && prompts < PROMPTS) {
           const before = new Date(Date.parse(instant) - 500).toISOString()
           prompt.run(thread, `message-${prompts++}`, provider, `native:${provider}:model:${provider === 'claude' ? 'opus' : 'gpt-6-astra'}`,
-            before, before.slice(0, 10), prompts % 7 === 0 ? 'wake-up' : 'user', elsewhere ? 'elsewhere' : 'sotto', client)
+            before, before.slice(0, 10), prompts % 7 === 0 ? 'wake-up' : 'user', outside ? 'outside' : 'sotto', client)
         }
         insert.run(provider, thread, hash(`row-${row}`), `native:${provider}:model:${models[provider][index % (subAgent ? 3 : 2)]}`, instant, instant.slice(0, 10),
-          10_000 + (row % 5_000), 200 + (row % 300), 8_000, 500, elsewhere ? 'elsewhere' : 'sotto', client, subAgent)
+          10_000 + (row % 5_000), 200 + (row % 300), 8_000, 500, outside ? 'outside' : 'sotto', client, subAgent)
       }
     }
     db.exec('COMMIT')
@@ -81,7 +81,7 @@ const queries: Record<string, UsageLocalQuery> = {
   'All time, UTC': {},
   'All time, Los Angeles': { timeZone: 'America/Los_Angeles' },
   'Last 30 days, Los Angeles': { timeZone: 'America/Los_Angeles', from: '2026-09-15', to: '2026-10-14' },
-  'Last 7 days, Kolkata, elsewhere only': { timeZone: 'Asia/Kolkata', from: '2026-10-08', to: '2026-10-14', sources: ['elsewhere'] },
+  'Last 7 days, Kolkata, outside only': { timeZone: 'Asia/Kolkata', from: '2026-10-08', to: '2026-10-14', sources: ['outside'] },
   'Since a 5-hour window start': { timeZone: 'America/Los_Angeles', since: '2026-10-14T03:07:30.000Z' },
   'All time, one served model': { timeZone: 'America/Los_Angeles', modelIds: ['claude-opus-5-5'] },
 }
@@ -112,7 +112,7 @@ describe.skipIf(!PERF_ASSERT && !PERF_BENCH)('Usage store queries over 400,000 r
         const batch: UsageTokenObservation[] = Array.from({ length: 2_048 }, (_, index) => ({
           providerId: 'claude', threadId: 'import-bench', recordKey: hash(`import-${index}`), modelId: 'claude-opus-5-5',
           tokens: { input: 100, output: 10, cached: 50 }, at: new Date(START + index * 30_000).toISOString(), phase: 'replay', partial: false,
-          origin: 'history', source: 'elsewhere', client: 'claude-code',
+          origin: 'history', source: 'outside', client: 'claude-code',
         }))
         const imported = performance.now()
         store.observeTokenBatch(batch)

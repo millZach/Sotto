@@ -20,7 +20,7 @@ const TABS: readonly UsageTab[] = ['overview', 'subscriptions', 'models']
 const TAB_NAMES: Record<UsageTab, string> = { overview: 'Overview', subscriptions: 'Subscriptions', models: 'Models' }
 type Range = '7' | '30' | '90' | 'all' | 'custom'
 const RANGES: readonly ChoiceOption<Range>[] = [{ value: '7', label: 'Last 7 days' }, { value: '30', label: 'Last 30 days' }, { value: '90', label: 'Last 90 days' }, { value: 'all', label: 'All time' }, { value: 'custom', label: 'Choose dates' }]
-const PLACES: readonly ChoiceOption<UsageWhere>[] = [{ value: 'all', label: 'Everywhere' }, { value: 'sotto', label: 'In Sotto' }, { value: 'elsewhere', label: 'Outside Sotto' }]
+const PLACES: readonly ChoiceOption<UsageWhere>[] = [{ value: 'all', label: 'Everywhere' }, { value: 'sotto', label: 'In Sotto' }, { value: 'outside', label: 'Outside Sotto' }]
 const PROVIDER_CHOICES: readonly ChoiceOption<UsageProviderId | 'all'>[] = [{ value: 'all', label: 'All providers' }, ...USAGE_PROVIDERS.map(id => ({ value: id, label: PROVIDER_NAMES[id] }))]
 const QUOTA_FRESH_MS = 60_000
 const DAYS_MAX = 366

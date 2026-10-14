@@ -111,6 +111,7 @@ describe('Usage page', () => {
     expect(rows[3]).toHaveTextContent('30 prompts')
     expect(stage).toHaveTextContent('71% of tokens and 65% of prompts were in Sotto.')
     expect(stage).toHaveTextContent('In SottoOutside Sotto')
+    // CONTEXT.md: say Outside Sotto, never "elsewhere".
     expect(plainText()).not.toMatch(/Elsewhere|elsewhere|sub-agent/u)
   })
 
@@ -126,7 +127,7 @@ describe('Usage page', () => {
     await user.keyboard('{Enter}')
     await user.click(within(screen.getByRole('listbox', { name: 'Where' })).getByRole('option', { name: 'Outside Sotto' }))
     expect(screen.getByRole('button', { name: 'Where: Outside Sotto' })).toHaveFocus()
-    await waitFor(() => expect(bridge.reads.at(-1)).toEqual(expect.objectContaining({ sources: ['elsewhere'], hostIds: ['laptop'] })))
+    await waitFor(() => expect(bridge.reads.at(-1)).toEqual(expect.objectContaining({ sources: ['outside'], hostIds: ['laptop'] })))
   })
 
   it('reads every computer at once and paints the first that answers', async () => {
@@ -155,7 +156,7 @@ describe('Usage page', () => {
     expect(screen.getByRole('tabpanel', { name: /Where/u })).toHaveTextContent('forge counts only its Sotto threads until its Owl host update.')
     await user.click(screen.getByRole('button', { name: 'Where: Everywhere' }))
     await user.click(screen.getByRole('option', { name: 'Outside Sotto' }))
-    await waitFor(() => expect(bridge.reads.filter(query => query.sources?.[0] === 'elsewhere')).toHaveLength(2))
+    await waitFor(() => expect(bridge.reads.filter(query => query.sources?.[0] === 'outside')).toHaveLength(2))
     // forge's figures are all Sotto threads, so outside Sotto it adds nothing.
     await waitFor(() => expect(measure(/^Prompts 200 /u)).toBeVisible())
   })

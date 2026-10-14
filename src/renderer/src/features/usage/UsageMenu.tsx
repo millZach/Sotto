@@ -43,7 +43,7 @@ function usePopup(align: 'start' | 'end') {
       if (!popup.current?.contains(target) && !button.current?.contains(target)) close(false)
     }
     const away = (): void => close(false)
-    // Focus that leaves both the popup and its button, by Tab or a click elsewhere, closes it.
+    // Focus that leaves both the popup and its button, by Tab or a click outside them, closes it.
     const left = (event: FocusEvent): void => {
       const next = event.relatedTarget as Node | null
       if (next !== null && !popup.current?.contains(next) && !button.current?.contains(next)) close(false)

@@ -86,9 +86,9 @@ describe('Usage across computers', () => {
     const summary = presentUsage(dashboard(localHost(), old))
     expect(summary.withoutPlaces).toEqual(['forge'])
     expect(summary.sottoTokens).toBe(36_000_000)
-    expect(scopeHost(old, ['elsewhere']).activity!.totals.prompts.total).toBe(0)
+    expect(scopeHost(old, ['outside']).activity!.totals.prompts.total).toBe(0)
     expect(scopeHost(old, ['sotto']).activity!.totals.prompts.total).toBe(30)
-    expect(scopeHost(localHost(), ['elsewhere']).activity!.totals.prompts.total).toBe(200)
+    expect(scopeHost(localHost(), ['outside']).activity!.totals.prompts.total).toBe(200)
   })
 })
 

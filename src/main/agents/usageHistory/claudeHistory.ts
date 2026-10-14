@@ -2,8 +2,8 @@ import { join } from 'node:path'
 import type { UsageTokens } from '../../../shared/threadUsage'
 import type { UsageHistoryPrompt, UsageTokenObservation } from '../../../shared/usageDashboard'
 import { claudeTokens, nativeUsageKey } from '../nativeUsage'
-import { readHistoryFolders, type HistoryBatch, type HistoryFile, type HistoryFileReader } from './files'
-import { usageHistoryRecordKey, usageHistoryThreadId, type UsageHistorySink } from './sink'
+import { dated, identity, object, readHistoryFolders, type HistoryBatch, type HistoryFile, type HistoryFileReader } from './files'
+import { usageHistoryMessageId, usageHistoryRecordKey, usageHistoryThreadId, type UsageHistorySink } from './sink'
 
 /**
  * Claude Code's own session transcripts on this computer: `<home>/projects/<project>/<session>.jsonl` and each
@@ -19,9 +19,6 @@ export interface ClaudeHistoryOptions {
 
 const SYNTHETIC = '<synthetic>'
 const WRAPPERS = ['<command-', '<local-command', 'Caveat:']
-const object = (value: unknown): Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
-const dated = (value: unknown): string | undefined => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : undefined
-const identity = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 256 && /^[^\s\p{Cc}]+$/u.test(value)
 
 interface Attribution { readonly owned?: string; readonly threadId: string }
 interface PendingMessage { attribution: Attribution; model: string; tokens: UsageTokens; at: string; subAgent: boolean }
@@ -54,7 +51,7 @@ function humanText(content: unknown): boolean {
 }
 
 function promptOf(prompt: WaitingPrompt, modelId: string): UsageHistoryPrompt {
-  return { providerId: 'claude', threadId: prompt.threadId, messageId: prompt.messageId, modelId, at: prompt.at, kind: 'user', source: 'elsewhere', client: 'claude-code' }
+  return { providerId: 'claude', threadId: prompt.threadId, messageId: prompt.messageId, modelId, at: prompt.at, kind: 'user', source: 'outside', client: 'claude-code' }
 }
 
 function maxTokens(previous: UsageTokens, next: UsageTokens): UsageTokens {
@@ -88,7 +85,7 @@ function reader(options: ClaudeHistoryOptions, memory: PassMemory): HistoryFileR
     }
     return { providerId: 'claude', threadId: row.attribution.threadId, recordKey: usageHistoryRecordKey('claude', row.attribution.threadId, messageId),
       modelId: row.model, tokens: { ...row.tokens }, at: row.at, phase: 'replay', partial, origin: 'history',
-      source: 'elsewhere', client: 'claude-code', ...(row.subAgent ? { subAgent: true } : {}) }
+      source: 'outside', client: 'claude-code', ...(row.subAgent ? { subAgent: true } : {}) }
   }
   return {
     needles: [Buffer.from('"usage"'), Buffer.from('"type":"user"')],
@@ -134,7 +131,7 @@ function reader(options: ClaudeHistoryOptions, memory: PassMemory): HistoryFileR
       if (options.owned.has(session) || memory.prompts.has(frame.uuid)) return
       if (!humanText(message.content)) return
       memory.prompts.add(frame.uuid)
-      state.waiting.push({ threadId: usageHistoryThreadId('claude', session), messageId: frame.uuid, at })
+      state.waiting.push({ threadId: usageHistoryThreadId('claude', session), messageId: usageHistoryMessageId('claude', frame.uuid), at })
     },
     settle(state: FileState, batch: HistoryBatch): void {
       for (const [messageId, row] of state.pending) batch.tokens.push(observation(messageId, row))

@@ -3,8 +3,8 @@ import { join } from 'node:path'
 import type { UsageTokens } from '../../../shared/threadUsage'
 import { USAGE_CLIENTS, type UsageClient, type UsageHistoryCursor, type UsageTokenObservation } from '../../../shared/usageDashboard'
 import { codexEntryKey, nativeUsageKey } from '../nativeUsage'
-import { historyFiles, readHistoryFile, type HistoryBatch, type HistoryFile, type HistoryFileReader } from './files'
-import { usageHistoryCursorKey, usageHistoryRecordKey, usageHistoryThreadId, type UsageHistorySink } from './sink'
+import { byFileName, dated, historyFileName, historyFiles, identity, object, readHistoryFile, type HistoryBatch, type HistoryFile, type HistoryFileReader } from './files'
+import { usageHistoryCursorKey, usageHistoryMessageId, usageHistoryRecordKey, usageHistoryThreadId, type UsageHistorySink } from './sink'
 
 /**
  * Codex's own session rollouts on this computer: `<CODEX_HOME>/sessions/**\/rollout-*.jsonl` and
@@ -28,10 +28,7 @@ export interface CodexHistoryOptions {
   readonly owned: ReadonlyMap<string, string>
 }
 
-const object = (value: unknown): Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const count = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
-const dated = (value: unknown): string | undefined => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : undefined
-const identity = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 256 && /^[^\s\p{Cc}]+$/u.test(value)
 const PARENT_DEPTH_MAX = 8
 /** A first line longer than this is not a session's meta worth reading for its parent. */
 const META_LINE_MAX_BYTES = 16 * 1024 * 1024
@@ -86,7 +83,10 @@ interface FileState {
   /** The sessions whose copied history this file is in, innermost last, until its own work begins. */
   copied: Session[]
   ordinal: number | undefined
+  /** The current turn's own ID. It is never saved: a resumed reading reads again from the line that opened it. */
   turn: string | undefined
+  /** This state's saved form just before the line that opened the current turn, and that line's first byte. */
+  mark: { readonly at: number; readonly saved: SavedState } | undefined
   model: string | undefined
   /** The request figures of the record just before, which the `token_count` after it repeats. */
   afterRecord: string | undefined
@@ -98,7 +98,23 @@ interface FileState {
   readonly turnOwners: Map<string, Session>
   readonly waiting: WaitingTurn[]
 }
-const stateSchemaVersion = 1
+/** Version 1 saved the current turn's own ID; a cursor it saved is read again from the file's start. */
+const stateSchemaVersion = 2
+/** What a cursor keeps between passes: hashed sessions, numbers and a model name, never a native ID. */
+interface SavedState {
+  readonly v: number
+  readonly own: { readonly id: Session; readonly client: UsageClient; readonly sub: boolean; readonly parent?: Session }
+  readonly copied?: Session[]
+  readonly ordinal?: number
+  readonly after?: string
+  readonly lines: number
+  readonly model?: string
+}
+function savedState(state: FileState, own: NonNullable<FileState['own']>, lines: number): SavedState {
+  return { v: stateSchemaVersion, own: { id: own.id, client: own.client, sub: own.subAgent, ...(own.parent ? { parent: own.parent } : {}) },
+    ...(state.copied.length > 0 ? { copied: [...state.copied] } : {}), ...(state.ordinal !== undefined ? { ordinal: state.ordinal } : {}),
+    ...(state.afterRecord !== undefined ? { after: state.afterRecord } : {}), lines, ...(state.model ? { model: state.model } : {}) }
+}
 
 /** What one pass remembers across files. */
 class PassMemory {
@@ -152,13 +168,13 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         ...(turn !== undefined ? { groupKey: nativeUsageKey('codex', 'group', who.owned, turn) } : {}) }
     }
     return { ...base, threadId: who.threadId, recordKey: usageHistoryRecordKey('codex', who.threadId, entry),
-      source: who.client === 'sotto' ? 'sotto' : 'elsewhere', ...(who.client === 'sotto' ? {} : { client: who.client }) }
+      source: who.client === 'sotto' ? 'sotto' : 'outside', ...(who.client === 'sotto' ? {} : { client: who.client }) }
   }
   const modelOf = (state: FileState, turn: string | undefined): string | undefined => (turn !== undefined ? state.turnModels.get(turn) : undefined) ?? state.model
   return {
     needles: [Buffer.from('"session_meta"'), Buffer.from('"turn_context"'), Buffer.from('token_usage_record'), Buffer.from('"token_count"'), Buffer.from('"task_started"')],
     start(_file, saved): FileState {
-      const state: FileState = { own: undefined, copied: [], ordinal: undefined, turn: undefined, model: undefined, afterRecord: undefined,
+      const state: FileState = { own: undefined, copied: [], ordinal: undefined, turn: undefined, mark: undefined, model: undefined, afterRecord: undefined,
         fresh: saved === undefined, base: 0, turnModels: new Map(), turnOwners: new Map(), waiting: [] }
       try {
         const value = object(saved === undefined ? undefined : JSON.parse(saved))
@@ -172,13 +188,12 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
           state.copied = copied.filter((session): session is string => typeof session === 'string' && session.length > 0).slice(-PARENT_DEPTH_MAX)
           state.ordinal = count(value.ordinal); state.base = count(value.lines) ?? 0
           if (typeof value.after === 'string' && value.after.length <= 256) state.afterRecord = value.after
-          if (identity(value.turn)) state.turn = value.turn
           if (typeof value.model === 'string' && value.model.length > 0) state.model = value.model
         }
       } catch { /* A fresh start. */ }
       return state
     },
-    line(text, state, batch, index): void {
+    line(text, state, batch, index, offset): void {
       let frame: Record<string, unknown>
       try { frame = object(JSON.parse(text)) } catch { return }
       const payload = object(frame.payload)
@@ -200,17 +215,21 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         else if (!state.copied.includes(id) && state.copied.length < PARENT_DEPTH_MAX) state.copied.push(id)
         return
       }
-      if (state.own === undefined) return
+      const own = state.own
+      if (own === undefined) return
       const at = dated(frame.timestamp)
+      // A resumed reading begins again at the line that opened the current turn, so the turn's own ID is never saved.
+      const opens = (turn: string): void => { if (turn !== state.turn) state.mark = { at: offset, saved: savedState(state, own, line) } }
       if (frame.type === 'turn_context') {
         const model = typeof payload.model === 'string' && payload.model.length > 0 ? payload.model : undefined
-        if (identity(payload.turn_id)) state.turn = payload.turn_id
+        if (identity(payload.turn_id)) { opens(payload.turn_id); state.turn = payload.turn_id }
         if (model !== undefined) { state.model = model; if (state.turn !== undefined) state.turnModels.set(state.turn, model) }
         return
       }
       const kind = frame.type === 'event_msg' ? payload.type : frame.type === 'token_usage_record' || payload.type === 'token_usage_record' ? 'token_usage_record' : undefined
       if (kind === 'task_started') {
         if (!identity(payload.turn_id)) return
+        opens(payload.turn_id)
         state.turn = payload.turn_id
         const session = current(state)
         if (at !== undefined && session !== undefined && !memory.learning) state.waiting.push({ turn: payload.turn_id, at, session })
@@ -221,7 +240,7 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         state.afterRecord = figures(last)
         const thread = identity(payload.thread_id) ? sessionOf(payload.thread_id) : current(state)
         if (thread === undefined) return
-        if (thread === state.own.id) state.copied = []
+        if (thread === own.id) state.copied = []
         else if (state.copied.includes(thread)) state.copied = state.copied.slice(0, state.copied.indexOf(thread) + 1)
         const turn = identity(payload.turn_id) ? payload.turn_id : state.turn
         if (turn !== undefined) state.turnOwners.set(turn, thread)
@@ -238,7 +257,7 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         const entry = response !== undefined ? `response:${response}`
           : payload.thread_token_usage !== undefined && turn !== undefined ? codexEntryKey(turn, rolloutTokens(payload.thread_token_usage)) : undefined
         if (entry === undefined) return
-        const who = owner(thread, state.own)
+        const who = owner(thread, own)
         // Sotto's live ledger keyed a thread's rows by the running total its token_count events carry, which
         // thread_token_usage does not always equal, so a Sotto thread's rows come from those events.
         if (who.owned !== undefined) return
@@ -267,7 +286,7 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         if (at === undefined) return
         const last = rolloutTokens(info.last_token_usage)
         if (!Object.values(last).some(value => value !== undefined)) return
-        const who = owner(session, state.own)
+        const who = owner(session, own)
         // The record just before reported this request; a Sotto thread's rows come from these events alone.
         if (paired && who.owned === undefined) return
         const entry = who.owned !== undefined ? codexEntryKey(state.turn, rolloutTokens(info.total_token_usage)) : `count:${key}`
@@ -283,8 +302,8 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
           const who = owner(session, state.own)
           // Sotto's own prompts come from its thread store; a sub-agent's turns are never prompts.
           if (who.owned !== undefined || who.subAgent || who.client === 'sotto') continue
-          batch.prompts.push({ providerId: 'codex', threadId: who.threadId, messageId: waiting.turn,
-            modelId: state.turnModels.get(waiting.turn) ?? state.model ?? 'unknown', at: waiting.at, kind: 'user', source: 'elsewhere', client: who.client })
+          batch.prompts.push({ providerId: 'codex', threadId: who.threadId, messageId: usageHistoryMessageId('codex', waiting.turn),
+            modelId: state.turnModels.get(waiting.turn) ?? state.model ?? 'unknown', at: waiting.at, kind: 'user', source: 'outside', client: who.client })
         }
       }
       state.waiting.length = 0
@@ -294,10 +313,15 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
     },
     save(state, lines): string | undefined {
       if (state.own === undefined) return undefined
-      return JSON.stringify({ v: stateSchemaVersion, own: { id: state.own.id, client: state.own.client, sub: state.own.subAgent, ...(state.own.parent ? { parent: state.own.parent } : {}) },
-        ...(state.copied.length > 0 ? { copied: state.copied } : {}), ...(state.ordinal !== undefined ? { ordinal: state.ordinal } : {}),
-        ...(state.afterRecord !== undefined ? { after: state.afterRecord } : {}), lines: state.base + lines,
-        ...(state.turn ? { turn: state.turn } : {}), ...(state.model ? { model: state.model } : {}) })
+      // Inside a turn, keep the state its opening line met: the next reading learns the turn from that line again.
+      if (state.turn !== undefined && state.mark !== undefined) return JSON.stringify({ ...state.mark.saved, at: state.mark.at })
+      return JSON.stringify(savedState(state, state.own, state.base + lines))
+    },
+    resumeAt(saved): number | undefined {
+      try {
+        const value = object(JSON.parse(saved))
+        return value.v === stateSchemaVersion ? count(value.at) : 0
+      } catch { return 0 }
     },
   }
 }
@@ -332,7 +356,6 @@ async function rolloutHead(path: string): Promise<RolloutHead | undefined> {
 
 /** A sink that keeps nothing: a parent read for its running totals alone. */
 const discard: UsageHistorySink = { tokens: () => undefined, prompts: () => undefined, cursor: () => undefined, setCursors: () => undefined }
-const fileName = (file: HistoryFile): string => file.relativePath.slice(file.relativePath.lastIndexOf('/') + 1)
 
 /**
  * Before a fork or sub-agent rollout with no copied-history ordinal is read from its start, its parent's running
@@ -373,7 +396,7 @@ class ForkParents {
   /** A rollout's file name ends with its session's ID; its first line says so. */
   private async find(nativeId: string): Promise<{ file: HistoryFile; head: RolloutHead } | undefined> {
     for (const file of this.files) {
-      const name = fileName(file)
+      const name = historyFileName(file)
       if (name !== `rollout-${nativeId}.jsonl` && !name.endsWith(`-${nativeId}.jsonl`)) continue
       const head = await rolloutHead(file.path)
       if (head?.id === nativeId) return { file, head }
@@ -390,7 +413,7 @@ export async function scanCodexHistory(options: CodexHistoryOptions, sink: Usage
     for (const file of await historyFiles(join(options.home, prefix), accept, signal)) files.push({ path: file.path, relativePath: `${prefix}/${file.relativePath}` })
   }
   // In name order across both folders, so a parent's rollout is read before its forks.
-  files.sort((a, b) => fileName(a) < fileName(b) ? -1 : fileName(a) > fileName(b) ? 1 : 0)
+  files.sort(byFileName)
   const memory = new PassMemory()
   const read = reader(options, memory)
   const parents = new ForkParents(files, options, memory, signal)

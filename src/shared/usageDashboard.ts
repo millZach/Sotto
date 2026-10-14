@@ -24,7 +24,7 @@ export function isUsageProviderId(value: unknown): value is UsageProviderId {
 }
 
 /** Where the work ran: a Sotto thread, or the same provider client used outside Sotto on this computer. */
-export const USAGE_SOURCES = ['sotto', 'elsewhere'] as const
+export const USAGE_SOURCES = ['sotto', 'outside'] as const
 export const usageSourceSchema = z.enum(USAGE_SOURCES)
 export type UsageSource = z.infer<typeof usageSourceSchema>
 /**
@@ -65,7 +65,7 @@ export const usageTokenObservationSchema = z.object({
   /** Read from the provider's own local record by the history importer rather than observed by an adapter. */
   origin: z.enum(['adapter', 'history']).optional(),
 }).strict().refine(value => (value.source ?? 'sotto') === 'sotto' ? (value.client ?? 'sotto') === 'sotto' : value.client !== undefined && value.client !== 'sotto', {
-  message: 'Sotto work uses the Sotto client and work elsewhere names its own client',
+  message: 'Sotto work uses the Sotto client and work outside Sotto names its own client',
 }).refine(value => value.origin !== 'history' || value.at !== undefined, {
   message: 'Imported history carries the instant its provider recorded',
 }).refine(value => value.liveNewGroup !== true || (value.phase === 'live' && value.groupKey !== undefined), {
@@ -94,7 +94,7 @@ export const usageHistoryPromptSchema = z.object({
   providerId: usageProviderIdSchema, threadId: identity, messageId: identity, modelId, at: timestamp,
   kind: z.enum(['user', 'watcher', 'wake-up']), source: usageSourceSchema, client: usageClientSchema,
 }).strict().refine(value => value.source === 'sotto' ? value.client === 'sotto' : value.client !== 'sotto', {
-  message: 'Sotto work uses the Sotto client and work elsewhere names its own client',
+  message: 'Sotto work uses the Sotto client and work outside Sotto names its own client',
 })
 export type UsageHistoryPrompt = z.infer<typeof usageHistoryPromptSchema>
 /** Where the importer stopped in one provider file. `state` is the reader's own numeric resume state, never text. */
@@ -141,7 +141,7 @@ export const usagePromptTotalsSchema = z.object({ user: count, watcher: count, w
 export type UsagePromptTotals = z.infer<typeof usagePromptTotalsSchema>
 export const usageActivityAggregateSchema = z.object({
   tokens: usageTokenTotalsSchema, prompts: usagePromptTotalsSchema,
-  /** Threads in Sotto, sessions elsewhere: each distinct place the work ran. */
+  /** Threads in Sotto, sessions outside it: each distinct place the work ran. */
   tokenRecords: count, partialTokenRecords: count, undatedTokenRecords: count, activeThreads: count, activeDays: count,
   /** The latest calendar day with activity, in the query's time zone. */
   lastDay: day.optional(),

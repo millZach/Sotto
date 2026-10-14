@@ -10,6 +10,13 @@ const CHUNK_BYTES = 128 * 1024
 /** Parsing is done in slices: after this much of a file the reader lets everything else waiting run first. */
 const YIELD_BYTES = 1024 * 1024
 
+/** A JSON value as an object, or an empty one. */
+export const object = (value: unknown): Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
+/** An instant a record names, as an ISO string. */
+export const dated = (value: unknown): string | undefined => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : undefined
+/** A native identity worth keying on: short, one token, no control characters. */
+export const identity = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 256 && /^[^\s\p{Cc}]+$/u.test(value)
+
 /** What a reader has read and not yet handed to the sink. */
 export class HistoryBatch {
   readonly tokens: UsageTokenObservation[] = []
@@ -25,14 +32,30 @@ export class HistoryBatch {
 export interface HistoryFileReader<State> {
   readonly needles: readonly Buffer[]
   start(file: HistoryFile, saved: string | undefined): State
-  /** `index` counts every line since this reading began, wanted or not. */
-  line(text: string, state: State, batch: HistoryBatch, index: number): void
+  /** `index` counts every line since this reading began, wanted or not; `offset` is the byte the line starts at. */
+  line(text: string, state: State, batch: HistoryBatch, index: number, offset: number): void
   settle(state: State, batch: HistoryBatch): void
   /** `lines` is how many lines this reading has consumed so far. */
   save(state: State, lines: number): string | undefined
+  /**
+   * The byte, at or before the cursor, that a saved state was taken at, when it was taken before the cursor: the
+   * reading resumes there with that state and reads those lines again. Rows are keyed, so a row read twice counts
+   * once. It lets a reader resume without saving an identity it only learns from an earlier line.
+   */
+  resumeAt?(saved: string): number | undefined
 }
 
 export interface HistoryFile { readonly path: string; readonly relativePath: string }
+
+/** A file's own name, without the folders above it. */
+export const historyFileName = (file: HistoryFile): string => file.relativePath.slice(file.relativePath.lastIndexOf('/') + 1)
+
+/** Files in name order, then by place: a parent's rollout is read before its forks. */
+export function byFileName(a: HistoryFile, b: HistoryFile): number {
+  const left = historyFileName(a), right = historyFileName(b)
+  if (left !== right) return left < right ? -1 : 1
+  return a.relativePath < b.relativePath ? -1 : a.relativePath > b.relativePath ? 1 : 0
+}
 
 /** Every file under `root` that `accept` takes, in name order so a parent's rollout is read before its forks. */
 export async function historyFiles(root: string, accept: (name: string, relativePath: string) => boolean, signal: AbortSignal): Promise<HistoryFile[]> {
@@ -51,8 +74,7 @@ export async function historyFiles(root: string, accept: (name: string, relative
     }
   }
   await walk(root, 0)
-  const name = (file: HistoryFile): string => file.relativePath.slice(file.relativePath.lastIndexOf('/') + 1)
-  return found.sort((a, b) => name(a) < name(b) ? -1 : name(a) > name(b) ? 1 : a.relativePath < b.relativePath ? -1 : a.relativePath > b.relativePath ? 1 : 0)
+  return found.sort(byFileName)
 }
 
 /** Where to begin a file: undefined when nothing changed since the saved cursor. */
@@ -61,13 +83,17 @@ async function startOffset(path: string, cursor: UsageHistoryCursor | undefined,
   // Shrunk or replaced by an older file: read again from the start. Dedupe makes a second reading count once.
   if (size < cursor.offset || mtimeMs < cursor.mtimeMs) return 0
   if (size === cursor.size && mtimeMs === cursor.mtimeMs && cursor.offset >= size) return undefined
-  if (cursor.offset === 0) return 0
-  // A cursor always sits just after a line break. Any other byte there means the file was rewritten.
+  return await lineStart(path, cursor.offset) ? cursor.offset : 0
+}
+
+/** A cursor always sits just after a line break. Any other byte there means the file was rewritten. */
+async function lineStart(path: string, offset: number): Promise<boolean> {
+  if (offset === 0) return true
   const handle = await open(path, 'r')
   try {
     const byte = Buffer.alloc(1)
-    const { bytesRead } = await handle.read(byte, 0, 1, cursor.offset - 1)
-    return bytesRead === 1 && byte[0] === 0x0a ? cursor.offset : 0
+    const { bytesRead } = await handle.read(byte, 0, 1, offset - 1)
+    return bytesRead === 1 && byte[0] === 0x0a
   } finally { await handle.close() }
 }
 
@@ -84,7 +110,12 @@ export async function readHistoryFile<State>(providerId: UsageProviderId, file: 
   const size = info.size, mtimeMs = Math.max(0, Math.floor(info.mtimeMs))
   const saved = sink.cursor(key)
   let offset: number | undefined
-  try { offset = await startOffset(file.path, saved, size, mtimeMs) } catch { return true }
+  try {
+    offset = await startOffset(file.path, saved, size, mtimeMs)
+    // A state taken before the cursor resumes where it was taken; a place that is not a line's start reads the file again.
+    const back = offset !== undefined && offset > 0 && saved?.state !== undefined ? reader.resumeAt?.(saved.state) : undefined
+    if (back !== undefined && offset !== undefined) offset = Number.isSafeInteger(back) && back >= 0 && back <= offset && await lineStart(file.path, back) ? back : 0
+  } catch { return true }
   if (offset === undefined) return true
   const state = reader.start(file, offset === 0 ? undefined : saved?.state)
   const batch = new HistoryBatch()
@@ -101,11 +132,11 @@ export async function readHistoryFile<State>(providerId: UsageProviderId, file: 
   }
   if (offset >= size) { await commit(); return true }
   const wanted = (line: Buffer): boolean => reader.needles.some(needle => line.includes(needle))
-  const take = (line: Buffer): void => {
+  const take = (line: Buffer, at: number): void => {
     if (!wanted(line)) return
     let text = line.toString('utf8')
     if (text.endsWith('\r')) text = text.slice(0, -1)
-    reader.line(text, state, batch, lines)
+    reader.line(text, state, batch, lines, at)
   }
   let carry: Buffer[] = []
   let carried = 0
@@ -126,7 +157,7 @@ export async function readHistoryFile<State>(providerId: UsageProviderId, file: 
           break
         }
         if (skipping) skipping = false
-        else take(carry.length ? Buffer.concat([...carry, chunk.subarray(start, end)]) : chunk.subarray(start, end))
+        else take(carry.length ? Buffer.concat([...carry, chunk.subarray(start, end)]) : chunk.subarray(start, end), consumed)
         carry = []; carried = 0
         lines += 1
         consumed = position + end + 1
@@ -152,8 +183,7 @@ export async function readHistoryFolders<State>(providerId: UsageProviderId, roo
   for (const { root, accept, prefix } of roots) {
     for (const file of await historyFiles(root, accept, signal)) files.push({ path: file.path, relativePath: `${prefix}/${file.relativePath}` })
   }
-  const name = (file: HistoryFile): string => file.relativePath.slice(file.relativePath.lastIndexOf('/') + 1)
-  files.sort((a, b) => name(a) < name(b) ? -1 : name(a) > name(b) ? 1 : 0)
+  files.sort(byFileName)
   for (const file of files) {
     if (signal.aborted) return
     if (!await readHistoryFile(providerId, file, reader, sink, signal)) return

@@ -2,7 +2,7 @@ import type { UsageBridge, UsageDashboardRead, UsageModelAggregate, UsageProvide
 import type { UsageProviderLimits, UsageSummary } from './usagePresentation'
 
 export type UsageTab = 'overview' | 'subscriptions' | 'models'
-export type UsageWhere = 'all' | 'sotto' | 'elsewhere'
+export type UsageWhere = 'all' | 'sotto' | 'outside'
 
 /** What every part of the page reads: the combined figures, the filters, names and the ways to move around. */
 export interface UsagePage {

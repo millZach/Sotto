@@ -53,6 +53,14 @@ export function usageHistoryRecordKey(providerId: UsageProviderId, threadId: str
   return createHash('sha256').update(JSON.stringify(['sotto-usage-history', providerId, 'row', threadId, identity])).digest('hex')
 }
 
+/**
+ * The message identity of a prompt outside any Sotto thread: a hash of the provider's own message or turn ID, which
+ * never leaves the reader. The same native message is the same identity on every pass and in every file.
+ */
+export function usageHistoryMessageId(providerId: UsageProviderId, nativeMessageId: string): string {
+  return createHash('sha256').update(JSON.stringify(['sotto-usage-history', providerId, 'message', nativeMessageId])).digest('hex')
+}
+
 /** A file's cursor key: a hash of the provider and the file's place under its client's folder, never the path itself. */
 export function usageHistoryCursorKey(providerId: UsageProviderId, relativePath: string): string {
   return `${providerId}:` + createHash('sha256').update(JSON.stringify(['sotto-usage-history', providerId, 'file', relativePath.replaceAll('\\', '/')])).digest('hex')
