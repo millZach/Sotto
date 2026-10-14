@@ -6,8 +6,11 @@ import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotP
 import { isDeepStrictEqual } from 'node:util'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { NativeUsage, type NativeUsageContext } from './nativeUsage'
+import { scanClaudeHistory } from './usageHistory/claudeHistory'
+import type { UsageHistorySink } from './usageHistory/sink'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
-import { mergeClaudeQuota, parseClaudeQuota, unavailableProviderQuota } from './providerQuota'
+import { unavailableProviderQuota } from './providerQuota'
+import { ClaudeLimits, type ClaudeControl } from './claudeLimits'
 import { compactionPending, compactionSchema } from '../../shared/compaction'
 import { randomUUID } from 'node:crypto'
 import { readdir, rm, writeFile } from 'node:fs/promises'
@@ -206,7 +209,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (id: string, visitor: (record: UsageTokenObservation) => void) => void
   readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
-  private quota: UsageQuotaRead | undefined
+  readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
+  /** Claude's account limits: read on demand through get_usage, with Claude Code's passive events between reads (ADR-0080). */
+  private readonly limits = new ClaudeLimits()
+  /** Runtimes whose CLI has answered initialize, so get_usage can go over a live thread's channel. */
+  private readonly initializedRuntimes = new WeakSet<Runtime>()
   private readonly usageGroups = new Map<string, { id: string; startedAt?: string | undefined }>()
   private readonly usageEnabled: boolean
   private launchProfiles: ThreadLaunchProfiles | undefined
@@ -397,9 +404,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (options.usageEnabled) {
       this.subscribeUsage = listener => this.usage.subscribeUsage(listener)
       this.visitUsage = (id, visitor) => this.usage.visitUsage(id, visitor)
-      this.readProviderQuota = async providerId => providerId !== 'claude' ? unavailableProviderQuota(providerId, 'unsupported')
-        : !this.state.connected ? unavailableProviderQuota('claude', 'not-connected')
-          : this.quota ?? unavailableProviderQuota('claude', 'refresh-unavailable')
+      this.scanUsageHistory = (sink, signal) => this.scanHistory(sink, signal)
+      this.readProviderQuota = async (providerId, refresh) => {
+        if (providerId !== 'claude') return unavailableProviderQuota(providerId, 'unsupported')
+        if (!this.state.connected) return unavailableProviderQuota('claude', 'not-connected')
+        const control = this.limitsControl()
+        return this.limits.read(refresh, {
+          ...(control ? { control } : {}), ...(this.executable ? { executable: this.executable } : {}),
+          prefixArgs: this.options.args ?? [], environment: this.client.environment(), workingDirectory: this.options.userDataPath,
+        })
+      }
     }
     // Compact: it holds every thread's record and every origin, and is rewritten whole.
     this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'claude-threads.json'), preserveLegacyAliases(z.record(z.string(), aliasSchema).parse), () => ({}))
@@ -479,7 +493,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.trackClosure(this.persist().catch(() => undefined))
   }
   async connect(): Promise<AgentHostSnapshot> {
-    if (this.usageEnabled) { this.quota = undefined; this.usageGroups.clear() }
+    if (this.usageEnabled) { this.limits.clear(); this.usageGroups.clear() }
     this.disconnect(); await this.closed()
     const generation = this.generation
     await this.removeLeftoverConfigs()
@@ -562,6 +576,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!version) throw new Error('Claude Code was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect Claude Code again to try the new version.')
     // Set together, so a CLI is launched either from the old client and counted old, or from the new one.
     this.executable = executable; this.clientRevision++
+    this.limits.clientChanged()
     this.state.version = version
     for (const id of this.runtimes.keys()) this.outdated.add(id)
     // A spare nobody has used yet runs the old client too; the thread's first send starts the new one.
@@ -1277,6 +1292,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       throw error
     }
     if (generation !== this.generation) { await (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime)); throw new Error('Claude connection was cancelled.') }
+    this.initializedRuntimes.add(runtime)
     return { runtime, initialized }
   }
   /**
@@ -1435,12 +1451,19 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.checkProfileContinuation(id, generation, runtime)
     return true
   }
+  /** A live thread's control channel for get_usage: a current-client runtime that has answered initialize. Spares are not threads' CLIs. */
+  private limitsControl(): ClaudeControl | undefined {
+    for (const runtime of this.runtimes.values()) {
+      if (runtime.clientRevision === this.clientRevision && this.initializedRuntimes.has(runtime)) return request => runtime.protocol.control(request)
+    }
+    return undefined
+  }
   private frameAfterProfileCheck(id: string, frame: ClaudeFrame): void {
     this.reaper.touch(id)
     const runtime = this.runtimes.get(id)!; const thread = this.threads.get(id)!; const alias = this.aliases[id]!
     if (typeof frame.session_id === 'string' && frame.session_id !== alias.sessionId) return
     if (this.usageEnabled && frame.type === 'rate_limit_event') {
-      this.quota = mergeClaudeQuota(this.quota, parseClaudeQuota(frame, new Date().toISOString())); return
+      this.limits.observe(frame); return
     }
     let monitoring = this.monitoring.get(id)
     if (!monitoring) { monitoring = new ClaudeMonitoring(); this.monitoring.set(id, monitoring) }
@@ -1995,6 +2018,27 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * store's journal generation or later are folded: an older one was in the store's hands when it was written whole.
    * A store with no generation, from before there was one, folds every line once.
    */
+  /**
+   * Claude Code's own transcripts on this computer, for Usage (ADR-0080). Every session this adapter ever ran for a
+   * thread, its rewound lineage included, reports under that thread; any other session under a hashed identity.
+   * Reads the saved thread records without changing them, so it never waits on or starts a connection.
+   */
+  private async scanHistory(sink: UsageHistorySink, signal: AbortSignal): Promise<void> {
+    const owned = new Map<string, string>()
+    const own = (aliases: Record<string, Alias>): void => {
+      for (const [id, alias] of Object.entries(aliases)) {
+        if (alias.kind === 'personal') continue
+        owned.set(alias.sessionId, id)
+        for (const earlier of alias.lineage ?? []) if (!owned.has(earlier.sessionId)) owned.set(earlier.sessionId, id)
+        if (alias.rollbackPending?.targetSessionId && !owned.has(alias.rollbackPending.targetSessionId)) owned.set(alias.rollbackPending.targetSessionId, id)
+      }
+    }
+    try { own(await this.aliasStore.read()) } catch { /* What this process holds still counts. */ }
+    own(this.aliases)
+    const home = this.options.claudeHome ?? (this.options.environment ?? process.env).CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+    await scanClaudeHistory({ home, owned }, sink, signal)
+  }
+
   private async readAliases(): Promise<Record<string, Alias>> {
     const { aliases, journal, stored } = await this.inAliasOrder(async () => {
       const aliases = await this.aliasStore.read()
