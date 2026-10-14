@@ -60,6 +60,7 @@ export class WatcherService implements WatcherControlHooks {
   private readonly remoteProgress = new Map<string, { hostId: string; fingerprint: string }>()
   private readonly pendingWatchAssignments = new Map<string, WatcherStandingWatch>()
   private readonly remoteGuards = new Map<string, () => void>()
+  private readonly pendingPromptTurns = new Map<string, { watcher: WatcherThreadTarget; messageId: string }>()
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
     limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; revoke?: (id: string) => void }) {
@@ -197,9 +198,9 @@ export class WatcherService implements WatcherControlHooks {
     }
     latest = { id: randomUUID(), watcher, createdAt: now(), ...(nativeTurnId ? { nativeTurnId } : {}), ...(nativeHead(thread) ? { rootUserMessageId: nativeHead(thread)! } : {}) }
     ;(record.promptTurns ??= []).push(latest)
-    // On an Owl upgrade, retain outstanding legacy accounting before a true new Send opens another budget.
+    // On an Owl upgrade, retain all legacy accounting until a true new Send opens another budget.
     for (const operation of record.operations) if (!operation.promptTurnId && record.requests.some(request => request.id === operation.requestId
-      && request.state === 'active' && key(request.watcher) === key(watcher))) {
+      && key(request.watcher) === key(watcher))) {
       operation.promptTurnId = latest.id
       if (operation.deliveryState === 'failed' && !['THREAD_TAKEN_OVER', 'REQUEST_NOT_ACTIVE', 'NOT_CURRENT_WATCHER'].includes(operation.refusalCode ?? 'PROVIDER_UNAVAILABLE')) operation.promptRefunded = true
     }
@@ -598,8 +599,8 @@ export class WatcherService implements WatcherControlHooks {
   }
   beforeDispatch(command: AgentHostCommand, _draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand {
     if (origin?.phoneOrigin && command.type === 'send') this.guardPhoneSend(command.threadId)
-    if (command.type === 'send' && command.threadId === this.record().current?.target.threadId) this.options.control.mutateWatcher(record => {
-      this.beginPromptTurn(record, record.current!.target, command.messageId)
+    if (command.type === 'send' && command.threadId === this.record().current?.target.threadId) this.pendingPromptTurns.set(command.commandId, {
+      watcher: this.record().current!.target, messageId: command.messageId,
     })
     if (origin?.operationId) {
       this.options.control.mutateWatcher(record => {
@@ -627,7 +628,19 @@ export class WatcherService implements WatcherControlHooks {
     const projects = this.options.control.watcherSnapshot().projects.filter(item => item.id !== record.current?.projectId)
     return { ...command, text: `${command.text}\n\n${watcherGuidancePrefix(request.id, this.hostId())}${projects.slice(0, 100).map(item => item.id).join(', ')}${WATCHER_GUIDANCE_SUFFIX}` }
   }
+  private activatePromptTurn(commandId: string): void {
+    const candidate = this.pendingPromptTurns.get(commandId)
+    if (candidate && this.record().current && key(candidate.watcher) === key(this.record().current!.target)) this.options.control.mutateWatcher(record => {
+      this.beginPromptTurn(record, candidate.watcher, candidate.messageId)
+    })
+    this.pendingPromptTurns.delete(commandId)
+  }
+  dispatched(command: AgentHostCommand): void { this.activatePromptTurn(command.commandId) }
+  dispatchAborted(command: AgentHostCommand): void { this.pendingPromptTurns.delete(command.commandId) }
   observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void {
+    const master = snapshot.threads.find(thread => thread.id === this.record().current?.target.threadId)
+    if (master) for (const [commandId, candidate] of this.pendingPromptTurns) if (candidate.watcher.threadId === master.id && knownUserMessages.has(candidate.messageId)
+      && (nativeHead(master) === candidate.messageId || master.messages.some(message => message.role === 'user' && message.id === candidate.messageId))) this.activatePromptTurn(commandId)
     if (!this.options.workerHost && this.record().current?.target.hostId === this.hostId()
       && snapshot.threads.some(thread => thread.id === this.record().current!.target.threadId)) this.options.control.mutateWatcher(record => {
       this.promptTurn(record, record.current!.target)
@@ -728,7 +741,7 @@ export class WatcherService implements WatcherControlHooks {
     if (!operation) refuse('UNKNOWN_OPERATION', 'This operation is unavailable.')
     const request = record.requests.find(item => item.id === operation.requestId)!
     if (request.remoteOrigin) {
-      this.checkRemoteMaster(request.remoteOrigin.master, request.remoteOrigin.clientId)
+      this.checkRemoteAuthority(operation, request.remoteOrigin.master, request.remoteOrigin.clientId, request.standingWatchId)
       const guard = this.remoteGuards.get(operation.id)
       if (!guard) refuse('HOST_DISCONNECTED', 'The master connection is unavailable. Reconcile this operation before continuing.')
       guard()
@@ -847,6 +860,7 @@ export class WatcherService implements WatcherControlHooks {
         if ((imported ? existing.digest : existing.inputDigest ?? existing.digest) !== inputDigest) refuse('RETRY_KEY_CONFLICT', 'This retry key already belongs to a different call. Use the original receipt.')
         return { operation: existing, retry: true }
       }
+      if (imported && request.remoteOrigin) this.checkRemoteAuthority(imported, request.remoteOrigin.master, request.remoteOrigin.clientId, request.standingWatchId)
       if (request.state !== 'active' && !(imported && this.confirmedWorkerStop(imported, request))) {
         const stoppedTarget = 'target' in input ? input.target : undefined
         if (stoppedTarget && record.requests.some(item => item.participants.some(participant => key(participant.target) === key(stoppedTarget) && participant.state === 'taken-over'))) refuse('THREAD_TAKEN_OVER', 'You took over this thread. Watcher stopped sending to it.')
@@ -1283,13 +1297,6 @@ export class WatcherService implements WatcherControlHooks {
       const packet = watcherHostControlSchema.parse(raw), { operation, request, master, call } = packet
       guard()
       this.checkRemoteMaster(master, clientId)
-      const send = operation.action === 'send', starts = operation.action === 'start'
-      if ((send || starts) && operation.standingWatchId && this.record().watchFences?.some(fence => fence.id === operation.standingWatchId)) refuse('REQUEST_NOT_ACTIVE', 'This watch was removed. Nothing was sent.')
-      if (send && operation.standingWatchId && !this.record().watches?.some(watch => watch.id === operation.standingWatchId && key(watch.target) === key(operation.target)
-        && watch.remoteOrigin?.clientId === clientId && watch.remoteOrigin.masterHostId === master.target.hostId
-        && watch.remoteOrigin.masterCreationOperationId === master.creationOperationId)) refuse('REQUEST_NOT_ACTIVE', 'The owning host has no matching watch assignment. Nothing was sent.')
-      if (send && !operation.standingWatchId && this.record().watchFences?.some(fence => fence.target && key(fence.target) === key(operation.target)
-        && fence.remoteOrigin.clientId === clientId && fence.remoteOrigin.masterHostId === master.target.hostId)) refuse('REQUEST_NOT_ACTIVE', 'This thread was unwatched. Use a new watch assignment before sending.')
       if (master.target.hostId === this.hostId() || key(master.target) !== key(request.watcher)
         || operation.target.hostId !== this.hostId() || operation.requestId !== request.id || call.input.requestId !== request.id || operation.retryKey !== call.input.retryKey
         || operation.digest !== digest([call.name, call.input]) || operation.deliveryState !== 'queued'
@@ -1305,10 +1312,8 @@ export class WatcherService implements WatcherControlHooks {
         || operation.expectedLastUserMessageId !== ('expectedLastUserMessageId' in call.input ? call.input.expectedLastUserMessageId : undefined)) refuse('INVALID_INPUT', 'The machine operation does not match its request and target. Nothing was sent.')
       await this.transaction(async () => {
         guard()
+        this.checkRemoteMaster(master, clientId)
         if (this.record().remoteAbsences?.some(item => item.operationId === operation.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
-        if (request.standingWatchId && !this.record().watches?.some(watch => watch.id === request.standingWatchId && key(watch.target) === key(operation.target)
-          && watch.remoteOrigin?.clientId === clientId && watch.remoteOrigin.masterHostId === master.target.hostId
-          && watch.remoteOrigin.masterCreationOperationId === master.creationOperationId)) refuse('REQUEST_NOT_ACTIVE', 'The owning host has no matching watch assignment. Nothing was sent.')
         const existing = this.record().requests.find(item => item.id === request.id)
         if (existing && (key(existing.watcher) !== key(master.target) || existing.rootUserMessageId !== request.rootUserMessageId
           || existing.createdAt !== request.createdAt || existing.remoteOrigin?.clientId !== clientId
@@ -1316,12 +1321,24 @@ export class WatcherService implements WatcherControlHooks {
           || existing.remoteOrigin.creationOperationId !== master.creationOperationId || existing.remoteOrigin.ceiling !== packet.ceiling)) refuse('RETRY_KEY_CONFLICT', 'This request identity belongs to another origin. Nothing was sent.')
         const retry = this.record().operations.find(item => item.requestId === request.id && item.retryKey === operation.retryKey)
         if (retry && (retry.id !== operation.id || retry.digest !== operation.digest || retry.confirmedStop !== operation.confirmedStop || key(retry.target) !== key(operation.target))) refuse('RETRY_KEY_CONFLICT', 'This operation identity changed. Read the original receipt.')
+        if (!retry) this.checkRemoteAuthority(operation, master, clientId, request.standingWatchId)
         if (!existing) await this.options.control.updateWatcher(record => { guard(); record.requests.push({ ...request, state: 'active', closedAt: null,
           participants: [], remoteOrigin: { clientId, master, creationOperationId: master.creationOperationId, ceiling: packet.ceiling } }) })
         if (!retry || this.remoteGuards.has(operation.id) && ['queued', 'dispatching', 'uncertain'].includes(retry.deliveryState)) this.remoteGuards.set(operation.id, guard)
       })
       return await this.mutate(master.target.threadId, call.name, call.input, operation)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('INVALID_INPUT', 'This machine request could not be admitted. Nothing was sent.') }
+  }
+  private checkRemoteAuthority(operation: WatcherOperation, master: WatcherIdentity, clientId: string, standingWatchId?: string): void {
+    this.checkRemoteMaster(master, clientId)
+    const record = this.record(), send = operation.action === 'send', starts = operation.action === 'start'
+    if ((send || starts) && operation.standingWatchId && record.watchFences?.some(fence => fence.id === operation.standingWatchId)) refuse('REQUEST_NOT_ACTIVE', 'This watch was removed. Nothing was sent.')
+    const assignmentId = standingWatchId ?? (send ? operation.standingWatchId : undefined)
+    if (assignmentId && !record.watches?.some(watch => watch.id === assignmentId && key(watch.target) === key(operation.target)
+      && watch.remoteOrigin?.clientId === clientId && watch.remoteOrigin.masterHostId === master.target.hostId
+      && watch.remoteOrigin.masterCreationOperationId === master.creationOperationId)) refuse('REQUEST_NOT_ACTIVE', 'The owning host has no matching watch assignment. Nothing was sent.')
+    if (send && !operation.standingWatchId && record.watchFences?.some(fence => fence.target && key(fence.target) === key(operation.target)
+      && fence.remoteOrigin.clientId === clientId && fence.remoteOrigin.masterHostId === master.target.hostId)) refuse('REQUEST_NOT_ACTIVE', 'This thread was unwatched. Use a new watch assignment before sending.')
   }
   remoteProjection(master: WatcherIdentity, clientId: string): WatcherHostProjection {
     const record = this.record(), owned = record.requests.filter(item => key(item.watcher) === key(master.target)
@@ -1665,5 +1682,5 @@ export class WatcherService implements WatcherControlHooks {
     }
     this.publish(); return { status: 'ok', state: this.state(), results }
   }
-  close(): void { this.closed = true; this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
+  close(): void { this.closed = true; this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
 }

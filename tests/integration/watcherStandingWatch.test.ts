@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { deferred } from '../fixtures/deferred'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
@@ -156,6 +156,138 @@ it('shares four prompts across ordinary and standing origins without renewing fo
   expect(await f.call('send_to_thread', { ...inputs[0], retryKey: randomUUID() })).toMatchObject({ status: 'ok', limits: { promptCount: 1 } })
 })
 
+it('keeps the exhausted turn budget when a new Watcher Send fails its intent save before any host write', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.request(); await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  for (let count = 1; count <= 4; count++) {
+    expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic exhausted standing prompt', delivery: 'now' })).toMatchObject({ status: 'ok' })
+    await f.finish(target.threadId)
+  }
+  await f.finish(f.watcherId())
+  const budget = f.control.watcherRecord().promptTurns!.at(-1)!.id
+  const storage = f.control as unknown as { persist(): Promise<void>; outbox: { type: string; threadId?: string }[] }
+  const persist = storage.persist.bind(storage)
+  let failed = false
+  const saving = vi.spyOn(storage, 'persist').mockImplementation(async () => {
+    if (!failed && storage.outbox.some(item => item.type === 'send' && item.threadId === f.watcherId())) {
+      failed = true; throw new Error('Synthetic Watcher intent storage failure')
+    }
+    await persist()
+  })
+  try {
+    expect((await f.control.commandShell({ type: 'manual-send', threadId: f.watcherId(), draftId: randomUUID(), text: 'Synthetic unwritten master instruction' })).error).not.toBeNull()
+    expect(failed).toBe(true)
+    expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text.startsWith('Synthetic unwritten master instruction'))).toBe(false)
+    expect(f.control.watcherRecord().promptTurns!.at(-1)!.id).toBe(budget)
+    expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic forbidden fifth prompt', delivery: 'now' }))
+      .toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
+  } finally { saving.mockRestore() }
+})
+
+it('keeps the exhausted turn budget when the native writer refuses a new Watcher Send before writing', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.request(); await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  for (let count = 1; count <= 4; count++) {
+    expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic exhausted native prompt', delivery: 'now' })).toMatchObject({ status: 'ok' })
+    await f.finish(target.threadId)
+  }
+  await f.finish(f.watcherId())
+  const budget = f.control.watcherRecord().promptTurns!.at(-1)!.id
+  const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  const refusing = vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+    if (command.type === 'send' && command.text.startsWith('Synthetic native refused master instruction')) throw new Error('Synthetic definite native pre-write refusal')
+    return execute(command)
+  })
+  try {
+    expect((await f.control.commandShell({ type: 'manual-send', threadId: f.watcherId(), draftId: randomUUID(), text: 'Synthetic native refused master instruction' })).error).not.toBeNull()
+    expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text.startsWith('Synthetic native refused master instruction'))).toBe(false)
+    expect(f.control.watcherRecord().promptTurns!.at(-1)!.id).toBe(budget)
+    expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic forbidden native fifth prompt', delivery: 'now' }))
+      .toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
+  } finally { refusing.mockRestore() }
+})
+
+it('retains a fresh turn budget after an uncertain but written Watcher Send and restart', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.request(); await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  for (let count = 1; count <= 4; count++) {
+    expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic prior uncertain prompt', delivery: 'now' })).toMatchObject({ status: 'ok' })
+    await f.finish(target.threadId)
+  }
+  await f.finish(f.watcherId())
+  const budget = f.control.watcherRecord().promptTurns!.at(-1)!.id
+  const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  const losingAck = vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+    const result = await execute(command)
+    return command.type === 'send' && command.text.startsWith('Synthetic written uncertain master instruction')
+      ? { accepted: false, uncertain: true, error: 'Synthetic lost acknowledgement' } : result
+  })
+  try { await f.control.commandShell({ type: 'manual-send', threadId: f.watcherId(), draftId: randomUUID(), text: 'Synthetic written uncertain master instruction' }) }
+  finally { losingAck.mockRestore() }
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text.startsWith('Synthetic written uncertain master instruction'))).toHaveLength(1)
+  expect(f.control.watcherRecord().promptTurns!.at(-1)!.id).not.toBe(budget)
+  await f.restart()
+  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic uncertain fresh budget', delivery: 'now' }))
+    .toMatchObject({ status: 'ok', limits: { promptCount: 1 } })
+})
+
+it('opens the new turn budget from an exact authored master echo before execute returns', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.request(); await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  for (let count = 1; count <= 4; count++) {
+    expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic prior echo prompt', delivery: 'now' })).toMatchObject({ status: 'ok' })
+    await f.finish(target.threadId)
+  }
+  await f.finish(f.watcherId())
+  const budget = f.control.watcherRecord().promptTurns!.at(-1)!.id
+  const authored = deferred<void>(), release = deferred<void>(), execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  const held = vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+    const result = await execute(command)
+    if (command.type === 'send' && command.text.startsWith('Synthetic authored master echo')) { authored.resolve(); await release.promise }
+    return result
+  })
+  let completed = false
+  const masterSend = f.control.commandShell({ type: 'manual-send', threadId: f.watcherId(), draftId: randomUUID(), text: 'Synthetic authored master echo' })
+    .then(result => { completed = true; return result })
+  try {
+    await authored.promise
+    await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+    expect(completed).toBe(false)
+    expect(f.control.watcherRecord().promptTurns!.at(-1)!.id).not.toBe(budget)
+    expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic before-ack worker prompt', delivery: 'now' }))
+      .toMatchObject({ status: 'ok', limits: { promptCount: 1 } })
+    release.resolve()
+    expect((await masterSend).error).toBeNull()
+  } finally { release.resolve(); await masterSend; held.mockRestore() }
+})
+
+it('retains all legacy standing prompt charges from stopped scopes until a trusted new Watcher Send', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  for (let count = 1; count <= 4; count++) {
+    expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic legacy standing prompt', delivery: 'now' })).toMatchObject({ status: 'ok' })
+    await f.finish(target.threadId)
+  }
+  await f.control.updateWatcher(record => {
+    const scope = record.requests.find(request => request.standingWatchId === watch.id)!
+    scope.state = 'stopped'; scope.closedAt = new Date().toISOString()
+    for (const operation of record.operations) { delete operation.promptTurnId; delete operation.promptRefunded }
+    delete record.promptTurns
+  })
+  await f.restart()
+  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic forbidden legacy fifth prompt', delivery: 'now' }))
+    .toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
+  expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text === 'Synthetic forbidden legacy fifth prompt')).toBe(false)
+  await f.request()
+  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic trusted new turn', delivery: 'now' }))
+    .toMatchObject({ status: 'ok', limits: { promptCount: 1 } })
+})
+
 it('keeps a queued user continuation on its original request after a standing automation scope exists', async () => {
   const f = await fixture(), requestId = await f.request(), target = await f.create(), draftId = randomUUID()
   await f.service.watchThread({ target })
@@ -193,6 +325,65 @@ it('refuses delayed original-request delivery after owning-host unwatch, includi
   const legacy = structuredClone(delayed!); delete legacy.operation.standingWatchId
   expect(await worker.service.admitRemote(legacy, clientId, () => undefined)).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
   expect(worker.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text === 'Synthetic delayed original request')).toHaveLength(0)
+})
+
+it.each([['admission', 1], ['mutation', 2]] as const)('rechecks legacy owning authority when unwatch wins before the %s lane', async (_phase, blockedCall) => {
+  const master = await fixture(), worker = await fixture(true), target = await worker.create(), clientId = randomUUID(), requestId = await master.request()
+  const captured = deferred<WatcherHostControl>(), delivery = deferred<unknown>(), blocked = deferred<void>(), release = deferred<void>()
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId: target.hostId, connected: true, reads: true, control: true, standingWatch: true, permissionCeiling: 'approval-required' }],
+    snapshot: () => worker.control.watcherSnapshot(),
+    read: (_hostId, request) => worker.service.readRemote(request, clientId, () => undefined),
+    control: (_hostId, request) => { captured.resolve(structuredClone(request)); return delivery.promise },
+    subscribe: () => () => undefined,
+  }
+  master.service.useRemoteHosts(remote); await master.service.watchThread({ target })
+  const sending = master.call('send_to_thread', { requestId, retryKey: randomUUID(), target, text: 'Synthetic legacy admission race', delivery: 'now' })
+  const packet = await captured.promise
+  delete packet.operation.standingWatchId
+  expect(packet.request.standingWatchId).toBeUndefined()
+  const owner = worker.service as unknown as { transaction<T>(work: () => Promise<T>): Promise<T> }
+  const transaction = owner.transaction.bind(owner)
+  let calls = 0
+  const lane = vi.spyOn(owner, 'transaction').mockImplementation(work => {
+    if (++calls !== blockedCall) return transaction(work)
+    blocked.resolve()
+    return release.promise.then(() => transaction(work))
+  })
+  const admitted = worker.service.admitRemote(packet, clientId, () => undefined)
+  try {
+    await blocked.promise
+    expect(await master.service.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+    expect(worker.service.state().standingWatches).toEqual([])
+    release.resolve()
+    const result = await admitted
+    delivery.resolve(result)
+    expect(result).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+    expect(worker.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text === 'Synthetic legacy admission race')).toHaveLength(0)
+  } finally {
+    release.resolve(); delivery.resolve(await admitted); await sending; lane.mockRestore()
+  }
+})
+
+it('replays an exact owning receipt after unwatch without admitting the legacy send again', async () => {
+  const master = await fixture(), worker = await fixture(true), target = await worker.create(), clientId = randomUUID(), requestId = await master.request()
+  let packet: WatcherHostControl | undefined
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId: target.hostId, connected: true, reads: true, control: true, standingWatch: true, permissionCeiling: 'approval-required' }],
+    snapshot: () => worker.control.watcherSnapshot(),
+    read: (_hostId, request) => worker.service.readRemote(request, clientId, () => undefined),
+    control: (_hostId, request) => { packet = structuredClone(request); delete packet.operation.standingWatchId; return worker.service.admitRemote(packet, clientId, () => undefined) },
+    subscribe: () => () => undefined,
+  }
+  master.service.useRemoteHosts(remote); await master.service.watchThread({ target })
+  const first = await master.call('send_to_thread', { requestId, retryKey: randomUUID(), target, text: 'Synthetic legacy receipt replay', delivery: 'now' })
+  expect(first.status).toBe('ok')
+  expect(await master.service.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+  const before = structuredClone(worker.control.watcherRecord())
+  const replay = await worker.service.admitRemote(packet!, clientId, () => undefined)
+  expect(replay).toMatchObject({ status: 'ok', receipt: first.status === 'ok' ? first.receipt : undefined })
+  expect(worker.control.watcherRecord()).toEqual(before)
+  expect(worker.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text === 'Synthetic legacy receipt replay')).toHaveLength(1)
 })
 
 it('enforces the same mixed-origin turn budget at the owning host before a fifth packet can dispatch', async () => {

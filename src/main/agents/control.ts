@@ -3315,6 +3315,7 @@ export class AgentControl {
     try { await this.persist() }
     catch (error) {
       // Nothing crossed the adapter boundary. Do not leave phantom uncertain intent.
+      this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand)
       this.outbox = this.outbox.filter(item => item.id !== command.commandId)
       if ((prompt || atomicDigest) && draftId && threadId) { this.setDelivery(threadId, draftId, 'failed'); this.publish() }
       // This write is also the one that first saves a prompt sent at once, so its failure says what admission's did.
@@ -3373,6 +3374,7 @@ export class AgentControl {
         if (endLoan && !result?.accepted) stages?.close()
       }
     } catch (error) {
+      this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand)
       if (prompt) {
         try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
         catch { /* Only usage metadata is affected. */ }
@@ -3388,6 +3390,8 @@ export class AgentControl {
         this.setDelivery(prompt.threadId, draftId, delivery?.status ?? 'submitting', { providerLatencyMs })
       }
     }
+    if (result.accepted || result.uncertain) this.watcherHooks?.dispatched?.(command as AgentHostCommand)
+    else this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand)
     // Previews are decoration, not history: the provider hears the prompt first, and a definitive refusal records nothing.
     if (prompt && previewAttachments.length
       && (result.accepted || result.uncertain || !this.outbox.some(item => item.id === command.commandId))) {

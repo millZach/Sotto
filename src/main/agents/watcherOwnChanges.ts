@@ -108,11 +108,19 @@ export function watcherOwnChanges(thread: AgentThread | undefined): WatcherOwnCh
     marks.set(message.id, message.watcherOwnChange)
   }
   for (const [turnId, changed] of files) {
+    const current = thread.lastTurn
     if (activities.some(activity => activity.kind === 'turn' && activity.turnId === turnId && activity.status === 'running')
-      || thread.lastTurn?.id === turnId && thread.lastTurn.status === 'running') continue
+      || current?.status === 'running' && (current.id === turnId || current.messageId === turnId)) continue
     const anchor = turns.get(turnId)!
+    const currentTerminal = current !== undefined && current.status !== 'running'
+      && (current.id === turnId || current.messageId === turnId)
+    const laterTurnAnchors = new Set(activities.filter(activity => activity.kind === 'turn' && activity.turnId !== turnId)
+      .flatMap(activity => { const index = turns.get(activity.turnId); return index !== undefined && index > anchor ? [index] : [] }))
     let reply: typeof messages[number] | undefined
-    for (let index = anchor + 1; index < messages.length && messages[index]!.role !== 'user'; index++) {
+    for (let index = anchor + 1; index < messages.length; index++) {
+      // A steer adds a user message inside the provider's current turn. Only the provider's explicit
+      // terminal identity permits crossing it; a different recorded turn is still a hard boundary.
+      if (messages[index]!.role === 'user' && (!currentTerminal || laterTurnAnchors.has(index))) break
       if (messages[index]!.role === 'assistant') reply = messages[index]
     }
     if (!reply) continue

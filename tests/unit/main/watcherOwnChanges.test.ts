@@ -97,6 +97,47 @@ describe('Watcher own changes', () => {
     expect(watcherOwnChanges(t)[0]?.replyMessageId).toBe('reply')
   })
 
+  it('marks edits made before a steer when the final reply still belongs to the same native turn', () => {
+    const t = thread(); const projection = new CodexActivityProjection()
+    t.messages = [message('user', 'user'), message('steer', 'user', 'Change direction'), message('reply', 'assistant', 'Watcher change reason: Needed.')]
+    projection.anchor(t, 'native-turn', 'user')
+    projection.item(t, codexItemSchema.parse({ id: 'patch', type: 'fileChange', status: 'completed',
+      changes: [{ path: '/project/src/a.ts', kind: { type: 'update' } }] }), { turnId: 'native-turn', afterMessageId: 'user', phase: 'completed' })
+    projection.turn(t, { id: 'native-turn', status: 'completed' })
+    t.lastTurn = { id: 'native-turn', status: 'completed' }
+    expect(watcherOwnChanges(t)).toEqual([{ replyMessageId: 'reply', turnId: 'native-turn', files: ['/project/src/a.ts'],
+      fileCount: 1, reason: 'Needed.', source: 'provider-file-change' }])
+  })
+
+  it('keeps a later explicitly anchored turn outside the current terminal turn scan', () => {
+    const t = thread()
+    t.messages = [message('user', 'user'), message('steer', 'user'), message('reply', 'assistant'), message('later-user', 'user'), message('later-reply', 'assistant')]
+    t.activities = [change('patch', 'native-turn'),
+      { id: 'original-turn', turnId: 'native-turn', sequence: 1, kind: 'turn', status: 'completed', title: 'Completed', afterMessageId: 'user' },
+      { id: 'later-turn', turnId: 'other-turn', sequence: 2, kind: 'turn', status: 'completed', title: 'Completed', afterMessageId: 'later-user' }]
+    t.lastTurn = { id: 'native-turn', status: 'completed' }
+    expect(watcherOwnChanges(t)[0]?.replyMessageId).toBe('reply')
+  })
+
+  it('uses the normalized Sotto origin of a completed Claude turn to cross a folded steer', () => {
+    const t = thread()
+    t.messages = [message('user', 'user'), message('steer', 'user'), message('reply', 'assistant')]
+    t.activities = [change(), { id: 'original-turn', turnId: 'user', sequence: 1, kind: 'turn', status: 'completed', title: 'Completed', afterMessageId: 'user' }]
+    t.lastTurn = { id: 'claude-native-origin', messageId: 'user', status: 'completed' }
+    expect(watcherOwnChanges(t)[0]).toMatchObject({ replyMessageId: 'reply', turnId: 'user', files: ['/project/src/a.ts'] })
+  })
+
+  it('keeps staged file evidence on the original turn after tool eviction and a same-turn steer', () => {
+    const t = thread()
+    t.messages = [message('user', 'user'), message('steer', 'user'), message('reply', 'assistant')]
+    t.messages[0]!.watcherObservedChanges = [{ turnId: 'user', files: ['/project/src/a.ts', '/project/src/b.ts'] }]
+    t.activities = []
+    t.lastTurn = { id: 'claude-native-origin', messageId: 'user', status: 'running' }
+    expect(watcherOwnChanges(t)).toEqual([])
+    t.lastTurn.status = 'completed'
+    expect(watcherOwnChanges(t)[0]).toMatchObject({ replyMessageId: 'reply', turnId: 'user', files: ['/project/src/a.ts', '/project/src/b.ts'], fileCount: 2 })
+  })
+
   it('requires an available unambiguous anchor and an assistant reply', () => {
     const t = thread(); t.activities = [{ ...change('missing', 'other-turn'), afterMessageId: 'missing' }]
     expect(watcherOwnChanges(t)).toEqual([])

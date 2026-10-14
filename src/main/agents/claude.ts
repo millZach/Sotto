@@ -890,7 +890,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
           if (!this.completedOrigins.has(origin.uuid)) { thread.status = 'running'; this.markTurn(id, 'running') }
           this.acknowledgements.get(origin.uuid)?.()
         })
-        thread.status = 'running'; thread.lastTurn = { id: origin.uuid, status: 'running' }
+        thread.status = 'running'; thread.lastTurn = { id: origin.uuid, status: 'running', ...(runtime.watcher ? { messageId: origin.messageId } : {}) }
         try {
           markSendStage(command.commandId, 'written')
           if (this.usageEnabled) this.usageGroups.set(id, { id: origin.uuid, startedAt: new Date().toISOString() })
@@ -968,7 +968,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         await runtime.protocol.control({ subtype: 'interrupt' }); this.interrupting.delete(id); this.clearMonitoring(id)
         // A steer Claude Code still holds runs next, so the thread goes on to it, or has already; the stop names the turn it stopped.
         const next = thread.lastTurn?.id !== stopping?.id || [...this.steers.values()].some(steer => steer.threadId === id && !steer.unconfirmed)
-        if (!next) { thread.status = 'idle'; thread.lastTurn = { id: thread.lastTurn?.id ?? command.commandId, status: 'interrupted' } }
+        if (!next) { thread.status = 'idle'; thread.lastTurn = { id: thread.lastTurn?.id ?? command.commandId, status: 'interrupted', ...(stopping?.messageId ? { messageId: stopping.messageId } : {}) } }
         this.markTurn(id, 'interrupted', stopping && alias.origins.find(origin => origin.uuid === stopping.id)?.messageId)
         this.emit(); return { accepted: true }
       }
@@ -1276,7 +1276,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         if (cut) thread.status = 'error'
         this.dropSteers(id)
         if (turn?.status === 'running') {
-          thread.lastTurn = { id: turn.id, status: 'failed' }; this.completedOrigins.add(turn.id)
+          thread.lastTurn = { ...turn, status: 'failed' }; this.completedOrigins.add(turn.id)
           // A prompt still waiting for its echo was not confirmed, so its send reports uncertain now rather than at the deadline.
           this.acknowledgements.get(turn.id)?.(false)
           this.markTurn(id, 'failed', saved?.origins.find(origin => origin.uuid === turn.id)?.messageId, SESSION_ENDED)
@@ -1518,7 +1518,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const steer = this.steers.get(uuid); this.steers.delete(uuid)
         if (steer && !steer.carried) this.foldedSteers.add(uuid)
         // Its turn is its own message's, though a later steer may already be shown.
-        else if (!this.completedOrigins.has(uuid)) { thread.status = 'running'; if (steer) thread.lastTurn = { id: uuid, status: 'running' }; this.markTurn(id, 'running', steer ? alias.origins.find(origin => origin.uuid === uuid)?.messageId : undefined) }
+        else if (!this.completedOrigins.has(uuid)) { thread.status = 'running'; if (steer) thread.lastTurn = { id: uuid, status: 'running', ...(runtime.watcher ? { messageId: alias.origins.find(origin => origin.uuid === uuid)?.messageId } : {}) }; this.markTurn(id, 'running', steer ? alias.origins.find(origin => origin.uuid === uuid)?.messageId : undefined) }
         this.acknowledgements.get(uuid)?.()
       }
     }
@@ -1570,10 +1570,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, this.assistantErrors.get(id)) : null
       if (origin) {
         this.completedOrigins.add(origin)
-        thread.lastTurn = { id: origin, status }
+        const messageId = !selfTurn ? alias.origins.find(value => value.uuid === origin)?.messageId : undefined
+        thread.lastTurn = { id: origin, status, ...(runtime.watcher && messageId ? { messageId } : {}) }
         // A turn Claude Code gave itself answers no message of Sotto's. The newest message may be a steer whose own
         // turn has not begun, so it has no record to settle here.
-        if (!selfTurn) this.markTurn(id, status, alias.origins.find(value => value.uuid === origin)?.messageId, failure ?? undefined, steered)
+        if (!selfTurn) this.markTurn(id, status, messageId, failure ?? undefined, steered)
       }
       this.assistantErrors.delete(id)
       // A prompt of Sotto's that Claude Code held behind its own turn starts next, so the thread goes straight on to it,
@@ -1896,9 +1897,21 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const thread = this.ensureActivityHistory(id)!
     let projector = this.activity.get(id)
     if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch)); this.activity.set(id, projector) }
-    const turnId = this.lastUserMessageId(id) ?? 'native-history'
+    const watcherTurn = live && this.runtimes.get(id)?.watcher && thread.lastTurn?.status === 'running' ? thread.lastTurn.messageId : undefined
+    const turnId = watcherTurn ?? this.lastUserMessageId(id) ?? 'native-history'
     const rows = projector.apply(thread.activities ?? [], frame, turnId, this.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
-    if (rows.length) thread.activities = rows
+    if (rows.length) {
+      // Transcript replay may place a tool after a folded steer. Its already-observed tool identity
+      // still belongs to the native turn that wrote it; replay must not move it to the steer.
+      if (!live && this.resolvedWatcherProfiles.has(id)) {
+        const observed = new Map((thread.activities ?? []).map(activity => [activity.id, activity]))
+        thread.activities = rows.map(activity => {
+          const previous = observed.get(activity.id) ?? this.history?.activity?.(id, activity.id, this.aliases[id]?.historyEpoch)
+          return activity.kind === 'file-change' && previous?.kind === 'file-change' && previous.turnId !== 'native-history'
+            && previous.turnId !== activity.turnId ? { ...activity, turnId: previous.turnId } : activity
+        })
+      } else thread.activities = rows
+    }
   }
   /** The turn a record read now belongs to: the newest user message, or the newest one a replay has reached. */
   private lastUserMessageId(id: string): string | undefined {
