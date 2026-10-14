@@ -32,6 +32,55 @@ function transport() {
 }
 
 describe('thread shell page lifecycle and command ordering', () => {
+  it.each([true, false])('recovers after a rejected command, rejection before held read settles: %s', async rejectFirst => {
+    const h = transport()
+    h.broadcaster.send(h.state, () => true)
+    const held = deferred<AgentState>()
+    h.get.mockImplementationOnce(() => { h.broadcaster.resetThreadDelivery(); return held.promise })
+    const page = h.page(), delivered: AgentState[] = []
+    page.onState(state => delivered.push(state))
+    h.send()
+    const command = deferred<Awaited<ReturnType<AgentWireBridge['command']>>>()
+    h.command.mockReturnValue(command.promise)
+    const rejected = expect(page.command({ type: 'refresh' })).rejects.toThrow('Host disconnected')
+    if (!rejectFirst) {
+      held.resolve(structuredClone(h.state))
+      for (let i = 0; i < 12; i++) await Promise.resolve()
+      expect(delivered).toEqual([])
+    }
+    command.reject(new Error('Host disconnected'))
+    await rejected
+    if (rejectFirst) held.resolve(structuredClone(h.state))
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    expect(delivered).toEqual([h.state])
+    expect(h.get).toHaveBeenCalledTimes(2)
+    h.send()
+    expect(delivered.at(-1)).toEqual(h.state)
+    expect(h.get).toHaveBeenCalledTimes(2)
+  })
+  it.each(['newer push', 'unsubscribe', 'failed read'] as const)('bounds rejected-command recovery after %s', async mode => {
+    const h = transport()
+    h.broadcaster.send(h.state, () => true)
+    const held = deferred<AgentState>()
+    h.get.mockImplementationOnce(() => { h.broadcaster.resetThreadDelivery(); return held.promise })
+    const page = h.page(), delivered: AgentState[] = []
+    const off = page.onState(state => delivered.push(state))
+    h.send()
+    const command = deferred<Awaited<ReturnType<AgentWireBridge['command']>>>()
+    h.command.mockReturnValue(command.promise)
+    const rejected = expect(page.command({ type: 'refresh' })).rejects.toThrow('Host disconnected')
+    const changeCatalog = (): void => { h.state.host.models = [...h.state.host.models, { id: 'new-model', name: 'New model', provider: 'codex', ready: true }] }
+    if (mode === 'newer push') { h.state.host.threads[0]!.title = 'Latest'; changeCatalog(); h.send() }
+    else if (mode === 'unsubscribe') off()
+    else h.get.mockImplementationOnce(() => { h.broadcaster.resetThreadDelivery(); return Promise.reject(new Error('Read failed')) })
+    command.reject(new Error('Host disconnected'))
+    await rejected
+    held.resolve(structuredClone(h.state))
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    expect(delivered).toEqual(mode === 'newer push' ? [h.state] : [])
+    expect(h.get).toHaveBeenCalledTimes(mode === 'failed read' ? 2 : 1)
+    if (mode === 'failed read') { changeCatalog(); h.send(); expect(delivered.at(-1)).toEqual(h.state); expect(h.get).toHaveBeenCalledTimes(2) }
+  })
   it('does not mistake a second fresh subscription for a newer broadcast during recovery', async () => {
     const h = transport()
     h.broadcaster.send(h.state, () => true)

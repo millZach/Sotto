@@ -16,6 +16,12 @@ import { syntheticModelCatalog } from './modelCatalog'
 import { testCredentials } from './testCredentials'
 import { join } from 'node:path'
 
+export const STREAMING_ROUNDS = 3
+export const STREAMING_CHUNKS = 180
+export const STREAMING_CHUNK_GAP_MS = 2
+export const STREAMING_ACTIVITY_EVERY = 25
+export const STREAMING_ACTIVITY_BYTES = 400
+
 const PUBLISHED_ARCHIVE = { threads: 50, records: 400, outputBytes: 1_000 }
 const UNREAD_ARCHIVE = { threads: 4, records: 1_100, outputBytes: 2_600 }
 const EMPTY_THREADS = 150

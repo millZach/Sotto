@@ -10,7 +10,7 @@ import { LocalHostService } from '../../src/main/agents/hostService'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import type { AgentStateBroadcast, AgentThreadsBroadcast } from '../../src/shared/agents'
-import { records, stack } from './windowThreadShellPipeline'
+import { records, stack, STREAMING_ROUNDS, STREAMING_CHUNKS, STREAMING_CHUNK_GAP_MS, STREAMING_ACTIVITY_EVERY, STREAMING_ACTIVITY_BYTES } from './windowThreadShellPipeline'
 
 const pause = (ms: number) => new Promise<void>(done => setTimeout(done, ms))
 
@@ -57,7 +57,7 @@ export async function measureElectronStreaming(window: BrowserWindow, streamCoun
       threadBytes: Buffer.byteLength(JSON.stringify(fixture.host.threads)), worktreeBytes: Buffer.byteLength(JSON.stringify(fixture.host.threads.map(thread => thread.worktree))), usageBytes: Buffer.byteLength(JSON.stringify(fixture.host.threads.map(thread => thread.usage))) }
     const rows: Record<string, number>[] = []
     const adapter = adapters.claude, streams = adapter.state.threads.filter(thread => thread.id.startsWith('stream-'))
-    for (let round = 0; round < 3; round++) {
+    for (let round = 0; round < STREAMING_ROUNDS; round++) {
       await pause(400)
       const at = new Date().toISOString(), reply = `reply-${round}`
       for (const thread of streams) { adapter.log.add(thread.id, { id: `prompt-${round}`, role: 'user', text: `Prompt ${round}`, createdAt: at }); thread.status = 'running' }
@@ -69,18 +69,18 @@ export async function measureElectronStreaming(window: BrowserWindow, streamCoun
       gcMs = 0
       await window.webContents.executeJavaScript('window.bench.startCpu()')
       const threadCpu = process.threadCpuUsage(), cpu = process.cpuUsage(), elu = performance.eventLoopUtilization(), start = performance.now()
-      for (let chunk = 0; chunk < 180; chunk++) {
+      for (let chunk = 0; chunk < STREAMING_CHUNKS; chunk++) {
         for (const thread of streams) {
           adapter.log.appendText(thread.id, reply, ` word${chunk}`)
-          if (chunk % 25 === 0) thread.activities = [...(thread.activities ?? []), ...records(`${thread.id}-${round}-${chunk}`, 1, 400)]
+          if (chunk % STREAMING_ACTIVITY_EVERY === 0) thread.activities = [...(thread.activities ?? []), ...records(`${thread.id}-${round}-${chunk}`, 1, STREAMING_ACTIVITY_BYTES)]
         }
         adapter.publish(true)
-        await pause(2)
+        await pause(STREAMING_CHUNK_GAP_MS)
       }
       await pause(150)
       const usedThread = process.threadCpuUsage(threadCpu), usedProcess = process.cpuUsage(cpu), usedElu = performance.eventLoopUtilization(elu), wallMs = performance.now() - start
       const renderer = await window.webContents.executeJavaScript('window.bench.endCpu()') as { cpuMs: number }
-      const chunks = 180 * streamCount, mainThreadMs = (usedThread.user + usedThread.system) / 1000, mainProcessMs = (usedProcess.user + usedProcess.system) / 1000
+      const chunks = STREAMING_CHUNKS * streamCount, mainThreadMs = (usedThread.user + usedThread.system) / 1000, mainProcessMs = (usedProcess.user + usedProcess.system) / 1000
       rows.push({ chunks, wallMs, mainThreadCpuMsPerChunk: mainThreadMs / chunks, mainProcessCpuMsPerChunk: mainProcessMs / chunks,
         rendererCpuMsPerChunk: renderer.cpuMs / chunks, totalProcessCpuMsPerChunk: (mainProcessMs + renderer.cpuMs) / chunks,
         mainThreadCpuMsPerWindow: mainThreadMs / Math.max(1, counts.states), senderThreadCpuMsPerWindow: counts.senderThreadCpuUs / 1000 / Math.max(1, counts.states),

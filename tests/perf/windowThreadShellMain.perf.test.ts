@@ -26,7 +26,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { performance, PerformanceObserver } from 'node:perf_hooks'
 import { afterAll, describe, expect, it } from 'vitest'
-import { records, stack } from '../fixtures/windowThreadShellPipeline'
+import { records, stack, STREAMING_CHUNKS as CHUNKS, STREAMING_CHUNK_GAP_MS as CHUNK_GAP_MS, STREAMING_ROUNDS as ROUNDS, STREAMING_ACTIVITY_EVERY, STREAMING_ACTIVITY_BYTES } from '../fixtures/windowThreadShellPipeline'
 import { AgentStateBroadcaster } from '../../src/main/agents/agentStateBroadcast'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../../src/main/agents/control'
 import { LocalHostService } from '../../src/main/agents/hostService'
@@ -34,9 +34,6 @@ import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 
-const CHUNKS = 180
-const CHUNK_GAP_MS = 2
-const ROUNDS = 3
 
 
 const sleep = (ms: number) => new Promise<void>(done => { setTimeout(done, ms) })
@@ -122,7 +119,7 @@ describe.skipIf(!PERF_BENCH)('desktop window main pipeline (#991)', () => {
       for (let chunk = 0; chunk < CHUNKS; chunk++) {
         for(const item of streaming) adapter.log.appendText(item.id, reply, ` word${chunk}`)
         // A command every 25 chunks, as a reply that runs tools has.
-        if (chunk % 25 === 0) for(const item of streaming) item.activities = [...(item.activities ?? []), ...records(`${item.id}-${round}-${chunk}`, 1, 400)]
+        if (chunk % STREAMING_ACTIVITY_EVERY === 0) for(const item of streaming) item.activities = [...(item.activities ?? []), ...records(`${item.id}-${round}-${chunk}`, 1, STREAMING_ACTIVITY_BYTES)]
         adapter.publish(true)
         heapPeak = Math.max(heapPeak, process.memoryUsage().heapUsed)
         await sleep(CHUNK_GAP_MS)

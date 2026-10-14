@@ -53,6 +53,7 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
   const completeReceipt = createReceiptCompleter({ get }, catalogs, lastRead)
   let observation = 0
   let observedThreadRevision: number | undefined
+  let threadRecoveries: Set<ReturnType<typeof createThreadReassembler>> | undefined
   const result: AgentBridge = {
     ...bridge,
     get,
@@ -72,19 +73,31 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
             observation++
             observedThreadRevision = typeof revision === 'number' ? revision : undefined
           }
-          optimized ??= createThreadReassembler({ get }, catalogs, emit, () => observation)
+          if (!optimized) {
+            optimized = createThreadReassembler({ get }, catalogs, emit, () => observation)
+            threadRecoveries ??= new Set()
+            threadRecoveries.add(optimized)
+          }
           optimized(raw)
         }
       })
-      return () => { active = false; optimized?.dispose(); off() }
+      return () => { active = false; if (optimized) threadRecoveries?.delete(optimized); optimized?.dispose(); off() }
     },
     command: async request => {
       observation++
-      const reply = await bridge.command(request)
-      observation++
-      const completed = await completeReceipt(reply)
-      observation++
-      return completed
+      try {
+        const reply = await bridge.command(request)
+        observation++
+        const completed = await completeReceipt(reply)
+        observation++
+        return completed
+      } catch (error) {
+        observation++
+        // A rejected command supplies no receipt. A read it overtook must recover again,
+        // rather than leave the subscriber empty until an unrelated broadcast arrives.
+        if (threadRecoveries) for (const recovery of threadRecoveries) recovery.retry()
+        throw error
+      }
     },
   }
   wrapped.set(bridge, result)
@@ -92,10 +105,11 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
 }
 
 /** Revisioned thread recovery cannot assign an unversioned read to a body's earlier revision. */
-function createThreadReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, listener: (state: AgentState) => void, observation: () => number): ((raw: unknown) => void) & { dispose: () => void } {
+function createThreadReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, listener: (state: AgentState) => void, observation: () => number): ((raw: unknown) => void) & { dispose: () => void; retry: () => void } {
   const threads = new AgentThreadShell()
   let recovering = false
   let pending: unknown = null
+  let unresolved: unknown = null
   let active = true
   const process = (raw: unknown): void => {
     if (!active || !isStateLike(raw)) return
@@ -105,9 +119,11 @@ function createThreadReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: Cat
     if (candidate && assembled) {
       candidate.commit()
       pending = null
+      unresolved = null
       listener({ ...assembled, host: { ...assembled.host, threads: candidate.threads } })
       return
     }
+    unresolved = raw
     if (recovering) { pending = raw; return }
     recovering = true
     const started = observation()
@@ -116,6 +132,7 @@ function createThreadReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: Cat
       // A get is complete but has no thread revision. Main reset its delivery base; the next
       // broadcast must carry every body. Never seed the thread cache from this unversioned read.
       rememberRecovered(catalogs, raw, full)
+      unresolved = null
       listener(full)
     }).catch(() => undefined).finally(() => {
       recovering = false
@@ -123,7 +140,8 @@ function createThreadReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: Cat
     })
   }
   const receive = (raw: unknown): void => process(raw)
-  receive.dispose = (): void => { active = false; pending = null; threads.clear() }
+  receive.retry = (): void => { if (active && unresolved !== null) process(unresolved) }
+  receive.dispose = (): void => { active = false; pending = null; unresolved = null; threads.clear() }
   return receive
 }
 
