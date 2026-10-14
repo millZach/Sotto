@@ -401,6 +401,11 @@ import XCTest
         XCTAssertFalse(app.buttons["folder-Panel tools"].exists)
         capture("new-project-filtered-folders")
         folder.tap()
+        // Opening the folder reads it, and Use this folder is off while a read is on its way: the read is done once the path
+        // names the folder, and only then is the button pressed.
+        let path = app.textFields["project-folder-path"]
+        let read = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "D:\\New project"), object: path)
+        XCTAssertEqual(XCTWaiter.wait(for: [read], timeout: 10), .completed, "Opening the folder reads it")
         let use = app.buttons["use-project-folder"]
         XCTAssertTrue(use.waitForExistence(timeout: 5)); XCTAssertTrue(use.isEnabled)
         capture("new-project-selected-folder-light")
