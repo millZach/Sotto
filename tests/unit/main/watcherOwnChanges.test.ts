@@ -184,15 +184,15 @@ describe('Watcher own changes', () => {
     ['- Watcher change reason: Needed.', null],
     ['> Watcher change reason: Needed.', null],
     ['watcher change reason: Needed.', null],
-    ['Watcher change reason:Needed.', null],
+    ['Watcher change reason:Needed.', 'Needed.'],
     ['Watcher change reason: ', null],
     ['Watcher change reason:   ', null],
-    ['Watcher change reason: ' + 'x'.repeat(2_001), null],
+    ['Watcher change reason: ' + 'x'.repeat(2_001), 'x'.repeat(1_999) + '…'],
     ['Watcher change reason: One\nWatcher change reason: Two', null],
     ['Watcher change reason: One\nWatcher change reason:', null],
     ['```text\nWatcher change reason: An example\n```', null],
     ['~~~\nWatcher change reason: An example\n~~~', null],
-  ])('captures only one defined whole reply line: %s', (text, reason) => {
+  ])('reads only one whole reply line, trimming and shortening its reason: %s', (text, reason) => {
     const t = thread(); t.messages[1]!.text = text; t.activities = [change()]
     expect(watcherOwnChanges(t)[0]?.reason).toBe(reason)
   })
@@ -259,6 +259,8 @@ describe('Watcher own changes', () => {
     ['I fixed it.\n\nWatcher change reason: Needed.', 'I fixed it.'],
     ['I fixed it.\r\n\r\nWatcher change reason: Needed.\r\n\r\nThen I told the worker.', 'I fixed it.\r\n\r\nThen I told the worker.'],
     ['Watcher change reason: Needed.\nI fixed it.', 'I fixed it.'],
+    ['I fixed it.\nWatcher change reason:Needed.', 'I fixed it.'],
+    ['I fixed it.\nWatcher change reason:   Needed.   ', 'I fixed it.'],
     ['Watcher change reason: Needed.\n\nI fixed it.', 'I fixed it.'],
     ['Watcher change reason: Needed.\r\n\r\nI fixed it.\r\n\r\nThen I told the worker.', 'I fixed it.\r\n\r\nThen I told the worker.'],
     ['I fixed it.\nWatcher change reason: Needed.\nThen I told the worker.', 'I fixed it.\nThen I told the worker.'],
@@ -269,6 +271,20 @@ describe('Watcher own changes', () => {
     t.messages = annotateWatcherOwnChanges(t)
     expect(t.messages[1]!.watcherOwnChange?.reason).toMatch(/^Needed\.$/)
     expect(watcherReplyAsShown(t.messages[1]!)).toBe(shown)
+  })
+
+  it('hides a reason line that runs long, and keeps its reason shortened', () => {
+    const t = thread(); t.messages[1]!.text = `I fixed it.\nWatcher change reason: ${'x'.repeat(2_500)}`; t.activities = [change()]
+    t.messages = annotateWatcherOwnChanges(t)
+    expect(t.messages[1]!.watcherOwnChange?.reason).toBe('x'.repeat(1_999) + '…')
+    expect(watcherReplyAsShown(t.messages[1]!)).toBe('I fixed it.')
+  })
+
+  it('hides an empty reason line, which gave no reason', () => {
+    const t = thread(); t.messages[1]!.text = 'I fixed it.\nWatcher change reason:'; t.activities = [change()]
+    t.messages = annotateWatcherOwnChanges(t)
+    expect(t.messages[1]!.watcherOwnChange?.reason).toBeNull()
+    expect(watcherReplyAsShown(t.messages[1]!)).toBe('I fixed it.')
   })
 
   it.each([

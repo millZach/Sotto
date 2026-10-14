@@ -3,10 +3,15 @@ import { isVisualMessage, type AgentHostSnapshot, type AgentMessage, type AgentT
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { WatcherOwnChange } from '../../shared/watcherChanges'
 
-const REASON_PREFIX = 'Watcher change reason: '
+const REASON_PREFIX = 'Watcher change reason:'
+const REASON_MAX = 2_000
 
-/** The one reason line Sotto reads from a reply, and where it sits among the reply's lines. */
-function reasonLine(lines: readonly string[]): { index: number; reason: string } | null {
+/**
+ * The one reason line Sotto reads from a reply, and where it sits among the reply's lines. A line that starts with the
+ * exact words is that line even when it misses the space after the colon or runs long: its reason is trimmed, and cut
+ * to 2,000 characters with an ellipsis, rather than dropped. An empty one gives no reason. Two such lines give none.
+ */
+function reasonLine(lines: readonly string[]): { index: number; reason: string | null } | null {
   const found: number[] = []
   let fence: { character: string; length: number } | undefined
   for (const [index, line] of lines.entries()) {
@@ -16,11 +21,11 @@ function reasonLine(lines: readonly string[]): { index: number; reason: string }
       else if (marker[0] === fence.character && marker.length >= fence.length) fence = undefined
       continue
     }
-    if (!fence && line.startsWith('Watcher change reason:')) found.push(index)
+    if (!fence && line.startsWith(REASON_PREFIX)) found.push(index)
   }
-  if (found.length !== 1 || !lines[found[0]!]!.startsWith(REASON_PREFIX)) return null
-  const reason = lines[found[0]!]!.slice(REASON_PREFIX.length)
-  return reason.length > 0 && reason.length <= 2_000 && reason.trim() ? { index: found[0]!, reason } : null
+  if (found.length !== 1) return null
+  const reason = lines[found[0]!]!.slice(REASON_PREFIX.length).trim()
+  return { index: found[0]!, reason: !reason ? null : reason.length <= REASON_MAX ? reason : `${reason.slice(0, REASON_MAX - 1).trimEnd()}…` }
 }
 
 /** A defined reply line, never an interpretation of narration or tool output. */
@@ -34,13 +39,13 @@ function changeReason(text: string): string | null {
  * and fenced example stays. A reply with no own-change reason, or nothing else in it, is shown as it was written.
  */
 export function watcherReplyAsShown(message: AgentMessage): string {
-  const reason = message.role === 'assistant' && message.watcherOwnChange?.replyMessageId === message.id ? message.watcherOwnChange.reason : null
-  if (!reason || !message.text.includes(REASON_PREFIX)) return message.text
+  const mark = message.role === 'assistant' && message.watcherOwnChange?.replyMessageId === message.id ? message.watcherOwnChange : undefined
+  if (!mark || !message.text.includes(REASON_PREFIX)) return message.text
   // Even entries are lines, odd entries the break after each, so the reply's own line endings survive.
   const parts = message.text.split(/(\r\n|\n|\r)/u)
   const lines = parts.filter((_, index) => index % 2 === 0), breaks = parts.filter((_, index) => index % 2 === 1)
   const found = reasonLine(lines)
-  if (!found || found.reason !== reason) return message.text
+  if (!found || found.reason !== mark.reason) return message.text
   const blank = (index: number): boolean => lines[index]!.trim() === ''
   let start = found.index, end = found.index + 1
   if (start > 0 && blank(start - 1) && (end === lines.length || blank(end))) start--
@@ -54,7 +59,7 @@ export function watcherReplyAsShown(message: AgentMessage): string {
 
 const shownReplies = new WeakMap<AgentMessage, { readonly text: string; readonly reason: string | null | undefined; readonly shown: AgentMessage }>()
 const isWatcherConversation = (thread: AgentThread): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
-const carriesReason = (message: AgentMessage): boolean => Boolean(message.role === 'assistant' && message.watcherOwnChange?.reason
+const carriesReason = (message: AgentMessage): boolean => Boolean(message.role === 'assistant' && message.watcherOwnChange
   && message.text.includes(REASON_PREFIX))
 function shownReply(message: AgentMessage): AgentMessage {
   const cached = shownReplies.get(message)
