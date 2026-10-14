@@ -1,8 +1,8 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { installerOutput } from '../../../src/main/agents/installerDetail'
 import { byHandFor, detectClientInstall, miseBinary, ProviderClients, updateActionFor, type RunLike, type RunOptions } from '../../../src/main/agents/providerClients'
 
@@ -15,6 +15,8 @@ import { byHandFor, detectClientInstall, miseBinary, ProviderClients, updateActi
 const roots: string[] = []
 const root = async (): Promise<string> => { const directory = await mkdtemp(join(tmpdir(), 'sotto-mise-')); roots.push(directory); return directory }
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
+const miseCommand = (tool: string): string => process.platform === 'win32'
+  ? `cmd /c "set MISE_MINIMUM_RELEASE_AGE=0s&& mise upgrade ${tool}"` : `MISE_MINIMUM_RELEASE_AGE=0s mise upgrade ${tool}`
 const answer = (version: string): Response => new Response(JSON.stringify({ version }), { status: 200 })
 
 /** A mise data folder with the tools forge has, each with mise's own record of its name. */
@@ -79,18 +81,37 @@ describe('which clients mise installed', () => {
 })
 
 describe('what an update of a mise install runs', () => {
+  it('gives POSIX shells an override for the one command', () => {
+    for (const platform of ['linux', 'darwin'] as const) {
+      expect(byHandFor('claude', { channel: 'mise', miseTool: 'claude' }, platform))
+        .toEqual(['MISE_MINIMUM_RELEASE_AGE=0s mise upgrade claude'])
+    }
+  })
+
+  it('gives Windows shells an override in a child cmd, leaving the calling shell alone', () => {
+    expect(byHandFor('claude', { channel: 'mise', miseTool: 'claude' }, 'win32'))
+      .toEqual(['cmd /c "set MISE_MINIMUM_RELEASE_AGE=0s&& mise upgrade claude"'])
+  })
+
+  it('includes the flag in the manual command only when mise supports it', () => {
+    expect(byHandFor('claude', { channel: 'mise', miseTool: 'claude' }, 'linux', true))
+      .toEqual(['MISE_MINIMUM_RELEASE_AGE=0s mise upgrade claude --minimum-release-age 0s'])
+    expect(byHandFor('claude', { channel: 'mise', miseTool: 'claude' }, 'win32', true))
+      .toEqual(['cmd /c "set MISE_MINIMUM_RELEASE_AGE=0s&& mise upgrade claude --minimum-release-age 0s"'])
+  })
+
   it('upgrades the one tool through mise itself, and gives the same command to run by hand', async () => {
-    const action = await updateActionFor('codex', { channel: 'mise', miseTool: 'codex' }, '/x/codex', async () => undefined, async () => '/usr/bin/mise')
+    const action = await updateActionFor('codex', { channel: 'mise', miseTool: 'codex' }, '/x/codex', async () => undefined, async () => '/usr/bin/mise', async () => false)
     // Run from the home folder, so mise reads the global config and not a project's own.
-    expect(action).toEqual({ command: 'mise upgrade codex --minimum-release-age 0s', byHand: ['mise upgrade codex --minimum-release-age 0s'], executable: '/usr/bin/mise', args: ['upgrade', 'codex', '--minimum-release-age', '0s'], cwd: homedir() })
+    expect(action).toEqual({ command: miseCommand('codex'), byHand: [miseCommand('codex')], executable: '/usr/bin/mise', args: ['upgrade', 'codex'], env: { MISE_MINIMUM_RELEASE_AGE: '0s' }, cwd: homedir() })
   })
 
   it('adds Grok Build’s install step after the upgrade, and names both, with the package folder, to run by hand', async () => {
-    const action = await updateActionFor('grok', { channel: 'mise', miseTool: 'npm:@xai-official/grok' }, '/x/grok', async () => undefined, async () => '/usr/bin/mise')
-    expect(action).toMatchObject({ executable: '/usr/bin/mise', args: ['upgrade', 'npm:@xai-official/grok', '--minimum-release-age', '0s'],
+    const action = await updateActionFor('grok', { channel: 'mise', miseTool: 'npm:@xai-official/grok' }, '/x/grok', async () => undefined, async () => '/usr/bin/mise', async () => false)
+    expect(action).toMatchObject({ executable: '/usr/bin/mise', args: ['upgrade', 'npm:@xai-official/grok'], env: { MISE_MINIMUM_RELEASE_AGE: '0s' },
       installStep: { mise: '/usr/bin/mise', tool: 'npm:@xai-official/grok', packageName: '@xai-official/grok' } })
     // Grok Build's package layout was checked on forge on September 29, 2026; explicit updates now skip the age delay.
-    expect(byHandFor('grok', { channel: 'mise', miseTool: 'npm:@xai-official/grok' })).toEqual(['mise upgrade npm:@xai-official/grok --minimum-release-age 0s',
+    expect(byHandFor('grok', { channel: 'mise', miseTool: 'npm:@xai-official/grok' })).toEqual([miseCommand('npm:@xai-official/grok'),
       'cd "$(mise where npm:@xai-official/grok)/node_modules/@xai-official/grok"', 'node bin/postinstall.js'])
   })
 
@@ -98,21 +119,64 @@ describe('what an update of a mise install runs', () => {
     const { data, installs } = await miseData()
     const clients = new ProviderClients({ fetchImpl: async () => answer('0.158.0'), misePath: async () => undefined })
     const reading = await clients.check('codex', '0.155.1', join(installs, 'codex', 'latest', 'bin', 'codex'), { MISE_DATA_DIR: data })
-    expect(reading).toMatchObject({ channel: 'mise', behind: true, canInstall: false, command: 'mise upgrade codex --minimum-release-age 0s', byHand: ['mise upgrade codex --minimum-release-age 0s'] })
+    expect(reading).toMatchObject({ channel: 'mise', behind: true, canInstall: false, command: miseCommand('codex'), byHand: [miseCommand('codex')] })
     expect(reading.steps).toBeUndefined()
   })
 
   it('reads a mise install as one step to install, and Grok Build as two', async () => {
     const { data, installs, home } = await miseData()
-    const clients = new ProviderClients({ fetchImpl: async url => answer(url.includes('claude-code') ? '2.1.284' : '1.0.43'), misePath: async () => '/usr/bin/mise' })
+    const clients = new ProviderClients({ fetchImpl: async url => answer(url.includes('claude-code') ? '2.1.284' : '1.0.43'), misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
     expect(await clients.check('claude', '2.1.281', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data }))
-      .toMatchObject({ channel: 'mise', canInstall: true, steps: 1, command: 'mise upgrade claude --minimum-release-age 0s' })
+      .toMatchObject({ channel: 'mise', canInstall: true, steps: 1, command: miseCommand('claude') })
     expect(await clients.check('grok', '1.0.41', join(home, '.grok', 'bin', 'grok'), { MISE_DATA_DIR: data, GROK_HOME: join(home, '.grok') }))
-      .toMatchObject({ channel: 'mise', canInstall: true, steps: 2, command: 'mise upgrade npm:@xai-official/grok --minimum-release-age 0s' })
+      .toMatchObject({ channel: 'mise', canInstall: true, steps: 2, command: miseCommand('npm:@xai-official/grok') })
   })
 })
 
 describe('running an update of a mise install', () => {
+  it.skipIf(process.platform === 'win32')('passes the override to a real child process without changing the app environment', async () => {
+    const { data, installs, home } = await miseData()
+    const mise = join(home, 'mise'), output = join(home, 'child.json')
+    await writeFile(mise, `#!/usr/bin/env node\nif (process.argv.includes('--help')) console.log('--minimum-release-age <duration>'); else require('node:fs').writeFileSync(${JSON.stringify(output)}, JSON.stringify({ age: process.env.MISE_MINIMUM_RELEASE_AGE, args: process.argv.slice(2) }))\n`)
+    await chmod(mise, 0o755)
+    vi.stubEnv('MISE_MINIMUM_RELEASE_AGE', '7d')
+    try {
+      const result = await new ProviderClients({ misePath: async () => mise })
+        .install('claude', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data })
+      expect(result.ok).toBe(true)
+      expect(JSON.parse(await readFile(output, 'utf8'))).toEqual({ age: '0s', args: ['upgrade', 'claude', '--minimum-release-age', '0s'] })
+      expect(process.env.MISE_MINIMUM_RELEASE_AGE).toBe('7d')
+    } finally { vi.unstubAllEnvs() }
+  })
+
+  it('keeps upgrading with older mise versions that reject the release-age flag', async () => {
+    const { data, installs } = await miseData()
+    let onDisk = '2.1.296'
+    const run: RunLike = async (_executable, args) => {
+      if (args.includes('--minimum-release-age')) return { ok: false, detail: "unexpected argument '--minimum-release-age' found" }
+      onDisk = '2.1.299'
+      return { ok: true }
+    }
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
+      .install('claude', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data })
+    expect(result.ok).toBe(true)
+    expect(onDisk).toBe('2.1.299')
+  })
+
+  it('overrides a per-tool delay when mise supports the release-age flag', async () => {
+    const { data, installs } = await miseData()
+    let onDisk = '2.1.296'
+    const run: RunLike = async (_executable, args) => {
+      // A per-tool age wins over the global environment variable; only the supported CLI flag overrides it.
+      if (args.includes('--minimum-release-age') && args[args.indexOf('--minimum-release-age') + 1] === '0s') onDisk = '2.1.299'
+      return { ok: true }
+    }
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => true })
+      .install('claude', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data })
+    expect(result.ok).toBe(true)
+    expect(onDisk).toBe('2.1.299')
+  })
+
   it.each([
     ['claude', 'claude', '2.1.296', '2.1.299'],
     ['codex', 'codex', '0.155.1', '0.158.0'],
@@ -120,28 +184,28 @@ describe('running an update of a mise install', () => {
   ] as const)('installs a newly published %s client without waiting for mise’s release-age delay', async (provider, tool, installed, published) => {
     const { data, installs, home } = await miseData()
     let onDisk: string = installed
-    const run: RunLike = async (_executable, args) => {
+    const run: RunLike = async (_executable, args, _asNode, options) => {
       if (args[0] === 'where') return { ok: true, stdout: join(installs, 'npm-xai-official-grok', '1.0.41') }
       if (args[0] === 'upgrade') {
         expect(args[1]).toBe(tool)
         // mise exits successfully when its age rule holds a release back, but leaves the old client installed.
-        if (args.includes('--minimum-release-age') && args[args.indexOf('--minimum-release-age') + 1] === '0s') onDisk = published
+        if (options?.env?.MISE_MINIMUM_RELEASE_AGE === '0s') onDisk = published
         return { ok: true, stdout: onDisk === installed ? 'mise All tools are up to date' : '' }
       }
       return { ok: true }
     }
     const executable = provider === 'grok' ? join(home, '.grok', 'bin', 'grok') : join(installs, provider, 'latest', provider)
-    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise' })
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
       .install(provider, executable, { MISE_DATA_DIR: data, GROK_HOME: join(home, '.grok') })
     expect(result.ok).toBe(true)
     expect(onDisk).toBe(published)
   })
 
   /** A stand-in for mise and Node: records each run and answers `mise where` with the folder mise installed in. */
-  function stand(installs: string, fail?: 'upgrade' | 'install-step'): { run: RunLike; ran: { executable: string; args: readonly string[]; asNode?: boolean; cwd?: string }[] } {
-    const ran: { executable: string; args: readonly string[]; asNode?: boolean; cwd?: string }[] = []
+  function stand(installs: string, fail?: 'upgrade' | 'install-step'): { run: RunLike; ran: { executable: string; args: readonly string[]; asNode?: boolean; cwd?: string; env?: Readonly<NodeJS.ProcessEnv> }[] } {
+    const ran: { executable: string; args: readonly string[]; asNode?: boolean; cwd?: string; env?: Readonly<NodeJS.ProcessEnv> }[] = []
     const run: RunLike = async (executable, args, asNode, options?: RunOptions) => {
-      ran.push({ executable, args, ...(asNode ? { asNode } : {}), ...(options?.cwd ? { cwd: options.cwd } : {}) })
+      ran.push({ executable, args, ...(asNode ? { asNode } : {}), ...(options?.cwd ? { cwd: options.cwd } : {}), ...(options?.env ? { env: options.env } : {}) })
       if (args[0] === 'upgrade') return fail === 'upgrade'
         ? { ok: false, detail: 'mise ERROR connection reset by peer', printed: 'mise ERROR Failed to install npm:@xai-official/grok@1.0.43\nmise ERROR connection reset by peer' }
         : { ok: true, stdout: '' }
@@ -154,14 +218,14 @@ describe('running an update of a mise install', () => {
   it('runs the upgrade, then Grok Build’s install step on this Node in the package folder, and tells each step as it starts', async () => {
     const { data, installs, home } = await miseData()
     const { run, ran } = stand(installs)
-    const clients = new ProviderClients({ run, misePath: async () => '/usr/bin/mise', nodePath: '/usr/bin/node' })
+    const clients = new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false, nodePath: '/usr/bin/node' })
     const steps: number[] = []
     const result = await clients.install('grok', join(home, '.grok', 'bin', 'grok'), { MISE_DATA_DIR: data, GROK_HOME: join(home, '.grok') }, step => steps.push(step))
     expect(result.ok).toBe(true)
     expect(steps).toEqual([1, 2])
     const folder = join(installs, 'npm-xai-official-grok', '1.0.41', 'node_modules', '@xai-official', 'grok')
     expect(ran).toEqual([
-      { executable: '/usr/bin/mise', args: ['upgrade', 'npm:@xai-official/grok', '--minimum-release-age', '0s'], cwd: homedir() },
+      { executable: '/usr/bin/mise', args: ['upgrade', 'npm:@xai-official/grok'], env: { MISE_MINIMUM_RELEASE_AGE: '0s' }, cwd: homedir() },
       { executable: '/usr/bin/mise', args: ['where', 'npm:@xai-official/grok'], cwd: homedir() },
       { executable: '/usr/bin/node', args: [join(folder, 'bin', 'postinstall.js')], asNode: true, cwd: folder },
     ])
@@ -171,17 +235,17 @@ describe('running an update of a mise install', () => {
     const { data, installs } = await miseData()
     const { run, ran } = stand(installs)
     const steps: number[] = []
-    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise' })
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
       .install('codex', join(installs, 'codex', 'latest', 'bin', 'codex'), { MISE_DATA_DIR: data }, step => steps.push(step))
     expect(result.ok).toBe(true)
     expect(steps).toEqual([1])
-    expect(ran).toEqual([{ executable: '/usr/bin/mise', args: ['upgrade', 'codex', '--minimum-release-age', '0s'], cwd: homedir() }])
+    expect(ran).toEqual([{ executable: '/usr/bin/mise', args: ['upgrade', 'codex'], env: { MISE_MINIMUM_RELEASE_AGE: '0s' }, cwd: homedir() }])
   })
 
   it('reports a dropped download as the first step, and runs nothing after it', async () => {
     const { data, installs, home } = await miseData()
     const { run, ran } = stand(installs, 'upgrade')
-    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise' })
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
       .install('grok', join(home, '.grok', 'bin', 'grok'), { MISE_DATA_DIR: data, GROK_HOME: join(home, '.grok') })
     expect(result).toMatchObject({ ok: false, step: 1, failure: 'download', printed: expect.stringContaining('connection reset by peer') })
     expect(ran).toHaveLength(1)
@@ -190,7 +254,7 @@ describe('running an update of a mise install', () => {
   it('reports the install step apart from the upgrade when it does not finish', async () => {
     const { data, installs, home } = await miseData()
     const { run } = stand(installs, 'install-step')
-    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise' })
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
       .install('grok', join(home, '.grok', 'bin', 'grok'), { MISE_DATA_DIR: data, GROK_HOME: join(home, '.grok') })
     expect(result).toMatchObject({ ok: false, step: 2, failure: 'install-step', detail: "EACCES: permission denied, rename '…'" })
   })
@@ -199,7 +263,7 @@ describe('running an update of a mise install', () => {
     const { data, installs, home } = await miseData()
     await rm(join(installs, 'npm-xai-official-grok', '1.0.41', 'node_modules'), { recursive: true })
     const { run, ran } = stand(installs)
-    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise' })
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
       .install('grok', join(home, '.grok', 'bin', 'grok'), { MISE_DATA_DIR: data, GROK_HOME: join(home, '.grok') })
     expect(result).toMatchObject({ ok: false, step: 2, failure: 'install-step' })
     expect(ran.map(item => item.args[0])).toEqual(['upgrade', 'where'])
