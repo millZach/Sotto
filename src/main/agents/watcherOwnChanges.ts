@@ -1,26 +1,79 @@
 import { posix, win32 } from 'node:path'
-import { isVisualMessage, type AgentMessage, type AgentThread } from '../../shared/agents'
+import { isVisualMessage, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../shared/agents'
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { WatcherOwnChange } from '../../shared/watcherChanges'
 
 const REASON_PREFIX = 'Watcher change reason: '
 
-/** A defined reply line, never an interpretation of narration or tool output. */
-function changeReason(text: string): string | null {
-  const lines: string[] = []
+/** The one reason line Sotto reads from a reply, and where it sits among the reply's lines. */
+function reasonLine(lines: readonly string[]): { index: number; reason: string } | null {
+  const found: number[] = []
   let fence: { character: string; length: number } | undefined
-  for (const line of text.split(/\r\n|\n|\r/u)) {
+  for (const [index, line] of lines.entries()) {
     const marker = /^\s*(`{3,}|~{3,})/u.exec(line)?.[1]
     if (marker) {
       if (!fence) fence = { character: marker[0]!, length: marker.length }
       else if (marker[0] === fence.character && marker.length >= fence.length) fence = undefined
       continue
     }
-    if (!fence && line.startsWith('Watcher change reason:')) lines.push(line)
+    if (!fence && line.startsWith('Watcher change reason:')) found.push(index)
   }
-  if (lines.length !== 1 || !lines[0]!.startsWith(REASON_PREFIX)) return null
-  const reason = lines[0]!.slice(REASON_PREFIX.length)
-  return reason.length > 0 && reason.length <= 2_000 && reason.trim() ? reason : null
+  if (found.length !== 1 || !lines[found[0]!]!.startsWith(REASON_PREFIX)) return null
+  const reason = lines[found[0]!]!.slice(REASON_PREFIX.length)
+  return reason.length > 0 && reason.length <= 2_000 && reason.trim() ? { index: found[0]!, reason } : null
+}
+
+/** A defined reply line, never an interpretation of narration or tool output. */
+function changeReason(text: string): string | null {
+  return reasonLine(text.split(/\r\n|\n|\r/u))?.reason ?? null
+}
+
+/**
+ * A Watcher reply as Sotto shows it: without the reason line its own-change line already shows. Only that exact line
+ * comes off, with one blank line beside it when it stood in a paragraph of its own; every other character, line break
+ * and fenced example stays. A reply with no own-change reason, or nothing else in it, is shown as it was written.
+ */
+export function watcherReplyAsShown(message: AgentMessage): string {
+  const reason = message.role === 'assistant' && message.watcherOwnChange?.replyMessageId === message.id ? message.watcherOwnChange.reason : null
+  if (!reason || !message.text.includes(REASON_PREFIX)) return message.text
+  // Even entries are lines, odd entries the break after each, so the reply's own line endings survive.
+  const parts = message.text.split(/(\r\n|\n|\r)/u)
+  const lines = parts.filter((_, index) => index % 2 === 0), breaks = parts.filter((_, index) => index % 2 === 1)
+  const found = reasonLine(lines)
+  if (!found || found.reason !== reason) return message.text
+  const blank = (index: number): boolean => lines[index]!.trim() === ''
+  let start = found.index
+  const end = found.index + 1
+  if (start > 0 && blank(start - 1) && (end === lines.length || blank(end))) start--
+  const before = lines.slice(0, start).flatMap((line, index) => index < start - 1 ? [line, breaks[index]!] : [line])
+  const after = lines.slice(end).flatMap((line, index) => end + index < lines.length - 1 ? [line, breaks[end + index]!] : [line])
+  const shown = [...before, ...(start > 0 && end < lines.length ? [breaks[start - 1]!] : []), ...after].join('')
+  return shown.trim() ? shown : message.text
+}
+
+const shownReplies = new WeakMap<AgentMessage, { readonly text: string; readonly reason: string | null | undefined; readonly shown: AgentMessage }>()
+const isWatcherConversation = (thread: AgentThread): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
+const carriesReason = (message: AgentMessage): boolean => Boolean(message.role === 'assistant' && message.watcherOwnChange?.reason
+  && message.text.includes(REASON_PREFIX))
+function shownReply(message: AgentMessage): AgentMessage {
+  const cached = shownReplies.get(message)
+  const reason = message.watcherOwnChange?.reason
+  if (cached?.text === message.text && cached.reason === reason) return cached.shown
+  const text = watcherReplyAsShown(message)
+  const shown = text === message.text ? message : { ...message, text }
+  shownReplies.set(message, { text: message.text, reason, shown })
+  return shown
+}
+
+/**
+ * Every user-facing copy of a Watcher conversation (its pane, Copy, the thread detail, the phone) comes from the
+ * coordinator's snapshot, so the reason line its own-change line shows comes off there, from Watcher's own replies only.
+ * Taking it off again is a no-op, and the mark keeps the reason, so the own-change line is unchanged.
+ */
+export function watcherRepliesAsShown(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+  if (!snapshot.threads.some(thread => isWatcherConversation(thread) && thread.messages.some(carriesReason))) return snapshot
+  return { ...snapshot, threads: snapshot.threads.map(thread => isWatcherConversation(thread) && thread.messages.some(carriesReason)
+    ? { ...thread, messages: thread.messages.map(message => carriesReason(message) ? shownReply(message) : message) } : thread) }
 }
 
 /** Compare equivalent provider paths without changing the spelling the provider reported. */
@@ -136,8 +189,9 @@ export function watcherOwnChanges(thread: AgentThread | undefined): WatcherOwnCh
       if (file !== undefined && !changed.has(file.identity)) changed.set(file.identity, file.path)
     }
     const paths = [...changed.values()]
+    // A reply shown without its reason line still has the reason its mark read from the line.
     marks.set(reply.id, { replyMessageId: reply.id, turnId, files: paths, fileCount: paths.length,
-      reason: changeReason(reply.text), source: 'provider-file-change' })
+      reason: changeReason(reply.text) ?? (previous?.turnId === turnId ? previous.reason : null), source: 'provider-file-change' })
   }
   return messages.flatMap(message => { const mark = marks.get(message.id); return mark ? [mark] : [] })
 }

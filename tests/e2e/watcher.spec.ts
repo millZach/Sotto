@@ -794,7 +794,7 @@ test.describe("Watcher's room on the built app", () => {
     ]
     const messages: AgentMessage[] = [
       { id: 'watcher-ask-2', role: 'user', text: 'The README’s install line says “npm instal”. Fix that too.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 40)).toISOString() },
-      { id: 'watcher-fixed', role: 'assistant', text: 'I fixed “npm instal” in README.md and docs/guide.md myself.\n\nWatcher change reason: A one-word typo in two files is smaller than briefing a thread.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 41)).toISOString() },
+      { id: 'watcher-fixed', role: 'assistant', text: 'I fixed “npm instal” in README.md and docs/guide.md myself.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 41)).toISOString() },
       { id: 'watcher-ask-3', role: 'user', text: 'And the changelog date?', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 44)).toISOString() },
       { id: 'watcher-quiet', role: 'assistant', text: 'The changelog date is right now.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 45)).toISOString() },
     ]
@@ -1112,6 +1112,9 @@ test.describe("Watcher's room on the built app", () => {
       const line = pane.locator('.watcher-own')
       await expect(line).toHaveText(`Watcher changed 1 file itself. Its reason: “${reason}”Show the file`)
       expect((await mainRoom(page)).ownChanges).toEqual([expect.objectContaining({ fileCount: 1, reason, source: 'provider-file-change', files: [expect.stringMatching(/README\.md$/)] })])
+      // The reply itself reads without the reason line: the own-change line under it already says it.
+      await expect(pane.getByText('I fixed the typo in README.md myself.', { exact: true })).toBeVisible()
+      await expect(pane.getByText(/Watcher change reason:/)).toHaveCount(0)
       // Captured folded: the file's full path names the disposable profile's folder.
       await line.scrollIntoViewIfNeeded()
       await settle(page)

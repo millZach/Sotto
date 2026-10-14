@@ -1,12 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { watcherOwnChanges, annotateWatcherOwnChanges } from '../../../src/main/agents/watcherOwnChanges'
+import { watcherOwnChanges, annotateWatcherOwnChanges, watcherReplyAsShown, watcherRepliesAsShown } from '../../../src/main/agents/watcherOwnChanges'
 import { WATCHER_SYSTEM_PROMPT } from '../../../src/main/agents/watcherPrompt'
 import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
 import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
 import { grokActivities } from '../../../src/main/agents/grokActivity'
 import { mergeAgentActivities, type AgentActivity } from '../../../src/shared/agentActivity'
-import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
+import type { AgentHostSnapshot, AgentMessage, AgentThread } from '../../../src/shared/agents'
 
 const at = '2026-10-13T00:00:00.000Z'
 const message = (id: string, role: AgentMessage['role'], text = 'Reply'): AgentMessage => ({ id, role, text, createdAt: at })
@@ -252,6 +252,49 @@ describe('Watcher own changes', () => {
     expect(WATCHER_SYSTEM_PROMPT).toContain('watch each active thread')
     expect(WATCHER_SYSTEM_PROMPT).toContain('Ping the user only')
     expect(WATCHER_SYSTEM_PROMPT).toContain('Never try to answer')
+  })
+
+  it.each([
+    ['I fixed it.\nWatcher change reason: Needed.', 'I fixed it.'],
+    ['I fixed it.\n\nWatcher change reason: Needed.', 'I fixed it.'],
+    ['I fixed it.\r\n\r\nWatcher change reason: Needed.\r\n\r\nThen I told the worker.', 'I fixed it.\r\n\r\nThen I told the worker.'],
+    ['Watcher change reason: Needed.\nI fixed it.', 'I fixed it.'],
+    ['I fixed it.\nWatcher change reason: Needed.\nThen I told the worker.', 'I fixed it.\nThen I told the worker.'],
+    ['I fixed it.  \n\n```text\nWatcher change reason: An example\n```\nWatcher change reason: Needed.\n',
+      'I fixed it.  \n\n```text\nWatcher change reason: An example\n```\n'],
+  ])('shows the reply without the reason line its own-change line shows: %j', (text, shown) => {
+    const t = thread(); t.messages[1]!.text = text; t.activities = [change()]
+    t.messages = annotateWatcherOwnChanges(t)
+    expect(t.messages[1]!.watcherOwnChange?.reason).toMatch(/^Needed\.$/)
+    expect(watcherReplyAsShown(t.messages[1]!)).toBe(shown)
+  })
+
+  it.each([
+    ['no own change', 'I looked.\nWatcher change reason: Needed.', false],
+    ['an unread reason', 'I fixed it.\nWatcher change reason: One\nWatcher change reason: Two', true],
+    ['a lookalike line', 'I fixed it.\n- Watcher change reason: Needed.', true],
+    ['only the reason line', 'Watcher change reason: Needed.', true],
+  ])('leaves a reply as written with %s', (_, text, changed) => {
+    const t = thread(); t.messages[1]!.text = text; t.activities = changed ? [change()] : []
+    t.messages = annotateWatcherOwnChanges(t)
+    expect(watcherReplyAsShown(t.messages[1]!)).toBe(text)
+  })
+
+  it('takes the reason line off Watcher replies in the shown snapshot only, keeping the reason on the mark', () => {
+    const t = thread(); t.messages[0]!.text = 'Watcher change reason: The user typed this.'
+    t.messages[1]!.text = 'I fixed it.\nWatcher change reason: Needed.'; t.activities = [change()]
+    t.messages = annotateWatcherOwnChanges(t)
+    const worker: AgentThread = { ...t, id: 'worker', kind: 'project' }
+    const snapshot = { threads: [t, worker] } as unknown as AgentHostSnapshot
+    const shown = watcherRepliesAsShown(snapshot)
+    const room = shown.threads[0]!
+    expect(room.messages.map(item => item.text)).toEqual(['Watcher change reason: The user typed this.', 'I fixed it.'])
+    expect(shown.threads[1]).toBe(worker)
+    // The mark still reads its reason once the line is off, and showing the shown snapshot again changes nothing.
+    expect(watcherOwnChanges(room)[0]?.reason).toBe('Needed.')
+    expect(watcherRepliesAsShown(shown).threads[0]!.messages[1]!.text).toBe('I fixed it.')
+    expect(watcherRepliesAsShown(snapshot).threads[0]!.messages[1]).toBe(room.messages[1])
+    expect(t.messages[1]!.text).toBe('I fixed it.\nWatcher change reason: Needed.')
   })
 
   it('describes the reason line exactly as Sotto reads it', () => {

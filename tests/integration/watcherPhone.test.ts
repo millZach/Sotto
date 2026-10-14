@@ -446,6 +446,24 @@ it('keeps own-change metadata attached to the Watcher reply in the phone project
   expect(f.phone.state(false).ownChanges).toContainEqual(ownChange)
 })
 
+it('shows a Watcher reply without the reason line its own-change line shows, on the desktop and the phone alike', async () => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); await f.finish(f.target.threadId)
+  const reason = 'A one-word typo is smaller than briefing a thread.'
+  const ownChange = { replyMessageId: 'reasoned-reply', turnId: 'reasoned-turn', files: ['src/example.ts'], fileCount: 1, reason, source: 'provider-file-change' as const }
+  f.native(f.target.threadId).messages.push({ id: ownChange.replyMessageId, role: 'assistant', text: `I fixed the typo myself.\n\nWatcher change reason: ${reason}`,
+    createdAt: new Date().toISOString(), watcherOwnChange: ownChange })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  // The room's pane and Copy read the coordinator's detail; the phone reads its projection of it.
+  expect(f.control.threadDetail(f.target.threadId)?.messages.find(message => message.id === ownChange.replyMessageId)?.text).toBe('I fixed the typo myself.')
+  const phone = f.phone.state(false)
+  expect(phone.conversation.messages.find(message => message.id === ownChange.replyMessageId)?.text).toBe('I fixed the typo myself.')
+  expect(phone.ownChanges).toContainEqual(ownChange)
+  expect(f.watcher.state().ownChanges).toContainEqual(ownChange)
+  // The provider's own history keeps what Watcher wrote.
+  expect(f.native(f.target.threadId).messages.at(-1)?.text).toContain('Watcher change reason: ')
+})
+
 it('rechecks phone permission authority after an await before the native writer', async () => {
   const f = await fixture(), peer = await f.pair(['watcher-phone', 'watcher-phone-manage'])
   f.workspace.adapters.codex.state.models[0]!.runtimeModes = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']

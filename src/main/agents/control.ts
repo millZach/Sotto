@@ -46,6 +46,7 @@ import { resolveFilesBinding } from '../files/binding'
 import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
 import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './sottoRequests'
+import { watcherRepliesAsShown } from './watcherOwnChanges'
 import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
@@ -629,6 +630,8 @@ export class AgentControl {
       for (const thread of snapshot.threads) if (thread.kind === 'watcher' || thread.kind === 'watcher-history') this.disabledWatcherIds.add(thread.id)
       snapshot = { ...snapshot, threads: snapshot.threads.filter(thread => this.watcherAvailable(thread.id)) }
     }
+    // Watcher's replies without the reason line their own-change line shows, in its pane, Copy and the phone alike.
+    snapshot = watcherRepliesAsShown(snapshot)
     return this.sottoRequests ? withSottoRequests(snapshot, this.sottoRequests.requests()) : snapshot
   }
   /**
