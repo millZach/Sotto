@@ -4,7 +4,8 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
-import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
+import { watcherMessageRequests, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
+import { watcherDisplayPrompt } from '../../src/main/agents/watcherMessageDisplay'
 import type { ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { watcherToolSchemas } from '../../src/shared/watcher'
@@ -886,6 +887,27 @@ it.each(['manual-send', 'queue-followup'] as const)('keeps the Watcher request c
   expect(Buffer.from(f.workspace.adapters.codex.images[0]!)).toEqual(PIXEL_PNG)
   expect(f.control.shell().activeThreadId).toBe(selected)
   expect(f.service.state().requests).toHaveLength(type === 'manual-send' ? 2 : 1)
+})
+
+it.each(['grok', 'codex'] as const)('moves a follow-up’s display proof to the message a %s retry is sent as', async provider => {
+  const f = await fixture(), draftId = randomUUID(), stale = { originalLength: 3, wireDigest: 'a'.repeat(64) }
+  await f.control.updateWatcher(record => {
+    record.current!.provider = provider
+    record.requests.find(item => item.id === f.requestId)!.userFollowups = [{ draftId, messageId: 'first-message', displayPrompt: stale }]
+  })
+  const sent = f.service.beforeDispatch({ type: 'send', commandId: randomUUID(), threadId: f.id, messageId: 'retried-message', text: 'Synthetic retry' }, draftId)
+  expect(sent).toMatchObject({ text: 'Synthetic retry', watcherRequestNote: watcherRequestNote(f.requestId, f.control.hostId()!) })
+  const request = f.control.watcherRecord().requests.find(item => item.id === f.requestId)!
+  const followup = request.userFollowups!.find(item => item.draftId === draftId)!
+  expect(followup.messageId).toBe('retried-message')
+  // Grok records no proof, so its retried message is found by provenance and its request line comes off;
+  // Codex records the retried message's own proof. Neither keeps the first message's.
+  if (provider === 'grok') {
+    expect(followup).not.toHaveProperty('displayPrompt')
+    const owner = watcherMessageRequests([request])(f.id, 'retried-message')
+    expect(owner).toEqual({ requestId: f.requestId, hostId: f.control.hostId() })
+    expect(watcherTextAsTyped(`Synthetic retry${watcherRequestLine(watcherRequestNote(f.requestId, f.control.hostId()!))}`, owner!)).toBe('Synthetic retry')
+  } else expect(followup.displayPrompt).toEqual(watcherDisplayPrompt('Synthetic retry', 'Synthetic retry'))
 })
 
 it('sends Watcher the user’s words as typed, with its request in the note beside them and no project list', async () => {

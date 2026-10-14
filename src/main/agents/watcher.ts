@@ -398,7 +398,10 @@ export class WatcherService implements WatcherControlHooks {
         const delivered = saved.userFollowups!.find(item => item.draftId === _draftId)!
         const sameMessage = delivered.messageId === command.messageId
         delivered.messageId = command.messageId
-        if (displayPrompt && (!sameMessage || delivered.displayPrompt === undefined)) delivered.displayPrompt = displayPrompt
+        // The proof belongs to the message it was made for. A retry under a new message keeps none of the old one's,
+        // so a Grok retry, which records none, is matched by its request line's provenance like any Grok send.
+        if (!sameMessage) { if (displayPrompt) delivered.displayPrompt = displayPrompt; else delete delivered.displayPrompt }
+        else if (displayPrompt && delivered.displayPrompt === undefined) delivered.displayPrompt = displayPrompt
       } else if (displayPrompt && saved.rootUserMessageId === command.messageId && saved.displayPrompt === undefined) saved.displayPrompt = displayPrompt
     })
     return { ...command, watcherRequestNote: note }
