@@ -141,6 +141,11 @@ it('reconciles an uncertain paired refusal to acceptance without retaining a fai
   expect(result).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', receipt })
   expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
   const record = f.control.watcherRecord(), accepted = { ...operation, deliveryState: 'accepted' as const }
+  f.read.mockResolvedValue({ hostId: f.hostId, master: record.current!, revision: 'uncertain', observedAt: operation.updatedAt,
+    requests: record.requests, operations: [{ ...operation, deliveryState: 'uncertain', refusalCode: 'DELIVERY_UNCERTAIN' }], evidence: [] })
+  await f.reconcile()
+  expect(f.control.watcherRecord().operations[0]).toMatchObject({ deliveryState: 'uncertain', refusalCode: 'DELIVERY_UNCERTAIN' })
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
   f.read.mockResolvedValue({ hostId: f.hostId, master: record.current!, revision: 'accepted', observedAt: accepted.updatedAt,
     requests: record.requests, operations: [accepted], evidence: [] })
   await f.reconcile()

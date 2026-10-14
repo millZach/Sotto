@@ -733,12 +733,30 @@ it('uses a fresh scoped connection for an admitted queue without renewing a rest
   await socket.watcherRead({ master: f.control.watcherRecord().current! })
   const worker = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
   expect(() => worker.guardOperation(queued.receipt!.operationId)).not.toThrow()
-  await native.driver.completeTurn(nativeId, 'Synthetic reconnect completion')
-  await socket.command({ type: 'refresh', provider: 'codex' })
-  await vi.waitFor(async () => expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(2))
-  const receipt = await socket.watcherRead({ master: f.control.watcherRecord().current!, call: { name: 'read_operation', input: { operationId: queued.receipt!.operationId } } })
-  expect(receipt).toMatchObject({ receipt: { deliveryState: 'accepted' } })
-  await vi.waitFor(() => expect((worker as unknown as { remoteGuards: Map<string, unknown> }).remoteGuards.size).toBe(0))
+  await native.script({ holdReply: 'turn/start', suppressNotifications: true })
+  const readReceipt = () => socket.watcherRead({ master: f.control.watcherRecord().current!,
+    call: { name: 'read_operation', input: { operationId: queued.receipt!.operationId } } })
+  const identity = { operationId: queued.receipt!.operationId, requestId: f.requestId, target: first.target }
+  let releaseAction: string | undefined
+  const releaseAck = async () => {
+    releaseAction ??= await native.action(nativeId, { type: 'release-reply', method: 'turn/start' })
+    await expect.poll(() => native.acted(releaseAction!)).toBe(true)
+  }
+  try {
+    await native.driver.completeTurn(nativeId, 'Synthetic reconnect completion')
+    await socket.command({ type: 'refresh', provider: 'codex' })
+    await vi.waitFor(async () => expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(2))
+    // The native journal proves arrival before acknowledgement. Acceptance belongs to the owning receipt.
+    expect(await readReceipt()).toMatchObject({ receipt: { ...identity, deliveryState: 'dispatching' } })
+    await releaseAck()
+    await expect.poll(readReceipt).toMatchObject({ receipt: { ...identity, deliveryState: 'accepted' } })
+    await vi.waitFor(() => expect((worker as unknown as { remoteGuards: Map<string, unknown> }).remoteGuards.size).toBe(0))
+    const requests = await native.driver.requests()
+    expect(requests.filter(item => item.method === 'turn/start')).toHaveLength(2)
+    expect(requests.filter(item => item.method === 'request/answer')).toHaveLength(0)
+  } finally {
+    await releaseAck()
+  }
 })
 
 it('refunds only an exact fenced absence and rejects a late packet for that operation', async () => {

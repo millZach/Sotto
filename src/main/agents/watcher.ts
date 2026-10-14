@@ -812,7 +812,8 @@ export class WatcherService implements WatcherControlHooks {
     if ((own.deliveryState === 'accepted' || own.deliveryState === 'failed') && receipt.deliveryState !== own.deliveryState) return
     const wasFailed = own.deliveryState === 'failed'
     if (own.deliveryState !== 'accepted') own.deliveryState = receipt.deliveryState
-    if (receipt.refusalCode) own.refusalCode = receipt.refusalCode
+    if (own.deliveryState === 'accepted') delete own.refusalCode
+    else if (receipt.refusalCode) own.refusalCode = receipt.refusalCode
     if (receipt.commandId) own.commandId = receipt.commandId
     if (receipt.itemId) own.itemId = receipt.itemId
     if (receipt.creationUncertain) own.creationUncertain = true
