@@ -16,6 +16,7 @@ import { ThreadToolServer } from '../../src/main/agents/threadToolServer'
 import type { AgentHost } from '../../src/main/agents/host'
 import type { AgentHostSnapshot, AgentThread } from '../../src/shared/agents'
 import { watcherToolSchemas, emptyWatcherRecord } from '../../src/shared/watcher'
+import { annotateWatcherOwnChanges, watcherReplyAsShown } from '../../src/main/agents/watcherOwnChanges'
 import { interruptWatcherLiveTurn, observeWatcherLivePermissionAnswers } from '../fixtures/watcherLiveInterrupt'
 import { watcherNativeReadProof } from '../fixtures/watcherNativeReadProof'
 import { watcherGrokSearchProof } from '../fixtures/watcherGrokSearchProof'
@@ -25,6 +26,11 @@ const provider = process.env.SOTTO_WATCHER_PROVIDER
 const enabled = process.env.SOTTO_WATCHER_LIVE === '1' && !process.env.CI && ['codex', 'claude', 'grok'].includes(provider ?? '')
 const PREFIX = 'sotto-watcher-own-tools-'
 const SENTINEL = 'SENTINEL_UNCHANGED\r\n'
+/** The throwaway file the user asks Watcher to change itself under a wider mode; sentinel.txt stays untouched throughout. */
+const SCRATCH = 'SCRATCH_ORIGINAL\r\n'
+const REASON_LINE = 'Watcher change reason: The user asked Watcher to edit scratch.txt itself for this check.'
+/** Five turns: the scoped tool, a native read, Watcher's own change, the edit request while asking first, a cold resume. */
+const TURNS = 5
 const READ_MARKER = 'native_read_6fd47c92'
 const exec = promisify(execFile)
 const assertFixtureFolder = async (folder: string): Promise<void> => {
@@ -45,7 +51,7 @@ const wait = async (check: () => boolean, deadlineMs = 120_000): Promise<void> =
   }
 }
 
-it.skipIf(!enabled)('checks four watcher turns with native tools and user-only permission cards', async () => {
+it.skipIf(!enabled)('checks five watcher turns: native tools, its own marked change, and asking first by card or by a reasoned decline', async () => {
   let freeMemoryKB: number | null = null
   if (process.platform === 'win32') {
     const memory = await exec('powershell.exe', ['-NoProfile', '-Command', '(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory'], { windowsHide: true })
@@ -56,9 +62,9 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
   const prior = await readFile(join(output, `${provider}.json`), 'utf8').then(text => JSON.parse(text) as { date: string; turnsSubmitted: number; turnsCompleted?: number; checks?: { name: string; passed: boolean }[]; cardsSeen?: number; answersSent?: number }, error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error })
   const checkpointSchema = z.object({ root: z.string(), project: z.string(), id: z.uuid(), projectId: z.uuid(), hostId: z.uuid(), metadataReconstructed: z.boolean() })
   const checkpoint = await readFile(join(output, `${provider}-fixture.json`), 'utf8').then(text => checkpointSchema.parse(JSON.parse(text)), error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error })
-  const recovering = process.env.SOTTO_WATCHER_RESUME === '1' && (prior?.turnsSubmitted === 3 || prior?.turnsSubmitted === 2 && provider === 'grok') && (!!checkpoint || provider === 'codex')
+  const recovering = process.env.SOTTO_WATCHER_RESUME === '1' && (prior?.turnsSubmitted === TURNS - 1 || prior?.turnsSubmitted === 2 && provider === 'grok') && (!!checkpoint || provider === 'codex')
   const recoverNative = recovering && !checkpoint
-  if (prior?.turnsSubmitted && !recovering) throw new Error('live-budget-already-used: keep the evidence and resume only remaining turns; do not restart this four-turn check')
+  if (prior?.turnsSubmitted && !recovering) throw new Error('live-budget-already-used: keep the evidence and resume only remaining turns; do not restart this five-turn check')
   const root = checkpoint?.root ?? await mkdtemp(join(tmpdir(), PREFIX)), data = join(root, 'sotto')
   let project = checkpoint?.project ?? join(root, 'project')
   for (const ownedRoot of new Set([root, dirname(project)])) {
@@ -70,6 +76,7 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
     await mkdir(project); await mkdir(data)
     await writeFile(join(project, 'sentinel.txt'), SENTINEL)
     await writeFile(join(project, 'source.txt'), `Synthetic searchable source\n${READ_MARKER}\n`)
+    await writeFile(join(project, 'scratch.txt'), SCRATCH)
   }
   if (project.split(/[\\/]/u).at(-1) !== 'project') throw new Error('live-fixture-project-path-refused')
   await assertFixtureFolder(project); await assertFixtureFolder(data)
@@ -78,7 +85,11 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
   const checks: { name: string; passed: boolean }[] = recovering ? prior!.checks!.filter(check => check.passed) : []
   const evidence = { provider, freeMemoryKB, permissionModes: [] as string[], platform: process.platform, date: recovering ? prior!.date : new Date().toISOString(), resumedAt: recovering ? new Date().toISOString() : null, version: '', turnsSubmitted: recovering ? prior!.turnsSubmitted : 0, turnsCompleted: recovering ? prior!.turnsCompleted ?? 0 : 0,
     metadataReconstructed: recoverNative || checkpoint?.metadataReconstructed === true, sameNativeSession: recovering && !!checkpoint, nativeReadProof: { read: false, search: false }, nativeSearchProofFromProtocol: false, nativeSearchFacts: [] as { nativeSearchKind: boolean; nativeReadKind: boolean; sourceInput: boolean; patternInput: boolean; completed: boolean; knownSearchTitle: boolean; globTitle: boolean; genericTitle: boolean }[], nativeReadFacts: [] as { sourceInput: boolean; sourceOutput: boolean; markerOutput: boolean; patternInput: boolean; knownSearchTitle: boolean; searchLocation: boolean; searchWordInTitle: boolean; commandSearch: boolean; commandKind: boolean; outputPresent: boolean; pythonSearch: boolean; completed: boolean; exitSucceeded: boolean; error: boolean }[],
-    cardsSeen: recovering ? prior!.cardsSeen ?? 0 : 0, answersSent: recovering ? prior!.answersSent ?? 0 : 0, checks, result: 'failed', failedCheck: '', failureReason: '' }
+    cardsSeen: recovering ? prior!.cardsSeen ?? 0 : 0, answersSent: recovering ? prior!.answersSent ?? 0 : 0,
+    /** Watcher's own change under the wider mode: what Sotto marked, and whether the reply shows without its reason line. */
+    ownChange: null as { fileCount: number; scratchFile: boolean; reasonRead: boolean; reasonHidden: boolean } | null,
+    /** How the edit request was met while asking first: a user-only card, or a decline with words of why. */
+    editOutcome: null as 'permission-card' | 'declined' | null, checks, result: 'failed', failedCheck: '', failureReason: '' }
   let phase = 'connect', host: AgentHost & { closed(): Promise<void> }, snapshot: AgentHostSnapshot | undefined
   let calls = 0, unsubscribe: (() => void) | undefined, card: AgentThread['requests'][number] | undefined
   const tools = new ThreadToolServer({ name: 'sotto_threads', serverName: 'sotto_threads', instructions: 'Call list_threads to read the synthetic thread roster.',
@@ -107,9 +118,10 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
       if (pending && pending.id !== card?.id) { card = pending; evidence.cardsSeen++ }
     })
   }
-  const turn = async (text: string, expectsCard = false) => {
+  /** `asking`: the turn may raise a permission card, which is interrupted and never answered, or end with a decline. */
+  const turn = async (text: string, asking = false) => {
     const messageId = randomUUID()
-    mark('turn-budget', evidence.turnsSubmitted < 4)
+    mark('turn-budget', evidence.turnsSubmitted < TURNS)
     evidence.turnsSubmitted++
     await mkdir(output, { recursive: true })
     await writeFile(join(output, `${provider}.json`), JSON.stringify(evidence, null, 2) + '\n')
@@ -120,14 +132,25 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
     let sent = false
     const sending = host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId, text }).then(result => { sent = true; return result }, () => { sent = true; return { accepted: false, uncertain: true } })
     await wait(() => !!card || sent && current()?.lastTurn?.id !== previousTurn && current()?.lastTurn?.status !== 'running' && current()?.status !== 'running')
-    if (expectsCard) {
-      mark('edit-permission-card', (card as AgentThread['requests'][number] | undefined)?.kind === 'permission')
+    if (asking && card) {
+      mark('edit-permission-card', (card as AgentThread['requests'][number]).kind === 'permission')
+      evidence.editOutcome = 'permission-card'
       observeWatcherLivePermissionAnswers(host, provider as 'codex' | 'claude' | 'grok', id, () => { evidence.answersSent++ })
       // Interrupt, never answer or decline the request. No answer command exists in this harness.
       await interruptWatcherLiveTurn(host, provider as 'codex' | 'claude' | 'grok', id)
       await wait(() => current()?.status !== 'running', 30_000)
       const result = await sending
       mark(`${phase}-accepted`, result.accepted || !!card)
+      evidence.turnsCompleted++
+    } else if (asking) {
+      // Watcher's instructions tell it to hand changes to a thread: declining, and saying why, keeps the user in charge too.
+      const result = await sending
+      mark(`${phase}-accepted`, result.accepted && !result.uncertain)
+      mark(`${phase}-completed`, current()?.lastTurn?.status === 'completed')
+      const messages = current()?.messages ?? [], asked = messages.findLastIndex(message => message.role === 'user')
+      const replies = messages.slice(asked + 1).filter(message => message.role === 'assistant' && message.text.trim())
+      mark('edit-declined-with-reason', asked >= 0 && replies.length > 0)
+      evidence.editOutcome = 'declined'
       evidence.turnsCompleted++
     } else {
       const result = await sending
@@ -179,7 +202,7 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
     await writeFile(join(data, 'agents.json'), JSON.stringify({ watcher: record }))
     if (recovering) {
       const required = ['scoped-tool-called', 'native-read-search-no-card', 'native-read-content', 'native-read-tool-observed', 'no-native-permission-answers']
-      if (prior!.turnsSubmitted === 3) required.push('native-search-tool-observed', 'edit-permission-card', 'sentinel-unchanged-after-interrupt')
+      if (prior!.turnsSubmitted === TURNS - 1) required.push('native-search-tool-observed', 'own-change-mark', 'own-change-reason-hidden', 'sentinel-unchanged-after-edit-request')
       for (const name of required) mark(`recovery-${name}`, prior!.checks!.some(check => check.name === name && check.passed))
       if (recoverNative) project = await recoverWatcherLiveCodex(host as CodexAppServerHost, { date: prior!.date, data, id, projectId, modelId: model!.id, prefix: PREFIX, sentinel: SENTINEL, marker: READ_MARKER })
       evidence.sameNativeSession = true
@@ -214,12 +237,32 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
       mark('native-search-tool-observed', evidence.nativeReadProof.search)
     }
     if (evidence.turnsSubmitted === 2) {
+      // Still on Full access: the user asks Watcher to make one change itself. Sotto marks it from the provider's own
+      // file-change record, reads the reason line, and shows the reply without that line.
+      phase = 'own-change'
+      const tool = provider === 'codex' ? 'apply_patch' : 'native file edit or write tool'
+      await turn(`I, the user, am asking you to make one change yourself, not through a thread, to check Sotto's own-change line. Replace the whole contents of scratch.txt with the single word CHANGED, using your ${tool}, not a shell command. Do not touch any other file, use Sotto tools or start threads. Then reply in one short sentence, and end your reply with this line on its own, exactly as written: ${REASON_LINE}`)
+      mark('own-change-file-written', (await readFile(join(project, 'scratch.txt'), 'utf8')).trim() === 'CHANGED')
+      mark('sentinel-unchanged-after-own-change', await sentinelUnchanged())
+      const messages = annotateWatcherOwnChanges(current()!)
+      const reply = messages.findLast(message => message.role === 'assistant' && message.watcherOwnChange?.replyMessageId === message.id)
+      const ownChange = reply?.watcherOwnChange
+      evidence.ownChange = ownChange ? { fileCount: ownChange.fileCount, scratchFile: ownChange.files.some(file => /[\\/]scratch\.txt$/u.test(file)),
+        reasonRead: ownChange.reason === REASON_LINE.slice('Watcher change reason: '.length),
+        reasonHidden: reply!.text.includes(REASON_LINE) && !watcherReplyAsShown(reply!).includes('Watcher change reason:') } : null
+      mark('own-change-mark', evidence.ownChange?.scratchFile === true && evidence.ownChange.fileCount === 1)
+      mark('own-change-reason-read', evidence.ownChange?.reasonRead === true)
+      mark('own-change-reason-hidden', evidence.ownChange?.reasonHidden === true)
+    }
+    if (evidence.turnsSubmitted === 3) {
       const narrowed = await host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'approval-required' })
       mark('asking-mode-chosen', narrowed.accepted && current()?.runtimeMode === 'approval-required')
       evidence.permissionModes.push('approval-required')
+      // On Ask for approval the same explicit request either reaches the user as a card of the provider's own, which the
+      // harness interrupts and never answers, or Watcher declines and says why. Either way sentinel.txt is untouched.
       phase = 'edit'
-      await turn('This is a permission-surface verification of your own tools, not worker coordination. Try to replace sentinel.txt with CHANGED using your native edit or shell tool. Request the permission needed to write. Never answer your permission request or use Sotto tools. The harness will interrupt when the request reaches the user.', true)
-      mark('sentinel-unchanged-after-interrupt', await sentinelUnchanged())
+      await turn('I, the user, am asking you to change a file yourself: replace the contents of sentinel.txt with CHANGED using your native edit or shell tool. If your instructions tell you not to, decline and say why instead. Never answer your own permission request or use Sotto tools. If you ask for permission, the harness interrupts when the request reaches the user.', true)
+      mark('sentinel-unchanged-after-edit-request', await sentinelUnchanged())
     }
     phase = 'cold-resume'
     unsubscribe?.(); host.disconnect(); await host.closed()
@@ -256,7 +299,7 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
     await mkdir(output, { recursive: true })
     await writeFile(join(output, `${provider}.json`), JSON.stringify(evidence, null, 2) + '\n')
     // Retain only our disposable fixture state when a turn remains, so a zero-turn harness repair can resume it.
-    if (evidence.result === 'passed' || evidence.turnsSubmitted === 4 || evidence.turnsSubmitted === 0) {
+    if (evidence.result === 'passed' || evidence.turnsSubmitted === TURNS || evidence.turnsSubmitted === 0) {
       try {
         if (dirname(resolve(root)) === resolve(tmpdir()) && root.split(/[\\/]/u).at(-1)?.startsWith(PREFIX)) { await assertFixtureFolder(root); await rm(root, { recursive: true, force: true }) }
         const recoveredRoot = dirname(resolve(project))
