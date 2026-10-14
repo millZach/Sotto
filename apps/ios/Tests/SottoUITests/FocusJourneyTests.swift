@@ -406,7 +406,15 @@ import XCTest
         capture("new-project-selected-folder-light")
         use.tap()
         let open = app.buttons["open-new-thread"]
-        XCTAssertTrue(open.waitForExistence(timeout: 5)); XCTAssertTrue(open.isEnabled)
+        // On CI the simulator once drew this press on Use this folder and SwiftUI never acted on it: the recording shows the
+        // button pressed, then the folder step, its button enabled and nothing on it moving, until the journey gave up. A
+        // press that wasn't taken is pressed once more, only while the folder step still offers it, and the screen and
+        // hierarchy go in the results, so a press that keeps being lost is seen there.
+        if !open.waitForExistence(timeout: 10), use.exists, use.isEnabled, use.isHittable {
+            explain("use-folder-press-not-taken", "Use this folder \(use.frame), still on the folder step")
+            use.tap()
+        }
+        XCTAssertTrue(open.waitForExistence(timeout: 10)); XCTAssertTrue(open.isEnabled)
         let project = app.buttons["new-thread-change-project"]
         XCTAssertTrue(project.exists)
         XCTAssertEqual(project.label, "Change project, now New project", "The chosen folder names the project")
