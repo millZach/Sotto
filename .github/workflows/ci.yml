@@ -421,8 +421,9 @@ jobs:
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
     # Simulator journeys on two phones, with the package tests and two builds before them. Nineteen journeys took 67
-    # minutes on a push to main and one run reached 75; the Watcher tab added six.
-    timeout-minutes: 110
+    # minutes on a push to main and one run reached 75; the Watcher tab added six, and twenty-five took 106 minutes on a
+    # push to main. Watcher's permissions, own changes and watching added three.
+    timeout-minutes: 140
     env:
       # The same Xcode as the TestFlight workflow: App Store Connect accepts only iOS 26 SDK builds.
       # Its Swift 6 compiler builds in Swift 5 mode, above Package.swift's 5.9 tools and the iOS 17 minimum.
