@@ -769,9 +769,11 @@ export class WatcherService implements WatcherControlHooks {
         this.recordRemoteRefusal(record, operation.id, parsed.code)
       })
       else {
+        // Control may already have reached the host; an unverified reply cannot prove that it failed.
         if (!receipt || receipt.operationId !== operation.id || receipt.requestId !== operation.requestId
-          || key(receipt.target) !== key(operation.target)) refuse('INVALID_INPUT', 'The host returned another operation receipt. Nothing was reconciled.')
-        await this.options.control.updateWatcher(record => this.copyRemoteReceipt(record, record.operations.find(item => item.id === operation.id)!, { ...receipt, updatedAt: now() }))
+          || key(receipt.target) !== key(operation.target)) throw new Error('The host returned another operation receipt. Nothing was reconciled.')
+        await this.options.control.updateWatcher(record => this.copyRemoteReceipt(record, record.operations.find(item => item.id === operation.id)!,
+          { ...receipt, ...(parsed.status === 'refused' && receipt.deliveryState === 'failed' ? { refusalCode: parsed.code } : {}), updatedAt: now() }))
         await this.reconcileRemote(operation.target.hostId).catch(() => {
           this.recoveryNotice = 'The host confirmed the operation, but its latest state could not be read. Reconnect to refresh it.'
         })
@@ -798,9 +800,12 @@ export class WatcherService implements WatcherControlHooks {
     record.reservations = record.reservations.filter(item => item.operationId !== operationId)
   }
   private copyRemoteReceipt(record: WatcherRecord, own: WatcherOperation, receipt: Pick<WatcherOperation, 'deliveryState' | 'refusalCode' | 'commandId' | 'itemId' | 'updatedAt' | 'creationUncertain'>): void {
+    // A read started before the control reply can arrive afterward. Definitive outcomes cannot become pending again.
+    if ((own.deliveryState === 'accepted' || own.deliveryState === 'failed') && receipt.deliveryState !== own.deliveryState) return
     const wasFailed = own.deliveryState === 'failed'
     if (own.deliveryState !== 'accepted') own.deliveryState = receipt.deliveryState
-    if (receipt.refusalCode) own.refusalCode = receipt.refusalCode
+    if (own.deliveryState === 'accepted') delete own.refusalCode
+    else if (receipt.refusalCode) own.refusalCode = receipt.refusalCode
     if (receipt.commandId) own.commandId = receipt.commandId
     if (receipt.itemId) own.itemId = receipt.itemId
     if (receipt.creationUncertain) own.creationUncertain = true
@@ -1253,7 +1258,16 @@ export class WatcherService implements WatcherControlHooks {
             digest: digest(['stop_thread', input]), action: 'stop', target, generation: participant.generation, deliveryState: 'queued',
             createdAt: stamp, updatedAt: stamp, receiptId: randomUUID(), cardId: randomUUID(), anchorMessageId: request.rootUserMessageId, confirmedStop: true }
           await this.options.control.updateWatcher(record => record.operations.push(operation))
-          const result = await this.executeRemote('stop_thread', operation, input, guard) as { status: string }
+          const running = this.executeRemote('stop_thread', operation, input, guard)
+          this.active.set(operation.id, running)
+          let result: { status: string }
+          try { result = await running as { status: string } }
+          finally {
+            this.active.delete(operation.id)
+            this.dispatchRefusals.delete(operation.id)
+            this.pruneRemoteGuards()
+            if (this.record().operations.find(item => item.id === operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(target.hostId, true)
+          }
           const state = this.operationState(target)
           results.push({ target, status: result.status === 'refused' ? 'uncertain' : state.stopped ? 'stopped' : 'requested', message: result.status === 'refused' ? 'The stop was not confirmed. Reconnect and check this thread.' : 'Stop requested.' })
           continue
