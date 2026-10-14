@@ -9,6 +9,7 @@ import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { PairedClients } from '../../src/main/agents/pairing'
 import { startSocketServer } from '../../src/host/socketServer'
+import { canonicalModelId } from '../../src/shared/modelCatalog'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
@@ -211,8 +212,9 @@ it('counts paired Watcher writes once in the owning Owl archive and keeps user s
   const final = await activity()
   expect(final.totals.prompts).toEqual({ user: 1, watcher: 4, wakeUp: 0, total: 5, steered: 1 })
   expect(final.models).toEqual(expect.arrayContaining([
-    expect.objectContaining({ modelId: f.model.id, prompts: { user: 0, watcher: 4, wakeUp: 0, total: 4, steered: 1 } }),
-    expect.objectContaining({ modelId: laterModel.id, prompts: { user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 } }),
+    // No token report names a served model here, so each prompt counts under the model it was sent on (ADR-0080).
+    expect.objectContaining({ modelId: canonicalModelId('codex', f.model.id), prompts: { user: 0, watcher: 4, wakeUp: 0, total: 4, steered: 1 } }),
+    expect.objectContaining({ modelId: canonicalModelId('codex', laterModel.id), prompts: { user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 } }),
   ]))
   const beforeRestart = await native.driver.requests()
   expect(beforeRestart.filter(item => item.method === 'turn/start')).toHaveLength(4)
