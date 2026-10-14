@@ -695,6 +695,18 @@ test.describe("Watcher's room on the built app", () => {
           await expect(page.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '0 of 3 watched')
           await expect.poll(async () => (await page.evaluate(() => window.sotto!.getSettings())).watcherInFlightLimit).toBe(3)
           await page.keyboard.press('Escape')
+          // Ordinary Settings updates supply no room reply. The last quiet room must reach React through
+          // the real subscription, rather than a test polling get() and flushing the desktop publisher.
+          await page.evaluate(async () => {
+            await window.sotto!.updateSettings({ watcherInFlightLimit: 1 })
+            await window.sotto!.updateSettings({ watcherInFlightLimit: 2 })
+          })
+          await expect(page.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '0 of 2 watched')
+          // A fresh renderer recovers from a complete read; no queued pre-reload room may replace it.
+          await page.reload()
+          await openRoom(page)
+          await expect(page.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '0 of 2 watched')
+          await expect(watcherPane(page).locator('[data-role="user"] .rich-message')).toHaveText(original)
           await settle(page)
           expect(await pageBoundProblems(page)).toEqual([])
           await capture(launched, 'room-main-sotto-dark-1280x800.png')
