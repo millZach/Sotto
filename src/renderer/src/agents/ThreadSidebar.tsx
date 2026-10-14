@@ -12,6 +12,7 @@ import { THREAD_DRAG_TYPE } from './splitLayout'
 import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WATCHED_BY_WATCHER, WatchedBadge } from '../watcher/WatcherOwl'
+import { WatchRowToggle } from '../watcher/WatchControls'
 
 export { useAddProject } from './addProject'
 
@@ -132,6 +133,8 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
       {!archived && row.thread.titleSource !== 'user' && providerWritesShortText(row.thread.providerId)
         ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Regenerate title for ${title}`} title="Regenerate title" disabled={busy} onClick={() => void command({ type: 'regenerate-thread-title', threadId: row.thread.id })}><Sparkles size={16} aria-hidden="true" /></button>
         : null}
+      {/* The owl: Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
+      {row.thread.kind === 'watcher' || row.thread.kind === 'watcher-history' ? null : <WatchRowToggle threadId={row.thread.id} title={title} />}
       {row.settledBy === null
         ? <button type="button" className="thread-nav__action tt-focusable" aria-label={`Settle ${title}`} title="Settle thread" disabled={busy} onClick={() => void settle(row.thread, row.project)}><Archive size={16} aria-hidden="true" /></button>
         : row.settledBy === 'thread'

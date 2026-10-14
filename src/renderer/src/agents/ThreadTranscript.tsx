@@ -19,6 +19,7 @@ import { SottoMark } from '../components/SottoMark'
 import { isResumeNoteText } from '../../../shared/restartResume'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
+import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
 import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
@@ -175,6 +176,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
       ? <p className="thread-message__writing" role="status">Writing a reply…</p>
       : <MessageContent text={markdown} streaming={writing} />}
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
+    {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
   </article>
 })
 
