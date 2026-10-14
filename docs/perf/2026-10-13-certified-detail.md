@@ -21,6 +21,12 @@ signature rules, including the existing trade that same-length text replacements
 distinguished. Reorders and removals retain the full-detail fallback. No new protocol field,
 production dependency, provider send, setting or feature switch is added.
 
+Closing a detail target or clearing its history cache releases record and signature references,
+but keeps a text-free revision counter. A reopened whole detail advances from that counter so a
+window or socket client holding an older cached detail accepts it. Both independent review axes
+caught the initial cache cleanup resetting the revision; close/reopen and privacy cleanup have
+durable regressions for this lifetime.
+
 ## Measurement
 
 Windows development laptop, Node v24.14.1. These are synthetic generated histories, not a user
@@ -70,7 +76,7 @@ do shell construction and other work outside step 3. This change does not claim 
 publishes, growth, same-length replacement, reorder, trim, reset, certification transitions,
 mutable nested edits and message appends. Caller edits to a whole detail or a delta cannot
 change the coordinator's private certified baseline. The existing shared arithmetic and
-shell/detail suites passed with it: 65 tests. Full gates and Electron evidence are recorded in
+shell/detail suites passed before the two lifetime regressions were added: 65 tests. Full gates and Electron evidence are recorded in
 the accompanying verification note once completed.
 
 #925's unchanged-thread ingestion sharing, #555's usage ledger, Claude activity ingestion,

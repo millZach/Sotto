@@ -408,6 +408,8 @@ export class AgentControl {
   private readonly detailRevisions = new Map<string, { signature: string; revision: number }>()
   private readonly certifiedDetailSignatures = new WeakMap<AgentActivity, string>()
   private readonly certifiedDetailRevisions = new Map<string, { messages: string; activities: readonly AgentActivity[]; revision: number }>()
+  /** Clients may retain a closed pane's detail. Releasing its words never resets their revision. */
+  private readonly certifiedDetailCounters = new Map<string, number>()
   /** The message count a thread's first exchange was last looked for at, so it is looked for once per arrival. */
   private readonly titleChecked = new Map<string, number>()
   private readonly publishedDetail = new Map<string, number>()
@@ -834,8 +836,9 @@ export class AgentControl {
       // publishes compare the owned record identities, without rebuilding a history-sized string.
       const legacy = this.detailRevisions.get(thread.id)
       const unchanged = !held && legacy?.signature === messages + '|' + activities!.map(record => `${record.id}:${this.certifiedActivitySignature(record)}`).join(',')
-      const revision = (held?.revision ?? legacy?.revision ?? 0) + (unchanged ? 0 : 1)
+      const revision = (held?.revision ?? legacy?.revision ?? this.certifiedDetailCounters.get(thread.id) ?? 0) + (unchanged ? 0 : 1)
       this.certifiedDetailRevisions.set(thread.id, { messages, activities: activities!, revision })
+      this.certifiedDetailCounters.set(thread.id, revision)
       return revision
     }
     const certified = this.certifiedDetailRevisions.get(thread.id)
@@ -854,8 +857,9 @@ export class AgentControl {
       + `|${activitySignature}`
     const held = this.detailRevisions.get(thread.id)
     if (held && held.signature === signature) return held.revision
-    const revision = (held?.revision ?? 0) + 1
+    const revision = (held?.revision ?? (this.dependencies.streamingPublishCost === true ? this.certifiedDetailCounters.get(thread.id) : undefined) ?? 0) + 1
     this.detailRevisions.set(thread.id, { signature, revision })
+    if (this.dependencies.streamingPublishCost === true) this.certifiedDetailCounters.set(thread.id, revision)
     return revision
   }
   private certifiedActivitySignature = (record: AgentActivity): string => {
@@ -3796,6 +3800,7 @@ export class AgentControl {
     this.detailListeners.clear()
     this.detailSnapshots.clear()
     this.certifiedDetailRevisions.clear()
+    this.certifiedDetailCounters.clear()
   }
 }
 
