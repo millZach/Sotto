@@ -1,5 +1,4 @@
-import { parsePublicProviderEntityId, providerIdOfLabel, type AgentModel, type ProviderId } from '../../../../shared/agents'
-import { canonicalModelId, servedModelName } from '../../../../shared/modelCatalog'
+import { servedModelName } from '../../../../shared/modelCatalog'
 import {
   USAGE_TOKEN_FIELDS,
   type UsageActivityAggregate, type UsageClient, type UsageClientAggregate, type UsageDashboardRead, type UsageDailyAggregate,
@@ -31,16 +30,6 @@ export const CLIENT_PROVIDER: Partial<Record<UsageClient, UsageProviderId>> = {
   'claude-code': 'claude', 'codex-app': 'codex', 'codex-cli': 'codex', 'codex-exec': 'codex', 'codex-ide': 'codex', 't3-code': 'codex', 'codex-in-claude-code': 'codex',
 }
 
-/** A served model's name: the host catalog's own name when it lists the model, else the served spelling in words. */
-export function usageModelName(modelId: string, providerId: ProviderId, catalog: readonly AgentModel[]): string {
-  const served = canonicalModelId(providerId, modelId)
-  if (served !== 'unknown') {
-    const listed = catalog.find(model => (model.providerId ?? parsePublicProviderEntityId(model.id)?.provider ?? providerIdOfLabel(model.provider)) === providerId
-      && canonicalModelId(providerId, model.id) === served)
-    if (listed !== undefined && listed.name.trim() !== '') return listed.name
-  }
-  return servedModelName(providerId, modelId)
-}
 
 /* ---------- Numbers ---------- */
 

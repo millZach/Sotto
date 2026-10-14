@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   fmtTok, formatField, longDay, pct, presentUsage, providerLimits, rangeBounds, rangeLabel, readAge, relativeDay, resetLong, resetShort, scopeHost, sentFrom,
-  sumFields, usageModelName, usagePlaces, windowView,
+  sumFields, usagePlaces, windowView,
 } from '../../../src/renderer/src/features/usage/usagePresentation'
+import { servedModelName } from '../../../src/shared/modelCatalog'
 import { USAGE_NOW, USAGE_ZONE, dashboard, forgeHost, localHost, oldForgeHost } from '../../fixtures/renderer/usageReads'
 
 const now = USAGE_NOW.getTime()
@@ -19,17 +20,15 @@ describe('Usage numbers in words', () => {
     expect(formatField(combined)).toBe('≥ 0')
     expect(formatField({ knownRows: 0, rows: 0, partial: false })).toBe('—')
   })
-  it('names served models from the host catalog when it lists them, else in words, never as an ID', () => {
-    const catalog = [
-      { id: 'native:claude:model:claude-sonnet-5-5', providerId: 'claude' as const, provider: 'Claude Code', name: 'Sonnet 5.5', ready: true },
-      { id: 'native:codex:model:claude-sonnet-5-5', providerId: 'codex' as const, provider: 'Codex', name: 'Another provider', ready: true },
-      { id: 'native:claude:model:opus', providerId: 'claude' as const, provider: 'Claude Code', name: 'Opus', ready: true },
-    ]
-    expect(usageModelName('claude-sonnet-5-5', 'claude', catalog)).toBe('Sonnet 5.5')
-    expect(usageModelName('claude-opus-5-5', 'claude', catalog)).toBe('Claude Opus 5.5')
-    expect(usageModelName('gpt-6.1-sol', 'codex', catalog)).toBe('GPT-6.1 Sol')
-    expect(usageModelName('codex-auto-review', 'codex', [])).toBe('Codex auto review')
-    expect(usageModelName('unknown', 'claude', catalog)).toBe('Model not reported')
+  it('names every served model in words the same way on every computer, never as an ID', () => {
+    // A client catalog names some Claude models with "Claude" and some without, and differs between versions, so Usage
+    // names a row from its served model alone.
+    expect(servedModelName('claude', 'claude-sonnet-5-5')).toBe('Claude Sonnet 5.5')
+    expect(servedModelName('claude', 'claude-opus-5')).toBe('Claude Opus 5')
+    expect(servedModelName('claude', 'claude-haiku-4-5')).toBe('Claude Haiku 4.5')
+    expect(servedModelName('codex', 'gpt-6.1-sol')).toBe('GPT-6.1 Sol')
+    expect(servedModelName('codex', 'codex-auto-review')).toBe('Codex auto review')
+    expect(servedModelName('claude', 'unknown')).toBe('Model not reported')
   })
   it('writes dates and resets in plain words in the chosen time zone', () => {
     expect(longDay('2026-10-14', '2026-10-14')).toBe('Wednesday, October 14, so far')

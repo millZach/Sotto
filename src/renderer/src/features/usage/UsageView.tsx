@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import type { AgentModel } from '../../../../shared/agents'
+import { servedModelName } from '../../../../shared/modelCatalog'
 import type { UsageBridge, UsageDashboardRead, UsageHostRead, UsageProviderId, UsageQuery, UsageSource } from '../../../../shared/usageDashboard'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { roomKeyTarget } from '../../components/AppShell'
@@ -11,7 +11,7 @@ import { Subscriptions } from './UsageSubscriptions'
 import type { UsagePage, UsageTab, UsageWhere } from './usagePage'
 import {
   PROVIDER_ACCOUNTS, PROVIDER_NAMES, USAGE_PROVIDERS, addDays, calendarDay, daysBetween, isEmptyActivity, predatesHistory, presentUsage, providerLimits,
-  rangeBounds, rangeLabel, scopeHost, usageModelName,
+  rangeBounds, rangeLabel, scopeHost,
 } from './usagePresentation'
 import { EVERY_HOST, useUsageRead } from './useUsageRead'
 import './usage.css'
@@ -99,12 +99,8 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
     const index = read.hosts.findIndex(host => host.hostId === value)
     return `Computer ${Math.max(1, index + 1)}`
   }, [connections, localId, read, state?.host.hostId])
-  const catalogOf = (value: string): readonly AgentModel[] => state?.host.clientHosts?.find(item => item.hostId === value)?.models
-    ?? (value === localId || value === state?.host.hostId || state?.host.clientHosts === undefined ? state?.host.models ?? [] : [])
-  const modelName = (row: { modelId: string; providerId: UsageProviderId }): string => {
-    const owners = read.hosts.filter(host => host.activity?.models.some(item => item.modelId === row.modelId && item.providerId === row.providerId))
-    return usageModelName(row.modelId, row.providerId, (owners.length > 0 ? owners : read.hosts).flatMap(host => catalogOf(host.hostId)))
-  }
+  // One name per served model on every computer, online or not: a client catalog's names differ between versions and hosts.
+  const modelName = (row: { modelId: string; providerId: UsageProviderId }): string => servedModelName(row.providerId, row.modelId)
   const providerAccount = (providerId: UsageProviderId, owner: string): string => {
     const statuses = state?.host.clientHosts?.find(item => item.hostId === owner)?.providers ?? (owner === localId || owner === state?.host.hostId ? state?.host.providers : undefined)
     return statuses?.find(item => item.id === providerId)?.account ?? PROVIDER_ACCOUNTS[providerId]
