@@ -346,6 +346,14 @@ describe('merging Claude readings', () => {
     expect(merged.windows.map(window => [window.id, window.usedPercent])).toEqual([['claude-seven-day-overage-included', 90], ['claude-five-hour', 40]])
     expect(merged).toMatchObject({ status: 'available', refreshable: true, observedAt: at(3) })
   })
+  it('lets an answer with no windows to show remove extra usage that is now turned off', () => {
+    const using = usage({ extra_usage: { is_enabled: true, utilization: 30 } }, 1)
+    expect(using.windows.map(window => window.id)).toEqual(['claude-overage'])
+    const off = mergeClaudeQuota(using, usage({ extra_usage: { is_enabled: false } }, 2))
+    expect(off).toMatchObject({ status: 'unavailable', reason: 'not-reported', windows: [] })
+    // A read that failed is not an answer: it keeps the figures it had as stale evidence.
+    expect(mergeClaudeQuota(using, unavailableProviderQuota('claude', 'refresh-unavailable', true, at(3))).windows.map(window => window.id)).toEqual(['claude-overage'])
+  })
   it('keeps a passive window seen after the answer, and an older event cannot bring back what the answer removed', () => {
     const newer = event({ rateLimitType: 'five_hour', status: 'allowed_warning', utilization: 0.7, resetsAt: resetSeconds }, 5)
     const merged = mergeClaudeQuota(newer, usage({ five_hour: { utilization: 40, resets_at: reset } }, 4))

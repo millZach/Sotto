@@ -313,8 +313,9 @@ export function mergeClaudeQuota(previous: UsageQuotaRead | undefined, update: U
     claudeQuotaEventTimes.set(result, eventTimes)
     return result
   }
-  // A passive event with nothing to show can still remove a window, so only other reads keep the old figures.
-  if (update.status !== 'available' && !passive) return finish(update, previous.windows, true)
+  // A passive event or a get_usage answer with nothing to show can still remove a window, such as extra usage
+  // turned off; only a read that failed keeps the old figures as stale evidence.
+  if (update.status !== 'available' && !passive && !claudeUsageSnapshots.has(update)) return finish(update, previous.windows, true)
   const newer = (id: string, at: string | undefined): boolean => {
     const eventAt = eventTimes.get(id)
     return !!eventAt && (!at || Date.parse(at) < Date.parse(eventAt))
