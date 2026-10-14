@@ -4,6 +4,8 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
+import { watcherMessageRequests, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
+import { watcherDisplayPrompt } from '../../src/main/agents/watcherMessageDisplay'
 import type { ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { watcherToolSchemas } from '../../src/shared/watcher'
@@ -894,13 +896,103 @@ it.each(['manual-send', 'queue-followup'] as const)('keeps the Watcher request c
   await vi.waitFor(() => expect(f.workspace.adapters.codex.images).toHaveLength(1))
   const sent = f.workspace.adapters.codex.commands.findLast(command => command.type === 'send' && command.attachments?.length)
   if (!sent || sent.type !== 'send') throw new Error('image not sent')
-  expect(sent.text).toContain(`Sotto Watcher request: ${f.service.state().requests.at(-1)!.id}`)
-  expect(sent.text).toContain(`Local host: ${f.control.hostId()}`)
-  expect(sent.text).toContain(f.project.id)
+  expect(sent.text).toBe('Synthetic image instruction')
+  expect(sent.watcherRequestNote).toContain(`Sotto Watcher request: ${f.service.state().requests.at(-1)!.id}`)
+  expect(sent.watcherRequestNote).toContain(`Local host: ${f.control.hostId()}`)
+  expect(sent.watcherRequestNote).not.toContain(f.project.id)
   expect(sent.attachments?.[0]?.id).toBe(image.id)
   expect(Buffer.from(f.workspace.adapters.codex.images[0]!)).toEqual(PIXEL_PNG)
   expect(f.control.shell().activeThreadId).toBe(selected)
   expect(f.service.state().requests).toHaveLength(type === 'manual-send' ? 2 : 1)
+})
+
+it.each(['grok', 'codex'] as const)('moves a follow-up’s display proof to the message a %s retry is sent as', async provider => {
+  const f = await fixture(), draftId = randomUUID(), stale = { originalLength: 3, wireDigest: 'a'.repeat(64) }
+  await f.control.updateWatcher(record => {
+    record.current!.provider = provider
+    record.requests.find(item => item.id === f.requestId)!.userFollowups = [{ draftId, messageId: 'first-message', displayPrompt: stale }]
+  })
+  const sent = f.service.beforeDispatch({ type: 'send', commandId: randomUUID(), threadId: f.id, messageId: 'retried-message', text: 'Synthetic retry' }, draftId)
+  expect(sent).toMatchObject({ text: 'Synthetic retry', watcherRequestNote: watcherRequestNote(f.requestId, f.control.hostId()!) })
+  const request = f.control.watcherRecord().requests.find(item => item.id === f.requestId)!
+  const followup = request.userFollowups!.find(item => item.draftId === draftId)!
+  expect(followup.messageId).toBe('retried-message')
+  // Grok records no proof, so its retried message is found by provenance and its request line comes off;
+  // Codex records the retried message's own proof. Neither keeps the first message's.
+  if (provider === 'grok') {
+    expect(followup).not.toHaveProperty('displayPrompt')
+    const owner = watcherMessageRequests([request])(f.id, 'retried-message')
+    expect(owner).toEqual({ requestId: f.requestId, hostId: f.control.hostId() })
+    expect(watcherTextAsTyped(`Synthetic retry${watcherRequestLine(watcherRequestNote(f.requestId, f.control.hostId()!))}`, owner!)).toBe('Synthetic retry')
+  } else expect(followup.displayPrompt).toEqual(watcherDisplayPrompt('Synthetic retry', 'Synthetic retry'))
+})
+
+it('sends Watcher the user’s words as typed, with its request in the note beside them and no project list', async () => {
+  const f = await fixture()
+  const session = f.workspace.registry.byThread(f.id)!.sessionId
+  const sends = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === session)
+  const projectIds = [...f.control.shell().host.projects, ...f.control.watcherSnapshot().projects].map(project => project.id)
+  const first = sends()[0]
+  if (first?.type !== 'send') throw new Error('Watcher was not sent the user request')
+  // What the provider receives as the user's message is what the user typed: nothing of Sotto's and no project IDs.
+  expect(first.text).toBe('Synthetic Watcher user request')
+  for (const id of projectIds) expect(first.text).not.toContain(id)
+  // The routing travels beside it, and names no project either.
+  expect(first.watcherRequestNote).toBe(watcherRequestNote(f.requestId, f.control.hostId()!))
+  for (const id of projectIds) expect(first.watcherRequestNote).not.toContain(id)
+  // The desktop shows the message as typed.
+  await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] })
+  await vi.waitFor(() => expect(f.control.threadDetail(f.id)!.messages.filter(message => message.role === 'user').map(message => message.text))
+    .toEqual(['Synthetic Watcher user request']))
+  // The request the note names still reaches Watcher's tools.
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
+  const worker = f.workspace.adapters.codex.commands.findLast(command => command.type === 'send' && command.threadId !== session)
+  expect(worker).toMatchObject({ type: 'send', text: f.start().firstPrompt })
+  expect(worker).not.toHaveProperty('watcherRequestNote')
+  // A later instruction starts its own request and carries its own note.
+  await f.finish(f.id)
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic later instruction' })).error).toBeNull()
+  const later = f.service.state().requests.at(-1)!
+  expect(later.id).not.toBe(f.requestId)
+  expect(sends().at(-1)).toMatchObject({ text: 'Synthetic later instruction', watcherRequestNote: watcherRequestNote(later.id, f.control.hostId()!) })
+})
+
+it('shows Watcher’s request messages without the line Sotto added, and leaves what the user typed', async () => {
+  const f = await fixture(), hostId = f.control.hostId()!
+  const native = f.workspace.adapters.codex.state.threads.find(row => row.id === f.workspace.registry.byThread(f.id)!.sessionId)!
+  const send = async (text: string) => {
+    await f.finish(f.id)
+    expect((await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text })).error).toBeNull()
+    return f.service.state().requests.at(-1)!
+  }
+  const first = f.service.state().requests.find(request => request.id === f.requestId)!
+  // A message saved before the request note, with the footer main appended for its own request.
+  const typed = 'Synthetic older instruction\n\nwith a second paragraph'
+  const footer = `\n\n[Sotto Watcher request: ${first.id}. Local host: ${hostId}. Use this requestId for sotto_threads mutations. `
+    + `Known project IDs: ${f.project.id}, native:claude:project:${randomUUID()}. Call list_projects for choices.]`
+  native.messages.find(message => message.id === first.rootUserMessageId)!.text = typed + footer
+  // A message as Grok Build is sent it, with the request line for its own request.
+  const grok = await send('Synthetic Grok instruction')
+  native.messages.find(message => message.id === grok.rootUserMessageId)!.text = `Synthetic Grok instruction${watcherRequestLine(watcherRequestNote(grok.id, hostId))}`
+  // A user who types an example note, or a lookalike, keeps every word of it.
+  const example = `Explain this example:${watcherRequestLine(watcherRequestNote(randomUUID(), hostId))}`
+  const exampleRequest = await send(example)
+  const lookalike = 'Synthetic [Sotto Watcher request: typed by the user.]'
+  const lookalikeRequest = await send(lookalike)
+  // Messages saved before display proofs, and Grok Build's (whose sends record none), carry no proof.
+  await f.control.updateWatcher(record => { for (const request of record.requests) if (request.id === first.id || request.id === grok.id) delete request.displayPrompt })
+  native.messages.push({ id: 'older-reply', role: 'assistant', text: `Synthetic reply quoting${footer}`, createdAt: new Date().toISOString() })
+  native.status = 'idle'
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] })
+  const shown = (id: string) => f.control.threadDetail(f.id)!.messages.find(message => message.id === id)?.text
+  await vi.waitFor(() => expect(shown(first.rootUserMessageId)).toBe(typed))
+  expect(shown(grok.rootUserMessageId)).toBe('Synthetic Grok instruction')
+  expect(shown(exampleRequest.rootUserMessageId)).toBe(example)
+  expect(shown(lookalikeRequest.rootUserMessageId)).toBe(lookalike)
+  expect(shown('older-reply')).toBe(`Synthetic reply quoting${footer}`)
+  // The provider's own history keeps what it was sent; only what the user sees changes.
+  expect(native.messages.find(message => message.id === first.rootUserMessageId)!.text).toBe(typed + footer)
 })
 
 

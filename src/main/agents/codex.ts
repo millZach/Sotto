@@ -43,6 +43,7 @@ import { markSendStage } from './sendStages'
 import type { WatcherLaunchProfile, ThreadLaunchProfiles } from './host'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
+import { questionInstructions } from './questionInstructions'
 import { probeWatcherCodexSandbox } from './watcherCodexSandbox'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 
@@ -50,6 +51,8 @@ const watcherCodexPolicy = Object.freeze({ approvalPolicy: 'on-request', approva
 
 /** What a thread shows when its own app-server stopped under a running turn. */
 const SESSION_ENDED = 'Codex stopped before this reply finished, so it may be cut short. Send a message to carry on.'
+/** The source key of Watcher's request note in a turn's `additionalContext` (experimental; codex-cli 0.162.1's schema). */
+const WATCHER_REQUEST_CONTEXT = 'sotto_watcher_request'
 const clientInfo = { clientInfo: { name: 'sotto', title: 'Sotto threads', version: '1.0' }, capabilities: { experimentalApi: true } }
 const threadPolicy = { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write' } as const
 // Codex's previous policy is auto-accept-edits; preserve it for old aliases and
@@ -76,7 +79,7 @@ async function threadConfig(tools: BrowserAgentTools | undefined, threadId: stri
   }
   return { config }
 }
-const questionInstructions = 'Ask actionable clarification questions through request_user_input so Sotto can show its question panel. Use it for questions with choices and free-text questions, including while continuing independent work. Do not leave questions that need a user answer only in commentary or a final message. A suggested choice is not an answer. If an answer is required before an action, wait for the user before that action. Permission requests still use the native approval flow.'
+const codexQuestions = questionInstructions('request_user_input', true)
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), itemId: z.string().optional(), turnId: z.string().optional(), clientIdentity: z.boolean().optional(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(),
   compaction: compactionSchema.optional(), compactTurnId: z.string().optional(),
@@ -797,7 +800,7 @@ export class CodexAppServerHost implements AgentHost {
         instructions = parsed.success ? parsed.data.config.developer_instructions ?? '' : undefined
       })
       if (typeof instructions !== 'string') throw new Error('Invalid native instructions')
-      return [instructions, questionInstructions, ...(id && this.watcherProfiles.has(id) ? [WATCHER_SYSTEM_PROMPT] : [])].filter(Boolean).join('\n\n')
+      return [instructions, codexQuestions, ...(id && this.watcherProfiles.has(id) ? [WATCHER_SYSTEM_PROMPT] : [])].filter(Boolean).join('\n\n')
     } catch {
       throw new Error('Codex settings could not be read. No new work was sent. Reconnect and try again.')
     }
@@ -1566,7 +1569,10 @@ export class CodexAppServerHost implements AgentHost {
               await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
                 input, approvalPolicy: this.policy(id, alias.runtimeMode).approvalPolicy,
                 approvalsReviewer: this.policy(id, alias.runtimeMode).approvalsReviewer,
-                ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {
+                ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}),
+                // Watcher's request note is the application's context for this turn, beside the user's input rather than in it.
+                ...(command.watcherRequestNote && this.watcherProfiles.has(id)
+                  ? { additionalContext: { [WATCHER_REQUEST_CONTEXT]: { value: command.watcherRequestNote, kind: 'application' } } } : {}) }, value => {
                 const { turn } = z.object({ turn: turnSchema }).parse(value)
                 origin.turnId = turn.id
                 if (this.usageEnabled) this.usageTurnStarts.set(JSON.stringify([id, turn.id]), origin.createdAt)

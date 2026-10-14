@@ -33,7 +33,8 @@ if (args.includes('--no-session-persistence') && value('--output-format') === 'j
 }
 const metadata = args.includes('--no-session-persistence')
 const session = metadata ? 'metadata' : value(args.includes('--resume') ? '--resume' : '--session-id')
-const watcher = args.includes('--append-system-prompt')
+// Every thread process appends Sotto's question guidance; only Watcher's appends Watcher's prompt as well.
+const watcher = args.includes('--append-system-prompt') && value('--append-system-prompt').includes("You are Sotto's Watcher.")
 const mcpConfig = args.includes('--mcp-config') ? JSON.parse(readFileSync(value('--mcp-config'), 'utf8')) : { mcpServers: {} }
 const position = args.indexOf('--allowedTools')
 const following = position < 0 ? [] : args.slice(position + 1)
@@ -75,6 +76,9 @@ const leave = () => { try { if (!metadata && readFileSync(alive, 'utf8') === Str
 let lastAction = ''
 let initialized = false
 let deferredInit
+/** The UserPromptSubmit hook callbacks the client registered at initialize, and the answers each prompt waits on. */
+let promptHooks = []
+const hookWaits = new Map()
 const released = name => new Promise(resolve => { const timer = setInterval(() => { if (existsSync(join(root, name))) { clearInterval(timer); resolve() } }, 10) })
 /**
  * script.json `steering`: a prompt sent while a turn runs, as Claude Code 2.1.295 takes it. It goes into the CLI's own
@@ -220,6 +224,8 @@ lines.on('line', async line => {
   const frame = JSON.parse(line); record(frame.request?.subtype ?? frame.type, frame)
   if (frame.type === 'control_request') {
     if (frame.request.subtype === 'initialize') {
+      promptHooks = (frame.request.hooks?.UserPromptSubmit ?? []).flatMap(matcher => matcher.hookCallbackIds ?? [])
+      if (Object.keys(frame.request.hooks ?? {}).some(event => event !== 'UserPromptSubmit')) violation('Only a UserPromptSubmit hook is expected')
       const scriptPath = join(root, 'initialize-script.json')
       const script = !metadata && existsSync(scriptPath) ? JSON.parse(readFileSync(scriptPath, 'utf8')) : {}
       const respond = () => {
@@ -341,6 +347,20 @@ lines.on('line', async line => {
       return
     }
     turnOpen = true; turnPrompt = frame.uuid
+    // A UserPromptSubmit hook the client registered at initialize runs before the prompt does, on this control channel.
+    // Its additional context joins the transcript as Claude Code files it, an attachment beside the prompt, never in it.
+    // script.json `foreignHookPrompt`: a prompt of Claude Code's own (a finished background task's) reaches the hook first.
+    const typed = typeof frame.message.content === 'string' ? frame.message.content : frame.message.content.filter(item => item.type === 'text').map(item => item.text).join('\n')
+    for (const [callback_id, prompt] of promptHooks.flatMap(id => [...(script.foreignHookPrompt ? [[id, script.foreignHookPrompt]] : []), [id, typed]])) {
+      const request_id = randomUUID()
+      const answered = new Promise(resolve => hookWaits.set(request_id, resolve))
+      output({ type: 'control_request', request_id, request: { subtype: 'hook_callback', callback_id, tool_use_id: null,
+        input: { session_id: session, transcript_path: log, cwd: process.cwd(), permission_mode: settings.mode, hook_event_name: 'UserPromptSubmit', prompt } } })
+      const hookAnswer = await answered
+      const context = hookAnswer?.hookSpecificOutput?.additionalContext
+      record('hook-context', { prompt, uuid: frame.uuid, additionalContext: context ?? null })
+      if (typeof context === 'string') persist({ type: 'attachment', uuid: randomUUID(), attachment: { type: 'hook_additional_context', content: [context], hookName: 'UserPromptSubmit', hookEvent: 'UserPromptSubmit' } })
+    }
     const reply = persist(frame)
     if (script.writeCwd) writeFileSync(join(process.cwd(), 'native-cwd-proof.txt'), typeof frame.message.content === 'string' ? frame.message.content : frame.message.content.find(item => item.type === 'text')?.text ?? '')
     if (script.delay) { writeFileSync(scriptPath, '{}'); setTimeout(() => output(reply), script.delay) } else output(reply)
@@ -348,6 +368,12 @@ lines.on('line', async line => {
     if (!script.delay && script.reply !== undefined) { writeFileSync(join(root, `control-${session}.json`), JSON.stringify({ id: randomUUID(), type: 'complete', text: script.reply })); act() }
   } else if (frame.type === 'control_response') {
     const envelope = frame.response; const request = pending.get(envelope?.request_id); const answer = envelope?.response
+    const hookWait = hookWaits.get(envelope?.request_id)
+    if (hookWait) {
+      hookWaits.delete(envelope.request_id)
+      if (envelope.subtype !== 'success' || typeof answer !== 'object' || answer === null) violation('Malformed hook callback response')
+      hookWait(answer); return
+    }
     if (envelope?.subtype === 'error' && typeof envelope.error === 'string') { pending.delete(envelope.request_id); return }
     if (request?.subtype === 'request_user_dialog' && ['completed', 'cancelled'].includes(answer?.behavior)) {
       if (answer.behavior === 'completed' && !['compact', 'continue', 'never'].includes(answer.result)) violation('Malformed dialog choice')

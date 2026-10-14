@@ -672,18 +672,24 @@ test.describe("Watcher's room on the built app", () => {
           await expect(pane.locator('[data-role="user"] .rich-message')).toHaveText(original)
           await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. I will look at the release notes.')
           await expect(pane.locator('[data-role="user"]')).toHaveCount(1)
+          // The bubble shows only what was typed. The request rides in the turn's own context, beside the words, and
+          // names no projects.
+          await expect(pane.locator('[data-role="user"]')).not.toContainText('Sotto Watcher request')
+          const turns = (await readFile(join(root, 'codex', 'requests.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as
+            { method?: string; params?: { input?: { type: string; text?: string }[]; additionalContext?: Record<string, { value: string; kind: string }> } })
+            .filter(frame => frame.method === 'turn/start')
+          expect(turns).toHaveLength(1)
+          expect(turns[0]!.params!.input).toEqual([expect.objectContaining({ type: 'text', text: original })])
+          const note = turns[0]!.params!.additionalContext?.sotto_watcher_request
+          expect(note).toMatchObject({ kind: 'application', value: expect.stringMatching(/^Sotto Watcher request: [0-9a-f-]{36}\. Local host: [0-9a-f-]{36}\./u) })
+          expect(note!.value).not.toMatch(/project/iu)
           const record = await page.evaluate(async () => (await window.sotto!.watcher!.get()))
           expect(record).toMatchObject({ status: 'ok', state: { current: { provider: 'codex' } } })
           if (record.status !== 'ok') throw new Error('Main did not return the Watcher room')
+          // The note names the request the message started, and its display proof records that the words went as typed.
           const request = record.state.requests.at(-1)!
-          const nativeCalls = (await readFile(join(root, 'codex', 'requests.jsonl'), 'utf8')).trim().split('\n')
-            .map(line => JSON.parse(line) as { method: string; params?: { input?: { type: string; text?: string }[] } })
-          const nativeText = nativeCalls.findLast(call => call.method === 'turn/start')?.params?.input?.find(item => item.type === 'text')?.text
-          expect(nativeText).toContain(`${original}\n\n[Sotto Watcher request: ${request.id}. Local host: ${request.watcher.hostId}.`)
-          expect(nativeText).toContain('Use this requestId for sotto_threads mutations. Known project IDs: ')
-          expect(nativeText).toMatch(/\. Call list_projects for choices\.\]$/u)
-          expect(request.displayPrompt).toEqual({ originalLength: original.length,
-            wireDigest: createHash('sha256').update(nativeText!).digest('hex') })
+          expect(note!.value).toContain(`Sotto Watcher request: ${request.id}. Local host: ${request.watcher.hostId}.`)
+          expect(request.displayPrompt).toEqual({ originalLength: original.length, wireDigest: createHash('sha256').update(original).digest('hex') })
           // Watcher is its room's: not listed on the Threads page, and nothing there was selected for it.
           await switchTab(page, 'Threads').click()
           await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()

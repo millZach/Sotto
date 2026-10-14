@@ -16,6 +16,7 @@ import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { questionInstructions } from '../../src/main/agents/questionInstructions'
 import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 import { handleOf, PIXEL_DATA_URL, PIXEL_PNG, promptImageOf, stageInto } from '../fixtures/stagedImages'
 
@@ -622,6 +623,16 @@ describe('Claude recovery and safety', () => {
     const created = randomUUID()
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: created, projectId: f.projectId, title: 'Surface', modelId: f.modelId, runtimeMode })
     expect(surface((await launches()).at(-1)!)).toBe('stdio')
+  })
+  it('tells every thread process to ask with AskUserQuestion, and only that', async () => {
+    // A question written into a reply folds away with it once the turn ends (ADR-0080).
+    const created = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: created, projectId: f.projectId, title: 'Questions', modelId: f.modelId })
+    for (const args of await launches()) {
+      const appended = args[args.indexOf('--append-system-prompt') + 1]
+      expect(appended).toBe(questionInstructions('AskUserQuestion', false))
+      expect(args.filter(argument => argument === '--append-system-prompt')).toHaveLength(1)
+    }
   })
   it('says the approval surface was refused when a session offers no question tool', async () => {
     f.host.disconnect(); await f.adapter.closed()
