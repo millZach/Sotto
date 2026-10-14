@@ -601,6 +601,18 @@ it.each(['desktop', 'native'] as const)('keeps watching through a %s user turn a
   expect(await f.call('send_to_thread', { ...automatic, retryKey: randomUUID() })).toMatchObject({ status: 'ok' })
 })
 
+it('pauses on the unobserved-turn sentinel when the user sends, never on the draft ID', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic automatic prompt', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  // Watcher's turn runs, so the user's prompt waits in the queue and has no message ID yet.
+  const draftId = randomUUID()
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId, text: 'Synthetic queued user prompt' })).error).toBeNull()
+  expect(f.control.watcherRecord().watches![0]!.pausedByUserMessageId).toBe('unobserved-user-turn')
+  expect(f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)?.paused).toBe(true)
+})
+
 it('ends the pause once the user’s own queued prompt settles after its turn has already finished', async () => {
   const f = await fixture(), target = await f.create()
   await f.service.watchThread({ target })

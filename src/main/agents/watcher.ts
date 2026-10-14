@@ -600,7 +600,9 @@ export class WatcherService implements WatcherControlHooks {
     const reason = ['send', 'manual-send', 'queue-followup', 'steer', 'steer-followup'].includes(command.type) ? 'user-send'
       : command.type === 'interrupt' ? 'user-stop' : command.type === 'settle-thread' ? 'user-settle'
       : ['configure-thread', 'configure-thread-working-copy', 'edit-followup', 'remove-followup', 'resume-followups', 'reorder-followups', 'compact-thread', 'git-switch-branch', 'git-checkout-pull-request', 'git-pull', 'git-pull-request-action', 'git-action'].includes(command.type) ? 'user-reconfigure' : undefined
-    if (reason) this.takeover(threadId, reason, 'draftId' in command ? command.draftId : undefined)
+    // The user's own message has no ID until the provider records it, so a send pauses on the unobserved-turn sentinel,
+    // which observe swaps for the message once it appears. A draft ID is never a message ID.
+    if (reason) this.takeover(threadId, reason, reason === 'user-send' ? 'unobserved-user-turn' : undefined)
     if (command.type === 'interrupt' && this.record().current?.target.threadId === threadId) {
       const stopped = new Set(this.record().requests.filter(item => item.state === 'active').map(item => item.id))
       const operations = new Set(this.record().operations.filter(item => stopped.has(item.requestId)).map(item => item.id))
@@ -611,6 +613,16 @@ export class WatcherService implements WatcherControlHooks {
       void this.reconcileRemote().catch(() => { this.recoveryNotice = 'The host has not confirmed this stopped request. Its pending slots remain held.'; this.publish() })
       void this.options.control.cancelWatcherQueue(operations).catch(() => { this.recoveryNotice = 'A stopped request has a queued message that could not be removed. It is fenced and will not be sent.'; this.publish() })
     }
+  }
+  /**
+   * Whether the user's own sends to a thread are still on their way: queued, dispatching or unconfirmed, and none of them
+   * Watcher's own or a wake-up. While one is, a pause from the user's send holds even if Watcher's message is the head.
+   */
+  private userWorkPending(threadId: string, record: WatcherRecord): boolean {
+    const machine = new Set(record.operations.flatMap(operation => operation.draftId ? [operation.draftId] : []))
+    const shell = this.options.control.shell()
+    return (shell.followups ?? []).some(item => item.threadId === threadId && !item.wakeUp && !machine.has(item.draftId))
+      || (shell.deliveries ?? []).some(item => item.threadId === threadId && !machine.has(item.draftId) && ['queued', 'submitting', 'uncertain'].includes(item.status))
   }
   private takeover(threadId: string, reason: 'user-send' | 'native-user-send' | 'user-stop' | 'user-settle' | 'user-reconfigure', userMessageId?: string): void {
     const target = this.target(threadId)
@@ -717,7 +729,7 @@ export class WatcherService implements WatcherControlHooks {
         live.lastUserMessageId = head
         if (this.humanTurnRunning(thread, next)) live.pausedByUserMessageId = head ?? 'unobserved-user-turn'
         else if (!this.options.control.hasPendingThreadWork(thread.id)
-          || machineHead && (live.pausedByUserMessageId === 'unobserved-user-turn' || live.pausedByUserMessageId === head)) live.pausedByUserMessageId = null
+          || machineHead && !this.userWorkPending(thread.id, next) && (live.pausedByUserMessageId === 'unobserved-user-turn' || live.pausedByUserMessageId === head)) live.pausedByUserMessageId = null
       })
       if (participants.length && this.connected(thread)) this.options.control.mutateWatcher(next => {
         for (const request of next.requests) for (const participant of request.participants) if (participant.target.hostId === this.hostId() && participant.target.threadId === thread.id && participant.state === 'participating') participant.lastUserMessageId = head
