@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema, watcherRefusalSchema,
   watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema } from './watcher'
 import { watcherEventSchema } from './watcherNews'
+import { agentRuntimeModeSchema } from './agents'
+import { watcherOwnChangeSchema, watcherStandingWatchSchema } from './watcher'
 
 /** Private desktop channels. A host may project the same state later without acquiring command authority. */
 export const WATCHER_GET = 'sotto:watcher:get'
@@ -10,6 +12,9 @@ export const WATCHER_CHANGED = 'sotto:watcher:changed'
 export const WATCHER_PREPARE_STOP_ALL = 'sotto:watcher:prepare-stop-all'
 export const WATCHER_STOP_ALL = 'sotto:watcher:stop-all'
 export const WATCHER_SET_LIMIT = 'sotto:watcher:set-limit'
+export const WATCHER_SET_PERMISSION = 'sotto:watcher:set-permission'
+export const WATCHER_WATCH_THREAD = 'sotto:watcher:watch-thread'
+export const WATCHER_UNWATCH_THREAD = 'sotto:watcher:unwatch-thread'
 export const WATCHER_RENDERER_ARGUMENT = '--sotto-watcher-enabled'
 /** Retained previews per desktop room or authenticated paired phone, never a shared capacity. */
 export const WATCHER_STOP_ALL_PREVIEW_LIMIT = 16
@@ -20,10 +25,14 @@ const pending = z.object({ id: z.string(), kind: z.enum(['question', 'permission
 export const watcherRoomStateSchema = z.object({
   current: watcherIdentitySchema.nullable(),
   currentOptions: z.object({ modelId: z.string(), reasoningEffort: z.string().nullable(),
+    runtimeMode: agentRuntimeModeSchema.optional(),
     status: z.enum(['idle', 'running', 'error']), connected: z.boolean() }).strict().nullable(),
   history: z.array(watcherIdentitySchema),
+  runtimeMode: agentRuntimeModeSchema.optional(),
+  standingWatches: z.array(watcherStandingWatchSchema).optional(), ownChanges: z.array(watcherOwnChangeSchema).optional(),
   requests: z.array(watcherRequestSchema),
   watchedThreads: z.array(z.object({ target: watcherThreadTargetSchema, title: z.string(),
+    watched: z.boolean().optional(), paused: z.boolean().optional(),
     status: z.enum(['idle', 'running', 'error', 'unavailable']), connected: z.boolean(),
     settled: z.boolean(), backgroundWorkCount: z.number().int().nonnegative(),
     waitsOn: z.array(pending), participation: z.array(watcherParticipantSchema),
@@ -48,6 +57,10 @@ export const watcherStopAllResultSchema = z.union([
       message: z.string() }).strict()) }).strict(), watcherRefusalSchema,
 ])
 export const watcherSetLimitRequestSchema = z.object({ limit: z.number().int().min(1).max(8) }).strict()
+export const watcherSetPermissionRequestSchema = z.object({ runtimeMode: agentRuntimeModeSchema }).strict()
+export const watcherWatchThreadRequestSchema = z.object({ target: watcherThreadTargetSchema }).strict()
+export type WatcherSetPermissionRequest = z.infer<typeof watcherSetPermissionRequestSchema>
+export type WatcherWatchThreadRequest = z.infer<typeof watcherWatchThreadRequestSchema>
 
 export type WatcherRoomState = z.infer<typeof watcherRoomStateSchema>
 export type WatcherOpenRequest = z.infer<typeof watcherOpenRequestSchema>
@@ -64,5 +77,8 @@ export interface WatcherBridge {
   prepareStopAll(): Promise<WatcherPrepareStopAllResult>
   stopAll(request: WatcherStopAllRequest): Promise<WatcherStopAllResult>
   setLimit(request: WatcherSetLimitRequest): Promise<WatcherRoomResult>
+  setPermission(request: WatcherSetPermissionRequest): Promise<WatcherRoomResult>
+  watchThread(request: WatcherWatchThreadRequest): Promise<WatcherRoomResult>
+  unwatchThread(request: WatcherWatchThreadRequest): Promise<WatcherRoomResult>
   onChanged(listener: (state: WatcherRoomState) => void): () => void
 }

@@ -1,12 +1,15 @@
 import { z } from 'zod'
-import { agentMessageSchema, agentRequestSchema, agentQuestionAnswersSchema, providerIdSchema } from './agents'
-import { watcherRefusalSchema, watcherThreadTargetSchema, watcherPhoneOriginSchema } from './watcher'
+import { agentMessageSchema, agentRequestSchema, agentQuestionAnswersSchema, providerIdSchema, agentRuntimeModeSchema } from './agents'
+import { watcherRefusalSchema, watcherThreadTargetSchema, watcherPhoneOriginSchema, watcherOwnChangeSchema, watcherStandingWatchSchema } from './watcher'
 export { watcherPhoneOriginSchema } from './watcher'
 import { watcherStopAllPreviewSchema } from './watcherRoom'
 
 /** Optional host-v1 phone features, offered only by the Owl desktop running Watcher. */
 export const WATCHER_PHONE_FEATURE = 'watcher-phone' as const
 export const WATCHER_PHONE_STOP_FEATURE = 'watcher-phone-stop-all' as const
+export const WATCHER_PHONE_MANAGE_FEATURE = 'watcher-phone-manage' as const
+export const watcherPhoneSetPermissionSchema = z.object({ runtimeMode: agentRuntimeModeSchema }).strict()
+export const watcherPhoneWatchSchema = z.object({ target: watcherThreadTargetSchema }).strict()
 export const watcherPhoneSendSchema = z.object({ origin: watcherPhoneOriginSchema, target: watcherThreadTargetSchema,
   draftId: z.uuid(), text: z.string().min(1).max(20_000).refine(text => text.trim().length > 0) }).strict()
 const id = z.string().min(1).max(512)
@@ -22,8 +25,11 @@ const requestCard = z.object({ target: watcherThreadTargetSchema, title: z.strin
   request: agentRequestSchema, connected: z.boolean(), mayAnswer: z.boolean() }).strict()
 export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
   current: z.object({ target: watcherThreadTargetSchema, provider: providerIdSchema, modelId: z.string(),
+    runtimeMode: agentRuntimeModeSchema.optional(),
     reasoningEffort: z.string().nullable(), status: z.enum(['idle', 'running', 'error']), connected: z.boolean() }).strict().nullable(),
   conversation: z.object({ messages: z.array(agentMessageSchema), earlierAvailable: z.boolean(), revision: z.number().int().nonnegative() }).strict(),
+  runtimeMode: agentRuntimeModeSchema.optional(), standingWatches: z.array(watcherStandingWatchSchema).optional(),
+  ownChanges: z.array(watcherOwnChangeSchema).optional(),
   receiptGroups: z.array(z.object({ replyMessageId: z.string().nullable(), requestId: z.uuid(), rows: z.array(receipt) }).strict()),
   watchedThreads: z.array(z.object({ target: watcherThreadTargetSchema, title: z.string(), provider: providerIdSchema.nullable(),
     status: z.enum(['idle', 'running', 'error', 'unavailable']), connected: z.boolean(), watched: z.boolean(),

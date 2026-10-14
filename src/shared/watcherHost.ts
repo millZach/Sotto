@@ -1,11 +1,11 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, type AgentHostSnapshot, type AgentRuntimeMode } from './agents'
-import { watcherIdentitySchema, type WatcherIdentity, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema } from './watcher'
+import { watcherIdentitySchema, type WatcherIdentity, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema, watcherStandingWatchSchema } from './watcher'
 
 /** Text-free attribution, bound by the host to its authenticated SSH-recorded desktop. No local tool token travels. */
 export const watcherHostScopeSchema = watcherIdentitySchema
 export const watcherHostControlSchema = z.object({ master: watcherHostScopeSchema,
-  request: watcherRequestSchema.pick({ id: true, watcher: true, rootUserMessageId: true, createdAt: true }),
+  request: watcherRequestSchema.pick({ id: true, watcher: true, rootUserMessageId: true, createdAt: true, standingWatchId: true }),
   ceiling: agentRuntimeModeSchema, operation: watcherOperationSchema,
   call: z.discriminatedUnion('name', [
     z.object({ name: z.literal('start_thread'), input: watcherToolSchemas.start_thread.input }).strict(),
@@ -14,6 +14,7 @@ export const watcherHostControlSchema = z.object({ master: watcherHostScopeSchem
     z.object({ name: z.literal('settle_thread'), input: watcherToolSchemas.settle_thread.input }).strict(),
   ]) }).strict()
 export const watcherHostReadSchema = z.object({ master: watcherHostScopeSchema,
+  standingWatches: z.array(watcherStandingWatchSchema).optional(),
   stoppedRequests: z.array(z.object({ request: watcherRequestSchema.pick({ id: true, watcher: true, rootUserMessageId: true, createdAt: true }), ceiling: agentRuntimeModeSchema }).strict()).max(1_000).optional(),
   call: z.discriminatedUnion('name', [
     z.object({ name: z.literal('list_threads'), input: watcherToolSchemas.list_threads.input }).strict(),
@@ -33,7 +34,7 @@ export type WatcherHostProjection = z.infer<typeof watcherHostProjectionSchema>
 
 /** Main-only routing seam. All IDs are owning-host IDs, never client UI keys. */
 export interface WatcherRemoteHosts {
-  hosts(): { hostId: string; control: boolean; reads: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
+  hosts(): { hostId: string; control: boolean; reads: boolean; standingWatch?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
   snapshot(hostId: string): AgentHostSnapshot | undefined

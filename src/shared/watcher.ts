@@ -26,6 +26,15 @@ export const watcherPhoneOriginSchema = z.object({ kind: z.literal('phone'), hos
 export const watcherProjectTargetSchema = z.object({ hostId: z.uuid(), projectId: entityId }).strict()
 export type WatcherThreadTarget = z.infer<typeof watcherThreadTargetSchema>
 export type WatcherProjectTarget = z.infer<typeof watcherProjectTargetSchema>
+/** Durable assignment, independent of any one request. Contains no user or provider prose. */
+export const watcherStandingWatchSchema = z.object({ id: z.uuid(), target: watcherThreadTargetSchema,
+  createdAt: time, generation: counter, pausedByUserMessageId: id.nullable().optional(),
+  remoteOrigin: z.object({ clientId: id, masterHostId: z.uuid() }).strict().optional() }).strict()
+export type WatcherStandingWatch = z.infer<typeof watcherStandingWatchSchema>
+/** Derived from provider file-change activities, never from a shared checkout's aggregate diff. */
+export const watcherOwnChangeSchema = z.object({ replyMessageId: id, turnId: id, files: z.array(z.string().min(1).max(4_096)),
+  fileCount: counter, reason: shortText.nullable(), source: z.literal('provider-file-change') }).strict()
+export type WatcherOwnChange = z.infer<typeof watcherOwnChangeSchema>
 export const watcherPositionSchema = z.object({ historyEpoch: id, afterPosition: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER) }).strict()
 const permission = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('runtime'), mode: agentRuntimeModeSchema }).strict(),
@@ -100,6 +109,14 @@ const boundedRead = <S extends z.ZodType>(schema: S) => schema.refine(value => n
 
 /** Only these named operations can cross the future sotto_threads boundary. None serve tools yet. */
 export const watcherToolSchemas = {
+  watch_thread: {
+    input: z.object({ target: watcherThreadTargetSchema }).strict(),
+    output: result({ watch: watcherStandingWatchSchema }),
+  },
+  unwatch_thread: {
+    input: z.object({ target: watcherThreadTargetSchema }).strict(),
+    output: result({ target: watcherThreadTargetSchema, watched: z.literal(false) }),
+  },
   list_threads: {
     input: z.object({ hostId: z.uuid().optional(), project: watcherProjectTargetSchema.optional(), group: watcherGroupSchema.optional(),
       includeSettled: z.boolean().default(true), ...paging }).strict(),
@@ -162,6 +179,7 @@ export const watcherParticipantSchema = participation.extend({ target: watcherTh
   lastUserMessageId: id.nullable().optional(),
   promptCount: z.number().int().min(0).max(WATCHER_PROMPTS_PER_THREAD) }).strict()
 export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, rootUserMessageId: id,
+  standingWatchId: z.uuid().optional(),
   phoneOrigin: watcherPhoneOriginSchema.optional(),
   pairedPermissionCeiling: agentRuntimeModeSchema.optional(),
   remoteOrigin: z.object({ clientId: id, master: watcherIdentitySchema, creationOperationId: z.uuid(), ceiling: agentRuntimeModeSchema }).strict().optional(),
@@ -178,6 +196,7 @@ export const watcherOperationSchema = z.object({ id: z.uuid(), requestId: z.uuid
   confirmedStop: z.literal(true).optional(),
   creationUncertain: z.literal(true).optional(), refusalCode: watcherRefusalCodeSchema.optional() }).strict().refine(item => !item.confirmedStop || item.action === 'stop', 'Only an explicit confirmed Stop can carry this marker.')
 export const watcherRecordSchema = z.object({ version: z.literal(1), current: watcherIdentitySchema.nullable(),
+  lastRuntimeMode: agentRuntimeModeSchema.optional(), watches: z.array(watcherStandingWatchSchema).optional(),
   creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
   history: z.array(watcherIdentitySchema).max(1_000), requests: z.array(watcherRequestSchema).max(10_000),

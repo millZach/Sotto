@@ -19,6 +19,8 @@ const workingCopy = { kind: 'shared' }
 
 /** Concrete, non-authoritative examples for consumers developing before the runtime tickets. */
 export const watcherToolFixtures: Record<WatcherToolName, { input: unknown; output: unknown }> = {
+  watch_thread: { input: { target: centerTarget }, output: { status: 'ok', watch: { id: centerRequestId, target: centerTarget, createdAt: centerTime, generation: 0 } } },
+  unwatch_thread: { input: { target: centerTarget }, output: { status: 'ok', target: centerTarget, watched: false } },
   list_threads: { input: {}, output: { status: 'ok', rows: [{ target: centerTarget, title: 'Worker', projectId: 'project', provider: 'codex', modelId: 'model',
     status: 'idle', group: 'Idle', waitsOn: [{ id: 'question', kind: 'question', label: 'Choose a scope', openTarget: centerTarget }],
     branch: null, workingCopy, pullRequests: [], evidence: [], lastActivityAt: centerTime, observedAt: centerTime, connected: true, freshness: 'fresh',
