@@ -56,7 +56,7 @@ export class WatcherService implements WatcherControlHooks {
   private readonly remoteGuards = new Map<string, () => void>()
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
-    limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; revoke?: (id: string) => void }) {
+    limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void }) {
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), record: () => this.record(),
       progress: target => this.remoteProgress.get(key(target))?.fingerprint,
       restoredEvents: () => options.control.restoredWatcherEvents(),
@@ -187,9 +187,25 @@ export class WatcherService implements WatcherControlHooks {
     const record = this.record()
     const current = this.options.control.watcherSnapshot().threads.find(item => item.id === record.current?.target.threadId)
     const targets = new Map(record.requests.flatMap(request => request.participants.map(item => [key(item.target), item.target] as const)))
+    const roomInputs = this.options.streamingPublishCost === true && this.remote?.roomThreads ? new Map<string, ReturnType<NonNullable<WatcherRemoteHosts['roomThreads']>>>() : undefined
+    if (roomInputs) for (const target of targets.values()) {
+      if (target.hostId === this.hostId() || roomInputs.has(target.hostId)) continue
+      roomInputs.set(target.hostId, this.remote!.roomThreads!(target.hostId,
+        [...targets.values()].filter(item => item.hostId === target.hostId).map(item => item.threadId)))
+    }
     return { current: record.current, currentOptions: current ? { modelId: current.modelId, reasoningEffort: current.reasoningEffort ?? null,
       status: current.status, connected: this.connected(current) } : null, history: record.history, requests: record.requests,
       watchedThreads: [...targets.values()].map(target => {
+        if (roomInputs?.has(target.hostId)) {
+          const input = roomInputs.get(target.hostId)?.find(item => item.id === target.threadId)
+          const observation = this.wakes.observations.get(JSON.stringify([target.hostId, target.threadId]))
+          return { target, title: input?.title ?? 'Unavailable thread', status: input?.status ?? 'unavailable',
+            connected: input?.connected ?? false, settled: input?.settled ?? false, backgroundWorkCount: input?.backgroundWorkCount ?? 0,
+            evidence: this.wakes.evidence.read(target, input?.connected ?? false),
+            ...(input && observation ? { observation: this.roomObservation(observation) } : {}),
+            waitsOn: input?.waitsOn.map(request => ({ ...request, openTarget: target })) ?? [],
+            participation: record.requests.flatMap(request => request.participants.filter(item => key(item.target) === key(target))) }
+        }
         const thread = this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)
         return { target, title: thread?.title ?? 'Unavailable thread', status: thread?.status ?? 'unavailable', connected: Boolean(thread && this.connected(thread)),
           settled: Boolean(thread && isWorkspaceThreadSettled(thread, this.owningSnapshot(target.hostId)?.projects.find(item => item.id === thread.projectId))),
