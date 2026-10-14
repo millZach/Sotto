@@ -21,14 +21,18 @@ permissions:
 
 jobs:
   # Decides which of the slower jobs a pull request needs. A push to main runs every job but the iOS one, which
-  # runs only when the push changed what it reads; the weekly run runs every job. The test shards run unless
-  # every changed file is a document; then the checks job runs only the tests that read the repository's own
-  # documents. The host job runs unless every changed file is in an area it cannot reach; the iOS job runs only
-  # when the native client, the protocol it mirrors or this file changed.
+  # runs only when what it reads changed since the last push run that passed; the weekly run runs every job.
+  # The test shards run unless every changed file is a document; then the checks job runs only the tests that
+  # read the repository's own documents. The host job runs unless every changed file is in an area it cannot
+  # reach; the iOS job runs only when the native client, the protocol it mirrors or this file changed.
   changes:
     name: Changed areas
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Reading this workflow's earlier runs on main is how a push finds what its iOS job must cover.
+    permissions:
+      contents: read
+      actions: read
     outputs:
       host: ${{ steps.areas.outputs.host }}
       ios: ${{ steps.areas.outputs.ios }}
@@ -45,24 +49,27 @@ jobs:
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
+          REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           # The iOS job reads only the native client, the host protocol its wire types mirror and this file.
           ios_paths='^(apps/ios/|src/shared/hostProtocol\.ts$|\.github/workflows/ci\.yml$)'
           if [ "$EVENT" = "push" ]; then
             # A push to main runs every job, the backstop for two pull requests that break each other, except the
-            # iOS job when nothing it reads changed: no pair of pull requests can break it then. The commit before a
-            # merge's push is usually its first parent, already checked out; any other is fetched without file
-            # contents, since only the names of the changed files are read. When it cannot be read (a new branch,
-            # a force push gone from the server), the iOS job runs.
+            # iOS job when nothing it reads changed since the last push run on main that finished green: no pair of
+            # pull requests can break it then. A run the next merge cancelled, or one that failed, proved nothing,
+            # so its commits stay in the range until a run passes. That commit is fetched without file contents,
+            # since only the names of the changed files are read. When it cannot be found or read, the job runs.
             ios=true
-            if [ -n "$BEFORE" ] && [ -n "${BEFORE//0/}" ] \
-              && { git cat-file -e "$BEFORE^{commit}" 2>/dev/null || git fetch --quiet --depth=1 --filter=blob:none origin "$BEFORE"; }; then
-              pushed=$(git diff --no-renames --name-only "$BEFORE" HEAD)
-              if ! grep -qE "$ios_paths" <<< "$pushed"; then ios=false; fi
+            passed=$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=1" \
+              --jq '.workflow_runs[0].head_sha // empty' || true)
+            if [ -n "$passed" ] \
+              && { git cat-file -e "$passed^{commit}" 2>/dev/null || git fetch --quiet --depth=1 --filter=blob:none origin "$passed"; }; then
+              unproven=$(git diff --no-renames --name-only "$passed" HEAD)
+              if ! grep -qE "$ios_paths" <<< "$unproven"; then ios=false; fi
             fi
             echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"
-            echo "Push to main: every job runs. iOS job: $ios."
+            echo "Push to main: every job runs. iOS job: $ios (changes since ${passed:-no passing run})."
             exit 0
           fi
           if [ "$EVENT" != "pull_request" ]; then
