@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'artifacts/certified-detail/**',
+      'artifacts/window-thread-shell/**',
       'artifacts/watcher-phone-wire/**',
       'artifacts/stable-from-main/**',
       'artifacts/watcher-paired-hosts/**',

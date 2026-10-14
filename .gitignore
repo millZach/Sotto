@@ -558,6 +558,9 @@ artifacts/linux-release-command/*
 !artifacts/linux-release-command/stable-rejection.txt
 
 artifacts/certified-detail/*
+artifacts/window-thread-shell/*
+!artifacts/window-thread-shell/owl-dark-1280.png
+!artifacts/window-thread-shell/owl-light-820.png
 !artifacts/certified-detail/owl-dark-1280.png
 !artifacts/certified-detail/stable-light-820.png
 

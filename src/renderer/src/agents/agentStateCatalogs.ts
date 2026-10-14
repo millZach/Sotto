@@ -1,5 +1,6 @@
 import { clientCatalogKey, hostCatalogKey } from '../../../shared/agents'
 import type { AgentBridge, AgentClientHost, AgentCommandReceipt, AgentModel, AgentState, AgentWireBridge } from '../../../shared/agents'
+import { AgentThreadShell } from './agentThreadShell'
 
 interface CachedCatalog {
   revision: number
@@ -50,14 +51,80 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
     return full
   }
   const completeReceipt = createReceiptCompleter({ get }, catalogs, lastRead)
+  let observation = 0
+  let observedThreadRevision: number | undefined
   const result: AgentBridge = {
     ...bridge,
     get,
-    onState: listener => bridge.onState(createReassembler({ get }, catalogs, listener)),
-    command: async request => completeReceipt(await bridge.command(request)),
+    onState: listener => {
+      let active = true
+      const emit = (state: AgentState): void => { if (active) listener(state) }
+      const legacy = createReassembler({ get }, catalogs, emit)
+      let optimized: ReturnType<typeof createThreadReassembler> | undefined
+      const off = bridge.onState(raw => {
+        if (!isStateLike(raw)) return
+        if (Array.isArray(raw.host.threads)) { observation++; legacy(raw) }
+        else {
+          const revision = (raw.host.threads as unknown as { revision?: unknown }).revision
+          // Every subscription sees the same broadcast. Another listener receiving that envelope
+          // is not newer evidence and must not invalidate the first listener's recovery.
+          if (typeof revision !== 'number' || revision !== observedThreadRevision) {
+            observation++
+            observedThreadRevision = typeof revision === 'number' ? revision : undefined
+          }
+          optimized ??= createThreadReassembler({ get }, catalogs, emit, () => observation)
+          optimized(raw)
+        }
+      })
+      return () => { active = false; optimized?.dispose(); off() }
+    },
+    command: async request => {
+      observation++
+      const reply = await bridge.command(request)
+      observation++
+      const completed = await completeReceipt(reply)
+      observation++
+      return completed
+    },
   }
   wrapped.set(bridge, result)
   return result
+}
+
+/** Revisioned thread recovery cannot assign an unversioned read to a body's earlier revision. */
+function createThreadReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, listener: (state: AgentState) => void, observation: () => number): ((raw: unknown) => void) & { dispose: () => void } {
+  const threads = new AgentThreadShell()
+  let recovering = false
+  let pending: unknown = null
+  let active = true
+  const process = (raw: unknown): void => {
+    if (!active || !isStateLike(raw)) return
+    const candidate = threads.assemble(raw.host.threads)
+    // Catalogs carried whole are remembered even if the thread base is missing, independently.
+    const assembled = assembleState(catalogs, raw)
+    if (candidate && assembled) {
+      candidate.commit()
+      pending = null
+      listener({ ...assembled, host: { ...assembled.host, threads: candidate.threads } })
+      return
+    }
+    if (recovering) { pending = raw; return }
+    recovering = true
+    const started = observation()
+    bridge.get().then(full => {
+      if (!active || observation() !== started) return
+      // A get is complete but has no thread revision. Main reset its delivery base; the next
+      // broadcast must carry every body. Never seed the thread cache from this unversioned read.
+      rememberRecovered(catalogs, raw, full)
+      listener(full)
+    }).catch(() => undefined).finally(() => {
+      recovering = false
+      if (active && pending !== null) { const next = pending; pending = null; process(next) }
+    })
+  }
+  const receive = (raw: unknown): void => process(raw)
+  receive.dispose = (): void => { active = false; pending = null; threads.clear() }
+  return receive
 }
 
 function isStateLike(raw: unknown): raw is AgentState {

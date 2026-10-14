@@ -953,7 +953,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined)
 
   // Only the threads the main window has declared viewed receive their messages.
-  const agentStateBroadcaster = new AgentStateBroadcaster()
+  const agentStateBroadcaster = new AgentStateBroadcaster({ streamingPublishCost: owlFeatures['streaming-publish-cost'] })
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
     // Every published state asks for answer recovery; the router runs one pass at a time, at most twice a second.
     hostRouter.scheduleRequestDraftReconcile(requestDrafts)
@@ -1431,7 +1431,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       })
       const cleanupHosts = registerHostsIpc(ipcMain, desktopHosts, () => windows.getTrustedRenderers(), state => windows.sendToMain(HOSTS_CHANGED, state), hostTailscale)
       const cleanupPhones = registerPhonesIpc(ipcMain, phoneAccess, () => windows.getTrustedRenderers(), state => windows.sendToMain(PHONES_CHANGED, state))
-      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
+      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, resetThreadDelivery: agentStateBroadcaster.resetThreadDelivery, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const cleanupWatcher = localRuntime?.watcher?.subscribe(state => windows.sendToMain(WATCHER_CHANGED, state))

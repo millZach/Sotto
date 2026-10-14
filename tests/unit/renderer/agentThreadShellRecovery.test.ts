@@ -1,0 +1,161 @@
+// @vitest-environment node
+import { describe, expect, it, vi } from 'vitest'
+import { AgentStateBroadcaster } from '../../../src/main/agents/agentStateBroadcast'
+import { wrapAgentBridge } from '../../../src/renderer/src/agents/agentStateCatalogs'
+import type { AgentState, AgentStateBroadcast, AgentThreadsBroadcast, AgentWireBridge } from '../../../src/shared/agents'
+import { threadsStateFixture } from '../../fixtures/agentState'
+import { deferred } from '../../fixtures/deferred'
+
+function transport() {
+  const broadcaster = new AgentStateBroadcaster({ streamingPublishCost: true })
+  const state = threadsStateFixture({ threads: [{ id: 'a', title: 'Initial' }, { id: 'b' }], topLevel: { activeThreadId: 'a' } })
+  const listeners = new Set<(state: AgentStateBroadcast) => void>()
+  const command = vi.fn<AgentWireBridge['command']>()
+  const get = vi.fn(async (): Promise<AgentState> => {
+    broadcaster.resetThreadDelivery()
+    return structuredClone(state)
+  })
+  const page = () => wrapAgentBridge({
+    get, command,
+    onState: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
+  } as AgentWireBridge)
+  const send = (): AgentStateBroadcast => {
+    let wire!: AgentStateBroadcast
+    broadcaster.send(state, payload => {
+      wire = structuredClone(payload)
+      for (const listener of listeners) listener(wire)
+      return true
+    })
+    return wire
+  }
+  return { broadcaster, state, listeners, command, get, page, send }
+}
+
+describe('thread shell page lifecycle and command ordering', () => {
+  it('does not mistake a second fresh subscription for a newer broadcast during recovery', async () => {
+    const h = transport()
+    h.broadcaster.send(h.state, () => true)
+    const page = h.page(), first = deferred<AgentState>(), second = deferred<AgentState>()
+    page.onState(state => first.resolve(state))
+    page.onState(state => second.resolve(state))
+    h.send()
+    expect(await first.promise).toEqual(h.state)
+    expect(await second.promise).toEqual(h.state)
+  })
+  it('recovers a fresh page from a warm omission and makes the next push complete', async () => {
+    const h = transport()
+    const first: AgentState[] = []
+    const off = h.page().onState(state => first.push(state))
+    h.send()
+    off()
+    const recovered = deferred<AgentState>()
+    const reload: AgentState[] = []
+    h.page().onState(state => { reload.push(state); recovered.resolve(state) })
+    const warm = h.send().host.threads as AgentThreadsBroadcast
+    expect(warm.changed).toEqual([])
+    expect(warm.baseRevision).not.toBeNull()
+    expect(await recovered.promise).toEqual(h.state)
+    expect(h.get).toHaveBeenCalledTimes(1)
+    const complete = h.send().host.threads as AgentThreadsBroadcast
+    expect(complete.baseRevision).toBeNull()
+    expect(complete.changed.map(body => body.thread.id)).toEqual(['a', 'b'])
+    h.state.host.threads[0]!.finishedUnread = true
+    h.state.activeThreadId = 'b'
+    h.send()
+    expect(reload.at(-1)).toEqual(h.state)
+    expect(first).toHaveLength(1)
+    expect(h.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('isolates two subscriptions from consumer and retained raw thread mutations', () => {
+    const h = transport()
+    const page = h.page()
+    const first: AgentState[] = [], second: AgentState[] = []
+    page.onState(state => {
+      first.push(state)
+      state.host.threads[0]!.title = 'Consumer changed this'
+      state.host.threads[0]!.requests.push({ id: 'consumer', kind: 'permission', text: 'Consumer request', options: [] })
+    })
+    page.onState(state => second.push(state))
+    h.listeners.add(raw => {
+      const threads = raw.host.threads as AgentThreadsBroadcast
+      for (const body of threads.changed) body.thread.title = 'Raw listener changed this'
+    })
+    h.send()
+    expect(second[0]!.host.threads).toEqual(h.state.host.threads)
+    second[0]!.host.threads[1]!.title = 'Retained consumer changed this'
+    h.send()
+    expect(second[1]!.host.threads).toEqual(h.state.host.threads)
+    expect(first[0]!.host.threads[1]!.title).toBe(h.state.host.threads[1]!.title)
+    expect(h.get).not.toHaveBeenCalled()
+  })
+
+  it('keeps a command begun before recovery intact when it completes during a held get', async () => {
+    const h = transport()
+    const page = h.page()
+    const delivered: AgentState[] = []
+    page.onState(state => delivered.push(state))
+    h.send()
+    const command = deferred<Awaited<ReturnType<AgentWireBridge['command']>>>()
+    h.command.mockReturnValue(command.promise)
+    const answer = page.command({ type: 'select-thread', threadId: 'b' })
+    const recovery = deferred<AgentState>()
+    h.get.mockImplementation(() => { h.broadcaster.resetThreadDelivery(); return recovery.promise })
+    const old = structuredClone(h.state)
+    // This subscriber did not receive the prior successful push: its first warm shell must recover.
+    const cold: AgentState[] = []
+    page.onState(state => cold.push(state))
+    h.send()
+    expect(h.get).toHaveBeenCalledTimes(1)
+    const own = structuredClone(h.state)
+    own.notice = 'Selection saved'
+    own.activeThreadId = 'b'
+    own.threadDraftPersistence = [{ threadId: 'b', draftId: 'aaaaaaaa-0000-4000-8000-000000000000', status: 'saved' }]
+    command.resolve(h.broadcaster.encodeReceipt(own))
+    expect(await answer).toMatchObject({ notice: own.notice, activeThreadId: 'b', threadDraftPersistence: own.threadDraftPersistence })
+    recovery.resolve(old)
+    await recovery.promise
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(cold).toEqual([])
+    h.state.activeThreadId = 'b'
+    h.state.notice = 'Newer broadcast'
+    h.state.host.threads[1]!.finishedUnread = true
+    h.send()
+    expect(cold.at(-1)).toEqual(h.state)
+    expect(delivered.at(-1)).toEqual(h.state)
+    expect(h.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps receipt evidence and newer thread state when catalog recovery finishes late', async () => {
+    const h = transport()
+    const page = h.page()
+    const delivered: AgentState[] = []
+    page.onState(state => delivered.push(state))
+    h.send()
+    h.state.host.models = [...h.state.host.models, { id: 'new-model', name: 'New model', provider: 'codex', ready: true }]
+    const own = structuredClone(h.state)
+    own.notice = 'Draft saved'
+    own.threadDraftPersistence = [{ threadId: 'a', draftId: 'aaaaaaaa-0000-4000-8000-000000000000', status: 'saved' }]
+    const recovery = deferred<AgentState>(), started = deferred<void>()
+    h.get.mockImplementation(() => { h.broadcaster.resetThreadDelivery(); started.resolve(); return recovery.promise })
+    h.command.mockResolvedValue(h.broadcaster.encodeReceipt(own))
+    const answer = page.command({ type: 'refresh' })
+    await started.promise
+    h.state.host.threads[0]!.title = 'Newest thread'
+    h.state.host.threads[0]!.requests.push({ id: 'new-question', kind: 'question', text: 'Which option?', options: [] })
+    h.state.globalLaneBusy = true
+    h.state.notice = 'Newest broadcast'
+    h.send()
+    recovery.resolve(own)
+    const reply = await answer
+    expect(reply.notice).toBe('Draft saved')
+    expect(reply.threadDraftPersistence).toEqual(own.threadDraftPersistence)
+    expect(reply.host.threads).toEqual(own.host.threads)
+    expect(reply.host.models).toEqual(h.state.host.models)
+    h.send()
+    expect(delivered.at(-1)).toEqual(h.state)
+    expect(delivered.map(state => state.notice)).not.toContain('Draft saved')
+    expect(h.get).toHaveBeenCalledTimes(1)
+  })
+})
