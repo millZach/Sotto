@@ -28,9 +28,11 @@ export const watcherProjectTargetSchema = z.object({ hostId: z.uuid(), projectId
 export type WatcherThreadTarget = z.infer<typeof watcherThreadTargetSchema>
 export type WatcherProjectTarget = z.infer<typeof watcherProjectTargetSchema>
 /** Durable assignment, independent of any one request. Contains no user or provider prose. */
+/** The paired master desktop a standing watch, or its withdrawal fence, came from on the owning host. */
+const watcherWatchOriginSchema = z.object({ clientId: id, masterHostId: z.uuid(), masterCreationOperationId: z.uuid().optional(), masterCreatedAt: time.optional() }).strict()
 export const watcherStandingWatchSchema = z.object({ id: z.uuid(), target: watcherThreadTargetSchema,
   createdAt: time, generation: counter, pausedByUserMessageId: id.nullable().optional(), lastUserMessageId: id.nullable().optional(),
-  remoteOrigin: z.object({ clientId: id, masterHostId: z.uuid(), masterCreationOperationId: z.uuid().optional(), masterCreatedAt: time.optional() }).strict().optional() }).strict()
+  remoteOrigin: watcherWatchOriginSchema.optional() }).strict()
 export type WatcherStandingWatch = z.infer<typeof watcherStandingWatchSchema>
 export const watcherPositionSchema = z.object({ historyEpoch: id, afterPosition: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER) }).strict()
 const permission = z.discriminatedUnion('kind', [
@@ -200,7 +202,7 @@ export const watcherOperationSchema = z.object({ id: z.uuid(), requestId: z.uuid
 export const watcherRecordSchema = z.object({ version: z.literal(1), current: watcherIdentitySchema.nullable(),
   promptTurns: z.array(watcherPromptTurnSchema).max(10_000).optional(),
   lastRuntimeMode: agentRuntimeModeSchema.optional(), watches: z.array(watcherStandingWatchSchema).optional(),
-  watchFences: z.array(z.object({ id: z.uuid(), target: watcherThreadTargetSchema.optional(), remoteOrigin: z.object({ clientId: id, masterHostId: z.uuid(), masterCreationOperationId: z.uuid().optional(), masterCreatedAt: time.optional() }).strict().optional() }).strict()).optional(),
+  watchFences: z.array(z.object({ id: z.uuid(), target: watcherThreadTargetSchema.optional(), remoteOrigin: watcherWatchOriginSchema.optional() }).strict()).optional(),
   remoteMasters: z.array(z.object({ clientId: id, masterHostId: z.uuid(), creationOperationId: z.uuid(), createdAt: time }).strict()).max(1_000).optional(),
   creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
