@@ -14,11 +14,12 @@ describe.skipIf(!PERF_BENCH)('actual Electron Watcher room pipeline (#991)', () 
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-watcher-room-entry-')) throw new Error('Unexpected owned fixture path')
     const main = join(root, 'main.cjs'), preload = join(root, 'preload.cjs'), page = join(root, 'page.js')
     await writeFile(preload, `const {contextBridge,ipcRenderer}=require('electron');let start;const receivers={};
-      for(const channel of ['room','shell','detail'])ipcRenderer.on(channel,(_event,value)=>receivers[channel]?.(value));contextBridge.exposeInMainWorld('bench',{
+      for(const channel of ['room','shell','detail'])ipcRenderer.on(channel,(_event,value,revision)=>receivers[channel]?.(value,revision));contextBridge.exposeInMainWorld('bench',{
       onRoom:listener=>{receivers.room=listener},onState:listener=>{receivers.shell=listener},onDetail:listener=>{receivers.detail=listener},
       get:()=>ipcRenderer.invoke('get'),startCpu:()=>{start=process.cpuUsage()},endCpu:()=>{const used=process.cpuUsage(start);return{cpuMs:(used.user+used.system)/1000}},
       measure:options=>ipcRenderer.invoke('measure',options)});`)
     await build({ stdin: { contents: `import {wrapAgentBridge} from './src/renderer/src/agents/agentStateCatalogs';
+      import {createRoomCompletion} from './tests/fixtures/watcherRoomCompletion';
       import {createStateSharing} from './src/renderer/src/agents/stateSharing';
       import {applyAgentThreadDetailDelta,isAgentThreadDetailDelta} from './src/shared/agentThreadDetail';
       window.restart=()=>{const held=new Map(),share=createStateSharing();let shell=null,last=null;
@@ -27,7 +28,9 @@ describe.skipIf(!PERF_BENCH)('actual Electron Watcher room pipeline (#991)', () 
       wrapAgentBridge({get:window.bench.get,onState:window.bench.onState}).onState(value=>{shell=value;assemble()});
       window.bench.onDetail(update=>{const previous=held.get(update.threadId),detail=isAgentThreadDetailDelta(update)?(previous?applyAgentThreadDetailDelta(previous,update):null):update;
         if(!detail)throw Error('Unexpected detail miss');held.set(detail.threadId,detail);assemble()});
-      window.room=null;window.bench.onRoom(value=>{window.room=value})};window.restart();`, resolveDir: process.cwd() }, bundle: true, platform: 'browser', outfile: page })
+      const completion=createRoomCompletion(()=>window.bench.endCpu().cpuMs);
+      window.completeRoom=(target,timeout)=>completion.wait(target,timeout);
+      window.room=null;window.bench.onRoom((value,revision)=>{window.room=value;completion.receive(value,revision)})};window.restart();`, resolveDir: process.cwd() }, bundle: true, platform: 'browser', outfile: page })
     await build({ stdin: { contents: `import {app,BrowserWindow,ipcMain} from 'electron';
       import {measureWatcherRoom} from './tests/fixtures/watcherRoomPipeline';let window;
       app.setPath('userData',${JSON.stringify(join(root, 'profile'))});

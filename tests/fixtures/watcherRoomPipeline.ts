@@ -64,12 +64,17 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
     for (const threadId of ids) watcher.checkpointObserved({ threadId, checkpointId: `checkpoint-${threadId}`,
       observedAt: at, changedFiles: 3, availability: 'available' })
     const counts = { projections: 0, projectionShellReads: 0, localRecordCopies: 0, localRecordCpuUs: 0,
-      captureCopies: 0, captureCpuUs: 0, captureWallMs: 0, attemptedSends: 0, successfulSends: 0, wireBytes: 0 }
+      captureCopies: 0, captureCpuUs: 0, captureWallMs: 0, oracleCopies: 0, oracleCpuUs: 0, oracleWallMs: 0,
+      attemptedSends: 0, successfulSends: 0, wireBytes: 0 }
+    let sourceRevision = 0
+    const revisions = new WeakMap<object, number>()
     const clone = globalThis.structuredClone
     globalThis.structuredClone = function <Value>(value: Value, options?: unknown): Value {
       if (value !== null && typeof value === 'object' && 'watchedThreads' in value && 'observedAt' in value) {
         const cpu = process.cpuUsage(), started = performance.now(), copy = Reflect.apply(clone, globalThis, [value, options]) as Value
         counts.captureCopies++; counts.captureCpuUs += copyCpu(cpu); counts.captureWallMs += performance.now() - started
+        const revision = revisions.get(value)
+        if (revision !== undefined) revisions.set(copy as object, revision)
         return copy
       }
       return Reflect.apply(clone, globalThis, [value, options]) as Value
@@ -81,11 +86,13 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
     let projecting = false
     let latestProjected: WatcherRoomState | undefined
     control.shell = () => { if (projecting) counts.projectionShellReads++; return originalShell() }
-    watcher.state = () => { counts.projections++; projecting = true; try { const state = originalState(); latestProjected = state; return state } finally { projecting = false } }
+    watcher.state = () => { counts.projections++; projecting = true; try { const state = originalState(); latestProjected = state; revisions.set(state, ++sourceRevision); return state } finally { projecting = false } }
     let sentRooms: WatcherRoomState[] = []
     const send = (state: WatcherRoomState) => {
       counts.attemptedSends++
-      window.webContents.send('room', state); counts.successfulSends++; sentRooms.push(state)
+      const revision = revisions.get(state)
+      if (revision === undefined) throw new Error('Room send lost its source revision')
+      window.webContents.send('room', state, revision); counts.successfulSends++; sentRooms.push(state)
     }
     // Earlier steps remain true in stack/router; only this desktop room seam varies off/on.
     const desktop = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: enabled, watcher,
@@ -124,17 +131,37 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
       for (const thread of streaming) thread.status = 'idle'
       adapter.publish(false)
       await pause(150) // includes the final quiet trailing publication
+      // A timer delay alone is not a delivery assertion. Wait for the normal room callback,
+      // retaining the same CPU starts if a newer projection appears during the roundtrip.
+      const completionDeadline = performance.now() + 10_000
+      let completionAttempts = 0
+      let result: { revision: number; cpuMs: number; room: WatcherRoomState }
+      let candidate: { revision: number; expected: WatcherRoomState }
+      do {
+        if (!latestProjected) throw new Error('Room source was not projected')
+        const oracleCpu = process.cpuUsage(), oracleStarted = performance.now()
+        candidate = { revision: sourceRevision, expected: clone(latestProjected) }
+        counts.oracleCopies++; counts.oracleCpuUs += copyCpu(oracleCpu); counts.oracleWallMs += performance.now() - oracleStarted
+        const target = candidate.revision
+        completionAttempts++
+        const remaining = Math.ceil(completionDeadline - performance.now())
+        if (remaining <= 0) throw new Error(`Room completion did not settle: source=${sourceRevision}, attempts=${completionAttempts}, projections=${counts.projections}, sends=${counts.successfulSends}`)
+        try {
+          result = await window.webContents.executeJavaScript(`window.completeRoom(${target},${remaining})`) as typeof result
+        } catch {
+          throw new Error(`Room completion failed: target=${target}, source=${sourceRevision}, attempts=${completionAttempts}, projections=${counts.projections}, sends=${counts.successfulSends}`)
+        }
+      } while (result.revision !== candidate.revision || sourceRevision !== candidate.revision)
       const mainProcessCpuMs = copyCpu(cpu) / 1000, usedThread = process.threadCpuUsage(mainThreadCpu)
       const mainCpuMs = (usedThread.user + usedThread.system) / 1000
       const wallMs = performance.now() - started
-      const result = await window.webContents.executeJavaScript('({...window.bench.endCpu(),room:window.room})') as { cpuMs: number; room: WatcherRoomState }
       // Payload accounting and equality run after both CPU reads. Keeping the latest projected room
       // independently catches a dropped trailing event rather than only checking last-send transport.
       counts.wireBytes = sentRooms.reduce((bytes, room) => bytes + serialize(room).length, 0)
-      if (JSON.stringify(result.room) !== JSON.stringify(latestProjected)) throw new Error('Latest projected room differs across actual IPC/contextBridge')
+      if (JSON.stringify(result.room) !== JSON.stringify(candidate.expected)) throw new Error('Latest projected room differs across actual IPC/contextBridge')
       if (counts.projectionShellReads !== 0) throw new Error('Room projection cloned a local shell')
       if (watcher.watchedThreadIds().length !== streamCount || result.room.watchedThreads.some(thread => thread.status !== 'idle')) throw new Error('Watcher fixture lost its participants or final quiet state')
-      rows.push({ ...counts, wallMs, mainCpuMs, mainProcessCpuMs, rendererCpuMs: result.cpuMs,
+      rows.push({ ...counts, completionAttempts, wallMs, mainCpuMs, mainProcessCpuMs, rendererCpuMs: result.cpuMs,
         mainCpuMsPerChunk: mainCpuMs / (STREAMING_CHUNKS * streamCount), totalCpuMsPerChunk: (mainProcessCpuMs + result.cpuMs) / (STREAMING_CHUNKS * streamCount) })
     }
     return { enabled, streamCount, chunks: STREAMING_CHUNKS, rounds: STREAMING_ROUNDS,
