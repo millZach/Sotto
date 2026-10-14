@@ -14,39 +14,36 @@ const STOP_TIP = 'Stop watching: Watcher lets this thread be'
 export const WATCHED_FOR_A_REQUEST = `${WATCHED_BY_WATCHER}. If you send here, Watcher stops sending to it.`
 
 /**
- * Watch in a thread's pane header (Zach's pick on October 13, 2026, watch B): pressed while Watcher watches the thread.
- * Its name is Watch and the thread's title, the same pressed or not, so a screen reader says whether it is on.
+ * What every owl toggle shares: its name, pressed state, tooltip and press. Its name is Watch and the thread's title, the
+ * same pressed or not, so a screen reader says whether it is on; a press watches or stops at once. Null where the
+ * bridge offers neither, and no owl is drawn as a control.
  */
-export function WatchHeaderToggle({ threadId, title }: { readonly threadId: string; readonly title: string }): ReactNode {
+function useWatchToggle(threadId: string, title: string) {
   const actions = useWatchActions()
   const watched = useWatchedThread(threadId)
-  if (actions === null) return null
-  return <button type="button" className="watch-toggle tt-focusable" aria-pressed={watched} aria-label={`Watch ${title}`} title={watched ? STOP_TIP : WATCH_TIP}
-    onClick={() => void actions.setThread(threadId, !watched)}>
-    <WatcherOwl size={15} /><span className="watch-toggle__text">Watch</span>
-  </button>
+  return actions === null ? null : { type: 'button' as const, 'aria-pressed': watched, 'aria-label': `Watch ${title}`,
+    title: watched ? STOP_TIP : WATCH_TIP, onClick: () => void actions.setThread(threadId, !watched) }
+}
+
+/** Watch in a thread's pane header (Zach's pick on October 13, 2026, watch B): pressed while Watcher watches the thread. */
+export function WatchHeaderToggle({ threadId, title }: { readonly threadId: string; readonly title: string }): ReactNode {
+  const toggle = useWatchToggle(threadId, title)
+  if (toggle === null) return null
+  return <button className="watch-toggle tt-focusable" {...toggle}><WatcherOwl size={15} /><span className="watch-toggle__text">Watch</span></button>
 }
 
 /** The owl among a sidebar row's actions, pressed while Watcher watches the thread. */
 export function WatchRowToggle({ threadId, title }: { readonly threadId: string; readonly title: string }): ReactNode {
-  const actions = useWatchActions()
-  const watched = useWatchedThread(threadId)
-  if (actions === null) return null
-  return <button type="button" className="thread-nav__action watch-row-toggle tt-focusable" aria-pressed={watched} aria-label={`Watch ${title}`}
-    title={watched ? STOP_TIP : WATCH_TIP} onClick={() => void actions.setThread(threadId, !watched)}>
-    <WatcherOwl size={16} />
-  </button>
+  const toggle = useWatchToggle(threadId, title)
+  if (toggle === null) return null
+  return <button className="thread-nav__action watch-row-toggle tt-focusable" {...toggle}><WatcherOwl size={16} /></button>
 }
 
 /** The owl at the end of a row in All threads, pressed while Watcher watches it; the row's last stop. */
 export function WatchListToggle({ threadId, title }: { readonly threadId: string; readonly title: string }): ReactNode {
-  const actions = useWatchActions()
-  const watched = useWatchedThread(threadId)
-  if (actions === null) return null
-  return <button type="button" className="watcher-row__watch tt-focusable" aria-pressed={watched} aria-label={`Watch ${title}`}
-    title={watched ? STOP_TIP : WATCH_TIP} onClick={() => void actions.setThread(threadId, !watched)}>
-    <WatcherOwl size={15} />
-  </button>
+  const toggle = useWatchToggle(threadId, title)
+  if (toggle === null) return null
+  return <button className="watcher-row__watch tt-focusable" {...toggle}><WatcherOwl size={15} /></button>
 }
 
 /**
