@@ -93,7 +93,8 @@ export async function stack(root: string, withActivity: boolean, streamCount: nu
     threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', adapters.claude, registry), codex: new SottoThreadHost('codex', adapters.codex, registry),
       grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
-  const workspace = new WorkspaceHost(native, root, () => true, undefined, false, true)
+  const workspace = new WorkspaceHost(native, root, () => true, undefined,
+    /* watcherEnabled */ false, /* museEnabled */ false, /* streamingPublishCostEnabled */ true)
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
   const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, streamingPublishCost: true })
