@@ -82,7 +82,10 @@ it('admits a paired phone origin without Can answer, keeps the computer defaults
   expect(watcherPhoneSendResultSchema.parse(sent.result)).toMatchObject({ status: 'ok' })
   expect(f.watcher.state().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
   expect(f.phone.state(false).conversation.messages[0]?.text).toBe(packet.request.text)
-  expect(f.native(f.target.threadId).messages[0]?.text).toContain('[Sotto Watcher request:')
+  // The provider receives the phone's words as typed; the request rides beside them.
+  expect(f.native(f.target.threadId).messages[0]?.text).toBe(packet.request.text)
+  expect(f.workspace.adapters.codex.commands.findLast(row => row.type === 'send')).toMatchObject({ text: packet.request.text,
+    watcherRequestNote: expect.stringContaining(f.watcher.state().requests.at(-1)!.id) })
   expect(await peer.call('receipt', { op: 'receipt', commandId: 'send' })).toMatchObject({ ok: true, result: { status: 'completed' } })
   expect(f.phone.state(false).draftDeliveries).toEqual(expect.arrayContaining([{ draftId: packet.request.draftId, status: 'accepted' }]))
   const roots = f.watcher.state().requests.length

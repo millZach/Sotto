@@ -1,14 +1,22 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { watcherTextAsTyped, watcherMessagesAsTyped } from '../../../src/main/agents/watcherRequestNote'
+import { watcherRequestLine, watcherRequestNote, watcherTextAsTyped, watcherMessagesAsTyped } from '../../../src/main/agents/watcherRequestNote'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 
-/** The footer exactly as main appends it to the user's text. */
+/** The footer exactly as main appended it to the user's text before the request note existed. */
 const footer = (requestId = randomUUID(), hostId = randomUUID(), projects = ['native:claude:project:' + randomUUID(), 'native:codex:project:' + randomUUID()]) =>
   `\n\n[Sotto Watcher request: ${requestId}. Local host: ${hostId}. Use this requestId for sotto_threads mutations. Known project IDs: ${projects.join(', ')}. Call list_projects for choices.]`
 
-describe('Watcher messages as typed', () => {
+describe('Watcher request note', () => {
+  it('names the request and this computer and lists no projects', () => {
+    const requestId = randomUUID(), hostId = randomUUID()
+    const note = watcherRequestNote(requestId, hostId)
+    expect(note).toContain(requestId)
+    expect(note).toContain(hostId)
+    expect(note).not.toMatch(/project/iu)
+  })
+
   it('takes only the exact Sotto-made footer off an older message', () => {
     const typed = 'Check the release notes.\n\nThen tell me what is missing.'
     expect(watcherTextAsTyped(typed + footer())).toBe(typed)
@@ -16,6 +24,10 @@ describe('Watcher messages as typed', () => {
     // An image sent with no words carried the footer alone.
     expect(watcherTextAsTyped(footer().slice(2))).toBe('')
     expect(watcherTextAsTyped(footer())).toBe('')
+    // Grok Build's request line, the one place the note follows the user's words.
+    const line = watcherRequestLine(watcherRequestNote(randomUUID(), randomUUID()))
+    expect(watcherTextAsTyped(typed + line)).toBe(typed)
+    expect(watcherTextAsTyped(line.slice(2))).toBe('')
   })
 
   it('leaves every other text alone, including text that only looks like the footer', () => {
@@ -29,6 +41,10 @@ describe('Watcher messages as typed', () => {
       `Typed${footer()}`.replace('Use this requestId', 'Use the requestId'),
       // Not on its own paragraph.
       `Typed ${footer().slice(2)}`,
+      // The note itself, written into a message rather than as Sotto's own last line.
+      watcherRequestNote(randomUUID(), randomUUID()),
+      `Typed${watcherRequestLine(watcherRequestNote(randomUUID(), randomUUID()))}\n\nAfter`,
+      `Typed${watcherRequestLine(watcherRequestNote(randomUUID(), randomUUID()))}`.replace('changes made', 'changes'),
     ]
     for (const text of near) expect(watcherTextAsTyped(text)).toBe(text)
   })

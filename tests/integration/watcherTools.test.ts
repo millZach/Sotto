@@ -4,6 +4,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
+import { watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
 import type { ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { watcherToolSchemas } from '../../src/shared/watcher'
@@ -877,13 +878,44 @@ it.each(['manual-send', 'queue-followup'] as const)('keeps the Watcher request c
   await vi.waitFor(() => expect(f.workspace.adapters.codex.images).toHaveLength(1))
   const sent = f.workspace.adapters.codex.commands.findLast(command => command.type === 'send' && command.attachments?.length)
   if (!sent || sent.type !== 'send') throw new Error('image not sent')
-  expect(sent.text).toContain(`Sotto Watcher request: ${f.service.state().requests.at(-1)!.id}`)
-  expect(sent.text).toContain(`Local host: ${f.control.hostId()}`)
-  expect(sent.text).toContain(f.project.id)
+  expect(sent.text).toBe('Synthetic image instruction')
+  expect(sent.watcherRequestNote).toContain(`Sotto Watcher request: ${f.service.state().requests.at(-1)!.id}`)
+  expect(sent.watcherRequestNote).toContain(`Local host: ${f.control.hostId()}`)
+  expect(sent.watcherRequestNote).not.toContain(f.project.id)
   expect(sent.attachments?.[0]?.id).toBe(image.id)
   expect(Buffer.from(f.workspace.adapters.codex.images[0]!)).toEqual(PIXEL_PNG)
   expect(f.control.shell().activeThreadId).toBe(selected)
   expect(f.service.state().requests).toHaveLength(type === 'manual-send' ? 2 : 1)
+})
+
+it('sends Watcher the user’s words as typed, with its request in the note beside them and no project list', async () => {
+  const f = await fixture()
+  const session = f.workspace.registry.byThread(f.id)!.sessionId
+  const sends = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === session)
+  const projectIds = [...f.control.shell().host.projects, ...f.control.watcherSnapshot().projects].map(project => project.id)
+  const first = sends()[0]
+  if (first?.type !== 'send') throw new Error('Watcher was not sent the user request')
+  // What the provider receives as the user's message is what the user typed: nothing of Sotto's and no project IDs.
+  expect(first.text).toBe('Synthetic Watcher user request')
+  for (const id of projectIds) expect(first.text).not.toContain(id)
+  // The routing travels beside it, and names no project either.
+  expect(first.watcherRequestNote).toBe(watcherRequestNote(f.requestId, f.control.hostId()!))
+  for (const id of projectIds) expect(first.watcherRequestNote).not.toContain(id)
+  // The desktop shows the message as typed.
+  await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] })
+  await vi.waitFor(() => expect(f.control.threadDetail(f.id)!.messages.filter(message => message.role === 'user').map(message => message.text))
+    .toEqual(['Synthetic Watcher user request']))
+  // The request the note names still reaches Watcher's tools.
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
+  const worker = f.workspace.adapters.codex.commands.findLast(command => command.type === 'send' && command.threadId !== session)
+  expect(worker).toMatchObject({ type: 'send', text: f.start().firstPrompt })
+  expect(worker).not.toHaveProperty('watcherRequestNote')
+  // A later instruction starts its own request and carries its own note.
+  await f.finish(f.id)
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic later instruction' })).error).toBeNull()
+  const later = f.service.state().requests.at(-1)!
+  expect(later.id).not.toBe(f.requestId)
+  expect(sends().at(-1)).toMatchObject({ text: 'Synthetic later instruction', watcherRequestNote: watcherRequestNote(later.id, f.control.hostId()!) })
 })
 
 it('shows an older Watcher message without the routing footer main once appended, and leaves other text alone', async () => {

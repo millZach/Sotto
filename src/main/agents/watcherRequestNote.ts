@@ -1,14 +1,31 @@
 import type { AgentHostSnapshot, AgentMessage, AgentThread } from '../../shared/agents'
 
+/**
+ * Watcher's request note: the one thing a user Send to Watcher tells it besides what the user typed, namely the Watcher
+ * request that message started and which host is this computer. It travels beside the user's message through the
+ * provider's own context channel for that turn (`watcherRequestNote` on a send), never in the user's text, and names no
+ * projects: Watcher calls list_projects when it needs one.
+ */
+export function watcherRequestNote(requestId: string, hostId: string): string {
+  return `Sotto Watcher request: ${requestId}. Local host: ${hostId}. Use this requestId for sotto_threads changes made for this message.`
+}
+
+/**
+ * The note as one bracketed line after the user's words, for Grok Build alone: its prompt has no other model-visible
+ * channel. The snapshot below takes this exact line off again, so no one is shown it.
+ */
+export const watcherRequestLine = (note: string): string => `\n\n[${note}]`
+
 const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
 const HEAD = `(?:^|\\n\\n)\\[Sotto Watcher request: ${UUID}\\. Local host: ${UUID}\\. `
 /**
- * The line Sotto puts after a Watcher message's words, ending the message on its own paragraph: the routing footer
- * main appends to every user Send, which also lists every project ID. Only this exact Sotto-made line matches; nothing
- * else in a message is read.
+ * The two lines Sotto ever put after a Watcher message's words, each ending the message on its own paragraph: the
+ * routing footer main appended to every user Send before the request note existed, which also listed every project ID,
+ * and Grok Build's request line. Only these exact Sotto-made lines match; nothing else in a message is read.
  */
 const SOTTO_LINES = [
   new RegExp(`${HEAD}Use this requestId for sotto_threads mutations\\. Known project IDs: [^\\n]*\\. Call list_projects for choices\\.\\]$`, 'u'),
+  new RegExp(`${HEAD}Use this requestId for sotto_threads changes made for this message\\.\\]$`, 'u'),
 ]
 
 /** A Watcher message as the user typed it, without the line Sotto put after it. */

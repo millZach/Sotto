@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -671,6 +671,17 @@ test.describe("Watcher's room on the built app", () => {
           await expect(pane.locator('[data-role="user"]')).toContainText('Check the release notes and tell me what is missing.')
           await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. I will look at the release notes.')
           await expect(pane.locator('[data-role="user"]')).toHaveCount(1)
+          // The bubble shows only what was typed. The request rides in the turn's own context, beside the words, and
+          // names no projects.
+          await expect(pane.locator('[data-role="user"]')).not.toContainText('Sotto Watcher request')
+          const turns = (await readFile(join(root, 'codex', 'requests.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as
+            { method?: string; params?: { input?: { type: string; text?: string }[]; additionalContext?: Record<string, { value: string; kind: string }> } })
+            .filter(frame => frame.method === 'turn/start')
+          expect(turns).toHaveLength(1)
+          expect(turns[0]!.params!.input).toEqual([expect.objectContaining({ type: 'text', text: 'Check the release notes and tell me what is missing.' })])
+          const note = turns[0]!.params!.additionalContext?.sotto_watcher_request
+          expect(note).toMatchObject({ kind: 'application', value: expect.stringMatching(/^Sotto Watcher request: [0-9a-f-]{36}\. Local host: [0-9a-f-]{36}\./u) })
+          expect(note!.value).not.toMatch(/project/iu)
           const record = await page.evaluate(async () => (await window.sotto!.watcher!.get()))
           expect(record).toMatchObject({ status: 'ok', state: { current: { provider: 'codex' } } })
           // Watcher is its room's: not listed on the Threads page, and nothing there was selected for it.

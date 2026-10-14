@@ -17,6 +17,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
+import { watcherRequestLine } from './watcherRequestNote'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { GrokSubscriptionClient, sweepLeftoverSessions } from './subscriptionGrok'
@@ -1179,7 +1180,11 @@ export class GrokAcpHost implements AgentHost {
           if (thread.requests.length) throw new Error('Answer the pending Grok request before sending another prompt.')
           verifyFileMentions(command.text, command.files)
           const skillText = command.skills?.length ? grokSkillPrompt(command.text, command.skills, await this.listThreadSkills(command.threadId, true)) : command.text
-          const nativeText = skillText
+          // Grok Build reads nothing model-visible from a prompt but its blocks, and its hooks drop added context, so a
+          // Watcher's request note is one bracketed line after the user's words. Sotto's snapshot takes that exact line
+          // off again before the message is shown anywhere (`watcherMessagesAsTyped`).
+          const requestLine = command.watcherRequestNote && await this.launchProfile(command.threadId) ? watcherRequestLine(command.watcherRequestNote) : ''
+          const nativeText = skillText + requestLine
           this.assertGeneration(generation)
           // Direct sends run beside configure-thread; a mode change that began during the awaits above owns the session now.
           if (alias.pendingRuntimeMode || !alias.settingsConfirmed) throw new Error('Grok is applying a new permission mode to this thread. Send again once it is confirmed.')
