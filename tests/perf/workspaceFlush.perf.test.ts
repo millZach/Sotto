@@ -46,7 +46,7 @@ describe.skipIf(!PERF_BENCH)('the 250 ms workspace flush over a large catalog (t
       })),
     }
     const adapter = new FakeProviderHost(state)
-    const workspace = new WorkspaceHost(adapter, root, () => true, undefined, false, true)
+    const workspace = new WorkspaceHost(adapter, root, () => true, undefined, false, false, true)
     await workspace.initialize()
     await workspace.connect()
     await workspace.flush()

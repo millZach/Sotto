@@ -37,33 +37,40 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     links.addEventListener('click', onOpenLinks)
     bar.insertBefore(links, close)
   }
-  let selected: { marker: IMarker; offset: number; endOffset: number; term: string; line: string } | undefined
+  let selected: { marker: IMarker; row: number; offset: number; endOffset: number; term: string; line: string } | undefined
+  let rebuildHighlights = false
   const rememberSelection = (): void => {
     const range = terminal.getSelectionPosition()
     if (!range || terminal.getSelection().toLowerCase() !== input.value.toLowerCase()) return
     selected?.marker.dispose()
     const buffer = terminal.buffer.active, row = terminalLineStart(buffer, range.start.y)
     const offset = terminalLineText(buffer, row, { row: range.start.y, column: range.start.x }).length
-    selected = { marker: terminal.registerMarker(row - buffer.baseY - buffer.cursorY), offset,
+    selected = { marker: terminal.registerMarker(row - buffer.baseY - buffer.cursorY), row, offset,
       endOffset: offset + terminal.getSelection().length, term: input.value,
       line: terminalLineText(buffer, row) }
   }
   const restoreSelection = (): void => {
-    if (!selected || selected.marker.isDisposed || selected.term !== input.value) return
+    if (!selected || selected.term !== input.value) return
     const buffer = terminal.buffer.active
     const range = terminal.getSelectionPosition()
-    if (range && terminal.getSelection().toLowerCase() === selected.term.toLowerCase() && terminalLineText(buffer, range.start.y) === selected.line && terminalLineText(buffer, range.start.y, { row: range.start.y, column: range.start.x }).length === selected.offset) return
-    if (terminalLineText(buffer, selected.marker.line) !== selected.line) {
-      // ConPTY can repaint the same screen at a new buffer row after a resize, without moving old markers.
+    if (range && terminal.getSelection().toLowerCase() === selected.term.toLowerCase() && terminalLineText(buffer, range.start.y) === selected.line && terminalLineText(buffer, range.start.y, { row: range.start.y, column: range.start.x }).length === selected.offset) {
+      selected.row = terminalLineStart(buffer, range.start.y)
+      return
+    }
+    const rememberedRow = selected.marker.isDisposed ? selected.row : selected.marker.line
+    if (selected.marker.isDisposed || terminalLineText(buffer, rememberedRow) !== selected.line) {
+      rebuildHighlights = true
+      // ConPTY can erase a marker or repaint its logical line at a new row after a resize.
       let nearest: number | undefined
       for (let row = 0; row < buffer.length; row++) {
         if (buffer.getLine(row)?.isWrapped || terminalLineText(buffer, row) !== selected.line) continue
-        if (nearest === undefined || Math.abs(row - selected.marker.line) < Math.abs(nearest - selected.marker.line)) nearest = row
+        if (nearest === undefined || Math.abs(row - rememberedRow) < Math.abs(nearest - rememberedRow)) nearest = row
       }
       if (nearest === undefined) { selected.marker.dispose(); selected = undefined; return }
       selected.marker.dispose()
       selected.marker = terminal.registerMarker(nearest - buffer.baseY - buffer.cursorY)
     }
+    selected.row = selected.marker.line
     const firstRow = terminalLineStart(buffer, selected.marker.line)
     const position = terminalTextPosition(buffer, firstRow, selected.offset)
     const last = terminalTextPosition(buffer, firstRow, selected.endOffset - 1)
@@ -95,6 +102,7 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
   const find = (backwards = false, incremental = false): void => {
     if (!input.value) {
       selected?.marker.dispose(); selected = undefined
+      rebuildHighlights = false
       addon.clearDecorations()
       terminal.clearSelection()
       count.textContent = ''
@@ -105,10 +113,16 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     paintedDecorations = JSON.stringify(decorations)
     const options = { incremental, decorations }
     restoreSelection()
+    if (rebuildHighlights) {
+      rebuildHighlights = false
+      addon.clearDecorations()
+      // Repainted result positions must be rebuilt at the retained match before navigation advances.
+      if (selected && selected.term === input.value && !incremental) addon.findNext(input.value, { incremental: true, decorations })
+    }
     if (backwards) addon.findPrevious(input.value, options)
     else addon.findNext(input.value, options)
   }
-  const hide = (): void => { bar.hidden = true; selected?.marker.dispose(); selected = undefined; onVisibilityChange?.(false); addon.clearDecorations(); terminal.clearSelection(); terminal.focus() }
+  const hide = (): void => { bar.hidden = true; selected?.marker.dispose(); selected = undefined; rebuildHighlights = false; onVisibilityChange?.(false); addon.clearDecorations(); terminal.clearSelection(); terminal.focus() }
   input.addEventListener('input', () => find(false, true))
   previous.addEventListener('click', () => find(true))
   next.addEventListener('click', () => find())

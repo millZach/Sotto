@@ -151,6 +151,109 @@ function scripted(threads: { id: string; status: 'idle' | 'running' }[], followu
   return { control, set }
 }
 
+async function dormantFixture(records: Saved['working'], options: {
+  enabled?: boolean; dormant?: readonly string[]; threads?: { id: string; status: 'idle' | 'running' }[]
+} = {}) {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
+  await writeFile(join(root, 'restart-resume.json'), JSON.stringify({ version: 1, working: records }))
+  const coordinator = scripted(options.threads ?? [{ id: 'ordinary', status: 'idle' }])
+  const delivered: { threadId: string; news: RestartNews }[] = []
+  const dormant = new Set(options.dormant ?? records.map(record => record.threadId))
+  const resume = new RestartResume({ directory: root, control: { ...coordinator.control,
+    deliverWakeUp: async (threadId, news) => { delivered.push({ threadId, news }) } }, enabled: () => options.enabled ?? true,
+    tool: () => false, preservesDormantThread: id => dormant.has(id) }); resumes.push(resume)
+  await resume.start()
+  return { root, resume, coordinator, delivered }
+}
+
+describe('a gated provider keeps its restart records', () => {
+  it('keeps a dormant resume record when a connected ordinary shell omits its thread', async () => {
+    const record = { ...stopped(1), threadId: 'muse' }
+    const f = await dormantFixture([record])
+    await f.resume.freeze()
+    expect(await saved(f.root)).toEqual([record])
+    expect(f.delivered).toEqual([])
+  })
+
+  it.each([false, true])('keeps a dormant record unchanged through native observations and note hooks, queued=%s', async queued => {
+    const record = { ...stopped(2), threadId: 'muse', ...(queued ? { queued: true as const } : {}) }
+    const f = await dormantFixture([record], { threads: [{ id: 'muse', status: 'idle' }] })
+    f.resume.noteSending('muse'); f.resume.noteUnsent('muse')
+    f.coordinator.set([{ id: 'muse', status: 'running' }])
+    f.coordinator.set([{ id: 'muse', status: 'idle' }])
+    f.coordinator.set([{ id: 'ordinary', status: 'idle' }])
+    await f.resume.freeze()
+    expect(await saved(f.root)).toEqual([record])
+    expect(f.delivered).toEqual([])
+  })
+
+  it.each(['setting off', 'expired', 'three resumes'] as const)('preserves dormant rows before %s pruning while ordinary rows still follow it', async reason => {
+    const since = new Date(Date.now() - (reason === 'expired' ? RESUME_RECORD_MAX_AGE_MS + 60_000 : 0)).toISOString()
+    const record = { ...stopped(reason === 'three resumes' ? RESUMES_IN_A_ROW_MAX : 0, since), threadId: 'muse' }
+    const ordinary = { ...record, threadId: 'ordinary' }
+    const f = await dormantFixture([record, ordinary], { dormant: ['muse'], enabled: reason !== 'setting off' })
+    await f.resume.freeze()
+    expect(await saved(f.root)).toEqual([record])
+    expect(f.delivered).toEqual([])
+  })
+
+  it('keeps all 500 dormant rows when ordinary work would otherwise displace the oldest one', async () => {
+    const records = Array.from({ length: 500 }, (_, index) => ({ ...stopped(index % 4), threadId: `muse-${index}`,
+      ...(index % 2 ? { queued: true as const } : {}) }))
+    const f = await dormantFixture(records, { threads: [{ id: 'ordinary', status: 'running' }] })
+    await f.resume.freeze()
+    expect(await saved(f.root)).toEqual(records)
+    expect(f.delivered).toEqual([])
+  })
+
+  it('fills the remaining record bound with the newest ordinary work without moving dormant rows', async () => {
+    const records = Array.from({ length: 499 }, (_, index) => ({ ...stopped(), threadId: `muse-${index}` }))
+    const f = await dormantFixture(records, { threads: [{ id: 'first', status: 'running' }, { id: 'second', status: 'running' }] })
+    await f.resume.freeze()
+    expect(await saved(f.root)).toEqual([...records, { threadId: 'second', resumes: 0, since: expect.any(String) }])
+    expect(f.delivered).toEqual([])
+  })
+
+  it('resumes the retained Muse thread once through the coordinator when a fresh Owl instance makes it available', async () => {
+    const record = stopped(1)
+    const parked = await dormantFixture([record])
+    await parked.resume.freeze()
+    expect(await saved(parked.root)).toEqual([record])
+    const host = new Host(); await host.connect()
+    host.state.threads.find(thread => thread.id === record.threadId)!.providerId = 'muse'
+    host.state.models[0]!.providerId = 'muse'; host.state.models[0]!.provider = 'Muse'
+    host.state.projects[0]!.path = parked.root
+    const credentials = await testCredentials(parked.root, { mode: 'unavailable' })
+    const control = createAgentControl({ directory: parked.root, host, credentials, reasoner: e2eAgentReasoner, museEnabled: true }); controls.push(control)
+    const resume = new RestartResume({ directory: parked.root, control, enabled: () => true, tool: () => false,
+      preservesDormantThread: () => false }); resumes.push(resume)
+    control.useRestartResume({ due: () => true, sending: id => resume.noteSending(id), unsent: id => resume.noteUnsent(id) })
+    await resume.start(); await control.start(); await control.command({ type: 'connect' })
+    await expect.poll(() => sends(host).length).toBe(1)
+    expect(sends(host)[0]).toMatchObject({ threadId: record.threadId, wakeUp: true, text: RESUME_NOTE })
+    await expect.poll(() => saved(parked.root)).toEqual([{ threadId: record.threadId, since: expect.any(String), resumes: 2 }])
+    finish(host)
+    await resume.freeze()
+    expect(await saved(parked.root)).toEqual([])
+    expect(sends(host)).toHaveLength(1)
+  })
+
+  it.each(['expired', 'three resumes'] as const)('keeps the normal %s limit when a fresh instance makes a retained thread available', async reason => {
+    const since = new Date(Date.now() - (reason === 'expired' ? RESUME_RECORD_MAX_AGE_MS + 60_000 : 0)).toISOString()
+    const record = { ...stopped(reason === 'three resumes' ? RESUMES_IN_A_ROW_MAX : 0, since), threadId: 'muse' }
+    const parked = await dormantFixture([record]); await parked.resume.freeze()
+    expect(await saved(parked.root)).toEqual([record])
+    const coordinator = scripted([{ id: record.threadId, status: 'idle' }])
+    const delivered: RestartNews[] = []
+    const resume = new RestartResume({ directory: parked.root, control: { ...coordinator.control,
+      deliverWakeUp: async (_threadId, news) => { delivered.push(news) } }, enabled: () => true, tool: () => false,
+      preservesDormantThread: () => false }); resumes.push(resume)
+    await resume.start(); await resume.freeze()
+    expect(await saved(parked.root)).toEqual([])
+    expect(delivered).toEqual([])
+  })
+})
+
 describe('what the record counts', () => {
   it('starts a turn of the user’s own again from none, even while a resume note waits (Sotto Bug Bot)', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)

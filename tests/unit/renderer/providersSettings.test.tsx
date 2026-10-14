@@ -9,6 +9,8 @@ import { ProvidersSettings } from '../../../src/renderer/src/agents/ProvidersSet
 import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
 import { AgentSetupFields } from '../../../src/renderer/src/agents/AgentAccountSettings'
 import { agentContextFixture } from '../../fixtures/agentContext'
+import { AppProvider } from '../../../src/renderer/src/state/AppContext'
+import { createBridge, createController } from '../../fixtures/renderer/appHarness'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn() }))
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
@@ -45,7 +47,9 @@ describe('independent provider settings', () => {
     state.configuration.defaultModelId = 'grok:same-native-model'
     const { command } = provide(state)
     render(<ProvidersSettings />)
-    for (const provider of providerIdSchema.options) {
+    // Muse is an Owl feature: with no Owl answers it is not offered at all (ADR-0079).
+    expect(screen.queryByRole('button', { name: 'Muse' })).toBeNull()
+    for (const provider of providerIdSchema.options.filter(id => id !== 'muse')) {
       fireEvent.click(screen.getByRole('button', { name: PROVIDER_LABELS[provider] }))
       expect(screen.queryByRole('combobox', { name: /default thread model/i })).toBeNull()
     }
@@ -69,7 +73,7 @@ describe('independent provider settings', () => {
   it("marks each provider and the selected detail with that provider's mark", () => {
     provide()
     const { container } = render(<ProvidersSettings />)
-    for (const provider of providerIdSchema.options) {
+    for (const provider of providerIdSchema.options.filter(id => id !== 'muse')) {
       // Every provider Sotto ships draws its own mark; the initial is the fallback for one it has none for.
       const drawn = screen.getByRole('button', { name: PROVIDER_LABELS[provider] }).querySelector(`svg.provider-mark[data-provider="${provider}"]`)
       expect(drawn, `${provider} needs its own mark rather than its initial`).not.toBeNull()
@@ -77,6 +81,14 @@ describe('independent provider settings', () => {
     }
     fireEvent.click(screen.getByRole('button', { name: 'Grok Build' }))
     expect(container.querySelector('.provider-detail__header svg.provider-mark[data-provider="grok"]')).not.toBeNull()
+  })
+  it('offers Muse in Sotto Owl with its own sign-in guidance (ADR-0079)', async () => {
+    provide()
+    render(<AppProvider bridge={createBridge({ getUpdateStatus: async () => ({ currentVersion: '0.1.37-owl.20261012.1', releaseTrack: 'owl', owlFeatures: { watcher: false, muse: true }, phase: { phase: 'unsupported' }, checkedAt: null }) as never })} createController={createController}><ProvidersSettings /></AppProvider>)
+    const muse = await screen.findByRole('button', { name: 'Muse' })
+    fireEvent.click(muse)
+    expect(screen.getByText(/Uses your Muse sign-in on this computer/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Copy Muse login command' })).toBeVisible()
   })
   it('shows a provider-specific failure and retries it while others stay connected', async () => {
     const state = fixture()

@@ -135,7 +135,7 @@ describe('the test iPhone surface', () => {
     const state = threadsStateFixture()
     state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, providerId: 'devin' as const } : thread)
     await setup(browser.bridge, { state })
-    expect(await screen.findByText('This Devin client does not support Sotto browser tools.')).toBeInTheDocument()
+    expect(await screen.findByText('This provider does not support Sotto browser tools.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Share with agent' })).not.toBeInTheDocument()
   })
 })

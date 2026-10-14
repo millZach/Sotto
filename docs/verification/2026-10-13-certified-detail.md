@@ -1,5 +1,9 @@
 # Certified detail publishing — October 13, 2026
 
+The two retained captures were refreshed during the PR #973 integration check on
+`0ff7b7f873eaee499a6b7f0d99ab47e23ad8b7c9`. The original measurements and gate results below
+retain their original revision attribution; the combined verification is recorded at the end.
+
 **VERIFIED on the built Windows Electron app, with the real Codex adapter over the existing fake
 native CLI.** This is not a claim about the installed app, a packaged release, live provider
 accounts, macOS or a native phone. The shared socket/detail tests remain part of the required
@@ -84,3 +88,40 @@ Its owner, source, command, worktree and exit code are preserved in
 `tests-settled-exit.json`; static checks have separate `*-settled` logs and exit JSON.
 No source or fixture changed while those gates ran. The earlier interrupted suite
 remains a separate nonpassing attempt.
+
+## Combined Muse and Watcher verification
+
+PR #973 merged main `b34e1d48b` into its formerly green `e228f919e` as
+`0ff7b7f873eaee499a6b7f0d99ab47e23ad8b7c9`. The runtime keeps Muse and streaming cost as
+independent Owl answers. Whole details and deltas retain Watcher's presented messages alongside
+owned immutable activity records.
+
+The mechanical integration exposed four failing regressions before the semantic fix: a changed
+Watcher proof did not publish through the certified path; a nonempty-message certification
+transition advanced its revision unnecessarily; and closing a publicly read detail without a
+subscriber retained caches with Watcher both off and on. A shared message signature and gated
+cleanup fixed those cases. The three focused files passed 32 tests, followed by the broader
+11-file integration selection passing 120 tests, with native exits 0 and no skipped cases.
+Independent Standards and Spec reviewers found no unresolved findings. Assets verification,
+typecheck, lint and notices also passed; notices verified 189 components.
+
+A fresh build on the exact clean merge commit passed, then the whole Muse, Watcher and certified
+detail Playwright specs passed **16 cases**, native exit 0. The two certified cases verify the
+actual native Codex adapter and coordinator tracker with the optimization off and on. The Muse
+case exercises Settings, requests, steering, recovery and Owl-to-stable-to-Owl preservation.
+Thirteen Watcher cases include its actual native input, original visible message, keyboard path,
+beside pane and light/dark layouts. These journeys use synthetic providers and owned temporary
+profiles. All 165 observed process identities drained and all 18 observed owned profiles were
+removed; source hashes and the inherited environment were unchanged.
+
+Fresh captures were written at 03:56:35–03:58:13 UTC on October 14 (October 13 locally). The dark
+1280 capture and light 820 capture above now come from this run. Their owl/stable filenames
+indicate the optimization gate on/off in the development fixture. They were opened and inspected,
+along with the minimum Muse Settings and original-message Watcher views. The transcript, expanded
+command output and minimum-size composer remain readable. No design baseline was regenerated.
+
+This records local Windows app verification on the stated source. Full hosted CI and packaging
+must run on the pushed revision. Native iOS and host-protocol source are unchanged from the
+previous fully green e228 revision; its hosted iOS proof keeps that attribution. Live native Muse
+sign-in, approval, installer update and handoff, Android builds and local macOS/Omarchy desktop
+journeys remain unverified.

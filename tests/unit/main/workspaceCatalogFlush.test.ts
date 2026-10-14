@@ -38,7 +38,7 @@ async function fixture(enabled: boolean, directory?: string) {
     await rm(root, { recursive: true, force: true })
   })
   const adapter = new FakeProviderHost(state(root))
-  const host = new WorkspaceHost(adapter, root, () => true, undefined, false, enabled)
+  const host = new WorkspaceHost(adapter, root, () => true, undefined, false, false, enabled)
   cleanup.push(async () => { host.disconnect(); host.dispose() })
   await host.initialize()
   return { root, adapter, host }

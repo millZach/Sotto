@@ -73,6 +73,8 @@ artifacts/sotto-owl-night-sky/*
 !artifacts/sotto-owl-night-sky/header-stable-sotto-dark.png
 !artifacts/sotto-owl-night-sky/header-stable-sotto-light.png
 artifacts/terminal-search-links-zoom/
+artifacts/terminal-search-repaint/*
+!artifacts/terminal-search-repaint/drawer-search-820x560-light.png
 artifacts/skill-pill-composer/*
 !artifacts/skill-pill-composer/proof.json
 !artifacts/skill-pill-composer/dark-1600x1000.png
@@ -432,6 +434,7 @@ artifacts/watcher-room/*
 !artifacts/watcher-room/room-disconnected-sotto-dark-820x560.png
 !artifacts/watcher-room/room-empty-sotto-dark-1280x800.png
 !artifacts/watcher-room/room-long-title-sotto-dark-820x560.png
+!artifacts/watcher-room/room-main-original-message-sotto-dark-1280x800.png
 !artifacts/watcher-room/room-main-sotto-dark-1280x800.png
 !artifacts/watcher-room/room-sotto-dark-1280x800-reduced-motion-setting.png
 !artifacts/watcher-room/room-sotto-dark-1280x800.png
@@ -512,6 +515,19 @@ artifacts/new-thread-defaults-every-host/*
 !artifacts/new-thread-defaults-every-host/dark-820.png
 !artifacts/new-thread-defaults-every-host/light-820.png
 
+# Muse provider review evidence; retain only the cited captures and measurements.
+artifacts/muse-provider/*
+!artifacts/muse-provider/settings-1600-dark.png
+!artifacts/muse-provider/settings-820-light.png
+!artifacts/muse-provider/settings-connected-1280-dark.png
+!artifacts/muse-provider/permission-820-light.png
+!artifacts/muse-provider/optional-question-820-light.png
+!artifacts/muse-provider/steered-thread-complete.png
+!artifacts/muse-provider/owl-restored-thread.png
+!artifacts/muse-provider/contrast.json
+!artifacts/muse-provider/journey.json
+!artifacts/muse-provider/mise-details-1600-dark.png
+!artifacts/muse-provider/mise-details-820-light.png
 artifacts/usage-dashboard/*
 !artifacts/usage-dashboard/overview-dark-1600.png
 !artifacts/usage-dashboard/tokens-dark-1280.png

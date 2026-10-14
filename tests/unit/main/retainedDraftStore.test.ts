@@ -13,7 +13,7 @@ import { AgentCredentials } from '../../../src/main/agents/credentials'
 
 let directory: string
 const hostId = randomUUID()
-const edit = (text = 'Synthetic retained edit'): RetainedDraft => ({ hostId, draft: { threadId: 'thread', draftId: randomUUID(),
+const edit = (text = 'Synthetic retained edit'): RetainedDraft => ({ hostId, providerId: 'codex', draft: { threadId: 'thread', draftId: randomUUID(),
   text, attachments: [], requestId: null, updatedAt: new Date().toISOString() }, questionsDigest: null, saved: false, recovery: false })
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'sotto-retained-drafts-')) })
 afterEach(async () => { await rm(directory, { recursive: true, force: true }) })

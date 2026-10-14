@@ -1,5 +1,7 @@
-import { visibleWatcherState } from '../../shared/watcherVisibility'
-import type { WatcherRemoteHosts } from '../../shared/watcherHost'
+import { clientUpdateEnumerationUsesMuse, commandUsesMuse, modelsWithoutMuse, museWatcherRefusal, threadUsesMuse, watcherRequestUsesMuse } from '../agents/museGate'
+import { visibleWatcherState, withoutThreads } from '../../shared/watcherVisibility'
+import { parsePublicProviderEntityId } from '../../shared/agents'
+import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts } from '../../shared/watcherHost'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
 import { agentCommandSchema, defaultNewThreadModelId, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
@@ -107,6 +109,8 @@ export class DesktopHostRouter {
       if (!entry || entry.kind !== 'remote' || this.reconnecting.has(id) || entry.available?.() === false) throw new Error('Watcher host is disconnected.')
       return entry
     }
+    const museHeld = (host: DesktopHostConnection, request: WatcherHostRead | WatcherHostControl) => this.options.museEnabled !== true
+      && watcherRequestUsesMuse(request, host.service.shell().host, this.dormantMuseIds.get(host.hostId))
     return {
       hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => ({
         hostId: host.hostId, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true,
@@ -115,13 +119,25 @@ export class DesktopHostRouter {
       snapshot: id => {
         allowed(); const entry = this.hosts.get(id)?.connection
         if (!entry || entry.kind !== 'remote') return undefined
-        const snapshot = entry.service.shell().host, connected = !this.reconnecting.has(id) && entry.available?.() !== false
+        const snapshot = this.visibleState(entry.service.shell(), id).host, connected = !this.reconnecting.has(id) && entry.available?.() !== false
         return { ...snapshot, hostId: id, connected: snapshot.connected && connected,
           threads: snapshot.threads.map(thread => ({ ...thread, hostId: id, ...!connected ? { clientConnected: false } : {} })) }
       },
       projection: (id, master) => connection(id).service.cachedWatcherProjection?.(master),
-      read: async (id, request) => { const host = connection(id); if (!host.service.supportsWatcherReads) throw new Error('Watcher reads are unavailable.'); return host.service.watcherRead!(request, desktopWindowClient()) },
-      control: async (id, request) => { const host = connection(id); if (!host.service.supportsWatcherControl || !host.service.supportsWatcherReads) throw new Error('Watcher control is unavailable.'); return host.service.watcherControl!(request, desktopWindowClient(), () => { connection(id) }) },
+      read: async (id, request) => {
+        const host = connection(id)
+        if (!host.service.supportsWatcherReads) throw new Error('Watcher reads are unavailable.')
+        if (museHeld(host, request)) return museWatcherRefusal()
+        return host.service.watcherRead!(request, desktopWindowClient())
+      },
+      control: async (id, request) => {
+        const host = connection(id)
+        if (!host.service.supportsWatcherControl || !host.service.supportsWatcherReads) throw new Error('Watcher control is unavailable.')
+        if (museHeld(host, request)) return museWatcherRefusal()
+        return host.service.watcherControl!(request, desktopWindowClient(), () => {
+          if (museHeld(connection(id), request)) throw new Error(museWatcherRefusal().message)
+        })
+      },
       subscribe: listener => { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) },
     }
   }
@@ -138,6 +154,8 @@ export class DesktopHostRouter {
   private publishedNotice: RouterNotice | undefined
   /** Hosts whose threads read Reconnecting: kept on the page while their host restarts for an update (ADR-0040). */
   private readonly reconnecting = new Set<string>()
+  /** Provider identity is immutable for a thread; classify its gated details when its shell arrives. */
+  private readonly dormantMuseIds = new Map<string, Map<string, string>>()
   /** Counts the window's own selections, so a command that ends after one does not undo it. */
   private selections = 0
   /** Receipt reads share a connection and owner state; no answer is replayed or held draft released. */
@@ -151,7 +169,7 @@ export class DesktopHostRouter {
   private readonly draftPass: { running: boolean; gap: ReturnType<typeof setTimeout> | undefined; wanted: RequestDraftRecovery | undefined; disposed: boolean } =
     { running: false, gap: undefined, wanted: undefined, disposed: false }
 
-  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean } = {}) {}
+  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean; museEnabled?: boolean } = {}) {}
 
   setUsageSavedHosts(hostIds: readonly string[]): void { this.usageSavedHostIds = [...new Set(hostIds)].slice(0, USAGE_HOSTS_MAX) }
   private usageHostIds(requested?: string[]): string[] {
@@ -209,7 +227,9 @@ export class DesktopHostRouter {
   /** Asks the host for the thread's kind as it is now. Reading its shell for that copied the whole state, and this runs for
    * every detail a streaming thread sends (#917); a host that cannot answer more cheaply is still read that way. */
   private watcherAvailable(connection: DesktopHostConnection, id: string | undefined): boolean {
-    if (this.options.watcherEnabled === true || !id || id === '_') return true
+    if (!id || id === '_') return true
+    if (this.options.museEnabled !== true && this.dormantMuseIds.get(connection.hostId)?.has(id)) return false
+    if (this.options.watcherEnabled === true) return true
     const kind = connection.service.threadKind ? connection.service.threadKind(id) : connection.service.shell().host.threads.find(thread => thread.id === id)?.kind
     return kind !== 'watcher' && kind !== 'watcher-history'
   }
@@ -222,8 +242,37 @@ export class DesktopHostRouter {
     const thread = connection?.service.shell().host.threads.find(thread => thread.id === key.id)
     return thread ? thread.kind === 'watcher' || thread.kind === 'watcher-history' : undefined
   }
-  private visibleState(state: AgentState): AgentState {
-    return visibleWatcherState(state, this.options.watcherEnabled === true)
+  preservesDormantThread(threadId: string): boolean | undefined {
+    const key = parseHostEntityKey(threadId)
+    if (!key) return false
+    const thread = this.hosts.get(key.hostId)?.connection.service.shell().host.threads.find(thread => thread.id === key.id)
+    return thread ? this.options.museEnabled !== true && thread.providerId === 'muse' || this.options.watcherEnabled !== true && (thread.kind === 'watcher' || thread.kind === 'watcher-history') : undefined
+  }
+  private rememberMuseThreads(state: AgentState, hostId: string): Map<string, string> {
+    const hidden = this.dormantMuseIds.get(hostId) ?? new Map<string, string>()
+    for (const thread of state.host.threads) {
+      if (threadUsesMuse(thread, state.host)) hidden.set(thread.id, thread.projectId)
+    }
+    this.dormantMuseIds.set(hostId, hidden)
+    return hidden
+  }
+  private visibleState(state: AgentState, hostId: string): AgentState {
+    const watched = visibleWatcherState(state, this.options.watcherEnabled === true)
+    if (this.options.museEnabled === true) return watched
+    const hidden = this.rememberMuseThreads(state, hostId)
+    const visible = withoutThreads(watched, new Set(hidden.keys()))
+    return { ...visible, configuration: { ...visible.configuration,
+      provider: visible.configuration.provider === 'muse' ? 'codex' : visible.configuration.provider,
+      ...(visible.configuration.enabledProviders ? { enabledProviders: visible.configuration.enabledProviders.filter(provider => provider !== 'muse') } : {}),
+      defaultModelId: parsePublicProviderEntityId(visible.configuration.defaultModelId)?.provider === 'muse' ? '' : visible.configuration.defaultModelId,
+      newThreadModelId: parsePublicProviderEntityId(visible.configuration.newThreadModelId)?.provider === 'muse' ? '' : visible.configuration.newThreadModelId },
+      host: { ...visible.host,
+        models: modelsWithoutMuse(visible.host.models),
+        projects: visible.host.projects.filter(project => project.providerId !== 'muse' && parsePublicProviderEntityId(project.id)?.provider !== 'muse'),
+        ...(visible.host.providers ? { providers: visible.host.providers.filter(provider => provider.id !== 'muse') } : {}) },
+      ...(visible.installedProviders ? { installedProviders: visible.installedProviders.filter(provider => provider !== 'muse') } : {}),
+      ...(visible.clientUpdates ? { clientUpdates: visible.clientUpdates.filter(update => update.id !== 'muse') } : {}),
+      ...(visible.clientUpdateRun?.line ? { clientUpdateRun: { ...visible.clientUpdateRun, line: visible.clientUpdateRun.line.filter(provider => provider !== 'muse') } } : {}) }
   }
 
   requiresManagementUpdate(hostId: string): boolean {
@@ -239,7 +288,10 @@ export class DesktopHostRouter {
    * has cached, so it is read afresh.
    */
   private watch(connection: DesktopHostConnection): (() => void)[] {
-    const signature = (state: AgentState) => JSON.stringify([state.stale === true, state.host.connected, connection.service.supportsWatcherControl, connection.service.supportsWatcherReads])
+    const signature = (state: AgentState) => {
+      if (this.options.museEnabled !== true) this.rememberMuseThreads(state, connection.hostId)
+      return JSON.stringify([state.stale === true, state.host.connected, connection.service.supportsWatcherControl, connection.service.supportsWatcherReads])
+    }
     let last = signature(connection.service.shell())
     const off = [connection.service.subscribe(state => {
       this.emit(connection.kind === 'local' ? { hostId: connection.hostId, state } : undefined)
@@ -286,6 +338,7 @@ export class DesktopHostRouter {
   remove(hostId: string): void {
     this.hosts.get(hostId)?.off.forEach(off => off())
     this.hosts.delete(hostId)
+    this.dormantMuseIds.delete(hostId)
     this.watcherChanged(hostId)
     this.reconnecting.delete(hostId)
     if (this.selectedHostId === hostId) this.selectedHostId = this.hosts.keys().next().value
@@ -321,7 +374,7 @@ export class DesktopHostRouter {
   private build(read: (connection: DesktopHostConnection) => AgentState): AgentState {
     this.settleAnswerNotice()
     const entries = [...this.hosts.values()].map(({ connection }) => {
-      const original = this.visibleState(read(connection))
+      const original = this.visibleState(read(connection), connection.hostId)
       return { connection, original, state: clientAgentState(original) }
     })
     const selected = entries.find(item => item.connection.hostId === this.selectedHostId)
@@ -726,16 +779,26 @@ export class DesktopHostRouter {
     mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
     if (references.size > 1) throw new Error('This action includes items from different hosts. Select items from one host.')
     const command = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
-    if (command.type === 'configure') return this.configurationRoute(command)
+    if (this.options.museEnabled !== true && commandUsesMuse(command)) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    if (command.type === 'configure') {
+      const routed = this.configurationRoute(command)
+      if (this.options.museEnabled !== true && (commandUsesMuse(routed.command, routed.connection.service.shell().host)
+        || clientUpdateEnumerationUsesMuse(routed.command, routed.connection.service.shell().host))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+      return routed
+    }
     // Update all names the machine whose clients it updates, which need not be the selected one (ADR-0077).
     if (command.type === 'queue-client-updates' && command.hostId !== undefined) {
       const { hostId, ...forwarded } = command
       const named = this.hosts.get(hostId)?.connection
       if (!named) throw new Error('This host is not connected. Connect it in Settings > Hosts, then try again. Nothing was changed.')
+      if (this.options.museEnabled !== true && (commandUsesMuse(forwarded, named.service.shell().host)
+        || clientUpdateEnumerationUsesMuse(forwarded, named.service.shell().host))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
       return { connection: named, command: forwarded }
     }
     const hostId = [...references][0] ?? this.selectedHostId
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
+    if (this.options.museEnabled !== true && (commandUsesMuse(command, connection.service.shell().host)
+      || clientUpdateEnumerationUsesMuse(command, connection.service.shell().host))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
     const threadId = 'threadId' in command ? command.threadId ?? undefined : command.type === 'send' ? command.draft?.threadId : undefined
     const defaultThread = command.type === 'send' || command.type === 'compose' ? connection.service.shell().draftThreadId ?? connection.service.shell().activeThreadId ?? undefined : undefined
     if (!this.watcherAvailable(connection, threadId ?? defaultThread)) throw new Error(WATCHER_DISABLED)

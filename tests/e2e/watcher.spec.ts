@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -668,11 +668,22 @@ test.describe("Watcher's room on the built app", () => {
           // Main created Watcher on Codex: its own pane, the meter, the message and the provider's reply.
           const pane = watcherPane(page)
           await expect(page.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '0 of 4 watched')
-          await expect(pane.locator('[data-role="user"]')).toContainText('Check the release notes and tell me what is missing.')
+          const original = 'Check the release notes and tell me what is missing.'
+          await expect(pane.locator('[data-role="user"] .rich-message')).toHaveText(original)
           await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. I will look at the release notes.')
           await expect(pane.locator('[data-role="user"]')).toHaveCount(1)
           const record = await page.evaluate(async () => (await window.sotto!.watcher!.get()))
           expect(record).toMatchObject({ status: 'ok', state: { current: { provider: 'codex' } } })
+          if (record.status !== 'ok') throw new Error('Main did not return the Watcher room')
+          const request = record.state.requests.at(-1)!
+          const nativeCalls = (await readFile(join(root, 'codex', 'requests.jsonl'), 'utf8')).trim().split('\n')
+            .map(line => JSON.parse(line) as { method: string; params?: { input?: { type: string; text?: string }[] } })
+          const nativeText = nativeCalls.findLast(call => call.method === 'turn/start')?.params?.input?.find(item => item.type === 'text')?.text
+          expect(nativeText).toContain(`${original}\n\n[Sotto Watcher request: ${request.id}. Local host: ${request.watcher.hostId}.`)
+          expect(nativeText).toContain('Use this requestId for sotto_threads mutations. Known project IDs: ')
+          expect(nativeText).toMatch(/\. Call list_projects for choices\.\]$/u)
+          expect(request.displayPrompt).toEqual({ originalLength: original.length,
+            wireDigest: createHash('sha256').update(nativeText!).digest('hex') })
           // Watcher is its room's: not listed on the Threads page, and nothing there was selected for it.
           await switchTab(page, 'Threads').click()
           await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()

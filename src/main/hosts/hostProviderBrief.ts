@@ -16,7 +16,7 @@ export interface HostProviderBriefInput {
 }
 
 /** The command each client is started by on the host, which the lookup searches for. */
-export const PROVIDER_COMMANDS: Readonly<Record<ProviderId, string>> = { claude: 'claude', codex: 'codex', grok: 'grok', devin: 'devin' }
+export const PROVIDER_COMMANDS: Readonly<Record<ProviderId, string>> = { claude: 'claude', codex: 'codex', grok: 'grok', devin: 'devin', muse: 'muse' }
 
 /**
  * Each provider's official way to install it on Linux or macOS, as its maker documents it, and what the host's lookup
@@ -28,6 +28,7 @@ export const PROVIDER_INSTALL_METHODS: Readonly<Record<ProviderId, string>> = {
   codex: 'npm\'s `npm install -g @openai/codex`, or OpenAI\'s installer, `curl -fsSL https://chatgpt.com/codex/install.sh | sh` (https://github.com/openai/codex). The host starts only Codex\'s native binary, never a script that wraps it; the GitHub release archive `codex-x86_64-unknown-linux-musl.tar.gz` (or the aarch64 one) holds it, to be renamed `codex` and put in ~/.local/bin.',
   grok: 'npm\'s `npm install -g @xai-official/grok`, or xAI\'s installer, `curl -fsSL https://x.ai/cli/install.sh | bash` (https://docs.x.ai/build/overview). Either keeps the native binary in ~/.grok/bin, which the host searches first. An npm install needs Node for the SSH account.',
   devin: 'Cognition\'s installer, `curl -fsSL https://cli.devin.ai/install.sh | bash` (https://docs.devin.ai/cli). Check where it put `devin`; if that folder is not one the host searches, link the binary into ~/.local/bin.',
+  muse: 'Meta\'s documented installer, `curl -fsSL https://dev.meta.ai/install.sh | bash`, which puts its launcher and versioned native binary in ~/.local/bin. Follow https://dev.meta.ai/docs/muse-code/ on Windows for its PowerShell installer. Preserve an existing manager-owned install and update it with that manager.',
 }
 
 /** Where the host's CLI lookup searches on Linux and macOS, in order (ADR-0036, `src/main/agents/cliLookup.ts`). */
