@@ -14,7 +14,7 @@ Before cutting the Windows release, run `npm ci` and `npm run test:desktop-smoke
 
 The first desktop release whose Add host turns on a host's tailnet connections (ADR-0053, October 6 amendment) waits for the iPhone build that reads a host's 403 `forbidden` as a reason to keep trying. Check that build is on TestFlight before publication, or publish both together. An older iPhone paired with that host reads the refusal as unpaired while the host's phone access is off.
 
-First-run setup's **Get the iPhone beta** opens `IPHONE_BETA_URL` in `src/shared/phones.ts`, which is a placeholder until external TestFlight testing has a public link (ADR-0063). Set it to that link in a reviewed main commit before a release.
+First-run setup's **Get the iPhone beta** opens `IPHONE_BETA_URL` in `src/shared/phones.ts`, the iPhone app's public TestFlight link (ADR-0063). If Apple's link changes, update it in a reviewed main commit before a release.
 
 1. Fetch `origin/main` and choose the clean, CI-green source commit. Check out that exact commit on each release machine. Do not bump `package.json` first. Run `npm ci`, the normal gates and the Windows desktop smoke check above. Agree the stable version across machines; the next patch is the default.
 2. Move that machine's previous installers, disk images and blockmaps from `release/` into `release/archive/`, so `release/` holds only the current version.
