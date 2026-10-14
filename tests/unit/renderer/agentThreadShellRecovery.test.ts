@@ -32,6 +32,71 @@ function transport() {
 }
 
 describe('thread shell page lifecycle and command ordering', () => {
+  it.each(['newer full', 'newer receipt', 'unsubscribe', 'failed fresh read'] as const)('fences a fresh rejection read after %s', async outcome => {
+    const h = transport(), page = h.page(), delivered: AgentState[] = []
+    h.state.notice = 'Before command'
+    const off = page.onState(state => delivered.push(state))
+    h.send()
+    h.state.host.models = [...h.state.host.models, { id: 'new-model', name: 'New model', provider: 'codex', ready: true }]
+    h.broadcaster.send(h.state, () => true)
+    h.broadcaster.resetThreadDelivery()
+    const original = deferred<AgentState>()
+    h.get.mockImplementationOnce(() => { h.broadcaster.resetThreadDelivery(); return original.promise })
+    h.send()
+    h.state.activeThreadId = 'b'; h.state.notice = 'Successful command'
+    h.command.mockResolvedValueOnce(h.broadcaster.encodeReceipt(h.state))
+    await page.command({ type: 'select-thread', threadId: 'b' })
+    original.resolve(structuredClone(h.state))
+    for (let i = 0; i < 12; i++) await Promise.resolve()
+    const fresh = deferred<AgentState>(), older = structuredClone(h.state)
+    h.get.mockImplementationOnce(() => { h.broadcaster.resetThreadDelivery(); return fresh.promise })
+    h.command.mockRejectedValueOnce(new Error('Host disconnected'))
+    await expect(page.command({ type: 'refresh' })).rejects.toThrow('Host disconnected')
+    expect(h.get).toHaveBeenCalledTimes(3)
+    if (outcome === 'unsubscribe') off()
+    else if (outcome === 'newer full') { h.state.notice = 'Newest push'; h.send() }
+    else if (outcome === 'newer receipt') {
+      h.state.notice = 'Newest receipt'; h.state.activeThreadId = 'a'
+      h.state.host.models = [...h.state.host.models, { id: 'latest-model', name: 'Latest model', provider: 'codex', ready: true }]
+      h.command.mockResolvedValueOnce(h.broadcaster.encodeReceipt(h.state))
+      expect((await page.command({ type: 'select-thread', threadId: 'a' })).notice).toBe('Newest receipt')
+    }
+    if (outcome === 'failed fresh read') fresh.reject(new Error('Read failed'))
+    else fresh.resolve(older)
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    expect(delivered.map(state => state.notice)).toEqual(outcome === 'newer full' ? ['Before command', 'Newest push'] : ['Before command'])
+    expect(h.get).toHaveBeenCalledTimes(outcome === 'newer receipt' ? 4 : 3)
+    h.send()
+    if (outcome !== 'unsubscribe') expect(delivered.at(-1)).toEqual(h.state)
+    else expect(delivered).toHaveLength(1)
+    expect(h.get).toHaveBeenCalledTimes(outcome === 'newer receipt' ? 4 : 3)
+  })
+  it.each([[true, false], [false, false], [true, true], [false, true]])('reads fresh after receipt recovery, read finished: %s, queued old broadcast: %s', async (finishFirst, queueRaw) => {
+    const h = transport(), page = h.page(), delivered: AgentState[] = []
+    h.state.notice = 'Before command'
+    page.onState(state => delivered.push(state))
+    h.send()
+    h.state.host.models = [...h.state.host.models, { id: 'new-model', name: 'New model', provider: 'codex', ready: true }]
+    h.broadcaster.send(h.state, () => true) // The page missed this catalog delivery.
+    h.broadcaster.resetThreadDelivery()
+    const before = structuredClone(h.state), held = deferred<AgentState>()
+    h.get.mockImplementationOnce(() => { h.broadcaster.resetThreadDelivery(); return held.promise })
+    h.send() // Whole threads are available, but the omitted catalog is unresolved.
+    if (queueRaw) { h.broadcaster.resetThreadDelivery(); h.send() }
+    h.state.activeThreadId = 'b'
+    h.state.notice = 'Newer successful command'
+    h.command.mockResolvedValueOnce(h.broadcaster.encodeReceipt(h.state))
+    expect((await page.command({ type: 'select-thread', threadId: 'b' })).notice).toBe(h.state.notice)
+    expect(h.get).toHaveBeenCalledTimes(2)
+    if (finishFirst) { held.resolve(before); for (let i = 0; i < 12; i++) await Promise.resolve() }
+    h.command.mockRejectedValueOnce(new Error('Host disconnected'))
+    await expect(page.command({ type: 'refresh' })).rejects.toThrow('Host disconnected')
+    if (!finishFirst) held.resolve(before)
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    expect(h.get).toHaveBeenCalledTimes(3)
+    expect(delivered.map(state => state.notice)).toEqual(['Before command', 'Newer successful command'])
+    expect(delivered.at(-1)?.activeThreadId).toBe('b')
+  })
   it.each([true, false])('recovers after a rejected command, rejection before held read settles: %s', async rejectFirst => {
     const h = transport()
     h.broadcaster.send(h.state, () => true)
@@ -55,8 +120,13 @@ describe('thread shell page lifecycle and command ordering', () => {
     expect(delivered).toEqual([h.state])
     expect(h.get).toHaveBeenCalledTimes(2)
     h.send()
+    for (let i = 0; i < 20; i++) await Promise.resolve()
     expect(delivered.at(-1)).toEqual(h.state)
-    expect(h.get).toHaveBeenCalledTimes(2)
+    // The fresh command-failure read cannot label its catalog with the old envelope's revision.
+    // The next broadcast's independent catalog miss recovers once, then the following push is warm.
+    expect(h.get).toHaveBeenCalledTimes(3)
+    h.send()
+    expect(h.get).toHaveBeenCalledTimes(3)
   })
   it.each(['newer push', 'unsubscribe', 'failed read'] as const)('bounds rejected-command recovery after %s', async mode => {
     const h = transport()

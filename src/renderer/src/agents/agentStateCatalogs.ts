@@ -108,8 +108,9 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
 function createThreadReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, listener: (state: AgentState) => void, observation: () => number): ((raw: unknown) => void) & { dispose: () => void; retry: () => void } {
   const threads = new AgentThreadShell()
   let recovering = false
-  let pending: unknown = null
+  let pending: { raw: unknown; observation: number } | null = null
   let unresolved: unknown = null
+  let retryRequested = false
   let active = true
   const process = (raw: unknown): void => {
     if (!active || !isStateLike(raw)) return
@@ -120,28 +121,49 @@ function createThreadReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: Cat
       candidate.commit()
       pending = null
       unresolved = null
+      retryRequested = false
       listener({ ...assembled, host: { ...assembled.host, threads: candidate.threads } })
       return
     }
     unresolved = raw
-    if (recovering) { pending = raw; return }
+    if (recovering) { pending = { raw, observation: observation() }; return }
+    recover(raw)
+  }
+  const recover = (raw?: AgentState): void => {
     recovering = true
     const started = observation()
     bridge.get().then(full => {
       if (!active || observation() !== started) return
-      // A get is complete but has no thread revision. Main reset its delivery base; the next
-      // broadcast must carry every body. Never seed the thread cache from this unversioned read.
-      rememberRecovered(catalogs, raw, full)
+      // A get has no thread revision: never seed the thread cache. A command-failure retry
+      // also has no current catalog revision to assign; its old envelope is only a need to read.
+      if (raw) rememberRecovered(catalogs, raw, full)
       unresolved = null
+      retryRequested = false
       listener(full)
     }).catch(() => undefined).finally(() => {
       recovering = false
-      if (active && pending !== null) { const next = pending; pending = null; process(next) }
+      if (!active) return
+      const retry = retryRequested
+      retryRequested = false
+      if (retry && unresolved !== null) {
+        pending = null
+        recover()
+      } else if (pending !== null) {
+        const next = pending
+        pending = null
+        if (next.observation === observation()) process(next.raw)
+      }
     })
   }
   const receive = (raw: unknown): void => process(raw)
-  receive.retry = (): void => { if (active && unresolved !== null) process(unresolved) }
-  receive.dispose = (): void => { active = false; pending = null; unresolved = null; threads.clear() }
+  receive.retry = (): void => {
+    if (!active || unresolved === null) return
+    // Reprocessing an old envelope could become possible after a receipt fills its catalog,
+    // but would replay old selection/draft/notice facts. Always request a fresh complete read.
+    if (recovering) retryRequested = true
+    else recover()
+  }
+  receive.dispose = (): void => { active = false; pending = null; unresolved = null; retryRequested = false; threads.clear() }
   return receive
 }
 
