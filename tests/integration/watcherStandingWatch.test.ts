@@ -569,7 +569,10 @@ it.each(['desktop', 'native'] as const)('keeps watching through a %s user turn a
   expect(f.control.shell().followups?.some(item => machineDrafts.has(item.draftId) && item.threadId === target.threadId)).toBe(false)
   await f.finish(target.threadId)
   if (origin === 'desktop') { await expect.poll(() => f.native(target.threadId).messages.at(-1)?.text).toBe('Synthetic direct user prompt'); await f.finish(target.threadId) }
-  expect(f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)?.paused).toBe(false)
+  // The desktop prompt went from the queue, whose entry settles after its turn can already have ended; the pause ends
+  // with it (see the held-settle test above), so the wait is for that settle, not for a deadline.
+  await expect.poll(() => f.control.hasPendingThreadWork(target.threadId)).toBe(false)
+  await expect.poll(() => f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)?.paused).toBe(false)
   await f.request()
   expect(await f.call('send_to_thread', { ...automatic, retryKey: randomUUID() })).toMatchObject({ status: 'ok' })
 })
@@ -654,6 +657,9 @@ it('syncs watches to the owning host, persists takeover there and refuses withdr
   await worker.finish(target.threadId)
   await expect.poll(() => worker.native(target.threadId).messages.at(-1)?.text).toBe('Synthetic owning-host user prompt')
   await worker.finish(target.threadId)
+  // The owning host's pause ends once its user's queued prompt has settled, which can follow the end of its turn.
+  await expect.poll(() => worker.control.hasPendingThreadWork(target.threadId)).toBe(false)
+  await expect.poll(() => worker.control.watcherRecord().watches![0]!.pausedByUserMessageId).toBeNull()
   // A refresh adopts the owning-host fence before a fresh automation scope is admitted.
   const projection = await remote.read(target.hostId, { master: identity }) as WatcherHostProjection
   expect(projection.standingWatches![0]).toMatchObject({ pausedByUserMessageId: null })
