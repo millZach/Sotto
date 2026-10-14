@@ -59,12 +59,17 @@ struct HostRefusal: Error, LocalizedError {
     /// The photo load limit the photo tests give the model: never passing, unless a test says otherwise.
     static var photoLoadLimit: @Sendable () async throws -> Void = { try await Task.sleep(nanoseconds: 3_600_000_000_000) }
     static var receipts: [String: JSONValue] = [:]
+    /// The computer's answer to Watcher's operations, given the operation and its request ID. Without one, a read
+    /// returns the `watcher` page in the computer's shell, as a computer that runs Watcher does.
+    static var watcherHandler: ((String, [String: JSONValue], String) async throws -> JSONValue)?
     var onPush: ((IncomingFrame, Int) -> Void)?
     var onLiveness: (() -> Void)?
     var onDisconnect: (() -> Void)?
     var operations: [String] = []
     var commands: [JSONValue] = []
     var terminalCalls: [[String: JSONValue]] = []
+    /// Every Watcher operation this connection carried, with its request ID.
+    var watcherCalls: [(operation: [String: JSONValue], id: String)] = []
     var hostID = ""
     var disconnects = 0
     var detailStarted: (() -> Void)?
@@ -100,6 +105,15 @@ struct HostRefusal: Error, LocalizedError {
         if ["terminal-approval", "answer-terminal", "observe-terminals"].contains(op) {
             terminalCalls.append(operation)
             if let handler = Self.terminalHandler { return try await handler(op, operation, id) }
+            return .null
+        }
+
+        if op.hasPrefix("watcher-phone-") {
+            watcherCalls.append((operation, id))
+            if let handler = Self.watcherHandler { return try await handler(op, operation, id) }
+            if op == "watcher-phone-read", case .object(let shell) = Self.shells[hostID] ?? Self.shell, let state = shell["watcher"] {
+                return .object(["status": .string("ok"), "state": state])
+            }
             return .null
         }
 

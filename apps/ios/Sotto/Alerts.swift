@@ -5,6 +5,8 @@ import SottoCore
 /// Where an alert keeps the thread it names. Only these two IDs ride on an alert, never a message's words.
 private let alertHostKey = "hostID"
 private let alertThreadKey = "threadID"
+/// Set on Watcher's own alerts, which open the Watcher tab rather than a thread.
+private let alertWatcherKey = "watcher"
 
 /// Local alerts through iOS's notification centre (ADR-0051). Nothing here uses Apple's push service or needs an
 /// entitlement: an alert is posted on this iPhone, while Sotto runs, and names only the thread, its agent and its
@@ -12,8 +14,8 @@ private let alertThreadKey = "threadID"
 @MainActor final class AlertCenter: AlertPosting {
     static let shared = AlertCenter()
     private weak var model: AppModel?
-    /// A thread whose alert was tapped before the model was handed over, at launch.
-    private var waiting: ThreadRef?
+    /// A thread whose alert was tapped before the model was handed over, at launch, and whether it was Watcher's.
+    private var waiting: (ref: ThreadRef, watcher: Bool)?
 
     /// Hands over the model, which posts alerts and opens a tapped alert's thread.
     func attach(_ model: AppModel) {
@@ -21,12 +23,12 @@ private let alertThreadKey = "threadID"
         model.alerts = self
         if let waiting {
             self.waiting = nil
-            model.openFromAlert(waiting)
+            model.openFromAlert(waiting.ref, watcher: waiting.watcher)
         }
     }
     var threadOnScreen: ThreadRef? { model?.threadOnScreen }
-    func open(_ ref: ThreadRef) {
-        if let model { model.openFromAlert(ref) } else { waiting = ref }
+    func open(_ ref: ThreadRef, watcher: Bool = false) {
+        if let model { model.openFromAlert(ref, watcher: watcher) } else { waiting = (ref, watcher) }
     }
 
     func permission() async -> AlertPermission {
@@ -46,7 +48,8 @@ private let alertThreadKey = "threadID"
         content.title = alert.title
         content.body = alert.body
         content.threadIdentifier = alert.ref.id
-        content.userInfo = [alertHostKey: alert.ref.hostID, alertThreadKey: alert.ref.threadID]
+        content.userInfo = [alertHostKey: alert.ref.hostID, alertThreadKey: alert.ref.threadID,
+                            alertWatcherKey: alert.id.hasPrefix(WatcherWatch.alertPrefix)]
         if sound { content.sound = UNNotificationSound.default }
         let request = UNNotificationRequest(identifier: alert.id, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
@@ -57,6 +60,8 @@ private let alertThreadKey = "threadID"
         guard let host = info[alertHostKey] as? String, let thread = info[alertThreadKey] as? String else { return nil }
         return ThreadRef(hostID: host, threadID: thread)
     }
+    /// Whether an alert is Watcher's own.
+    nonisolated static func isWatcher(_ info: [AnyHashable: Any]) -> Bool { info[alertWatcherKey] as? Bool == true }
 }
 
 /// iOS asks this how to show an alert while Sotto is open, and tells it when one is tapped. An alert for the thread
@@ -75,9 +80,11 @@ final class AlertDelegate: NSObject, UNUserNotificationCenterDelegate {
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        let ref = AlertCenter.ref(response.notification.request.content.userInfo)
+        let info = response.notification.request.content.userInfo
+        let ref = AlertCenter.ref(info)
+        let watcher = AlertCenter.isWatcher(info)
         Task { @MainActor in
-            if let ref { AlertCenter.shared.open(ref) }
+            if let ref { AlertCenter.shared.open(ref, watcher: watcher) }
             completionHandler()
         }
     }

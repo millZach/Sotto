@@ -683,6 +683,374 @@ import XCTest
         capture("question-glow-after")
     }
 
+    /// A question with a few choices is answered on its Threads card: the chip chosen there is the question's answer.
+    func testAOneTapQuestionIsAnsweredOnItsCard() {
+        launch(Self.fixture + ["--ui-question-while-reading"])
+        let chip = app.buttons["Ctrl+J"]
+        // Whole and clear of the floating tab bar. At the largest text on the Pro Max, a chip mostly under the bar is
+        // hittable to XCTest only at its top corner, outside its capsule, and on CI the press there opened the thread.
+        reveal(chip, fullyVisible: true)
+        chip.tap()
+        XCTAssertTrue(chip.isSelected, "The pressed chip is chosen on its card")
+        // Another card on Threads has its own Send answer, which stays off until one of its chips is chosen.
+        let send = app.buttons.matching(NSPredicate(format: "label == %@ AND enabled == true", "Send answer")).firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "Choosing a chip readies its card's Send answer")
+        reveal(send, fullyVisible: true)
+        send.tap()
+        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The chosen chip goes as the question's answer")
+        capture("threads-glow-card-answered")
+    }
+
+    // MARK: Watcher (ADR-0073, amended October 11, 2026)
+
+    private static let watcher = fixture + ["--ui-watcher"]
+
+    /// Opens the Watcher tab, which only a computer that runs Watcher gives this iPhone.
+    @discardableResult private func openWatcher() -> XCUIElement {
+        let tab = app.tabBars.buttons["Watcher"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 10), "A computer that runs Watcher gives it a tab")
+        tab.tap()
+        XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Watcher's page opens with its state")
+        return tab
+    }
+    /// Puts the keyboard away the way Watcher's conversation lets it go, as a thread's does: a drag that starts in the
+    /// conversation and carries on down into the keyboard, which follows it off the screen. A swipe that ends above the
+    /// keyboard leaves it up, which is how the journey's first swipe failed on CI.
+    private func dismissKeyboard() {
+        let keyboard = app.keyboards.firstMatch
+        guard keyboard.exists else { return }
+        let window = app.windows.firstMatch
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        let x = window.frame.width - 8
+        for _ in 0..<3 where keyboard.exists {
+            let band = watcherBand
+            let from = origin.withOffset(CGVector(dx: x, dy: (band.top + band.bottom) / 2 - window.frame.minY))
+            let to = origin.withOffset(CGVector(dx: x, dy: window.frame.height - 24))
+            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .default, thenHoldForDuration: 0)
+            if keyboard.waitForNonExistence(timeout: 5) { break }
+        }
+        XCTAssertTrue(waitUntilGone(keyboard), "Dragging the conversation down into the keyboard puts it away")
+    }
+    /// Turns this iPhone to light in Settings and comes back to the Watcher tab.
+    private func watcherInLight() {
+        app.tabBars.buttons["Settings"].tap()
+        let light = app.buttons["setting-light"]
+        XCTAssertTrue(light.waitForExistence(timeout: 5))
+        reveal(light, swipingDown: true)
+        light.tap()
+        XCTAssertEqual(light.value as? String, "Selected")
+        openWatcher()
+    }
+    /// The part of Watcher's conversation a press reaches: below its pinned glass header and above its reply box, with
+    /// anything the box carries over it. XCTest calls a row under the header hittable, but a press there lands on the
+    /// header (on CI it opened Watched instead of a card's Review question).
+    private var watcherBand: (top: CGFloat, bottom: CGFloat) {
+        let header = byID("watcher-section-conversation")
+        // The header's glass ends the switch's own padding and the header's bottom padding below Conversation | Watched.
+        let top = (header.exists ? header.frame.maxY : app.windows.firstMatch.frame.minY) + 16
+        let tabs = app.tabBars.firstMatch
+        var bottom = tabs.exists ? tabs.frame.minY : app.windows.firstMatch.frame.maxY
+        // The box's glass starts above its text; a held line or a message sits above the box.
+        let dock: [(XCUIElement, CGFloat)] = [(byID("watcher-reply"), 20), (byID("watcher-send-held"), 8),
+                                              (app.buttons["Dismiss message"].firstMatch, 8)]
+        for (element, gap) in dock where element.exists { bottom = min(bottom, element.frame.minY - gap) }
+        return (top, bottom)
+    }
+    /// Scrolls Watcher's conversation until `target` sits whole in `watcherBand`, or for one taller than the band, until
+    /// its top does. Each drag runs down the page's trailing margin, clear of cards and rows, and moves the page no
+    /// farther than the target needs, so it settles rather than passing back and forth.
+    private func revealInWatcher(_ target: XCUIElement) {
+        let window = app.windows.firstMatch
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        var down = true
+        var steps: [String] = []
+        var settling = 0
+        func placed(_ frame: CGRect, _ band: (top: CGFloat, bottom: CGFloat)) -> Bool {
+            if frame.height <= band.bottom - band.top { return frame.minY >= band.top && frame.maxY <= band.bottom }
+            return frame.minY >= band.top && frame.minY <= band.bottom - 60
+        }
+        for attempt in 0..<40 {
+            let band = watcherBand
+            guard band.bottom - band.top > 60 else { steps.append("No room to drag: \(band.top) to \(band.bottom)"); break }
+            var needed: CGFloat = 120
+            if target.exists {
+                let frame = target.frame
+                if placed(frame, band) {
+                    if target.isHittable { return }
+                    // A page still settling after a drag can't be pressed yet; give it a moment, a few times at most.
+                    steps.append("\(attempt): target \(frame) is in place but can't be pressed yet")
+                    settling += 1
+                    if settling > 3 { break }
+                    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in target.isHittable }, object: nil)
+                    _ = XCTWaiter.wait(for: [ready], timeout: 2)
+                    continue
+                }
+                if !frame.isEmpty {
+                    let fits = frame.height <= band.bottom - band.top
+                    if frame.minY < band.top { down = true; needed = band.top - frame.minY }
+                    else { down = false; needed = fits ? frame.maxY - band.bottom : frame.minY - (band.bottom - 60) }
+                }
+                steps.append("\(attempt): target \(frame), between \(band.top) and \(band.bottom), down \(down)")
+            } else {
+                steps.append("\(attempt): target not materialized, between \(band.top) and \(band.bottom), down \(down)")
+            }
+            let distance = min(220, (band.bottom - band.top) * 0.45, max(needed + 16, 40))
+            let direction: CGFloat = down ? 1 : -1
+            let x = window.frame.width - 8
+            let middle = (band.top + band.bottom) / 2 - window.frame.minY
+            let start = origin.withOffset(CGVector(dx: x, dy: middle - direction * distance / 2))
+            let end = origin.withOffset(CGVector(dx: x, dy: middle + direction * distance / 2))
+            start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.15)
+        }
+        let reached = target.exists && target.isHittable && placed(target.frame, watcherBand)
+        if reached { return }
+        explain("unreachable-in-watcher", steps.joined(separator: "\n"))
+        XCTAssertTrue(reached, "Scrolling Watcher's conversation must bring it clear of the header and the reply box")
+    }
+
+    /// The Watcher tab sits between Threads and Computers, with a dot while Watcher works that VoiceOver reads; its page
+    /// shows Watcher's model and computer, its conversation and one card of what it did for each reply. A message the
+    /// user writes goes to Watcher and its answer arrives under it.
+    func testTheWatcherTabOpensAndTakesAMessage() {
+        launch(Self.watcher)
+        let labels = app.tabBars.buttons.allElementsBoundByIndex.map(\.label)
+        XCTAssertEqual(labels, ["Threads", "Watcher", "Computers", "Settings"], "Watcher's tab sits between Threads and Computers")
+        let tab = openWatcher()
+        XCTAssertEqual(byID("watcher-state").label, "Watcher, Working")
+        XCTAssertTrue(text("Codex · GPT-6.1 Sol on Laptop").exists, "Watcher's model and computer head its page")
+        XCTAssertTrue(text("Started it.").waitForExistence(timeout: 5), "Watcher's conversation is on its page")
+        let receipt = app.buttons["watcher-receipt-\(laptop)/login"]
+        XCTAssertTrue(receipt.exists, "What Watcher did sits under its reply, a row per thread")
+        XCTAssertTrue(receipt.label.contains("Started"), "The row says what Watcher did")
+        capture("watcher-conversation-dark")
+
+        let reply = byID("watcher-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertEqual(reply.label, "Ask Watcher")
+        reply.tap()
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The box opens the keyboard, with its own dictation key")
+        reply.typeText("How is the release notes thread doing?")
+        let send = app.buttons["watcher-send"]
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+        XCTAssertTrue(waitUntilGone(keyboard), "Sending puts the keyboard away, as the design does, so the answer has room")
+        XCTAssertTrue(text("How is the release notes thread doing?").waitForExistence(timeout: 5), "The message joins the conversation")
+        let answer = text("On it.")
+        XCTAssertTrue(answer.waitForExistence(timeout: 10), "Watcher's answer arrives under it")
+        // The page already had a row for the release notes thread; Watcher's answer carries one more.
+        let rows = app.buttons.matching(identifier: "watcher-receipt-\(laptop)/notes845")
+        let added = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 2"), object: rows)
+        XCTAssertEqual(XCTWaiter.wait(for: [added], timeout: 5), .completed, "With what it did")
+        // The answer's end is on screen between the header and the box, not left under the card still waiting below.
+        // The band is read before the wait and again after it, and the wait reads only the answer. On CI's SE each query
+        // can take a second or two: reading the header, tab bar and box inside a ten-second wait left time for one
+        // reading, which ran past the deadline, found no answer and failed with the answer on screen.
+        func inBand(_ frame: CGRect, _ band: (top: CGFloat, bottom: CGFloat)) -> Bool {
+            frame.maxY > band.top && frame.maxY <= band.bottom + 1
+        }
+        let band = watcherBand
+        var seen = ""
+        var matches = 0
+        let shown = NSPredicate { _, _ in
+            guard answer.exists else { seen = "the answer is missing"; matches = 0; return false }
+            let frame = answer.frame
+            seen = "answer \(frame), between \(band.top) and \(band.bottom)"
+            matches = inBand(frame, band) ? matches + 1 : 0
+            return matches >= 2
+        }
+        let inView = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: shown, object: nil)], timeout: 60)
+        if inView != .completed { explain("watcher-answer-not-in-view", seen) }
+        XCTAssertEqual(inView, .completed, "Watcher's answer comes into view above the box (\(seen))")
+        let settled = watcherBand, rest = answer.frame
+        XCTAssertTrue(inBand(rest, settled),
+                      "Watcher's answer stays in view above the box (answer \(rest), between \(settled.top) and \(settled.bottom))")
+        capture("watcher-sent-dark")
+        // The keyboard can also be put away without sending, by dragging the conversation down into it.
+        reply.tap()
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The box opens the keyboard again")
+        dismissKeyboard()
+        watcherInLight()
+        XCTAssertTrue(answer.waitForExistence(timeout: 5))
+        revealInWatcher(answer)
+        capture("watcher-sent-light")
+        // Last, so the rest of the journey reports first if the tab bar doesn't carry it.
+        let working = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "Working"), object: tab)
+        XCTAssertEqual(XCTWaiter.wait(for: [working], timeout: 10), .completed, "VoiceOver hears the working dot as Working")
+    }
+
+    /// A row in what Watcher did opens its thread, with the provider's logo and the owl under its title and the takeover
+    /// line in its reply box.
+    func testAReceiptRowOpensItsThread() {
+        launch(Self.watcher)
+        for appearance in ["dark", "light"] {
+            if appearance == "light" { watcherInLight() } else { openWatcher() }
+            let row = app.buttons["watcher-receipt-\(laptop)/notes845"]
+            revealInWatcher(row)
+            XCTAssertTrue(row.label.contains("watched by Watcher"), "The row says Watcher works with the thread")
+            row.tap()
+            let title = byID("thread-title")
+            XCTAssertTrue(title.waitForExistence(timeout: 10), "The row opens its thread")
+            XCTAssertEqual(title.label, "Babysit #845 release notes")
+            XCTAssertTrue(text("Codex on Laptop · Sotto, watched by Watcher").exists, "The owl follows the provider's logo")
+            let takeover = byID("watched-takeover")
+            XCTAssertTrue(takeover.waitForExistence(timeout: 5))
+            XCTAssertEqual(takeover.label, "Watched by Watcher. If you send here, Watcher stops sending to it.")
+            capture("watcher-receipt-thread-" + appearance)
+            back()
+            XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Back returns to Watcher's page")
+        }
+    }
+
+    /// Pulls Watcher's conversation down from just under its header, far and slowly enough for iOS to refresh it, and holds
+    /// it there a moment. On CI a quick 200-point swipe at the conversation's start only bounced the page, short of where
+    /// iOS starts a refresh: no refresh showed in the recording, and the page was never read again.
+    private func pullWatcherToRefresh(_ band: (top: CGFloat, bottom: CGFloat)) {
+        let window = app.windows.firstMatch
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        // Down the trailing margin, clear of bubbles and cards, from under the header to near the screen's foot.
+        let x = window.frame.width - 8
+        let from = origin.withOffset(CGVector(dx: x, dy: band.top + 8 - window.frame.minY))
+        let to = origin.withOffset(CGVector(dx: x, dy: window.frame.height - 40))
+        from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.6)
+    }
+
+    /// Watcher's new words leave a reader of earlier messages where they are, and are there when the reader comes back to
+    /// the newest words. The page follows them only for a reader who sees the newest words or the page's end, and never
+    /// while the user moves it (ADR-0051). Here a pull to refresh at the conversation's start reads the page again, and the
+    /// fixture's Watcher says something new at its end.
+    func testWatchersNewWordsLeaveAReaderOfEarlierMessagesWhereTheyAre() {
+        launch(Self.watcher + ["--ui-watcher-refresh-news"])
+        openWatcher()
+        let first = text("The login test fails about one run in five")
+        XCTAssertTrue(first.waitForExistence(timeout: 5), "Watcher's conversation starts with the user's first message")
+        // The header and the box don't move here; where the band begins and ends is read once.
+        let band = watcherBand
+        // The scroll view that holds Watcher's conversation, whatever else is on screen.
+        let conversation = app.scrollViews.containing(NSPredicate(format: "label BEGINSWITH %@", "The login test fails")).firstMatch
+        for _ in 0..<8 where first.frame.minY < band.top { conversation.swipeDown(velocity: .fast) }
+        XCTAssertGreaterThanOrEqual(first.frame.minY, band.top, "The conversation's start is in view")
+        // A pull past the start reads Watcher's page again. A pull iOS doesn't take for a refresh is tried again.
+        let news = text("Nothing new needs you.")
+        for _ in 0..<3 where !news.exists {
+            pullWatcherToRefresh(band)
+            _ = news.waitForExistence(timeout: 10)
+        }
+        if !news.exists { explain("watcher-refresh-not-read", "first message \(first.frame), band \(band.top) to \(band.bottom)") }
+        XCTAssertTrue(news.exists, "Pulling down read the page again, and Watcher said something new at its end")
+        // A scroll that shouldn't happen is given time to happen; then the reader is still where they were.
+        _ = XCTWaiter.wait(for: [XCTestExpectation(description: "The page settles")], timeout: 2)
+        let frame = first.frame
+        if !(frame.minY >= band.top - 1 && frame.minY < band.bottom) {
+            explain("watcher-reader-moved", "first message \(frame), between \(band.top) and \(band.bottom)")
+        }
+        XCTAssertTrue(frame.minY >= band.top - 1 && frame.minY < band.bottom,
+                      "Watcher's new words leave the reader at the conversation's start (first message \(frame), between \(band.top) and \(band.bottom))")
+        capture("watcher-reading-earlier-dark")
+        // The reader comes back down when they choose to, and Watcher's new words are there, above the box.
+        revealInWatcher(news)
+        let shown = news.frame
+        XCTAssertTrue(shown.minY >= band.top - 1 && shown.maxY <= band.bottom + 1,
+                      "Back at the newest words, Watcher's new words are in view (\(shown), between \(band.top) and \(band.bottom))")
+        capture("watcher-back-at-newest-dark")
+    }
+
+    /// A worker's own question sits in Watcher's page and is answered there, as the user's own answer to that thread.
+    func testAWorkersCardIsAnsweredInWatchersPage() {
+        launch(Self.watcher + ["--ui-watcher-can-answer"])
+        openWatcher()
+        XCTAssertTrue(text("The thread’s own card. Your answer goes to Fix login test, not to Watcher.").waitForExistence(timeout: 5))
+        let choice = app.buttons["A fresh account for each run"]
+        revealInWatcher(choice)
+        capture("watcher-card-dark")
+        choice.tap()
+        XCTAssertTrue(choice.isSelected, "The chosen answer is marked")
+        let send = app.buttons["watcher-card-send"]
+        revealInWatcher(send)
+        XCTAssertTrue(send.isEnabled)
+        send.tap()
+        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The answer reached its thread")
+        XCTAssertTrue(waitUntilGone(send), "The card leaves Watcher's page once answered")
+        capture("watcher-card-answered-dark")
+        launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-light"])
+        openWatcher()
+        revealInWatcher(app.buttons["A fresh account for each run"])
+        capture("watcher-card-light")
+    }
+
+    /// A phone without Can answer on the computer that runs Watcher reads the cards in its page and answers none of them,
+    /// and says so, as it does on Threads. Watcher's own request badges its tab.
+    func testAPhoneWithoutCanAnswerSaysSoInWatchersPage() {
+        launch(Self.watcher + ["--ui-watcher-asks"])
+        let tab = openWatcher()
+        XCTAssertEqual(byID("watcher-state").label, "Watcher, Needs you")
+        let note = text("This iPhone can’t answer on Laptop yet.")
+        revealInWatcher(note)
+        XCTAssertFalse(app.buttons["watcher-card-send"].exists, "Nothing can be sent from a card")
+        XCTAssertFalse(app.buttons["Allow once"].exists)
+        let own = byID("watcher-own-card")
+        revealInWatcher(own)
+        XCTAssertTrue(own.label.contains("Watcher asks each time. It can’t be given lasting permission."))
+        XCTAssertTrue(byID("watcher-send-held").exists, "Watcher waits for its own request before it takes more")
+        capture("watcher-cannot-answer-dark")
+        let review = app.buttons["watcher-card-review"].firstMatch
+        revealInWatcher(review)
+        review.tap()
+        XCTAssertTrue(text("This iPhone can’t answer on Laptop yet. Turn on Can answer for it in Sotto on Laptop").waitForExistence(timeout: 5),
+                      "Review opens the card's own sheet, which says why it can't be answered here")
+        capture("watcher-cannot-answer-sheet-dark")
+        let notNow = app.buttons["Not now"]
+        reveal(notNow)
+        notNow.tap()
+        XCTAssertTrue(waitUntilGone(notNow))
+        watcherInLight()
+        revealInWatcher(byID("watcher-own-card"))
+        capture("watcher-cannot-answer-light")
+        // Last, so the rest of the journey reports first if the tab bar doesn't carry it.
+        let badged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "1 needs you"), object: tab)
+        XCTAssertEqual(XCTWaiter.wait(for: [badged], timeout: 10), .completed, "VoiceOver hears Watcher's own request on its tab")
+    }
+
+    /// Watched shows how many threads Watcher works with of how many it may, and Stop all asks first: cancelling stops
+    /// nothing, and confirming stops only the threads Watcher started.
+    func testStopAllAsksFirst() {
+        launch(Self.watcher)
+        openWatcher()
+        app.buttons["watcher-section-watched"].tap()
+        let meter = byID("watcher-meter")
+        XCTAssertTrue(meter.waitForExistence(timeout: 5))
+        XCTAssertEqual(meter.value as? String, "3 of 4 watched")
+        XCTAssertTrue(app.buttons["watched-\(laptop)/login"].exists, "Each watched thread opens from its card")
+        XCTAssertTrue(text("No longer watched").exists)
+        capture("watcher-watched-dark")
+        let stopAll = app.buttons["watcher-stop-all"]
+        stopAll.tap()
+        // An alert, named by its question, so its Cancel is always there to press (iOS 26 leaves a confirmation
+        // dialog's out).
+        let question = app.alerts["Stop the 3 threads Watcher started?"]
+        XCTAssertTrue(question.waitForExistence(timeout: 5), "Stop all asks first")
+        let confirm = question.buttons["Stop 3 threads"]
+        XCTAssertTrue(confirm.exists)
+        let named = question.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Add Android share sheet, Claude Code on Studio Mac")).firstMatch
+        XCTAssertTrue(named.exists, "The question names each thread it would stop and where it runs")
+        capture("watcher-stop-all-dark")
+        question.buttons["Cancel"].tap()
+        XCTAssertTrue(waitUntilGone(question))
+        XCTAssertEqual(meter.value as? String, "3 of 4 watched", "Cancelling stops nothing")
+        stopAll.tap()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        XCTAssertTrue(labelled("Stopped 3 threads Watcher started.").waitForExistence(timeout: 10))
+        let stopped = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "0 of 4 watched"), object: meter)
+        XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 5), .completed)
+        XCTAssertFalse(stopAll.exists, "With nothing watched, there is nothing to stop")
+        capture("watcher-stopped-dark")
+        watcherInLight()
+        app.buttons["watcher-section-watched"].tap()
+        XCTAssertTrue(meter.waitForExistence(timeout: 5))
+        capture("watcher-stopped-light")
+    }
+
     /// Settings on this iPhone: the look, alerts off until turned on, another theme, light, compact and larger text.
     func testSettingsThemeAppearanceDensityAndAlerts() {
         app.tabBars.buttons["Settings"].tap()
@@ -864,6 +1232,7 @@ import XCTest
         XCTAssertTrue(counts.exists)
         XCTAssertTrue(counts.label.contains("2 working"), "The summary counts the threads at work")
         XCTAssertTrue(app.buttons["Try reaching Studio Mac again"].exists, "A computer that can't be reached offers Try again")
+        XCTAssertFalse(app.tabBars.buttons["Watcher"].exists, "A computer that doesn't run Watcher gives it no tab")
         capture("threads-glow-dark")
         app.tabBars.buttons["Computers"].tap()
         XCTAssertTrue(app.buttons["Add computer"].waitForExistence(timeout: 5))

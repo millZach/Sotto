@@ -247,15 +247,20 @@ private struct NotificationsPanel: View {
     /// iOS said no: the switch went back off, and the panel says where to allow alerts.
     @State private var refused = false
     var body: some View {
+        // With a computer that runs Watcher, the same three switches cover Watcher's own requests and errors, and never
+        // its finished turns (5A).
+        let watcher = model.watcherHostID != nil
         VStack(alignment: .leading, spacing: 0) {
             VStack(spacing: 0) {
-                AlertSwitch(title: "When a thread needs you", detail: "A question or permission is waiting.",
+                AlertSwitch(title: "When a thread needs you",
+                            detail: watcher ? "A question or permission is waiting, Watcher’s own too." : "A question or permission is waiting.",
                             identifier: "setting-notify-needs-you", isOn: asking($needsYou))
                 RowDivider()
-                AlertSwitch(title: "When a thread finishes", detail: "Its turn ended while you weren’t looking.",
+                AlertSwitch(title: "When a thread finishes",
+                            detail: watcher ? "Its turn ended while you weren’t looking. Watcher’s turns don’t count." : "Its turn ended while you weren’t looking.",
                             identifier: "setting-notify-finished", isOn: asking($finished))
                 RowDivider()
-                AlertSwitch(title: "When a thread stops with an error", detail: nil,
+                AlertSwitch(title: "When a thread stops with an error", detail: watcher ? "Watcher’s own errors too." : nil,
                             identifier: "setting-notify-failed", isOn: asking($failed))
                 RowDivider()
                 // A sound only goes with an alert, so it asks iOS for nothing and waits for one to be on.

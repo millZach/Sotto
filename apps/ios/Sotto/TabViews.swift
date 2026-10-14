@@ -509,6 +509,7 @@ struct ThreadsView: View {
         let recent = groups.recent.filter { !departing.contains($0.id) }
         let settled = groups.settled.filter { !departing.contains($0.id) }
         let unread = Set((recent + settled).filter { groups.isUnreadFinish($0) }.map { $0.id })
+        let watched = model.watchedThreadIDs
         if needs.isEmpty && working.isEmpty && recent.isEmpty && settled.isEmpty && terminals.isEmpty && terminalNeeds.isEmpty {
             let includesTerminals = model.computers.contains { model.show.admits($0.hostID) && model.supportsTerminals($0.hostID) }
             let noMatches = includesTerminals ? "No matching threads or terminals." : "No matching threads."
@@ -552,7 +553,7 @@ struct ThreadsView: View {
                 }
                 ForEach(Array(recent.enumerated()), id: \.element.id) { index, row in
                     if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 20) }
-                    ThreadRow(row: row, unread: unread.contains(row.id))
+                    ThreadRow(row: row, unread: unread.contains(row.id), watched: watched.contains(row.id))
                 }
             }
             .sottoCard(.plain)
@@ -564,7 +565,7 @@ struct ThreadsView: View {
                 settledToggle(settled.count)
             }
             if settledExpanded || groups.searching {
-                ThreadRowList(rows: settled, unread: unread)
+                ThreadRowList(rows: settled, unread: unread, watched: watched)
             }
         }
     }
@@ -649,10 +650,17 @@ struct ThreadsView: View {
         let id = item.row.id
         sent[id] = CardAnswer(requestID: item.request.id, busy: busy, done: done, index: index, row: item.row, request: item.request)
         Task {
-            await model.answer(item.request, in: item.row.ref, choice: choice)
+            await model.answer(item.request, in: item.row.ref, choice: choice, answers: Self.oneTapAnswers(item.request, choice: choice))
             sent[id]?.inFlight = false
             resolve(id)
         }
+    }
+
+    /// A chip on a card for one structured question answers that question; plain options and permissions go as the
+    /// choice alone. As a choice alone, a structured question had no answer, and the phone refused to send it.
+    static func oneTapAnswers(_ request: AgentRequest, choice: String) -> [String: QuestionAnswer] {
+        guard request.kind == "question", let question = request.questions?.first else { return [:] }
+        return [question.id: QuestionAnswer(optionIds: [choice])]
     }
 
     /// Settles a card once the model has finished with its answer. Confirmed, it reads Answered for a moment and
@@ -786,7 +794,10 @@ private struct RequestCard: View {
     private var isPermission: Bool { request.kind == "permission" }
     private var tag: String { isPermission ? "Permission" : "Question" }
     private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
-    private var openLabel: String { "\(row.thread.title). \(tag) from \(Words.provider(row.thread.providerId)) on \(row.computer): \(ask)" }
+    private var openLabel: String {
+        "\(row.thread.title). \(tag) from \(Words.provider(row.thread.providerId)) on \(row.computer)"
+            + WatchedWords.spoken(model.watchedByWatcher(row.ref)) + ": \(ask)"
+    }
     private var reviewWords: String {
         if row.thread.requests.count > 1 { return "Review \(row.thread.requests.count) requests" }
         return isPermission ? "Review permission" : "Review question"
@@ -807,8 +818,8 @@ private struct RequestCard: View {
             Text(row.thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Space.s2)
-            Text("\(Words.provider(row.thread.providerId)) on \(row.computer)").font(.sotto(.small)).foregroundStyle(Palette.muted)
-                .lineLimit(1)
+            PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref),
+                      text: "\(Words.provider(row.thread.providerId)) on \(row.computer)")
                 .padding(.top, Space.s1)
             Text(ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -889,25 +900,11 @@ private struct RequestCard: View {
 
     private func questionActions(_ options: [RequestOption], enabled: Bool) -> some View {
         let ownWords = request.questions?.first?.allowFreeText == true ? "Write your own" : reviewWords
-        return VStack(alignment: .leading, spacing: Space.s3) {
-            FlowLayout(spacing: Space.s2) {
-                ForEach(options) { option in
-                    Button { picked = picked == option.id ? nil : option.id } label: { Text(option.label) }
-                        .buttonStyle(ChipStyle(selected: picked == option.id))
-                        .accessibilityAddTraits(picked == option.id ? .isSelected : [])
-                }
-            }
-            .disabled(!enabled)
-            HStack(spacing: Space.s2) {
-                NavigationLink(value: ThreadRoute(ref: row.ref)) { Text(ownWords) }
-                    .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
-                Spacer(minLength: 0)
-                Button("Send answer") {
-                    if let picked { send(picked, "Sending…", "Answered") }
-                }
-                .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
-                .disabled(!enabled || picked == nil)
-            }
+        return OneTapQuestion(options: options, enabled: enabled, picked: $picked) { choice in
+            send(choice, "Sending…", "Answered")
+        } more: {
+            NavigationLink(value: ThreadRoute(ref: row.ref)) { Text(ownWords) }
+                .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
         }
     }
 
@@ -931,22 +928,74 @@ private struct RequestCard: View {
     private var moreWords: String { request.cardPermissionChoices == nil && request.permissionChoices != nil ? reviewWords : "More choices" }
 
     /// Deny, then Allow once, on the computer's own words. A request with no choices of its own takes Allow and Deny.
-    @ViewBuilder private func permissionButtons(enabled: Bool) -> some View {
+    private func permissionButtons(enabled: Bool) -> some View {
+        CardPermissionButtons(request: request, enabled: enabled) { choice, allows in
+            send(choice, allows ? "Allowing…" : "Denying…", allows ? "Allowed" : "Denied")
+        }
+    }
+}
+
+/// A card's one-tap answer to a question with a few choices: the choices as chips, then the card's own way to say more
+/// and Send answer, which stays off until a chip is chosen. Threads and Watcher's page share it, and each says where the
+/// chosen answer goes.
+struct OneTapQuestion<More: View>: View {
+    let options: [RequestOption]
+    let enabled: Bool
+    @Binding var picked: String?
+    let sendID: String?
+    let send: (String) -> Void
+    let more: More
+    init(options: [RequestOption], enabled: Bool, picked: Binding<String?>, sendID: String? = nil,
+         send: @escaping (String) -> Void, @ViewBuilder more: () -> More) {
+        self.options = options
+        self.enabled = enabled
+        self._picked = picked
+        self.sendID = sendID
+        self.send = send
+        self.more = more()
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            FlowLayout(spacing: Space.s2) {
+                ForEach(options) { option in
+                    Button { picked = picked == option.id ? nil : option.id } label: { Text(option.label) }
+                        .buttonStyle(ChipStyle(selected: picked == option.id))
+                        .accessibilityAddTraits(picked == option.id ? .isSelected : [])
+                }
+            }
+            .disabled(!enabled)
+            HStack(spacing: Space.s2) {
+                more
+                Spacer(minLength: 0)
+                let button = Button("Send answer") { if let picked { send(picked) } }
+                    .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
+                    .disabled(!enabled || picked == nil)
+                if let sendID { button.accessibilityIdentifier(sendID) } else { button }
+            }
+        }
+    }
+}
+
+/// A card's permission buttons: Deny, then Allow once, in the provider's own words, and Deny and Allow for a request with
+/// no choices of its own. Each press hands over the choice and whether it allows; where it goes is the card's.
+struct CardPermissionButtons: View {
+    let request: AgentRequest
+    let enabled: Bool
+    let send: (_ choice: String, _ allows: Bool) -> Void
+    var body: some View {
         if let choices = request.cardPermissionChoices {
             let ordered: [PermissionChoice] = choices.sorted { $0.kind == "deny" && $1.kind != "deny" }
             ForEach(ordered) { choice in
                 let allows = choice.kind != "deny"
-                Button(choice.label) {
-                    send(choice.id, allows ? "Allowing…" : "Denying…", allows ? "Allowed" : "Denied")
-                }
-                .buttonStyle(PillButtonStyle(kind: allows ? .primary : .soft, compact: true))
-                .disabled(!enabled)
+                Button(choice.label) { send(choice.id, allows) }
+                    .buttonStyle(PillButtonStyle(kind: allows ? .primary : .soft, compact: true))
+                    .disabled(!enabled)
             }
         } else if request.permissionChoices == nil {
-            Button("Deny") { send("deny", "Denying…", "Denied") }
+            Button("Deny") { send("deny", false) }
                 .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
                 .disabled(!enabled)
-            Button("Allow") { send("allow", "Allowing…", "Allowed") }
+            Button("Allow") { send("allow", true) }
                 .buttonStyle(PillButtonStyle(kind: .primary, compact: true))
                 .disabled(!enabled)
         }
@@ -979,7 +1028,7 @@ private struct WorkingCard: View {
                 Text(row.thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, Space.s2)
-                Text(place).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(1)
+                PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref), text: place)
                     .padding(.top, Space.s1)
                 Text(liveLine).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -992,7 +1041,7 @@ private struct WorkingCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
-        .accessibilityLabel("\(row.thread.title), \(state.words), \(place)")
+        .accessibilityLabel("\(row.thread.title), \(state.words), \(place)" + WatchedWords.spoken(model.watchedByWatcher(row.ref)))
         .accessibilityHint("Opens the thread")
         .accessibilityIdentifier("thread-\(row.id)")
     }
@@ -1020,13 +1069,14 @@ private struct WorkingCard: View {
 private struct ThreadRowList: View {
     let rows: [HostedThread]
     let unread: Set<String>
+    var watched: Set<String> = []
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 {
                     Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 20)
                 }
-                ThreadRow(row: row, unread: unread.contains(row.id))
+                ThreadRow(row: row, unread: unread.contains(row.id), watched: watched.contains(row.id))
             }
         }
         .sottoCard(.plain)
@@ -1038,6 +1088,8 @@ private struct ThreadRowList: View {
 private struct ThreadRow: View {
     let row: HostedThread
     let unread: Bool
+    /// Watcher works with it: the owl follows its provider's logo.
+    var watched = false
     @Environment(\.sottoDensity) private var density
     private var state: ThreadState { ThreadState(row.thread) }
     private var failed: Bool { row.reachable && state == .failed }
@@ -1048,7 +1100,8 @@ private struct ThreadRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.thread.title).font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    Text(line).font(.sotto(.small)).foregroundStyle(failed ? Palette.dangerText : Palette.muted).lineLimit(1)
+                    PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
+                              tone: failed ? Palette.dangerText : Palette.muted)
                 }
                 Spacer(minLength: Space.s2)
                 if let ago = Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt) {
@@ -1062,7 +1115,7 @@ private struct ThreadRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
-        .accessibilityLabel(label)
+        .accessibilityLabel(label + WatchedWords.spoken(watched))
         .accessibilityHint("Opens the thread")
         .accessibilityIdentifier("thread-\(row.id)")
     }
