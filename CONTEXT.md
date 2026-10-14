@@ -245,15 +245,21 @@ Answering a question or permission request and creating a project are also part 
 
 ## History and the host
 
-**Usage.** The Owl page for native subscription limits and observed numeric activity across connected computers, with Overview, Subscriptions and Models. Its headline index opens one focused measure at a time.
+**Usage.** The Owl page for subscription limits and all the work each connected computer's Claude Code and Codex clients did, in Sotto and outside it, with Overview, Subscriptions and Models. Its headline index opens one focused measure at a time (ADR-0080).
 
-**Usage history.** Counts, dates and provider/model names retained on the computer that owns the threads, independently of transcript history. Clear usage removes its figures separately; old cleared turns stay cleared and new turns count afterward.
+**Usage history.** Counts, dates, model names and app names retained on the computer that ran the work, independently of transcript history: what Sotto observed, and what Usage read from the clients' own session records on that computer, keeping numbers only. Clear usage removes its figures separately; records from before a clear never return and new work counts afterward.
 
-**Accepted prompt.** One user message sent through Sotto whose exact native echo confirms acceptance, counted under the model selected at send. Watcher messages and wake-ups have separate counts; an uncertain send waits for that evidence.
+**Outside Sotto.** Work a provider client did on a computer without Sotto sending it: Claude Code itself, the Codex app, the Codex CLI, `codex exec`, Codex in VS Code, T3 Code or the Codex plugin in Claude Code, named as the client's own records name the app. Usage's **Everywhere / In Sotto / Outside Sotto** menu and its **Where you work** view tell it apart from work in Sotto. Avoid: "elsewhere", which first-run setup uses for its group of other computers and the iPhone; "external".
 
-**Subscription limits.** The current account allowance reported by a provider's native client, including work outside Sotto. Each computer has its own readings and ages; percentages are never added across computers.
+**Subagent work.** The tokens a subagent spent for its session, in Sotto or outside it. Usage counts it in tokens, with a bar of its own for Sotto's subagents, and never as a prompt.
 
-**Observed tokens.** Numeric native request usage on tracked threads, under the model the provider reported. Input contains cache read/write subsets; total is input plus output, and older usage without a known event date stays undated.
+**Accepted prompt.** One user message sent through Sotto whose exact native echo confirms acceptance, counted under its **served model**. Watcher messages and wake-ups have separate counts; an uncertain send waits for that evidence. Sotto messages from before Usage began are read from the thread store, and prompts outside Sotto are the client's own user turns, each `codex exec` run included.
+
+**Served model.** The model that answered a prompt, under one spelling: the first token report after the prompt in its thread or session, else the model selected when it was sent. A prompt on `opus` and the tokens Claude reports for `claude-opus-5-5` are one model.
+
+**Subscription limits.** The current account allowance reported by a provider's native client, including work outside Sotto, read on demand as metadata (Claude Code through its own `get_usage`). Each computer has its own readings and ages; percentages are never added across computers, and Subscriptions shows the freshest one with the others beside it.
+
+**Observed tokens.** Numeric native request usage, under the model the provider reported: what Sotto saw on its threads, and what the clients' own records hold for Sotto and outside it. Input contains cache read/write subsets; total is input plus output. A request Sotto already counted gains its date from the client's record rather than counting twice.
 
 **Event store.** The SQLite database `threads.sqlite` in the user data folder, opened by `node:sqlite` behind `ThreadStore`, and the source of truth for what was said in every thread. Providers are read to append to it and never asked to rebuild it; their transcripts are read on demand for rewind, takeover detection and a capped import (ADR-0016). It is a second database beside the memory store, which keeps memories and policy records and is not touched by history. Avoid: "message cache", "transcript backup".
 
