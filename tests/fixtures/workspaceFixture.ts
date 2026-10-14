@@ -21,7 +21,7 @@ export async function workspaceFixture(root?: string, options?: { worktreeRefres
   let history = options?.history ?? true
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'codex', enabledProviders: () => ['codex', 'claude', 'grok'],
     threadProvider: id => registry.byThread(id)?.provider,
-    hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost() } })
+    hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost(), muse: new FakeProviderHost() } })
   const host = new WorkspaceHost(native, root, () => history, options?.worktreeRefreshDelayMs, options?.watcherEnabled ?? true)
   await host.initialize()
   let stopping: Promise<void> | undefined

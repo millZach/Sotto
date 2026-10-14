@@ -1,3 +1,4 @@
+import { modelsWithoutMuse } from './museGate'
 import { summarizePullRequestChecks } from './pullRequestCheckState'
 import type { PullRequestObservation } from './watcherEvidence'
 import { threadsInCheckout } from './checkoutCandidates'
@@ -13,7 +14,7 @@ import { cloneActivitySnapshot, immutableActivities, immutableModels, isImmutabl
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, providerTakesSottoTools, PROVIDER_LABELS, isVisualMessage, parsePublicProviderEntityId, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
@@ -284,15 +285,24 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private readonly launchProfiles: WatcherLaunchProfiles
   /** Disabled records are carried through saves exactly as read, outside the active projection. */
-  private readonly preservedWatcherThreads = new Map<string, AgentThread>()
+  private readonly preservedDormantThreads = new Map<string, AgentThread>()
   private readonly retainedWatcherIds = new Set<string>()
-  private visible(thread: AgentThread): boolean { return this.watcherEnabled || !this.retainedWatcherIds.has(thread.id) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' }
+  private visible(thread: AgentThread): boolean {
+    return (this.watcherEnabled || !this.retainedWatcherIds.has(thread.id) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history')
+      && (this.museEnabled || thread.providerId !== 'muse' && parsePublicProviderEntityId(thread.modelId)?.provider !== 'muse')
+  }
   private threadVisible(id: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === id)
-    return this.watcherEnabled || !this.retainedWatcherIds.has(id) && (!thread || this.visible(thread))
+    return (this.watcherEnabled || !this.retainedWatcherIds.has(id)) && (!thread || this.visible(thread))
   }
   private visibleSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
-    return this.watcherEnabled ? snapshot : { ...snapshot, threads: snapshot.threads.filter(thread => this.visible(thread)) }
+    if (this.watcherEnabled && this.museEnabled) return snapshot
+    return { ...snapshot, threads: snapshot.threads.filter(thread => this.visible(thread)),
+      ...(this.museEnabled ? {} : {
+        models: modelsWithoutMuse(snapshot.models),
+        projects: snapshot.projects.filter(project => project.providerId !== 'muse' && parsePublicProviderEntityId(project.id)?.provider !== 'muse'),
+        ...(snapshot.providers ? { providers: snapshot.providers.filter(provider => provider.id !== 'muse') } : {}),
+      }) }
   }
   watcherCreationPhase(threadId: string): 'unstarted' | 'starting' | 'retryable' | 'started' | undefined { return this.state.creations.find(item => item.threadId === threadId)?.phase }
   async watcherRead(threadId: string, afterPosition?: number, limit = 50) {
@@ -1257,10 +1267,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.publishSoon()
     return { added: true, visual: stored.visual, anchor }
   }
-  /** Whether a thread may draw a visual: one this host holds, on a provider that offers Sotto's tools (Devin does not). */
+  /** Whether a thread may draw a visual: one this host holds, on a provider that can receive Sotto's tool servers. */
   admitsVisuals(threadId: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    return thread !== undefined && this.visible(thread) && thread.providerId !== 'devin'
+    return thread !== undefined && this.visible(thread) && providerTakesSottoTools(thread.providerId)
   }
   /**
    * Whether an agent in this thread is offered Sotto's pull request tools (ADR-0061 decision 2): a thread this host holds,
@@ -1340,7 +1350,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
-    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS, private readonly watcherEnabled = false,
+    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS, private readonly watcherEnabled = false, private readonly museEnabled = false,
     /** The Owl list's answer for cheaper publish windows (#991), read once by the process owner. Absent fails closed. */
     private readonly streamingPublishCostEnabled = false) {
     this.concurrentProviders = inner.concurrentProviders === true
@@ -1355,16 +1365,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       id => this.state.snapshot.threads.find(thread => thread.id === id), watcherEnabled)
     inner.useLaunchProfiles?.({ profileFor: async id => { await this.initialize(); return this.launchProfiles.profileFor(id) } })
     this.worktrees = new ThreadWorktrees(directory)
-    const preserveThread = watcherEnabled ? undefined : (id: string): boolean => !this.threadVisible(id)
+    const preserveThread = watcherEnabled && museEnabled ? undefined : (id: string): boolean => !this.threadVisible(id)
     this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'), preserveThread)
     this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'), preserveThread)
     const parseWorkspace = (input: unknown): Workspace => { this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); const parsed = workspaceSchema.parse(input);
       // Whichever track wrote the file, every model reads back with its provider's modes on it.
       expandProviderModes(parsed.snapshot.models)
-      if (!this.watcherEnabled) {
+      if (!this.watcherEnabled || !this.museEnabled) {
         const original = input as { snapshot: AgentHostSnapshot }
-        this.preservedWatcherThreads.clear()
-        for (const thread of original.snapshot.threads) if (!this.visible(thread)) this.preservedWatcherThreads.set(thread.id, structuredClone(thread))
+        this.preservedDormantThreads.clear()
+        for (const thread of original.snapshot.threads) if (!this.visible(thread)) this.preservedDormantThreads.set(thread.id, structuredClone(thread))
       }
       return parsed }
     // With cheaper publish windows on, the file is written compact; every reader parses either form.
@@ -2130,7 +2140,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   eventsAfter(seq: number, threadId?: string, limit?: number): StoredThreadEvent[] {
     if (this.storeUnavailable) return []
     this.writeEvents(false, true)
-    return this.threadStore.eventsAfter(seq, threadId, limit, this.watcherEnabled ? [] : this.watcherThreadIds())
+    return this.threadStore.eventsAfter(seq, threadId, limit, this.dormantThreadIds())
   }
   private stopDelivery(): void {
     this.stopping = true
@@ -2251,7 +2261,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     return this.withProfileRefusal(threadId, () => this.inner.listThreadSkills!(threadId, forceReload))
   }
-  preservesWatcherThread(threadId: string): boolean { return !this.watcherEnabled && !this.threadVisible(threadId) }
+  preservesWatcherThread(threadId: string): boolean { return !this.watcherEnabled && this.watcherThreadIds().includes(threadId) }
+  preservesDormantThread(threadId: string): boolean { return !this.threadVisible(threadId) }
+  dormantThreadIds(): readonly string[] {
+    return [...new Set([...(this.watcherEnabled ? [] : this.retainedWatcherIds), ...this.state.snapshot.threads.filter(thread => !this.visible(thread)).map(thread => thread.id)])]
+  }
   watcherThreadIds(): readonly string[] {
     return [...new Set([...this.retainedWatcherIds, ...this.state.snapshot.threads.filter(thread => thread.kind === 'watcher' || thread.kind === 'watcher-history').map(thread => thread.id)])]
   }
@@ -2583,7 +2597,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           const built: Workspace = { ...this.state,
             snapshot: { ...this.state.snapshot,
               ...(this.streamingPublishCostEnabled ? { models: CATALOG_PLACEHOLDER as unknown as AgentModel[] } : {}),
-              threads: this.state.snapshot.threads.map(thread => this.preservedWatcherThreads.get(thread.id) ?? this.withBabysitting(organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable)))) } }
+              threads: this.state.snapshot.threads.map(thread => this.preservedDormantThreads.get(thread.id) ?? this.withBabysitting(organizationOnly(thread, this.activityJsonFallbackAllowed && (this.storeUnavailable || this.activityStoreUnavailable)))) } }
           const scrub = (saved: Workspace): void => {
             if (!this.historyEnabled()) for (const thread of saved.snapshot.threads.filter(thread => this.visible(thread))) {
               thread.requests = []
@@ -2848,8 +2862,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private thread(id: string): AgentThread {
     const thread = this.state.snapshot.threads.find(thread => thread.id === id)
     if (!thread) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
-    if (!this.visible(thread)) throw new WatcherProfileRefusal(WATCHER_DISABLED)
+    if (!this.visible(thread)) this.refuseDormantThread(thread)
     return thread
+  }
+  private refuseDormantThread(thread: AgentThread): never {
+    if (!this.museEnabled && (thread.providerId === 'muse' || parsePublicProviderEntityId(thread.modelId)?.provider === 'muse')) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    throw new WatcherProfileRefusal(WATCHER_DISABLED)
   }
   /** Starts working-copy setup, or returns the setup already running for this thread.
    * The checkout runs after `create-thread` has returned, so the pane appears at once; the
@@ -3072,6 +3090,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private async executeWithProfile(command: AgentHostCommand, checkoutHeld: boolean): Promise<AgentHostResult> {
     const watcherGuard = this.watcherDispatchGuards.get(command)
     await this.initialize(); watcherGuard?.()
+    if (!this.museEnabled && (command.type === 'create-project' && command.provider === 'muse'
+      || command.type === 'create-thread' && (resolveModel(this.state.snapshot.models, command.modelId)?.providerId === 'muse' || parsePublicProviderEntityId(command.modelId)?.provider === 'muse'))) {
+      throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    }
     const commandProfile = 'threadId' in command ? await this.launchProfiles.profileFor(command.threadId) : undefined
     if ('threadId' in command) {
       if (commandProfile) {
@@ -3307,7 +3329,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * set drops to its summary, one joining it is given the first window of its history from the store.
    */
   observeThreads(ids: readonly string[]): void {
-    if (!this.watcherEnabled && !this.ready) { void this.initialize().then(() => this.observeThreads(ids)).catch(() => undefined); return }
+    if (this.stopping) return
+    if ((!this.watcherEnabled || !this.museEnabled) && !this.ready) { void this.initialize().then(() => this.observeThreads(ids)).catch(() => undefined); return }
     ids = ids.filter(id => { const thread = this.state.snapshot.threads.find(thread => thread.id === id); return !thread || this.visible(thread) })
     // A thread coming into view reads its stored records back before its provider hears of it, so the pane's first
     // publish has them and a provider reading the thread's history merges onto them (#918).
@@ -3364,7 +3387,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.initialize()
       const thread = this.state.snapshot.threads.find(item => item.id === threadId)
       if (!thread || thread.archivedAt || thread.providerSessionOpen) return
-      if (!this.visible(thread)) throw new WatcherProfileRefusal(WATCHER_DISABLED)
+      if (!this.visible(thread)) this.refuseDormantThread(thread)
       if (thread.nativeSessionStarted !== false) return start.call(this.inner, threadId)
       const creation = this.state.creations.find(item => item.threadId === threadId)
       if (creation?.phase !== 'unstarted') return

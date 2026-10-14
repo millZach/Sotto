@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       'artifacts/certified-detail/**',
+      'artifacts/window-thread-shell/**',
       'artifacts/watcher-phone-wire/**',
       'artifacts/stable-from-main/**',
       'artifacts/watcher-paired-hosts/**',
@@ -43,6 +44,7 @@ export default tseslint.config(
       'apps/omarchy/src/**',
       'apps/omarchy/pkg/**',
       'artifacts/e2e-runs/**',
+      'artifacts/immediate-client-updates/**',
       'artifacts/omarchy-shell-integration/**',
       'artifacts/linux-window-minimum/**',
       'artifacts/linux-hyprland-paste/**',
@@ -118,6 +120,7 @@ export default tseslint.config(
       'artifacts/terminal-agent-states/**',
       'artifacts/phone-terminals/**',
       'artifacts/terminal-search-links-zoom/**',
+      'artifacts/terminal-search-repaint/**',
       'artifacts/thread-sidebar/**',
       'artifacts/frosted-window/**',
       'artifacts/forge-hand-test/**',
@@ -136,6 +139,7 @@ export default tseslint.config(
       'artifacts/issue-146/**',
       'artifacts/codex-connection-recovery/**',
       'artifacts/devin-local-provider/**',
+      'artifacts/muse-provider/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',

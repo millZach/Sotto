@@ -10,7 +10,7 @@ const WEEK_MS = 7 * DAY_MS
 export type ThreadRowState = 'needs' | 'working' | 'done'
 
 /** The badge tint for a provider; `other` is the neutral badge for a provider Sotto has no colour for. */
-export type ProviderKey = 'claude' | 'codex' | 'grok' | 'devin' | 'other'
+export type ProviderKey = 'claude' | 'codex' | 'grok' | 'devin' | 'muse' | 'other'
 
 export interface ThreadLastMessage {
   readonly who: string
@@ -73,7 +73,7 @@ const parse = (value: string | null | undefined): number => {
 
 /** Other names a label may give a provider than its id or its name: its company's, or ChatGPT for Codex. */
 const OTHER_NAMES: Readonly<Record<string, ProviderKey>> = {
-  anthropic: 'claude', openai: 'codex', chatgpt: 'codex', xai: 'grok', cognition: 'devin',
+  anthropic: 'claude', openai: 'codex', chatgpt: 'codex', xai: 'grok', cognition: 'devin', meta: 'muse',
 }
 
 /** The badge tint for a provider name as the provider reports it (a model's `provider` field), never a model's display name. */
@@ -83,7 +83,7 @@ export function providerKey(provider: string): ProviderKey {
 
 /** Sotto's badge glyph for an agent provider; an unknown provider gets its initial. */
 export function providerGlyph(provider: string): string {
-  const glyph = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', other: provider.trim().charAt(0).toLocaleUpperCase() }[providerKey(provider)]
+  const glyph = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', muse: 'M', other: provider.trim().charAt(0).toLocaleUpperCase() }[providerKey(provider)]
   return glyph === '' ? '?' : glyph
 }
 

@@ -53,6 +53,7 @@ async function fixture(optimized = false) {
       claude: new SottoThreadHost('claude', adapters.claude, registry),
       grok: new SottoThreadHost('grok', adapters.grok, registry),
       devin: new SottoThreadHost('devin', adapters.devin, registry),
+      muse: new FakeProviderHost(),
     },
   })
   const workspace = new WorkspaceHost(providers, directory)

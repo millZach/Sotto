@@ -940,6 +940,8 @@ it('shows Watcher’s request messages without the line Sotto added, and leaves 
   const exampleRequest = await send(example)
   const lookalike = 'Synthetic [Sotto Watcher request: typed by the user.]'
   const lookalikeRequest = await send(lookalike)
+  // Messages saved before display proofs, and Grok Build's (whose sends record none), carry no proof.
+  await f.control.updateWatcher(record => { for (const request of record.requests) if (request.id === first.id || request.id === grok.id) delete request.displayPrompt })
   native.messages.push({ id: 'older-reply', role: 'assistant', text: `Synthetic reply quoting${footer}`, createdAt: new Date().toISOString() })
   native.status = 'idle'
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })

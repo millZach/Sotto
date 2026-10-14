@@ -21,6 +21,8 @@ export interface FakeSystemdState {
   unit?: { ActiveState: string; SubState: string; Result: string; NRestarts: string; ExecMainStatus: string }
   /** The host's data folder, where `lost-lock` waits for the other host's lock. */
   data?: string
+  /** A test-owned first-start barrier; the test releases it in finally before draining the fixture. */
+  startBarrier?: { entered: string; release: string }
 }
 export interface FakeSystemdCall { readonly command: string; readonly args: string[] }
 export interface FakeSystemd {

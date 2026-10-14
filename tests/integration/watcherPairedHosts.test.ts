@@ -258,17 +258,35 @@ it('rechecks a late native question at the owning Codex writer, without answerin
   const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
   await native.driver.completeTurn(nativeId, 'Synthetic completion')
   await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === target.threadId)?.lastTurn?.status).toBe('completed'))
-  const gate = heldOperation()
+  // Hold a real owning read from before refusal until the control reply has already refunded this send.
+  vi.spyOn(f.watcher as unknown as { scheduleRemote: () => void }, 'scheduleRemote').mockImplementation(() => undefined)
+  const background = f.watcher as unknown as { remoteTimer?: unknown; remoteFlushing: boolean; reconciling?: Promise<void>; reconcileRemote(hostId: string): Promise<void> }
+  await expect.poll(() => !background.remoteTimer && !background.remoteFlushing && !background.reconciling).toBe(true)
+  const gate = heldOperation(), olderProjection = heldOperation()
+  const read = f.socket.watcherRead.bind(f.socket)
+  let held = false
+  vi.spyOn(f.socket, 'watcherRead').mockImplementation(async packet => {
+    const projection = await read(packet)
+    if (!packet.call && !held) { held = true; await olderProjection.wait() }
+    return projection
+  })
   const prepare = native.adapter.prepareSkillInput.bind(native.adapter)
   vi.spyOn(native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => { const result = await prepare(...args); if (args[1] === 'Synthetic held machine') await gate.wait(); return result })
   const sendInput = { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'now', text: 'Synthetic held machine' }
   const send = () => f.call('send_to_thread', sendInput)
   const lateQuestion = send()
+  let reconciliation: Promise<void> | undefined
   try {
     await gate.entered
+    const operationId = f.control.watcherRecord().operations.at(-1)!.id
+    reconciliation = background.reconcileRemote(target.hostId)
+    await olderProjection.entered
     await native.driver.raiseQuestion(nativeId, 'Synthetic late question')
     await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === target.threadId)?.requests.length).toBe(1))
     gate.release()
+    await expect.poll(() => f.control.watcherRecord().operations.find(item => item.id === operationId)?.deliveryState).toBe('failed')
+    olderProjection.release()
+    await reconciliation
     const refused = await lateQuestion
     expect(refused).toMatchObject({ code: 'PENDING_USER_REQUEST', receipt: { deliveryState: 'failed' } })
     const promptCount = () => f.watcher.state().requests.find(item => item.id === f.requestId)!.participants[0]!.promptCount
@@ -281,7 +299,7 @@ it('rechecks a late native question at the owning Codex writer, without answerin
     // A machine stop cancels the held question without answering it.
     expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target })).toMatchObject({ status: 'ok' })
     expect((await native.driver.requests()).filter(item => item.method === 'request/answer')).toHaveLength(0)
-  } finally { gate.release(); await lateQuestion; vi.restoreAllMocks() }
+  } finally { gate.release(); olderProjection.release(); await Promise.all([lateQuestion, reconciliation]); vi.restoreAllMocks() }
 }, 60_000)
 
 it('keeps remote receipts and ownership across host restart and never replays the original start', async () => {
@@ -372,6 +390,68 @@ it('enforces the narrower owning-host default and keeps a confirmed remote Stop 
   expect(await f.call('start_thread', acceptedInput)).toMatchObject({ status: 'ok', receipt: { operationId: first.receipt.operationId } })
   expect(writes).not.toHaveBeenCalled()
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic stopped request refusal' })).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
+})
+
+it('keeps a remote Stop all in flight while reconciliation reads the owning host', async () => {
+  const f = await master(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok') throw new Error('start-refused')
+  const confirmation = f.watcher.prepareStopAll()
+  if (confirmation.status !== 'ok') throw new Error('stop-preview-refused')
+  const original = f.socket.watcherControl.bind(f.socket)
+  let stopId: string | undefined
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => {
+    if (packet.call.name === 'stop_thread') {
+      stopId = packet.operation.id
+      // The master's stop is dispatching, but the owning host has not admitted it.
+      await (f.watcher as unknown as { reconcileRemote(hostId: string): Promise<void> }).reconcileRemote(packet.operation.target.hostId)
+    }
+    return original(packet)
+  })
+  expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ status: 'ok', results: [{ target: started.target, status: expect.stringMatching(/stopped|requested/u) }] })
+  expect(await f.socket.watcherRead({ master: f.control.watcherRecord().current!, call: { name: 'read_operation', input: { operationId: stopId! } } })).toMatchObject({ status: 'ok', receipt: { operationId: stopId, deliveryState: 'accepted' } })
+  expect(f.watcher.state().requests.find(item => item.id === f.requestId)?.state).toBe('stopped')
+})
+
+it('reconciles a remote Stop all after its acknowledgement is lost without sending it again', async () => {
+  const f = await master(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok') throw new Error('start-refused')
+  const confirmation = f.watcher.prepareStopAll()
+  if (confirmation.status !== 'ok') throw new Error('stop-preview-refused')
+  const original = f.socket.watcherControl.bind(f.socket)
+  let stopId: string | undefined
+  const writes = vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => {
+    const reply = await original(packet)
+    if (packet.call.name === 'stop_thread') {
+      stopId = packet.operation.id
+      throw new Error('Synthetic lost stop acknowledgement')
+    }
+    return reply
+  })
+  expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ status: 'ok', results: [{ target: started.target, status: 'uncertain' }] })
+  await (f.watcher as unknown as { reconcileRemote(hostId: string): Promise<void> }).reconcileRemote(started.target.hostId)
+  await vi.waitFor(() => expect(f.control.watcherRecord().operations.find(item => item.id === stopId)?.deliveryState).toBe('accepted'))
+  expect(writes).toHaveBeenCalledTimes(1)
+})
+
+it('releases an uncertain remote Stop all so an exact absent receipt can settle it', async () => {
+  const f = await master(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok') throw new Error('start-refused')
+  const confirmation = f.watcher.prepareStopAll()
+  if (confirmation.status !== 'ok') throw new Error('stop-preview-refused')
+  const original = f.socket.watcherControl.bind(f.socket)
+  let stopPacket: WatcherHostControl | undefined
+  const writes = vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => {
+    if (packet.call.name === 'stop_thread') {
+      stopPacket = packet
+      throw new Error('Synthetic unconfirmed transmission')
+    }
+    return original(packet)
+  })
+  expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ status: 'ok', results: [{ target: started.target, status: 'uncertain' }] })
+  await (f.watcher as unknown as { reconcileRemote(hostId: string): Promise<void> }).reconcileRemote(started.target.hostId)
+  await vi.waitFor(() => expect(f.control.watcherRecord().operations.find(item => item.id === stopPacket!.operation.id)).toMatchObject({ deliveryState: 'failed', refusalCode: 'OPERATION_NOT_RECORDED' }))
+  expect(await original(stopPacket!)).toMatchObject({ status: 'refused', code: 'OPERATION_NOT_RECORDED' })
+  expect(writes).toHaveBeenCalledTimes(1)
 })
 
 it.each(['queued', 'dispatching'])('rechecks a revoked phone after remote Stop all %s persistence', async phase => {
@@ -715,12 +795,30 @@ it('uses a fresh scoped connection for an admitted queue without renewing a rest
   await socket.watcherRead({ master: f.control.watcherRecord().current! })
   const worker = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
   expect(() => worker.guardOperation(queued.receipt!.operationId)).not.toThrow()
-  await native.driver.completeTurn(nativeId, 'Synthetic reconnect completion')
-  await socket.command({ type: 'refresh', provider: 'codex' })
-  await vi.waitFor(async () => expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(2))
-  const receipt = await socket.watcherRead({ master: f.control.watcherRecord().current!, call: { name: 'read_operation', input: { operationId: queued.receipt!.operationId } } })
-  expect(receipt).toMatchObject({ receipt: { deliveryState: 'accepted' } })
-  await vi.waitFor(() => expect((worker as unknown as { remoteGuards: Map<string, unknown> }).remoteGuards.size).toBe(0))
+  await native.script({ holdReply: 'turn/start', suppressNotifications: true })
+  const readReceipt = () => socket.watcherRead({ master: f.control.watcherRecord().current!,
+    call: { name: 'read_operation', input: { operationId: queued.receipt!.operationId } } })
+  const identity = { operationId: queued.receipt!.operationId, requestId: f.requestId, target: first.target }
+  let releaseAction: string | undefined
+  const releaseAck = async () => {
+    releaseAction ??= await native.action(nativeId, { type: 'release-reply', method: 'turn/start' })
+    await expect.poll(() => native.acted(releaseAction!)).toBe(true)
+  }
+  try {
+    await native.driver.completeTurn(nativeId, 'Synthetic reconnect completion')
+    await socket.command({ type: 'refresh', provider: 'codex' })
+    await vi.waitFor(async () => expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(2))
+    // The native journal proves arrival before acknowledgement. Acceptance belongs to the owning receipt.
+    expect(await readReceipt()).toMatchObject({ receipt: { ...identity, deliveryState: 'dispatching' } })
+    await releaseAck()
+    await expect.poll(readReceipt).toMatchObject({ receipt: { ...identity, deliveryState: 'accepted' } })
+    await vi.waitFor(() => expect((worker as unknown as { remoteGuards: Map<string, unknown> }).remoteGuards.size).toBe(0))
+    const requests = await native.driver.requests()
+    expect(requests.filter(item => item.method === 'turn/start')).toHaveLength(2)
+    expect(requests.filter(item => item.method === 'request/answer')).toHaveLength(0)
+  } finally {
+    await releaseAck()
+  }
 })
 
 it('refunds only an exact fenced absence and rejects a late packet for that operation', async () => {

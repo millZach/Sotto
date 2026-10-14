@@ -668,7 +668,8 @@ test.describe("Watcher's room on the built app", () => {
           // Main created Watcher on Codex: its own pane, the meter, the message and the provider's reply.
           const pane = watcherPane(page)
           await expect(page.getByRole('meter', { name: 'Watched threads' })).toHaveAttribute('aria-valuetext', '0 of 4 watched')
-          await expect(pane.locator('[data-role="user"]')).toContainText('Check the release notes and tell me what is missing.')
+          const original = 'Check the release notes and tell me what is missing.'
+          await expect(pane.locator('[data-role="user"] .rich-message')).toHaveText(original)
           await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. I will look at the release notes.')
           await expect(pane.locator('[data-role="user"]')).toHaveCount(1)
           // The bubble shows only what was typed. The request rides in the turn's own context, beside the words, and
@@ -678,12 +679,17 @@ test.describe("Watcher's room on the built app", () => {
             { method?: string; params?: { input?: { type: string; text?: string }[]; additionalContext?: Record<string, { value: string; kind: string }> } })
             .filter(frame => frame.method === 'turn/start')
           expect(turns).toHaveLength(1)
-          expect(turns[0]!.params!.input).toEqual([expect.objectContaining({ type: 'text', text: 'Check the release notes and tell me what is missing.' })])
+          expect(turns[0]!.params!.input).toEqual([expect.objectContaining({ type: 'text', text: original })])
           const note = turns[0]!.params!.additionalContext?.sotto_watcher_request
           expect(note).toMatchObject({ kind: 'application', value: expect.stringMatching(/^Sotto Watcher request: [0-9a-f-]{36}\. Local host: [0-9a-f-]{36}\./u) })
           expect(note!.value).not.toMatch(/project/iu)
           const record = await page.evaluate(async () => (await window.sotto!.watcher!.get()))
           expect(record).toMatchObject({ status: 'ok', state: { current: { provider: 'codex' } } })
+          if (record.status !== 'ok') throw new Error('Main did not return the Watcher room')
+          // The note names the request the message started, and nothing was appended, so there is no display proof to keep.
+          const request = record.state.requests.at(-1)!
+          expect(note!.value).toContain(`Sotto Watcher request: ${request.id}. Local host: ${request.watcher.hostId}.`)
+          expect(request.displayPrompt).toBeUndefined()
           // Watcher is its room's: not listed on the Threads page, and nothing there was selected for it.
           await switchTab(page, 'Threads').click()
           await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()

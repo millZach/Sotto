@@ -44,7 +44,7 @@ async function fixture() {
   let configuration: AgentConfiguration = { ...defaultAgentConfiguration(), enabledProviders: ['codex', 'claude', 'grok'] }
   const host = new ConfiguredProviderHost({
     directory: root,
-    hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost() },
+    hosts: { codex: new SottoThreadHost('codex', adapters.codex, registry), claude: new SottoThreadHost('claude', adapters.claude, registry), grok: new SottoThreadHost('grok', adapters.grok, registry), devin: new FakeProviderHost(), muse: new FakeProviderHost() },
     provider: () => configuration.provider, enabledProviders: () => enabledThreadProviders(configuration), threadProvider: id => registry.byThread(id)?.provider,
   })
   cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })
@@ -66,7 +66,7 @@ describe('independent thread providers', () => {
   it('ignores snapshot and event callbacks retained from an earlier provider connection', async () => {
     const codex = new RetainedCallbacksProvider()
     const host = new ConfiguredProviderHost({
-      hosts: { codex, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() },
+      hosts: { codex, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost() },
       provider: () => 'codex', enabledProviders: () => ['codex'],
     })
     const events: ThreadHostEvent[] = []
@@ -161,7 +161,7 @@ describe('independent thread providers', () => {
   })
   it('aggregates colliding native IDs and routes durable threads independently of the default provider', async () => {
     const f = await fixture(); const snapshot = await f.host.connect()
-    expect(snapshot.providers?.map(provider => provider.connection)).toEqual(['connected', 'connected', 'connected', 'disconnected'])
+    expect(snapshot.providers?.map(provider => provider.connection)).toEqual(['connected', 'connected', 'connected', 'disconnected', 'disconnected'])
     expect(new Set(snapshot.models.map(model => model.id)).size).toBe(3)
     expect(new Set(snapshot.projects.map(project => project.id)).size).toBe(3)
     expect(new Set(snapshot.threads.map(thread => thread.id)).size).toBe(6)
@@ -305,7 +305,7 @@ await pending2.promise; return connect() })
     const registry = new ThreadRegistry(f.root)
     const host = new ConfiguredProviderHost({ directory: f.root, provider: () => 'codex', enabledProviders: () => ['codex', 'claude'],
       threadProvider: id => registry.byThread(id)?.provider,
-      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: f.adapters.grok, devin: new FakeProviderHost() } })
+      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: f.adapters.grok, devin: new FakeProviderHost(), muse: new FakeProviderHost() } })
     cleanup.push(async () => { host.disconnect(); await registry.flush() })
     await host.connect()
     await expect(host.execute({ ...create, commandId: 'retry' })).rejects.toThrow('earlier project registration')
@@ -331,7 +331,7 @@ await pending2.promise; return connect() })
     f.host.disconnect()
     const registry = new ThreadRegistry(f.root)
     const host = new ConfiguredProviderHost({ directory: f.root, provider: () => 'grok', enabledProviders: () => ['codex', 'claude', 'grok'],
-      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: new SottoThreadHost('grok', f.adapters.grok, registry), devin: new FakeProviderHost() } })
+      hosts: { codex: new SottoThreadHost('codex', f.adapters.codex, registry), claude: new SottoThreadHost('claude', f.adapters.claude, registry), grok: new SottoThreadHost('grok', f.adapters.grok, registry), devin: new FakeProviderHost(), muse: new FakeProviderHost() } })
     cleanup.push(async () => { host.disconnect(); await registry.flush() })
     const restarted = await host.connect()
     for (const project of restarted.projects) {
@@ -468,11 +468,11 @@ await pending3.promise; return connect() })
     const failed = await control.command({ type: 'connect' })
     expect(failed.connection).toBe('disconnected')
     expect(failed.error).toBe(message)
-    expect(failed.host.providers?.filter(provider => provider.id !== 'devin').map(provider => provider.connection)).toEqual(['error', 'error', 'error'])
+    expect(failed.host.providers?.filter(provider => ['codex', 'claude', 'grok'].includes(provider.id)).map(provider => provider.connection)).toEqual(['error', 'error', 'error'])
     for (const spy of spies) spy.mockRestore()
     const restored = await control.command({ type: 'connect' })
     expect(restored.connection).toBe('connected')
     expect(restored.error).toBeNull()
-    expect(restored.host.providers?.filter(provider => provider.id !== 'devin').every(provider => provider.connection === 'connected')).toBe(true)
+    expect(restored.host.providers?.filter(provider => ['codex', 'claude', 'grok'].includes(provider.id)).every(provider => provider.connection === 'connected')).toBe(true)
   })
 })

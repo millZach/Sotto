@@ -161,12 +161,17 @@ export const watcherIdentitySchema = z.object({ target: watcherThreadTargetSchem
 export const watcherParticipantSchema = participation.extend({ target: watcherThreadTargetSchema,
   lastUserMessageId: id.nullable().optional(),
   promptCount: z.number().int().min(0).max(WATCHER_PROMPTS_PER_THREAD) }).strict()
+/** Text-free proof of the user's boundary in the exact native message Sotto sent. */
+export const watcherDisplayPromptSchema = z.object({ originalLength: counter,
+  wireDigest: z.string().regex(/^[a-f0-9]{64}$/u) }).strict()
+export type WatcherDisplayPrompt = z.infer<typeof watcherDisplayPromptSchema>
 export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, rootUserMessageId: id,
+  displayPrompt: watcherDisplayPromptSchema.optional(),
   phoneOrigin: watcherPhoneOriginSchema.optional(),
   pairedPermissionCeiling: agentRuntimeModeSchema.optional(),
   remoteOrigin: z.object({ clientId: id, master: watcherIdentitySchema, creationOperationId: z.uuid(), ceiling: agentRuntimeModeSchema }).strict().optional(),
   state: z.enum(['active', 'stopped', 'closed']), createdAt: time, closedAt: time.nullable(),
-  userFollowups: z.array(z.object({ draftId: z.uuid(), messageId: id.optional() }).strict()).max(1_000).optional(),
+  userFollowups: z.array(z.object({ draftId: z.uuid(), messageId: id.optional(), displayPrompt: watcherDisplayPromptSchema.optional() }).strict()).max(1_000).optional(),
   participants: z.array(watcherParticipantSchema).max(1_000) }).strict()
 export const watcherOperationSchema = z.object({ id: z.uuid(), requestId: z.uuid(), retryKey: z.uuid(), digest: z.string().regex(/^[a-f0-9]{64}$/u),
   // The caller's original choices, before fitting defaults. Retries never resolve new defaults or dispatch again.

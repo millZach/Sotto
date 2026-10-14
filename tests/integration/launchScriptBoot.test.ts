@@ -14,10 +14,20 @@ import { fakeSystemd, type FakeSystemd, type FakeSystemdState } from '../fixture
 const HOST_ID = '11111111-1111-4111-8111-111111111111'
 // Each case runs several launch script operations, each a Node start and a fake systemctl call per step.
 vi.setConfig({ testTimeout: 60_000 })
-const directories: string[] = [], children: ChildProcess[] = [], pids: number[] = []
+const directories: string[] = [], children: ChildProcess[] = []
 let systemd: FakeSystemd | undefined
+const ownedFixtureHosts: Array<{ dataDirectory: string; pid: number; instance: string }> = []
 afterEach(async () => {
-  for (const pid of [...pids.splice(0), ...(systemd ? await systemd.spawned() : [])]) { try { process.kill(pid, 'SIGTERM') } catch { /* already exited */ } }
+  // Recovery errors omit the new PID from their result. Stop only an identity still served by this owned fixture.
+  for (const owned of ownedFixtureHosts.splice(0).reverse()) {
+    try {
+      const current = JSON.parse(await readFile(join(owned.dataDirectory, 'host-listener.json'), 'utf8')) as { fixture?: string; pid: number; instance: string; port: number }
+      if (current.fixture !== 'sotto-fake-ssh-host' || current.pid !== owned.pid || current.instance !== owned.instance) continue
+      const response = await fetch(`http://127.0.0.1:${current.port}/health`, { signal: AbortSignal.timeout(10_000) })
+      const health = await response.json() as { fixture?: string; pid?: number; instance?: string }
+      if (health.fixture === current.fixture && health.pid === owned.pid && health.instance === owned.instance) process.kill(owned.pid, 'SIGTERM')
+    } catch { /* a stopped or replaced host is not ours to signal by PID alone */ }
+  }
   for (const child of children.splice(0)) if (child.exitCode === null) child.kill()
   systemd = undefined
   await new Promise(resolve => setTimeout(resolve, 100))
@@ -48,7 +58,10 @@ async function run(configuration: Configuration, operation: LaunchOperation | Re
   await new Promise(resolve => child.once('close', resolve))
   const messages = output.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line) as Record<string, unknown>)
   const result = messages.at(-1) ?? {}
-  if (typeof result.pid === 'number') pids.push(result.pid)
+  try {
+    const current = JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8')) as { fixture?: string; pid: number; instance: string }
+    if (current.fixture === 'sotto-fake-ssh-host' && typeof current.pid === 'number' && typeof current.instance === 'string') ownedFixtureHosts.push({ dataDirectory: configuration.dataDirectory, pid: current.pid, instance: current.instance })
+  } catch { /* an operation that starts no host can leave no descriptor */ }
   return { messages, result }
 }
 const descriptor = async (configuration: Configuration) => JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.json'), 'utf8')) as { pid: number; startedBy?: string; instance: string }
@@ -146,7 +159,6 @@ describe.skipIf(process.platform === 'darwin')("start at boot in the launch scri
     await expect(readFile(configuration.systemd.unitPath)).rejects.toMatchObject({ code: 'ENOENT' })
     expect((await systemd!.state()).enabled).toBe(false)
     const restarted = await descriptor(configuration)
-    pids.push(restarted.pid)
     expect(replaced(first, restarted)).toBe(true)
     expect(restarted).toMatchObject({ startedBy: 'launch-script' })
     expect(alive(restarted.pid)).toBe(true)
@@ -343,13 +355,32 @@ describe.skipIf(process.platform === 'darwin')("start at boot in the launch scri
   })
 
   it('stops a host the unit runs through the user manager, and keeps the unit enabled for the next boot', async () => {
-    const configuration = await installed()
+    const configuration = await fixture({ linger: true })
+    await run(configuration, { op: 'launch' })
+    const lock = join(configuration.dataDirectory, 'host-listener.lock')
+    const retiredLease = await readFile(lock, 'utf8')
+    const first = await descriptor(configuration)
+    expect(JSON.parse(retiredLease)).toMatchObject({ fixture: 'sotto-fake-ssh-host', pid: first.pid, instance: first.instance })
+    const entered = join(configuration.directory, 'unit-start-entered.json'), release = join(configuration.directory, 'unit-start-release')
+    await configuration.systemd.set({ startBarrier: { entered, release } })
+    const installing = run(configuration, { op: 'boot-install', hostId: HOST_ID })
+    let install: Outcome
+    try {
+      await vi.waitFor(async () => { await readFile(entered, 'utf8') }, { timeout: configuration.readyTimeoutMs })
+      // The old host is already dead here. Native Windows SIGTERM skipped its Linux cleanup handler.
+      await expect(readFile(lock, 'utf8'), 'The exact retired fixture lease must be gone before the unit spawns its replacement.').rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await writeFile(release, '')
+      install = await installing
+    }
+    expect(install.result).toEqual(expect.objectContaining({ type: 'boot-installed', installed: true, stopped: true }))
     const unitHost = (await descriptor(configuration)).pid
     const before = (await systemd!.calls()).length
     expect((await run(configuration, { op: 'stop-host', hostId: HOST_ID })).result).toEqual({ type: 'host-stopped', stopped: true, hostId: HOST_ID })
-    expect(alive(unitHost)).toBe(false)
+    expect(await configuration.systemd.stops()).toContainEqual({ pid: unitHost, exited: true })
     expect(await changes(before)).toEqual(['systemctl stop sotto-host'])
     expect((await systemd!.state()).enabled).toBe(true)
+    await expect(readFile(lock, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   describe('boot-remove', () => {
@@ -529,10 +560,13 @@ await import('./fake.mjs')
 
     it.runIf(process.platform === 'win32')('preserves a replacement lease when the fake unit stops its own host', async () => {
       const configuration = await installed(), replacement = { pid: process.pid, nonce: 'another-owned-fixture-instance' }
+      const unitHost = (await descriptor(configuration)).pid
       await systemd!.set({ stopLeaseReplacement: replacement })
       const outcome = await run(configuration, { op: 'stop-host', hostId: HOST_ID })
       expect(outcome.result).toMatchObject({ type: 'host-stopped', stopped: true })
+      expect(await configuration.systemd.stops()).toContainEqual({ pid: unitHost, exited: true })
       expect(JSON.parse(await readFile(join(configuration.dataDirectory, 'host-listener.lock'), 'utf8'))).toEqual(replacement)
+      expect(alive(replacement.pid)).toBe(true)
     })
 
     it('stops a new version the unit keeps running but that never answers, and rolls back to the old one', async () => {

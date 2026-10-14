@@ -1,9 +1,12 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
+import { UsageService } from '../../src/main/agents/usageService'
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { PairedClients } from '../../src/main/agents/pairing'
 import { startSocketServer } from '../../src/host/socketServer'
@@ -17,16 +20,19 @@ import { deferred } from '../fixtures/deferred'
 
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-async function fixture(phoneFeature = true) {
+async function fixture(phoneFeature = true, usageEnabled = false) {
   const workspace = await workspaceFixture()
   cleanups.push(workspace.remove)
+  const usage = usageEnabled ? new UsageService({ directory: workspace.root, host: workspace.host,
+    acceptedPromptIdentities: identities => workspace.host.recordedUserMessages(identities) }) : undefined
+  usage?.start()
   let canAnswer = false
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
-    control: { watcherEnabled: true, authority: { authorizes: () => ({ allowed: false, reason: 'no-policy' }),
+    control: { watcherEnabled: true, ...(usage ? { usage } : {}), authority: { authorizes: () => ({ allowed: false, reason: 'no-policy' }),
       mayGrant: client => ({ allowed: client.transport === 'ipc' || canAnswer, reason: 'paired-client' }) } } })
   const watcher = new WatcherService({ directory: workspace.root, host: workspace.host, control: f.control, limit: () => 4, historyEnabled: () => true })
   const tools = new WatcherToolServer(watcher); workspace.host.useWatcherTools(tools)
-  cleanups.push(async () => { watcher.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
+  cleanups.push(async () => { watcher.close(); await tools.close(); f.control.dispose(); await f.control.closed(); usage?.close(); await workspace.stop() })
   await f.control.start(); await f.control.commandShell({ type: 'connect', provider: 'codex' })
   await watcher.recover()
   const model = f.control.shell().host.models.find(row => row.providerId === 'codex')!
@@ -53,7 +59,7 @@ async function fixture(phoneFeature = true) {
       title: 'Synthetic worker', workingCopy: { kind: 'shared' }, firstPrompt: 'Synthetic worker request' }) as { status: string; target: typeof target }
     expect(result.status).toBe('ok'); return result.target
   }
-  return { ...f, workspace, watcher, phone, target, service, pairing, server, pair, native, finish, start,
+  return { ...f, workspace, watcher, phone, target, service, pairing, server, pair, native, finish, start, usage,
     canAnswer: (value: boolean) => { canAnswer = value }, send: (clientId: string, draftId = randomUUID(), text = 'Synthetic phone request') => ({ op: 'watcher-phone-send',
       request: { origin: { kind: 'phone', hostId: target.hostId, clientId }, target, draftId, text } }) }
 }
@@ -107,6 +113,8 @@ it('shows phone instructions as typed: without the footer main once appended, an
     + `Known project IDs: native:claude:project:${randomUUID()}. Call list_projects for choices.]`
   const typed = 'Synthetic older phone instruction'
   f.native(f.target.threadId).messages.find(row => row.id === older.rootUserMessageId)!.text = typed + footer
+  // Saved before display proofs, so it carries none.
+  await f.control.updateWatcher(record => { delete record.requests.find(request => request.id === older.id)!.displayPrompt })
   // A later instruction in which the user typed an example note of their own.
   const example = `Explain this example:\n\n[Sotto Watcher request: ${randomUUID()}. Local host: ${f.target.hostId}. Use this requestId for sotto_threads changes made for this message.]`
   await peer.call('send-example', f.send(peer.paired.clientId, randomUUID(), example)); await f.finish(f.target.threadId)
@@ -120,6 +128,43 @@ it('shows phone instructions as typed: without the footer main once appended, an
     expect.objectContaining({ id: older.rootUserMessageId, text: typed }), expect.objectContaining({ id: later.rootUserMessageId, text: example })]) } } })
   expect(JSON.stringify(read.result)).not.toContain('Use this requestId for sotto_threads mutations')
 })
+
+it('counts accepted paired phone instructions as user prompts while keeping actual Watcher operations separate', async () => {
+  const f = await fixture(true, true), peer = await f.pair()
+  const text = 'Synthetic private phone instruction', packet = f.send(peer.paired.clientId, randomUUID(), text)
+  expect(await peer.call('phone-user', packet)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  expect(f.watcher.state().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
+  expect(f.phone.state(false).conversation.messages.some(message => message.text === text)).toBe(true)
+  expect(f.native(f.target.threadId).messages.filter(message => message.role === 'user')).toHaveLength(1)
+  expect((await f.usage!.read()).activity!.totals.prompts).toEqual({ user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 })
+  expect(await peer.call('same-phone-draft', packet)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  expect(f.native(f.target.threadId).messages.filter(message => message.role === 'user')).toHaveLength(1)
+  expect((await f.usage!.read()).activity!.totals.prompts.total).toBe(1)
+
+  const worker = await f.start()
+  expect((await f.usage!.read()).activity!.totals.prompts).toEqual({ user: 1, watcher: 1, wakeUp: 0, total: 2, steered: 0 })
+  await f.finish(worker.threadId)
+  expect(await f.watcher.invoke(f.target.threadId, 'send_to_thread', { target: worker,
+    requestId: f.watcher.state().requests.at(-1)!.id, retryKey: randomUUID(), text: 'Synthetic private Watcher follow-up', delivery: 'now' }))
+    .toMatchObject({ status: 'ok' })
+  expect((await f.usage!.read()).activity!.totals.prompts).toEqual({ user: 1, watcher: 2, wakeUp: 0, total: 3, steered: 0 })
+
+  const ordinary = f.control.shell().host.threads.find(thread => thread.providerId === 'codex'
+    && thread.id !== worker.threadId && thread.id !== f.target.threadId)!
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: ordinary.id,
+    draftId: randomUUID(), text: 'Synthetic private desktop instruction' })).error).toBeNull()
+  const read = await f.usage!.read()
+  expect(read).toMatchObject({ status: 'ready', persistence: 'saved' })
+  expect(read.activity!.totals.prompts).toEqual({ user: 2, watcher: 2, wakeUp: 0, total: 4, steered: 0 })
+  const db = new DatabaseSync(join(f.workspace.root, 'usage.sqlite'), { readOnly: true })
+  try {
+    const rows = db.prepare('SELECT * FROM prompt_rows').all()
+    expect(rows).toHaveLength(4)
+    expect(JSON.stringify(rows)).not.toContain('Synthetic private')
+    expect(rows.filter(row => row.thread_id === f.target.threadId)).toMatchObject([{ kind: 'user', model_id: ordinary.modelId }])
+  } finally { db.close() }
+})
+
 it('does not attach an old receipt to an assistant reply after a later user instruction', async () => {
   const f = await fixture(), peer = await f.pair(); await peer.call('first', f.send(peer.paired.clientId)); await f.start()
   const firstRequest = f.watcher.state().requests.at(-1)!.id

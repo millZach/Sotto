@@ -3,21 +3,94 @@ import { describe, expect, it } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
+import { immutableActivities, isImmutableActivities } from '../../../src/main/agents/activitySnapshots'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
+import { watcherDisplayPrompt, type WatcherMessageDisplay } from '../../../src/main/agents/watcherMessageDisplay'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
-import type { AgentState, AgentThread, AgentThreadDetailUpdate } from '../../../src/shared/agents'
+import type { AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../src/shared/agents'
+import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../src/shared/agentThreadDetail'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { watcherRecordFixture } from '../../fixtures/watcher'
 
 const record = (id: string, output = 'first'): AgentActivity => ({ id, turnId: 'turn', sequence: 1, kind: 'command', status: 'running', title: 'Synthetic', output, steps: [{ text: 'first', status: 'running' }] })
 const thread = (): AgentThread => ({ id: 'thread', projectId: 'project', title: 'Synthetic', modelId: 'fake', status: 'running', messages: [], requests: [], activities: immutableActivities([record('one'), record('two')]) })
-function fixture(enabled: boolean, directory = '') {
-  const control = createAgentControl({ directory, host: new E2EAgentHost(), credentials: { has: () => false, available: () => false } as never, streamingPublishCost: enabled })
-  const detail = control as unknown as { detailRevision(thread: AgentThread): number; detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate; detailSnapshots: Map<string, { activities?: AgentActivity[] }>; state: AgentState; viewedThreadIds: string[]; broadcastDetail(): void; certifiedDetailRevisions: Map<string, unknown>; detailRevisions: Map<string, unknown> }
+function fixture(enabled: boolean, directory = '', watcherEnabled = true) {
+  const control = createAgentControl({ directory, host: new E2EAgentHost(), credentials: { has: () => false, available: () => false } as never, streamingPublishCost: enabled, watcherEnabled })
+  const detail = control as unknown as { detailRevision(thread: AgentThread): number; detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate; detailSnapshots: Map<string, AgentThreadDetail>; state: AgentState; viewedThreadIds: string[]; broadcastDetail(): void; certifiedDetailRevisions: Map<string, { activities: readonly AgentActivity[] }>; detailRevisions: Map<string, unknown>; certifiedDetailCounters: Map<string, number>; watcherMessageDisplay?: WatcherMessageDisplay }
   return { control, detail, publish(value: AgentThread) { const revision = detail.detailRevision(value); return { revision, update: detail.detailUpdate(value, revision) } } }
 }
 
 describe('certified activity detail under the streaming cost gate', () => {
+  it.each([false, true])('releases a publicly read detail on close without a subscriber, with Watcher %s', async watcherEnabled => {
+    const f = fixture(true, '', watcherEnabled), value = thread()
+    try {
+      f.detail.state.host.threads = [value]
+      await f.control.commandShell({ type: 'observe-threads', threadIds: [value.id] })
+      const cached = f.control.threadDetail(value.id)!
+      expect(f.detail.detailSnapshots.size).toBe(1)
+      expect(isImmutableActivities(f.detail.certifiedDetailRevisions.get(value.id)?.activities)).toBe(true)
+      await f.control.commandShell({ type: 'observe-threads', threadIds: [] })
+      expect(f.detail.detailSnapshots.size).toBe(0)
+      expect(f.detail.certifiedDetailRevisions.size).toBe(0)
+      expect(f.detail.detailRevisions.size).toBe(0)
+      expect(f.detail.certifiedDetailCounters.get(value.id)).toBe(cached.revision)
+      await f.control.commandShell({ type: 'observe-threads', threadIds: [value.id] })
+      expect(f.control.threadDetail(value.id)!.revision).toBeGreaterThan(cached.revision)
+      value.activities = structuredClone(value.activities)
+      const mutable = f.control.threadDetail(value.id)!
+      expect(f.detail.certifiedDetailRevisions.size).toBe(0)
+      expect(f.detail.detailRevisions.size).toBe(1)
+      await f.control.commandShell({ type: 'observe-threads', threadIds: [] })
+      expect(f.detail.detailSnapshots.size).toBe(0)
+      expect(f.detail.certifiedDetailRevisions.size).toBe(0)
+      expect(f.detail.detailRevisions.size).toBe(0)
+      expect(f.detail.certifiedDetailCounters.get(value.id)).toBe(mutable.revision)
+      await f.control.commandShell({ type: 'observe-threads', threadIds: [value.id] })
+      expect(f.control.threadDetail(value.id)!.revision).toBeGreaterThan(mutable.revision)
+    } finally { f.control.dispose() }
+  })
+
+  it.each([false, true])('publishes changed Watcher proof with unchanged native lengths, with streaming cost %s', enabled => {
+    const f = fixture(enabled), value = thread(), record = watcherRecordFixture(), request = record.requests[0]!
+    const original = 'Inspect the synthetic project', wire = `${original}\n\nSynthetic native-only routing context`
+    const proof = watcherDisplayPrompt(original, wire)
+    value.id = request.watcher.threadId; value.kind = 'watcher'
+    value.messages = [{ id: request.rootUserMessageId, role: 'user', text: wire, createdAt: request.createdAt }]
+    request.displayPrompt = proof
+    f.detail.state.host.hostId = request.watcher.hostId
+    f.detail.state.host.threads = [value]; f.detail.viewedThreadIds = [value.id]
+    const updateProof = () => f.detail.watcherMessageDisplay!.update(record.requests)
+    updateProof()
+    let held = f.control.threadDetail(value.id)!
+    expect(held.messages[0]!.text).toBe(original)
+    expect(f.detail.certifiedDetailRevisions.has(value.id)).toBe(enabled)
+    if (enabled) expect(isImmutableActivities(f.detail.certifiedDetailRevisions.get(value.id)!.activities)).toBe(true)
+    const invalid: AgentThreadDetailUpdate[] = []
+    const off = f.control.subscribeThreadDetail(update => {
+      const next = isAgentThreadDetailDelta(update) ? applyAgentThreadDetailDelta(held, update) : update
+      if (next === null) invalid.push(update); else held = next
+    })
+    const publish = (expected: string) => {
+      const previous = held.revision
+      updateProof(); f.detail.broadcastDetail()
+      expect(held.revision).toBeGreaterThan(previous)
+      expect(held.messages[0]!.text).toBe(expected)
+      expect(f.detail.detailSnapshots.get(value.id)!.messages[0]!.text).toBe(expected)
+    }
+    try {
+      request.displayPrompt = { ...proof, wireDigest: '0'.repeat(64) }; publish(wire)
+      expect(value.messages[0]!.text).toBe(wire)
+      request.displayPrompt = proof; publish(original)
+      delete request.displayPrompt; publish(wire)
+      request.displayPrompt = proof; publish(original)
+      value.messages[0]!.text = 'i' + wire.slice(1); publish(value.messages[0]!.text)
+      expect(value.messages[0]!.text.length).toBe(wire.length)
+      value.messages[0]!.text = wire; publish(original)
+      expect(invalid).toEqual([])
+      expect(value.messages[0]!.text).toBe(wire)
+    } finally { off(); f.control.dispose() }
+  })
+
   it('reopens above a client-held revision while releasing the closed pane records and signatures', () => {
     const f = fixture(true), value = thread()
     const updates: AgentThreadDetailUpdate[] = []
@@ -76,6 +149,8 @@ describe('certified activity detail under the streaming cost gate', () => {
       value.historyEpoch = 'reset'; value.activities = immutableActivities([]); check()
       value.messages = [{ id: 'reply', role: 'assistant', text: 'First', createdAt: '2026-10-13' }]; check()
       value.messages[0]!.text += ' more'; check()
+      value.activities = structuredClone(value.activities); check()
+      value.activities = immutableActivities(value.activities!); check()
     } finally { stable.control.dispose(); owl.control.dispose() }
   })
 

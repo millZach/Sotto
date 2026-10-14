@@ -1,18 +1,19 @@
 import { join } from 'node:path'
-import type { AgentHostSnapshot, ProviderId } from '../../shared/agents'
+import type { AgentHostSnapshot } from '../../shared/agents'
 import {
   usageLocalClearRequestSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageQuotaReadSchema,
   usageTokenObservationSchema, usagePromptSubmissionSchema, usagePromptIdentitySchema,
+  isUsageProviderId,
   type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery,
   type UsagePromptSubmission, type UsageQuotaRead, type UsageTokenObservation,
-  type UsagePromptIdentity,
+  type UsagePromptIdentity, type UsageProviderId,
 } from '../../shared/usageDashboard'
 import type { AgentHost } from './host'
 import { subscribeActivitySnapshots } from './activitySnapshots'
 import { unavailableProviderQuota } from './providerQuota'
 import { UsageStore, USAGE_PENDING_RECONCILIATION_BATCH_MAX } from './usageStore'
 
-const PROVIDERS: readonly ProviderId[] = ['codex', 'claude', 'grok', 'devin']
+const PROVIDERS: readonly UsageProviderId[] = ['codex', 'claude', 'grok', 'devin']
 const BUFFER_MAX = 4_096
 const FLUSH_MS = 1_000
 const RETRY_MS = 5_000
@@ -34,11 +35,11 @@ export class UsageService implements UsagePromptRecorder {
   private readonly store: Store
   private readonly tokens = new Map<string, UsageTokenObservation>()
   private readonly prompts = new Map<string, PromptWrite>()
-  private readonly quotas = new Map<ProviderId, UsageQuotaRead>()
+  private readonly quotas = new Map<UsageProviderId, UsageQuotaRead>()
   private readonly visited = new Set<string>()
-  private readonly connected = new Set<ProviderId>()
+  private readonly connected = new Set<UsageProviderId>()
   private readonly subscriptions: (() => void)[] = []
-  private readonly refreshing = new Map<ProviderId, Promise<UsageQuotaRead>>()
+  private readonly refreshing = new Map<UsageProviderId, Promise<UsageQuotaRead>>()
   private timer: ReturnType<typeof setTimeout> | undefined
   private reconcileTimer: ReturnType<typeof setTimeout> | undefined
   private reconciliation: { after?: UsagePromptIdentity; through: UsagePromptIdentity } | undefined
@@ -122,7 +123,7 @@ export class UsageService implements UsagePromptRecorder {
     }
   }
 
-  async refresh(providerIds?: readonly ProviderId[]): Promise<UsageLocalHostRead> {
+  async refresh(providerIds?: readonly UsageProviderId[]): Promise<UsageLocalHostRead> {
     const quotas = await this.readQuotas(providerIds, true)
     return { status: 'ready', quotas, persistence: this.failed || this.lost ? 'failed' : 'saved' }
   }
@@ -193,14 +194,14 @@ export class UsageService implements UsagePromptRecorder {
     this.receivedSnapshot = true
     const previouslyConnected = new Set(this.connected)
     this.connected.clear()
-    for (const provider of snapshot.providers ?? []) if (provider.connection === 'connected') this.connected.add(provider.id)
+    for (const provider of snapshot.providers ?? []) if (provider.connection === 'connected' && isUsageProviderId(provider.id)) this.connected.add(provider.id)
     if (!snapshot.providers && snapshot.connected) {
-      for (const thread of snapshot.threads) if (thread.providerId) this.connected.add(thread.providerId)
-      for (const model of snapshot.models) if (model.providerId) this.connected.add(model.providerId)
+      for (const thread of snapshot.threads) if (isUsageProviderId(thread.providerId)) this.connected.add(thread.providerId)
+      for (const model of snapshot.models) if (isUsageProviderId(model.providerId)) this.connected.add(model.providerId)
     }
     if (this.options.host.visitUsage) {
       for (const thread of snapshot.threads) {
-        if (this.visited.has(thread.id) || (thread.providerId && !this.connected.has(thread.providerId))) continue
+        if (this.visited.has(thread.id) || (thread.providerId && (!isUsageProviderId(thread.providerId) || !this.connected.has(thread.providerId)))) continue
         try {
           this.options.host.visitUsage(thread.id, record => this.observeTokens(record))
           this.visited.add(thread.id)
@@ -245,7 +246,7 @@ export class UsageService implements UsagePromptRecorder {
     }
   }
 
-  private async readQuotas(providerIds: readonly ProviderId[] | undefined, refresh: boolean): Promise<UsageQuotaRead[]> {
+  private async readQuotas(providerIds: readonly UsageProviderId[] | undefined, refresh: boolean): Promise<UsageQuotaRead[]> {
     const selected = PROVIDERS.filter(provider => providerIds === undefined || providerIds.includes(provider))
     return Promise.all(selected.map(async providerId => {
       if (!this.connected.has(providerId)) return unavailableProviderQuota(providerId, 'not-connected')

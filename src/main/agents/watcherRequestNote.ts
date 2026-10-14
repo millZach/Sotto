@@ -41,16 +41,20 @@ export function watcherTextAsTyped(text: string, request: WatcherMessageRequest)
   return match ? text.slice(0, match.index) : text
 }
 
-/** Each user message's request, from the Watcher record's request roots and continuations. */
+/**
+ * Each unproven user message's request, from the Watcher record's request roots and continuations. A message with a
+ * display proof is left to the proof alone (`WatcherMessageDisplay`): it was either sent with the old footer and its
+ * exact boundary recorded, or sent as typed, so nothing in it is ever searched for a line.
+ */
 export function watcherMessageRequests(requests: readonly WatcherRequest[]): WatcherMessageRequests {
   let index = requestIndexes.get(requests)
   if (!index) {
     index = new Map()
     for (const request of requests) {
       const value = { requestId: request.id, hostId: request.watcher.hostId }
-      for (const messageId of [request.rootUserMessageId, ...(request.userFollowups ?? []).flatMap(item => item.messageId ? [item.messageId] : [])]) {
-        index.set(`${request.watcher.threadId}\n${messageId}`, value)
-      }
+      const unproven = [...request.displayPrompt === undefined ? [request.rootUserMessageId] : [],
+        ...(request.userFollowups ?? []).flatMap(item => item.messageId && item.displayPrompt === undefined ? [item.messageId] : [])]
+      for (const messageId of unproven) index.set(`${request.watcher.threadId}\n${messageId}`, value)
     }
     requestIndexes.set(requests, index)
   }

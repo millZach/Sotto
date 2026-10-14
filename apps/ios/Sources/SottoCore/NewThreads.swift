@@ -168,7 +168,7 @@ public enum NewThreads {
 }
 extension Commands {
     public static func createProject(providerID: String, title: String, path: String) throws -> JSONValue {
-        guard ["codex", "claude", "grok", "devin"].contains(providerID),
+        guard ["codex", "claude", "grok", "devin", "muse"].contains(providerID),
               !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.utf16.count <= 512,
               !path.isEmpty, path.utf16.count <= 4096 else { throw ClientError.invalidRequest }
         return try RemoteCommands.checked(.object(["type": .string("create-project"), "provider": .string(providerID),
