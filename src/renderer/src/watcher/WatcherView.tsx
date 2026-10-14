@@ -18,7 +18,7 @@ import { useClock } from '../agents/paneGrid'
 import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
 import { useShared } from '../agents/stateSharing'
 import { describeThreads, providerKey, type ThreadRow } from '../agents/threadFacts'
-import { effortChoices, WatcherPermission } from '../agents/ThreadOptions'
+import { effortChoices } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
 import { BrowserPageRouteContext } from '../tools/webLinks'
 import { useWatcherRoom, type WatcherRoom } from './watcherRoom'
@@ -28,6 +28,7 @@ import { WatcherDock } from './WatcherDock'
 import { WatcherGlance } from './WatcherGlance'
 import { overviewCount, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
 import { WatcherOwl } from './WatcherOwl'
+import { WatcherPermissionChip } from './WatcherPermissionChip'
 
 const WATCHER_PROMPT_ID = 'watcher-prompt'
 const WATCHER_PANE_ID = 'watcher-pane'
@@ -150,6 +151,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const efforts = effortChoices(model, reasoning)
   const starting = phase !== 'writing'
   const field = useRef<PromptEditorElement | null>(null)
+  const [notices, setNotices] = useState<HTMLElement | null>(null)
   const provider = model === undefined ? null : watcherProviderOf(model)
   const ready = model !== undefined && provider !== null && room.open !== null && !starting
   const canSend = ready && text.trim() !== ''
@@ -172,11 +174,11 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
           <WatcherOwl size={28} className="watcher-first__owl" />
           <h2>Start Watcher</h2>
           <p>Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work.</p>
-          <p>It runs on your own Codex, Claude Code or Grok Build account, with that provider’s own tools. It asks before it changes anything, and only you answer a thread’s questions and permissions.</p>
+          <p>It runs on your own Codex, Claude Code or Grok Build account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions.</p>
           {model === undefined ? <>
             <p className="watcher-first__missing">Connect Codex, Claude Code or Grok Build in Settings, under Providers, to start Watcher.</p>
             {app ? <div className="thread-workspace__empty-actions"><Button variant="secondary" onClick={() => app.actions.navigate('settings')}>Open Settings</Button></div> : null}
-          </> : <p>Pick its model below, then send what you want done first. That message starts it.</p>}
+          </> : <p>Pick its model and what it may do without asking below, then send what you want done first. That message starts it.</p>}
         </div>
       </div>
     </div>
@@ -199,7 +201,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
                 <ModelPicker models={models} modelId={model.id} disabled={starting} onChange={id => firstMessage.update({ modelId: id, effort: null })} />
                 {efforts.length > 0 ? <EffortPicker key={model.id} value={reasoning} options={efforts} disabled={starting} onChange={value => firstMessage.update({ effort: value })}
                   defaultValue={model.defaultReasoningEffort} modelName={model.name} /> : null}
-                <WatcherPermission />
+                <WatcherPermissionChip model={model} provider={providerName ?? model.provider} disabled={starting} noticeSlot={notices} />
               </div>
             </div>
             {starting ? <span className="thread-prompt__status" role="status">Starting Watcher…</span> : null}
@@ -210,6 +212,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
             </Button>
           </div>
         </div>
+        <div ref={setNotices} className="thread-options-notices" />
       </form>
       <div className="thread-pane__meta">
         <p className="watched-note"><WatcherOwl size={13} /><span>Your first message starts Watcher on {model.name}, with your own {providerName ?? model.provider} account.</span></p>
