@@ -214,6 +214,11 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
           if (ordinal !== undefined) state.ordinal = ordinal
           // Read from its first line to its last in this pass, before any other file.
           if (state.fresh && line === 0) memory.loaded.add(id)
+          // A fork or subagent rollout begins with a copy of the session it came from, whether or not that session's
+          // own header is copied too (older rollouts leave it out). The copy ends at the ordinal, or else at the first
+          // running total that session never had, so a child that copied nothing leaves it at its first count.
+          const source = identity(payload.forked_from_id) ? sessionOf(payload.forked_from_id) : meta.parent
+          if (source !== undefined && source !== id && state.fresh && line === 0) state.copied = [source]
         } else if (id === state.own.id) state.copied = []
         else if (!state.copied.includes(id) && state.copied.length < PARENT_DEPTH_MAX) state.copied.push(id)
         return

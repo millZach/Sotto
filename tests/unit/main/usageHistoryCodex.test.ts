@@ -113,6 +113,37 @@ describe('Codex history reader', () => {
     expect(sink.prompts.map(prompt => prompt.messageId)).toEqual([turn('p-turn')])
   })
 
+  it('counts the copied history of an old subagent rollout once when it does not carry its parent header', async () => {
+    // Older Codex subagent rollouts name their parent and begin with its token_count history, with no copy of its session_meta.
+    const parentLines = [
+      codexMeta({ id: 'old-parent', originator: 'Codex Desktop', at: t(0) }),
+      codexTaskStarted({ turn: 'op-turn', at: t(1) }),
+      codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } }),
+      codexTokenCount({ at: t(3), total: { input: 300, output: 30 }, last: { input: 200, output: 20 } }),
+    ]
+    const childLines = [
+      codexMeta({ id: 'old-child', originator: 'Codex Desktop', at: t(5), parent: 'old-parent', threadSource: 'subagent' }),
+      ...parentLines.slice(1),
+      codexTaskStarted({ turn: 'oc-turn', at: t(6) }),
+      codexTokenCount({ at: t(7), total: { input: 340, output: 34 }, last: { input: 40, output: 4 } }),
+    ]
+    const together = await home()
+    await writeFile(rollout(together, '2026-09-20T10-00-00-old-parent'), jsonl(parentLines))
+    await writeFile(rollout(together, '2026-09-20T10-05-00-old-child'), jsonl(childLines))
+    const one = memorySink()
+    await scan(together, one)
+    // The parent alone in a first pass, its subagent in the next.
+    const apart = await home()
+    await writeFile(rollout(apart, '2026-09-20T10-00-00-old-parent'), jsonl(parentLines))
+    const two = memorySink()
+    await scan(apart, two)
+    await writeFile(rollout(apart, '2026-09-20T10-05-00-old-child'), jsonl(childLines))
+    await scan(apart, two)
+    for (const sink of [one, two]) {
+      expect(sink.sum('input')).toBe(340)
+      expect([...sink.rows().values()].filter(row => row.subAgent).map(row => row.tokens.input)).toEqual([40])
+    }
+  })
   it('attributes a fork read in a later pass to its parent, so the store counts the copy once', async () => {
     const root = await home()
     const parentLines = [
