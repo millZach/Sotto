@@ -5,7 +5,7 @@ import { ProviderMark } from '../../agents/ProviderMark'
 import { Ring } from './UsageCharts'
 import type { UsagePage } from './usagePage'
 import {
-  LOW_LEFT, PROVIDER_NAMES, READ_OUTSIDE_SOTTO, fieldTokens, nounFor, sumFields, fieldValue, fmtInt, limitsMissing, predatesHistory, readAge, resetLong,
+  LOW_LEFT, PROVIDER_NAMES, READ_OUTSIDE_SOTTO, fieldTokens, nounFor, sumFields, fieldValue, fmtInt, limitsMissing, midSentence, predatesHistory, readAge, resetLong,
   unknownUseNote, type UsageProviderLimits, type UsageWindowView,
 } from './usagePresentation'
 
@@ -67,7 +67,7 @@ function Provider({ limits, page, busy, onReadAgain, since }: {
   const read = primary.quota.status === 'available' || primary.observedAt !== undefined
   const refreshable = limits.readings.some(item => item.quota.refreshable)
   const sharedHosts = limits.readings.filter(item => item.windows.length > 0).length > 1
-  const onComputer = page.hostName(primary.hostId) === 'This computer' ? 'on this computer' : `on ${page.hostName(primary.hostId)}`
+  const onComputer = `on ${midSentence(page.hostName(primary.hostId))}`
   let activity: ReactNode = null
   if (since !== undefined) {
     const prompts = since.totals.prompts.total

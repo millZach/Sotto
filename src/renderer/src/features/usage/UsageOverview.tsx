@@ -6,7 +6,7 @@ import { roomKeyTarget } from '../../components/AppShell'
 import { DailyChart, Dash, HourGrid, Ring, Spark, TokenBar, dismissDisclosure, type DayValue } from './UsageCharts'
 import type { UsagePage } from './usagePage'
 import {
-  PROVIDER_ORDER, LOW_LEFT, NO_TOKENS, cacheShare, nounFor, PROVIDER_NAMES, CLIENT_NAMES, fieldTokens, fieldValue, fmtInt, fmtTok, hourLabel, longDay, pct, readAge, resetLong, resetShort, sentFrom, share,
+  PROVIDER_ORDER, LOW_LEFT, NO_TOKENS, cacheShare, nounFor, PROVIDER_NAMES, CLIENT_NAMES, fieldTokens, fieldValue, fmtInt, fmtTok, hourLabel, longDay, midSentence, pct, readAge, resetLong, resetShort, sentFrom, share,
   shortDay, usagePlaces, WEEKDAYS_PLURAL, WEEKDAYS_SHORT, type UsageProviderLimits,
 } from './usagePresentation'
 
@@ -312,7 +312,7 @@ function RingCard({ limits, page }: { readonly limits: UsageProviderLimits; read
     <div className="usage-ring-card__name"><ProviderMark provider={providerId} name={PROVIDER_NAMES[providerId]} size={15} />{PROVIDER_NAMES[providerId]}</div>
     <ul className="usage-ring-card__rows">
       {rows.length > 0 ? rows.map((window, index) => <li key={window.id}><i className={`usage-dot${index > 0 ? ' usage-dot--inner' : ''}`} />{window.label} {window.left === undefined ? <Dash /> : <b data-low={window.left <= LOW_LEFT || undefined}>{window.left}%</b>}{window.resetsAt === undefined ? null : ` · ${resetShort(window.resetsAt, page.now, page.timeZone)}`}</li>)
-        : <li>{providerId === 'devin' || primary.quota.reason === 'unsupported' ? "Sotto can't read these limits yet" : `No reading from ${page.hostName(primary.hostId)}`}</li>}
+        : <li>{providerId === 'devin' || primary.quota.reason === 'unsupported' ? "Sotto can't read these limits yet" : `No reading from ${midSentence(page.hostName(primary.hostId))}`}</li>}
       {rows.length > 0 ? <li className="usage-ring-card__fresh">{tightest !== undefined ? readAge(primary.observedAt, page.now) : 'Use not reported'}</li> : null}
     </ul>
   </div>
@@ -333,7 +333,7 @@ export function Glance({ page }: { readonly page: UsagePage }): ReactNode {
       sub = `Use not reported · resets ${resetShort(longest.resetsAt, page.now, page.timeZone)}`
       label = `${name}: use not reported, the ${longest.noun} resets ${resetLong(longest.resetsAt, page.now, page.timeZone)}`
     } else if (providerId === 'devin' || primary.quota.reason === 'unsupported') { sub = "Can't read limits"; label = `${name}: limits can't be read yet` }
-    else { sub = `No reading from ${page.hostName(primary.hostId)}`; label = `${name}: no reading from ${page.hostName(primary.hostId)}` }
+    else { const from = midSentence(page.hostName(primary.hostId)); sub = `No reading from ${from}`; label = `${name}: no reading from ${from}` }
     return <button key={providerId} type="button" className="usage-gauge tt-focusable" aria-label={`${label}. Open Subscriptions`} onClick={() => page.openProvider(providerId)}>
       <Ring size={34} parts={[{ left: tight?.left, width: 3.5, inset: 0 }]} stale={primary.stale} />
       <span><span className="usage-gauge__name">{name}</span><span className="usage-gauge__sub">{sub}</span></span>
@@ -351,7 +351,7 @@ export function EmptyUsage({ title, detail, bars = [8, 14, 10, 22, 16, 6, 18] }:
 }
 
 export function NoHistory({ name }: { readonly name: string }): ReactNode {
-  return <EmptyUsage title={`No history from ${name} yet`} detail={`${name}'s history appears after its Owl host update.`} />
+  return <EmptyUsage title={`No history from ${midSentence(name)} yet`} detail={`${name}'s history appears after its Owl host update.`} />
 }
 
 export function About({ page }: { readonly page: UsagePage }): ReactNode {

@@ -11,7 +11,7 @@ import { Subscriptions } from './UsageSubscriptions'
 import type { UsagePage, UsageTab, UsageWhere } from './usagePage'
 import {
   PROVIDER_ACCOUNTS, PROVIDER_NAMES, USAGE_PROVIDERS, addDays, calendarDay, daysBetween, isEmptyActivity, predatesHistory, presentUsage, providerLimits,
-  rangeBounds, rangeLabel, scopeHost,
+  midSentence, rangeBounds, rangeLabel, scopeHost,
 } from './usagePresentation'
 import { EVERY_HOST, useUsageRead } from './useUsageRead'
 import './usage.css'
@@ -262,14 +262,14 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
     <div className="usage-notices">
       {invalidRange && activityFilters ? <p className="usage-notice" role="alert">Choose an end date on or after the start date.</p> : null}
       {notice !== null ? <p className="usage-notice" role="status">{notice}</p> : null}
-      {usage.failed.map(item => <p key={item} className="usage-notice" role="alert">{item === EVERY_HOST ? 'Usage could not be read.' : `Usage could not be read from ${hostName(item)}.`} Your saved figures were not changed. <button type="button" className="usage-link tt-focusable" onClick={() => usage.reload([item])}>Try again</button></p>)}
+      {usage.failed.map(item => <p key={item} className="usage-notice" role="alert">{item === EVERY_HOST ? 'Usage could not be read.' : `Usage could not be read from ${midSentence(hostName(item))}.`} Your saved figures were not changed. <button type="button" className="usage-link tt-focusable" onClick={() => usage.reload([item])}>Try again</button></p>)}
       {read.hosts.some(host => host.persistence === 'failed') ? <p className="usage-notice" role="alert">Some recent usage could not be saved. Provider work goes on; repair local storage, then restart Sotto.</p> : null}
       {read.hosts.filter(host => host.status !== 'ready' || withoutHistory(host)).filter(host => !(noHistory && withoutHistory(host))).map(host => <p key={host.hostId} className="usage-notice usage-notice--quiet">{
         withoutHistory(host) ? `${hostName(host.hostId)}'s history appears after its Owl host update.`
           : host.status === 'offline' ? `${hostName(host.hostId)} is offline. Its figures appear when it reconnects.`
-            : `Usage could not be read from ${hostName(host.hostId)}. Nothing was changed. Try again in a moment.`}</p>)}
+            : `Usage could not be read from ${midSentence(hostName(host.hostId))}. Nothing was changed. Try again in a moment.`}</p>)}
       {pendingNames.length > 0 ? <p className="usage-notice usage-notice--quiet" role="status">Still reading {joinNames(pendingNames)}…</p> : null}
-      {scanning.length > 0 && tab !== 'subscriptions' ? <p className="usage-notice usage-notice--quiet">Still reading {joinNames(scanning.map(name => name === 'This computer' ? "this computer's" : `${name}'s`))} history. The figures fill in as it reads.</p> : null}
+      {scanning.length > 0 && tab !== 'subscriptions' ? <p className="usage-notice usage-notice--quiet">Still reading {joinNames(scanning.map(name => `${midSentence(name)}'s`))} history. The figures fill in as it reads.</p> : null}
     </div>
     <div id={`${id}-panel`} className="usage-panel" role="tabpanel" aria-labelledby={`${id}-${tab}`} aria-busy={usage.loading || undefined}>
       <div key={tab} className="usage-enter">{body}</div>
@@ -277,7 +277,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
     <p className="tt-visually-hidden" aria-live="polite">{announcement}</p>
   </div></div>
   {clearRead !== null ? <ConfirmationDialog title="Clear saved usage?" description={<>
-    <p>Remove the usage figures saved on {joinNames(clearRead.hosts.filter(host => host.status === 'ready' && host.activity !== undefined).map(host => hostName(host.hostId)))}?</p>
+    <p>Remove the usage figures saved on {joinNames(clearRead.hosts.filter(host => host.status === 'ready' && host.activity !== undefined).map(host => midSentence(hostName(host.hostId))))}?</p>
     <p>This clears every date, provider, model and app on those computers, including figures outside the current filters. Thread history, subscription limits and the clients' own records stay as they are.</p>
     <p>Records from before the clear never come back. New work counts afterward.</p>
   </>} confirmLabel="Clear saved usage" cancelLabel="Keep usage" onConfirm={clear} onCancel={() => setClearRead(null)} failureMessage="Usage could not be cleared. Your saved figures may remain. Try again." fallbackFocusRef={moreButton} /> : null}

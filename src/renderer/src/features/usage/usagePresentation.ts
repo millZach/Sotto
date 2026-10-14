@@ -418,16 +418,19 @@ export function providerLimits(read: UsageDashboardRead, now: number): UsageProv
     return [{ providerId, primary: primary!, others: rest.filter(item => item.tightest !== undefined), readings: own }]
   })
 }
+/** A computer's name where it falls mid-sentence, where this computer reads in lower case. */
+export const midSentence = (name: string): string => name === 'This computer' ? 'this computer' : name
 /** Why a provider has no current window to show, in words. */
-export function limitsMissing(limits: UsageProviderLimits, hostName: (hostId: string) => string, now: number, timeZone: string): string {
+export function limitsMissing(limits: UsageProviderLimits, hostOf: (hostId: string) => string, now: number, timeZone: string): string {
   const { primary, providerId } = limits
+  const hostName = (hostId: string): string => midSentence(hostOf(hostId))
   const name = PROVIDER_NAMES[providerId]
   const quota = primary.quota
   if (quota.reason === 'unsupported' || providerId === 'devin') return `Sotto can't read ${name}'s limits yet.${providerId === 'devin' ? ' Devin shows them in its own usage settings.' : ''}`
   if (quota.status === 'available' && primary.expired > 0) {
     const last = Math.max(...quota.windows.map(window => window.resetsAt === undefined ? 0 : Date.parse(window.resetsAt)))
     const when = calendarDay(new Date(last), timeZone) === calendarDay(new Date(now), timeZone) ? `at ${clockTime(last, timeZone)}` : `on ${shortDay(calendarDay(new Date(last), timeZone))}`
-    return `The window ${hostName(primary.hostId) === 'This computer' ? 'this computer' : hostName(primary.hostId)} last read ended ${when}. Read again for the new one.`
+    return `The window ${hostName(primary.hostId)} last read ended ${when}. Read again for the new one.`
   }
   if (quota.status === 'error' || quota.reason === 'read-failed') return `${name}'s limits couldn't be read on ${hostName(primary.hostId)}. Nothing was changed. Read again to try once more.`
   switch (quota.reason) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  fmtTok, formatField, longDay, pct, presentUsage, providerLimits, rangeBounds, rangeLabel, readAge, relativeDay, resetLong, resetShort, scopeHost, sentFrom,
+  fmtTok, formatField, limitsMissing, longDay, pct, presentUsage, providerLimits, rangeBounds, rangeLabel, readAge, relativeDay, resetLong, resetShort, scopeHost, sentFrom,
   nounFor, sumFields, tokenParts, usagePlaces, windowView,
 } from '../../../src/renderer/src/features/usage/usagePresentation'
 import { servedModelName } from '../../../src/shared/modelCatalog'
@@ -128,5 +128,13 @@ describe('Usage limits', () => {
     expect(claude.primary.windows.map(window => window.label)).toEqual(['Week'])
     expect(claude.primary.expired).toBe(1)
     expect(claude.primary.tightest!.left).toBe(94)
+  })
+  it('says why limits are missing with this computer in lower case mid-sentence', () => {
+    const host = localHost()
+    host.quotas[2] = { providerId: 'grok', status: 'unavailable', refreshable: false, reason: 'not-connected', windows: [] }
+    const grok = providerLimits(dashboard(host), now).find(item => item.providerId === 'grok')!
+    const name = (hostId: string): string => hostId === 'laptop' ? 'This computer' : hostId
+    expect(limitsMissing(grok, name, now, USAGE_ZONE)).toBe("Grok Build isn't connected on this computer.")
+    expect(limitsMissing({ ...grok, primary: { ...grok.primary, hostId: 'forge' } }, name, now, USAGE_ZONE)).toBe("Grok Build isn't connected on forge.")
   })
 })
