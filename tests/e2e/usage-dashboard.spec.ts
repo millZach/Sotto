@@ -8,13 +8,13 @@ import { fillPrompt, promptField } from './support/prompt'
 import { openThreads } from './support/sottoLaunch'
 import { textContrast } from './support/textContrast'
 import {
-  REPORTED_USAGE_MODEL, SELECTED_USAGE_MODEL, usageAssistantFrame, usageDashboardHarness,
+  REPORTED_USAGE_MODEL, SELECTED_USAGE_MODEL, chooseUsageFilter, usageAssistantFrame, usageDashboardHarness,
   usageResultFrame, usageWait, waitForNativePrompt,
 } from './support/usageDashboard'
 
 const artifacts = evidenceDirectory('artifacts/usage-dashboard')
 
-test('Owl Usage counts real accepted sends and native cache tokens, filters and clears safely, and survives history off and restart', async () => {
+test('Owl Usage counts real accepted sends under their served model, filters by place and clears safely, and survives history off and restart', async () => {
   test.setTimeout(180_000)
   const harness = await usageDashboardHarness()
   const { action, activity } = harness
@@ -26,7 +26,7 @@ test('Owl Usage counts real accepted sends and native cache tokens, filters and 
     await harness.open()
     const measures = () => page.getByRole('tablist', { name: 'Usage measures', exact: true })
     const views = () => page.getByRole('tablist', { name: 'Usage views', exact: true })
-    await expect(measures().getByRole('tab')).toHaveCount(6)
+    await expect(measures().getByRole('tab')).toHaveCount(7)
     await expect(measures().getByRole('tab', { name: /^Prompts 0 /u })).toBeVisible()
     await expect(measures().getByRole('tab', { name: /^Tokens — /u })).toBeVisible()
     expect((await activity()).totals.prompts.user).toBe(0)
@@ -55,6 +55,10 @@ test('Owl Usage counts real accepted sends and native cache tokens, filters and 
     const first = usageAssistantFrame(nativeId, 'first-accounting-request')
     await action(nativeId, { type: 'raw', persist: true, frame: first })
     const resetsAt = Math.floor(Date.now() / 1000) + 18_000
+    // Claude Code answers get_usage with the same windows its passive events report below.
+    await writeFile(join(harness.client, 'usage-script.json'), JSON.stringify({ rate_limits: {
+      five_hour: { utilization: 0, resets_at: new Date(resetsAt * 1000).toISOString() },
+      seven_day: { utilization: 20, resets_at: new Date((resetsAt + 86_400) * 1000).toISOString() } } }))
     await action(nativeId, { type: 'raw', frame: { type: 'rate_limit_event', session_id: nativeId,
       rate_limit_info: { rateLimitType: 'five_hour', status: 'allowed', utilization: 0, resetsAt } } })
     await action(nativeId, { type: 'raw', frame: { type: 'rate_limit_event', session_id: nativeId,
@@ -63,81 +67,88 @@ test('Owl Usage counts real accepted sends and native cache tokens, filters and 
     const initial = await activity()
     expect(initial.totals.tokens).toMatchObject({ input: { value: 3500 }, output: { value: 100 }, cached: { value: 2000 },
       cacheWrite: { value: 500 }, cacheWrite5m: { value: 0 }, cacheWrite1h: { value: 500 }, total: { value: 3600 } })
-    expect(initial.models.find(row => row.modelId.endsWith(SELECTED_USAGE_MODEL))).toMatchObject({ prompts: { user: 1 } })
-    expect(initial.models.find(row => row.modelId.endsWith(SELECTED_USAGE_MODEL))!.tokens.total.value).toBeUndefined()
-    expect(initial.models.find(row => row.modelId.endsWith(REPORTED_USAGE_MODEL))).toMatchObject({ prompts: { user: 0 }, tokens: { total: { value: 3600 } } })
+    // The prompt counts under the model that served it: the first token report after it in the thread.
+    expect(initial.models).toHaveLength(1)
+    expect(initial.models[0]!.modelId.endsWith(REPORTED_USAGE_MODEL)).toBe(true)
+    expect(initial.models[0]).toMatchObject({ prompts: { user: 1 }, tokens: { total: { value: 3600 } } })
+    expect(initial.models.some(row => row.modelId.endsWith(SELECTED_USAGE_MODEL))).toBe(false)
 
     await harness.open()
-    await page.getByRole('button', { name: 'Refresh subscription limits', exact: true }).click()
     await expect(measures().getByRole('tab', { name: /^Tokens 3,600 /u })).toBeVisible()
     await expect(measures().getByRole('tab', { name: /^From cache 57% /u })).toBeVisible()
-    await expect(measures().getByRole('tab', { name: /^Room left 80% /u })).toBeVisible()
+    await expect(measures().getByRole('tab', { name: /^Room left 80% /u })).toBeVisible(usageWait)
+    await expect(measures().getByRole('tab', { name: /^Where 100% in Sotto /u })).toBeVisible()
     await harness.capture(artifacts, 'overview-dark-1600.png', 1600, 1000, 'dark')
 
     const prompts = measures().getByRole('tab', { name: /^Prompts /u })
     await prompts.focus(); await prompts.press('End')
     await expect(measures().getByRole('tab', { name: /^Busiest hour /u })).toHaveAttribute('aria-selected', 'true')
-    const hours = page.getByRole('group', { name: 'Your prompts by weekday and hour', exact: true })
+    const hours = page.getByRole('group', { name: /^Prompts you sent, by weekday and hour\./u })
     await hours.focus(); await hours.press('ArrowRight')
-    const hoursDescription = await hours.getAttribute('aria-describedby')
-    await expect(page.locator(`[id="${hoursDescription}"]`)).toContainText('1am')
+    await expect(page.locator('.usage-when')).toContainText('Mondays, 10 AM to 11 AM')
+    await hours.press('Escape'); await expect(page.locator('.usage-when')).toContainText('Busiest:')
     await measures().getByRole('tab', { name: /^Prompts /u }).click()
-    const daily = page.getByRole('group', { name: 'Your prompts per day', exact: true })
+    const daily = page.getByRole('group', { name: /^Prompts per day, /u })
     await daily.focus(); await daily.press('End')
-    const dailyDescription = await daily.getAttribute('aria-describedby')
-    await expect(page.locator(`[id="${dailyDescription}"]`)).toContainText('1 prompts from you')
-    await daily.press('Escape'); await expect(page.locator(`[id="${dailyDescription}"]`)).toContainText('Point to a day')
-    const dailySummary = page.getByText('Read daily counts', { exact: true })
-    await dailySummary.click(); await expect(page.locator('.usage-chart__table[open]')).toBeVisible()
-    await dailySummary.press('Escape'); await expect(dailySummary).toBeFocused(); await expect(page.locator('.usage-chart__table[open]')).toHaveCount(0)
+    await expect(page.locator('.usage-when')).toContainText('so far · 1 prompt')
+    await daily.press('Escape'); await expect(page.locator('.usage-when')).toContainText('Under 1 a day')
+    await expect(page.locator('.usage-split-block').filter({ hasText: 'Sent from' })).toContainText('Sotto1')
 
     await measures().getByRole('tab', { name: /^Tokens /u }).click()
-    const fact = (label: string) => page.locator('.usage-token-facts div').filter({ has: page.getByText(label, { exact: true }) }).locator('dd')
-    await expect(fact('Input')).toHaveText('3,500'); await expect(fact('Output')).toHaveText('100')
+    const fact = (label: string) => page.locator('.usage-tokens__legend div').filter({ has: page.getByText(label, { exact: true }) }).locator('dd')
     await expect(fact('Cache read')).toHaveText('2,000'); await expect(fact('Cache write')).toHaveText('500')
-    await expect(fact('Cache write · 5 minutes')).toHaveText('0')
+    await expect(fact('Uncached input')).toHaveText('1,000'); await expect(fact('Output')).toHaveText('100')
+    await expect(page.getByRole('img', { name: '3,500 input tokens, including 2,000 cache read and 500 cache write, then 100 output tokens.', exact: true })).toBeVisible()
     await harness.capture(artifacts, 'tokens-dark-1280.png', 1280, 800, 'dark')
 
     const overview = views().getByRole('tab', { name: 'Overview', exact: true })
     await overview.focus(); await overview.press('ArrowRight')
     await expect(views().getByRole('tab', { name: 'Subscriptions', exact: true })).toHaveAttribute('aria-selected', 'true')
-    const claude = page.locator('.usage-subscription').filter({ has: page.getByRole('heading', { name: 'Claude Code', exact: true }) })
+    await expect(page.getByRole('button', { name: /^Provider: /u })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^Where: /u })).toHaveCount(0)
+    const claude = page.getByRole('region', { name: 'Claude Code', exact: true })
     await expect(claude).toContainText('100%'); await expect(claude).toContainText('80%')
-    await expect(claude).toContainText('Updates when Claude Code reports limits.')
-    await expect(page.locator('.usage-subscription').filter({ has: page.getByRole('heading', { name: 'Devin', exact: true }) })).toContainText('not connected')
-    await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('claude')
-    await expect(page.locator('.usage-subscription')).toHaveCount(1)
+    await expect(claude.locator('.usage-window')).toHaveCount(2)
+    await expect(claude).toContainText('of the time left')
+    await expect(page.getByRole('region', { name: 'Devin', exact: true })).toContainText("Sotto can't read Devin's limits yet.")
     await harness.appearance('light'); await harness.resize(820, 560)
     await claude.locator('.usage-window').last().scrollIntoViewIfNeeded()
     await harness.capture(artifacts, 'subscriptions-light-820.png', 820, 560, 'light')
-    const about = page.getByText('About these figures', { exact: true })
+    await views().getByRole('tab', { name: 'Subscriptions', exact: true }).press('ArrowRight')
+    await expect(views().getByRole('tab', { name: 'Models', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.locator('.usage-row')).toHaveCount(1)
+    const about = page.getByText('About these numbers', { exact: true })
     await about.click()
     await expect(page.locator('.usage-about[open]')).toBeVisible()
-    const aboutContrast = await textContrast(page.locator('.usage-about'), 'p', true)
-    expect(aboutContrast).toHaveLength(3)
+    const aboutContrast = await textContrast(page.locator('.usage-about'), 'li', true)
+    expect(aboutContrast).toHaveLength(7)
     expect(aboutContrast.filter(row => row.ratio < 4.5)).toEqual([])
     await about.press('Escape'); await expect(about).toBeFocused()
     await expect(page.locator('.usage-about[open]')).toHaveCount(0)
-    await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('all')
-    await views().getByRole('tab', { name: 'Subscriptions', exact: true }).press('ArrowRight')
-    await expect(views().getByRole('tab', { name: 'Models', exact: true })).toHaveAttribute('aria-selected', 'true')
-    await expect(page.locator('.usage-model')).toHaveCount(2)
-    await page.getByRole('combobox', { name: 'Sort models by', exact: true }).selectOption('tokens')
-    const modelRow = page.locator('.usage-model__main').first()
+    await page.getByRole('radio', { name: 'Tokens', exact: true }).click()
+    await expect(page.getByRole('radio', { name: 'Tokens', exact: true })).toHaveAttribute('aria-checked', 'true')
+    const modelRow = page.locator('.usage-row__main').first()
+    await expect(modelRow).toHaveAccessibleName(/^Claude Opus 5\.5, Claude Code: 1 prompts, 3,600 tokens, 57% from cache$/u)
     await modelRow.click(); await expect(modelRow).toHaveAttribute('aria-expanded', 'true')
-    await expect(page.locator('.usage-model__id')).toContainText(REPORTED_USAGE_MODEL)
+    await expect(page.locator('.usage-detail')).toContainText('Tokens per prompt3,600')
+    await expect(page.locator('.usage-detail')).toContainText('Prompts per day')
+    await expect(page.locator('.usage-view')).not.toContainText(REPORTED_USAGE_MODEL)
     await modelRow.press('Escape'); await expect(modelRow).toHaveAttribute('aria-expanded', 'false'); await expect(modelRow).toBeFocused()
     await harness.capture(artifacts, 'models-light-1280.png', 1280, 800, 'light')
     await views().getByRole('tab', { name: 'Models', exact: true }).press('Home')
     await expect(overview).toHaveAttribute('aria-selected', 'true')
 
-    const localHost = (await harness.read()).hosts[0]!.hostId
-    await page.getByRole('combobox', { name: 'Computer', exact: true }).selectOption(localHost)
-    await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('devin')
+    await chooseUsageFilter(page, 'Computer', 'This computer')
+    await chooseUsageFilter(page, 'Provider', 'Devin')
     await expect(measures().getByRole('tab', { name: /^Tokens — /u })).toBeVisible()
     await expect(measures().getByRole('tab', { name: /^Prompts 0 /u })).toBeVisible()
-    await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('claude')
+    await chooseUsageFilter(page, 'Provider', 'Claude Code')
     await expect(measures().getByRole('tab', { name: /^Tokens 3,600 /u })).toBeVisible()
+    await chooseUsageFilter(page, 'Where', 'Outside Sotto')
+    await expect(measures().getByRole('tab', { name: /^Prompts 0 /u })).toBeVisible()
+    await chooseUsageFilter(page, 'Where', 'In Sotto')
+    await expect(measures().getByRole('tab', { name: /^Prompts 1 /u })).toBeVisible()
+    await chooseUsageFilter(page, 'Where', 'Everywhere')
     const dates = await page.evaluate(() => {
       const format = (value: Date) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
       const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
@@ -145,7 +156,7 @@ test('Owl Usage counts real accepted sends and native cache tokens, filters and 
       const yearStart = new Date(); yearStart.setDate(yearStart.getDate() - 365)
       return { tomorrow: format(tomorrow), yesterday: format(yesterday), today: format(new Date()), yearStart: format(yearStart) }
     })
-    await page.getByRole('combobox', { name: 'Date range', exact: true }).selectOption('custom')
+    await chooseUsageFilter(page, 'Date range', 'Choose dates')
     await page.getByLabel('From', { exact: true }).fill(dates.yearStart); await page.getByLabel('Through', { exact: true }).fill(dates.today)
     await expect(page.locator('.usage-chart__column')).toHaveCount(366)
     await harness.resize(820, 560)
@@ -155,14 +166,14 @@ test('Owl Usage counts real accepted sends and native cache tokens, filters and 
     await expect(measures().getByRole('tab', { name: /^Tokens — /u })).toBeVisible()
     await page.getByLabel('Through', { exact: true }).fill(dates.yesterday)
     await expect(page.getByRole('alert')).toContainText('Choose an end date on or after the start date.')
-    await page.getByRole('combobox', { name: 'Date range', exact: true }).selectOption('30')
-    await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('all')
-    await page.getByRole('combobox', { name: 'Computer', exact: true }).selectOption('all')
+    await chooseUsageFilter(page, 'Date range', 'Last 30 days')
+    await chooseUsageFilter(page, 'Provider', 'All providers')
+    await chooseUsageFilter(page, 'Computer', 'All computers')
     await expect(measures().getByRole('tab', { name: /^Tokens 3,600 /u })).toBeVisible()
     await harness.resize(820, 560)
     await measures().getByRole('tab', { selected: true }).focus()
     await page.keyboard.press('Home')
-    for (let index = 0; index < 6; index++) {
+    for (let index = 0; index < 7; index++) {
       await expect.poll(async () => JSON.stringify(await measures().evaluate(element => {
         const strip = element.getBoundingClientRect()
         const selected = element.querySelector('[aria-selected="true"]')!.getBoundingClientRect()
@@ -170,22 +181,26 @@ test('Owl Usage counts real accepted sends and native cache tokens, filters and 
           left: selected.left, right: selected.right, stripLeft: strip.left, stripRight: strip.right,
           index: [...element.children].findIndex(child => child.getAttribute('aria-selected') === 'true') }
       }))).toContain('"fits":true')
-      if (index < 5) await page.keyboard.press('ArrowRight')
+      if (index < 6) await page.keyboard.press('ArrowRight')
     }
     await measures().getByRole('tab', { name: /^Prompts /u }).click()
     await harness.capture(artifacts, 'overview-dark-820.png', 820, 560, 'dark')
 
-    const clear = page.getByRole('button', { name: 'Clear usage', exact: true })
-    await clear.click(); await expect(page.getByRole('dialog', { name: 'Clear saved usage?', exact: true })).toBeVisible()
+    const more = page.getByRole('button', { name: 'More usage actions', exact: true })
+    const clear = async (): Promise<void> => { await more.click(); await page.getByRole('menuitem', { name: 'Clear usage…', exact: true }).click() }
+    await more.focus(); await more.press('ArrowDown')
+    await expect(page.getByRole('menuitem', { name: 'Clear usage…', exact: true })).toBeFocused()
+    await page.keyboard.press('Escape'); await expect(page.getByRole('menu')).toHaveCount(0); await expect(more).toBeFocused()
+    await clear(); await expect(page.getByRole('dialog', { name: 'Clear saved usage?', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Keep usage', exact: true })).toBeFocused()
-    await page.keyboard.press('Escape'); await expect(page.getByRole('dialog')).toHaveCount(0); await expect(clear).toBeFocused()
-    await clear.click()
+    await page.keyboard.press('Escape'); await expect(page.getByRole('dialog')).toHaveCount(0); await expect(more).toBeFocused()
+    await clear()
     await action(nativeId, { type: 'raw', persist: true, frame: usageAssistantFrame(nativeId, 'first-accounting-request', 150) })
     await expect.poll(async () => (await activity()).totals.tokens.total.value, usageWait).toBe(3650)
     await page.getByRole('button', { name: 'Clear saved usage', exact: true }).click()
     await expect(page.getByRole('status')).toContainText('Usage changed while the question was open.')
     expect((await activity()).totals.tokens.total.value).toBe(3650)
-    await expect(clear).toBeEnabled(); await clear.click(); await page.getByRole('button', { name: 'Clear saved usage', exact: true }).click()
+    await clear(); await page.getByRole('button', { name: 'Clear saved usage', exact: true }).click()
     await expect(page.getByRole('status')).toContainText('Saved usage figures were cleared')
     expect((await activity()).totals.tokenRecords).toBe(0); expect((await activity()).totals.prompts.total).toBe(0)
     await action(nativeId, { type: 'raw', persist: true, frame: usageAssistantFrame(nativeId, 'first-accounting-request', 200) })

@@ -746,6 +746,8 @@ describe('history import and served models', () => {
       ['elsewhere', 'codex-app', false, 1, 0, '2026-10-13'],
       ['elsewhere', 'codex-exec', false, 2, 1, '2026-10-12'],
     ])
+    // Each place names the providers whose work it holds, so Sotto's rows can show their marks.
+    expect(all.clients?.map(row => row.providerIds)).toEqual([['claude'], ['claude'], ['codex'], ['codex']])
     expect(all.totals.lastDay).toBe('2026-10-13')
     expect(all.providers.map(row => [row.providerId, row.lastDay])).toEqual([['claude', '2026-10-12'], ['codex', '2026-10-13']])
     expect(f.store.query({ sources: ['sotto'] }).totals).toMatchObject({ tokenRecords: 3, undatedTokenRecords: 1, prompts: { total: 0 } })

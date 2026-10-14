@@ -1,78 +1,121 @@
-import React, { type ReactNode } from 'react'
-import type { UsageDashboardRead, UsageQuotaRead, UsageQuotaWindow } from '../../../../shared/usageDashboard'
+import React, { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react'
+import { Clock } from 'lucide-react'
+import type { UsageActivityAggregate, UsageProviderId } from '../../../../shared/usageDashboard'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { Ring } from './UsageCharts'
-import { PROVIDER_NAMES } from './usagePresentation'
+import type { UsagePage } from './usagePage'
+import {
+  LOW_LEFT, PROVIDER_NAMES, READ_OUTSIDE_SOTTO, fieldTokens, fieldValue, fmtInt, fmtTok, limitsMissing, predatesHistory, readAge, resetLong,
+  unknownUseNote, type UsageProviderLimits, type UsageWindowView,
+} from './usagePresentation'
 
-export function quotaExpired(window: UsageQuotaWindow, now: number): boolean {
-  return window.resetsAt !== undefined && Date.parse(window.resetsAt) <= now
-}
+type Style = CSSProperties & Record<`--${string}`, string | number>
+interface Since { readonly totals: UsageActivityAggregate; readonly sottoTokens: number }
 
-export function quotaAge(at: string | undefined, now: number): string {
-  if (at === undefined) return 'Not read yet'
-  const minutes = Math.max(0, Math.floor((now - Date.parse(at)) / 60_000))
-  if (minutes < 1) return 'Read just now'
-  if (minutes < 60) return `Read ${minutes} minute${minutes === 1 ? '' : 's'} ago`
-  const hours = Math.floor(minutes / 60)
-  return hours < 24 ? `Read ${hours} hour${hours === 1 ? '' : 's'} ago` : `Read ${Math.floor(hours / 24)} days ago`
-}
-
-export function quotaUnavailable(quota: UsageQuotaRead): string {
-  if (quota.status === 'error') return 'Limits could not be read. Refresh to try again.'
-  switch (quota.reason) {
-    case 'not-connected': return 'This provider is not connected on this computer.'
-    case 'not-read': return 'Limits have not been read yet.'
-    case 'refresh-unavailable': return 'Waiting for the provider to report limits.'
-    case 'not-reported': return 'The provider has not reported a percentage.'
-    case 'read-failed': return 'Limits could not be read. Refresh to try again.'
-    default: return 'This provider does not expose subscription limits here.'
-  }
-}
-
-export function quotaWindows(read: UsageDashboardRead, now: number) {
-  return read.hosts.flatMap(host => host.quotas.flatMap(quota => quota.windows.map(window => ({ hostId: host.hostId, quota, window,
-    left: window.usedPercent === undefined || quotaExpired(window, now) ? undefined : Math.max(0, 100 - window.usedPercent),
-  }))))
-}
-
-function resetCopy(window: UsageQuotaWindow, now: number): string {
-  if (window.resetsAt === undefined) return 'Reset time not reported'
-  const formatted = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(window.resetsAt))
-  return quotaExpired(window, now) ? `Reset was ${formatted}. Waiting for a new reading.` : `Resets ${formatted}`
-}
-
-export function UsageSubscriptions({ read, hostName, now, compact = false }: {
-  readonly read: UsageDashboardRead; readonly hostName: (hostId: string) => string; readonly now: number; readonly compact?: boolean
+export function Subscriptions({ page, refreshing, onReadAgain }: {
+  readonly page: UsagePage
+  readonly refreshing: ReadonlySet<UsageProviderId>
+  readonly onReadAgain: (providerId: UsageProviderId) => void
 }): ReactNode {
-  const entries = read.hosts.flatMap(host => host.quotas.map(quota => ({ host, quota })))
-  if (entries.length === 0) return <p className="usage-note">No subscription readings are available on the selected computers.</p>
-  return <div className={compact ? 'usage-allowances' : 'usage-subscriptions'}>
-    {entries.map(({ host, quota }) => {
-      const known = (quota.status === 'available' ? quota.windows : []).filter(window => window.usedPercent !== undefined && !quotaExpired(window, now))
-        .sort((a, b) => b.usedPercent! - a.usedPercent!)[0]
-      const left = known === undefined ? undefined : Math.max(0, 100 - known.usedPercent!)
-      const name = PROVIDER_NAMES[quota.providerId]
-      return <section key={`${host.hostId}:${quota.providerId}`} className={compact ? 'usage-allowance' : 'usage-subscription'} aria-label={`${name} on ${hostName(host.hostId)}`}>
-        <div className="usage-subscription__identity"><h3><ProviderMark provider={quota.providerId} name={name} size={20} />{name}</h3><p>{hostName(host.hostId)}</p>
-          {compact ? <div className="usage-allowance__ring"><Ring percent={left} /><span><b>{left === undefined ? '—' : `${Math.round(left)}%`}</b><small>room left</small></span></div> : null}
-          <p>{quotaAge(quota.observedAt, now)}</p>
-          {quota.providerId === 'claude' ? <p>Updates when Claude Code reports limits.</p> : null}
-        </div>
-        {compact ? <><p className="usage-note">{known?.label ?? (quota.status === 'available' && quota.windows.length > 0 ? quota.windows.every(window => quotaExpired(window, now)) ? 'The previous reading expired.' : 'Percentage not reported.' : quotaUnavailable(quota))}</p>{quota.windows[0]?.resetsAt !== undefined ? <p className="usage-note">{resetCopy(known ?? quota.windows[0], now)}</p> : null}</> : <div className="usage-subscription__windows">
-          {quota.status !== 'available' ? <p className="usage-note">{quotaUnavailable(quota)}{quota.windows.length > 0 ? ' The previous reading is shown below.' : ''}</p> : null}
-          {quota.windows.length === 0 && quota.status === 'available' ? <p className="usage-note">The provider has not reported any limits.</p> : null}
-          {quota.windows.map(window => {
-            const expired = quotaExpired(window, now)
-            const windowLeft = window.usedPercent === undefined ? undefined : Math.max(0, 100 - window.usedPercent)
-            return <div className="usage-window" key={window.id} data-expired={expired || undefined}>
-              <div className="usage-window__head"><span>{window.label}</span><span><b>{windowLeft === undefined ? '—' : `${Math.round(windowLeft)}%`}</b> {expired ? 'at last reading' : 'left'}</span></div>
-              <div className="usage-window__track" aria-hidden="true"><i style={{ width: `${windowLeft ?? 0}%` }} /></div>
-              <p>{resetCopy(window, now)}</p>
-              <p>{window.usedPercent === undefined ? 'Percentage not reported. ' : window.usedPercent > 100 ? `${window.usedPercent}% used. ` : ''}{quotaAge(window.observedAt ?? quota.observedAt, now)}</p>
-            </div>
-          })}
-        </div>}
-      </section>
-    })}
+  const since = useWindowActivity(page)
+  return <>
+    <p className="usage-intro">Limits come from each provider and count all use of the account, in Sotto or anywhere else. The thin mark on each bar shows how much of that window's time is left.</p>
+    {page.limits.length === 0 ? <p className="usage-none">No subscription readings on the selected computers.</p> : null}
+    {page.limits.map(item => <Provider key={item.providerId} limits={item} page={page} busy={refreshing.has(item.providerId)} onReadAgain={onReadAgain} since={since.get(sinceKey(item))} />)}
+  </>
+}
+
+const sinceKey = (item: UsageProviderLimits): string => `${item.primary.hostId}|${item.providerId}|${item.primary.longest?.startedAt ?? ''}`
+
+/** What the computer behind each reading did since that provider's longest window began, from a `since` read. */
+function useWindowActivity(page: UsagePage): ReadonlyMap<string, Since> {
+  const [found, setFound] = useState<ReadonlyMap<string, Since>>(() => new Map())
+  const wanted = page.limits.filter(item => {
+    const host = page.read.hosts.find(entry => entry.hostId === item.primary.hostId)
+    return item.primary.longest?.startedAt !== undefined && host?.status === 'ready' && host.activity !== undefined && !predatesHistory(host.activity)
+  })
+  const revision = (hostId: string): number => page.read.hosts.find(entry => entry.hostId === hostId)?.activity?.metadata.revision ?? -1
+  const key = wanted.map(item => `${sinceKey(item)}|${revision(item.primary.hostId)}`).join('\n')
+  const { bridge, timeZone } = page
+  useEffect(() => {
+    if (bridge === undefined || key === '') return
+    let current = true
+    for (const line of key.split('\n')) {
+      const [hostId, providerId, startedAt] = line.split('|') as [string, UsageProviderId, string]
+      bridge.read({ since: new Date(Number(startedAt)).toISOString(), providerIds: [providerId], hostIds: [hostId], timeZone }).then(result => {
+        const activity = result.hosts.find(host => host.hostId === hostId)?.activity
+        if (!current || activity === undefined) return
+        const sottoTokens = (activity.clients ?? []).filter(row => row.source === 'sotto').reduce((sum, row) => sum + fieldValue(row.tokens.total), 0)
+        setFound(value => new Map(value).set(`${hostId}|${providerId}|${startedAt}`, { totals: activity.totals, sottoTokens }))
+      }, () => undefined)
+    }
+    return () => { current = false }
+  }, [bridge, key, timeZone])
+  return found
+}
+
+function Provider({ limits, page, busy, onReadAgain, since }: {
+  readonly limits: UsageProviderLimits
+  readonly page: UsagePage
+  readonly busy: boolean
+  readonly onReadAgain: (providerId: UsageProviderId) => void
+  readonly since: Since | undefined
+}): ReactNode {
+  const { providerId, primary } = limits
+  const name = PROVIDER_NAMES[providerId]
+  const heading = useId()
+  const read = primary.quota.status === 'available' || primary.observedAt !== undefined
+  const refreshable = limits.readings.some(item => item.quota.refreshable)
+  const sharedHosts = limits.readings.filter(item => item.windows.length > 0).length > 1
+  const onComputer = page.hostName(primary.hostId) === 'This computer' ? 'on this computer' : `on ${page.hostName(primary.hostId)}`
+  let activity: ReactNode = null
+  if (since !== undefined) {
+    const prompts = since.totals.prompts.total
+    const tokens = since.totals.tokens.total
+    if (!READ_OUTSIDE_SOTTO.has(providerId)) {
+      activity = <p className="usage-sub__activity">{prompts > 0 ? <>Since this window began: <b>{fmtInt(prompts)}</b> prompts in Sotto.</> : 'Since this window began: no prompts in Sotto.'} Sotto doesn't read {name}'s use outside Sotto.</p>
+    } else if (prompts === 0 && fieldValue(tokens) === 0) activity = <p className="usage-sub__activity">Since this window began: nothing {onComputer}.</p>
+    else activity = <p className="usage-sub__activity">Since this window began: <b>{fmtInt(prompts)}</b> prompts and <b>{fieldTokens(tokens)}</b> tokens {onComputer}, <b>{fmtTok(since.sottoTokens)}</b> of them in Sotto.</p>
+  }
+  return <section className="usage-sub" id={`usage-sub-${providerId}`} aria-labelledby={heading}>
+    <div className="usage-sub__id">
+      <div className="usage-sub__name"><ProviderMark provider={providerId} name={name} size={22} /><div><h2 id={heading} tabIndex={-1}>{name}</h2><p className="usage-sub__account">{page.providerAccount(providerId, primary.hostId)}</p></div></div>
+      {read ? <span className="usage-sub__fresh" data-stale={primary.stale || undefined}><Clock size={13} aria-hidden="true" />{readAge(primary.observedAt, page.now)}{sharedHosts ? ` · ${page.hostName(primary.hostId)}` : ''}</span> : null}
+      {refreshable ? <button type="button" className="usage-button tt-focusable" aria-disabled={busy || undefined} aria-label={busy ? `Reading ${name} limits` : `Read ${name} limits again`} onClick={() => { if (!busy) onReadAgain(providerId) }}>{busy ? 'Reading…' : 'Read again'}</button> : null}
+      {limits.others.map(other => <p key={other.hostId} className="usage-sub__other">On {page.hostName(other.hostId)}: <b>{other.tightest!.left}%</b> left, {other.tightest!.label.toLowerCase()} · {readAge(other.observedAt, page.now).toLowerCase()}</p>)}
+    </div>
+    <div className="usage-sub__body">
+      {primary.windows.length > 0
+        ? primary.windows.map(window => <Window key={window.id} window={window} page={page} note={window.left === undefined && window.resetsAt !== undefined ? unknownUseNote(providerId) : undefined} />)
+        : <div className="usage-sub__none"><Ring size={56} parts={[{ left: undefined, width: 4, inset: 0 }]} /><p>{limitsMissing(limits, page.hostName, page.now, page.timeZone)}</p></div>}
+      {activity}
+    </div>
+  </section>
+}
+
+function Window({ window, page, note }: { readonly window: UsageWindowView; readonly page: UsagePage; readonly note: string | undefined }): ReactNode {
+  const timeLeft = window.timeLeft
+  const mark = timeLeft === undefined ? null : <i className="usage-window__now" style={{ '--usage-x': `${timeLeft.toFixed(1)}%` } as Style} />
+  const foot = <div className="usage-window__foot">
+    <span>{window.resetsAt === undefined ? 'Reset time not reported' : `Resets ${resetLong(window.resetsAt, page.now, page.timeZone)}`}</span>
+    {timeLeft === undefined ? null : <span>{Math.round(timeLeft)}% of the time left</span>}
+  </div>
+  const timeWords = timeLeft === undefined ? '' : `, ${Math.round(timeLeft)}% of the window's time left`
+  if (window.left === undefined) {
+    return <div className="usage-window">
+      <div className="usage-window__top"><span className="usage-window__label">{window.label}</span><span className="usage-window__left"><b className="usage-dash" aria-hidden="true">—</b>left</span></div>
+      <div className="usage-window__track usage-window__track--unknown" role="img" aria-label={`${window.label}: use not reported${timeWords}`}>{mark}</div>
+      {foot}
+      {note === undefined ? null : <p className="usage-window__note">{note}</p>}
+    </div>
+  }
+  const low = window.left <= LOW_LEFT
+  return <div className="usage-window">
+    <div className="usage-window__top"><span className="usage-window__label">{window.label}</span><span className="usage-window__left"><b data-low={low || undefined}>{window.left}%</b>left</span></div>
+    <div className="usage-window__track" role="img" aria-label={`${window.label}: ${window.left}% of the allowance left${timeWords}`}>
+      <i className="usage-window__fill usage-grow" data-low={low || undefined} style={{ '--usage-w': `${window.left}%` } as Style} />{mark}
+    </div>
+    {foot}
+    {window.usedPercent !== undefined && window.usedPercent > 100 ? <p className="usage-window__note">{Math.round(window.usedPercent)}% used, past the allowance.</p> : null}
   </div>
 }

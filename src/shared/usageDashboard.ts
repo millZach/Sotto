@@ -169,6 +169,8 @@ export type UsageModelAggregate = z.infer<typeof usageModelAggregateSchema>
 /** Activity grouped by where it ran and the app that sent it. Sub-agent work has its own row. */
 export const usageClientAggregateSchema = usageActivityAggregateSchema.extend({
   source: usageSourceSchema, clientId: usageClientSchema, subAgent: z.boolean(),
+  /** The providers whose work the row holds. */
+  providerIds: z.array(usageProviderIdSchema).max(providers.length).optional(),
 }).strict()
 export type UsageClientAggregate = z.infer<typeof usageClientAggregateSchema>
 export const usageDailyAggregateSchema = usageActivityAggregateSchema.extend({ day }).strict()

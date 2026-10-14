@@ -442,10 +442,11 @@ export class UsageStore {
         TOTAL(kind='wake-up') AS prompt_wake_up,COUNT(*) AS prompt_total,TOTAL(input_kind='steer') AS prompt_steered
       FROM usage_prompt_items GROUP BY weekday,hour ORDER BY weekday,hour LIMIT ?`).all(USAGE_HOURLY_CELLS_MAX)
       .map(row => ({ weekday: safeCount(row.weekday), hour: safeCount(row.hour), prompts: promptTotals(row) }))
-    const clients = this.statement(`SELECT source,client,sub_agent,${aggregateSql()} FROM usage_activity
+    const clients = this.statement(`SELECT source,client,sub_agent,GROUP_CONCAT(DISTINCT provider) AS providers,${aggregateSql()} FROM usage_activity
       GROUP BY source,client,sub_agent ORDER BY source DESC,client,sub_agent LIMIT ?`).all(USAGE_CLIENT_ROWS_MAX)
       .map((row): UsageClientAggregate => ({ ...aggregate(row), source: usageSourceSchema.parse(row.source),
-        clientId: usageClientSchema.parse(row.client), subAgent: row.sub_agent === 1 }))
+        clientId: usageClientSchema.parse(row.client), subAgent: row.sub_agent === 1,
+        providerIds: usageProviderIdSchema.array().parse(String(row.providers ?? '').split(',').filter(Boolean).sort()) }))
     return {
       metadata, totals: aggregate(totalRow), providers, timeZone,
       models: modelRows.map(row => ({ ...aggregate(row), providerId: usageProviderIdSchema.parse(row.provider), modelId: String(row.model) })),
