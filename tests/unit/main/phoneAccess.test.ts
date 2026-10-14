@@ -180,19 +180,24 @@ it('stops looking at a missing Tailscale once the start window has passed, and l
 
 it('looks again at a Serve setting that failed during a start window, every retry, until it works', async () => {
   vi.useFakeTimers()
+  const fake = fakeTailscale({ serve: { ok: false, reason: 'failed' } }), server = fakeServer()
+  const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: HOST_START_RETRY_WINDOW_MS })
   try {
-    const fake = fakeTailscale({ serve: { ok: false, reason: 'failed' } }), server = fakeServer()
-    const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, startRetryWindowMs: HOST_START_RETRY_WINDOW_MS })
     await access.start()
     expect(access.get()).toMatchObject({ phase: 'failed', serve: { status: 'failed', reason: 'failed' } })
     await vi.advanceTimersByTimeAsync(60_000)
+    // The failed phase precedes saved cleanup and registration of the next retry.
+    await access.settled()
     await vi.waitFor(() => expect(vi.mocked(fake.tailscale.serve).mock.calls.length).toBe(2))
     await vi.waitFor(() => expect(access.get()).toMatchObject({ phase: 'failed', serve: { status: 'failed', reason: 'failed' } }))
     vi.mocked(fake.tailscale.serve).mockImplementation(async () => ({ ok: true }))
     await vi.advanceTimersByTimeAsync(60_000)
+    await access.settled()
+    expect(fake.tailscale.serve).toHaveBeenCalledTimes(3)
     await vi.waitFor(() => expect(access.get().phase).toBe('on'))
-    await access.close()
-  } finally { vi.useRealTimers() }
+  } finally {
+    try { await access.close() } finally { vi.useRealTimers() }
+  }
 })
 
 it('shows the consent page when the tailnet has not turned Serve on, closes the listener, and opens the page only when asked', async () => {

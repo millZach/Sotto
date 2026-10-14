@@ -122,7 +122,7 @@ object Commands {
     }
 
     fun createProject(providerID: String, title: String, path: String): JsonObject {
-        if (providerID !in setOf("codex", "claude", "grok", "devin") || title.isBlank() || title.length > 512 ||
+        if (providerID !in setOf("codex", "claude", "grok", "devin", "muse") || title.isBlank() || title.length > 512 ||
             path.isEmpty() || path.length > 4096
         ) throw ClientError.InvalidRequest
         return RemoteCommands.checked(

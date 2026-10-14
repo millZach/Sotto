@@ -18,7 +18,7 @@ export function connectCheckpoints(options: { files: FilesService; directory: st
   }
   const pending = async (threadId: string, destinationFolder?: string): Promise<boolean> => (await sharedThreads(threadId, destinationFolder)).some(thread => thread.status === 'running' || thread.requests.length > 0
     || thread.historyStatus === 'loading' || thread.historyStatus === 'error' || control.hasPendingThreadWork(thread.id))
-  const preserveThread = host.watcherThreadIds().some(id => host.preservesWatcherThread(id)) ? (id: string) => host.preservesWatcherThread(id) : undefined
+  const preserveThread = host.dormantThreadIds().length ? (id: string) => host.preservesDormantThread(id) : undefined
   // A capture may precede the next native turn. Keep its checkpoint identity rather than guessing from the current turn.
   const observed: import('./checkpointTypes').CheckpointDependencies['observed'] = control.watcherObservationsEnabled?.()
     ? read => control.checkpointObserved(read) : undefined

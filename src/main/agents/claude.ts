@@ -21,6 +21,7 @@ import { ClaudeOriginJournal } from './claudeOriginJournal'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
+import { questionInstructions } from './questionInstructions'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
@@ -131,6 +132,8 @@ function settingsSteps(from: ClaudeSettings, to: ClaudeSettings): ClaudeSettings
   if (from.runtimeMode !== to.runtimeMode) steps.push({ field: 'runtimeMode', request: { subtype: 'set_permission_mode', mode: nativePermissionModes[to.runtimeMode] } })
   return steps
 }
+/** Appended to Claude Code's own system prompt on every thread process, Watcher's included (ADR-0080). */
+const CLAUDE_QUESTIONS = questionInstructions('AskUserQuestion', false)
 function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): string[] {
   // Two flags, and both are needed. `--permission-prompts host` only says prompts are not force-denied;
   // `--permission-prompt-tool stdio` is what makes this process the surface that answers them, the way
@@ -186,7 +189,17 @@ type Spare = { sessionId: string; cwd: string; settings: ClaudeSettings; frames:
 /** Which of Sotto's scoped servers answered for a session, in order: a spare is adopted only by a start that gets the same. */
 const scopedNames = (servers: readonly { tools: ScopedThreadTools }[]): string => servers.map(({ tools }) => tools.name).join('\n')
 /** `client` is the client generation the CLI was launched from: see `clientUpdated`. */
-type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number; watcher: boolean }
+type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number; watcher: boolean
+  /**
+   * A Watcher's request note and the words of the prompt it was written with. Only that prompt's UserPromptSubmit hook
+   * takes it as context: a steer, or a turn Claude Code starts itself, never does.
+   */
+  requestNote?: { readonly note: string; readonly text: string } | undefined }
+/**
+ * The one hook a Watcher's CLI is started with (ADR-0073): UserPromptSubmit, answered on this process's own control
+ * channel with the request note as the prompt's additional context, so the note never joins the user's words.
+ */
+const WATCHER_REQUEST_HOOK = 'sotto_watcher_request'
 
 /** A read of a thread's transcript from its first byte into a seeded log (`ClaudeStreamJsonHost.replays`). */
 interface Replay {
@@ -894,6 +907,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
         try {
           markSendStage(command.commandId, 'written')
           if (this.usageEnabled) this.usageGroups.set(id, { id: origin.uuid, startedAt: new Date().toISOString() })
+          // Only this prompt's own note, or none: a wake-up or an ordinary send never carries an earlier request's.
+          runtime.requestNote = runtime.watcher && command.watcherRequestNote ? { note: command.watcherRequestNote, text: nativeText } : undefined
           const delivery = runtime.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } })
           this.emit(); await delivery
         }
@@ -1246,7 +1261,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (generation !== this.generation || spare?.exited) { if (mcpConfig) await this.removeConfig(mcpConfig); throw new Error('Claude connection was cancelled.') }
     const toolArguments = mcpConfig ? ['--mcp-config', mcpConfig, ...toolAllowance(servers)] : []
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-      '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode), ...(profile ? ['--append-system-prompt', WATCHER_SYSTEM_PROMPT] : []),
+      '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
+      '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${WATCHER_SYSTEM_PROMPT}` : CLAUDE_QUESTIONS,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
     let runtime: Runtime
     try {
@@ -1286,7 +1302,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (spare) spare.runtime = runtime; else this.runtimes.set(id, runtime)
     this.trackClosure(runtime.protocol.closed.then(async () => { if (mcpConfig) await this.removeConfig(mcpConfig) }))
     let initialized: ClaudeFrame
-    try { initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'] }) }
+    try { initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: profile ? { UserPromptSubmit: [{ hookCallbackIds: [WATCHER_REQUEST_HOOK] }] } : {},
+      sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'] }) }
     // A spare is not the thread's CLI, so it is stopped as one: only a thread on its session ID waits for its exit.
     catch (error) {
       void (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime))
@@ -1439,7 +1456,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       void this.guardWatcherRequest(id, frame, runtime).then(allowed => {
         const pending = !requestId || checking?.delete(requestId)
         if (allowed && pending && runtime && this.runtimes.get(id) === runtime) this.frameAfterProfileCheck(id, frame)
-      }).catch(() => { if (requestId) checking?.delete(requestId) })
+      }).catch(() => {
+        if (requestId) checking?.delete(requestId)
+        // A prompt waits on its hook's answer: one Sotto no longer vouches for still gets one, without the note.
+        if (requestId && object(frame.request)?.subtype === 'hook_callback') void this.reply(runtime, requestId, {}).catch(() => undefined)
+      })
       return
     }
     this.frameAfterProfileCheck(id, frame)
@@ -1468,6 +1489,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (typeof frame.claude_code_version === 'string' && runtime.clientRevision === this.clientRevision) this.state.version = frame.claude_code_version
       this.checkApprovalSurface(frame)
       this.queries.add(id)
+    }
+    const hook = frame.type === 'control_request' ? object(frame.request) : undefined
+    if (hook?.subtype === 'hook_callback' && typeof frame.request_id === 'string') {
+      // Only a Watcher's CLI registers a hook, and its note goes once, as context for the prompt it was written with.
+      const input = object(hook.input), pending = runtime.requestNote
+      const note = runtime.watcher && pending && hook.callback_id === WATCHER_REQUEST_HOOK && input?.hook_event_name === 'UserPromptSubmit'
+        && (typeof input.prompt !== 'string' || input.prompt.trim() === pending.text.trim()) ? pending.note : undefined
+      if (note !== undefined) runtime.requestNote = undefined
+      void this.reply(runtime, frame.request_id, note ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: note } } : {}).catch(() => undefined)
+      return
     }
     if (frame.type === 'control_request') {
       if (typeof frame.request_id === 'string' && runtime.answered.has(frame.request_id)) return

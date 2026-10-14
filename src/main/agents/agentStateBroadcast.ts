@@ -1,6 +1,8 @@
 import { isDeepStrictEqual } from 'node:util'
 import { clientCatalogKey, hostCatalogKey } from '../../shared/agents'
-import type { AgentClientHost, AgentCommandReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast } from '../../shared/agents'
+import { cloneAgentThread } from '../../shared/cloneAgentThread'
+import { ownAgentThreadSnapshot, sameAgentThreadContent } from './sameAgentThreadContent'
+import type { AgentClientHost, AgentCommandReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, AgentThread, AgentThreadsBroadcast } from '../../shared/agents'
 
 type EncodedClientHost<Catalog> = Omit<AgentClientHost, 'models'> & { models: Catalog }
 type EncodedState<Catalog> = Omit<AgentState, 'host'> & {
@@ -74,21 +76,67 @@ export class ModelCatalogRevisions {
 export class AgentStateBroadcaster {
   private readonly revisions = new ModelCatalogRevisions()
   private readonly sent = new Map<string, number>()
+  private threads: Map<string, { revision: number; thread: AgentThread }> | undefined
+  private sentThreads: Map<string, number> | undefined
+  private threadRevision = 0
+  private broadcastRevision = 0
+  private deliveredRevision: number | null = null
+  private deliveryEpoch = 0
+
+  constructor(private readonly options: { streamingPublishCost?: boolean } = {}) {}
+
+  /** An unversioned complete read cannot certify old revisioned bodies. The next push starts afresh. */
+  readonly resetThreadDelivery = (): void => {
+    if (!this.options.streamingPublishCost) return
+    this.deliveredRevision = null
+    this.sentThreads?.clear()
+    this.deliveryEpoch++
+  }
 
   /** Encodes `state` for the main window and hands it to `deliver`; only a delivery `deliver` reports as
    * successful (its return value) is remembered, so a window that was not actually listening is sent the
    * catalog in full again next time rather than being assumed caught up. */
   send(state: AgentState, deliver: (payload: AgentStateBroadcast) => boolean): boolean {
     const confirmed: Array<[string, number]> = []
-    const payload: AgentStateBroadcast = this.encode(state, (key, models): AgentModelCatalogBroadcast => {
+    const encoded = this.encode(state, (key, models): AgentModelCatalogBroadcast => {
       const revision = this.revisionFor(key, models)
       if (this.sent.get(key) === revision) return { revision, omitted: true }
       confirmed.push([key, revision])
       return { revision, models: models as AgentModel[] }
     })
+    const epoch = this.deliveryEpoch
+    const threads = this.options.streamingPublishCost ? this.encodeThreads(state.host.threads) : null
+    const capturedRevision = threads?.revision ?? null
+    const confirmedThreads = threads === null ? null : new Map(threads.roster.map(entry => [entry.id, entry.revision]))
+    const payload: AgentStateBroadcast = threads === null ? encoded : { ...encoded, host: { ...encoded.host, threads } }
     const delivered = deliver(payload)
     if (delivered) for (const [key, revision] of confirmed) this.sent.set(key, revision)
+    if (delivered && capturedRevision !== null && confirmedThreads !== null && epoch === this.deliveryEpoch && (this.deliveredRevision ?? 0) < capturedRevision) {
+      this.deliveredRevision = capturedRevision
+      this.sentThreads = confirmedThreads
+    }
     return delivered
+  }
+
+  private encodeThreads(incoming: AgentThread[]): AgentThreadsBroadcast {
+    const snapshots = this.threads ??= new Map()
+    const live = new Set(incoming.map(thread => thread.id))
+    for (const id of snapshots.keys()) if (!live.has(id)) snapshots.delete(id)
+    const roster: AgentThreadsBroadcast['roster'] = []
+    const changed: AgentThreadsBroadcast['changed'] = []
+    for (const thread of incoming) {
+      let current = snapshots.get(thread.id)
+      // Whole shell threads are mutable even when their activity descendants are certified.
+      if (!current || !sameAgentThreadContent(current.thread, thread)) {
+        current = { revision: ++this.threadRevision, thread: ownAgentThreadSnapshot(thread) }
+        snapshots.set(thread.id, current)
+      }
+      roster.push({ id: thread.id, revision: current.revision })
+      if (this.deliveredRevision === null || this.sentThreads?.get(thread.id) !== current.revision) {
+        changed.push({ revision: current.revision, thread: cloneAgentThread(current.thread) })
+      }
+    }
+    return { revision: ++this.broadcastRevision, baseRevision: this.deliveredRevision, roster, changed }
   }
 
   /**

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { RefreshCw, Trash2 } from 'lucide-react'
-import type { ProviderId } from '../../../../shared/agents'
-import type { UsageBridge, UsageDashboardRead, UsageModelAggregate, UsageQuery } from '../../../../shared/usageDashboard'
+import type { UsageBridge, UsageDashboardRead, UsageModelAggregate, UsageProviderId, UsageQuery } from '../../../../shared/usageDashboard'
 import { USAGE_MODEL_ROWS_MAX } from '../../../../shared/usageDashboard'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { ProviderMark } from '../../agents/ProviderMark'
@@ -61,7 +60,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
     ...(range === 'custom' && customFrom !== '' ? { from: customFrom } : {}),
     ...(range === 'custom' && customTo !== '' ? { to: customTo } : {}),
     ...(hostId !== 'all' ? { hostIds: [hostId] } : {}),
-    ...(providerId !== 'all' ? { providerIds: [providerId as ProviderId] } : {}),
+    ...(providerId !== 'all' ? { providerIds: [providerId as UsageProviderId] } : {}),
   }), [range, hostId, providerId, customFrom, customTo, timeZone, now, today])
   const queryRef = useRef(query)
   queryRef.current = query

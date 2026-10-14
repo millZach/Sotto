@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { watcherRecordSchema, watcherRefusalSchema, watcherToolSchemas, WATCHER_REFUSAL_CODES,
+import { watcherDisplayPromptSchema, watcherRecordSchema, watcherRefusalSchema, watcherToolSchemas, WATCHER_REFUSAL_CODES,
   WATCHER_PROMPT_BYTES_MAX, WATCHER_READ_BYTES_MAX } from '../../../src/shared/watcher'
 import { agentThreadKindSchema } from '../../../src/shared/agents'
 import { watcherPhoneSendSchema } from '../../../src/shared/watcherPhone'
@@ -18,6 +18,17 @@ function withUnknownFields(value: unknown): unknown[] {
 }
 
 describe('closed watcher contracts', () => {
+  it('retains optional text-free display proofs without changing older request records', () => {
+    const record = watcherRecordFixture(), proof = { originalLength: 12, wireDigest: 'a'.repeat(64) }
+    expect(watcherRecordSchema.safeParse(record).success).toBe(true)
+    record.requests[0]!.displayPrompt = proof
+    record.requests[0]!.userFollowups = [{ draftId: record.requests[0]!.id, messageId: 'delivered-follow-up', displayPrompt: proof }]
+    expect(watcherRecordSchema.parse(record).requests[0]!.userFollowups![0]!.displayPrompt).toEqual(proof)
+    for (const patch of [{ originalLength: -1 }, { originalLength: 1.5 }, { originalLength: Number.MAX_SAFE_INTEGER + 1 },
+      { wireDigest: 'native-text' }, { originalText: 'private words' }, { approved: true }]) {
+      expect(watcherDisplayPromptSchema.safeParse({ ...proof, ...patch }).success).toBe(false)
+    }
+  })
   it('keeps persisted phone origins and send origins equally bounded and closed', () => {
     const record = watcherRecordFixture(), origin = { kind: 'phone' as const, hostId: record.current!.target.hostId, clientId: 'phone' }
     const input = { origin, target: record.current!.target, draftId: record.requests[0]!.id, text: 'Synthetic phone request' }

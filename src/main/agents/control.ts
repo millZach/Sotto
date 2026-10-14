@@ -1,3 +1,5 @@
+import { modelsWithoutMuse } from './museGate'
+import { WatcherMessageDisplay } from './watcherMessageDisplay'
 import { CheckoutSendRefusal, type CheckoutPendingWork } from './checkoutMutations'
 import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextWriter'
 import type { AgentSkillReference } from '../../shared/agentSkills'
@@ -19,6 +21,7 @@ import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
 import { queuedWakeUpText, isRestartNews, isWatcherNews, type WakeUpNews } from './wakeUp'
 import type { UsagePromptRecorder } from './usageService'
+import { isUsageProviderId } from '../../shared/usageDashboard'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import { nearestReasoningEffort, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
@@ -47,11 +50,13 @@ import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
 import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './sottoRequests'
 import { watcherRepliesAsShown } from './watcherOwnChanges'
+import { watcherMessageRequests, watcherMessagesAsTyped } from './watcherRequestNote'
 import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
+import { parsePublicProviderEntityId } from '../../shared/agents'
 import { migrateWatcherRecord } from './watcherRecords'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
@@ -106,6 +111,10 @@ const savedReceiptsSchema = z.array(agentDeliveryReceiptsSchema.element).max(MAX
 /** A dormant legacy singleton can be parked while stable uses its ordinary composer. */
 const dormantLegacyDraftSchema = z.object({ draft: z.string(), draftThreadId: z.string(), draftRequestId: z.string().nullable(),
   draftAttachments: savedAttachmentsSchema, manualDraftId: z.uuid().nullable(), composing: z.boolean() })
+/** Muse choices parked while stable uses an available provider; ordinary choices remain editable. */
+const dormantMuseConfigurationSchema = agentConfigurationSchema.pick({ provider: true, defaultModelId: true,
+  newThreadModelId: true, newThreadReasoningEffort: true }).partial().extend({ enabled: z.boolean().optional(),
+    newThreadRuntimeMode: agentConfigurationSchema.shape.newThreadRuntimeMode.nullable() })
 const savedSchema = z.object({
   watcher: z.preprocess(migrateWatcherRecord, watcherRecordSchema),
   providerUpgrade: providerUpgradeSchema.nullable().default(null),
@@ -116,6 +125,7 @@ const savedSchema = z.object({
   draftAttachments: savedAttachmentsSchema.default([]),
   manualDraftId: z.uuid().nullable().default(null),
   dormantLegacyDraft: dormantLegacyDraftSchema.optional(),
+  dormantMuseConfiguration: dormantMuseConfigurationSchema.optional(),
   deliveredDrafts: savedReceiptsSchema.default([]),
   obsoleteDrafts: savedReceiptsSchema.default([]),
   deliveredPromptDigests: z.array(z.object({ threadId: z.string(), draftId: z.uuid(), digest: z.string(), atomicDigest: z.string().optional() })).default([]),
@@ -268,6 +278,7 @@ export class AgentControl {
   private state: AgentState
   private outbox: Saved['outbox'] = []
   private watcher: WatcherRecord = emptyWatcherRecord()
+  private readonly watcherMessageDisplay: WatcherMessageDisplay | undefined
   private watcherHooks: WatcherControlHooks | undefined
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
@@ -283,6 +294,7 @@ export class AgentControl {
   }
   mutateWatcher(update: (record: WatcherRecord) => void): void {
     const next = this.watcherRecord(); update(next); this.watcher = watcherRecordSchema.parse(next)
+    this.watcherMessageDisplay?.update(this.watcher.requests)
   }
   useWatcher(hooks: WatcherControlHooks): () => void {
     if (this.dependencies.watcherEnabled === true) this.watcherHooks = hooks
@@ -321,10 +333,15 @@ export class AgentControl {
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
     await this.followupStore.cancelWatcher(operationIds); this.syncFollowups(); this.observe(); await this.persist(); this.publish()
   }
-  private readonly disabledWatcherIds = new Set<string>()
+  private readonly dormantThreadIds = new Set<string>()
+  private readonly dormantWatcherIds = new Set<string>()
   private readonly dormantThreadDrafts = new Map<string, Saved['threadDrafts'][number]>()
   private dormantLegacyDraft: Saved['dormantLegacyDraft']
-  private watcherAvailable(id: string | null | undefined): boolean { return this.dependencies.watcherEnabled === true || !id || !this.disabledWatcherIds.has(id) }
+  private dormantMuseConfiguration: Saved['dormantMuseConfiguration']
+  private threadAvailable(id: string | null | undefined): boolean { return !id || !this.dormantThreadIds.has(id) }
+  private dormantRefusal(id: string | null | undefined): string { return `${id && this.dormantWatcherIds.has(id) ? 'Watcher' : 'Muse'} is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.` }
+  private providerAvailable(provider: string): boolean { return provider !== 'muse' || this.dependencies.museEnabled === true }
+  private availableProviders(): ProviderId[] { return providerIdSchema.options.filter(provider => this.providerAvailable(provider)) }
   private readonly store: AtomicJsonStore<Saved>
   private persistedDrafts = new Map<string, string>()
   /** Clients may retire their recovery copy only after this exact obsolete-ID snapshot reaches disk. */
@@ -433,6 +450,8 @@ export class AgentControl {
     historyEnabled?: () => boolean
     /** Release gate only; the saved Watcher record is retained on either track. */
     watcherEnabled?: boolean
+    /** Immutable provider gate; absent fails closed while retaining Owl's saved choices. */
+    museEnabled?: boolean
     streamingPublishCost?: boolean
     /** Numeric-only Owl history. It never gates or retries a provider send. */
     usage?: UsagePromptRecorder
@@ -472,8 +491,9 @@ export class AgentControl {
     /** Native CLIs present on this machine. Absent in tests that script the host themselves. */
     installedProviders?: () => Promise<readonly ProviderId[]>
   }) {
+    this.watcherMessageDisplay = dependencies.watcherEnabled === true ? new WatcherMessageDisplay() : undefined
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
-    this.finishedUnread = new FinishedUnread([], dependencies.watcherEnabled === true ? undefined : id => !this.watcherAvailable(id))
+    this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id))
     this.clients = dependencies.clients ?? new ProviderClients()
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -487,7 +507,7 @@ export class AgentControl {
     this.store = AtomicJsonStore.compact(join(dependencies.directory, 'agents.json'), input => this.parseSaved(input), () => this.saved())
     this.attachments = new AttachmentStore(dependencies.directory, { historyEnabled: () => dependencies.historyEnabled?.() !== false, missing: dependencies.missingAttachment })
     this.stageInline = inlineStager(this.attachments)
-    this.attachmentPreviews = new AttachmentPreviews(dependencies.directory, this.attachments, () => dependencies.historyEnabled?.() !== false, undefined, dependencies.watcherEnabled === true ? undefined : this.disabledWatcherIds)
+    this.attachmentPreviews = new AttachmentPreviews(dependencies.directory, this.attachments, () => dependencies.historyEnabled?.() !== false, undefined, this.dormantThreadIds)
   }
   /**
    * Reads what was saved and connects. `beforeConnect` runs once the follow-up queue and the host's own records are read
@@ -505,12 +525,15 @@ export class AgentControl {
       }
     }
 
-    if (this.dependencies.watcherEnabled !== true) {
+    if (this.dependencies.watcherEnabled !== true || this.dependencies.museEnabled !== true) {
       // The workspace retains special kinds that its public snapshots omit. They must be known before saved work is normalized.
       await this.dependencies.host.initialize?.()
-      for (const id of this.dependencies.host.watcherThreadIds?.() ?? []) this.disabledWatcherIds.add(id)
+      const dormant = this.dependencies.host.dormantThreadIds?.()
+        ?? (this.dependencies.watcherEnabled !== true ? this.dependencies.host.watcherThreadIds?.() : undefined) ?? []
+      for (const id of dormant) this.dormantThreadIds.add(id)
+      if (this.dependencies.watcherEnabled !== true) for (const id of this.dependencies.host.watcherThreadIds?.() ?? []) this.dormantWatcherIds.add(id)
       const snapshot = this.dependencies.host.workspaceSnapshot?.()
-      if (snapshot) this.withSottoRequests(snapshot)
+      if (snapshot) this.shownSnapshot(snapshot)
     }
     try {
       await retireLegacyProvider({ directory: this.dependencies.directory, parse: input => this.parseSaved(input),
@@ -523,9 +546,10 @@ export class AgentControl {
     }
     const saved = await this.store.read()
     this.watcher = saved.watcher
+    this.watcherMessageDisplay?.update(this.watcher.requests)
     if (this.dependencies.watcherEnabled !== true) {
       const identities = [saved.watcher.current, saved.watcher.creation?.identity, ...saved.watcher.history]
-      for (const identity of identities) if (identity) this.disabledWatcherIds.add(identity.target.threadId)
+      for (const identity of identities) if (identity) { this.dormantThreadIds.add(identity.target.threadId); this.dormantWatcherIds.add(identity.target.threadId) }
     }
     // The store comes first: previews, drafts and the queue each name content it keeps, and older files carry
     // their images inline, which are staged here before anything reads them (ADR-0031).
@@ -534,39 +558,40 @@ export class AgentControl {
     this.persistedDrafts = this.draftSignatures(images.threadDrafts)
     this.persistedObsoleteDrafts = saved.obsoleteDrafts
     await this.attachmentPreviews.load(this.stageInline)
-    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, ...restored } = saved
-    void _watcher; void _dormantLegacyDraft
+    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, ...restored } = saved
+    void _watcher; void _dormantLegacyDraft; void _dormantMuseConfiguration
     this.finishedUnread.restore(finishedUnread)
     this.deliveredPromptDigests = deliveredPromptDigests
     this.answeredRequests = answeredRequests
     this.manualDraftId = manualDraftId
     // The drafts' images as adopted above replace what the file held.
-    Object.assign(this.state, restored, { draftAttachments: images.draftAttachments, threadDrafts: images.threadDrafts })
+    Object.assign(this.state, restored, { configuration: structuredClone(saved.configuration), draftAttachments: images.draftAttachments, threadDrafts: images.threadDrafts })
+    this.restoreProviderConfiguration(saved)
     const parkedDraft = saved.dormantLegacyDraft
-    if (parkedDraft && this.watcherAvailable(parkedDraft.draftThreadId)) {
+    if (parkedDraft && this.threadAvailable(parkedDraft.draftThreadId)) {
       const previous = saved.threadDrafts.find(draft => draft.threadId === parkedDraft.draftThreadId)
       const imported = images.threadDrafts.find(draft => draft.threadId === parkedDraft.draftThreadId)
       if (previous && imported && previous.draftId !== imported.draftId) this.obsoleteDraft(previous.threadId, previous.draftId)
     }
     // Upgrade the native singleton in place, never from the currently selected thread.
     this.syncLegacyDraft()
-    await this.followupStore.load(this.stageInline, handle => this.attachments.has(handle.digest), id => this.watcherAvailable(id))
+    await this.followupStore.load(this.stageInline, handle => this.attachments.has(handle.digest), id => this.threadAvailable(id))
     this.syncFollowups()
     await this.dependencies.host.initialize?.()
-    if (this.dependencies.host.workspaceSnapshot) this.state.host = this.withSottoRequests(this.dependencies.host.workspaceSnapshot())
+    if (this.dependencies.host.workspaceSnapshot) this.state.host = this.shownSnapshot(this.dependencies.host.workspaceSnapshot())
     const historyDisabled = this.dependencies.historyEnabled?.() === false
     this.privacyCleanupPending ||= historyDisabled
     // Before independent providers, every durable pending action belonged to the restored native provider.
-    this.outbox = outbox.map(item => this.watcherAvailable(item.threadId) ? { ...item, provider: item.provider ?? this.state.configuration.provider } : item)
+    this.outbox = outbox.map(item => this.threadAvailable(item.threadId) ? { ...item, provider: item.provider ?? saved.configuration.provider } : item)
     for (const delivery of this.state.deliveries ?? []) {
-      if (!this.watcherAvailable(delivery.threadId)) continue
+      if (!this.threadAvailable(delivery.threadId)) continue
       if (delivery.status === 'queued' || delivery.status === 'submitting') {
         delivery.status = this.outbox.some(item => item.threadId === delivery.threadId && item.draftId === delivery.draftId) ? 'uncertain' : 'failed'
         delivery.updatedAt = new Date().toISOString()
       }
     }
     for (const item of this.outbox) {
-      if (!this.watcherAvailable(item.threadId)) continue
+      if (!this.threadAvailable(item.threadId)) continue
       if ((item.type !== 'send' && item.type !== 'steer') || !item.threadId || item.wakeUp) continue
       item.draftId ??= this.state.threadDrafts?.find(draft => draft.threadId === item.threadId && (item.draftDigest
         ? item.draftDigest === followupDigest(draft) : draft.requestId === null))?.draftId ?? randomUUID()
@@ -579,10 +604,10 @@ export class AgentControl {
       // A host saved before the record existed wrote an empty enabled set only for Disconnect with no provider,
       // which no default produces: that was the user turning every provider off, and it stays so.
       if (this.state.configuration.disconnectedProviders === undefined && this.state.configuration.enabledProviders?.length === 0) {
-        this.state.configuration = withTurnedOff(this.state.configuration, [...providerIdSchema.options])
+        this.state.configuration = withTurnedOff(this.state.configuration, this.availableProviders())
       }
       const off = new Set(this.state.configuration.disconnectedProviders ?? [])
-      this.state.configuration.enabledProviders = providerIdSchema.options.filter(provider => !off.has(provider))
+      this.state.configuration.enabledProviders = this.availableProviders().filter(provider => !off.has(provider))
     }
     // Redaction also reaches disk when control is disabled and no reconnect will run.
     await this.persist().catch(() => {
@@ -625,13 +650,25 @@ export class AgentControl {
     // A change is taken like a new snapshot, so the thread carries the request at once.
     this.unsubscribeSottoRequests = requests.subscribe(() => this.acceptSnapshot(this.state.host))
   }
-  private withSottoRequests(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+  /**
+   * A host's snapshot as everything in Sotto shows it: Watcher's threads only where the gate allows them (ADR-0072), its
+   * user messages as typed (ADR-0073), and Sotto's own requests among the provider's (ADR-0035).
+   */
+  private shownSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
     if (this.dependencies.watcherEnabled !== true) {
-      for (const thread of snapshot.threads) if (thread.kind === 'watcher' || thread.kind === 'watcher-history') this.disabledWatcherIds.add(thread.id)
-      snapshot = { ...snapshot, threads: snapshot.threads.filter(thread => this.watcherAvailable(thread.id)) }
+      for (const thread of snapshot.threads) if (thread.kind === 'watcher' || thread.kind === 'watcher-history') { this.dormantThreadIds.add(thread.id); this.dormantWatcherIds.add(thread.id) }
+      snapshot = { ...snapshot, threads: snapshot.threads.filter(thread => this.threadAvailable(thread.id)) }
     }
-    // Watcher's replies without the reason line their own-change line shows, in its pane, Copy and the phone alike.
-    snapshot = watcherRepliesAsShown(snapshot)
+    if (this.dependencies.museEnabled !== true) {
+      for (const thread of snapshot.threads) if (thread.providerId === 'muse') this.dormantThreadIds.add(thread.id)
+      snapshot = { ...snapshot, threads: snapshot.threads.filter(thread => this.threadAvailable(thread.id)),
+        models: modelsWithoutMuse(snapshot.models),
+        projects: snapshot.projects.filter(project => project.providerId !== 'muse' && parsePublicProviderEntityId(project.id)?.provider !== 'muse'),
+        ...(snapshot.providers ? { providers: snapshot.providers.filter(provider => provider.id !== 'muse') } : {}) }
+    }
+    // One display path for Watcher's own threads, in its pane, Copy and the phone alike: the user's messages without a line
+    // Sotto put after them, and Watcher's replies without the reason line their own-change line already shows.
+    snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(snapshot, watcherMessageRequests(this.watcher.requests)))
     return this.sottoRequests ? withSottoRequests(snapshot, this.sottoRequests.requests()) : snapshot
   }
   /**
@@ -640,7 +677,7 @@ export class AgentControl {
    * and the cleared mark is saved so a restart keeps it read. True when a mark was cleared.
    */
   showThreads(threadIds: readonly string[]): boolean {
-    if (!this.finishedUnread.show(threadIds.filter(id => this.watcherAvailable(id)))) return false
+    if (!this.finishedUnread.show(threadIds.filter(id => this.threadAvailable(id)))) return false
     this.publish()
     void this.persist().catch(() => undefined)
     return true
@@ -683,7 +720,10 @@ export class AgentControl {
     const state = structuredClone(this.state)
     if (this.migrationSaveFailure) state.error = this.migrationSaveFailure
     state.obsoleteDrafts = structuredClone(this.persistedObsoleteDrafts)
-    state.host.threads = state.host.threads.map(thread => this.finishedUnread.publish(thread))
+    state.host.threads = state.host.threads.map(thread => {
+      const presented = this.presentedMessages(thread)
+      return this.finishedUnread.publish(presented === thread.messages ? thread : { ...thread, messages: [...presented] })
+    })
     state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
@@ -729,20 +769,20 @@ export class AgentControl {
   private hideWatcher(state: AgentState): void {
     const folder = resolve(join(this.dependencies.directory, 'watcher', 'workspace'))
     state.host.projects = state.host.projects.filter(project => resolve(project.path) !== folder)
-    if (!this.watcherAvailable(state.activeThreadId)) { state.activeThreadId = null; state.activeProjectId = null }
-    if (!this.watcherAvailable(state.draftThreadId)) {
+    if (!this.threadAvailable(state.activeThreadId)) { state.activeThreadId = null; state.activeProjectId = null }
+    if (!this.threadAvailable(state.draftThreadId)) {
       state.draft = ''; state.draftThreadId = null; state.draftRequestId = null; state.draftAttachments = []; state.composing = false
     }
     for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence'] as const) {
       const records = state[key]
-      if (records) (state as Record<string, unknown>)[key] = records.filter(item => this.watcherAvailable(item.threadId))
+      if (records) (state as Record<string, unknown>)[key] = records.filter(item => this.threadAvailable(item.threadId))
     }
     // Stable can retain dormant receipts beside a full ordinary ledger. Public shells keep their usual bound on either track.
     for (const key of ['deliveredDrafts', 'obsoleteDrafts', 'followupReceipts'] as const) {
       const records = state[key]
       if (records && records.length > MAX_DELIVERED_DRAFTS) state[key] = records.slice(-MAX_DELIVERED_DRAFTS)
     }
-    if (state.unconfirmedSettings) state.unconfirmedSettings = state.unconfirmedSettings.filter(item => this.watcherAvailable(item.threadId))
+    if (state.unconfirmedSettings) state.unconfirmedSettings = state.unconfirmedSettings.filter(item => this.threadAvailable(item.threadId))
   }
   shell(): AgentState {
     const { threads, models } = this.state.host
@@ -789,14 +829,15 @@ export class AgentControl {
   /** The whole of a thread's history at a revision, which becomes the base the next delta is measured from. */
   private wholeDetail(thread: AgentThread, revision: number): AgentThreadDetail {
     const threadId = thread.id
-    const messages = structuredClone(thread.messages)
+    const presented = this.presentedMessages(thread)
+    const messages = structuredClone([...presented])
     // Nothing decorates or edits an activity record on either side of the bridge, so the snapshot and the
     // detail share one copy of it. Messages cannot be shared: decoration rewrites their attachments.
     const pane = this.paneActivities(thread)
     const activities = pane === undefined ? undefined : structuredClone(pane) as AgentActivity[]
     // The snapshot is the undecorated history: decoration is a fact about the preview store rather than
     // about the thread, and diffing decorated against live would report every image message as changed.
-    this.detailSnapshots.set(threadId, { threadId, revision, messages: structuredClone(thread.messages),
+    this.detailSnapshots.set(threadId, { threadId, revision, messages: structuredClone([...presented]),
       ...(activities === undefined ? {} : { activities: this.dependencies.streamingPublishCost === true
         ? immutableActivities(pane!) : activities }) })
     this.publishedDetail.set(threadId, revision)
@@ -811,6 +852,11 @@ export class AgentControl {
   private paneActivities(thread: AgentThread): readonly AgentActivity[] | undefined {
     if (thread.activities === undefined) return undefined
     return this.dependencies.host.paneActivities?.(thread.id, thread.activities) ?? thread.activities
+  }
+  /** Display only; every native state, receipt and history reader keeps the complete provider message. */
+  private presentedMessages(thread: AgentThread): readonly AgentMessage[] {
+    if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') return thread.messages
+    return this.watcherMessageDisplay?.project(this.state.host.hostId, thread.id, thread.messages) ?? thread.messages
   }
   /** Which threads main pushes detail for: what the window says it is looking at, plus work it must see land. */
   private detailTargets(): string[] {
@@ -829,9 +875,10 @@ export class AgentControl {
    */
   private detailRevision(thread: AgentThread): number {
     const activities = this.paneActivities(thread)
+    const presented = this.presentedMessages(thread)
+    const messages = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
+      .map((message, index) => `${message.id}:${message.text.length}:${presented[index]!.text.length}:${message.attachments?.length ?? 0}`).join(',')
     if (this.dependencies.streamingPublishCost === true && isImmutableActivities(activities)) {
-      const messages = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
-        .map(message => `${message.id}:${message.text.length}:${message.attachments?.length ?? 0}`).join(',')
       const held = this.certifiedDetailRevisions.get(thread.id)
       if (held && held.messages === messages && held.activities.length === activities!.length
         && held.activities.every((record, index) => record === activities![index]
@@ -856,9 +903,7 @@ export class AgentControl {
       activitySignature = (activities ?? []).map(record => `${record.id}:${agentActivitySignature(record)}`).join(',')
       if (activities && isImmutableActivities(activities)) this.activityDetailSignatures.set(activities, activitySignature)
     }
-    const signature = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
-      .map(message => `${message.id}:${message.text.length}:${message.attachments?.length ?? 0}`).join(',')
-      + `|${activitySignature}`
+    const signature = messages + `|${activitySignature}`
     const held = this.detailRevisions.get(thread.id)
     if (held && held.signature === signature) return held.revision
     const revision = (held?.revision ?? (this.dependencies.streamingPublishCost === true ? this.certifiedDetailCounters.get(thread.id) : undefined) ?? 0) + 1
@@ -921,20 +966,20 @@ export class AgentControl {
     const adopt = async (items: Saved['draftAttachments'], threadId: string | null): Promise<AgentAttachmentHandle[]> => {
       const handles: AgentAttachmentHandle[] = []
       for (const item of items) {
-        if (!this.watcherAvailable(threadId) && 'dataUrl' in item) continue
-        const handle = 'dataUrl' in item ? await this.stageInline(item) : !this.watcherAvailable(threadId) || this.attachments.has(item.digest) ? item : null
+        if (!this.threadAvailable(threadId) && 'dataUrl' in item) continue
+        const handle = 'dataUrl' in item ? await this.stageInline(item) : !this.threadAvailable(threadId) || this.attachments.has(item.digest) ? item : null
         if (handle) handles.push(handle)
       }
       return handles
     }
     const threadDrafts: AgentThreadDraft[] = []
     for (const draft of saved.threadDrafts) {
-      if (!this.watcherAvailable(draft.threadId)) this.dormantThreadDrafts.set(draft.threadId, structuredClone(draft))
+      if (!this.threadAvailable(draft.threadId)) this.dormantThreadDrafts.set(draft.threadId, structuredClone(draft))
       threadDrafts.push({ ...draft, attachments: await adopt(draft.attachments, draft.threadId) })
     }
     const parked = saved.dormantLegacyDraft
     if (parked) {
-      if (!this.watcherAvailable(parked.draftThreadId)) this.dormantLegacyDraft = structuredClone(parked)
+      if (!this.threadAvailable(parked.draftThreadId)) this.dormantLegacyDraft = structuredClone(parked)
       else {
         const previous = threadDrafts.find(draft => draft.threadId === parked.draftThreadId)
         const draftId = parked.manualDraftId ?? randomUUID()
@@ -951,7 +996,7 @@ export class AgentControl {
         }
       }
     }
-    if (saved.draftThreadId && !this.watcherAvailable(saved.draftThreadId)) {
+    if (saved.draftThreadId && !this.threadAvailable(saved.draftThreadId)) {
       this.dormantLegacyDraft = structuredClone({ draft: saved.draft, draftThreadId: saved.draftThreadId, draftRequestId: saved.draftRequestId,
         draftAttachments: saved.draftAttachments, manualDraftId: saved.manualDraftId, composing: saved.composing })
     }
@@ -1019,6 +1064,7 @@ export class AgentControl {
     this.syncLegacyDraft()
     const { configuration, activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, composing } = this.state
     const saved = { configuration, watcher: this.watcher, providerUpgrade: this.state.providerUpgrade ?? null,
+      ...(this.dormantMuseConfiguration ? { dormantMuseConfiguration: this.dormantMuseConfiguration } : {}),
       activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId,
       draftAttachments: this.dormantLegacyDraft?.draftThreadId === draftThreadId ? this.dormantLegacyDraft.draftAttachments : this.state.draftAttachments ?? [], composing,
       ...(this.dormantLegacyDraft && this.dormantLegacyDraft.draftThreadId !== draftThreadId ? { dormantLegacyDraft: this.dormantLegacyDraft } : {}),
@@ -1036,11 +1082,41 @@ export class AgentControl {
     }
     return saved
   }
+  private restoreProviderConfiguration(saved: Saved): void {
+    const configuration = this.state.configuration
+    const held = saved.dormantMuseConfiguration
+    if (this.dependencies.museEnabled === true) {
+      if (held) {
+        const { enabled, newThreadRuntimeMode, ...choices } = held
+        Object.assign(configuration, choices)
+        if (held.newThreadModelId !== undefined) {
+          if (newThreadRuntimeMode == null) delete configuration.newThreadRuntimeMode
+          else configuration.newThreadRuntimeMode = newThreadRuntimeMode
+        }
+        if (enabled) configuration.enabledProviders = [...new Set([...enabledThreadProviders(configuration), 'muse' as const])]
+      }
+      return
+    }
+    const dormant = { ...held }
+    if (!held && configuration.provider !== 'muse' && !enabledThreadProviders(configuration).includes('muse')
+      && parsePublicProviderEntityId(configuration.defaultModelId)?.provider !== 'muse'
+      && parsePublicProviderEntityId(configuration.newThreadModelId)?.provider !== 'muse') return
+    if (configuration.provider === 'muse') { dormant.provider = 'muse'; configuration.provider = enabledThreadProviders(configuration).find(provider => this.providerAvailable(provider)) ?? 'codex' }
+    if (enabledThreadProviders(saved.configuration).includes('muse')) dormant.enabled = true
+    configuration.enabledProviders = enabledThreadProviders(saved.configuration).filter(provider => this.providerAvailable(provider))
+    if (parsePublicProviderEntityId(configuration.defaultModelId)?.provider === 'muse') { dormant.defaultModelId = configuration.defaultModelId; configuration.defaultModelId = '' }
+    if (parsePublicProviderEntityId(configuration.newThreadModelId)?.provider === 'muse') {
+      dormant.newThreadModelId = configuration.newThreadModelId; dormant.newThreadReasoningEffort = configuration.newThreadReasoningEffort
+      dormant.newThreadRuntimeMode = configuration.newThreadRuntimeMode ?? null
+      configuration.newThreadModelId = ''; configuration.newThreadReasoningEffort = ''; delete configuration.newThreadRuntimeMode
+    }
+    this.dormantMuseConfiguration = Object.keys(dormant).length ? dormant : undefined
+  }
   private parseSaved(input: unknown): Saved {
     const saved = savedSchema.parse(withoutLegacyManagement(input))
     const identities = [saved.watcher.current, saved.watcher.creation?.identity, ...saved.watcher.history]
-    if (this.dependencies.watcherEnabled !== true && saved.draftThreadId
-      && (this.disabledWatcherIds.has(saved.draftThreadId) || identities.some(identity => identity?.target.threadId === saved.draftThreadId))) {
+    if (saved.draftThreadId
+      && (this.dormantThreadIds.has(saved.draftThreadId) || this.dependencies.watcherEnabled !== true && identities.some(identity => identity?.target.threadId === saved.draftThreadId))) {
       const original = input as { composing?: unknown }
       if (typeof original.composing === 'boolean') saved.composing = original.composing
     }
@@ -1213,14 +1289,17 @@ export class AgentControl {
    * window is diffed once, at the end, because the diff is taken here rather than as each event lands.
    */
   private broadcastDetail(): void {
-    if (!this.detailListeners.size) return
+    if (!this.detailListeners.size && !this.watcherMessageDisplay && this.dependencies.streamingPublishCost !== true) return
     const targets = this.detailTargets()
+    this.watcherMessageDisplay?.retain(this.state.host.hostId, targets)
+    if (!this.detailListeners.size && this.dependencies.streamingPublishCost !== true) return
     for (const threadId of this.publishedDetail.keys()) if (!targets.includes(threadId)) this.publishedDetail.delete(threadId)
     for (const threadId of this.detailSnapshots.keys()) if (!targets.includes(threadId)) this.detailSnapshots.delete(threadId)
     if (this.dependencies.streamingPublishCost === true) {
       for (const threadId of this.certifiedDetailRevisions.keys()) if (!targets.includes(threadId)) this.certifiedDetailRevisions.delete(threadId)
       for (const threadId of this.detailRevisions.keys()) if (!targets.includes(threadId)) this.detailRevisions.delete(threadId)
     }
+    if (!this.detailListeners.size) return
     for (const threadId of targets) {
       const thread = this.state.host.threads.find(item => item.id === threadId)!
       const revision = this.detailRevision(thread)
@@ -1233,7 +1312,7 @@ export class AgentControl {
   private detailUpdate(thread: AgentThread, revision: number): AgentThreadDetailUpdate | null {
     const held = this.detailSnapshots.get(thread.id)
     if (held !== undefined) {
-      const delta = diffAgentThreadDetail(held, { messages: thread.messages, activities: this.paneActivities(thread) }, revision,
+      const delta = diffAgentThreadDetail(held, { messages: this.presentedMessages(thread), activities: this.paneActivities(thread) }, revision,
         this.dependencies.streamingPublishCost === true ? this.certifiedActivitySignature : undefined)
       const advanced = delta === null ? null : applyAgentThreadDetailDelta(held, delta)
       if (delta !== null && advanced !== null) {
@@ -1488,7 +1567,7 @@ export class AgentControl {
       ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
       ...(this.state.draftThreadId && this.hasDraft() ? [this.state.draftThreadId] : []),
       ...this.viewedThreadIds.filter(id => this.state.host.threads.some(thread => thread.id === id)),
-      ...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.queuedThreadIds(), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])].filter(id => this.watcherAvailable(id)))
+      ...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.queuedThreadIds(), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])].filter(id => this.threadAvailable(id)))
   }
   /**
    * The threads whose follow-up queue holds something of the user's, or a wake-up already sending. A queue holding only
@@ -1527,7 +1606,7 @@ export class AgentControl {
    * settle, an unlink or the switch sends the thread nothing (ADR-0061 decision 9).
    */
   async withdrawWakeUp(threadId: string, url: string | undefined, options: { readonly tool: boolean }): Promise<void> {
-    if (!this.watcherAvailable(threadId)) throw new Error('Watcher is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    if (!this.threadAvailable(threadId)) throw new Error(this.dormantRefusal(threadId))
     await this.followupStore.withdrawWakeUp(threadId, url, items => queuedWakeUpText(items, options))
     this.syncFollowups(); this.publish()
   }
@@ -1580,7 +1659,7 @@ export class AgentControl {
 
   /** Main-only evidence for request drafts; no answer or question text is retained in receipts. */
   requestAnswerRecovery(threadId: string, provider: ProviderId): { uncertainRequestIds: string[]; completed: { requestId: string; questionsDigest: string; decisionId?: string }[] } {
-    if (!this.watcherAvailable(threadId)) return { uncertainRequestIds: [], completed: [] }
+    if (!this.threadAvailable(threadId)) return { uncertainRequestIds: [], completed: [] }
     return {
       uncertainRequestIds: this.outbox.filter(item => item.type === 'answer' && item.threadId === threadId
         && (item.provider ?? this.state.configuration.provider) === provider).flatMap(item => item.requestId ? [item.requestId] : []),
@@ -1641,9 +1720,9 @@ export class AgentControl {
 
   /** Dormant Watcher records do not spend or lose ordinary receipt capacity on stable. */
   private trimReceipts<T extends { threadId: string }>(records: T[]): T[] {
-    if (this.dependencies.watcherEnabled === true) return records.slice(-MAX_DELIVERED_DRAFTS)
-    const ordinary = new Set(records.filter(item => this.watcherAvailable(item.threadId)).slice(-MAX_DELIVERED_DRAFTS))
-    return records.filter(item => !this.watcherAvailable(item.threadId) || ordinary.has(item))
+    if (!this.dormantThreadIds.size) return records.slice(-MAX_DELIVERED_DRAFTS)
+    const ordinary = new Set(records.filter(item => this.threadAvailable(item.threadId)).slice(-MAX_DELIVERED_DRAFTS))
+    return records.filter(item => !this.threadAvailable(item.threadId) || ordinary.has(item))
   }
   private recordAnsweredRequest(item: Saved['outbox'][number]): void {
     if (item.type !== 'answer' || !item.threadId || !item.requestId || !item.questionsDigest) return
@@ -1707,7 +1786,7 @@ export class AgentControl {
     } else this.emptyDraftRevisions.set(draft.threadId, { draftId: draft.draftId, requestId: draft.requestId })
   }
   private syncLegacyDraft(): void {
-    if (!this.state.draftThreadId || !this.watcherAvailable(this.state.draftThreadId)) return
+    if (!this.state.draftThreadId || !this.threadAvailable(this.state.draftThreadId)) return
     if (!this.state.draft.length && !this.state.draftAttachments?.length) {
       this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(item => item.threadId !== this.state.draftThreadId)
       return
@@ -2093,7 +2172,7 @@ export class AgentControl {
   }
   commandShell(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string): Promise<AgentState> {
     // Admission refuses a dormant owner before the atomic wrapper can alter any delivery ledger.
-    if (command.type !== 'send' || !command.draft?.draftId || this.disposed || !this.watcherAvailable(command.draft.threadId)) return this.admitCommandShell(command, client, answerDecisionId)
+    if (command.type !== 'send' || !command.draft?.draftId || this.disposed || !this.threadAvailable(command.draft.threadId)) return this.admitCommandShell(command, client, answerDecisionId)
     const packet = structuredClone(command)
     const watcherOrigin = this.watcherOrigins.get(command)
     if (watcherOrigin) this.watcherOrigins.set(packet, watcherOrigin)
@@ -2149,7 +2228,7 @@ export class AgentControl {
     const explicitThreadId = 'threadId' in command ? command.threadId : command.type === 'send' ? command.draft?.threadId : undefined
     const implicitThreadId = ['send', 'compose', 'cancel-draft'].includes(command.type)
       ? client.transport === 'socket' ? client.selectedThreadId : this.state.draftThreadId ?? this.state.activeThreadId : undefined
-    if (!this.watcherAvailable(explicitThreadId ?? implicitThreadId)) return Promise.resolve({ ...this.shell(), error: 'Watcher is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.' })
+    if (!this.threadAvailable(explicitThreadId ?? implicitThreadId)) return Promise.resolve({ ...this.shell(), error: this.dormantRefusal(explicitThreadId ?? implicitThreadId) })
     const privateDraftReply = client.transport === 'socket' && (command.type === 'save-thread-draft' || command.type === 'compose' && command.threadId !== undefined)
     // A handle is the window's claim; the store is what it is checked against, before the command does anything.
     // A draft save is the exception: it keeps the text and drops what is gone (saveThreadDraft), so typing is never lost.
@@ -2429,9 +2508,9 @@ export class AgentControl {
     // A crash between the two stores leaves both copies. Durable queue ownership wins
     // only for the submitted revision; newer draft revisions are never touched.
     const owned = [...receipts, ...items]
-    this.state.deliveries = (this.state.deliveries ?? []).filter(d => !this.watcherAvailable(d.threadId) || d.status !== 'queued' || !owned.some(r => r.threadId === d.threadId && r.draftId === d.draftId))
-    this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => !this.watcherAvailable(draft.threadId) || !owned.some(r => r.threadId === draft.threadId && r.draftId === draft.draftId))
-    if (this.watcherAvailable(this.state.draftThreadId) && owned.some(r => r.threadId === this.state.draftThreadId && r.draftId === this.manualDraftId)) {
+    this.state.deliveries = (this.state.deliveries ?? []).filter(d => !this.threadAvailable(d.threadId) || d.status !== 'queued' || !owned.some(r => r.threadId === d.threadId && r.draftId === d.draftId))
+    this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => !this.threadAvailable(draft.threadId) || !owned.some(r => r.threadId === draft.threadId && r.draftId === draft.draftId))
+    if (this.threadAvailable(this.state.draftThreadId) && owned.some(r => r.threadId === this.state.draftThreadId && r.draftId === this.manualDraftId)) {
       this.state.draft = ''; this.state.draftAttachments = []; this.state.draftThreadId = null
       this.state.draftRequestId = null; this.manualDraftId = null; this.state.composing = false
     }
@@ -2488,7 +2567,7 @@ export class AgentControl {
     // awaits, which is safe because the store replaces its state rather than editing it.
     const items = this.followupStore.peek().items
     for (const threadId of new Set(items.map(item => item.threadId))) {
-      if (!this.watcherAvailable(threadId)) continue
+      if (!this.threadAvailable(threadId)) continue
       // A queued follow-up waits on a prompt of its own thread, as before, not on the thread's other work.
       if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) continue
       const thread = this.state.host.threads.find(t => t.id === threadId)
@@ -2730,6 +2809,13 @@ export class AgentControl {
     client: ClientIdentity = this.localClient, answerDecisionId?: string, composer?: ComposerContext, sentDraft?: AgentThreadDraft): Promise<void> {
     const origin = this.watcherOrigins.get(command); origin?.guard()
     if (this.disposed) throw new Error('Sotto is stopping. Your draft is saved.')
+    if (this.dependencies.museEnabled !== true && ('provider' in command && command.provider === 'muse'
+      || command.type === 'configure' && (command.patch.provider === 'muse' || command.patch.enabledProviders?.includes('muse')
+        || parsePublicProviderEntityId(command.patch.defaultModelId ?? '')?.provider === 'muse'
+        || parsePublicProviderEntityId(command.patch.newThreadModelId ?? '')?.provider === 'muse')
+      || (command.type === 'queue-client-updates' || command.type === 'cancel-client-updates') && command.providers.includes('muse'))) {
+      throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    }
     if (command.type === 'send' && command.draft) {
       // One user Send owns staging and dispatch. A Check can never reopen an old reservation between them.
       if (!composer) throw new Error('Review this draft and send again. Your draft is kept.')
@@ -2866,7 +2952,7 @@ export class AgentControl {
         } else {
           if (this.dependencies.host.concurrentProviders) {
             this.state.configuration.enabledProviders = []
-            this.state.configuration = withTurnedOff(this.state.configuration, [...providerIdSchema.options])
+            this.state.configuration = withTurnedOff(this.state.configuration, this.availableProviders())
           } else this.state.configuration.enabled = false
           this.disconnect(); this.say('Sotto disconnected.')
         }
@@ -3358,10 +3444,10 @@ export class AgentControl {
           endLoan = lendSendStages(command.commandId, stages)
         }
         writeGuard?.()
-        if (prompt && provider) {
+        if (prompt && isUsageProviderId(provider)) {
           try { this.dependencies.usage?.submitPrompt({ providerId: provider, threadId: prompt.threadId,
             messageId: prompt.messageId, modelId: this.thread(prompt.threadId).modelId, at: new Date().toISOString(),
-            kind: wakeUp ? 'wake-up' : origin ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
+            kind: wakeUp ? 'wake-up' : origin?.operationId ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
           catch { /* A usage failure cannot refuse or resend the user's message. */ }
         }
         result = await (writeGuard && this.dependencies.host.executeFromWatcher
@@ -3378,7 +3464,7 @@ export class AgentControl {
       }
     } catch (error) {
       this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand)
-      if (prompt) {
+      if (prompt && (provider === undefined || isUsageProviderId(provider))) {
         try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
         catch { /* Only usage metadata is affected. */ }
       }
@@ -3456,7 +3542,7 @@ export class AgentControl {
       if (!result.uncertain && answerIntent) { this.recordAnsweredRequest(answerIntent); this.recordAtomicDelivery(answerIntent) }
     }
     this.outbox = this.outbox.filter(o => o.id !== command.commandId)
-    if (prompt && !result.accepted && !result.uncertain) {
+    if (prompt && !result.accepted && !result.uncertain && (provider === undefined || isUsageProviderId(provider))) {
       try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
       catch { /* Only a definitive refusal removes pending numeric evidence. */ }
     }
@@ -3633,11 +3719,11 @@ export class AgentControl {
     this.firstOutputs.observe(incoming.threads)
     const connecting = this.state.connection === 'connecting'
     // Sotto's own requests join the provider's before anything below reads the threads (ADR-0035).
-    const snapshot = this.withSottoRequests(incoming)
+    const snapshot = this.shownSnapshot(incoming)
     this.state.host = snapshot
     this.watcherHooks?.observe(snapshot, new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
       ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])]))
-    if (snapshot.connected && this.state.activeThreadId && this.watcherAvailable(this.state.activeThreadId) && !snapshot.threads.some(thread => thread.id === this.state.activeThreadId)) {
+    if (snapshot.connected && this.state.activeThreadId && this.threadAvailable(this.state.activeThreadId) && !snapshot.threads.some(thread => thread.id === this.state.activeThreadId)) {
       const selected = snapshot.threads.find(thread => thread.id === this.state.draftThreadId) ?? snapshot.threads.find(thread => !isThreadClosed(thread))
       this.state.activeThreadId = selected?.id ?? null
       this.state.activeProjectId = selected?.projectId ?? null
@@ -3666,7 +3752,7 @@ export class AgentControl {
     if (this.reconnect) clearTimeout(this.reconnect)
     this.reconnect = null
     for (const item of [...this.outbox]) {
-      if (!this.watcherAvailable(item.threadId)) continue
+      if (!this.threadAvailable(item.threadId)) continue
       const thread = snapshot.threads.find(t => t.id === item.threadId)
       if (item.provider && snapshot.providers && snapshot.providers.find(provider => provider.id === item.provider)?.connection !== 'connected') continue
       if (thread && !isThreadProviderConnected(snapshot, thread)) continue
@@ -3679,7 +3765,8 @@ export class AgentControl {
             ? thread !== undefined && isThreadProviderConnected(snapshot, thread) && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
               && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'
       if (!confirmed) continue
-      if (message && item.threadId && item.messageId) {
+      const usageProvider = item.provider ?? thread?.providerId
+      if (message && item.threadId && item.messageId && (usageProvider === undefined || isUsageProviderId(usageProvider))) {
         try { this.dependencies.usage?.acceptPrompt(item.threadId, item.messageId) }
         catch { /* The exact echo still settles native delivery. Numeric evidence can recover separately. */ }
       }
@@ -3744,6 +3831,7 @@ export class AgentControl {
     if (!detect) return
     let installed: readonly ProviderId[]
     try { installed = await detect() } catch { return }
+    installed = installed.filter(provider => this.providerAvailable(provider))
     this.state.installedProviders = [...new Set(installed)]
     const selection = selectInstalledProviders(this.state.configuration, installed)
     if (!selection) return
@@ -3808,6 +3896,7 @@ export class AgentControl {
     this.listeners.clear()
     this.detailListeners.clear()
     this.detailSnapshots.clear()
+    this.watcherMessageDisplay?.retain(undefined, [])
     this.certifiedDetailRevisions.clear()
     this.certifiedDetailCounters.clear()
   }

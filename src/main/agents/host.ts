@@ -40,7 +40,13 @@ export type AgentHostCommand =
     readonly historyFromEvents?: boolean } & AgentThreadOptions)
   | { readonly type: 'send'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null
     /** A wake-up babysitting sends (ADR-0061 decision 8): the workspace records the message as Sotto's before the provider hears it. */
-    readonly wakeUp?: true }
+    readonly wakeUp?: true
+    /**
+     * Main's request note for a user Send to the current Watcher (ADR-0073), set only by its Watcher service. A Watcher
+     * thread's adapter gives it to the model through the provider's own context channel for this turn, never in the
+     * user's text, so the message is sent, echoed and shown as typed. Every other thread ignores it.
+     */
+    readonly watcherRequestNote?: string }
   | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
@@ -211,6 +217,8 @@ export interface AgentHost {
   workspaceSnapshot?(): AgentHostSnapshot
   /** Main-only saved Watcher identities and special kinds, including threads omitted by the release gate. */
   watcherThreadIds?(): readonly string[]
+  /** Saved threads held behind an immutable Owl gate, for dormant drafts and history preservation. */
+  dormantThreadIds?(): readonly string[]
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }, watcherGuard?: () => void): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */

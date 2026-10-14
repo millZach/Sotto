@@ -232,3 +232,74 @@ test('a turn a steer cut reads as steered, not stopped, at the minimum window', 
     await expect(steered).toHaveAttribute('aria-expanded', 'true')
   } finally { await app.close() }
 })
+
+/** A text's contrast with what it sits on: its colour over every background under it, composited from the window up. */
+async function contrast(target: Locator): Promise<number> {
+  return target.evaluate(element => {
+    const context = document.createElement('canvas').getContext('2d')!
+    const layers: string[] = []
+    for (let node: Element | null = element; node; node = node.parentElement) {
+      const fill = getComputedStyle(node).backgroundColor
+      if (fill && fill !== 'transparent' && fill !== 'rgba(0, 0, 0, 0)') layers.unshift(fill)
+    }
+    const paint = (fills: string[]): number[] => {
+      context.clearRect(0, 0, 1, 1)
+      context.fillStyle = getComputedStyle(document.documentElement).backgroundColor || '#000'
+      context.fillRect(0, 0, 1, 1)
+      for (const fill of fills) { context.fillStyle = fill; context.fillRect(0, 0, 1, 1) }
+      return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3)
+    }
+    const luminance = (channels: number[]): number => {
+      const [r, g, b] = channels.map(value => { const channel = value / 255; return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4 })
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+    }
+    const under = luminance(paint(layers)), text = luminance(paint([...layers, getComputedStyle(element).color]))
+    return (Math.max(under, text) + 0.05) / (Math.min(under, text) + 0.05)
+  })
+}
+
+test('a question a folded reply asked stays in view under the fold and leads back to that reply (#1019)', async () => {
+  test.setTimeout(180_000)
+  for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+    const { app, page } = await launch({ width, height })
+    try {
+      await show(page, 'asked')
+      const log = transcript(page)
+      const work = log.getByRole('button', { name: /^Worked for/ })
+      const lifted = log.getByRole('region', { name: /^Codex asked while working/ })
+      await expect(work).toHaveAttribute('aria-expanded', 'false')
+      await expect(lifted.locator('blockquote')).toHaveText('Should I also patch it on a timer for a stream that never closes, or leave that for now?')
+      // The reply that asked stays folded: only its question is lifted, and the final reply follows the question.
+      await expect(log.locator('.thread-message')).toHaveCount(2)
+      expect(await overflow(page)).toBeLessThanOrEqual(0)
+      for (const mode of ['dark', 'light'] as const) {
+        await theme(page, mode)
+        await scrollTo(page, work, 60)
+        for (const [name, target] of Object.entries({ who: lifted.locator('.thread-lifted__who'), question: lifted.locator('blockquote > p'), where: lifted.getByRole('button') })) {
+          expect(await contrast(target), `${name} at ${width} ${mode}`).toBeGreaterThanOrEqual(4.5)
+        }
+        await page.screenshot({ path: resolve(shots, `asked-${width}-${mode}.png`) })
+      }
+      if (width !== 820) continue
+      // The keyboard path: the question's own button opens the fold at the reply, which takes the focus.
+      const where = lifted.getByRole('button', { name: /^Show where it asked, at / })
+      await where.focus()
+      await page.keyboard.press('Enter')
+      await expect(work).toHaveAttribute('aria-expanded', 'true')
+      const asking = log.locator('.thread-message[data-message-id="m2"]')
+      await expect(asking).toBeFocused()
+      await expect(asking).toBeInViewport()
+      await expect(asking).toHaveAttribute('data-sought', '')
+      await page.screenshot({ path: resolve(shots, 'asked-where-820-light.png') })
+      await expect(asking).not.toHaveAttribute('data-sought')
+      await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'on' })
+      // Reduced motion leaves the mark no visible fade (the app-wide rule shortens every transition to a millisecond).
+      await expect.poll(() => asking.evaluate(element => Math.max(...getComputedStyle(element).transitionDuration.split(',').map(Number.parseFloat)))).toBeLessThan(0.01)
+      // Escape inside what the fold opened folds it again and hands the focus to its line.
+      await page.keyboard.press('Escape')
+      await expect(work).toHaveAttribute('aria-expanded', 'false')
+      await expect(work).toBeFocused()
+      await expect(lifted).toBeVisible()
+    } finally { await app.close() }
+  }
+})

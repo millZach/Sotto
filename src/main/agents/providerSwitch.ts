@@ -11,7 +11,7 @@ import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, provide
 import { resolveModel } from '../../shared/modelCatalog'
 import { ProviderUnavailable, providerProblemOf } from './providerProblem'
 import { sameSnapshot } from './sameSnapshot'
-import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
+import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { unavailableProviderQuota } from './providerQuota'
 import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles } from './host'
 
@@ -84,17 +84,18 @@ export class ConfiguredProviderHost implements AgentHost {
     if (providerIdSchema.options.some(id => options.hosts[id].subscribeEvents)) {
       this.subscribeEvents = listener => { this.eventListeners.add(listener); return () => this.eventListeners.delete(listener) }
     }
-    if (providerIdSchema.options.some(id => options.hosts[id].subscribeUsage)) {
+    if (providerIdSchema.options.some(id => isUsageProviderId(id) && options.hosts[id].subscribeUsage)) {
       this.subscribeUsage = listener => {
         this.usageListeners.add(listener)
         return () => this.usageListeners.delete(listener)
       }
     }
-    if (providerIdSchema.options.some(id => options.hosts[id].visitUsage)) this.visitUsage = (threadId, visitor) => {
-      for (const id of providerIdSchema.options) options.hosts[id].visitUsage?.(threadId, record => visitor({ ...record, providerId: id,
+    if (providerIdSchema.options.some(id => isUsageProviderId(id) && options.hosts[id].visitUsage)) this.visitUsage = (threadId, visitor) => {
+      for (const id of providerIdSchema.options) if (isUsageProviderId(id)) options.hosts[id].visitUsage?.(threadId, record => visitor({ ...record, providerId: id,
         modelId: providerEntityId(id, 'model', record.modelId) }))
     }
     if (providerIdSchema.options.some(id => options.hosts[id].readProviderQuota)) this.readProviderQuota = async (providerId, refresh) => {
+      if (!isUsageProviderId(providerId)) throw new Error('Usage is not available for this provider.')
       const slot = this.slots.get(providerId), epoch = slot?.epoch
       if (slot?.status.connection !== 'connected') return unavailableProviderQuota(providerId, 'not-connected')
       const quota = await options.hosts[providerId].readProviderQuota?.(providerId, refresh)
@@ -226,11 +227,11 @@ export class ConfiguredProviderHost implements AgentHost {
       if (!slot.wanted || slot.epoch !== epoch) return
       for (const listener of this.eventListeners) listener(event)
     })
-    slot.unsubscribeUsage = this.options.hosts[id].subscribeUsage?.(record => {
+    slot.unsubscribeUsage = isUsageProviderId(id) ? this.options.hosts[id].subscribeUsage?.(record => {
       if (!slot.wanted || slot.epoch !== epoch) return
       const projected = { ...record, providerId: id, modelId: providerEntityId(id, 'model', record.modelId) }
       for (const listener of this.usageListeners) listener(projected)
-    })
+    }) : undefined
     this.publish()
     if (this.observed) this.options.hosts[id].observeThreads?.(this.observed)
     const pending = (async () => {

@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { deferred } from '../fixtures/deferred'
 import { randomUUID } from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import * as fs from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -103,7 +104,7 @@ for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`
     const directory = join(f.root, 'workspace')
     await fs.mkdir(directory); await fs.writeFile(join(directory, 'agents.json'), '{}')
     const registry = new ThreadRegistry(directory)
-    const hosts = { claude: new FakeProviderHost(), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() }
+    const hosts = { claude: new FakeProviderHost(), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost() }
     const native = new ConfiguredProviderHost({ directory, provider: () => provider, enabledProviders: () => [provider],
       threadProvider: id => registry.byThread(id)?.provider,
       hosts: { ...hosts, [provider]: new SottoThreadHost(provider, f.host, registry) } })
@@ -125,18 +126,32 @@ for (const provider of ['claude', 'codex', 'grok', 'devin'] as const) describe(`
     if (action === 'stale refusal') {
       const profiles = (host as unknown as { launchProfiles: WatcherLaunchProfiles }).launchProfiles
       const resolve = profiles.profileFor.bind(profiles)
+      const operations = new AsyncLocalStorage<symbol>(), staleSend = Symbol('stale-send')
       let first = true
+      let held: { operation: symbol; threadId: string; error: unknown } | undefined
+      let sendSettled = false
       const { promise: waiting, resolve: entered } = deferred<void>()
       const { promise: gate, resolve: release } = deferred<void>()
       vi.spyOn(profiles, 'profileFor').mockImplementation(async id => {
-        if (!first) return resolve(id)
+        const operation = operations.getStore()
+        // Native history reads share this resolver; only this send owns its delayed refusal.
+        if (!first || operation !== staleSend || id !== threadId) return resolve(id)
         first = false
-        try { return await resolve(id) } catch (error) { entered(); await gate; throw error }
+        try { return await resolve(id) } catch (error) {
+          held = { operation, threadId: id, error }; entered(); await gate; throw error
+        }
       })
-      const sending = host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: 'Synthetic stale turn' })
+      const sending = operations.run(staleSend, () => host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: 'Synthetic stale turn' }))
+      void sending.then(() => { sendSettled = true }, () => { sendSettled = true })
       const refused = expect(sending).rejects.toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
+      // Observe a wrong-error assertion at once, and still rethrow it at the final await.
+      void refused.catch(() => undefined)
       try {
         await waiting
+        expect(held?.operation).toBe(staleSend)
+        expect(held?.threadId).toBe(threadId)
+        expect(held?.error).toMatchObject({ code: 'READ_ONLY_PROFILE_UNAVAILABLE' })
+        expect(sendSettled).toBe(false)
         await fs.writeFile(join(directory, 'agents.json'), '{}')
         host.disconnect(); await f.adapter.closed(); await host.connect(provider)
         await native.startThreadSession(threadId)
@@ -170,7 +185,7 @@ it.each(['send', 'refresh', 'skills', 'short text', 'rollback'] as const)('stops
   const native = new ConfiguredProviderHost({ directory, provider: () => 'claude', enabledProviders: () => ['claude', 'codex'],
     threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', claude.host, registry), codex: new SottoThreadHost('codex', codex.host, registry),
-      grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
+      grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost() } })
   const host = new WorkspaceHost(native, directory, undefined, undefined, true)
   cleanups.push(async () => { await host.close(); await registry.flush() })
   await host.connect('claude')

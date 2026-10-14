@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, MessageSquare } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
 import { isThreadBusy, isVisualMessage, type AgentFollowup, type AgentMessage, type AgentState } from '../../../shared/agents'
@@ -14,6 +15,7 @@ import { renderedPlainText, useTransientFlag, writeClipboard } from './richActio
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
 import { ActivityGroupView, CompactionLine, foldOnEscape, LiveActivity, TurnChangedFiles } from './ThreadActivity'
 import { isDrawableVisual, VisualCard } from './VisualCard'
+import { MOST_LIFTED, questionsIn } from './liftedQuestions'
 import { isWakeUpFollowup, isWakeUpMessage, wakeUpMarkdown } from './babysitting'
 import { SottoMark } from '../components/SottoMark'
 import { isResumeNoteText } from '../../../shared/restartResume'
@@ -38,6 +40,8 @@ export interface ActivityContext {
   readonly connected: boolean
   readonly provider: string
   readonly onDisclosure: (element: HTMLElement) => void
+  /** Brings an earlier message into view and focus for Show where it asked; the reader stops following the end. */
+  readonly onSeek?: ((message: HTMLElement) => void) | undefined
 }
 
 function ActivityGroups({ groups, context, outcome }: {
@@ -52,29 +56,82 @@ function ActivityGroups({ groups, context, outcome }: {
   }) ?? null
 }
 
+/** A folded reply that asked something, and the questions it asked. */
+interface LiftedReply { readonly message: AgentMessage; readonly questions: readonly string[] }
+
+/** How long a reply reached by Show where it asked stays marked. */
+const SOUGHT_MS = 1_600
+
+/** Each marked reply's own clearing, so a second press while it is marked keeps the mark for the full time again. */
+const soughtTimers = new WeakMap<HTMLElement, number>()
+const seekWithoutTranscript = (message: HTMLElement): void => {
+  message.scrollIntoView?.({ block: 'center' })
+  message.focus({ preventScroll: true })
+}
+
+/** A lifted question's words, with the code it quoted between backticks drawn as code. */
+function QuestionWords({ text }: { readonly text: string }): ReactNode {
+  return text.split(/`([^`]+)`/u).map((part, index) => index % 2 ? <code key={index}>{part}</code> : part)
+}
+
 /**
  * A finished turn's work, folded to one line above its final reply: the replies written on the way and every
- * activity group, in the order they happened. The turn's own error stays in view.
+ * activity group, in the order they happened. The turn's own error stays in view, and so does every question a
+ * folded reply asked, quoted under the line with a way back to the reply that asked it (#1019).
  */
-function TurnWork({ headline, error, failed, changes, onDisclosure, children }: {
+function TurnWork({ headline, error, failed, changes, onDisclosure, onSeek, lifted, who, children }: {
   readonly headline: string; readonly error?: string | undefined; readonly changes: readonly TurnChange[]
   /** The turn failed: its line is where a press that opens the thread at its failed turn lands. */
   readonly failed: boolean
-  readonly onDisclosure: (element: HTMLElement) => void; readonly children: ReactNode
+  readonly onDisclosure: (element: HTMLElement) => void; readonly onSeek?: ((message: HTMLElement) => void) | undefined
+  readonly lifted: readonly LiftedReply[]; readonly who: string; readonly children: ReactNode
 }): ReactNode {
   const [open, setOpen] = useState(false)
+  const body = useRef<HTMLDivElement>(null)
   const bodyId = useId()
-  return <section className="thread-work" data-expanded={open || undefined} data-turn-outcome={failed ? 'failed' : undefined} aria-label={headline}
-    onKeyDown={foldOnEscape(open, summary => { onDisclosure(summary); setOpen(false) })}>
-    <button type="button" className="thread-work__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
-      onClick={event => { onDisclosure(event.currentTarget); setOpen(value => !value) }}>
-      <span className="thread-work__headline">{headline}</span>
-      <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
-    </button>
-    <TurnChangedFiles changes={changes} onDisclosure={onDisclosure} />
-    {error ? <p className="thread-activity__error thread-activity__error--turn">{error}</p> : null}
-    {open ? <div id={bodyId} className="thread-work__body">{children}</div> : null}
-  </section>
+  const liftedId = useId()
+  // The fold opens before the reply is looked for, because a closed fold does not draw its replies.
+  const seek = (messageId: string): void => {
+    flushSync(() => setOpen(true))
+    const message = [...body.current?.querySelectorAll<HTMLElement>('.thread-message[data-message-id]') ?? []].find(element => element.dataset.messageId === messageId)
+    if (!message) return
+    message.tabIndex = -1
+    message.dataset.sought = ''
+    ;(onSeek ?? seekWithoutTranscript)(message)
+    window.clearTimeout(soughtTimers.get(message))
+    soughtTimers.set(message, window.setTimeout(() => { delete message.dataset.sought; soughtTimers.delete(message) }, SOUGHT_MS))
+  }
+  return <>
+    <section className="thread-work" data-expanded={open || undefined} data-turn-outcome={failed ? 'failed' : undefined} aria-label={headline}
+      onKeyDown={foldOnEscape(open, summary => { onDisclosure(summary); setOpen(false) })}>
+      <button type="button" className="thread-work__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
+        onClick={event => { onDisclosure(event.currentTarget); setOpen(value => !value) }}>
+        <span className="thread-work__headline">{headline}</span>
+        <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
+      </button>
+      <TurnChangedFiles changes={changes} onDisclosure={onDisclosure} />
+      {error ? <p className="thread-activity__error thread-activity__error--turn">{error}</p> : null}
+      {open ? <div id={bodyId} ref={body} className="thread-work__body">{children}</div> : null}
+    </section>
+    {lifted.map(({ message, questions }) => {
+      const time = clockLabel(Date.parse(message.createdAt))
+      const more = questions.length - MOST_LIFTED
+      return <section key={message.id} className="thread-lifted" aria-labelledby={`${liftedId}-${message.id}`}>
+        <p className="thread-lifted__who" id={`${liftedId}-${message.id}`}>{who} asked while working · <time dateTime={message.createdAt}>{time}</time></p>
+        <blockquote className="thread-lifted__questions">{questions.slice(0, MOST_LIFTED).map(question => <p key={question}><QuestionWords text={question} /></p>)}</blockquote>
+        {more > 0 ? <p className="thread-lifted__more">{more === 1 ? 'One more question in that reply.' : `${more} more questions in that reply.`}</p> : null}
+        <button type="button" className="thread-lifted__where tt-focusable" aria-label={`Show where it asked, at ${time}`} onClick={() => seek(message.id)}>Show where it asked</button>
+      </section>
+    })}
+  </>
+}
+
+/** Replies are shared across updates, so a reply's questions are found once. */
+const liftedQuestions = new WeakMap<AgentMessage, readonly string[]>()
+function asked(message: AgentMessage): readonly string[] {
+  let questions = liftedQuestions.get(message)
+  if (!questions) liftedQuestions.set(message, questions = questionsIn(message.text))
+  return questions
 }
 
 /** Inside a folded turn the turn line already says how it ended, so its groups carry only their counts, and the boundaries it crossed are drawn outside the fold. */
@@ -84,7 +141,8 @@ const folded = (groups: readonly ActivityGroup[] | undefined): ActivityGroup[] =
 
 /**
  * Rendered history, turn by turn. A finished turn shows the user's message and its final reply, with everything in
- * between folded under one "Worked for" line above the reply. The running turn shows its messages and activity as
+ * between folded under one "Worked for" line above the reply, and the questions the folded replies asked quoted under
+ * that line. The running turn shows its messages and activity as
  * they arrive. Memoized on the message array and placement so composer keystrokes and status ticks do not repaint it.
  *
  * An assistant message with no text yet (a provider call that so far holds only tool use) draws no header.
@@ -223,10 +281,12 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     .map(({ message }) => <React.Fragment key={message.id}>{article(message)}</React.Fragment>)
   const lifecycle = groups.find(group => group.turn)?.turn
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
+  // A question a folded reply asked would fold away with it, so it is quoted under the fold (#1019).
+  const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])
   return <>
     {turn.user ? article(turn.user) : null}
     <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} error={lifecycle?.error} failed={lifecycle?.status === 'failed'}
-      changes={turnChanges(groups)} onDisclosure={context.onDisclosure}>
+      changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
         {message === turn.user || unfolded.has(message) ? null : article(message)}
         <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} />
@@ -481,8 +541,13 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
       following.current = current.scrollHeight - current.scrollTop - current.clientHeight <= FOLLOW_SLACK_PX
     })
   }, [])
-  const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure }),
-    [liveTurn, thread.status, row.connected, row.provider, onDisclosure])
+  // Show where it asked takes the reader up to an earlier reply, so the end-follow lets go before the fold grows.
+  const onSeek = useCallback((message: HTMLElement): void => {
+    following.current = false
+    seekWithoutTranscript(message)
+  }, [])
+  const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
+    [liveTurn, thread.status, row.connected, row.provider, onDisclosure, onSeek])
   const showsActivity = placement.trailing.length > 0 || liveTurn !== null
   const lastGroup = placement.trailing.at(-1) ?? (lastMessageId === undefined ? undefined : placement.after.get(lastMessageId)?.at(-1))
 

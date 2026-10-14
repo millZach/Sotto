@@ -1,12 +1,13 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from 'vitest'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { SocketHostService } from '../../../src/main/agents/socketHostService'
 import { DesktopHostRouter } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { WatcherService } from '../../../src/main/agents/watcher'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import type { WatcherHostProjection, WatcherRemoteHosts } from '../../../src/shared/watcherHost'
+import { watcherToolSchemas } from '../../../src/shared/watcher'
 import { watcherRecordFixture } from '../../fixtures/watcher'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import { agentControlFixture } from '../../fixtures/agentControlFixture'
@@ -73,6 +74,123 @@ it('keeps a validated accepted control receipt when its follow-up projection rea
   const result = await (f.watcher as unknown as { executeRemote(name: string, saved: typeof operation, input: unknown): Promise<unknown> }).executeRemote('send_to_thread', operation, input)
   expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
   expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('accepted')
+})
+
+it.each(['queued', 'dispatching', 'uncertain'] as const)('keeps a definitive paired failure refunded once after an older %s projection', async pending => {
+  const f = await fixture()
+  await f.control.updateWatcher(record => {
+    const second = record.operations[0]!
+    record.operations.unshift({ ...structuredClone(second), id: randomUUID(), retryKey: randomUUID(), digest: 'b'.repeat(64),
+      action: 'start', deliveryState: 'accepted', receiptId: 'first-receipt', cardId: 'first-card', messageId: 'first-message',
+      creationReceiptId: 'first-creation', firstPromptReceiptId: 'first-prompt' })
+    record.requests[0]!.participants[0]!.promptCount = 2
+  })
+  const record = f.control.watcherRecord(), first = record.operations[0]!, second = record.operations[1]!
+  const failed = { ...second, deliveryState: 'failed' as const, refusalCode: 'PENDING_USER_REQUEST' as const,
+    commandId: 'held-command', updatedAt: '2026-10-09T10:00:02.000Z' }
+  const project = (operation: typeof second) => f.projection({ hostId: f.hostId, master: record.current!, revision: operation.deliveryState,
+    observedAt: operation.updatedAt, requests: record.requests, operations: [first, operation], evidence: [] })
+  project(failed); await f.reconcile()
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
+  const refunded = f.control.watcherRecord().operations[1]!
+  project({ ...second, deliveryState: pending, refusalCode: 'DELIVERY_UNCERTAIN', commandId: 'older-command', itemId: 'older-item', creationUncertain: true })
+  await f.reconcile()
+  const afterOlder = f.control.watcherRecord().operations[1]!
+  project(failed); await f.reconcile()
+  // Check the budget first: an older in-flight receipt must not resurrect and refund this same send twice.
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
+  expect(afterOlder).toEqual(refunded)
+  expect(f.control.watcherRecord().operations).toEqual([first, refunded])
+  expect(f.remote.control).not.toHaveBeenCalled()
+})
+
+it('keeps an accepted paired outcome whole when an older failure projection arrives', async () => {
+  const f = await fixture(), record = f.control.watcherRecord(), original = record.operations[0]!
+  const accepted = { ...original, deliveryState: 'accepted' as const, commandId: 'accepted-command', updatedAt: '2026-10-09T10:00:02.000Z' }
+  await f.control.updateWatcher(next => { next.operations[0] = accepted })
+  f.projection({ hostId: f.hostId, master: record.current!, revision: 'older-failure', observedAt: original.updatedAt,
+    requests: record.requests, operations: [{ ...original, deliveryState: 'failed', refusalCode: 'PROVIDER_UNAVAILABLE', creationUncertain: true }], evidence: [] })
+  await f.reconcile()
+  expect(f.control.watcherRecord().operations[0]).toEqual(accepted)
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
+  expect(f.remote.control).not.toHaveBeenCalled()
+})
+
+it('keeps a definitive paired refusal on retry when its follow-up projection read fails', async () => {
+  const f = await fixture(), operation = f.control.watcherRecord().operations[0]!
+  // Watcher's own send is the thread's latest user message, so no user turn of the user's holds it back.
+  f.snapshot.threads[0]!.lastUserMessageId = operation.messageId!
+  const input = watcherToolSchemas.send_to_thread.input.parse({ requestId: operation.requestId, retryKey: operation.retryKey, target: operation.target, delivery: 'now', text: 'Synthetic refused send' })
+  const receipt = { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'failed', receiptId: operation.receiptId, cardId: operation.cardId }
+  vi.mocked(f.remote.control).mockResolvedValue({ status: 'refused', code: 'PENDING_USER_REQUEST', message: 'Synthetic pending question', retryable: false, receipt })
+  f.read.mockRejectedValue(new Error('synthetic-read-failed'))
+  await f.control.updateWatcher(record => { record.operations[0]!.inputDigest = createHash('sha256').update(JSON.stringify(['send_to_thread', input])).digest('hex') })
+  const result = await (f.watcher as unknown as { executeRemote(name: string, saved: typeof operation, input: unknown): Promise<unknown> }).executeRemote('send_to_thread', operation, input)
+  expect(result).toMatchObject({ status: 'refused', code: 'PENDING_USER_REQUEST', receipt })
+  const retry = await f.watcher.invoke(f.control.watcherRecord().current!.target.threadId, 'send_to_thread', input)
+  expect(retry).toMatchObject({ status: 'refused', code: 'PENDING_USER_REQUEST', receipt })
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(0)
+  expect(f.remote.control).toHaveBeenCalledOnce()
+})
+
+it('reconciles an uncertain paired refusal to acceptance without retaining a failure on retry', async () => {
+  const f = await fixture(), operation = f.control.watcherRecord().operations[0]!
+  // Watcher's own send is the thread's latest user message, so no user turn of the user's holds it back.
+  f.snapshot.threads[0]!.lastUserMessageId = operation.messageId!
+  const input = watcherToolSchemas.send_to_thread.input.parse({ requestId: operation.requestId, retryKey: operation.retryKey, target: operation.target, delivery: 'now', text: 'Synthetic uncertain send' })
+  const receipt = { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'uncertain', receiptId: operation.receiptId, cardId: operation.cardId }
+  vi.mocked(f.remote.control).mockResolvedValue({ status: 'refused', code: 'DELIVERY_UNCERTAIN', message: 'Synthetic unavailable acknowledgement', retryable: true, receipt })
+  f.read.mockRejectedValue(new Error('synthetic-read-failed'))
+  await f.control.updateWatcher(record => { record.operations[0]!.inputDigest = createHash('sha256').update(JSON.stringify(['send_to_thread', input])).digest('hex') })
+  const result = await (f.watcher as unknown as { executeRemote(name: string, saved: typeof operation, input: unknown): Promise<unknown> }).executeRemote('send_to_thread', operation, input)
+  expect(result).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', receipt })
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
+  const record = f.control.watcherRecord(), accepted = { ...operation, deliveryState: 'accepted' as const }
+  f.read.mockResolvedValue({ hostId: f.hostId, master: record.current!, revision: 'uncertain', observedAt: operation.updatedAt,
+    requests: record.requests, operations: [{ ...operation, deliveryState: 'uncertain', refusalCode: 'DELIVERY_UNCERTAIN' }], evidence: [] })
+  await f.reconcile()
+  expect(f.control.watcherRecord().operations[0]).toMatchObject({ deliveryState: 'uncertain', refusalCode: 'DELIVERY_UNCERTAIN' })
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
+  f.read.mockResolvedValue({ hostId: f.hostId, master: record.current!, revision: 'accepted', observedAt: accepted.updatedAt,
+    requests: record.requests, operations: [accepted], evidence: [] })
+  await f.reconcile()
+  const retry = await f.watcher.invoke(record.current!.target.threadId, 'send_to_thread', input)
+  expect(retry).toMatchObject({ status: 'ok', receipt: { ...receipt, deliveryState: 'accepted' } })
+  expect(f.control.watcherRecord().operations[0]!.refusalCode).toBeUndefined()
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
+  expect(f.remote.control).toHaveBeenCalledOnce()
+})
+
+it('holds a mismatched control receipt uncertain until the owning operation confirms acceptance', async () => {
+  const f = await fixture(), operation = f.control.watcherRecord().operations[0]!
+  // Watcher's own send is the thread's latest user message, so no user turn of the user's holds it back.
+  f.snapshot.threads[0]!.lastUserMessageId = operation.messageId!
+  const input = watcherToolSchemas.send_to_thread.input.parse({ requestId: operation.requestId, retryKey: operation.retryKey,
+    target: operation.target, delivery: 'now', text: 'Synthetic unverified receipt send' })
+  const receipt = { operationId: operation.id, target: operation.target, requestId: operation.requestId,
+    deliveryState: 'accepted', receiptId: operation.receiptId, cardId: operation.cardId }
+  vi.mocked(f.remote.control).mockResolvedValue({ status: 'ok', receipt: { ...receipt, operationId: randomUUID(),
+    receiptId: 'foreign-receipt', cardId: 'foreign-card', itemId: 'foreign-item', messageId: 'foreign-message' },
+    limits: { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }, delivery: 'now' })
+  f.read.mockRejectedValue(new Error('synthetic-read-failed'))
+  await f.control.updateWatcher(record => { record.operations[0]!.inputDigest = createHash('sha256').update(JSON.stringify(['send_to_thread', input])).digest('hex') })
+  const result = await (f.watcher as unknown as { executeRemote(name: string, saved: typeof operation, input: unknown): Promise<unknown> }).executeRemote('send_to_thread', operation, input)
+  expect(result).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', receipt: { ...receipt, deliveryState: 'uncertain' } })
+  const pending = f.control.watcherRecord().operations[0]!
+  expect(pending).toMatchObject({ id: operation.id, requestId: operation.requestId, target: operation.target,
+    deliveryState: 'uncertain', receiptId: operation.receiptId, cardId: operation.cardId })
+  expect(pending.messageId).toBe(operation.messageId)
+  expect(pending.itemId).toBe(operation.itemId)
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
+  const record = f.control.watcherRecord(), accepted = { ...operation, deliveryState: 'accepted' as const }
+  f.read.mockResolvedValue({ hostId: f.hostId, master: record.current!, revision: 'accepted', observedAt: accepted.updatedAt,
+    requests: record.requests, operations: [accepted], evidence: [] })
+  await f.reconcile()
+  const retry = await f.watcher.invoke(record.current!.target.threadId, 'send_to_thread', input)
+  expect(retry).toMatchObject({ status: 'ok', receipt })
+  expect(f.control.watcherRecord().operations[0]!.refusalCode).toBeUndefined()
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
+  expect(f.remote.control).toHaveBeenCalledOnce()
 })
 
 it('continues to another owning host when the first projection read fails', async () => {

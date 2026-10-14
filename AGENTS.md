@@ -21,7 +21,7 @@ Sotto is an Electron desktop app: a dictation tool that is becoming a developmen
 
 Only what the tree does not say for itself.
 
-- `src/main/agents/` is the coordinator (`control.ts`) and the three provider adapters (`claude.ts`, `codex.ts`, `grok.ts`). `src/main/ipc/registerIpc.ts` registers every channel.
+- `src/main/agents/` is the coordinator (`control.ts`) and the provider adapters (`claude.ts`, `codex.ts`, `devin.ts`, `grok.ts`, `muse.ts`). `src/main/ipc/registerIpc.ts` registers every channel.
 - `src/renderer/src/agents/` is the Threads page: panes, composer, sidebar, pickers. `features/` holds the other pages, `state/` the app context and hooks, `widget/` the floating widget's own renderer.
 - `src/host/` is the headless host entry, its socket server and the remote command allow-list. It runs under plain Node, is built on its own by `scripts/build-host.mjs`, and must never import Electron. `src/main/hosts/` is the desktop's side of remote hosts: saved hosts, the SSH launcher, the launch script it runs on the host machine, and the router that joins every connected host's threads.
 - `apps/ios/` is the native iPhone client: a SwiftUI app and a SottoCore Swift package with its own XCTest suite, outside npm. Only the macOS CI job compiles it, and it speaks host protocol version 1 and nothing else from the desktop.

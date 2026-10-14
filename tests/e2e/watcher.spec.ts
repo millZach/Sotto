@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -1009,10 +1009,27 @@ test.describe("Watcher's room on the built app", () => {
       await expect(pane.getByRole('tab', { name: 'Watched, 0 threads' })).toBeVisible()
       // Main takes the choice, so Watcher's permissions is the chip, on Ask for approval the first time.
       await expect(pane.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveText('Ask for approval')
-      await expect(pane.locator('[data-role="user"]')).toContainText('Check the release notes and tell me what is missing.')
+      const original = 'Check the release notes and tell me what is missing.'
+      await expect(pane.locator('[data-role="user"] .rich-message')).toHaveText(original)
       await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. I will look at the release notes.')
       await expect(pane.locator('[data-role="user"]')).toHaveCount(1)
-      expect(await mainRoom(page)).toMatchObject({ current: { provider: 'codex' } })
+      // The bubble shows only what was typed. The request rides in the turn's own context, beside the words, and
+      // names no projects.
+      await expect(pane.locator('[data-role="user"]')).not.toContainText('Sotto Watcher request')
+      const turns = (await readFile(join(root, 'codex', 'requests.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as
+        { method?: string; params?: { input?: { type: string; text?: string }[]; additionalContext?: Record<string, { value: string; kind: string }> } })
+        .filter(frame => frame.method === 'turn/start')
+      expect(turns).toHaveLength(1)
+      expect(turns[0]!.params!.input).toEqual([expect.objectContaining({ type: 'text', text: original })])
+      const note = turns[0]!.params!.additionalContext?.sotto_watcher_request
+      expect(note).toMatchObject({ kind: 'application', value: expect.stringMatching(/^Sotto Watcher request: [0-9a-f-]{36}\. Local host: [0-9a-f-]{36}\./u) })
+      expect(note!.value).not.toMatch(/project/iu)
+      const room = await mainRoom(page)
+      expect(room).toMatchObject({ current: { provider: 'codex' } })
+      // The note names the request the message started, and its display proof records that the words went as typed.
+      const request = room.requests.at(-1)!
+      expect(note!.value).toContain(`Sotto Watcher request: ${request.id}. Local host: ${request.watcher.hostId}.`)
+      expect(request.displayPrompt).toEqual({ originalLength: original.length, wireDigest: createHash('sha256').update(original).digest('hex') })
       // The bridge itself, as a paired phone's management reaches the same calls.
       expect(await page.evaluate(async () => window.sotto!.watcher!.setPermission!({ runtimeMode: 'full-access' })))
         .toMatchObject({ status: 'ok', state: { runtimeMode: 'full-access', currentOptions: { runtimeMode: 'full-access' } } })

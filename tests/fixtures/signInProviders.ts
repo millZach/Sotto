@@ -21,11 +21,11 @@ export class SignedOutUntilSignIn extends E2EAgentHost {
 }
 export function signInProviders(directory: string): Record<ProviderId, SignedOutUntilSignIn> {
   return { codex: new SignedOutUntilSignIn('codex', directory), claude: new SignedOutUntilSignIn('claude', directory),
-    grok: new SignedOutUntilSignIn('grok', directory), devin: new SignedOutUntilSignIn('devin', directory) }
+    grok: new SignedOutUntilSignIn('grok', directory), devin: new SignedOutUntilSignIn('devin', directory), muse: new SignedOutUntilSignIn('muse', directory) }
 }
 /** Each provider's sign-in, run as the fake client under this Node, with only what it needs in its environment. */
 export function fakeSignInCommand(directory: string, script = resolve('tests/fixtures/fakeSignInCli.mjs'), page?: string, split?: string) {
-  return async (provider: ProviderId): Promise<SignInCommand | undefined> => provider === 'devin' ? undefined : {
+  return async (provider: ProviderId): Promise<SignInCommand | undefined> => PROVIDER_SIGN_IN_ARGS[provider] === null ? undefined : {
     executable: process.execPath,
     args: [script, provider, ...PROVIDER_SIGN_IN_ARGS[provider] ?? []],
     env: { PATH: process.env.PATH ?? '', SYSTEMROOT: process.env.SYSTEMROOT ?? '', FAKE_SIGN_IN_DIR: directory, ...(page ? { FAKE_SIGN_IN_PAGE: page } : {}), ...(split ? { FAKE_SIGN_IN_SPLIT: split } : {}) },
