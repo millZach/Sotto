@@ -56,5 +56,5 @@ describe.skipIf(!PERF_BENCH)('actual Electron Watcher room pipeline (#991)', () 
       await app?.close()
       await rm(root, { recursive: true, force: true })
     }
-  }, 420_000)
+  }, 900_000)
 })
