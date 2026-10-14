@@ -190,3 +190,21 @@
   .watcher-first__intro h2 { margin: 6px 0 6px; }
   .watcher-first__intro p { font-size: 13.5px; line-height: 1.5; }
 }
+
+/* ---------- Watcher's own changes ---------- */
+/* One quiet line under a reply in which Watcher changed files itself: the count, its reason or that it gave none, and
+   the files on request. The icon and "It gave no reason" take the needs-you ink, since Watcher is meant to hand changes on. */
+.watcher-own { margin-top: 12px; }
+.watcher-own__line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.watcher-own__icon { flex: none; align-self: center; color: var(--watcher-needs-ink); }
+.watcher-own__words { min-width: 0; }
+.watcher-own__words > strong { color: var(--tt-text); font-weight: 600; }
+.watcher-own__said { color: var(--tt-text-muted); }
+.watcher-own__none { color: var(--watcher-needs-ink); }
+.watcher-own__toggle { display: inline-flex; flex: none; align-items: center; gap: 3px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-accent-text); font: inherit; font-size: 13px; cursor: pointer; }
+.watcher-own__toggle:hover { text-decoration: underline; text-underline-offset: 3px; }
+.watcher-own__files { display: grid; gap: 4px; margin: 8px 0 0 6px; padding: 2px 0 2px 14px; border-left: 1px solid var(--tt-hairline); list-style: none; color: var(--tt-text-muted); font-size: 12.5px; }
+.watcher-own__files > li { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.watcher-own__files > li > svg { flex: none; }
+.watcher-own__files code { min-width: 0; overflow: hidden; padding: 1px 6px; border: 1px solid var(--tt-code-border); border-radius: 5px; background: var(--tt-code-bg); color: var(--tt-code-text);
+  font-family: var(--tt-font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

@@ -28,6 +28,7 @@ import { WatcherDock } from './WatcherDock'
 import { WatcherGlance } from './WatcherGlance'
 import { overviewCount, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
 import { WatcherOwl } from './WatcherOwl'
+import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
 
 const WATCHER_PROMPT_ID = 'watcher-prompt'
@@ -241,12 +242,16 @@ function WatcherPane({ state, row, header, error, focused, now }: {
   useLayoutEffect(() => {
     if (document.activeElement === null || document.activeElement === document.body) document.getElementById(WATCHER_PROMPT_ID)?.focus()
   }, [])
+  // Each reply in which Watcher changed files itself carries a line saying so (`WatcherOwnChangeFor`).
+  const room = useWatcherRoom()
+  const ownChanges = room?.state?.ownChanges
+  const changes = useMemo(() => new Map((ownChanges ?? []).map(change => [change.replyMessageId, change] as const)), [ownChanges])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
   // system browser.
-  return <BrowserPageRouteContext.Provider value={null}>
+  return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}>
     <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
       error={error} now={now} watcherHeader={header} />
-  </BrowserPageRouteContext.Provider>
+  </WatcherOwnChangesContext.Provider></BrowserPageRouteContext.Provider>
 }
 
 /** Room left above a failed turn's line when it is brought into view, so the line does not sit flush on the edge. */
