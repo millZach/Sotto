@@ -253,7 +253,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       clientCapabilities: { mayAnswer: options.mayAnswer?.(peer.client) ?? false } })
     // A client from before #480 reads the client updates' channel and state against the values it knows, and one it
     // does not know would make it refuse the whole shell: it is sent them as it knew them.
-    const phoneState = peer.watcherPhone && service.watcherPhone ? service.watcherPhone.state(options.mayAnswer?.(peer.client) ?? false) : undefined
+    const phoneState = peer.watcherPhone && service.watcherPhone ? service.watcherPhone.state(options.mayAnswer?.(peer.client) ?? false, peer.watcherPhoneManage === true) : undefined
     const projected = phoneState ? { ...own, watcher: phoneState, host: { ...own.host, threads: own.host.threads.map(thread => ({ ...thread,
       watchedByWatcher: phoneState.watchedThreads.some(row => row.target.hostId === hostId && row.target.threadId === thread.id && row.watched) })) } } : own
     const rows = peer.terminals && options.terminals ? { ...projected, terminals: options.terminals.phoneRows() } : projected
@@ -587,6 +587,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (closing || peer.frames.isClosed || !authenticated(peer) || !admits(peer.client.clientId)) throw new Refusal('unauthenticated')
       }
       const mayAnswer = () => options.mayAnswer?.(peer.client) ?? false
+      // A phone that never negotiated management knows nothing of standing watches, and is shown none (ADR-0073).
+      const standing = peer.watcherPhoneManage === true
       guard()
       switch (request.op) {
         case 'watcher-phone-set-permission':
@@ -618,7 +620,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           receipts.record(peer.client.clientId, request.id, { digest, receipt, task })
           return task
         }
-        case 'watcher-phone-read': await observe(); return service.watcherPhone.get(mayAnswer())
+        case 'watcher-phone-read': await observe(); return service.watcherPhone.get(mayAnswer(), standing)
         case 'watcher-phone-send': {
           const digest = createHash('sha256').update(JSON.stringify([request.op, request.request])).digest('hex')
           const previous = receipts.get(peer.client.clientId, request.id)
@@ -626,11 +628,11 @@ export async function startSocketServer(options: SocketServerOptions) {
             if (previous.digest !== digest) throw new Refusal('invalid_request')
             await previous.task
             if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
-            return { status: 'ok', draftId: request.request.draftId, state: service.watcherPhone.state(mayAnswer()) }
+            return { status: 'ok', draftId: request.request.draftId, state: service.watcherPhone.state(mayAnswer(), standing) }
           }
           if (!receipts.makeRoom()) throw new Refusal('busy')
           const receipt: HostReceipt = { status: 'pending' }
-          const task = service.watcherPhone.send(request.request, peer.client, guard, mayAnswer).then(result => {
+          const task = service.watcherPhone.send(request.request, peer.client, guard, mayAnswer, standing).then(result => {
             receipt.status = 'completed'
             if (result.status === 'refused') receipt.error = { code: 'unavailable', message: result.message }
             return result
@@ -651,11 +653,11 @@ export async function startSocketServer(options: SocketServerOptions) {
             guard()
             if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
             const outcome = previous.receipt.watcherStop!
-            return outcome.status === 'refused' ? outcome : { ...outcome, state: service.watcherPhone.state(mayAnswer()) }
+            return outcome.status === 'refused' ? outcome : { ...outcome, state: service.watcherPhone.state(mayAnswer(), standing) }
           }
           if (!receipts.makeRoom()) throw new Refusal('busy')
           const receipt: HostReceipt = { status: 'pending' }
-          const task = service.watcherPhone.stop(request.confirmationId, peer.client, guard, mayAnswer).then(result => {
+          const task = service.watcherPhone.stop(request.confirmationId, peer.client, guard, mayAnswer, standing).then(result => {
             receipt.watcherStop = result.status === 'refused' ? result : { status: 'ok', results: result.results }
             receipt.status = 'completed'
             return result
@@ -672,7 +674,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           const result = await command(peer, { ...request, op: 'command', command: input }, target)
           guard()
           if (result.error) throw new Refusal('unavailable')
-          return service.watcherPhone.get(mayAnswer())
+          return service.watcherPhone.get(mayAnswer(), standing)
         }
       }
     }

@@ -4,12 +4,13 @@ import { watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend,
 import { watcherRefusal, watcherGuidancePrefix, WATCHER_GUIDANCE_SUFFIX, type WatcherService } from './watcher'
 import type { AgentControl } from './control'
 import type { ClientIdentity } from './hostService'
-import { isWatchedRow, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest } from '../../shared/watcherRoom'
+import { isWatchedRow, takesPartInActiveRequest, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest } from '../../shared/watcherRoom'
 
 /** A phone reads the room, never the persisted control record or the desktop's aggregate shell. */
 export class WatcherPhoneService {
   constructor(private readonly control: AgentControl, private readonly watcher: WatcherService) {}
-  state(mayAnswer: boolean): WatcherPhoneState {
+  /** `standing`: whether this phone negotiated Watcher management, and with it knows standing watches. */
+  state(mayAnswer: boolean, standing = true): WatcherPhoneState {
     const room = this.watcher.state(), snapshot = this.watcher.phoneSnapshot()
     const thread = (target: { hostId: string; threadId: string }): AgentThread | undefined => snapshot.threads.find(row =>
       (row.hostId ?? snapshot.hostId) === target.hostId && row.id === target.threadId)
@@ -48,12 +49,20 @@ export class WatcherPhoneService {
         ...(operation.delivery ? { delivery: operation.delivery } : {}), ...(operation.refusalCode ? { refusalCode: operation.refusalCode } : {}) })
     }
     // Main's own mark, as the room and the Threads page read it: a standing watch, or taking part in an active request.
-    const watchedThreads = room.watchedThreads.map(row => ({ target: row.target, title: row.title,
+    // A phone from before standing watches says a send there takes the thread over, which holds only for a thread watched
+    // for a request alone: it is shown those, watched as it always counted them, and nothing of standing watches. A thread
+    // under a standing watch is left off its page rather than called watched or no longer watched.
+    const own = room.current
+    const activeRequests = new Set(room.requests.filter(request => request.state === 'active' && own !== null
+      && request.watcher.hostId === own.target.hostId && request.watcher.threadId === own.target.threadId).map(request => request.id))
+    const rows = standing ? room.watchedThreads : room.watchedThreads.filter(row => row.participation.length > 0
+      && !room.standingWatches?.some(watch => watch.target.hostId === row.target.hostId && watch.target.threadId === row.target.threadId))
+    const watched = (row: typeof rows[number]): boolean => standing ? isWatchedRow(row, room.requests) : takesPartInActiveRequest(row.participation, activeRequests)
+    const watchedThreads = rows.map(row => ({ target: row.target, title: row.title,
       provider: thread(row.target)?.providerId ?? null, status: row.status, connected: row.connected,
-      watched: isWatchedRow(row, room.requests), paused: row.paused,
+      watched: watched(row), ...(standing ? { paused: row.paused } : {}),
       takenOver: row.participation.some(part => part.state === 'taken-over'), backgroundWorkCount: row.backgroundWorkCount }))
-    const targets = [...room.watchedThreads.filter(row => isWatchedRow(row, room.requests)).map(row => row.target),
-      ...room.current ? [room.current.target] : []]
+    const targets = [...rows.filter(watched).map(row => row.target), ...own ? [own.target] : []]
     const needsYou = targets.flatMap(target => {
       const owner = thread(target), connected = Boolean(owner?.clientConnected)
       return (owner?.requests ?? []).map(request => ({ target, title: owner!.title, provider: owner?.providerId ?? null,
@@ -69,11 +78,11 @@ export class WatcherPhoneService {
       target: room.current.target, provider: room.current.provider, ...room.currentOptions } : null,
     conversation: { messages, revision: detail?.revision ?? 0, earlierAvailable: Boolean(detail?.earlierAvailable || (detail?.messages.length ?? 0) > messages.length) },
     draftDeliveries: (this.control.shell().deliveries ?? []).filter(row => row.threadId === current?.id).map(row => ({ draftId: row.draftId, status: row.status })),
-    runtimeMode: room.runtimeMode, standingWatches: room.standingWatches, ownChanges: room.ownChanges,
+    runtimeMode: room.runtimeMode, ...(standing ? { standingWatches: room.standingWatches } : {}), ownChanges: room.ownChanges,
     receiptGroups, watchedThreads, needsYou, inFlight: room.inFlight, inFlightLimit: room.inFlightLimit,
     working: room.currentOptions?.status === 'running' || room.inFlight > 0, recoveryNotice: room.recoveryNotice, observedAt: room.observedAt })
   }
-  async send(request: WatcherPhoneSend, client: ClientIdentity, guard: () => void, mayAnswer: () => boolean): Promise<WatcherPhoneSendResult> {
+  async send(request: WatcherPhoneSend, client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, standing = true): Promise<WatcherPhoneSendResult> {
     if (request.origin.clientId !== client.clientId || request.origin.hostId !== this.control.hostId() || client.transport !== 'socket') {
       return watcherRefusal('INVALID_INPUT', 'This instruction does not belong to this phone and computer. Nothing was sent.')
     }
@@ -92,7 +101,7 @@ export class WatcherPhoneService {
         draftId: request.draftId, text: request.text, attachments: [], binding: { requestId: null, questionsDigest: null } } },
       { phoneOrigin: request.origin, guard: check }, { ...client, selectedThreadId: request.target.threadId })
       if (result.error) return watcherRefusal('PROVIDER_UNAVAILABLE', 'Watcher could not take this instruction. Your text is kept on the phone. Refresh Watcher and check its delivery before trying again.', true)
-      return { status: 'ok', draftId: request.draftId, state: this.state(mayAnswer()) }
+      return { status: 'ok', draftId: request.draftId, state: this.state(mayAnswer(), standing) }
     } catch { return watcherRefusal('TARGET_CHANGED', 'Watcher changed or is unavailable. Nothing new was sent. Refresh Watcher and review its request cards.', true) }
   }
   answer(command: Extract<AgentCommand, { type: 'answer' }>, client: ClientIdentity, decisionId: string, guard: () => void) {
@@ -106,10 +115,10 @@ export class WatcherPhoneService {
       title: state.watchedThreads.find(row => row.target.hostId === target.hostId && row.target.threadId === target.threadId)?.title ?? 'Unavailable thread',
       provider: state.watchedThreads.find(row => row.target.hostId === target.hostId && row.target.threadId === target.threadId)?.provider ?? null })) }
   }
-  async stop(confirmationId: string, client: ClientIdentity, guard: () => void, mayAnswer: () => boolean): Promise<WatcherPhoneStopResult> {
+  async stop(confirmationId: string, client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, standing = true): Promise<WatcherPhoneStopResult> {
     guard()
     const result = await this.watcher.stopAll(confirmationId, guard, client.clientId)
-    return result.status === 'refused' ? result : { status: 'ok', state: this.state(mayAnswer()), results: result.results }
+    return result.status === 'refused' ? result : { status: 'ok', state: this.state(mayAnswer(), standing), results: result.results }
   }
   currentThreadId(): string | undefined { return this.watcher.state().current?.target.threadId }
   async manage(action: 'permission' | 'watch' | 'unwatch', request: WatcherSetPermissionRequest | WatcherWatchThreadRequest,
@@ -130,5 +139,5 @@ export class WatcherPhoneService {
     return result.status === 'refused' ? result : this.get(mayAnswer())
   }
   subscribe(listener: () => void): () => void { return this.watcher.subscribe(listener) }
-  get(mayAnswer: boolean): WatcherPhoneResult { return { status: 'ok', state: this.state(mayAnswer) } }
+  get(mayAnswer: boolean, standing = true): WatcherPhoneResult { return { status: 'ok', state: this.state(mayAnswer, standing) } }
 }

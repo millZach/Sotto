@@ -268,7 +268,7 @@ it('reconciles a lost Stop all reply from a client-bound receipt with partial re
 
 
 it('keeps standing watches through stopped and closed requests until explicit unwatch', async () => {
-  const f = await fixture(), peer = await f.pair()
+  const f = await fixture(), peer = await f.pair(['watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage'])
   await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
   const watched = () => f.phone.state(false).watchedThreads.find(row => row.target.threadId === worker.threadId)!.watched
   expect(watched()).toBe(true)
@@ -282,6 +282,29 @@ it('keeps standing watches through stopped and closed requests until explicit un
   expect(watched()).toBe(true)
   expect(await f.watcher.unwatchThread({ target: worker })).toMatchObject({ status: 'ok' })
   expect(watched()).toBe(false)
+})
+
+it('shows a phone from before standing watches only the threads a request watches, as it always counted them', async () => {
+  const f = await fixture(), old = await f.pair(), current = await f.pair(['watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage'])
+  await old.call('send', f.send(old.paired.clientId))
+  // Watcher started one thread for the request, which keeps its standing watch; another only takes part in the request.
+  const standing = await f.start(), requestOnly = await f.start()
+  await f.control.updateWatcher(record => { record.watches = (record.watches ?? []).filter(watch => watch.target.threadId !== requestOnly.threadId) })
+  type Page = { standingWatches?: unknown; watchedThreads: { target: { threadId: string }; watched: boolean; paused?: boolean }[] }
+  const page = async (peer: typeof old, id: string) => ((await peer.call(id, { op: 'watcher-phone-read' })).result as { state: Page }).state
+  const shell = async (peer: typeof old, id: string) => ((await peer.call(id, { op: 'shell' })).result as { watcher: Page; host: { threads: { id: string; watchedByWatcher?: boolean }[] } })
+  const oldPage = await page(old, 'old-read'), oldShell = await shell(old, 'old-shell')
+  for (const seen of [oldPage, oldShell.watcher]) {
+    expect(seen.standingWatches).toBeUndefined()
+    expect(seen.watchedThreads.map(row => [row.target.threadId, row.watched, row.paused])).toEqual([[requestOnly.threadId, true, undefined]])
+  }
+  expect(oldShell.host.threads.find(row => row.id === standing.threadId)?.watchedByWatcher).toBe(false)
+  expect(oldShell.host.threads.find(row => row.id === requestOnly.threadId)?.watchedByWatcher).toBe(true)
+  // A phone that negotiated management sees both, and the standing watch.
+  const currentPage = await page(current, 'current-read')
+  expect(currentPage.standingWatches).toEqual([expect.objectContaining({ target: standing })])
+  expect(currentPage.watchedThreads.map(row => [row.target.threadId, row.watched]).sort()).toEqual([[requestOnly.threadId, true], [standing.threadId, true]].sort())
+  expect((await shell(current, 'current-shell')).host.threads.find(row => row.id === standing.threadId)?.watchedByWatcher).toBe(true)
 })
 
 it('marks a thread taking part in an active request watched in the room, the phone page and the phone shell alike', async () => {
