@@ -90,6 +90,8 @@ interface FileState {
   model: string | undefined
   /** The request figures of the record just before, which the `token_count` after it repeats. */
   afterRecord: string | undefined
+  /** The last `token_count`'s running total and figures, which Codex repeats at a turn's edge; kept across passes. */
+  lastCount: string | undefined
   /** This reading began at the file's first line. */
   fresh: boolean
   /** Lines before this reading's start, for the copied-history ordinal. */
@@ -113,7 +115,7 @@ interface SavedState {
 function savedState(state: FileState, own: NonNullable<FileState['own']>, lines: number): SavedState {
   return { v: stateSchemaVersion, own: { id: own.id, client: own.client, sub: own.subAgent, ...(own.parent ? { parent: own.parent } : {}) },
     ...(state.copied.length > 0 ? { copied: [...state.copied] } : {}), ...(state.ordinal !== undefined ? { ordinal: state.ordinal } : {}),
-    ...(state.afterRecord !== undefined ? { after: state.afterRecord } : {}), lines, ...(state.model ? { model: state.model } : {}) }
+    ...(state.afterRecord !== undefined ? { after: state.afterRecord } : {}), ...(state.lastCount !== undefined ? { last: state.lastCount } : {}), lines, ...(state.model ? { model: state.model } : {}) }
 }
 
 /** What one pass remembers across files. */
@@ -174,7 +176,7 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
   return {
     needles: [Buffer.from('"session_meta"'), Buffer.from('"turn_context"'), Buffer.from('token_usage_record'), Buffer.from('"token_count"'), Buffer.from('"task_started"')],
     start(_file, saved): FileState {
-      const state: FileState = { own: undefined, copied: [], ordinal: undefined, turn: undefined, mark: undefined, model: undefined, afterRecord: undefined,
+      const state: FileState = { own: undefined, copied: [], ordinal: undefined, turn: undefined, mark: undefined, model: undefined, afterRecord: undefined, lastCount: undefined,
         fresh: saved === undefined, base: 0, turnModels: new Map(), turnOwners: new Map(), waiting: [] }
       try {
         const value = object(saved === undefined ? undefined : JSON.parse(saved))
@@ -188,6 +190,7 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
           state.copied = copied.filter((session): session is string => typeof session === 'string' && session.length > 0).slice(-PARENT_DEPTH_MAX)
           state.ordinal = count(value.ordinal); state.base = count(value.lines) ?? 0
           if (typeof value.after === 'string' && value.after.length <= 256) state.afterRecord = value.after
+          if (typeof value.last === 'string' && value.last.length <= 512) state.lastCount = value.last
           if (typeof value.model === 'string' && value.model.length > 0) state.model = value.model
         }
       } catch { /* A fresh start. */ }
@@ -267,9 +270,12 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
       if (kind === 'token_count') {
         const info = object(payload.info)
         if (info.total_token_usage === undefined || info.last_token_usage === undefined) return
+        const key = tuple(info.total_token_usage, info.last_token_usage)
+        // A repeat of the count just before adds nothing, whether or not this pass read that count.
+        if (key === state.lastCount) return
+        state.lastCount = key
         const paired = state.afterRecord !== undefined && state.afterRecord === figures(info.last_token_usage)
         state.afterRecord = undefined
-        const key = tuple(info.total_token_usage, info.last_token_usage)
         // Without an ordinal, a running total the copied session never had is the end of its copy.
         if (state.ordinal === undefined) {
           while (state.copied.length > 0 && memory.totals.get(state.copied.at(-1)!)?.has(key) !== true) state.copied.pop()

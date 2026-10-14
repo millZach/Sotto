@@ -324,6 +324,32 @@ describe('Codex history reader', () => {
     expect([...split.rows().keys()].sort()).toEqual([...whole.rows().keys()].sort())
   })
 
+  it('counts a repeated running total once when the repeat arrives in a later pass', async () => {
+    // Codex repeats its last token_count at a turn's edge; the repeat can land after the next turn has begun.
+    const first = [
+      codexMeta({ id: 'repeating', originator: 'Codex Desktop', at: t(0) }),
+      codexTaskStarted({ turn: 'turn-1', at: t(1) }),
+      codexRecord({ at: t(2), thread: 'repeating', turn: 'turn-1', response: 'rep-resp-1', total: { input: 100, output: 10 }, last: { input: 100, output: 10 } }),
+      codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } }),
+      codexTaskStarted({ turn: 'turn-2', at: t(5) }),
+    ]
+    const repeat = codexTokenCount({ at: t(6), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } })
+    const once = await home()
+    await writeFile(rollout(once, '2026-09-20T10-00-00-repeating'), jsonl([...first, repeat]))
+    const whole = memorySink()
+    await scan(once, whole)
+    const twice = await home()
+    const file = rollout(twice, '2026-09-20T10-00-00-repeating')
+    await writeFile(file, jsonl(first))
+    const split = memorySink()
+    await scan(twice, split)
+    await appendFile(file, jsonl([repeat]))
+    await scan(twice, split)
+    for (const sink of [whole, split]) {
+      expect(sink.rows().size).toBe(1)
+      expect(sink.sum('input')).toBe(100)
+    }
+  })
   it('resumes a rollout across passes with its session and turn intact', async () => {
     const root = await home()
     const file = rollout(root, '2026-09-20T10-00-00-cli')
