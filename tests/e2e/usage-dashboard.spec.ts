@@ -128,7 +128,7 @@ test('Owl Usage counts real accepted sends under their served model, filters by 
     await page.getByRole('radio', { name: 'Tokens', exact: true }).click()
     await expect(page.getByRole('radio', { name: 'Tokens', exact: true })).toHaveAttribute('aria-checked', 'true')
     const modelRow = page.locator('.usage-row__main').first()
-    await expect(modelRow).toHaveAccessibleName(/^Claude Opus 5\.5, Claude Code: 1 prompts, 3,600 tokens, 57% from cache$/u)
+    await expect(modelRow).toHaveAccessibleName(/^Claude Opus 5\.5, Claude Code: 1 prompt, 3,600 tokens, 57% from cache$/u)
     await modelRow.click(); await expect(modelRow).toHaveAttribute('aria-expanded', 'true')
     await expect(page.locator('.usage-detail')).toContainText('Tokens per prompt3,600')
     await expect(page.locator('.usage-detail')).toContainText('Prompts per day')
