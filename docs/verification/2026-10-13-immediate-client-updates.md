@@ -39,4 +39,4 @@ The new release-age regression failed first for Claude, Codex and Grok: the runn
 
 Eight focused unit and integration files passed (104 tests, one platform-specific skip). The Update all card then passed again with its added multi-host case (11 tests): one press queues the local Claude update plus Codex and Grok updates on two connected hosts. These are simulated hosts; the real macOS desktop and a second live host were not exercised.
 
-Typecheck, lint and third-party notice verification passed. The full repository test suite was not run. The installed desktop and forge's running Sotto host have not been replaced with this development build; both need a release carrying the patch for future presses to use it.
+Typecheck, lint and third-party notice verification passed. Before opening the PR, `npm test -- --maxWorkers=2` passed on Windows: 10,392 tests passed and 321 skipped (818 passing files, 68 skipped). Independent Standards and Spec reviews both found no issues. The installed desktop and forge's running Sotto host have not been replaced with this development build; both need a release carrying the patch for future presses to use it.
