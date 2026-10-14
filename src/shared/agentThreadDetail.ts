@@ -37,7 +37,7 @@ function size(value: string | undefined): number { return value === undefined ? 
  */
 export function diffAgentThreadDetail(base: AgentThreadDetail,
   next: { readonly messages: readonly AgentMessage[]; readonly activities?: readonly AgentActivity[] | undefined },
-  revision: number): AgentThreadDetailDelta | null {
+  revision: number, activitySignature: (record: AgentActivity) => string = agentActivitySignature): AgentThreadDetailDelta | null {
   if ((base.activities === undefined) !== (next.activities === undefined)) return null
   if (next.messages.length < base.messages.length) return null
   const messageDeltas: AgentMessageDelta[] = []
@@ -54,11 +54,14 @@ export function diffAgentThreadDetail(base: AgentThreadDetail,
   const activityDeltas: AgentActivityDelta[] = []
   const heldActivities = base.activities ?? []
   const nextActivities = next.activities ?? []
-  const signatures = new Map(heldActivities.map(record => [record.id, agentActivitySignature(record)]))
+  const signatures = activitySignature === agentActivitySignature
+    ? new Map(heldActivities.map(record => [record.id, activitySignature(record)])) : undefined
+  const heldRecords = signatures === undefined ? new Map(heldActivities.map(record => [record.id, record])) : undefined
   const present = new Set(nextActivities.map(record => record.id))
   for (const record of heldActivities) if (!present.has(record.id)) activityDeltas.push({ id: record.id, removed: true })
   for (const record of nextActivities) {
-    if (signatures.get(record.id) === agentActivitySignature(record)) continue
+    const held = heldRecords?.get(record.id)
+    if (held === record || (held !== undefined ? activitySignature(held) : signatures?.get(record.id)) === activitySignature(record)) continue
     activityDeltas.push({ record: structuredClone(record) })
   }
   const delta: AgentThreadDetailDelta = { threadId: base.threadId, baseRevision: base.revision, revision, messageDeltas, activityDeltas }

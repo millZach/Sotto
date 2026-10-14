@@ -30,6 +30,9 @@ export function isImmutableActivities(activities: readonly AgentActivity[] | und
   return activities !== undefined && owned.has(activities)
 }
 
+/** A record is trusted only when this owner recursively copied and froze it. */
+export function isImmutableActivity(activity: AgentActivity): boolean { return owned.has(activity) }
+
 /** A model catalog owned and frozen the same way. Every layer between an adapter and the window then shares one copy
  * until the catalog itself changes, where each used to copy all of it, 608 models on the owner's machine (#917). */
 export function immutableModels(models: readonly AgentModel[]): AgentModel[] {

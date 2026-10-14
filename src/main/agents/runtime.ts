@@ -163,7 +163,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       grok: new GrokSubscriptionClient(join(directory, 'reasoning', 'grok')),
     })
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false, ...(usage ? { usage } : {}),
+    directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     historyEnabled: options.historyEnabled,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
