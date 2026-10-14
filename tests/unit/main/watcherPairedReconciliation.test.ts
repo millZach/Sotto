@@ -156,6 +156,36 @@ it('reconciles an uncertain paired refusal to acceptance without retaining a fai
   expect(f.remote.control).toHaveBeenCalledOnce()
 })
 
+it('holds a mismatched control receipt uncertain until the owning operation confirms acceptance', async () => {
+  const f = await fixture(), operation = f.control.watcherRecord().operations[0]!
+  const input = watcherToolSchemas.send_to_thread.input.parse({ requestId: operation.requestId, retryKey: operation.retryKey,
+    target: operation.target, delivery: 'now', text: 'Synthetic unverified receipt send' })
+  const receipt = { operationId: operation.id, target: operation.target, requestId: operation.requestId,
+    deliveryState: 'accepted', receiptId: operation.receiptId, cardId: operation.cardId }
+  vi.mocked(f.remote.control).mockResolvedValue({ status: 'ok', receipt: { ...receipt, operationId: randomUUID(),
+    receiptId: 'foreign-receipt', cardId: 'foreign-card', itemId: 'foreign-item', messageId: 'foreign-message' },
+    limits: { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }, delivery: 'now' })
+  f.read.mockRejectedValue(new Error('synthetic-read-failed'))
+  await f.control.updateWatcher(record => { record.operations[0]!.inputDigest = createHash('sha256').update(JSON.stringify(['send_to_thread', input])).digest('hex') })
+  const result = await (f.watcher as unknown as { executeRemote(name: string, saved: typeof operation, input: unknown): Promise<unknown> }).executeRemote('send_to_thread', operation, input)
+  expect(result).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', receipt: { ...receipt, deliveryState: 'uncertain' } })
+  const pending = f.control.watcherRecord().operations[0]!
+  expect(pending).toMatchObject({ id: operation.id, requestId: operation.requestId, target: operation.target,
+    deliveryState: 'uncertain', receiptId: operation.receiptId, cardId: operation.cardId })
+  expect(pending.messageId).toBe(operation.messageId)
+  expect(pending.itemId).toBe(operation.itemId)
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
+  const record = f.control.watcherRecord(), accepted = { ...operation, deliveryState: 'accepted' as const }
+  f.read.mockResolvedValue({ hostId: f.hostId, master: record.current!, revision: 'accepted', observedAt: accepted.updatedAt,
+    requests: record.requests, operations: [accepted], evidence: [] })
+  await f.reconcile()
+  const retry = await f.watcher.invoke(record.current!.target.threadId, 'send_to_thread', input)
+  expect(retry).toMatchObject({ status: 'ok', receipt })
+  expect(f.control.watcherRecord().operations[0]!.refusalCode).toBeUndefined()
+  expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
+  expect(f.remote.control).toHaveBeenCalledOnce()
+})
+
 it('continues to another owning host when the first projection read fails', async () => {
   const f = await fixture(), other = randomUUID()
   await f.control.updateWatcher(next => {
