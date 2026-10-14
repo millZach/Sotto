@@ -369,7 +369,13 @@ it('enforces the narrower owning-host default and keeps a confirmed remote Stop 
   const progress = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic follow-up during confirmation' })
   expect(progress.status, progress.status === 'refused' ? progress.code : undefined).toBe('ok')
   expect(progress).toMatchObject({ limits: { promptCount: 2 } })
-  expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ status: 'ok', results: [{ target: first.target, status: expect.stringMatching(/stopped|requested/u) }] })
+  const stopped = await f.watcher.stopAll(confirmation.confirmationId)
+  // Should the stop come back unconfirmed, say which refusal each operation on the thread recorded, here and on the owning host.
+  const outcomes = (receipts: { action: string; deliveryState: string; refusalCode?: string | undefined; target: { threadId: string } }[]) =>
+    receipts.filter(item => item.target.threadId === first.target.threadId).map(item => `${item.action}:${item.deliveryState}:${item.refusalCode ?? '-'}`)
+  const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+  expect(stopped, JSON.stringify({ master: outcomes(f.watcher.state().receipts), owner: outcomes(owner.state().receipts) }))
+    .toMatchObject({ status: 'ok', results: [{ target: first.target, status: expect.stringMatching(/stopped|requested/u) }] })
   expect(f.watcher.state().requests.find(item => item.id === f.requestId)?.state).toBe('stopped')
   expect(f.watcher.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)?.participation[0]?.automationStopped).toBe(true)
   const writes = vi.spyOn(f.socket, 'watcherControl')
