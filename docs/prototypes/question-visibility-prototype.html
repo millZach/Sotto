@@ -1,0 +1,262 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  A model writes a question into a reply, keeps working, and when the turn ends the question folds into
+  "Worked for …" with everything else but the last reply. Question: how should a finished turn keep what the
+  model said to the user on screen, and how should a question asked with the question tool stay readable after
+  it is answered?
+
+    now  As it ships: a finished turn folds every reply but the last. An answered tool question leaves only a
+         folded AskUserQuestion row.
+    a    Every reply stays. Replies never fold. Each stretch of work between two replies folds to its own line,
+         the way the iPhone and Android already show a thread. No guessing about what is a question.
+    b    Questions lift out. One fold, as now, but a sentence in a folded reply that ends in "?" is quoted under
+         the fold with Show where it asked. Sotto guesses which sentences are questions.
+    c    One work line, every reply after it. All the turn's work folds to one line, as now, and every reply
+         stays on screen below it in order.
+
+  An answered tool question folds with the work around it (Zach, October 14), shown as what was asked and what
+  you answered rather than the raw AskUserQuestion row.
+
+  Bar: ← → (or arrow keys) switch variants. "Asked in a reply" / "Asked with the question tool" switches the
+  scenario. The page opens on a finished turn; "Start the turn over" shows it running, where no variant folds anything. Light flips the palette.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — keeping a model's question on screen, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-field: oklch(0.145 0.008 265); --tt-surface-elevated: oklch(0.185 0.008 265); --tt-sunken: oklch(0.13 0.008 265);
+  --tt-text: oklch(0.985 0.005 280); --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714 0.104 183); --tt-on-accent: oklch(0.16 0.012 190); --tt-attention: oklch(0.8 0.13 80);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent); --tt-selected: color-mix(in oklab, oklch(0.714 0.104 183) 16%, transparent);
+  --tt-flash: color-mix(in oklab, oklch(0.8 0.13 80) 18%, transparent);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-field: oklch(0.99 0.003 85); --tt-surface-elevated: oklch(0.955 0.006 85); --tt-sunken: oklch(0.965 0.005 85);
+  --tt-text: oklch(0.2 0.01 265); --tt-text-2: oklch(0.36 0.012 265); --tt-text-muted: oklch(0.45 0.012 265);
+  --tt-hairline: oklch(0.88 0.006 85); --tt-field-border: oklch(0.78 0.01 85);
+  --tt-accent: oklch(0.52 0.1 183); --tt-on-accent: oklch(0.99 0.003 85); --tt-attention: oklch(0.55 0.13 70);
+  --tt-hover: oklch(0.93 0.02 185); --tt-selected: oklch(0.93 0.03 185); --tt-flash: oklch(0.94 0.05 85);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.5 var(--tt-font); overflow: hidden; }
+button { font: inherit; color: inherit; }
+button:focus-visible, textarea:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+code { font: 13px ui-monospace, Consolas, monospace; padding: 1px 5px; border-radius: 5px; background: var(--tt-surface-elevated); }
+.app { display: grid; grid-template-columns: 272px 1fr; height: 100vh; }
+@media (max-width: 1100px) { .app { grid-template-columns: 1fr; } .side { display: none; } }
+.side { border-right: 1px solid var(--tt-hairline); padding: 54px 8px 0; background: var(--tt-sunken); }
+.side h2 { font-size: 13px; font-weight: 600; color: var(--tt-text-2); margin: 0 10px 8px; }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 9px 12px; border-radius: 10px; color: var(--tt-text-2); }
+.row .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--tt-text); }
+.row .s { grid-column: 1 / -1; font-size: 12.5px; color: var(--tt-text-muted); }
+.row[data-current] { background: var(--tt-selected); }
+.row .s[data-needs] { color: var(--tt-attention); font-weight: 600; }
+.pane { display: grid; grid-template-rows: 46px 1fr auto; min-width: 0; height: 100vh; }
+.head { display: flex; align-items: center; gap: 12px; padding: 0 20px; border-bottom: 1px solid var(--tt-hairline); white-space: nowrap; overflow: hidden; }
+.head b { font-weight: 600; } .head span { color: var(--tt-text-muted); font-size: 13px; }
+.scroll { overflow-y: auto; padding: 28px 20px 40px; }
+.transcript { max-width: 880px; margin: 0 auto; font-size: 16px; }
+.msg { margin: 0 0 28px; border-radius: 10px; transition: background .6s; }
+.msg header { display: flex; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg header .who { color: var(--tt-text-2); font-weight: 600; }
+.msg p { margin: 0 0 12px; } .msg p:last-child { margin: 0; }
+.msg[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--tt-surface-elevated); border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; }
+.msg[data-flash] { background: var(--tt-flash); }
+.work { margin: -8px 0 20px; border-bottom: 1px solid var(--tt-field-border); }
+.work--quiet { border-bottom: 0; margin-bottom: 14px; }
+.fold { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; margin: 0 0 8px -6px; padding: 0 8px 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font-size: 14px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.fold:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.chev { transition: transform .16s; } [aria-expanded='true'] > .chev { transform: rotate(90deg); }
+.work__body { padding: 4px 0 12px; }
+.ledger { margin: 0 0 18px; padding: 0; list-style: none; color: var(--tt-text-muted); font-size: 14px; }
+.ledger li { display: flex; gap: 8px; align-items: center; min-height: 28px; }
+.ledger li::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-field-border); }
+.ledger li.tool { font: 13px ui-monospace, Consolas, monospace; }
+.live { display: flex; gap: 8px; align-items: center; color: var(--tt-text-muted); font-size: 14px; }
+.live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-accent); }
+.changed { color: var(--tt-text-muted); font-size: 14px; margin: -14px 0 24px; }
+/* An answered question kept on screen: what was asked, what you answered. */
+.asked { margin: 0 0 24px; padding: 12px 16px; border: 1px solid var(--tt-hairline); border-left: 2px solid var(--tt-accent); border-radius: 10px; background: var(--tt-field); font-size: 15px; }
+.asked header { color: var(--tt-text-muted); font-size: 12.5px; margin-bottom: 6px; }
+.asked .q { font-weight: 600; margin-bottom: 8px; }
+.asked .a { color: var(--tt-text-2); } .asked .a b { color: var(--tt-text); font-weight: 600; }
+.asked--open { border-left-color: var(--tt-attention); }
+/* b: questions quoted out of the fold. */
+.lifted { margin: 0 0 24px; padding: 12px 16px; border-left: 2px solid var(--tt-attention); background: var(--tt-field); border-radius: 0 10px 10px 0; }
+.lifted header { color: var(--tt-text-muted); font-size: 12.5px; margin-bottom: 6px; }
+.lifted blockquote { margin: 0 0 8px; font-size: 15.5px; }
+.link { border: 0; background: none; padding: 0; color: var(--tt-accent); font-size: 13.5px; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.compose { padding: 0 20px 64px; }
+.compose__inner { max-width: 900px; margin: 0 auto; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-field); overflow: hidden; }
+.composer { padding: 14px 18px; min-height: 92px; color: var(--tt-text-muted); display: flex; flex-direction: column; justify-content: space-between; gap: 14px; }
+.pills { display: flex; gap: 8px; font-size: 13px; } .pills span { border: 1px solid var(--tt-hairline); border-radius: 8px; padding: 3px 10px; color: var(--tt-text-2); }
+.card { padding: 16px 18px; border-bottom: 1px solid var(--tt-hairline); display: grid; gap: 10px; }
+.card .who { color: var(--tt-text-muted); font-size: 12.5px; }
+.card .prompt { font-size: 16px; font-weight: 600; }
+.opt { display: grid; gap: 2px; text-align: left; padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: transparent; cursor: pointer; }
+.opt:hover { background: var(--tt-hover); } .opt[aria-pressed='true'] { border-color: var(--tt-accent); background: var(--tt-selected); }
+.opt small { color: var(--tt-text-muted); font-size: 13px; }
+.card textarea { min-height: 52px; border-radius: 10px; border: 1px solid var(--tt-field-border); background: var(--tt-canvas); color: var(--tt-text); padding: 8px 10px; font: inherit; resize: vertical; }
+.card .send { justify-self: end; height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 600; cursor: pointer; }
+.card .send:disabled { opacity: .45; cursor: default; }
+.bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 22px; max-width: calc(100vw - 24px);
+  background: #111; color: #fff; font: 600 12.5px system-ui, sans-serif; box-shadow: 0 8px 26px rgb(0 0 0 / 45%); z-index: 20; }
+.bar button { background: #2a2a2a; color: #fff; border: 0; border-radius: 14px; height: 28px; padding: 0 11px; cursor: pointer; }
+.bar #label { min-width: 0; padding: 0 4px; text-align: center; }
+.statebox { position: fixed; left: 12px; bottom: 14px; max-width: 300px; padding: 8px 10px; border-radius: 8px; background: #111; color: #cfd; font: 11.5px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; opacity: .86; z-index: 19; }
+.hint { max-width: 880px; margin: 0 auto 22px; padding: 10px 14px; border: 1px dashed var(--tt-field-border); border-radius: 10px; color: var(--tt-text-2); font-size: 13.5px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" aria-label="Threads">
+    <h2>Talk to Text Application</h2>
+    <div class="row" data-current><span class="t">Fix usage tab bugs and match approved prototype</span><span>12m</span><span class="s" id="sideState">Working</span></div>
+    <div class="row"><span class="t">Add TestFlight link to setup</span><span>35m</span><span class="s">Working</span></div>
+    <div class="row"><span class="t">Review PR 973 against its issue</span><span>2m</span><span class="s">Working</span></div>
+    <div class="row"><span class="t">Audit open issues and close fixed ones</span><span>3m</span><span class="s">Working</span></div>
+  </aside>
+  <section class="pane">
+    <div class="head"><b>Fix usage tab bugs and match approved prototype</b><span>Talk to Text Application</span><span>fix/iphone-beta-link</span></div>
+    <div class="scroll" id="scroll"><div class="hint" id="hint"></div><div class="transcript" id="transcript"></div></div>
+    <div class="compose"><div class="compose__inner"><div id="cardSlot"></div>
+      <div class="composer"><span id="placeholder"></span><div class="pills"><span>Opus 5.5</span><span>Extra high</span><span>Auto</span></div></div></div></div>
+  </section>
+</div>
+<div class="statebox" id="state" aria-live="polite"></div>
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <button id="prev" type="button" aria-label="Previous variant">←</button><span id="label"></span><button id="next" type="button" aria-label="Next variant">→</button>
+  <button id="scenario" type="button"></button><button id="finish" type="button"></button><button id="theme" type="button">Light</button>
+</div>
+<script>
+const VARIANTS = [['now', 'As it ships'], ['a', 'Every reply stays'], ['b', 'Questions lift out'], ['c', 'One work line, every reply after it']]
+const HINTS = {
+  now: 'A finished turn folds every reply but the last. The question at 10:12 goes into the fold, and the last reply carries on as if you had been asked.',
+  a: 'Replies never fold. Each stretch of work between two replies folds to its own line. This is how the iPhone and Android already show a thread.',
+  b: 'One fold, as now. A sentence in a folded reply that ends in "?" is quoted under the fold, with Show where it asked. Sotto guesses which sentences are questions.',
+  c: 'All the turn\'s work folds to one line, as now, and every reply stays on screen below it, in order.',
+}
+const CHEV = '<svg class="chev" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+const ASK = 'Should Overview follow ADR-0078 and show only this computer, or show history from every computer?'
+const QUESTION = { time: '10:12 am', header: 'Overview history', text: 'ADR-0078 keeps Usage history on the computer that recorded it, which is why Overview is empty here. Which history should Overview show?',
+  options: [['Only this computer', 'Follow ADR-0078 as written.'], ['Every computer', 'Overrule ADR-0078 and join history from your hosts. I would amend the ADR.']] }
+function turn(scenario, answer) {
+  const tool = scenario === 'tool'
+  return [
+    { type: 'work', time: '3m 41s', rows: ['Read 12 files', 'Started 3 agents', 'Searched the code 7 times'] },
+    { type: 'msg', time: '10:12 am', ask: tool ? null : ASK, paras: [
+      'Three read-only investigators are tracing the data problems: why Overview has no history, why Subscriptions doubles providers, and why Models lists Opus 5.5 twice.',
+      '<b>You\'re right: what shipped is not the design you approved.</b> Logos, the pill tabs, the room-left rings and the split token bar from C · Focus were all dropped.',
+      tool ? 'I\'ll keep going on the layout and the data bugs meanwhile.' : `One thing I need from you. ADR-0078 keeps Usage history on the computer that recorded it, which is why Overview is empty here. <b>${ASK}</b> I'll keep going on the layout while you decide.`] },
+    ...(tool ? [{ type: 'question' }] : []),
+    { type: 'work', time: '4m 52s', rows: ['Ran 14 commands', '2 agents finished', 'Read 6 files'] },
+    { type: 'msg', time: '10:17 am', paras: ['The Models investigator is done. Opus 5.5 shows up twice because prompts are filed under the alias you picked (<code>opus</code>) and tokens under the model Claude reports back (<code>claude-opus-5-5</code>). I\'m still waiting on the history and subscriptions investigators.'] },
+    { type: 'work', time: '6m 03s', rows: ['Edited 6 files', 'Ran 9 commands', '1 agent finished'] },
+    { type: 'msg', time: '10:24 am', final: true, paras: tool && answer === 'Every computer'
+      ? ['All three investigators are back and the fixes are in. Models joins the alias to the model Claude reports, so Opus 5.5 shows once. Subscriptions shows one card per provider. Overview now joins history from every computer, as you chose, and ADR-0078 is amended to say so. Typecheck and the Usage tests pass.']
+      : ['All three investigators are back and the fixes are in. Models joins the alias to the model Claude reports, so Opus 5.5 shows once. Subscriptions shows one card per provider. Overview still shows only this computer\'s history, as ADR-0078 says. Typecheck and the Usage tests pass.'] },
+  ]
+}
+const params = new URLSearchParams(location.search)
+const S = { variant: params.get('variant') || 'now', scenario: params.get('scenario') || 'prose', finished: true, answer: null, picked: null, open: {} }
+if (S.scenario === 'tool') S.answer = 'Every computer'
+const $ = id => document.getElementById(id)
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+const user = () => `<article class="msg" data-role="user"><header><span class="who">You</span><time>10:08 am</time></header><p>The Usage tab is broken: Overview has no history, Subscriptions doubles providers and gets Claude wrong, and Models lists Opus 5.5 twice. Fix those and make it match the prototype I approved.</p></article>`
+const msg = (m, i) => `<article class="msg" id="m${i}"><header><span class="who">Claude Code</span><time>${m.time}</time></header>${m.paras.map(p => `<p>${p}</p>`).join('')}</article>`
+const ledger = rows => `<ul class="ledger">${rows.map(r => `<li>${r}</li>`).join('')}</ul>`
+const toolRow = () => `<ul class="ledger"><li class="tool">AskUserQuestion {"questions":[{"header":"Overview history","question":"ADR-0078 keeps Usage history on…","options":[…]}]}</li></ul>`
+const asked = () => `<section class="asked" aria-label="Question you answered"><header>Claude Code asked · ${QUESTION.time}</header><div class="q">${QUESTION.text}</div><div class="a">You answered: <b>${esc(S.answer)}</b></div></section>`
+const fold = (key, label, body, quiet) => `<div class="work${quiet ? ' work--quiet' : ''}"><button class="fold" type="button" data-fold="${key}" aria-expanded="${!!S.open[key]}">${label} ${CHEV}</button>${S.open[key] ? `<div class="work__body">${body}</div>` : ''}</div>`
+function render() {
+  history.replaceState(null, '', '?' + new URLSearchParams({ variant: S.variant, scenario: S.scenario }))
+  const items = turn(S.scenario, S.answer)
+  const waiting = S.scenario === 'tool' && !S.answer
+  const v = S.variant
+  let out = user()
+  if (!S.finished) {
+    const asks = items.findIndex(x => x.type === 'question')
+    items.forEach((it, i) => {
+      if (it.final || (waiting && asks >= 0 && i > asks)) return
+      if (it.type === 'work') out += ledger(it.rows)
+      else if (it.type === 'msg') out += msg(it, i)
+      else if (it.type === 'question') out += S.answer ? (v === 'now' ? toolRow() : asked()) : ''
+    })
+    out += `<p class="live">${waiting ? 'Waiting for your answer' : 'Working for 12m 07s · Thinking'}</p>`
+  } else {
+    const final = items.find(it => it.final), finalIndex = items.indexOf(final)
+    const before = items.slice(0, finalIndex)
+    if (v === 'now' || v === 'b') {
+      const body = before.map((it, i) => it.type === 'work' ? ledger(it.rows) : it.type === 'msg' ? msg(it, i) : v === 'now' ? toolRow() : asked()).join('')
+      out += fold('all', 'Worked for 14m 36s', body)
+      if (v === 'b') {
+        before.forEach((it, i) => {
+          if (it.type === 'msg' && it.ask) out += `<section class="lifted" aria-label="Question asked while working"><header>Claude Code asked while working · ${it.time}</header><blockquote>${esc(it.ask)}</blockquote><button class="link" type="button" data-where="m${i}">Show where it asked</button></section>`
+        })
+      }
+    } else if (v === 'a') {
+      let held = ''
+      before.forEach((it, i) => {
+        if (it.type === 'work') { out += fold('w' + i, `Worked for ${it.time}`, held + ledger(it.rows), true); held = '' }
+        else if (it.type === 'msg') out += msg(it, i)
+        else held += asked()
+      })
+    } else {
+      out += fold('all', 'Worked for 14m 36s', before.map(it => it.type === 'work' ? ledger(it.rows) : it.type === 'question' ? asked() : '').join(''))
+      before.forEach((it, i) => { if (it.type === 'msg') out += msg(it, i) })
+    }
+    out += msg(final, finalIndex) + '<p class="changed">Changed 6 files ›</p>'
+  }
+  $('transcript').innerHTML = out
+  $('cardSlot').innerHTML = waiting ? `<section class="card" aria-label="Question from Claude Code"><span class="who">Claude Code asks · ${QUESTION.header}</span><div class="prompt">${QUESTION.text}</div>
+    ${QUESTION.options.map(([l, d]) => `<button class="opt" type="button" data-pick="${l}" aria-pressed="${S.picked === l}"><span>${l}</span><small>${d}</small></button>`).join('')}
+    <textarea aria-label="Write my own answer" placeholder="Write my own answer"></textarea><button class="send" type="button" id="send" ${S.picked ? '' : 'disabled'}>Send answer</button></section>` : ''
+  $('placeholder').textContent = S.finished ? 'What would you like to do next?' : 'Claude Code is working. Write a follow-up to queue it.'
+  $('sideState').textContent = waiting ? 'Needs your answer' : S.finished ? 'Finished' : 'Working'
+  $('sideState').toggleAttribute('data-needs', waiting)
+  $('label').textContent = `${v.toUpperCase()} — ${VARIANTS.find(([k]) => k === v)[1]}`
+  $('scenario').textContent = S.scenario === 'prose' ? 'Scenario: asked in a reply' : 'Scenario: asked with the question tool'
+  $('finish').textContent = S.finished ? 'Start the turn over' : 'Finish the turn'
+  $('finish').disabled = waiting && !S.finished
+  $('finish').style.opacity = $('finish').disabled ? .4 : 1
+  const hint = S.scenario === 'tool' ? (v === 'now' ? 'A finished turn folds every reply but the last. The question and your answer leave only an AskUserQuestion row inside the fold.' : HINTS[v] + ' The answered question folds with the work around it; open the fold to read it.') : HINTS[v]
+  const lead = S.scenario === 'tool'
+    ? (S.finished ? 'The model asked with its question tool and you answered "Every computer". Start the turn over to answer the card yourself. ' : 'The model asked with its question tool. Answer the card above the message box, then finish the turn. ')
+    : (S.finished ? 'The model wrote its question into the 10:12 reply and kept working; the turn has finished. Press ← → to compare. ' : 'The turn is running, so nothing is folded yet in any variant. Finish the turn to see where the question goes. ')
+  $('hint').textContent = lead + hint
+  $('state').textContent = `variant  ${v}\nscenario ${S.scenario}\nturn     ${S.finished ? 'finished' : waiting ? 'waiting for answer' : 'running'}\nanswer   ${S.answer ?? '—'}\nopen     ${Object.keys(S.open).filter(k => S.open[k]).join(', ') || 'nothing'}`
+}
+function cycle(step) { const keys = VARIANTS.map(([k]) => k); S.variant = keys[(keys.indexOf(S.variant) + step + keys.length) % keys.length]; S.open = {}; render() }
+document.addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return
+  if (t.id === 'prev') cycle(-1)
+  else if (t.id === 'next') cycle(1)
+  else if (t.id === 'theme') { const light = document.documentElement.dataset.theme !== 'light'; document.documentElement.dataset.theme = light ? 'light' : 'dark'; t.textContent = light ? 'Dark' : 'Light' }
+  else if (t.id === 'scenario') { S.scenario = S.scenario === 'prose' ? 'tool' : 'prose'; S.finished = true; S.answer = S.scenario === 'tool' ? 'Every computer' : null; S.picked = null; S.open = {}; render() }
+  else if (t.id === 'finish') { if (S.finished) { S.finished = false; S.answer = null; S.picked = null } else S.finished = true; S.open = {}; render() }
+  else if (t.dataset.pick) { S.picked = t.dataset.pick; render() }
+  else if (t.id === 'send') { S.answer = S.picked; render() }
+  else if (t.dataset.fold) { S.open[t.dataset.fold] = !S.open[t.dataset.fold]; render() }
+  else if (t.dataset.where) { S.open.all = true; render(); const el = $(t.dataset.where); el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); el.dataset.flash = ''; setTimeout(() => delete el.dataset.flash, 1400) }
+})
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable]')) return
+  if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1)
+})
+render()
+</script>
+</body>
+</html>
