@@ -1,9 +1,10 @@
+import { open, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { UsageTokens } from '../../../shared/threadUsage'
-import { USAGE_CLIENTS, type UsageClient, type UsageTokenObservation } from '../../../shared/usageDashboard'
+import { USAGE_CLIENTS, type UsageClient, type UsageHistoryCursor, type UsageTokenObservation } from '../../../shared/usageDashboard'
 import { codexEntryKey, nativeUsageKey } from '../nativeUsage'
-import { readHistoryFolders, type HistoryBatch, type HistoryFileReader } from './files'
-import { usageHistoryRecordKey, usageHistoryThreadId, type UsageHistorySink } from './sink'
+import { historyFiles, readHistoryFile, type HistoryBatch, type HistoryFile, type HistoryFileReader } from './files'
+import { usageHistoryCursorKey, usageHistoryRecordKey, usageHistoryThreadId, type UsageHistorySink } from './sink'
 
 /**
  * Codex's own session rollouts on this computer: `<CODEX_HOME>/sessions/**\/rollout-*.jsonl` and
@@ -12,8 +13,13 @@ import { usageHistoryRecordKey, usageHistoryThreadId, type UsageHistorySink } fr
  *
  * Forked and sub-agent rollouts begin with a copy of their parent's history, the parent's own `session_meta`
  * included. Every record is attributed to the session that produced it (the copied meta, a usage record's own
- * `thread_id`), so a copy is the parent's row under the parent's identity and counts once; one pass also skips any
- * response or running total it already read.
+ * `thread_id`), so a copy is the parent's row under the parent's identity and counts once. Without a
+ * `subagent_history_start_ordinal`, the copy ends at the first running total its parent never had; a parent the
+ * pass has not read is read for its running totals first, numbers only.
+ *
+ * Newer rollouts report each request twice: a `token_usage_record` and, just after it, a `token_count` with the same
+ * request figures. That `token_count` is skipped; every other one (a session's history from before Codex wrote
+ * records) is its own request.
  */
 export interface CodexHistoryOptions {
   /** `CODEX_HOME`, as the adapter finds it. */
@@ -27,6 +33,8 @@ const count = (value: unknown): number | undefined => typeof value === 'number' 
 const dated = (value: unknown): string | undefined => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : undefined
 const identity = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 256 && /^[^\s\p{Cc}]+$/u.test(value)
 const PARENT_DEPTH_MAX = 8
+/** A first line longer than this is not a session's meta worth reading for its parent. */
+const META_LINE_MAX_BYTES = 16 * 1024 * 1024
 
 /** The app that started a Codex session, as its rollout's `session_meta.originator` names it. */
 export function codexClient(originator: unknown): UsageClient {
@@ -63,43 +71,56 @@ function rolloutTokens(value: unknown): UsageTokens {
   const row = object(value)
   return { input: count(row.input_tokens), output: count(row.output_tokens), cached: count(row.cached_input_tokens), cacheWrite: count(row.cache_write_input_tokens) }
 }
-/** A request's running totals and its own figures, exact enough that only a copy repeats them. */
-function tuple(total: unknown, last: unknown): string {
-  const fields = (value: unknown): (number | null)[] => {
-    const row = object(value)
-    return [row.input_tokens, row.cached_input_tokens, row.output_tokens, row.reasoning_output_tokens, row.total_tokens].map(field => count(field) ?? null)
-  }
-  return JSON.stringify([fields(total), fields(last)])
+const fields = (value: unknown): (number | null)[] => {
+  const row = object(value)
+  return [row.input_tokens, row.cached_input_tokens, row.output_tokens, row.reasoning_output_tokens, row.total_tokens].map(field => count(field) ?? null)
 }
+/** One request's own figures, exact enough that only the same request repeats them next to each other. */
+const figures = (last: unknown): string => JSON.stringify(fields(last))
+/** A request's running totals and its own figures, exact enough that within one session only a copy repeats them. */
+const tuple = (total: unknown, last: unknown): string => JSON.stringify([fields(total), fields(last)])
 
 interface WaitingTurn { readonly turn: string; readonly at: string; readonly session: Session }
-interface PendingCount { readonly session: Session; readonly turn: string | undefined; readonly model: string | undefined; readonly total: UsageTokens; readonly last: UsageTokens; readonly at: string }
 interface FileState {
   own: ({ id: Session } & SessionMeta) | undefined
-  /** The session whose copied history this file is in, until its own work begins. */
-  copied: Session | undefined
+  /** The sessions whose copied history this file is in, innermost last, until its own work begins. */
+  copied: Session[]
   ordinal: number | undefined
   turn: string | undefined
   model: string | undefined
-  /** This rollout reports per-request records, so its older `token_count` events are not read as well. */
-  records: boolean
+  /** The request figures of the record just before, which the `token_count` after it repeats. */
+  afterRecord: string | undefined
+  /** This reading began at the file's first line. */
+  fresh: boolean
   /** Lines before this reading's start, for the copied-history ordinal. */
   base: number
   readonly turnModels: Map<string, string>
   readonly turnOwners: Map<string, Session>
   readonly waiting: WaitingTurn[]
-  readonly counts: PendingCount[]
 }
 const stateSchemaVersion = 1
 
 /** What one pass remembers across files. */
 class PassMemory {
-  readonly metas = new Map<Session, SessionMeta>()
   readonly responses = new Set<string>()
-  /** Running totals, apart for each kind of event: a request's `token_count` and its record repeat the same totals. */
-  readonly tuples = new Set<string>()
+  /** Records with no response ID, by session and figures. */
   readonly recordTuples = new Set<string>()
   readonly turns = new Set<string>()
+  constructor(
+    /** Learns running totals and counts nothing: a parent read only to tell where a fork's copy ends. */
+    readonly learning = false,
+    readonly metas = new Map<Session, SessionMeta>(),
+    /** Every running total met this pass, by the session it belongs to; true once this pass counted it. */
+    readonly totals = new Map<Session, Map<string, boolean>>(),
+    /** Sessions whose whole rollout this pass has read, so every running total they have is in `totals`. */
+    readonly loaded = new Set<Session>(),
+  ) {}
+  learner(): PassMemory { return new PassMemory(true, this.metas, this.totals, this.loaded) }
+  totalsOf(session: Session): Map<string, boolean> {
+    let found = this.totals.get(session)
+    if (!found) { found = new Map(); this.totals.set(session, found) }
+    return found
+  }
 }
 
 interface Owner { readonly owned?: string; readonly threadId: string; readonly client: UsageClient; readonly subAgent: boolean }
@@ -121,7 +142,7 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
     }
     return { threadId: session, client: meta?.client ?? own?.client ?? 'other', subAgent: meta?.subAgent ?? false }
   }
-  const current = (state: FileState): Session | undefined => state.copied ?? state.own?.id
+  const current = (state: FileState): Session | undefined => state.copied.at(-1) ?? state.own?.id
   const observation = (who: Owner, entry: string, turn: string | undefined, model: string | undefined, tokens: UsageTokens, at: string): UsageTokenObservation => {
     const partial = tokens.input === undefined || tokens.output === undefined
     const base = { providerId: 'codex' as const, modelId: model ?? 'unknown', tokens: { ...tokens }, at, phase: 'replay' as const, partial, origin: 'history' as const,
@@ -133,11 +154,12 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
     return { ...base, threadId: who.threadId, recordKey: usageHistoryRecordKey('codex', who.threadId, entry),
       source: who.client === 'sotto' ? 'sotto' : 'elsewhere', ...(who.client === 'sotto' ? {} : { client: who.client }) }
   }
+  const modelOf = (state: FileState, turn: string | undefined): string | undefined => (turn !== undefined ? state.turnModels.get(turn) : undefined) ?? state.model
   return {
     needles: [Buffer.from('"session_meta"'), Buffer.from('"turn_context"'), Buffer.from('token_usage_record'), Buffer.from('"token_count"'), Buffer.from('"task_started"')],
     start(_file, saved): FileState {
-      const state: FileState = { own: undefined, copied: undefined, ordinal: undefined, turn: undefined, model: undefined, records: false, base: 0,
-        turnModels: new Map(), turnOwners: new Map(), waiting: [], counts: [] }
+      const state: FileState = { own: undefined, copied: [], ordinal: undefined, turn: undefined, model: undefined, afterRecord: undefined,
+        fresh: saved === undefined, base: 0, turnModels: new Map(), turnOwners: new Map(), waiting: [] }
       try {
         const value = object(saved === undefined ? undefined : JSON.parse(saved))
         const own = object(value.own)
@@ -145,8 +167,11 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
           const client = typeof own.client === 'string' && (USAGE_CLIENTS as readonly string[]).includes(own.client) ? own.client as UsageClient : 'other'
           state.own = { id: own.id, client, subAgent: own.sub === true, ...(typeof own.parent === 'string' ? { parent: own.parent } : {}) }
           if (!memory.metas.has(state.own.id)) memory.metas.set(state.own.id, state.own)
-          if (typeof value.copied === 'string') state.copied = value.copied
-          state.ordinal = count(value.ordinal); state.records = value.records === true; state.base = count(value.lines) ?? 0
+          // The first readers saved one copied session as a string.
+          const copied: unknown[] = typeof value.copied === 'string' ? [value.copied] : Array.isArray(value.copied) ? value.copied : []
+          state.copied = copied.filter((session): session is string => typeof session === 'string' && session.length > 0).slice(-PARENT_DEPTH_MAX)
+          state.ordinal = count(value.ordinal); state.base = count(value.lines) ?? 0
+          if (typeof value.after === 'string' && value.after.length <= 256) state.afterRecord = value.after
           if (identity(value.turn)) state.turn = value.turn
           if (typeof value.model === 'string' && value.model.length > 0) state.model = value.model
         }
@@ -158,7 +183,7 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
       try { frame = object(JSON.parse(text)) } catch { return }
       const payload = object(frame.payload)
       const line = state.base + index
-      if (state.copied !== undefined && state.ordinal !== undefined && line > state.ordinal) state.copied = undefined
+      if (state.copied.length > 0 && state.ordinal !== undefined && line > state.ordinal) state.copied = []
       if (frame.type === 'session_meta') {
         const nativeId = identity(payload.id) ? payload.id : identity(payload.session_id) ? payload.session_id : undefined
         if (nativeId === undefined) return
@@ -169,7 +194,10 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
           state.own = { id, ...meta }
           const ordinal = count(payload.subagent_history_start_ordinal)
           if (ordinal !== undefined) state.ordinal = ordinal
-        } else state.copied = id === state.own.id ? undefined : id
+          // Read from its first line to its last in this pass, before any other file.
+          if (state.fresh && line === 0) memory.loaded.add(id)
+        } else if (id === state.own.id) state.copied = []
+        else if (!state.copied.includes(id) && state.copied.length < PARENT_DEPTH_MAX) state.copied.push(id)
         return
       }
       if (state.own === undefined) return
@@ -185,59 +213,69 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         if (!identity(payload.turn_id)) return
         state.turn = payload.turn_id
         const session = current(state)
-        if (at !== undefined && session !== undefined) state.waiting.push({ turn: payload.turn_id, at, session })
+        if (at !== undefined && session !== undefined && !memory.learning) state.waiting.push({ turn: payload.turn_id, at, session })
         return
       }
-      if (at === undefined) return
       if (kind === 'token_usage_record') {
-        state.records = true
+        const last = payload.usage ?? payload.turn_token_usage
+        state.afterRecord = figures(last)
         const thread = identity(payload.thread_id) ? sessionOf(payload.thread_id) : current(state)
         if (thread === undefined) return
-        if (thread === state.own.id) state.copied = undefined
+        if (thread === state.own.id) state.copied = []
+        else if (state.copied.includes(thread)) state.copied = state.copied.slice(0, state.copied.indexOf(thread) + 1)
         const turn = identity(payload.turn_id) ? payload.turn_id : state.turn
         if (turn !== undefined) state.turnOwners.set(turn, thread)
+        if (memory.learning || at === undefined) return
         const response = identity(payload.response_id) ? payload.response_id : undefined
-        if (response !== undefined) { if (memory.responses.has(response)) return; memory.responses.add(response) }
-        const last = payload.usage ?? payload.turn_token_usage
-        const key = tuple(payload.thread_token_usage, last)
-        if (payload.thread_token_usage !== undefined) { if (memory.recordTuples.has(key)) return; memory.recordTuples.add(key) }
+        // A response is one request wherever it is copied; equal figures in two responses are two requests.
+        if (response !== undefined) { if (memory.responses.has(response)) return; memory.responses.add(response) } else {
+          const key = JSON.stringify([thread, tuple(payload.thread_token_usage, last)])
+          if (memory.recordTuples.has(key)) return
+          memory.recordTuples.add(key)
+        }
         const tokens = rolloutTokens(last)
         if (!Object.values(tokens).some(value => value !== undefined)) return
-        const entry = payload.thread_token_usage !== undefined && turn !== undefined ? codexEntryKey(turn, rolloutTokens(payload.thread_token_usage))
-          : response !== undefined ? `response:${response}` : undefined
+        const entry = response !== undefined ? `response:${response}`
+          : payload.thread_token_usage !== undefined && turn !== undefined ? codexEntryKey(turn, rolloutTokens(payload.thread_token_usage)) : undefined
         if (entry === undefined) return
         const who = owner(thread, state.own)
         // Sotto's live ledger keyed a thread's rows by the running total its token_count events carry, which
-        // thread_token_usage does not always equal, so a Sotto thread's rows come from those events (settle).
+        // thread_token_usage does not always equal, so a Sotto thread's rows come from those events.
         if (who.owned !== undefined) return
-        const model = (turn !== undefined ? state.turnModels.get(turn) : undefined) ?? state.model
-        batch.tokens.push(observation(who, entry, turn, model, tokens, at))
+        batch.tokens.push(observation(who, entry, turn, modelOf(state, turn), tokens, at))
         return
       }
       if (kind === 'token_count') {
         const info = object(payload.info)
         if (info.total_token_usage === undefined || info.last_token_usage === undefined) return
+        const paired = state.afterRecord !== undefined && state.afterRecord === figures(info.last_token_usage)
+        state.afterRecord = undefined
         const key = tuple(info.total_token_usage, info.last_token_usage)
-        if (memory.tuples.has(key)) return
-        memory.tuples.add(key)
-        // A running total this pass has not seen is this session's own work: its copied history is behind it.
-        if (state.copied !== undefined && state.ordinal === undefined) state.copied = undefined
+        // Without an ordinal, a running total the copied session never had is the end of its copy.
+        if (state.ordinal === undefined) {
+          while (state.copied.length > 0 && memory.totals.get(state.copied.at(-1)!)?.has(key) !== true) state.copied.pop()
+        }
         const session = current(state)
         if (session === undefined) return
-        state.counts.push({ session, turn: state.turn, model: (state.turn !== undefined ? state.turnModels.get(state.turn) : undefined) ?? state.model,
-          total: rolloutTokens(info.total_token_usage), last: rolloutTokens(info.last_token_usage), at })
+        if (state.turn !== undefined && !state.turnOwners.has(state.turn)) state.turnOwners.set(state.turn, session)
+        const totals = memory.totalsOf(session)
+        const seen = totals.get(key)
+        if (memory.learning) { if (seen === undefined) totals.set(key, false); return }
+        // Counted already in this pass, or a copy of a session whose own reading counts it.
+        if (seen === true || (seen === false && state.copied.length > 0)) return
+        totals.set(key, true)
+        if (at === undefined) return
+        const last = rolloutTokens(info.last_token_usage)
+        if (!Object.values(last).some(value => value !== undefined)) return
+        const who = owner(session, state.own)
+        // The record just before reported this request; a Sotto thread's rows come from these events alone.
+        if (paired && who.owned === undefined) return
+        const entry = who.owned !== undefined ? codexEntryKey(state.turn, rolloutTokens(info.total_token_usage)) : `count:${key}`
+        batch.tokens.push(observation(who, entry, state.turn, modelOf(state, state.turn), last, at))
       }
     },
     settle(state, batch: HistoryBatch): void {
       if (state.own !== undefined) {
-        // Held until now: a rollout with per-request records reports each request there, except for Sotto's own
-        // threads, whose rows keep the key the live ledger gave them from these running totals.
-        for (const row of state.counts) {
-          if (!Object.values(row.last).some(value => value !== undefined)) continue
-          const who = owner(row.session, state.own)
-          if (state.records && who.owned === undefined) continue
-          batch.tokens.push(observation(who, codexEntryKey(row.turn, row.total), row.turn, row.model, row.last, row.at))
-        }
         for (const waiting of state.waiting) {
           if (memory.turns.has(waiting.turn)) continue
           memory.turns.add(waiting.turn)
@@ -249,7 +287,7 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
             modelId: state.turnModels.get(waiting.turn) ?? state.model ?? 'unknown', at: waiting.at, kind: 'user', source: 'elsewhere', client: who.client })
         }
       }
-      state.counts.length = 0; state.waiting.length = 0
+      state.waiting.length = 0
       // Only the current turn's model is needed to resume; earlier turns are settled.
       for (const turn of [...state.turnModels.keys()]) if (turn !== state.turn) state.turnModels.delete(turn)
       for (const turn of [...state.turnOwners.keys()]) if (turn !== state.turn) state.turnOwners.delete(turn)
@@ -257,18 +295,108 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
     save(state, lines): string | undefined {
       if (state.own === undefined) return undefined
       return JSON.stringify({ v: stateSchemaVersion, own: { id: state.own.id, client: state.own.client, sub: state.own.subAgent, ...(state.own.parent ? { parent: state.own.parent } : {}) },
-        ...(state.copied ? { copied: state.copied } : {}), ...(state.ordinal !== undefined ? { ordinal: state.ordinal } : {}),
-        ...(state.records ? { records: true } : {}), lines: state.base + lines,
+        ...(state.copied.length > 0 ? { copied: state.copied } : {}), ...(state.ordinal !== undefined ? { ordinal: state.ordinal } : {}),
+        ...(state.afterRecord !== undefined ? { after: state.afterRecord } : {}), lines: state.base + lines,
         ...(state.turn ? { turn: state.turn } : {}), ...(state.model ? { model: state.model } : {}) })
     },
+  }
+}
+
+/** A rollout's first line, if it is its session's meta: the session, the sessions it was copied from, and its ordinal. */
+interface RolloutHead { readonly id: string; readonly parents: readonly string[]; readonly ordinal: number | undefined }
+async function rolloutHead(path: string): Promise<RolloutHead | undefined> {
+  let handle
+  try { handle = await open(path, 'r') } catch { return undefined }
+  try {
+    const chunks: Buffer[] = []
+    let read = 0
+    for (;;) {
+      const chunk = Buffer.alloc(64 * 1024)
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, read)
+      if (bytesRead === 0) break
+      const end = chunk.subarray(0, bytesRead).indexOf(0x0a)
+      chunks.push(chunk.subarray(0, end === -1 ? bytesRead : end))
+      read += bytesRead
+      if (end !== -1) break
+      if (read > META_LINE_MAX_BYTES) return undefined
+    }
+    const frame = object(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+    const payload = object(frame.payload)
+    if (frame.type !== 'session_meta') return undefined
+    const id = identity(payload.id) ? payload.id : identity(payload.session_id) ? payload.session_id : undefined
+    if (id === undefined) return undefined
+    const parents = [...new Set([payload.forked_from_id, payload.parent_thread_id].filter(identity))].filter(parent => parent !== id)
+    return { id, parents, ordinal: count(payload.subagent_history_start_ordinal) }
+  } catch { return undefined } finally { await handle.close() }
+}
+
+/** A sink that keeps nothing: a parent read for its running totals alone. */
+const discard: UsageHistorySink = { tokens: () => undefined, prompts: () => undefined, cursor: () => undefined, setCursors: () => undefined }
+const fileName = (file: HistoryFile): string => file.relativePath.slice(file.relativePath.lastIndexOf('/') + 1)
+
+/**
+ * Before a fork or sub-agent rollout with no copied-history ordinal is read from its start, its parent's running
+ * totals must be in the pass's memory, or the copy would look like the fork's own work. A parent this pass has not
+ * read whole is read for those totals alone, through the same reader, counting nothing.
+ */
+class ForkParents {
+  private readonly tried = new Set<Session>()
+  private readonly learn: HistoryFileReader<FileState>
+  constructor(private readonly files: readonly HistoryFile[], options: CodexHistoryOptions, private readonly memory: PassMemory, private readonly signal: AbortSignal) {
+    this.learn = reader(options, memory.learner())
+  }
+
+  async prepare(file: HistoryFile, cursor: UsageHistoryCursor | undefined): Promise<void> {
+    if (cursor !== undefined) {
+      // A file already read past its copy, or not changed since, needs nothing.
+      if (cursor.state === undefined || !cursor.state.includes('"copied"')) return
+      try {
+        const info = await stat(file.path)
+        if (info.size === cursor.size && Math.max(0, Math.floor(info.mtimeMs)) === cursor.mtimeMs && cursor.offset >= info.size) return
+      } catch { return }
+    }
+    const head = await rolloutHead(file.path)
+    if (head === undefined || head.ordinal !== undefined) return
+    for (const parent of head.parents) await this.load(parent, 0)
+  }
+
+  private async load(nativeId: string, depth: number): Promise<void> {
+    const session = sessionOf(nativeId)
+    if (depth > PARENT_DEPTH_MAX || this.memory.loaded.has(session) || this.tried.has(session) || this.signal.aborted) return
+    this.tried.add(session)
+    const found = await this.find(nativeId)
+    if (found === undefined) return
+    if (found.head.ordinal === undefined) for (const parent of found.head.parents) await this.load(parent, depth + 1)
+    if (await readHistoryFile('codex', found.file, this.learn, discard, this.signal)) this.memory.loaded.add(session)
+  }
+
+  /** A rollout's file name ends with its session's ID; its first line says so. */
+  private async find(nativeId: string): Promise<{ file: HistoryFile; head: RolloutHead } | undefined> {
+    for (const file of this.files) {
+      const name = fileName(file)
+      if (name !== `rollout-${nativeId}.jsonl` && !name.endsWith(`-${nativeId}.jsonl`)) continue
+      const head = await rolloutHead(file.path)
+      if (head?.id === nativeId) return { file, head }
+    }
+    return undefined
   }
 }
 
 /** One pass over Codex's rollouts, resuming each file from its cursor. */
 export async function scanCodexHistory(options: CodexHistoryOptions, sink: UsageHistorySink, signal: AbortSignal): Promise<void> {
   const accept = (name: string): boolean => name.startsWith('rollout-') && name.endsWith('.jsonl')
-  await readHistoryFolders('codex', [
-    { root: join(options.home, 'sessions'), prefix: 'sessions', accept },
-    { root: join(options.home, 'archived_sessions'), prefix: 'archived_sessions', accept },
-  ], reader(options, new PassMemory()), sink, signal)
+  const files: HistoryFile[] = []
+  for (const prefix of ['sessions', 'archived_sessions']) {
+    for (const file of await historyFiles(join(options.home, prefix), accept, signal)) files.push({ path: file.path, relativePath: `${prefix}/${file.relativePath}` })
+  }
+  // In name order across both folders, so a parent's rollout is read before its forks.
+  files.sort((a, b) => fileName(a) < fileName(b) ? -1 : fileName(a) > fileName(b) ? 1 : 0)
+  const memory = new PassMemory()
+  const read = reader(options, memory)
+  const parents = new ForkParents(files, options, memory, signal)
+  for (const file of files) {
+    if (signal.aborted) return
+    await parents.prepare(file, sink.cursor(usageHistoryCursorKey('codex', file.relativePath)))
+    if (!await readHistoryFile('codex', file, read, sink, signal)) return
+  }
 }

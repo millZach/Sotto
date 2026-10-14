@@ -69,10 +69,14 @@ describe('Codex history reader', () => {
       codexMeta({ id: 'session-app', originator: 'Codex Desktop', at: t(0) }),
       codexTaskStarted({ turn: 'turn-a', at: t(1) }),
       codexTurnContext({ turn: 'turn-a', model: 'gpt-6.1-sol', at: t(1) }),
-      codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } }),
+      // Codex writes a request's record first and its token_count just after.
       codexRecord({ at: t(2), thread: 'session-app', turn: 'turn-a', response: 'resp-1', total: { input: 100, output: 10 }, last: { input: 100, output: 10 } }),
+      codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } }),
       codexRecord({ at: t(3), thread: 'session-app', turn: 'turn-a', response: 'resp-1', total: { input: 100, output: 10 }, last: { input: 100, output: 10 } }),
       codexRecord({ at: t(4), thread: 'session-app', turn: 'turn-a', response: 'resp-2', total: { input: 180, output: 25 }, last: { input: 80, output: 15 } }),
+      codexTokenCount({ at: t(4), total: { input: 180, output: 25 }, last: { input: 80, output: 15 } }),
+      // The turn's closing repeat of the last count.
+      codexTokenCount({ at: t(5), total: { input: 180, output: 25 }, last: { input: 80, output: 15 } }),
     ]))
     const sink = memorySink()
     await scan(root, sink)
@@ -224,6 +228,100 @@ describe('Codex history reader', () => {
     expect(sink.tokens.filter(row => row.threadId === usageHistoryThreadId('codex', 'native-app'))).toHaveLength(1)
     await ledger.flushed()
   })
+
+  it('counts two unrelated sessions whose first requests have the same figures, in records and in token_count rollouts', async () => {
+    const root = await home()
+    const first = { input: 120, cached: 20, output: 12 }
+    for (const [name, at] of [['rec-a', 0], ['rec-b', 1]] as const) {
+      await writeFile(rollout(root, `2026-09-20T10-0${at}-00-${name}`), jsonl([
+        codexMeta({ id: name, originator: 'Codex Desktop', at: t(at) }),
+        codexTaskStarted({ turn: `${name}-turn`, at: t(at) }),
+        codexRecord({ at: t(at + 1), thread: name, turn: `${name}-turn`, response: `${name}-resp`, total: first, last: first }),
+        codexTokenCount({ at: t(at + 1), total: first, last: first }),
+      ]))
+    }
+    for (const [name, at] of [['old-a', 2], ['old-b', 3]] as const) {
+      await writeFile(rollout(root, `2026-09-20T10-0${at}-00-${name}`), jsonl([
+        codexMeta({ id: name, originator: 'codex-tui', at: t(at) }),
+        codexTaskStarted({ turn: `${name}-turn`, at: t(at) }),
+        codexTokenCount({ at: t(at + 1), total: first, last: first }),
+      ]))
+    }
+    const sink = memorySink()
+    await scan(root, sink)
+    expect(sink.rows().size).toBe(4)
+    expect(sink.sum('input')).toBe(480)
+    expect(new Set([...sink.rows().values()].map(row => row.threadId))).toEqual(new Set(['rec-a', 'rec-b', 'old-a', 'old-b'].map(id => usageHistoryThreadId('codex', id))))
+  })
+
+  it('counts an old fork\'s copied history once when its parent was read in an earlier pass', async () => {
+    const root = await home()
+    const parentLines = [
+      codexMeta({ id: 'fork-parent', originator: 'codex-tui', at: t(0) }),
+      codexTaskStarted({ turn: 'p-turn', at: t(1) }),
+      codexTurnContext({ turn: 'p-turn', model: 'gpt-6-astra', at: t(1) }),
+      codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } }),
+      codexTokenCount({ at: t(3), total: { input: 250, output: 30 }, last: { input: 150, output: 20 } }),
+    ]
+    await writeFile(rollout(root, '2026-09-20T10-00-00-fork-parent'), jsonl(parentLines))
+    const sink = memorySink()
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(250)
+    // No copied-history ordinal: the fork's own work begins where its running totals leave the parent's.
+    await writeFile(rollout(root, '2026-09-20T11-00-00-fork-child'), jsonl([
+      codexMeta({ id: 'fork-child', originator: 'Codex Desktop', at: t(10), forkedFrom: 'fork-parent' }),
+      ...parentLines,
+      codexTaskStarted({ turn: 'f-turn', at: t(11) }),
+      codexTurnContext({ turn: 'f-turn', model: 'gpt-6.1-sol', at: t(11) }),
+      codexTokenCount({ at: t(12), total: { input: 300, output: 35 }, last: { input: 50, output: 5 } }),
+    ]))
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(300)
+    const fork = [...sink.rows().values()].filter(row => row.threadId === usageHistoryThreadId('codex', 'fork-child'))
+    expect(fork.map(row => [row.tokens.input, row.modelId, row.client])).toEqual([[50, 'gpt-6.1-sol', 'codex-app']])
+    expect([...sink.uniquePrompts().values()].map(prompt => [prompt.messageId, prompt.threadId])).toEqual([
+      ['p-turn', usageHistoryThreadId('codex', 'fork-parent')], ['f-turn', usageHistoryThreadId('codex', 'fork-child')]])
+  })
+
+  it('keeps a session\'s token_count history from before Codex wrote records, in one pass or two', async () => {
+    const before = [
+      codexMeta({ id: 'upgraded', originator: 'codex-tui', at: t(0) }),
+      codexTaskStarted({ turn: 'turn-1', at: t(1) }),
+      codexTurnContext({ turn: 'turn-1', model: 'gpt-6-astra', at: t(1) }),
+      codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } }),
+      codexTokenCount({ at: t(3), total: { input: 250, output: 30 }, last: { input: 150, output: 20 } }),
+    ]
+    const after = [
+      // Codex was upgraded mid-session: each request now has a record and, just after it, a matching token_count.
+      codexTaskStarted({ turn: 'turn-2', at: t(10) }),
+      codexRecord({ at: t(11), thread: 'upgraded', turn: 'turn-2', response: 'up-resp-1', total: { input: 310, output: 36 }, last: { input: 60, output: 6 } }),
+      codexTokenCount({ at: t(11), total: { input: 310, output: 36 }, last: { input: 60, output: 6 } }),
+      codexRecord({ at: t(12), thread: 'upgraded', turn: 'turn-2', response: 'up-resp-2', total: { input: 350, output: 40 }, last: { input: 40, output: 4 } }),
+      codexTokenCount({ at: t(12), total: { input: 350, output: 40 }, last: { input: 40, output: 4 } }),
+    ]
+    const once = await home()
+    await writeFile(rollout(once, '2026-09-20T10-00-00-upgraded'), jsonl([...before, ...after]))
+    const whole = memorySink()
+    await scan(once, whole)
+
+    const twice = await home()
+    const file = rollout(twice, '2026-09-20T10-00-00-upgraded')
+    await writeFile(file, jsonl([...before, after[0]!, after[1]!]))
+    const split = memorySink()
+    await scan(twice, split)
+    // The record's own token_count arrives in the next pass.
+    await appendFile(file, jsonl(after.slice(2)))
+    await scan(twice, split)
+
+    for (const sink of [whole, split]) {
+      expect(sink.rows().size).toBe(4)
+      expect(sink.sum('input')).toBe(350)
+      expect(sink.sum('output')).toBe(40)
+      expect(sink.uniquePrompts().size).toBe(2)
+    }
+    expect([...split.rows().keys()].sort()).toEqual([...whole.rows().keys()].sort())
+  })
+
   it('resumes a rollout across passes with its session and turn intact', async () => {
     const root = await home()
     const file = rollout(root, '2026-09-20T10-00-00-cli')
