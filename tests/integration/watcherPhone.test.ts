@@ -88,7 +88,10 @@ it('admits a paired phone origin without Can answer, keeps the computer defaults
   expect(watcherPhoneSendResultSchema.parse(sent.result)).toMatchObject({ status: 'ok' })
   expect(f.watcher.state().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
   expect(f.phone.state(false).conversation.messages[0]?.text).toBe(packet.request.text)
-  expect(f.native(f.target.threadId).messages[0]?.text).toContain('[Sotto Watcher request:')
+  // The provider receives the phone's words as typed; the request rides beside them.
+  expect(f.native(f.target.threadId).messages[0]?.text).toBe(packet.request.text)
+  expect(f.workspace.adapters.codex.commands.findLast(row => row.type === 'send')).toMatchObject({ text: packet.request.text,
+    watcherRequestNote: expect.stringContaining(f.watcher.state().requests.at(-1)!.id) })
   expect(await peer.call('receipt', { op: 'receipt', commandId: 'send' })).toMatchObject({ ok: true, result: { status: 'completed' } })
   expect(f.phone.state(false).draftDeliveries).toEqual(expect.arrayContaining([{ draftId: packet.request.draftId, status: 'accepted' }]))
   const roots = f.watcher.state().requests.length
@@ -99,6 +102,31 @@ it('admits a paired phone origin without Can answer, keeps the computer defaults
   expect(await peer.call('wrong-host', { ...packet, request: { ...packet.request, origin: { ...packet.request.origin, hostId: randomUUID() } } })).toMatchObject({ ok: true, result: { status: 'refused' } })
   expect(await peer.call('retired', { ...packet, request: { ...packet.request, target: worker } })).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
   expect(await peer.call('generic', { op: 'command', command: { type: 'manual-send', threadId: f.target.threadId, text: 'Synthetic forged generic' } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+})
+
+it('shows phone instructions as typed: without the footer main once appended, and with a note the user typed', async () => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); await f.finish(f.target.threadId)
+  const older = f.watcher.state().requests.at(-1)!
+  // An instruction saved before the request note, with the footer main appended for its own request.
+  const footer = `\n\n[Sotto Watcher request: ${older.id}. Local host: ${f.target.hostId}. Use this requestId for sotto_threads mutations. `
+    + `Known project IDs: native:claude:project:${randomUUID()}. Call list_projects for choices.]`
+  const typed = 'Synthetic older phone instruction'
+  f.native(f.target.threadId).messages.find(row => row.id === older.rootUserMessageId)!.text = typed + footer
+  // Saved before display proofs, so it carries none.
+  await f.control.updateWatcher(record => { delete record.requests.find(request => request.id === older.id)!.displayPrompt })
+  // A later instruction in which the user typed an example note of their own.
+  const example = `Explain this example:\n\n[Sotto Watcher request: ${randomUUID()}. Local host: ${f.target.hostId}. Use this requestId for sotto_threads changes made for this message.]`
+  await peer.call('send-example', f.send(peer.paired.clientId, randomUUID(), example)); await f.finish(f.target.threadId)
+  const later = f.watcher.state().requests.at(-1)!
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const text = (id: string) => f.phone.state(false).conversation.messages.find(row => row.id === id)?.text
+  await vi.waitFor(() => expect(text(older.rootUserMessageId)).toBe(typed))
+  expect(text(later.rootUserMessageId)).toBe(example)
+  const read = await peer.call('read', { op: 'watcher-phone-read' })
+  expect(watcherPhoneResultSchema.parse(read.result)).toMatchObject({ status: 'ok', state: { conversation: { messages: expect.arrayContaining([
+    expect.objectContaining({ id: older.rootUserMessageId, text: typed }), expect.objectContaining({ id: later.rootUserMessageId, text: example })]) } } })
+  expect(JSON.stringify(read.result)).not.toContain('Use this requestId for sotto_threads mutations')
 })
 
 it('counts accepted paired phone instructions as user prompts while keeping actual Watcher operations separate', async () => {

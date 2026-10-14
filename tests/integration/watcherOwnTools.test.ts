@@ -8,6 +8,7 @@ import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { WATCHER_SYSTEM_PROMPT } from '../../src/main/agents/watcherPrompt'
+import { watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
 import { questionInstructions } from '../../src/main/agents/questionInstructions'
 import type { AgentHost, WatcherProfileTools } from '../../src/main/agents/host'
 import type { ScopedThreadTools } from '../../src/main/agents/threadToolServer'
@@ -181,6 +182,82 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
       }
     }
   })
+})
+
+/** A Watcher thread and an ordinary thread beside it on one provider, for the request note checks. */
+async function watcherBesideOrdinary(f: { host: AgentHost; root: string; projectId: string; modelId: string }, provider: 'codex' | 'claude' | 'grok') {
+  const id = randomUUID(), ordinary = randomUUID()
+  await attach(f.host, f.root, id, f.projectId, provider)
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId })
+  // Watcher refuses Sotto's browser tools; an ordinary thread is started with them.
+  f.host.useBrowserTools!({ call: async () => ({ content: [] }), definitions: [], mcpServer: async () => ({ name: 'sotto_browser', type: 'http', url: 'http://127.0.0.1:12345/mcp', headers: [] }) })
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: ordinary, projectId: f.projectId, title: 'Ordinary', modelId: f.modelId })
+  return { id, ordinary }
+}
+it('gives a Codex Watcher its request note as the turn’s application context and sends the user’s words as typed', async () => {
+  const f = await codexFixture(undefined, false, 10_000); cleanups.push(f.cleanup)
+  const { id, ordinary } = await watcherBesideOrdinary(f, 'codex')
+  const typed = 'Synthetic instruction to Watcher', note = watcherRequestNote(randomUUID(), randomUUID())
+  for (const threadId of [id, ordinary]) {
+    await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: typed, watcherRequestNote: note })
+  }
+  const [watcher, other] = (await f.driver.requests()).filter(record => record.method === 'turn/start')
+  // What Codex receives as the user's input is what the user typed; the note is the application's context beside it.
+  expect(watcher!.params!.input).toEqual([expect.objectContaining({ type: 'text', text: typed })])
+  expect(watcher!.params!.additionalContext).toEqual({ sotto_watcher_request: { value: note, kind: 'application' } })
+  // An ordinary thread is never given a note, even one a command carried.
+  expect(other!.params!.input).toEqual([expect.objectContaining({ type: 'text', text: typed })])
+  expect(other!.params).not.toHaveProperty('additionalContext')
+  await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.messages.find(message => message.role === 'user')?.text).toBe(typed)
+})
+
+it('gives a Claude Watcher its request note through its own UserPromptSubmit hook and sends the user’s words as typed', async () => {
+  const f = await claudeFixture(undefined, 10_000); cleanups.push(f.cleanup)
+  const { id, ordinary } = await watcherBesideOrdinary(f, 'claude')
+  const typed = 'Synthetic instruction to Watcher', first = watcherRequestNote(randomUUID(), randomUUID()), second = watcherRequestNote(randomUUID(), randomUUID())
+  expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: typed, watcherRequestNote: first })).accepted).toBe(true)
+  await f.driver.completeTurn(id, 'Synthetic complete')
+  await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
+  // A wake-up or any send without a note gives the hook nothing, never an earlier request's note.
+  expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic news' })).accepted).toBe(true)
+  await f.driver.completeTurn(id, 'Synthetic complete')
+  await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
+  // A prompt of Claude Code's own that reaches the hook first is not the one the note was written for.
+  const foreign = '<task-notification>Synthetic background task finished</task-notification>'
+  await writeFile(join(f.root, 'script.json'), JSON.stringify({ foreignHookPrompt: foreign }))
+  expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: typed, watcherRequestNote: second })).accepted).toBe(true)
+  expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: ordinary, messageId: randomUUID(), text: typed, watcherRequestNote: first })).accepted).toBe(true)
+  const records = await f.driver.requests()
+  type Frame = { request?: { hooks?: Record<string, unknown> }; message?: { content?: unknown }; additionalContext?: string | null; prompt?: string }
+  const frame = (record: RecordedRpc) => record.params!.frame as Frame
+  // Only the Watcher's CLI registers the hook; an ordinary thread's CLI, like the account check's, starts with none.
+  const hooks = records.filter(record => record.method === 'initialize').map(record => frame(record).request?.hooks ?? {})
+  expect(hooks.filter(registered => Object.keys(registered).length)).toEqual([{ UserPromptSubmit: [{ hookCallbackIds: ['sotto_watcher_request'] }] }])
+  expect(hooks.filter(registered => !Object.keys(registered).length).length).toBeGreaterThanOrEqual(2)
+  // What Claude Code receives as the user's message is what the user typed.
+  const prompts = records.filter(record => record.method === 'user').map(record => frame(record).message?.content)
+  expect(prompts).toEqual([typed, 'Synthetic news', typed, typed])
+  // The note reaches the model as the hook's context, once, for its own prompt.
+  expect(records.filter(record => record.method === 'hook-context').map(record => [frame(record).prompt, frame(record).additionalContext]))
+    .toEqual([[typed, first], ['Synthetic news', null], [foreign, null], [typed, second]])
+  const shown = (await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.filter(message => message.role === 'user').map(message => message.text)
+  expect(shown).toEqual([typed, 'Synthetic news', typed])
+})
+
+it('gives a Grok Watcher its request note as one Sotto line after the user’s words, its only prompt channel', async () => {
+  const f = await grokFixture(undefined, 10_000); cleanups.push(f.cleanup)
+  const { id, ordinary } = await watcherBesideOrdinary(f, 'grok')
+  const typed = 'Synthetic instruction to Watcher', request = { requestId: randomUUID(), hostId: randomUUID() }, note = watcherRequestNote(request.requestId, request.hostId)
+  for (const threadId of [id, ordinary]) {
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: typed, watcherRequestNote: note })).accepted).toBe(true)
+  }
+  const prompts = (await f.driver.requests()).filter(record => record.method === 'session/prompt').map(record => record.params!.prompt)
+  // The line lists no projects and is the only addition; an ordinary thread is sent the words alone.
+  expect(prompts).toEqual([[{ type: 'text', text: typed + watcherRequestLine(note) }], [{ type: 'text', text: typed }]])
+  // Grok's own echo is what Sotto reads back, so the coordinator's snapshot is where the line comes off (see watcherRequestNote.test.ts).
+  expect(watcherTextAsTyped((await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.find(message => message.role === 'user')!.text, request)).toBe(typed)
 })
 
 it('keeps Devin unavailable because its adapter cannot attach a scoped Sotto server', async () => {

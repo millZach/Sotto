@@ -16,18 +16,16 @@ import type { AgentHostCommand } from './host'
 import type { AgentControl } from './control'
 import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherProgressFingerprint } from './watcherWakeUp'
+import { watcherRequestNote } from './watcherRequestNote'
+import { watcherDisplayPrompt } from './watcherMessageDisplay'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
-import { watcherDisplayPrompt } from './watcherMessageDisplay'
 import { watcherHostControlSchema, watcherHostReadSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts } from '../../shared/watcherHost'
 
 const now = () => new Date().toISOString()
 const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-export const watcherGuidancePrefix = (requestId: string, hostId: string): string =>
-  `[Sotto Watcher request: ${requestId}. Local host: ${hostId}. Use this requestId for sotto_threads mutations. Known project IDs: `
-export const WATCHER_GUIDANCE_SUFFIX = '. Call list_projects for choices.]'
 export function watcherRefusal(code: WatcherRefusal['code'], message: string, retryable = false): WatcherRefusal {
   return { status: 'refused', code, message, retryable }
 }
@@ -387,9 +385,12 @@ export class WatcherService implements WatcherControlHooks {
       const created = request
       this.options.control.mutateWatcher(next => { next.requests.push(created) })
     }
-    const projects = this.options.control.watcherSnapshot().projects.filter(item => item.id !== record.current?.projectId)
-    const text = `${command.text}\n\n${watcherGuidancePrefix(request.id, this.hostId())}${projects.slice(0, 100).map(item => item.id).join(', ')}${WATCHER_GUIDANCE_SUFFIX}`
-    const displayPrompt = watcherDisplayPrompt(command.text, text)
+    // The user's text goes as typed. The request rides beside it, through the provider's own context channel.
+    const note = watcherRequestNote(request.id, this.hostId())
+    // Codex and Claude Code are sent the words alone, and their display proof says so: a proven message is never
+    // searched for an older footer, even one the user typed. Grok Build's request line is taken off by its exact
+    // provenance instead (watcherRequestNote.ts), since a skill prompt can change what its adapter sends.
+    const displayPrompt = record.current?.provider === 'grok' ? undefined : watcherDisplayPrompt(command.text, command.text)
     const followup = request.userFollowups?.find(item => item.draftId === _draftId)
     this.options.control.mutateWatcher(next => {
       const saved = next.requests.find(item => item.id === request!.id)!
@@ -397,10 +398,13 @@ export class WatcherService implements WatcherControlHooks {
         const delivered = saved.userFollowups!.find(item => item.draftId === _draftId)!
         const sameMessage = delivered.messageId === command.messageId
         delivered.messageId = command.messageId
-        if (!sameMessage || delivered.displayPrompt === undefined) delivered.displayPrompt = displayPrompt
-      } else if (saved.rootUserMessageId === command.messageId && saved.displayPrompt === undefined) saved.displayPrompt = displayPrompt
+        // The proof belongs to the message it was made for. A retry under a new message keeps none of the old one's,
+        // so a Grok retry, which records none, is matched by its request line's provenance like any Grok send.
+        if (!sameMessage) { if (displayPrompt) delivered.displayPrompt = displayPrompt; else delete delivered.displayPrompt }
+        else if (displayPrompt && delivered.displayPrompt === undefined) delivered.displayPrompt = displayPrompt
+      } else if (displayPrompt && saved.rootUserMessageId === command.messageId && saved.displayPrompt === undefined) saved.displayPrompt = displayPrompt
     })
-    return { ...command, text }
+    return { ...command, watcherRequestNote: note }
   }
   observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void {
     const record = this.record()
