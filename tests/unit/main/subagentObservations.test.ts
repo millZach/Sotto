@@ -63,6 +63,67 @@ describe('observational subagent roster metadata', () => {
     expect(thread.activities.at(-1)!.agents![0]!.parentId).toBe(child.id)
   })
 
+  it('follows Codex multi-agent v2 agents through start, messages, completion and follow-up tasks', () => {
+    let now = 1_000
+    const projection = new CodexActivityProjection(() => now)
+    const thread = { id: 'sotto', messages: [], activities: [] as AgentActivity[] }
+    const activity = (id: string, kind: string, agentPath: string, agentThreadId: string, model: string | null = null) =>
+      codexItemSchema.parse({ id, type: 'subAgentActivity', kind, agentThreadId, agentPath, model, reasoningEffort: 'xhigh' })
+    const agents = () => thread.activities.flatMap(record => record.agents ?? [])
+    projection.item(thread, activity('call-spawn', 'started', '/root/review_tests', 'native-child', 'reported-model'), { turnId: 'turn', phase: 'completed' })
+    const started = agents()[0]!
+    expect(started).toMatchObject({ status: 'running', title: 'review_tests', model: 'reported-model', startedAt: new Date(now).toISOString() })
+    expect(thread.activities[0]).toMatchObject({ kind: 'subagent', title: 'review_tests', status: 'running' })
+    now = 2_000
+    projection.item(thread, activity('call-message', 'interacted', '/root/review_tests', 'native-child'), { turnId: 'turn', phase: 'completed' })
+    expect(thread.activities).toHaveLength(1)
+    expect(agents()[0]).toMatchObject({ status: 'running', assignmentId: started.assignmentId, startedAt: started.startedAt })
+    now = 3_000
+    projection.item(thread, activity('subagent-completed-1', 'completed', '/root/review_tests', 'native-child'), { turnId: 'later-turn', phase: 'completed' })
+    expect(thread.activities).toHaveLength(1)
+    expect(thread.activities[0]).toMatchObject({ turnId: 'turn', status: 'completed', completedAt: new Date(now).toISOString() })
+    expect(agents()[0]).toMatchObject({ status: 'completed', assignmentId: started.assignmentId, completedAt: new Date(now).toISOString() })
+    now = 4_000
+    projection.item(thread, activity('call-followup', 'interacted', '/root/review_tests', 'native-child'), { turnId: 'later-turn', phase: 'completed' })
+    const followup = thread.activities.at(-1)!.agents![0]!
+    expect(thread.activities).toHaveLength(2)
+    expect(followup).toMatchObject({ id: started.id, status: 'running', model: 'reported-model', startedAt: new Date(now).toISOString() })
+    expect(followup.assignmentId).not.toBe(started.assignmentId)
+    expect(followup.completedAt).toBeUndefined()
+    // A child's message up to the agent that started it is not work the parent gave it.
+    projection.childNotification('native-child', 'item/completed', { turnId: 'child-turn', item: { id: 'call-reply', type: 'subAgentActivity', kind: 'interacted', agentThreadId: 'native-root', agentPath: '/root' } })
+    expect(thread.activities).toHaveLength(2)
+    projection.childNotification('native-child', 'item/completed', { turnId: 'child-turn', item: { id: 'call-nested', type: 'subAgentActivity', kind: 'started', agentThreadId: 'native-grandchild', agentPath: '/root/review_tests/fixtures' } })
+    expect(thread.activities.at(-1)!.agents![0]).toMatchObject({ title: 'fixtures', parentId: started.id, status: 'running' })
+    expect(JSON.stringify(thread)).not.toMatch(/native-|xhigh/u)
+    thread.activities.forEach(row => agentActivitySchema.parse(row))
+  })
+
+  it('starts a new Codex v2 assignment after a late repeat of the item that started a finished one', () => {
+    const projection = new CodexActivityProjection(() => 1_000)
+    const thread = { id: 'sotto', messages: [], activities: [] as AgentActivity[] }
+    const activity = (id: string, kind: string) => codexItemSchema.parse({ id, type: 'subAgentActivity', kind, agentThreadId: 'native-child', agentPath: '/root/review_tests' })
+    projection.item(thread, activity('call-spawn', 'started'), { turnId: 'turn', phase: 'started' })
+    projection.item(thread, activity('subagent-completed-1', 'completed'), { turnId: 'turn', phase: 'completed' })
+    projection.item(thread, activity('call-spawn', 'started'), { turnId: 'turn', phase: 'completed' })
+    projection.item(thread, activity('call-followup', 'interacted'), { turnId: 'turn', phase: 'completed' })
+    expect(thread.activities.map(record => record.agents![0]!.status)).toEqual(['completed', 'running'])
+  })
+
+  it('keeps each Codex v2 assignment\'s observed times when history is read again', () => {
+    let now = 1_000
+    const projection = new CodexActivityProjection(() => now)
+    const thread = { id: 'sotto', messages: [], activities: [] as AgentActivity[] }
+    const items = [['call-spawn', 'started'], ['subagent-completed-1', 'completed'], ['call-followup', 'interacted'], ['subagent-completed-2', 'completed']] as const
+    const activity = ([id, kind]: readonly [string, string]) => codexItemSchema.parse({ id, type: 'subAgentActivity', kind, agentThreadId: 'native-child', agentPath: '/root/review_tests' })
+    for (const item of items) { projection.item(thread, activity(item), { turnId: 'turn', phase: 'completed' }); now += 2_000 }
+    const times = () => thread.activities.map(record => [record.agents![0]!.startedAt, record.agents![0]!.completedAt])
+    const observed = times()
+    expect(observed).toEqual([[new Date(1_000).toISOString(), new Date(3_000).toISOString()], [new Date(5_000).toISOString(), new Date(7_000).toISOString()]])
+    for (const item of items) projection.item(thread, activity(item), { turnId: 'turn', phase: 'history' })
+    expect(times()).toEqual(observed)
+  })
+
   it('unifies Claude launch/task rows, records only reported models, and preserves the background child after launch acknowledgement', () => {
     const projection = new ClaudeActivity()
     let rows = projection.apply([], claudeTool('launch', { description: 'Review tests', prompt: 'Check assertions', model: 'sonnet', run_in_background: true }), 'turn', 'message', '/p')
