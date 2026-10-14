@@ -73,6 +73,8 @@ artifacts/sotto-owl-night-sky/*
 !artifacts/sotto-owl-night-sky/header-stable-sotto-dark.png
 !artifacts/sotto-owl-night-sky/header-stable-sotto-light.png
 artifacts/terminal-search-links-zoom/
+artifacts/terminal-search-repaint/*
+!artifacts/terminal-search-repaint/drawer-search-820x560-light.png
 artifacts/skill-pill-composer/*
 !artifacts/skill-pill-composer/proof.json
 !artifacts/skill-pill-composer/dark-1600x1000.png

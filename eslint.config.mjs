@@ -117,6 +117,7 @@ export default tseslint.config(
       'artifacts/terminal-agent-states/**',
       'artifacts/phone-terminals/**',
       'artifacts/terminal-search-links-zoom/**',
+      'artifacts/terminal-search-repaint/**',
       'artifacts/thread-sidebar/**',
       'artifacts/frosted-window/**',
       'artifacts/forge-hand-test/**',
