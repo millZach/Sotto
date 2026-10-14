@@ -409,6 +409,9 @@ enum WatcherPermissions {
         let listed = (model?.runtimeModes ?? []).filter { modes.contains($0) }
         return listed.isEmpty ? modes : modes.filter { listed.contains($0) }
     }
+    /// Why the chip can't be pressed while Watcher works, as on the desktop: beside the chip, and when, as its hint.
+    static let fixed = "Fixed while Watcher works."
+    static let fixedHint = "It can change once Watcher finishes and nothing waits on you."
     /// What stays in force while Watcher's provider hasn't confirmed the mode just chosen.
     static func inForce(_ mode: String, provider: String) -> String { "\(provider) stays on \(name(mode)) until it confirms." }
     /// Why the wider modes can't be chosen from this iPhone.

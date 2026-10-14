@@ -226,6 +226,21 @@ describe('Watcher’s permissions chip', () => {
     await waitFor(() => expect(chip).toHaveTextContent('Ask for approval'))
   })
 
+  it.each([
+    ['works', (thread: AgentThread) => { thread.status = 'running' }],
+    ['waits on a card', (thread: AgentThread) => { thread.requests = [{ id: 'ask', kind: 'permission', text: 'Run the tests?', options: [] }] }],
+  ])('is fixed while Watcher %s, as a thread’s chips are, and says why', async (_, change) => {
+    const state = stateWithWatcher()
+    change(state.host.threads.find(thread => thread.id === 'watcher')!)
+    const { bridge } = renderRoom(roomState(), { state })
+    const chip = within(await watcherPane()).getByRole('combobox', { name: 'Watcher’s permissions' })
+    expect(chip).toBeDisabled()
+    expect(chip).toHaveAttribute('title', 'Watcher’s permissions. Fixed while Watcher works. It can change once Watcher finishes and nothing waits on you.')
+    fireEvent.click(chip)
+    expect(screen.queryByRole('listbox', { name: 'Watcher’s permissions' })).toBeNull()
+    expect(bridge.setPermission).not.toHaveBeenCalled()
+  })
+
   it('says the mode as a fact where the bridge cannot change it', async () => {
     renderRoom(roomState(), { legacy: true })
     const pane = await watcherPane()

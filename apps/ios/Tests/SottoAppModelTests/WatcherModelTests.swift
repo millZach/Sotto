@@ -959,14 +959,14 @@ final class WatcherModelTests: XCTestCase {
     }
 
     @MainActor func testWatchersPermissionChangesThroughItsComputerAndSaysWhatIsStillInForce() async throws {
-        let model = try await fixture(features: Self.manageFeatures, spec: Spec(runtimeMode: "approval-required", currentMode: "approval-required"))
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(status: "idle", runtimeMode: "approval-required", currentMode: "approval-required"))
         XCTAssertTrue(model.offersWatcherManage(laptop))
         XCTAssertEqual(model.watcherPermission(laptop), "approval-required")
         XCTAssertEqual(WatcherPermissions.name(model.watcherPermission(laptop)), "Ask before actions", "In this iPhone's own words")
         XCTAssertEqual(model.watcherPermissionModes(laptop), WatcherPermissions.modes, "A model that names none offers all four")
         XCTAssertNil(model.watcherPermissionInForce(laptop))
         // The computer keeps the choice for Watcher at once; Watcher's provider hasn't confirmed it yet.
-        let kept = page(Spec(observedAt: "2026-10-11T09:01:00.000Z", runtimeMode: "full-access", currentMode: "approval-required"))
+        let kept = page(Spec(status: "idle", observedAt: "2026-10-11T09:01:00.000Z", runtimeMode: "full-access", currentMode: "approval-required"))
         manage({ _, _ in try self.ok(kept) }, read: { kept })
         XCTAssertTrue(model.mayChooseWatcherPermission("full-access", on: laptop))
         await model.setWatcherPermission("full-access", on: laptop)
@@ -979,7 +979,7 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertTrue(model.watcherPermissionPicks.isEmpty)
         XCTAssertNil(model.feedback)
         // Once the provider confirms it, nothing more is said.
-        try push(Spec(observedAt: "2026-10-11T09:02:00.000Z", runtimeMode: "full-access", currentMode: "full-access"))
+        try push(Spec(status: "idle", observedAt: "2026-10-11T09:02:00.000Z", runtimeMode: "full-access", currentMode: "full-access"))
         await until { model.watcherPermissionInForce(laptop) == nil }
         XCTAssertNil(model.watcherPermissionInForce(laptop))
         // The same choice again sends nothing.
@@ -988,16 +988,36 @@ final class WatcherModelTests: XCTestCase {
         model.phase(.background)
     }
 
+    @MainActor func testWatchersPermissionIsFixedWhileWatcherWorksOrItsOwnRequestWaits() async throws {
+        // Watcher's turn runs: its computer would refuse a change, so the chip waits and nothing is sent.
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(status: "running", runtimeMode: "approval-required", currentMode: "approval-required"))
+        XCTAssertTrue(model.watcherPermissionFixed(laptop))
+        XCTAssertFalse(model.canChangeWatcherPermission(laptop))
+        await model.setWatcherPermission("auto-accept-edits", on: laptop)
+        XCTAssertTrue(try calls("watcher-phone-set-permission").isEmpty)
+        XCTAssertEqual(WatcherPermissions.fixed, "Fixed while Watcher works.")
+        // Its turn over, a request of its own still waits on the user.
+        try push(Spec(status: "idle", ownCard: true, observedAt: "2026-10-11T09:01:00.000Z", runtimeMode: "approval-required", currentMode: "approval-required"))
+        await until { model.watcherPage(laptop)?.needsYou.contains { model.watcherPage(laptop)?.isOwn($0) == true } == true }
+        XCTAssertTrue(model.watcherPermissionFixed(laptop))
+        // Nothing waits: the chip can be pressed again.
+        try push(Spec(status: "idle", observedAt: "2026-10-11T09:02:00.000Z", runtimeMode: "approval-required", currentMode: "approval-required"))
+        await until { !model.watcherPermissionFixed(laptop) }
+        XCTAssertFalse(model.watcherPermissionFixed(laptop))
+        XCTAssertTrue(model.canChangeWatcherPermission(laptop))
+        model.phase(.background)
+    }
+
     @MainActor func testAPhoneWithoutCanAnswerCanOnlyKeepWatcherAskingFirst() async throws {
         let model = try await fixture(features: Self.manageFeatures, mayAnswer: false,
-                                      spec: Spec(mayAnswer: false, runtimeMode: "auto", currentMode: "auto"))
+                                      spec: Spec(status: "idle", mayAnswer: false, runtimeMode: "auto", currentMode: "auto"))
         XCTAssertEqual(model.watcherPermission(laptop), "auto")
         for mode in ["auto-accept-edits", "auto", "full-access"] {
             XCTAssertFalse(model.mayChooseWatcherPermission(mode, on: laptop), "\(mode) lets Watcher act without asking")
         }
         XCTAssertTrue(model.mayChooseWatcherPermission("approval-required", on: laptop))
         XCTAssertEqual(WatcherPermissions.asksOnly("Laptop"), "This iPhone can’t answer on Laptop, so it can only keep Watcher asking first.")
-        let narrowed = page(Spec(mayAnswer: false, observedAt: "2026-10-11T09:01:00.000Z", runtimeMode: "approval-required", currentMode: "approval-required"))
+        let narrowed = page(Spec(status: "idle", mayAnswer: false, observedAt: "2026-10-11T09:01:00.000Z", runtimeMode: "approval-required", currentMode: "approval-required"))
         manage({ _, _ in try self.ok(narrowed) }, read: { narrowed })
         await model.setWatcherPermission("full-access", on: laptop)
         XCTAssertTrue(try calls("watcher-phone-set-permission").isEmpty, "A wider mode is never sent from a phone that can't answer")
@@ -1009,8 +1029,8 @@ final class WatcherModelTests: XCTestCase {
     }
 
     @MainActor func testARefusedPermissionPutsTheChipBackAndSaysWhy() async throws {
-        let model = try await fixture(features: Self.manageFeatures, spec: Spec(runtimeMode: "approval-required", currentMode: "approval-required"))
-        let before = page()
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(status: "idle", runtimeMode: "approval-required", currentMode: "approval-required"))
+        let before = page(Spec(status: "idle"))
         manage({ _, _ in
             try self.json(#"{"status":"refused","code":"PERMISSION_TOO_WIDE","message":"This phone needs Can answer to let Watcher act without asking. Nothing changed.","retryable":false}"#)
         }, read: { before })
@@ -1023,8 +1043,8 @@ final class WatcherModelTests: XCTestCase {
     }
 
     @MainActor func testALostPermissionAcknowledgementReadsItsReceiptAndIsNeverSentAgain() async throws {
-        let model = try await fixture(features: Self.manageFeatures, spec: Spec(runtimeMode: "approval-required", currentMode: "approval-required"))
-        let kept = page(Spec(observedAt: "2026-10-11T09:01:00.000Z", runtimeMode: "auto", currentMode: "auto"))
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(status: "idle", runtimeMode: "approval-required", currentMode: "approval-required"))
+        let kept = page(Spec(status: "idle", observedAt: "2026-10-11T09:01:00.000Z", runtimeMode: "auto", currentMode: "auto"))
         // The computer makes the change and keeps its outcome under the request's ID; the acknowledgement is lost.
         manage({ _, _ in throw ClientError.uncertain }, read: { kept }, sent: { _, id in
             HostConnection.receipts[id] = try? self.json(#"{"status":"completed","watcherManage":{"status":"ok"}}"#)

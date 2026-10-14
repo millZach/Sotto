@@ -665,9 +665,17 @@ extension AppModel {
         guard let current = watcherPage(hostID)?.current, let mode = current.runtimeMode, mode != watcherPermission(hostID) else { return nil }
         return WatcherPermissions.inForce(mode, provider: AgentNames.name(current.provider))
     }
-    /// Whether the chip can be pressed now: once Watcher's page is read, and while no other change to it is on its way.
+    /// Whether the chip can be pressed now: once Watcher's page is read, while no other change to it is on its way, and
+    /// not while Watcher works, as on the desktop.
     func canChangeWatcherPermission(_ hostID: String) -> Bool {
         offersWatcherManage(hostID) && online(hostID) && watcherPage(hostID) != nil && !watcherManaging.contains(Self.permissionKey(hostID))
+            && !watcherPermissionFixed(hostID)
+    }
+    /// Whether Watcher's permissions are fixed now: while its turn runs or a card of its own waits on the user, its
+    /// computer refuses a change, so the chip waits too.
+    func watcherPermissionFixed(_ hostID: String) -> Bool {
+        guard let page = watcherPage(hostID) else { return false }
+        return page.current?.status == "running" || page.needsYou.contains { page.isOwn($0) }
     }
     /// Whether this iPhone may choose `mode` there: asking first always, and a mode that lets Watcher act without asking
     /// only under this iPhone's Can answer on that computer, which the computer checks again.
@@ -1583,8 +1591,9 @@ struct HeldDetail {
                                           "options": [[String: String]](), "permissionChoices": choices, "context": ["command": "gh pr checks 845"]]
             cards.append(["target": watcher, "title": "Watcher", "provider": "codex", "request": request, "connected": true, "mayAnswer": mayAnswer])
         }
+        // Watcher waits between turns while its workers run, so its permissions can change unless its own request waits.
         let current: [String: Any] = ["target": watcher, "provider": "codex", "modelId": "fixture-model", "reasoningEffort": "high",
-                                      "status": asks ? "idle" : "running", "connected": true, "runtimeMode": WatcherPermissions.first]
+                                      "status": "idle", "connected": true, "runtimeMode": WatcherPermissions.first]
         return ["hostId": laptop, "current": current,
                 "conversation": ["messages": messages, "earlierAvailable": false, "revision": 5],
                 "receiptGroups": groups, "watchedThreads": threads, "needsYou": cards,

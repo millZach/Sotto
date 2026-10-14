@@ -997,10 +997,39 @@ import XCTest
         XCTAssertTrue(own.label.contains("Watcher asks each time. It can’t be given lasting permission."))
         XCTAssertTrue(byID("watcher-send-held").exists, "Watcher waits for its own request before it takes more")
         capture("watcher-cannot-answer-dark")
-        // Watcher's permissions can only stay asking first from a phone that can't answer there.
+        // While Watcher's own request waits on the user, its permissions are fixed, as on the desktop, and the chip says so.
         let permissions = app.buttons["watcher-permissions"]
         XCTAssertTrue(permissions.waitForExistence(timeout: 5))
         XCTAssertEqual(permissions.value as? String, "Ask before actions")
+        XCTAssertFalse(permissions.isEnabled, "Fixed while Watcher waits on the user")
+        XCTAssertEqual(byID("watcher-permissions-fixed").label, "Fixed while Watcher works.")
+        let review = app.buttons["watcher-card-review"].firstMatch
+        revealInWatcher(review)
+        review.tap()
+        XCTAssertTrue(text("This iPhone can’t answer on Laptop yet. Turn on Can answer for it in Sotto on Laptop").waitForExistence(timeout: 5),
+                      "Review opens the card's own sheet, which says why it can't be answered here")
+        capture("watcher-cannot-answer-sheet-dark")
+        let notNow = app.buttons["Not now"]
+        reveal(notNow)
+        notNow.tap()
+        XCTAssertTrue(waitUntilGone(notNow))
+        watcherInLight()
+        revealInWatcher(byID("watcher-own-card"))
+        capture("watcher-cannot-answer-light")
+        // Last, so the rest of the journey reports first if the tab bar doesn't carry it.
+        let badged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "1 needs you"), object: tab)
+        XCTAssertEqual(XCTWaiter.wait(for: [badged], timeout: 10), .completed, "VoiceOver hears Watcher's own request on its tab")
+    }
+
+    /// Watcher's permissions can only stay asking first from a phone that can't answer on Watcher's computer, and the list
+    /// says why.
+    func testAPhoneWithoutCanAnswerCanOnlyKeepWatcherAskingFirst() {
+        launch(Self.watcher)
+        openWatcher()
+        let permissions = app.buttons["watcher-permissions"]
+        XCTAssertTrue(permissions.waitForExistence(timeout: 5))
+        XCTAssertEqual(permissions.value as? String, "Ask before actions")
+        XCTAssertTrue(permissions.isEnabled, "Watcher waits between turns, so its permissions can change")
         permissions.tap()
         XCTAssertTrue(byID("watcher-permissions-asks-only").waitForExistence(timeout: 5), "The list says why")
         XCTAssertEqual(byID("watcher-permissions-asks-only").label, "This iPhone can’t answer on Laptop, so it can only keep Watcher asking first.")
@@ -1018,22 +1047,6 @@ import XCTest
         asking.tap()
         XCTAssertTrue(waitUntilGone(asking))
         XCTAssertEqual(permissions.value as? String, "Ask before actions")
-        let review = app.buttons["watcher-card-review"].firstMatch
-        revealInWatcher(review)
-        review.tap()
-        XCTAssertTrue(text("This iPhone can’t answer on Laptop yet. Turn on Can answer for it in Sotto on Laptop").waitForExistence(timeout: 5),
-                      "Review opens the card's own sheet, which says why it can't be answered here")
-        capture("watcher-cannot-answer-sheet-dark")
-        let notNow = app.buttons["Not now"]
-        reveal(notNow)
-        notNow.tap()
-        XCTAssertTrue(waitUntilGone(notNow))
-        watcherInLight()
-        revealInWatcher(byID("watcher-own-card"))
-        capture("watcher-cannot-answer-light")
-        // Last, so the rest of the journey reports first if the tab bar doesn't carry it.
-        let badged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "1 needs you"), object: tab)
-        XCTAssertEqual(XCTWaiter.wait(for: [badged], timeout: 10), .completed, "VoiceOver hears Watcher's own request on its tab")
     }
 
     /// Watched says what watching means, with a card for each watched thread and no count to fill, and Stop all asks

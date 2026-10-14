@@ -1044,11 +1044,12 @@ private struct WatcherPermissionChip: View {
 
     var body: some View {
         let caption = model.watcherPermissionInForce(hostID)
+        let fixed = model.watcherPermissionFixed(hostID)
         Group {
             if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: Space.s1) { chip(pending: caption != nil); captionText(caption) }
+                VStack(alignment: .leading, spacing: Space.s1) { chip(pending: caption != nil, fixed: fixed); captionText(caption); fixedText(fixed && caption == nil) }
             } else {
-                HStack(spacing: Space.s3) { chip(pending: caption != nil); captionText(caption) }
+                HStack(spacing: Space.s3) { chip(pending: caption != nil, fixed: fixed); captionText(caption); fixedText(fixed && caption == nil) }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1062,7 +1063,7 @@ private struct WatcherPermissionChip: View {
         }
     }
 
-    private func chip(pending: Bool) -> some View {
+    private func chip(pending: Bool, fixed: Bool) -> some View {
         let mode = model.watcherPermission(hostID)
         let busy = model.watcherManaging.contains(AppModel.permissionKey(hostID))
         let edge = StrokeStyle(lineWidth: 1, dash: pending ? [4, 3] : [])
@@ -1084,7 +1085,8 @@ private struct WatcherPermissionChip: View {
         .disabled(!model.canChangeWatcherPermission(hostID))
         .accessibilityLabel("Watcher’s permissions")
         .accessibilityValue(WatcherPermissions.name(mode))
-        .accessibilityHint("Opens what Watcher may do without asking")
+        .accessibilityHint(fixed ? WatcherPermissions.fixedHint : "Opens what Watcher may do without asking")
+        .opacity(fixed ? 0.55 : 1)
         .accessibilityIdentifier("watcher-permissions")
     }
 
@@ -1092,6 +1094,14 @@ private struct WatcherPermissionChip: View {
         if let caption {
             Text(caption).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("watcher-permissions-in-force")
+        }
+    }
+
+    /// Beside the chip while Watcher works; the chip's hint says when it can change.
+    @ViewBuilder private func fixedText(_ shown: Bool) -> some View {
+        if shown {
+            Text(WatcherPermissions.fixed).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("watcher-permissions-fixed")
         }
     }
 }

@@ -16,7 +16,7 @@ import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 import { followupsFor, ThreadFollowups } from './ThreadFollowups'
-import { ThreadOptions } from './ThreadOptions'
+import { ThreadOptions, watcherPermissionFixedReason } from './ThreadOptions'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
@@ -270,7 +270,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
             ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher}
               {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? 'Answer this question' : 'Manual prompt'}</small></span>
-              {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices} /> : null}</>}
+              {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
+                disabled={watcherPermissionFixedReason(state, row.thread) !== undefined} fixedReason={watcherPermissionFixedReason(state, row.thread)} /> : null}</>}
           {status}
         </div>
         <div className="thread-prompt__actions">

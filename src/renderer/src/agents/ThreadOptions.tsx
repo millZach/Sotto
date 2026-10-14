@@ -182,10 +182,12 @@ export function unconfirmedSettingText(provider: string, wanted: string, error: 
  * the line that says what is still in force (`describedBy`), so the words are the ones on screen, said once. A `foot`
  * is a line under the list that holds in every choice; it sits outside the listbox, so it is read, never chosen.
  */
-export function ChoiceChip({ label, placeholder, value, options, disabled, pending, describedBy, onChange, foot }: {
+export function ChoiceChip({ label, placeholder, value, options, disabled, pending, describedBy, onChange, foot, fixedReason }: {
   readonly label: string; readonly placeholder: string; readonly value: string; readonly options: readonly ChoiceOption[]
   readonly disabled: boolean; readonly pending: boolean; readonly describedBy?: string | undefined; readonly onChange: (id: string) => void
   readonly foot?: string | undefined
+  /** Why the chip cannot be pressed now, on its tooltip while it is disabled. */
+  readonly fixedReason?: string | undefined
 }): ReactNode {
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -215,7 +217,7 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
       event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus()
     }}
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}>
-    <button ref={trigger} type="button" className="thread-chip tt-focusable" role="combobox" aria-label={label} title={label} aria-haspopup="listbox" aria-expanded={open}
+    <button ref={trigger} type="button" className="thread-chip tt-focusable" role="combobox" aria-label={label} title={disabled && fixedReason ? `${label}. ${fixedReason}` : label} aria-haspopup="listbox" aria-expanded={open}
       aria-controls={open ? listId : undefined} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined}
       disabled={disabled} onClick={() => setOpen(value => !value)}>
       {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
@@ -228,6 +230,12 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
 /** Whether a prompt on this thread is on its way to the provider, which a settings change would have to wait behind. */
 const sending = (state: AgentState, threadId: string): boolean =>
   state.deliveries?.some(delivery => delivery.threadId === threadId && (delivery.status === 'queued' || delivery.status === 'submitting' || delivery.status === 'uncertain')) === true
+
+/** Why Watcher's permissions are fixed now, as a thread's are while it works: main refuses a change until then. */
+export function watcherPermissionFixedReason(state: AgentState, thread: AgentThread): string | undefined {
+  return thread.status === 'running' || thread.requests.length > 0 || sending(state, thread.id)
+    ? 'Fixed while Watcher works. It can change once Watcher finishes and nothing waits on you.' : undefined
+}
 
 /**
  * The composer's option controls: three chips saying what this thread is set to, the model with its
@@ -295,7 +303,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const capabilities = capabilitiesForThread(state.host, thread)
   if (locked && !capabilities.configureThread) {
     return watcher ? <WatcherPermissionChip model={resolveModel(models, thread.modelId)} provider={thread.providerId ? PROVIDER_LABELS[thread.providerId] : 'The provider'}
-      inForce={thread.runtimeMode} noticeSlot={noticeSlot} /> : null
+      inForce={thread.runtimeMode} noticeSlot={noticeSlot} disabled={fixed} fixedReason={watcherPermissionFixedReason(state, thread)} /> : null
   }
   const modelDisabled = locked && capabilities.configureThreadModel === false
   // The model shown is the one pressed; effort and permissions are read for it, as they will be once it lands.
@@ -357,7 +365,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
       {watcher
-        ? <WatcherPermissionChip model={model} provider={provider} inForce={thread.runtimeMode} noticeSlot={noticeSlot} />
+        ? <WatcherPermissionChip model={model} provider={provider} inForce={thread.runtimeMode} noticeSlot={noticeSlot}
+          disabled={fixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
         : modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder="Provider default" value={permission} options={modes} disabled={fixed}
         pending={pendingPermission !== null} describedBy={permissionUnconfirmed ? unconfirmedId : captionId}
         onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />}
