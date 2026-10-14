@@ -53,6 +53,23 @@ async function fixture(history = true) {
     } }
 }
 
+it('projects the local room and complete get without copying a coordinator shell', async () => {
+  const f = await fixture()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const before = f.service.state()
+  const shell = vi.spyOn(f.control, 'shell').mockImplementation(() => { throw new Error('Room projection read a whole shell') })
+  try {
+    const room = f.service.state(), complete = f.service.get()
+    expect(shell).not.toHaveBeenCalled()
+    expect(room).toMatchObject({ current: before.current, currentOptions: before.currentOptions,
+      watchedThreads: before.watchedThreads, requests: before.requests, receipts: before.receipts,
+      inFlight: before.inFlight, inFlightLimit: before.inFlightLimit })
+    expect(complete).toMatchObject({ status: 'ok', state: { current: before.current,
+      currentOptions: before.currentOptions, requests: before.requests, receipts: before.receipts } })
+  } finally { shell.mockRestore() }
+})
+
 it('creates one current master, attaches exact tools only there, starts and reads without changing selection or user marks', async () => {
   const f = await fixture()
   const selected = f.control.shell().activeThreadId, project = f.control.shell().activeProjectId

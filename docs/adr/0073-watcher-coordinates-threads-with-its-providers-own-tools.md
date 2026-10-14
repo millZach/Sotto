@@ -140,3 +140,15 @@ Restart reconciliation uses the waiting queue's text-free evidence references wh
 The bounded source cache retains up to three hundred facts per target, enough for fifty linked PRs with independent facts. The existing evidence projection remains at one hundred entries, favoring recent actual changes. Clock-only refreshes update observation times without moving facts through that projection, so its limit cannot turn unchanged background reads into news.
 
 Recovery compares actual source changes against the bounded cache, so projection omissions are not removals. First materialization remains unknown until the saved occurrence is reconciled; explicit new/removed PR associations and changed already-observed facts still supersede it. Before the newest checkpoint is published, retained captures are offered to the private restorer; only a capture referenced by the waiting occurrence seeds its comparison. This lets a newer saved capture supersede older waiting news without replaying unrelated historical captures.
+
+## October 14, 2026: desktop room publication (#991, draft)
+
+**Implementation and measurements pending.** This amendment is the scoped publication rule being prepared for step 5, not a claim that it has shipped.
+
+The desktop room's notifications may share the established 50-millisecond leading/trailing publish window only when both existing startup answers are true: Watcher and `streaming-publish-cost` (ADR-0072). Both are checked before creating its scheduler or capture work. There is no new switch. With Watcher off no room path starts; with the cost answer off the existing immediate room notification and complete replies remain unchanged. Dormant records are kept whole.
+
+Only desktop room IPC is coalesced. Watcher observations, display-prompt presentation, evidence, event news, wake deadlines, admission, ownership and permission operations keep their existing timing. Phone/socket events and owning-host transport are unchanged. The room already projects directly from local host state without copying the whole local shell; its bounded record copies and existing remote cached-shell copies remain separate costs.
+
+A burst's first room is sent immediately. During its open window, one owned complete room captured at the event replaces the pending room. The trailing deadline sends the newest capture even after the source goes quiet; a quiet deadline repeats nothing. Capturing at the event preserves its original observation time and facts rather than substituting a later command's state when the timer fires.
+
+Get, Open, Stop-all preview, confirmed Stop all and limit replies remain immediate and complete. Before returning a reply, main flushes any pending room synchronously and returns that operation's own result, without another read replacing its outcome. Equal observation timestamps do not substitute for this ordering. A failed or unavailable window gains no retry loop; a fresh complete Get supplies recovery. Cleanup first removes the subscription, then cancels the timer and drops the pending capture. This changes neither the separate event-news batching windows nor the quiet-episode rule above.

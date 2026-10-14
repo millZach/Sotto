@@ -188,6 +188,7 @@ import { registerUsageIpc } from './agents/usageIpc'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
+import { createWatcherRoomDesktop } from './agents/watcherRoomDesktop'
 import { AgentStateBroadcaster } from './agents/agentStateBroadcast'
 import { registerAgentIpc } from './agents/ipc'
 import { desktopWindowClient } from './agents/hostService'
@@ -1447,17 +1448,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, resetThreadDelivery: agentStateBroadcaster.resetThreadDelivery, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
-      const cleanupWatcher = localRuntime?.watcher?.subscribe(state => windows.sendToMain(WATCHER_CHANGED, state))
-      const unavailableWatcher = () => ({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE',
-        message: 'Turn on Run the local host in Settings and restart Sotto to use Watcher.', retryable: true } as const)
+      const desktopWatcher = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
+        watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state),
+        setLimit: limit => settingsCoordinator.updateSettings({ watcherInFlightLimit: limit }) })
       const cleanup = registerIpc(ipcMain, {
-        ...(watcherEnabled ? { watcher: {
-          get: async () => localRuntime?.watcher?.get() ?? unavailableWatcher(),
-          open: request => localRuntime?.watcher?.open(request) ?? Promise.resolve(unavailableWatcher()),
-          prepareStopAll: async () => localRuntime?.watcher?.prepareStopAll() ?? unavailableWatcher(),
-          stopAll: request => localRuntime?.watcher?.stopAll(request.confirmationId) ?? Promise.resolve(unavailableWatcher()),
-          setLimit: async request => { if (!localRuntime?.watcher) return unavailableWatcher(); await settingsCoordinator.updateSettings({ watcherInFlightLimit: request.limit }); return localRuntime.watcher.get() },
-        } satisfies Omit<import('../shared/watcherRoom').WatcherBridge, 'onChanged'> } : {}),
+        ...(desktopWatcher ? { watcher: desktopWatcher.bridge } : {}),
         settings: {
           get: () => settingsCoordinator.getSettings(),
           update: (patch) => { requireLocalHistoryCleanup(startupSettings.localHostEnabled, agentHistoryEnabled, patch.historyEnabled); return settingsCoordinator.updateSettings(patch) },
@@ -1563,7 +1558,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         transcription.dispose()
         speechModelStore?.dispose()
         updates.dispose()
-        cleanupWatcher?.()
+        desktopWatcher?.dispose()
         cleanup()
       }
       if (e2eState === null) return cleanupNativeIpc
