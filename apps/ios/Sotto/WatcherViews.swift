@@ -1259,7 +1259,8 @@ private struct WatchedPane: View {
     /// What watching means here, then Watch a thread, with Stop all beside it while Watcher has threads it started.
     private func lead(_ page: WatcherPage) -> some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            Text(WatcherWords.watchedLead(page.watched.count)).font(.sotto(.body)).foregroundStyle(Palette.muted)
+            Text(WatcherWords.watchedLead(page.watched.count, standing: page.watched.filter { page.standingWatch($0.target.ref) != nil }.count))
+                .font(.sotto(.body)).foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("watcher-watched-lead")
             ViewThatFits(in: .horizontal) {

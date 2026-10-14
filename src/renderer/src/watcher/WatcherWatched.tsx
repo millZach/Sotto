@@ -6,7 +6,7 @@ import type { WatcherRoomState } from '../../../shared/watcherRoom'
 import { ProviderMark } from '../agents/ProviderMark'
 import { clockLabel } from '../agents/threadFacts'
 import { openAtRequestLabel, statusWord, threadPress, TONES, waitKind, type OpenThread, type OverviewEntry, type OverviewGroup } from './WatcherOverview'
-import { threadForTarget, useWatchActions, watchedRows, type WatcherRoom } from './watcherRoom'
+import { hasStandingWatch, threadForTarget, useWatchActions, watchedRows, type WatcherRoom } from './watcherRoom'
 import { WATCHED_BY_WATCHER, WatchedBadge, WatcherOwl } from './WatcherOwl'
 
 type WatchedRow = WatcherRoomState['watchedThreads'][number]
@@ -46,6 +46,19 @@ export function watchedDoing(row: WatchedRow, room: WatcherRoomState): string | 
   }
   const watch = room.standingWatches?.find(item => same(item.target, row.target))
   return watch === undefined ? null : `Watching since ${clockLabel(Date.parse(watch.createdAt))}. Nothing sent yet.`
+}
+
+/**
+ * The line over the cards. A thread under a standing watch stays watched until the user stops it; one watched only for
+ * a Watcher request stops when the user sends there, so the line promises only what holds for each.
+ */
+export function watchedLead(count: number, standing: number): string {
+  if (count === 0) return 'Watcher watches no threads yet. Press the owl on a thread, here in All threads or on Threads, and Watcher keeps it going until you stop it.'
+  const keeps = count === 1 ? 'Watcher keeps this thread going on its own and brings you its questions and permissions.'
+    : `Watcher keeps these ${count} threads going on its own and brings you their questions and permissions.`
+  if (standing === count) return `${keeps} ${count === 1 ? 'It stays' : 'Each stays'} watched until you stop it.`
+  if (standing === 0) return `${keeps} ${count === 1 ? 'It is' : 'They are'} watched for a request: if you send to ${count === 1 ? 'it' : 'one'} yourself, Watcher stops sending to it.`
+  return `${keeps} A thread you watch stays watched until you stop it. One watched for a request stops when you send to it yourself.`
 }
 
 /** A watched thread this window does not list (its host is out of reach): its status as the room last saw it. */
@@ -114,10 +127,7 @@ export function WatcherWatchedView({ room, state, groups, labelledBy, id, onOpen
     const entry = threadId === null ? undefined : entries.get(threadId)
     return { row, threadId: entry === undefined ? null : threadId, entry, group: entry?.overview.group ?? 'Idle' }
   })
-  const count = cards.length
-  const lead = count === 0 ? 'Watcher watches no threads yet. Press the owl on a thread, here in All threads or on Threads, and Watcher keeps it going until you stop it.'
-    : count === 1 ? 'Watcher keeps this thread going on its own and brings you its questions and permissions. It stays watched until you stop it.'
-      : `Watcher keeps these ${count} threads going on its own and brings you their questions and permissions. Each stays watched until you stop it.`
+  const lead = projection === null ? watchedLead(0, 0) : watchedLead(cards.length, cards.filter(card => hasStandingWatch(projection, card.row.target)).length)
   return <div id={id} className="thread-workspace__transcript watcher-watched" role="tabpanel" aria-labelledby={labelledBy} tabIndex={0}>
     <div className="watcher-watched__lead">
       <p>{lead}</p>

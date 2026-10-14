@@ -735,7 +735,8 @@ describe('a watched thread', () => {
     state.activeThreadId = 'footer-links'
     mockApp('threads', watcherEnabled)
     mockAgents(state)
-    const { bridge } = fakeBridge(roomState())
+    // Watcher started Footer links, so main keeps a standing watch on it.
+    const { bridge } = fakeBridge(roomState({ standingWatches: [{ id: '5d1f0a6e-2c3b-4a59-8e7d-6f5e4d3c2b1a', target: target('footer-links'), createdAt: at, generation: 0 }] }))
     render(<WatcherRoomProvider bridge={bridge}><ThreadsView now={NOW} /></WatcherRoomProvider>)
     return bridge
   }

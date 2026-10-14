@@ -25,6 +25,8 @@ export interface WatcherRoom {
   readonly watchedThreadIds: ReadonlySet<string>
   /** Watched threads whose watching waits while the user's own turn there runs. */
   readonly pausedThreadIds: ReadonlySet<string>
+  /** Watched threads under a standing watch, which lasts until the user stops it; the rest are watched for a request. */
+  readonly standingThreadIds: ReadonlySet<string>
   readonly open: WatcherBridge['open'] | null
   readonly setLimit: WatcherBridge['setLimit'] | null
   /** What Watcher may do without asking; null where the bridge cannot change it, and the room says it as a fact. */
@@ -81,6 +83,13 @@ export function targetForThread(state: AgentState, thread: AgentThread): Watcher
 export function watchedRows(room: WatcherRoomState): WatcherRoomState['watchedThreads'] {
   return room.watchedThreads.filter(entry => isWatchedRow(entry, room.requests))
 }
+/**
+ * Whether a thread is under a standing watch, which lasts until the user stops it. A thread watched only because it takes
+ * part in a Watcher request is not: the user's own send there takes it over and it stops being watched.
+ */
+export function hasStandingWatch(room: WatcherRoomState, target: WatcherThreadTarget): boolean {
+  return room.standingWatches?.some(watch => watch.target.hostId === target.hostId && watch.target.threadId === target.threadId) === true
+}
 export function watchedTargets(room: WatcherRoomState): WatcherThreadTarget[] {
   return watchedRows(room).map(entry => entry.target)
 }
@@ -125,6 +134,9 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   const pausedKey = state === null || agentState === null ? '' : JSON.stringify(state.watchedThreads.filter(entry => entry.watched === true && entry.paused === true)
     .map(entry => threadForTarget(agentState, entry.target)?.id).filter(Boolean))
   const pausedThreadIds = useMemo<ReadonlySet<string>>(() => pausedKey === '' ? NONE : new Set(JSON.parse(pausedKey) as string[]), [pausedKey])
+  const standingKey = state === null || agentState === null ? '' : JSON.stringify(watchedRows(state).filter(entry => hasStandingWatch(state, entry.target))
+    .map(entry => threadForTarget(agentState, entry.target)?.id).filter(Boolean))
+  const standingThreadIds = useMemo<ReadonlySet<string>>(() => standingKey === '' ? NONE : new Set(JSON.parse(standingKey) as string[]), [standingKey])
   // A first message sent before Watcher existed goes to it from here, so leaving the room cannot lose it.
   useFirstMessageDelivery(enabled ? agents : null, currentThreadId)
   // The contract keeps these three optional for stand-ins written before them, so the room asks before offering them.
@@ -165,13 +177,13 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   }, [enabled, manage, settle])
   const value = useMemo<WatcherRoom | null>(() => !enabled ? null : {
     status: !live ? 'unavailable' : answered ? 'ready' : 'loading',
-    state, error, currentThreadId, watchedThreadIds, pausedThreadIds, settle,
+    state, error, currentThreadId, watchedThreadIds, pausedThreadIds, standingThreadIds, settle,
     open: live ? request => bridge.open(request) : null,
     setLimit: live ? request => bridge.setLimit(request) : null,
     setPermission: manage.setPermission,
     watchThread: manage.watch?.watchThread ?? null,
     unwatchThread: manage.watch?.unwatchThread ?? null,
-  }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, pausedThreadIds, settle, bridge, manage])
+  }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, pausedThreadIds, standingThreadIds, settle, bridge, manage])
   return <WatcherRoomContext.Provider value={value}>
     <WatchedThreadsContext.Provider value={enabled ? watchedThreadIds : NONE}>
       <WatchActionsContext.Provider value={actions}>{children}</WatchActionsContext.Provider>
@@ -197,6 +209,11 @@ export function useWatchActions(): WatchActions | null {
 /** Whether a watched thread's watching waits while the user's own turn there runs. */
 export function useWatchPaused(threadId: string): boolean {
   return useContext(WatcherRoomContext)?.pausedThreadIds.has(threadId) ?? false
+}
+
+/** Whether a watched thread is under a standing watch, rather than watched for a Watcher request alone. */
+export function useStandingWatch(threadId: string): boolean {
+  return useContext(WatcherRoomContext)?.standingThreadIds.has(threadId) ?? false
 }
 
 /** The window's ID for the current Watcher, which the Threads page leaves to Watcher's room. */

@@ -19,7 +19,7 @@ import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
 import { WatcherOwnChangeLine } from '../../../src/renderer/src/watcher/WatcherOwnChange'
 import { watcherModeDescriptions, WATCHER_PERMISSIONS_FOOT } from '../../../src/renderer/src/watcher/WatcherPermissionChip'
-import { watchedDoing } from '../../../src/renderer/src/watcher/WatcherWatched'
+import { watchedDoing, watchedLead } from '../../../src/renderer/src/watcher/WatcherWatched'
 import { watchNotices } from '../../../src/renderer/src/watcher/watchNotice'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
 import { agentContextFixture } from '../../fixtures/agentContext'
@@ -83,10 +83,13 @@ function fakeBridge(initial: WatcherRoomState, legacy = false) {
     onChanged: vi.fn((listener: (next: WatcherRoomState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }),
     ...legacy ? {} : {
       setPermission: vi.fn(async ({ runtimeMode }: { runtimeMode: AgentRuntimeMode }) => ok({ ...state, runtimeMode })),
+      // As main does: Watch keeps a standing watch, and Stop watching ends it.
       watchThread: vi.fn(async ({ target: wanted }: { target: WatcherThreadTarget }) => ok({ ...state,
+        standingWatches: [...(state.standingWatches ?? []).filter(watch => !same(watch.target, wanted)), { id: crypto.randomUUID(), target: wanted, createdAt: at, generation: 0 }],
         watchedThreads: state.watchedThreads.some(entry => same(entry.target, wanted)) ? state.watchedThreads.map(entry => same(entry.target, wanted) ? { ...entry, watched: true } : entry)
           : [...state.watchedThreads, row(wanted.threadId, wanted.threadId)] })),
       unwatchThread: vi.fn(async ({ target: wanted }: { target: WatcherThreadTarget }) => ok({ ...state,
+        standingWatches: (state.standingWatches ?? []).filter(watch => !same(watch.target, wanted)),
         watchedThreads: state.watchedThreads.map(entry => same(entry.target, wanted) ? { ...entry, watched: false } : entry) })),
     },
   }
@@ -345,6 +348,26 @@ describe('watching a thread', () => {
     expect(within(pane).getByRole('button', { name: 'Watch Footer links' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('promises a thread watched only for a request nothing past the user’s own send, under its composer and over Watched', async () => {
+    const user = userEvent.setup()
+    // Footer links takes part in Watcher's request, with no standing watch.
+    const participant = { requestId: REQUEST, startedBy: 'watcher' as const, generation: 0, state: 'participating' as const, target: target('footer-links'), promptCount: 1 }
+    const room = roomState({ standingWatches: [], requests: [{ id: REQUEST, watcher: identity.target, rootUserMessageId: 'watcher-1', state: 'active', createdAt: at, closedAt: null, participants: [participant] }],
+      watchedThreads: [row('footer-links', 'Footer links', { participation: [participant] })] })
+    renderThreads(room)
+    const pane = await screen.findByRole('region', { name: 'Footer links' })
+    expect(await within(pane).findByText('Watched by Watcher. If you send here, Watcher stops sending to it.')).toBeInTheDocument()
+    expect(within(pane).queryByText(/keeps this thread going/)).toBeNull()
+    cleanup()
+    renderRoom(room)
+    const room1 = await watcherPane()
+    await user.click(within(room1).getByRole('tab', { name: 'Watched, 1 thread' }))
+    expect(within(room1).getByRole('tabpanel', { name: 'Watched, 1 thread' })).toHaveTextContent(
+      'Watcher keeps this thread going on its own and brings you its questions and permissions. It is watched for a request: if you send to it yourself, Watcher stops sending to it.')
+    expect(within(room1).queryByText(/until you stop it/)).toBeNull()
+    expect(watchedLead(3, 1)).toBe('Watcher keeps these 3 threads going on its own and brings you their questions and permissions. A thread you watch stays watched until you stop it. One watched for a request stops when you send to it yourself.')
   })
 
   it('says a paused watch waits for the user’s own turn', async () => {

@@ -149,11 +149,15 @@ struct WatcherSummary: Equatable, Sendable {
     let watched: Set<String>
     /// Watched threads where the user's own turn runs, so Watcher waits until it ends.
     let paused: Set<String>
+    /// Watched threads under a standing watch, which lasts until the user stops it. The rest are watched for a Watcher
+    /// request, which the user's own send there takes over.
+    let standing: Set<String>
     init(_ page: WatcherPage) {
         working = page.working
         waiting = page.needsYou.map(\.target.ref)
         watched = Set(page.watched.map(\.target.ref.id))
         paused = Set(page.watched.filter { $0.paused == true }.map(\.target.ref.id))
+        standing = Set(page.watched.filter { page.standingWatch($0.target.ref) != nil }.map(\.target.ref.id))
     }
 }
 
@@ -315,13 +319,20 @@ enum WatcherWords {
 
     // Watching (watch B, Zach's pick on October 13, 2026): a thread stays watched until the user stops it, with no limit.
 
-    /// The line over Watched's cards, from a computer whose watches last until the user stops them.
-    static func watchedLead(_ count: Int) -> String {
-        switch count {
-        case 0: return "Watcher watches no threads yet. Watch one here or from its page, and Watcher keeps it going until you stop it."
-        case 1: return "Watcher keeps this thread going on its own and brings you its questions and permissions. It stays watched until you stop it."
-        default: return "Watcher keeps these \(count) threads going on its own and brings you their questions and permissions. Each stays watched until you stop it."
+    /// The line over Watched's cards, from a computer whose watches last until the user stops them. `standing` of the
+    /// `count` have a standing watch; the rest are watched for a Watcher request, which the user's own send there ends,
+    /// so the line promises only what holds for each, word for word as on the desktop.
+    static func watchedLead(_ count: Int, standing: Int? = nil) -> String {
+        let standing = standing ?? count
+        if count == 0 { return "Watcher watches no threads yet. Watch one here or from its page, and Watcher keeps it going until you stop it." }
+        let keeps = count == 1 ? "Watcher keeps this thread going on its own and brings you its questions and permissions."
+            : "Watcher keeps these \(count) threads going on its own and brings you their questions and permissions."
+        if standing == count { return keeps + (count == 1 ? " It stays" : " Each stays") + " watched until you stop it." }
+        if standing == 0 {
+            return keeps + (count == 1 ? " It is watched for a request: if you send to it yourself, Watcher stops sending to it."
+                : " They are watched for a request: if you send to one yourself, Watcher stops sending to it.")
         }
+        return keeps + " A thread you watch stays watched until you stop it. One watched for a request stops when you send to it yourself."
     }
     /// What Watcher last did with a watched thread, from its computer's own records and never from anyone's words: waiting
     /// while the user's own turn runs, its latest action and how that went, or how long it has watched with nothing sent.

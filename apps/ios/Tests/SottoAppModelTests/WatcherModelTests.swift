@@ -1149,6 +1149,23 @@ final class WatcherModelTests: XCTestCase {
         model.phase(.background)
     }
 
+    @MainActor func testAThreadWatchedOnlyForARequestIsPromisedNothingPastTheUsersOwnSend() async throws {
+        // The computer keeps standing watches, but `t` is watched only because it takes part in Watcher's request.
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(standing: false))
+        XCTAssertTrue(model.watchedByWatcher(worker))
+        XCTAssertEqual(model.watchedLine(worker), WatchedWords.takeover)
+        XCTAssertEqual(model.watchedLine(worker), "Watched by Watcher. If you send here, Watcher stops sending to it.")
+        // Under a standing watch it is kept going until the user stops it.
+        try push(Spec(observedAt: "2026-10-11T09:01:00.000Z", standing: true))
+        await until { model.watchedLine(worker) == WatchedWords.standing }
+        XCTAssertEqual(model.watchedLine(worker), WatchedWords.standing)
+        XCTAssertEqual(WatcherWords.watchedLead(1, standing: 0),
+                       "Watcher keeps this thread going on its own and brings you its questions and permissions. It is watched for a request: if you send to it yourself, Watcher stops sending to it.")
+        XCTAssertEqual(WatcherWords.watchedLead(3, standing: 1),
+                       "Watcher keeps these 3 threads going on its own and brings you their questions and permissions. A thread you watch stays watched until you stop it. One watched for a request stops when you send to it yourself.")
+        model.phase(.background)
+    }
+
     @MainActor func testAWatchedThreadsReplyBoxSaysWatcherWaitsWhileTheUsersTurnRuns() async throws {
         let model = try await fixture(features: Self.manageFeatures, spec: Spec(standing: true, paused: true))
         XCTAssertTrue(model.watchedByWatcher(worker))

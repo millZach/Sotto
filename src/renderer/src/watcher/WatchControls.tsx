@@ -1,12 +1,17 @@
 import React, { type ReactNode } from 'react'
 import { X } from 'lucide-react'
-import { useWatchActions, useWatchedThread, useWatchPaused } from './watcherRoom'
+import { useStandingWatch, useWatchActions, useWatchedThread, useWatchPaused } from './watcherRoom'
 import { watchNotices, useWatchNotice } from './watchNotice'
 import { WATCHED_BY_WATCHER, WatcherOwl } from './WatcherOwl'
 
 /** What a press on a toggle does, for its tooltip: the toggle's name stays Watch, and its pressed state says the rest. */
 const WATCH_TIP = 'Watch: Watcher keeps this thread going until you stop it'
 const STOP_TIP = 'Stop watching: Watcher lets this thread be'
+/**
+ * A thread Watcher watches only because it takes part in a Watcher request: the user's own send takes it over. Word for
+ * word as the iPhone says it.
+ */
+export const WATCHED_FOR_A_REQUEST = `${WATCHED_BY_WATCHER}. If you send here, Watcher stops sending to it.`
 
 /**
  * Watch in a thread's pane header (Zach's pick on October 13, 2026, watch B): pressed while Watcher watches the thread.
@@ -45,17 +50,19 @@ export function WatchListToggle({ threadId, title }: { readonly threadId: string
 }
 
 /**
- * Under a watched thread's composer, before anything is sent: what watching means, with Stop watching. Watching lasts
- * until it is stopped; the user's own send only holds Watcher back while that turn runs, and the line says so then.
+ * Under a watched thread's composer, before anything is sent: what watching means, with Stop watching. A standing watch
+ * lasts until it is stopped; the user's own send only holds Watcher back while that turn runs, and the line says so
+ * then. A thread watched only for a Watcher request is taken over by the user's own send, and the line says that.
  */
 export function WatchedNote({ threadId, title }: { readonly threadId: string; readonly title: string }): ReactNode {
   const actions = useWatchActions()
   const watched = useWatchedThread(threadId)
   const paused = useWatchPaused(threadId)
+  const standing = useStandingWatch(threadId)
   if (!watched) return null
   return <p className="watched-note">
     <WatcherOwl size={13} />
-    <span>{paused ? `${WATCHED_BY_WATCHER}. It waits while your own turn here runs, then keeps this thread going.`
+    <span>{!standing ? WATCHED_FOR_A_REQUEST : paused ? `${WATCHED_BY_WATCHER}. It waits while your own turn here runs, then keeps this thread going.`
       : `${WATCHED_BY_WATCHER}. It keeps this thread going and brings you its questions and permissions.`}</span>
     {actions === null ? null : <button type="button" className="watched-note__stop tt-focusable" aria-label={`Stop watching ${title}`}
       onClick={() => void actions.setThread(threadId, false)}>Stop watching</button>}
