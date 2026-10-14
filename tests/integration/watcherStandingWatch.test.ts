@@ -91,6 +91,30 @@ it('watches without sending, survives request closure and process-state restart,
   expect(f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)?.watched).not.toBe(true)
 })
 
+it('takes a watch with watch_thread only while answering the user’s own message, and keeps sending under the user’s watch', async () => {
+  const f = await fixture(), target = await f.create()
+  const sends = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId !== undefined).length
+  // On its own initiative, with no message from the user: nothing is watched.
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(f.service.state().standingWatches ?? []).toEqual([])
+  // Asked in the user's message: the watch is taken.
+  await f.request()
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'ok' })
+  expect(await f.call('unwatch_thread', { target })).toMatchObject({ status: 'ok', watched: false })
+  // A wake-up or any other message that is not the user's request answers nothing: no watch from it.
+  const master = f.native(f.watcherId())
+  master.messages.push({ id: randomUUID(), role: 'user', text: 'Synthetic Sotto news', createdAt: new Date().toISOString() })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(f.service.state().standingWatches ?? []).toEqual([])
+  // The user's own Watch still gives the thread to Watcher, which sends under it without asking again.
+  await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  const before = sends()
+  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic standing continuation', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  expect(sends()).toBe(before + 1)
+})
+
 it('has no watched-count cap, keeps starts capped, and lets standing sends bypass start capacity', async () => {
   const f = await fixture(), requestId = await f.request()
   for (let index = 0; index < 10; index++) expect(await f.service.watchThread({ target: await f.create() })).toMatchObject({ status: 'ok' })

@@ -821,6 +821,20 @@ export class WatcherService implements WatcherControlHooks {
     }
   }
 
+  /**
+   * A watch is the user's to give. A watched thread is Watcher's to keep going, so Watcher may take one with watch_thread
+   * only while it answers the user's own message: the turn's latest user message must be the root or a continuation of
+   * an active request the user started. A wake-up, a standing scope or Watcher's own initiative grants no watch.
+   */
+  private checkUserAskedWatch(): void {
+    const record = this.record(), current = record.current!
+    const head = nativeHead(this.thread(current.target))
+    if (!head || !record.requests.some(request => request.state === 'active' && !request.standingWatchId && !request.remoteOrigin
+      && key(request.watcher) === key(current.target)
+      && (request.rootUserMessageId === head || request.userFollowups?.some(followup => followup.messageId === head)))) {
+      refuse('REQUEST_NOT_ACTIVE', 'Only the user gives Watcher a thread to watch, with Watch or by asking in a message to Watcher. Nothing was watched.')
+    }
+  }
   async invoke(threadId: string, name: WatcherToolName, args: unknown): Promise<unknown> {
     this.invocations++
     try {
@@ -828,7 +842,10 @@ export class WatcherService implements WatcherControlHooks {
       if (this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before using its tools.', true)
       const parsed = watcherToolSchemas[name].input.safeParse(args)
       if (!parsed.success) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
-      if (name === 'watch_thread') return { status: 'ok', watch: await this.assignWatch(parsed.data as WatcherToolInput<'watch_thread'>) }
+      if (name === 'watch_thread') {
+        this.checkUserAskedWatch()
+        return { status: 'ok', watch: await this.assignWatch(parsed.data as WatcherToolInput<'watch_thread'>) }
+      }
       if (name === 'unwatch_thread') {
         const result = await this.unwatchThread(parsed.data as WatcherToolInput<'unwatch_thread'>)
         return result.status === 'refused' ? result : { status: 'ok', target: (parsed.data as WatcherToolInput<'unwatch_thread'>).target, watched: false }
