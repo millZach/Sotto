@@ -92,6 +92,8 @@ for (const enabled of [false, true]) test(`native certified detail stays whole w
       await resizeWindow(launched, width!, height!)
       await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance }), appearance)
       await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+      await log.locator('[data-role="assistant"]').last().scrollIntoViewIfNeeded()
+      await expect(log).toContainText('First' + ' streamed words'.repeat(6))
       expect(await page.getByRole('main').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
       await page.screenshot({ animations: 'disabled', path: join(evidence, `${enabled ? 'owl' : 'stable'}-${appearance}-${width}.png`) })
     }

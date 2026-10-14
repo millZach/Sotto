@@ -32,7 +32,9 @@ durable regressions for this lifetime.
 Windows development laptop, Node v24.14.1. These are synthetic generated histories, not a user
 profile. No live provider is contacted and no thread words are printed. The raw logs survive
 outside the worktree under `.zstack/perf-991-remaining/` (`detail-before.log`,
-`detail-after-initial.log`, `detail-after.log`). Times are evidence rather than budgets.
+`detail-after-initial.log`, `detail-after.log`, `detail-after-final.log`). The final run includes
+the review fix. Times are evidence rather than budgets; background load and the laptop's power
+state differed between runs, so the whole-chain comparison uses the paired run's own before.
 
 Commands:
 
@@ -49,9 +51,9 @@ delta applications, not just a signature helper.
 
 | Records per viewed thread | Viewed threads | Before ms/window | After ms/window |
 | --- | ---: | ---: | ---: |
-| 200 | 1 / 3 / 6 | 0.473 / 0.905 / 1.040 | 0.064 / 0.188 / 0.444 |
-| 1,000 | 1 / 3 / 6 | 0.805 / 2.641 / 5.122 | 0.219 / 0.698 / 1.437 |
-| 2,000 | 1 / 3 / 6 | 1.756 / 5.919 / 15.609 | 0.507 / 1.711 / 3.279 |
+| 200 | 1 / 3 / 6 | 0.473 / 0.905 / 1.040 | 0.117 / 0.263 / 0.524 |
+| 1,000 | 1 / 3 / 6 | 0.805 / 2.641 / 5.122 | 0.244 / 0.762 / 1.697 |
+| 2,000 | 1 / 3 / 6 | 1.756 / 5.919 / 15.609 | 0.513 / 1.871 / 3.852 |
 
 The second benchmark runs native-shaped event and certified activity publication through the
 workspace, coordinator and the window's coalesced state/detail publishers. Each viewed thread
@@ -62,11 +64,12 @@ holds all 2,000 records and that all final streamed message text reaches the sto
 
 | Viewed streaming threads | Before CPU ms/chunk | After CPU ms/chunk | Before active ms/window | After active ms/window |
 | --- | ---: | ---: | ---: | ---: |
-| 1 | 5.483 | 2.867 | 5.481 | 3.521 |
-| 3 | 4.856 | 2.167 | 13.947 | 7.311 |
-| 6 | 4.036 | 2.169 | 23.519 | 14.105 |
+| 1 | 8.067 | 3.900 | 7.604 | 4.336 |
+| 3 | 6.333 | 3.733 | 19.949 | 11.273 |
+| 6 | 5.906 | 3.125 | 34.880 | 19.962 |
 
-Per-chunk CPU stays about flat as more threads stream. Total work per window still grows with
+Per-chunk CPU does not grow as more threads stream. The earlier paired run read
+5.483/4.856/4.036 ms before and 2.867/2.167/2.169 ms after. Total work per window still grows with
 the number of viewed histories: delta maps, order validation and both applications remain, as
 do shell construction and other work outside step 3. This change does not claim to remove them.
 
@@ -76,8 +79,9 @@ do shell construction and other work outside step 3. This change does not claim 
 publishes, growth, same-length replacement, reorder, trim, reset, certification transitions,
 mutable nested edits and message appends. Caller edits to a whole detail or a delta cannot
 change the coordinator's private certified baseline. The existing shared arithmetic and
-shell/detail suites passed before the two lifetime regressions were added: 65 tests. Full gates and Electron evidence are recorded in
-the accompanying verification note once completed.
+shell/detail suites and two integration files passed with the lifetime regressions: 119 tests.
+Electron evidence is recorded in the accompanying verification note; final gates follow on the
+settled source.
 
 #925's unchanged-thread ingestion sharing, #555's usage ledger, Claude activity ingestion,
 #993's classification, changed-thread shell transport and Watcher publishing remain outside
