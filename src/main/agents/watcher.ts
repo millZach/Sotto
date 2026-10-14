@@ -359,7 +359,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   private withdrawWatch(record: WatcherRecord, target: WatcherThreadTarget, operations: Set<string>): void {
     const watches = record.watches?.filter(item => key(item.target) === key(target)) ?? []
-    for (const watch of watches) if (watch.remoteOrigin && !record.watchFences?.some(item => item.id === watch.id)) (record.watchFences ??= []).push({ id: watch.id, target: watch.target, remoteOrigin: watch.remoteOrigin })
+    for (const watch of watches) if (!record.watchFences?.some(item => item.id === watch.id)) (record.watchFences ??= []).push({ id: watch.id, target: watch.target, ...(watch.remoteOrigin ? { remoteOrigin: watch.remoteOrigin } : {}) })
     record.watches = record.watches?.filter(item => key(item.target) !== key(target)) ?? []
     for (const request of record.requests) {
       if (request.standingWatchId && watches.some(watch => watch.id === request.standingWatchId) && request.state === 'active') { request.state = 'stopped'; request.closedAt = now() }
@@ -748,16 +748,18 @@ export class WatcherService implements WatcherControlHooks {
     } else if (!record.current || key(record.current.target) !== key(request.watcher)) refuse('NOT_CURRENT_WATCHER', 'This operation no longer belongs to the current Watcher.')
     if (operation.deliveryState === 'failed') refuse(operation.refusalCode ?? 'REQUEST_NOT_ACTIVE', 'This operation was cancelled before dispatch. Nothing was sent.')
     if (request.state !== 'active' && !this.confirmedWorkerStop(operation, request)) refuse('REQUEST_NOT_ACTIVE', 'This Watcher request has stopped. Nothing was sent.')
-    if (operation.action === 'send' && operation.standingWatchId) {
+    if (!request.remoteOrigin) this.checkLocalWithdrawal(operation)
+    const participant = request.participants.find(item => key(item.target) === key(operation.target))
+    if (operation.standingWatchId) {
       const assignment = record.watches?.find(watch => watch.id === operation.standingWatchId && key(watch.target) === key(operation.target))
-      if (!assignment || assignment.generation !== operation.generation) refuse('REQUEST_NOT_ACTIVE', 'This watch changed or stopped. Nothing was sent.')
+      if (!assignment && !(request.remoteOrigin && operation.action === 'start')) refuse('REQUEST_NOT_ACTIVE', 'This watch changed or stopped. Nothing was sent.')
+      if (assignment && assignment.generation !== operation.generation) refuse(assignment.pausedByUserMessageId || participant?.state === 'taken-over' ? 'THREAD_TAKEN_OVER' : 'REQUEST_NOT_ACTIVE', 'This watch changed or stopped. Nothing was sent.')
     }
     if (request.standingWatchId) {
       const watch = record.watches?.find(item => item.id === request.standingWatchId && key(item.target) === key(operation.target))
       if (!watch || watch.generation !== operation.generation) refuse('THREAD_TAKEN_OVER', 'This watch changed. Read its thread before sending again.')
       if (request.remoteOrigin && watch.remoteOrigin?.masterCreationOperationId !== request.remoteOrigin.creationOperationId) refuse('NOT_CURRENT_WATCHER', 'That Watcher conversation was replaced. Nothing was sent.')
     }
-    const participant = request.participants.find(item => key(item.target) === key(operation.target))
     if (participant?.state === 'relinquished' && (operation.action === 'start' || operation.action === 'send')) refuse('REQUEST_NOT_ACTIVE', 'Watcher settled this participation. Nothing was sent.')
     if (!participant || participant.state !== 'participating' || participant.generation !== operation.generation) refuse('THREAD_TAKEN_OVER', 'You took over this thread. Watcher stopped sending to it.')
     if (participant.automationStopped && (operation.action === 'start' || operation.action === 'send')) refuse('REQUEST_NOT_ACTIVE', 'Watcher stopped this participation. It will not send another prompt for this request.')
@@ -823,7 +825,7 @@ export class WatcherService implements WatcherControlHooks {
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
     finally { this.invocations-- }
   }
-  private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation): Promise<unknown> {
+  private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void): Promise<unknown> {
     const admitted = await this.transaction(async () => {
       if (imported && this.record().remoteAbsences?.some(item => item.operationId === imported.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
       if (imported && this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was sent. Reopen Sotto.')
@@ -872,6 +874,7 @@ export class WatcherService implements WatcherControlHooks {
       if (remote) this.requireRemote(owner, true)
       if (remote && request.standingWatchId && !this.remote?.hosts().find(host => host.hostId === owner)?.standingWatch) refuse('HOST_FEATURE_UNAVAILABLE', 'Update this host before Watcher manages a standing watch.')
       const target = imported?.target ?? (start ? { hostId: owner, threadId: randomUUID() } : (input as WatcherToolInput<'send_to_thread'>).target)
+      if (!imported && !record.watches?.some(watch => key(watch.target) === key(target)) && record.watchFences?.some(fence => !fence.remoteOrigin && fence.target && key(fence.target) === key(target))) refuse('REQUEST_NOT_ACTIVE', 'This thread was unwatched. Watch it again before using another automatic action.')
       if (start && this.options.control.watcherSnapshot().threads.some(item => item.id === target.threadId) && target.hostId === this.hostId()) refuse('TARGET_CHANGED', 'That thread identity already exists. Nothing was started.')
       const thread = start ? undefined : this.thread(target)
       if (thread) { this.protect(thread); if (!this.connected(thread)) refuse('HOST_DISCONNECTED', 'This thread is disconnected. Reconnect it before sending.', true) }
@@ -944,6 +947,7 @@ export class WatcherService implements WatcherControlHooks {
           return imported[name] && imported[name] === item[name]
         })))) refuse('TARGET_CHANGED', 'This operation identity or ownership generation changed. Nothing was sent.')
       await this.options.control.updateWatcher(next => {
+        if (imported && connectionGuard) { connectionGuard(); this.remoteGuards.set(imported.id, connectionGuard) }
         if (turn) next.promptTurns = record.promptTurns
         if (newStandingRequest) next.requests.push(newStandingRequest)
         const owned = next.requests.find(item => item.id === request.id)!
@@ -994,7 +998,7 @@ export class WatcherService implements WatcherControlHooks {
       if (operation.action === 'stop') {
         await this.options.control.updateWatcher(record => {
           const request = record.requests.find(item => item.id === operation.requestId)!
-          const watch = record.watches?.find(item => item.id === request.standingWatchId)
+          const watch = record.watches?.find(item => item.id === (request.standingWatchId ?? operation.standingWatchId))
           if (watch) watch.generation++
           for (const request of record.requests) for (const participant of request.participants) if (key(participant.target) === key(operation.target) && participant.state === 'participating') {
             participant.generation++; participant.automationStopped = true
@@ -1076,11 +1080,12 @@ export class WatcherService implements WatcherControlHooks {
       this.checkCaller(request.watcher.threadId); this.requireRemote(operation.target.hostId, true)
       if (!confirmedStop) {
         const record = this.record(), live = record.operations.find(item => item.id === operation.id)!, scope = record.requests.find(item => item.id === operation.requestId)!
+        this.checkLocalWithdrawal(live)
         const participant = scope.participants.find(item => key(item.target) === key(operation.target))
         if (live.deliveryState === 'failed') refuse(live.refusalCode ?? 'REQUEST_NOT_ACTIVE', 'This operation was cancelled before dispatch.')
         if (!participant || participant.state !== 'participating' || participant.generation !== live.generation) refuse('THREAD_TAKEN_OVER', 'You took over this thread. Nothing was sent.')
         if (scope.standingWatchId && !record.watches?.some(watch => watch.id === scope.standingWatchId && watch.generation === live.generation)) refuse('REQUEST_NOT_ACTIVE', 'This watch changed. Nothing was sent.')
-        if (live.action === 'send' && live.standingWatchId && !record.watches?.some(watch => watch.id === live.standingWatchId && watch.generation === live.generation)) refuse('REQUEST_NOT_ACTIVE', 'This watch changed. Nothing was sent.')
+        if (live.standingWatchId && !record.watches?.some(watch => watch.id === live.standingWatchId && watch.generation === live.generation)) refuse('REQUEST_NOT_ACTIVE', 'This watch changed. Nothing was sent.')
         if (live.action === 'send') this.checkHumanTurn(this.thread(live.target), record)
       }
       if (confirmedStop) confirmedStop()
@@ -1326,19 +1331,24 @@ export class WatcherService implements WatcherControlHooks {
           participants: [], remoteOrigin: { clientId, master, creationOperationId: master.creationOperationId, ceiling: packet.ceiling } }) })
         if (!retry || this.remoteGuards.has(operation.id) && ['queued', 'dispatching', 'uncertain'].includes(retry.deliveryState)) this.remoteGuards.set(operation.id, guard)
       })
-      return await this.mutate(master.target.threadId, call.name, call.input, operation)
+      return await this.mutate(master.target.threadId, call.name, call.input, operation, guard)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('INVALID_INPUT', 'This machine request could not be admitted. Nothing was sent.') }
   }
   private checkRemoteAuthority(operation: WatcherOperation, master: WatcherIdentity, clientId: string, standingWatchId?: string): void {
     this.checkRemoteMaster(master, clientId)
-    const record = this.record(), send = operation.action === 'send', starts = operation.action === 'start'
-    if ((send || starts) && operation.standingWatchId && record.watchFences?.some(fence => fence.id === operation.standingWatchId)) refuse('REQUEST_NOT_ACTIVE', 'This watch was removed. Nothing was sent.')
-    const assignmentId = standingWatchId ?? (send ? operation.standingWatchId : undefined)
+    const record = this.record()
+    if (operation.standingWatchId && record.watchFences?.some(fence => fence.id === operation.standingWatchId)) refuse('REQUEST_NOT_ACTIVE', 'This watch was removed. Nothing was sent.')
+    const assignmentId = standingWatchId ?? (operation.action !== 'start' ? operation.standingWatchId : undefined)
     if (assignmentId && !record.watches?.some(watch => watch.id === assignmentId && key(watch.target) === key(operation.target)
       && watch.remoteOrigin?.clientId === clientId && watch.remoteOrigin.masterHostId === master.target.hostId
       && watch.remoteOrigin.masterCreationOperationId === master.creationOperationId)) refuse('REQUEST_NOT_ACTIVE', 'The owning host has no matching watch assignment. Nothing was sent.')
-    if (send && !operation.standingWatchId && record.watchFences?.some(fence => fence.target && key(fence.target) === key(operation.target)
-      && fence.remoteOrigin.clientId === clientId && fence.remoteOrigin.masterHostId === master.target.hostId)) refuse('REQUEST_NOT_ACTIVE', 'This thread was unwatched. Use a new watch assignment before sending.')
+    if (!operation.standingWatchId && !operation.confirmedStop && record.watchFences?.some(fence => fence.target && key(fence.target) === key(operation.target)
+      && fence.remoteOrigin?.clientId === clientId && fence.remoteOrigin.masterHostId === master.target.hostId)) refuse('REQUEST_NOT_ACTIVE', 'This thread was unwatched. Use a new watch assignment before continuing.')
+  }
+  private checkLocalWithdrawal(operation: WatcherOperation): void {
+    const fences = this.record().watchFences ?? []
+    if (operation.standingWatchId ? fences.some(fence => fence.id === operation.standingWatchId)
+      : !operation.confirmedStop && fences.some(fence => !fence.remoteOrigin && fence.target && key(fence.target) === key(operation.target))) refuse('REQUEST_NOT_ACTIVE', 'This watch was removed. Nothing was sent.')
   }
   remoteProjection(master: WatcherIdentity, clientId: string): WatcherHostProjection {
     const record = this.record(), owned = record.requests.filter(item => key(item.watcher) === key(master.target)

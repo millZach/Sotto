@@ -327,6 +327,117 @@ it('refuses delayed original-request delivery after owning-host unwatch, includi
   expect(worker.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text === 'Synthetic delayed original request')).toHaveLength(0)
 })
 
+it.each([
+  ['stop_thread', false], ['stop_thread', true], ['settle_thread', false], ['settle_thread', true],
+] as const)('fences the first delayed ordinary %s packet after unwatch (legacy=%s)', async (action, legacy) => {
+  const master = await fixture(), worker = await fixture(true), target = await worker.create(), clientId = randomUUID(), requestId = await master.request()
+  const captured = deferred<WatcherHostControl>(), release = deferred<void>()
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId: target.hostId, connected: true, reads: true, control: true, standingWatch: true, permissionCeiling: 'approval-required' }],
+    snapshot: () => worker.control.watcherSnapshot(),
+    read: (_hostId, request) => worker.service.readRemote(request, clientId, () => undefined),
+    control: async (_hostId, request) => {
+      const packet = structuredClone(request)
+      if (legacy) delete packet.operation.standingWatchId
+      captured.resolve(packet); await release.promise
+      return worker.service.admitRemote(packet, clientId, () => undefined)
+    },
+    subscribe: () => () => undefined,
+  }
+  master.service.useRemoteHosts(remote); await master.service.watchThread({ target })
+  const operation = master.call(action, { requestId, retryKey: randomUUID(), target })
+  const packet = await captured.promise
+  expect(packet.request.standingWatchId).toBeUndefined()
+  expect(await master.service.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+  await worker.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic user work after unwatch' })
+  if (action === 'settle_thread') await worker.finish(target.threadId)
+  const interrupts = worker.workspace.adapters.codex.commands.filter(command => command.type === 'interrupt').length
+  try {
+    release.resolve()
+    expect(await operation).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+    expect(worker.control.watcherRecord().operations.some(item => item.id === packet.operation.id)).toBe(false)
+    expect(worker.workspace.adapters.codex.commands.filter(command => command.type === 'interrupt')).toHaveLength(interrupts)
+    expect(worker.control.watcherSnapshot().threads.find(thread => thread.id === target.threadId)?.workspaceSettledAt ?? null).toBeNull()
+    if (action === 'stop_thread') expect(worker.native(target.threadId).status).toBe('running')
+  } finally { release.resolve(); await operation }
+})
+
+it.each(['stop_thread', 'settle_thread'] as const)('rechecks a bound %s assignment at the local writer after withdrawal', async action => {
+  const f = await fixture(), target = await f.create(), requestId = await f.request()
+  await f.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic existing local work' })
+  if (action === 'settle_thread') await f.finish(target.threadId)
+  await f.service.watchThread({ target })
+  const entered = deferred<void>(), release = deferred<void>()
+  const execute = f.workspace.host.executeFromWatcher.bind(f.workspace.host)
+  const settle = f.workspace.host.setWorkspaceSettled.bind(f.workspace.host)
+  const writing = action === 'stop_thread'
+    ? vi.spyOn(f.workspace.host, 'executeFromWatcher').mockImplementation(async (command, guard) => {
+      if (command.type === 'interrupt') { entered.resolve(); await release.promise }
+      return execute(command, guard)
+    })
+    : vi.spyOn(f.workspace.host, 'setWorkspaceSettled').mockImplementation(async (...args) => {
+      entered.resolve(); await release.promise
+      return settle(...args)
+    })
+  const operation = f.call(action, { requestId, retryKey: randomUUID(), target })
+  try {
+    await entered.promise
+    expect(await f.service.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+    release.resolve()
+    expect(await operation).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+    expect(f.workspace.adapters.codex.commands.some(command => command.type === 'interrupt')).toBe(false)
+    expect(f.control.watcherSnapshot().threads.find(thread => thread.id === target.threadId)?.workspaceSettledAt ?? null).toBeNull()
+  } finally { release.resolve(); await operation; writing.mockRestore() }
+})
+
+it.each(['stop_thread', 'settle_thread'] as const)('retains local legacy %s withdrawal fences across restart and admits an explicit fresh watch', async action => {
+  const f = await fixture(), target = await f.create(), requestId = await f.request()
+  await f.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic local user work' })
+  if (action === 'settle_thread') await f.finish(target.threadId)
+  await f.service.watchThread({ target })
+  const old = f.service.state().standingWatches![0]!
+  expect(await f.service.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+  await f.restart()
+  expect(f.control.watcherRecord().watchFences).toContainEqual({ id: old.id, target })
+  const commands = structuredClone(f.workspace.adapters.codex.commands)
+  expect(await f.call(action, { requestId, retryKey: randomUUID(), target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(f.workspace.adapters.codex.commands).toEqual(commands)
+  expect(await f.service.watchThread({ target })).toMatchObject({ status: 'ok' })
+  expect(f.service.state().standingWatches![0]!.id).not.toBe(old.id)
+  expect(await f.call(action, { requestId, retryKey: randomUUID(), target })).toMatchObject({ status: 'ok' })
+})
+
+it('keeps the authenticated owning guard when a read arrives between remote start admission lanes', async () => {
+  const master = await fixture(), worker = await fixture(true), clientId = randomUUID(), requestId = await master.request()
+  const entered = deferred<void>(), release = deferred<void>(), captured = deferred<WatcherHostControl>()
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId: worker.control.hostId()!, connected: true, reads: true, control: true, standingWatch: true, permissionCeiling: 'approval-required' }],
+    snapshot: () => worker.control.watcherSnapshot(),
+    read: (_hostId, request) => worker.service.readRemote(request, clientId, () => undefined),
+    control: (_hostId, request) => { captured.resolve(structuredClone(request)); return worker.service.admitRemote(request, clientId, () => undefined) },
+    subscribe: () => () => undefined,
+  }
+  master.service.useRemoteHosts(remote)
+  const owner = worker.service as unknown as { transaction<T>(work: () => Promise<T>): Promise<T> }
+  const transaction = owner.transaction.bind(owner)
+  let calls = 0
+  const lane = vi.spyOn(owner, 'transaction').mockImplementation(work => {
+    if (++calls !== 2) return transaction(work)
+    entered.resolve(); return release.promise.then(() => transaction(work))
+  })
+  const starting = master.call('start_thread', { requestId, retryKey: randomUUID(), project: { hostId: worker.control.hostId()!, projectId: worker.project.id },
+    modelId: worker.model.id, title: 'Synthetic admitted guard worker', workingCopy: { kind: 'shared' }, firstPrompt: 'Synthetic admission guard prompt' })
+  try {
+    const packet = await captured.promise
+    await entered.promise
+    expect(await worker.service.readRemote({ master: packet.master, standingWatches: [] }, clientId, () => undefined)).toMatchObject({ standingWatches: [] })
+    release.resolve()
+    const result = await starting
+    expect(result, JSON.stringify(result)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+    expect(worker.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text === 'Synthetic admission guard prompt')).toHaveLength(1)
+  } finally { release.resolve(); await starting; lane.mockRestore() }
+})
+
 it.each([['admission', 1], ['mutation', 2]] as const)('rechecks legacy owning authority when unwatch wins before the %s lane', async (_phase, blockedCall) => {
   const master = await fixture(), worker = await fixture(true), target = await worker.create(), clientId = randomUUID(), requestId = await master.request()
   const captured = deferred<WatcherHostControl>(), delivery = deferred<unknown>(), blocked = deferred<void>(), release = deferred<void>()
@@ -384,6 +495,29 @@ it('replays an exact owning receipt after unwatch without admitting the legacy s
   expect(replay).toMatchObject({ status: 'ok', receipt: first.status === 'ok' ? first.receipt : undefined })
   expect(worker.control.watcherRecord()).toEqual(before)
   expect(worker.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text === 'Synthetic legacy receipt replay')).toHaveLength(1)
+})
+
+it.each(['stop_thread', 'settle_thread'] as const)('replays an exact %s receipt after withdrawal without another mutation', async action => {
+  const master = await fixture(), worker = await fixture(true), target = await worker.create(), clientId = randomUUID(), requestId = await master.request()
+  await worker.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic existing replay work' })
+  if (action === 'settle_thread') await worker.finish(target.threadId)
+  let packet: WatcherHostControl | undefined
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId: target.hostId, connected: true, reads: true, control: true, standingWatch: true, permissionCeiling: 'approval-required' }],
+    snapshot: () => worker.control.watcherSnapshot(),
+    read: (_hostId, request) => worker.service.readRemote(request, clientId, () => undefined),
+    control: (_hostId, request) => { packet = structuredClone(request); return worker.service.admitRemote(packet, clientId, () => undefined) },
+    subscribe: () => () => undefined,
+  }
+  master.service.useRemoteHosts(remote); await master.service.watchThread({ target })
+  const first = await master.call(action, { requestId, retryKey: randomUUID(), target })
+  expect(first.status, JSON.stringify(first)).toBe('ok')
+  expect(await master.service.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+  const before = structuredClone(worker.control.watcherRecord()), commands = structuredClone(worker.workspace.adapters.codex.commands)
+  expect(await worker.service.admitRemote(packet!, clientId, () => undefined))
+    .toMatchObject({ status: 'ok', receipt: first.status === 'ok' ? first.receipt : undefined })
+  expect(worker.control.watcherRecord()).toEqual(before)
+  expect(worker.workspace.adapters.codex.commands).toEqual(commands)
 })
 
 it('enforces the same mixed-origin turn budget at the owning host before a fifth packet can dispatch', async () => {

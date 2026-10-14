@@ -1516,9 +1516,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (alias.origins.some(origin => origin.uuid === uuid)) {
         // A steer read into the running turn is part of it. One held past that turn's end starts the next, as any prompt does.
         const steer = this.steers.get(uuid); this.steers.delete(uuid)
+        const messageId = steer ? alias.origins.find(origin => origin.uuid === uuid)?.messageId : undefined
         if (steer && !steer.carried) this.foldedSteers.add(uuid)
         // Its turn is its own message's, though a later steer may already be shown.
-        else if (!this.completedOrigins.has(uuid)) { thread.status = 'running'; if (steer) thread.lastTurn = { id: uuid, status: 'running', ...(runtime.watcher ? { messageId: alias.origins.find(origin => origin.uuid === uuid)?.messageId } : {}) }; this.markTurn(id, 'running', steer ? alias.origins.find(origin => origin.uuid === uuid)?.messageId : undefined) }
+        else if (!this.completedOrigins.has(uuid)) { thread.status = 'running'; if (steer) thread.lastTurn = { id: uuid, status: 'running', ...(runtime.watcher ? { messageId } : {}) }; this.markTurn(id, 'running', messageId) }
         this.acknowledgements.get(uuid)?.()
       }
     }

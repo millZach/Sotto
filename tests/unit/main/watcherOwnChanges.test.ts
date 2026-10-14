@@ -119,6 +119,21 @@ describe('Watcher own changes', () => {
     expect(watcherOwnChanges(t)[0]?.replyMessageId).toBe('reply')
   })
 
+  it('keeps retained later turn anchors as reply boundaries after activity eviction', () => {
+    const t = thread()
+    t.messages = [{ ...message('user', 'user'), watcherObservedChanges: [{ turnId: 'original-native-turn', files: ['/project/old.ts'] }] },
+      message('steer', 'user'), message('reply', 'assistant', 'Watcher change reason: Original'),
+      { ...message('later-user', 'user'), watcherObservedChanges: [{ turnId: 'later-native-turn', files: ['/project/later.ts'] }] },
+      message('later-reply', 'assistant', 'Watcher change reason: Later')]
+    t.activities = [{ id: 'later-turn', turnId: 'later-native-turn', sequence: 0, kind: 'turn', status: 'completed', title: 'Completed', afterMessageId: 'later-user' }]
+    t.lastTurn = { id: 'original-native-turn', status: 'completed' }
+    const expected = [['reply', 'original-native-turn', ['/project/old.ts'], 'Original'], ['later-reply', 'later-native-turn', ['/project/later.ts'], 'Later']]
+    const marks = () => watcherOwnChanges(t).map(mark => [mark.replyMessageId, mark.turnId, mark.files, mark.reason])
+    expect(marks()).toEqual(expected)
+    t.activities = []
+    expect(marks()).toEqual(expected)
+  })
+
   it('uses the normalized Sotto origin of a completed Claude turn to cross a folded steer', () => {
     const t = thread()
     t.messages = [message('user', 'user'), message('steer', 'user'), message('reply', 'assistant')]

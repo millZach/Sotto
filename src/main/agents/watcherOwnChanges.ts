@@ -104,6 +104,11 @@ export function watcherOwnChanges(thread: AgentThread | undefined): WatcherOwnCh
   if (!thread) return []
   const { messages, activities, turns, files } = observedChanges(thread)
   const marks = new Map<string, WatcherOwnChange>()
+  // History-owned user anchors remain boundaries after their lifecycle activity has been evicted.
+  const boundaryTurnIds = new Set(activities.filter(activity => activity.kind === 'turn').map(activity => activity.turnId))
+  for (const message of messages) if (message.role === 'user') {
+    for (const observed of message.watcherObservedChanges ?? []) boundaryTurnIds.add(observed.turnId)
+  }
   for (const message of messages) if (message.role === 'assistant' && message.watcherOwnChange?.replyMessageId === message.id) {
     marks.set(message.id, message.watcherOwnChange)
   }
@@ -114,8 +119,8 @@ export function watcherOwnChanges(thread: AgentThread | undefined): WatcherOwnCh
     const anchor = turns.get(turnId)!
     const currentTerminal = current !== undefined && current.status !== 'running'
       && (current.id === turnId || current.messageId === turnId)
-    const laterTurnAnchors = new Set(activities.filter(activity => activity.kind === 'turn' && activity.turnId !== turnId)
-      .flatMap(activity => { const index = turns.get(activity.turnId); return index !== undefined && index > anchor ? [index] : [] }))
+    const laterTurnAnchors = new Set([...boundaryTurnIds].filter(boundaryTurnId => boundaryTurnId !== turnId)
+      .flatMap(boundaryTurnId => { const index = turns.get(boundaryTurnId); return index !== undefined && index > anchor ? [index] : [] }))
     let reply: typeof messages[number] | undefined
     for (let index = anchor + 1; index < messages.length; index++) {
       // A steer adds a user message inside the provider's current turn. Only the provider's explicit
