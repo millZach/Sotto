@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { UsageDashboardRead, UsageQuery } from '../../../src/shared/usageDashboard'
 import { UsageView, type UsageComputer } from '../../../src/renderer/src/features/usage/UsageView'
 import { deferred } from '../../fixtures/deferred'
-import { USAGE_NOW, USAGE_ZONE, dashboard, fixtureBridge, forgeHost, localHost, oldForgeHost } from '../../fixtures/renderer/usageReads'
+import { USAGE_NOW, USAGE_ZONE, activityRow, dashboard, fixtureBridge, forgeHost, localActivity, localHost, oldForgeHost, tokens } from '../../fixtures/renderer/usageReads'
 
 afterEach(cleanup)
 const now = () => USAGE_NOW
@@ -261,6 +261,33 @@ describe('Usage page', () => {
     render(<UsageView {...props} computers={[laptop, forge]} bridge={bridge} />)
     await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
     expect(refresh).toHaveBeenCalledWith({ hostIds: ['forge'], providerIds: ['codex'] })
+  })
+
+  it('reads Claude again on open when its fresh reading names no share', async () => {
+    // A Claude Code event can carry a window's status and reset without its share; the page asks get_usage for it.
+    const host = localHost()
+    host.quotas = host.quotas.map(quota => quota.providerId !== 'claude' ? quota
+      : { ...quota, windows: quota.windows.map(window => { const shareless = { ...window, status: 'allowed' as const }; delete shareless.usedPercent; return shareless }) })
+    const bridge = fixtureBridge(dashboard(host))
+    const refresh = vi.spyOn(bridge, 'refresh')
+    render(<UsageView {...props} bridge={bridge} />)
+    await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
+    expect(refresh).toHaveBeenCalledWith({ hostIds: ['laptop'], providerIds: ['claude'] })
+  })
+
+  it('says nothing is recorded yet once usage was cleared, keeping the room-left gauges', async () => {
+    const empty = activityRow(0, 0, 0, tokens())
+    const cleared = localActivity(9)
+    const host = { ...localHost(), activity: { ...cleared, metadata: { ...cleared.metadata, clearedAt: '2026-10-14T17:30:00.000Z' },
+      totals: empty, providers: [], models: [], modelCount: 0, daily: [], hourly: [], clients: [] } }
+    const bridge = fixtureBridge(dashboard(host))
+    const user = userEvent.setup()
+    render(<UsageView {...props} bridge={bridge} />)
+    expect(await screen.findByRole('heading', { name: 'Nothing recorded yet' })).toBeVisible()
+    expect(screen.getByText('Usage starts counting again with your next prompt.')).toBeVisible()
+    expect(screen.getByRole('button', { name: /Claude Code/u })).toBeVisible()
+    await user.click(screen.getByRole('tab', { name: 'Models' }))
+    expect(await screen.findByRole('heading', { name: 'No models recorded yet' })).toBeVisible()
   })
 
   it('clears usage from the … menu with a confirmation, and asks again when figures changed', async () => {

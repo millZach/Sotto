@@ -1,4 +1,4 @@
-import { servedModelName } from '../../../../shared/modelCatalog'
+import { canonicalModelId, servedModelName } from '../../../../shared/modelCatalog'
 import {
   USAGE_TOKEN_FIELDS,
   type UsageActivityAggregate, type UsageClient, type UsageClientAggregate, type UsageDashboardRead, type UsageDailyAggregate,
@@ -147,8 +147,10 @@ export function presentUsage(read: UsageDashboardRead): UsageSummary {
   const providers: UsageProviderAggregate[] = grouped(activity.flatMap(row => row.providers), row => row.providerId)
     .map(rows => ({ ...sumActivity(rows), providerId: rows[0]!.providerId }))
     .sort((a, b) => USAGE_PROVIDERS.indexOf(a.providerId) - USAGE_PROVIDERS.indexOf(b.providerId))
-  const models: UsageModelAggregate[] = grouped(activity.flatMap(row => row.models), row => JSON.stringify([row.providerId, row.modelId]))
-    .map(rows => ({ ...sumActivity(rows), providerId: rows[0]!.providerId, modelId: rows[0]!.modelId }))
+  // A host from before ADR-0080 names models by their public ID; the canonical spelling joins its rows to an updated host's.
+  const served = (row: UsageModelAggregate): string => canonicalModelId(row.providerId, row.modelId)
+  const models: UsageModelAggregate[] = grouped(activity.flatMap(row => row.models), row => JSON.stringify([row.providerId, served(row)]))
+    .map(rows => ({ ...sumActivity(rows), providerId: rows[0]!.providerId, modelId: served(rows[0]!) }))
     .sort((a, b) => b.prompts.total - a.prompts.total || fieldValue(b.tokens.total) - fieldValue(a.tokens.total) || a.modelId.localeCompare(b.modelId))
   // A host without a place split counts only Sotto threads; it reads as one Sotto row.
   const clientRows = activity.flatMap(row => row.clients ?? (isEmptyActivity(row.totals) ? [] : [{ ...row.totals, source: 'sotto' as const, clientId: 'sotto' as const, subAgent: false }]))

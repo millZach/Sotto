@@ -20,6 +20,15 @@ describe('Usage numbers in words', () => {
     expect(formatField(combined)).toBe('≥ 0')
     expect(formatField({ knownRows: 0, rows: 0, partial: false })).toBe('—')
   })
+  it('joins one model reported by an older host and an updated host into one row', () => {
+    // An older host names models by their public ID; an updated host by the canonical served ID.
+    const updated = localHost(); const older = oldForgeHost()
+    older.activity = { ...older.activity!, models: [{ ...older.activity!.models[0]!, providerId: 'claude', modelId: 'native:claude:model:claude-opus-5-5' }] }
+    const rows = presentUsage(dashboard(updated, older)).models.filter(row => row.providerId === 'claude' && row.modelId === 'claude-opus-5-5')
+    expect(rows).toHaveLength(1)
+    expect(presentUsage(dashboard(updated, older)).models.some(row => row.modelId.startsWith('native:'))).toBe(false)
+  })
+
   it('names every served model in words the same way on every computer, never as an ID', () => {
     // A client catalog names some Claude models with "Claude" and some without, and differs between versions, so Usage
     // names a row from its served model alone.

@@ -337,12 +337,17 @@ export function Glance({ page }: { readonly page: UsagePage }): ReactNode {
   })}</section>
 }
 
-export function NoHistory({ name }: { readonly name: string }): ReactNode {
+/** The page with nothing to draw: a few empty bars, what is missing and what brings it back. */
+export function EmptyUsage({ title, detail, bars = [8, 14, 10, 22, 16, 6, 18] }: { readonly title: string; readonly detail: string; readonly bars?: readonly number[] }): ReactNode {
   return <div className="usage-empty">
-    <div className="usage-empty__art" aria-hidden="true">{[8, 14, 10, 22, 16, 6, 18].map((height, index) => <i key={index} style={{ height: height * 2 }} />)}</div>
-    <h2>No history from {name} yet</h2>
-    <p>{name}'s history appears after its Owl host update.</p>
+    <div className="usage-empty__art" aria-hidden="true">{bars.map((height, index) => <i key={index} style={{ height: height * 2 }} />)}</div>
+    <h2>{title}</h2>
+    <p>{detail}</p>
   </div>
+}
+
+export function NoHistory({ name }: { readonly name: string }): ReactNode {
+  return <EmptyUsage title={`No history from ${name} yet`} detail={`${name}'s history appears after its Owl host update.`} />
 }
 
 export function About({ page }: { readonly page: UsagePage }): ReactNode {

@@ -3,7 +3,7 @@ import type { UsageDailyAggregate, UsageModelAggregate } from '../../../../share
 import { ProviderMark } from '../../agents/ProviderMark'
 import { roomKeyTarget } from '../../components/AppShell'
 import { CompositionBar, Dash, Spark } from './UsageCharts'
-import { About } from './UsageOverview'
+import { About, EmptyUsage } from './UsageOverview'
 import type { UsagePage } from './usagePage'
 import { NO_TOKENS, PROVIDER_NAMES, fieldValue, fmtInt, fmtTok, isEmptyActivity, pct, relativeDay, share, sumActivity } from './usagePresentation'
 
@@ -25,10 +25,9 @@ export function Models({ page }: { readonly page: UsagePage }): ReactNode {
   const openRow = rows.find(row => keyOf(row) === opened)
   const daily = useModelDaily(page, openRow)
   if (rows.length === 0) {
-    return <><div className="usage-empty">
-      <div className="usage-empty__art" aria-hidden="true">{[8, 14, 10, 22, 16].map((height, index) => <i key={index} style={{ height: height * 2 }} />)}</div>
-      <h2>No models in this range</h2><p>Try a longer range or another provider.</p>
-    </div><About page={page} /></>
+    return <><EmptyUsage bars={[8, 14, 10, 22, 16]} {...(page.cleared
+      ? { title: 'No models recorded yet', detail: 'Models appear here after your next prompt.' }
+      : { title: 'No models in this range', detail: 'Try a longer range or another provider.' })} /><About page={page} /></>
   }
   const maximum = Math.max(1, ...rows.filter(reported).map(row => fieldValue(row.tokens.total)))
   const totals = summary.totals

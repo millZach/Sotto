@@ -6,7 +6,7 @@ import { roomKeyTarget } from '../../components/AppShell'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { ActionMenu, ChoiceMenu, type ChoiceOption } from './UsageMenu'
 import { Models } from './UsageModels'
-import { Glance, NoHistory, Overview } from './UsageOverview'
+import { EmptyUsage, Glance, NoHistory, Overview } from './UsageOverview'
 import { Subscriptions } from './UsageSubscriptions'
 import type { UsagePage, UsageTab, UsageWhere } from './usagePage'
 import {
@@ -129,6 +129,8 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
       refreshedOnOpen.current.add(host.hostId)
       const providerIds = host.quotas.filter(quota => {
         if (!quota.refreshable) return false
+        // Claude Code's passive events can carry a status and no share; a recent one of those is read again too.
+        if (quota.providerId === 'claude' && (quota.status !== 'available' || quota.windows.some(window => window.usedPercent === undefined))) return true
         const observed = Date.parse(quota.observedAt ?? '')
         return !Number.isFinite(observed) || Math.abs(clock - observed) >= QUOTA_FRESH_MS
       }).map(quota => quota.providerId)
@@ -211,6 +213,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
     bridge, read, summary, limits, query: query ?? { timeZone }, hostIds: targets, now: clock, today, timeZone, rangeLabel: label, days,
     provider: activityFilters ? provider : 'all', where: activityFilters ? where : 'all',
     placesKnown: ready.some(host => !predatesHistory(host.activity!)), withoutPlacesNote,
+    cleared: ready.some(host => host.activity?.metadata.clearedAt !== undefined),
     hostName, modelName, providerAccount, announce, openTab, openProvider,
   }
 
@@ -228,6 +231,9 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   else if (tab === 'subscriptions') body = <Subscriptions page={page} refreshing={refreshing} onReadAgain={providerId => void readAgain(providerId)} />
   else if (noHistory) body = <>{tab === 'overview' ? <Glance page={page} /> : null}<NoHistory name={joinNames(read.hosts.map(host => hostName(host.hostId)))} /></>
   else if (tab === 'models') body = <Models page={page} />
+  else if (isEmptyActivity(summary.totals)) body = <><Glance page={page} /><EmptyUsage {...(page.cleared
+    ? { title: 'Nothing recorded yet', detail: 'Usage starts counting again with your next prompt.' }
+    : { title: 'Nothing in this range', detail: 'Try a longer range, another provider or Everywhere.' })} /></>
   else body = <Overview page={page} />
 
   return <section className="usage-view" aria-label="Usage"><div ref={scroll} className="usage-scroll"><div className="usage-page">

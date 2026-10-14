@@ -25,6 +25,8 @@ export interface UsagePage {
   readonly placesKnown: boolean
   /** What older hosts leave out of the place split, in a sentence, or null when nothing is missing. */
   readonly withoutPlacesNote: string | null
+  /** A computer read so far has had its usage cleared, so an empty page means nothing new since. */
+  readonly cleared: boolean
   readonly hostName: (hostId: string) => string
   readonly modelName: (row: Pick<UsageModelAggregate, 'modelId' | 'providerId'>) => string
   readonly providerAccount: (providerId: UsageProviderId, hostId: string) => string
