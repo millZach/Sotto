@@ -31,14 +31,17 @@ export function createWatcherRoomDesktop(options: {
   }
   const publisher = coalesceAgentStatePublishes<WatcherRoomState>(state => { options.send(state) }, options.schedule ? { schedule: options.schedule } : {})
   const unsubscribe = watcher.subscribe(state => publisher.publish(structuredClone(state)))
-  const reply = <Result>(result: Result): Result => { publisher.flush(); return result }
+  const reply = async <Result>(operation: () => Promise<Result>): Promise<Result> => {
+    try { return await operation() }
+    finally { publisher.flush() }
+  }
   return {
     bridge: {
-      get: async () => reply(await bridge.get()),
-      open: async request => reply(await bridge.open(request)),
-      prepareStopAll: async () => reply(await bridge.prepareStopAll()),
-      stopAll: async request => reply(await bridge.stopAll(request)),
-      setLimit: async request => reply(await bridge.setLimit(request)),
+      get: () => reply(() => bridge.get()),
+      open: request => reply(() => bridge.open(request)),
+      prepareStopAll: () => reply(() => bridge.prepareStopAll()),
+      stopAll: request => reply(() => bridge.stopAll(request)),
+      setLimit: request => reply(() => bridge.setLimit(request)),
     },
     dispose: () => { unsubscribe(); publisher.dispose() },
   }

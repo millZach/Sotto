@@ -124,6 +124,20 @@ describe('desktop Watcher room publication', () => {
     } finally { desktop.dispose() }
   })
 
+  it('keeps authorization and schema refusals outside the room reply flush', async () => {
+    const f = fixture(), ipc = createIpcHarness(); ipc.cleanup()
+    const cleanup = registerIpc(ipc.ipc, { settings: ipc.settings, history: ipc.history, startup: ipc.startup, hotkeys: ipc.hotkeys,
+      app: ipc.app, trustedSenders: () => [{ role: 'main', webContents: ipc.trustedContents, url: ipc.trustedUrl }], watcher: f.desktop!.bridge })
+    try {
+      f.publish(room('leading')); f.publish(room('pending'))
+      await expect(ipc.ipc.invoke(WATCHER_OPEN, { provider: 'codex', modelId: 'model', approved: true })).rejects.toThrow()
+      await expect(ipc.ipc.invokeArgs(WATCHER_GET, [], { sender: { ...ipc.trustedContents }, senderFrame: ipc.trustedEvent.senderFrame })).rejects.toThrow()
+      expect(f.service.open).not.toHaveBeenCalled(); expect(f.service.get).not.toHaveBeenCalled()
+      expect(f.send).toHaveBeenCalledTimes(1)
+      f.clock.tick(); expect(f.send).toHaveBeenCalledTimes(2)
+    } finally { cleanup(); f.desktop!.dispose() }
+  })
+
   it.each([
     [WATCHER_GET, undefined], [WATCHER_OPEN, { provider: 'codex', modelId: 'model' }],
     [WATCHER_PREPARE_STOP_ALL, undefined], [WATCHER_STOP_ALL, { confirmationId: randomUUID() }], [WATCHER_SET_LIMIT, { limit: 3 }],
@@ -175,6 +189,41 @@ describe('desktop Watcher room publication', () => {
       expect(f.service.get).toHaveBeenCalledOnce()
       expect(f.order).toEqual(['send:leading', 'send:later tied event'])
       f.clock.tick(); expect(f.send).toHaveBeenCalledTimes(2)
+    } finally { f.desktop!.dispose() }
+  })
+
+  it.each(['open', 'stopAll', 'setLimit'] as const)('flushes before an awaited %s rejection and preserves the original error', async operation => {
+    const f = fixture(), held = deferred<never>(), failure = new Error('Synthetic operation rejection')
+    if (operation === 'open') f.service.open.mockImplementation(() => held.promise)
+    else if (operation === 'stopAll') f.service.stopAll.mockImplementation(() => held.promise)
+    else f.setLimit.mockImplementation(() => held.promise)
+    try {
+      f.publish(room('leading')); f.publish(room('pending'))
+      const answer = operation === 'open' ? f.desktop!.bridge.open({ provider: 'codex', modelId: 'model' })
+        : operation === 'stopAll' ? f.desktop!.bridge.stopAll({ confirmationId: randomUUID() }) : f.desktop!.bridge.setLimit({ limit: 2 })
+      const observed = answer.catch(error => { f.order.push('rejected'); return error })
+      held.reject(failure)
+      expect(await observed).toBe(failure)
+      expect(f.order).toEqual(['send:leading', 'send:pending', 'rejected'])
+      expect(f.service.get).not.toHaveBeenCalled()
+      f.clock.tick(); f.clock.tick(); expect(f.send).toHaveBeenCalledTimes(2)
+    } finally { f.desktop!.dispose() }
+  })
+
+  it.each(['get', 'open', 'prepareStopAll', 'stopAll', 'setLimit'] as const)('flushes before a synchronous %s throw crosses the bridge', async operation => {
+    const f = fixture(), failure = new Error('Synthetic synchronous operation failure')
+    const fail = (): never => { throw failure }
+    if (operation === 'setLimit') f.setLimit.mockImplementation(fail)
+    else f.service[operation].mockImplementation(fail)
+    try {
+      f.publish(room('leading')); f.publish(room('pending'))
+      const answer = operation === 'get' ? f.desktop!.bridge.get()
+        : operation === 'open' ? f.desktop!.bridge.open({ provider: 'codex', modelId: 'model' })
+          : operation === 'prepareStopAll' ? f.desktop!.bridge.prepareStopAll()
+            : operation === 'stopAll' ? f.desktop!.bridge.stopAll({ confirmationId: randomUUID() }) : f.desktop!.bridge.setLimit({ limit: 2 })
+      expect(await answer.catch(error => { f.order.push('rejected'); return error })).toBe(failure)
+      expect(f.order).toEqual(['send:leading', 'send:pending', 'rejected'])
+      f.clock.tick(); f.clock.tick(); expect(f.send).toHaveBeenCalledTimes(2)
     } finally { f.desktop!.dispose() }
   })
 })
