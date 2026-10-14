@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { ProviderId } from '../../shared/agents'
 import {
-  USAGE_QUOTA_WINDOWS_MAX, isUsageProviderId, usageQuotaReadSchema,
+  USAGE_QUOTA_WINDOWS_MAX, isUsageProviderId, usageQuotaReadSchema, usageWindowLength,
   type UsageQuotaRead, type UsageQuotaWindow,
 } from '../../shared/usageDashboard'
 
@@ -44,14 +44,7 @@ function windowId(provider: string, identity: string, kind: string): string {
  * Undefined when the length is unknown, so the caller can say what kind of limit it is instead.
  */
 export function quotaDurationLabel(minutes: number | undefined): string | undefined {
-  if (minutes === undefined || !Number.isSafeInteger(minutes) || minutes <= 0) return undefined
-  if (minutes === 10_080) return 'Week'
-  // A calendar month runs 28 to 31 days.
-  if (minutes >= 40_320 && minutes <= 44_640 && minutes % 1_440 === 0) return 'Month'
-  if (minutes === 1_440) return 'Day'
-  if (minutes % 1_440 === 0) return `${minutes / 1_440} days`
-  if (minutes % 60 === 0) return minutes === 60 ? '1 hour' : `${minutes / 60} hours`
-  return minutes === 1 ? '1 minute' : `${minutes} minutes`
+  return usageWindowLength(minutes)?.label
 }
 
 function codexPayload(value: unknown): Record<string, unknown> | undefined {

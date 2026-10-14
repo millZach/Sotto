@@ -118,7 +118,7 @@ function ModelDetail({ id, row, page, daily }: { readonly id: string; readonly r
     <dl className="usage-detail__facts">
       {fact('Input', tokens('input'))}{fact('Cache read', tokens('cached'))}{fact('Cache write', tokens('cacheWrite'))}{fact('Output', tokens('output'))}
       {fact('Tokens per prompt', has && prompts > 0 ? fmtTok(fieldValue(row.tokens.total) / prompts) : <Dash />)}
-      {fact('Sessions', fmtInt(row.activeThreads))}{fact('Days used', fmtInt(daysUsed))}{fact('Last used', last === undefined ? <Dash /> : relativeDay(last, page.today))}
+      {fact('Provider sessions', fmtInt(row.activeThreads))}{fact('Days used', fmtInt(daysUsed))}{fact('Last used', last === undefined ? <Dash /> : relativeDay(last, page.today))}
     </dl>
     <div className="usage-detail__spark">{daily === undefined ? <span className="usage-detail__wait" aria-hidden="true" /> : <Spark values={values} width={220} height={40} />}<p>{usePrompts ? 'Prompts' : 'Tokens'} per day</p></div>
     {notes.length > 0 ? <p className="usage-detail__note">{notes.join(' ')}</p> : null}

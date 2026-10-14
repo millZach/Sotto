@@ -84,7 +84,7 @@ describe('Usage page', () => {
     expect(screen.getByText(/36\.0M of 41\.0M input tokens were read from cache/u)).toBeVisible()
     await user.keyboard('{ArrowDown}')
     expect(screen.getByRole('heading', { name: 'Models' })).toBeVisible()
-    expect(screen.getByText(/28\.0M tokens · 95% from cache · 9 sessions/u)).toBeVisible()
+    expect(screen.getByText(/28\.0M tokens · 95% from cache · 9 provider sessions/u)).toBeVisible()
     await user.keyboard('{ArrowDown}')
     expect(screen.getByRole('heading', { name: 'When you work' })).toBeVisible()
     expect(screen.getByText('Wednesdays around 10 AM')).toBeVisible()
@@ -240,7 +240,7 @@ describe('Usage page', () => {
     await user.click(opus)
     expect(opus).toHaveAttribute('aria-expanded', 'true')
     const detail = document.getElementById(opus.getAttribute('aria-controls')!)!
-    for (const name of ['Input', 'Cache read', 'Cache write', 'Output', 'Tokens per prompt', 'Sessions', 'Days used', 'Last used']) expect(within(detail).getByText(name)).toBeVisible()
+    for (const name of ['Input', 'Cache read', 'Cache write', 'Output', 'Tokens per prompt', 'Provider sessions', 'Days used', 'Last used']) expect(within(detail).getByText(name)).toBeVisible()
     expect(detail).toHaveTextContent('Tokens per prompt200K')
     expect(detail).toHaveTextContent('Last usedToday')
     await waitFor(() => expect(bridge.reads.some(query => query.modelIds?.[0] === 'claude-opus-5-5' && query.providerIds?.[0] === 'claude')).toBe(true))
@@ -290,6 +290,33 @@ describe('Usage page', () => {
     expect(await screen.findByRole('heading', { name: 'No models recorded yet' })).toBeVisible()
   })
 
+  it('shows an unreported token figure as a dash and an incomplete one as at least', async () => {
+    const host = localHost()
+    const totals = host.activity!.totals
+    host.activity = { ...host.activity!, totals: { ...totals, tokens: { ...totals.tokens,
+      cached: { knownRows: 0, rows: 10, partial: true }, input: { ...totals.tokens.input, partial: true } } } }
+    const { user } = await open(dashboard(host))
+    await user.click(measure(/^Tokens/u))
+    const legend = await screen.findByText('Cache read')
+    expect(legend.closest('div')).toHaveTextContent('—')
+    expect(legend.closest('div')?.querySelector('dd')?.textContent).not.toBe('0')
+    expect(screen.getAllByText('at least').length).toBeGreaterThan(0)
+  })
+
+  it('closes a menu whose every action is disabled with Escape, and when focus leaves it', async () => {
+    // A computer whose host does not offer Usage has nothing to clear, so the menu's one action is disabled.
+    render(<UsageView {...props} bridge={fixtureBridge(dashboard({ hostId: 'laptop', status: 'unsupported', quotas: [] }))} />)
+    const user = userEvent.setup()
+    const more = await screen.findByRole('button', { name: 'More usage actions' })
+    await user.click(more)
+    const menu = await screen.findByRole('menu')
+    await user.keyboard('{Escape}')
+    expect(menu).not.toBeInTheDocument()
+    expect(more).toHaveFocus()
+    await user.click(more); await screen.findByRole('menu')
+    await user.tab()
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+  })
   it('clears usage from the … menu with a confirmation, and asks again when figures changed', async () => {
     const { bridge, user } = await open()
     const clear = vi.spyOn(bridge, 'clear').mockResolvedValueOnce([{ hostId: 'laptop', status: 'stale' }])

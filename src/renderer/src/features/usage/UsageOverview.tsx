@@ -202,7 +202,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
             <span className="usage-share__name"><ProviderMark provider={row.providerId} name={PROVIDER_NAMES[row.providerId]} size={14} /><span>{page.modelName(row)}</span></span>
             <span className="usage-share__value">{share(row.prompts.total, prompts)}<small>{fmtInt(row.prompts.total)}</small></span>
             <span className="usage-share__bar"><i className="usage-grow" style={{ '--usage-w': (row.prompts.total / top).toFixed(3) } as React.CSSProperties} /></span>
-            <span className="usage-share__note">{detail} · {fmtInt(row.activeThreads)} session{row.activeThreads === 1 ? '' : 's'}</span>
+            <span className="usage-share__note">{detail} · {fmtInt(row.activeThreads)} provider session{row.activeThreads === 1 ? '' : 's'}</span>
           </li>
         })}</ol>}
         {ranked.length > shown.length ? <p className="usage-more-line">{ranked.length - shown.length} more in <button type="button" className="usage-link tt-focusable" onClick={() => page.openTab('models')}>Models</button></p> : null}

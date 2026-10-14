@@ -28,7 +28,8 @@ function usePopup(align: 'start' | 'end') {
   useEffect(() => {
     if (!open || !placed) return
     const items = [...(popup.current?.querySelectorAll<HTMLElement>('[role="option"], [role="menuitem"]:not(:disabled)') ?? [])]
-    const target = items.find(item => item.getAttribute('aria-selected') === 'true') ?? items[0]
+    // With every item disabled the popup itself takes focus, so Escape and Tab still reach it.
+    const target = items.find(item => item.getAttribute('aria-selected') === 'true') ?? items[0] ?? popup.current ?? undefined
     target?.focus({ preventScroll: true })
     // Should a frame still refuse focus, the next one takes it.
     if (target === undefined || document.activeElement === target) return
@@ -42,11 +43,18 @@ function usePopup(align: 'start' | 'end') {
       if (!popup.current?.contains(target) && !button.current?.contains(target)) close(false)
     }
     const away = (): void => close(false)
+    // Focus that leaves both the popup and its button, by Tab or a click elsewhere, closes it.
+    const left = (event: FocusEvent): void => {
+      const next = event.relatedTarget as Node | null
+      if (next !== null && !popup.current?.contains(next) && !button.current?.contains(next)) close(false)
+    }
+    popup.current?.addEventListener('focusout', left)
     const scrolled = (event: Event): void => { if (!popup.current?.contains(event.target as Node)) close(false) }
     document.addEventListener('pointerdown', outside, true)
     window.addEventListener('resize', away); window.addEventListener('blur', away); window.addEventListener('scroll', scrolled, true)
     return () => {
       document.removeEventListener('pointerdown', outside, true)
+      popup.current?.removeEventListener('focusout', left)
       window.removeEventListener('resize', away); window.removeEventListener('blur', away); window.removeEventListener('scroll', scrolled, true)
     }
   }, [open, close])
@@ -85,7 +93,7 @@ export function ChoiceMenu<T extends string>({ name, value, options, onChoose, a
       onClick={() => (menu.open ? menu.close(false) : menu.setOpen(true))} onKeyDown={menu.onButtonKey}>
       <span>{current}</span><ChevronDown size={14} aria-hidden="true" />
     </button>
-    {menu.open ? createPortal(<div ref={menu.popup} className="usage-pop" role="listbox" aria-label={name} style={menu.style} onKeyDown={menu.onPopupKey}>
+    {menu.open ? createPortal(<div ref={menu.popup} className="usage-pop" role="listbox" aria-label={name} tabIndex={-1} style={menu.style} onKeyDown={menu.onPopupKey}>
       {options.map(option => <button key={option.value} type="button" role="option" className="usage-pop__item" aria-selected={option.value === value} tabIndex={-1}
         onClick={() => { menu.close(true); onChoose(option.value) }}>
         <Check className="usage-pop__check" size={15} aria-hidden="true" />{option.label}
@@ -105,7 +113,7 @@ export const ActionMenu = forwardRef<HTMLButtonElement | null, { readonly label:
       onClick={() => (menu.open ? menu.close(false) : menu.setOpen(true))} onKeyDown={menu.onButtonKey}>
       <MoreHorizontal size={18} aria-hidden="true" />
     </button>
-    {menu.open ? createPortal(<div ref={menu.popup} className="usage-pop" role="menu" aria-label={label} style={menu.style} onKeyDown={menu.onPopupKey}>
+    {menu.open ? createPortal(<div ref={menu.popup} className="usage-pop" role="menu" aria-label={label} tabIndex={-1} style={menu.style} onKeyDown={menu.onPopupKey}>
       {items.map(item => <button key={item.id} type="button" role="menuitem" className="usage-pop__item" data-tone={item.tone} disabled={item.disabled} title={item.hint} tabIndex={-1}
         onClick={() => { menu.close(false); item.run() }}>
         {item.label}{item.hint ? <span className="tt-visually-hidden">. {item.hint}</span> : null}

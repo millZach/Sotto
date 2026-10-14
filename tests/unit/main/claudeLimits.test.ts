@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClaudeLimits, readClaudeLimits, type ClaudeControl } from '../../../src/main/agents/claudeLimits'
 import { ClaudeRejected } from '../../../src/main/agents/claudeProtocol'
 import recordedUsage from '../../fixtures/claudeUsageAnswer.json'
+import { expectWithinBudget } from '../../fixtures/perfBudget'
 
 const fake = resolve('tests/fixtures/fakeClaudeUsage.mjs')
 const now = () => new Date('2099-10-14T18:00:00.000Z')
@@ -83,7 +84,7 @@ describe('reading Claude limits through a short probe', () => {
   it('gives up at the deadline on a client that never answers, and when the client exits or fails to start first', async () => {
     const started = Date.now()
     expect(await readClaudeLimits(probe('silent', { timeoutMs: 1_500 }))).toMatchObject({ status: 'unavailable', reason: 'refresh-unavailable', refreshable: true })
-    expect(Date.now() - started).toBeLessThan(10_000)
+    expectWithinBudget(Date.now() - started, 10_000, 'a silent client reaching its deadline')
     expect(await readClaudeLimits(probe('exit'))).toMatchObject({ reason: 'refresh-unavailable', refreshable: true })
     expect(await readClaudeLimits(probe('no-init'))).toMatchObject({ reason: 'refresh-unavailable', refreshable: true })
     expect(await readClaudeLimits({ ...probe('usage'), executable: join(root, 'missing-claude.exe') }))
@@ -109,7 +110,7 @@ describe('reading Claude limits through a short probe', () => {
     const both = [readClaudeLimits(probe('silent', { signal: all.signal })), readClaudeLimits(probe('silent', { signal: all.signal }))]
     all.abort()
     for (const read of both) await expect(read).rejects.toThrow()
-    expect(Date.now() - started).toBeLessThan(5_000)
+    expectWithinBudget(Date.now() - started, 5_000, 'aborted reads letting go')
     await expect(readClaudeLimits(probe('usage', { signal: all.signal }))).rejects.toThrow()
   })
 })

@@ -1,5 +1,5 @@
 import React, { type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import type { UsageTokenTotals } from '../../../../shared/usageDashboard'
+import type { UsageFieldTotal, UsageTokenTotals } from '../../../../shared/usageDashboard'
 import { fmtInt, fmtTok, hourLabel, shortDay, WEEKDAYS_SHORT, weekdayOf, LOW_LEFT } from './usagePresentation'
 
 type Style = CSSProperties & Record<`--${string}`, string | number>
@@ -134,31 +134,44 @@ export function HourGrid({ grid, cell, onCell, onKey, label }: {
   </div>
 }
 
-/** Input, split into cache read, cache write and uncached input, beside output. Reads are part of input. */
-export function tokenParts(tokens: UsageTokenTotals): { input: number; output: number; read: number; write: number; uncached: number; writeKnown: boolean; writePartial: boolean } {
-  const input = tokens.input.value ?? 0, output = tokens.output.value ?? 0, read = tokens.cached.value ?? 0, write = tokens.cacheWrite.value ?? 0
-  return { input, output, read, write, uncached: Math.max(0, input - read - write), writeKnown: tokens.cacheWrite.value !== undefined, writePartial: tokens.cacheWrite.partial }
+/** One token figure as reported: a dash when no row reports it, "at least" when some rows leave it out. */
+interface TokenFigure { readonly value: number; readonly known: boolean; readonly partial: boolean }
+const figure = (field: UsageFieldTotal): TokenFigure => ({ value: field.value ?? 0, known: field.value !== undefined, partial: field.partial })
+function Figure({ of }: { readonly of: TokenFigure }): ReactNode {
+  return of.known ? <>{of.partial ? <small>at least </small> : null}{fmtTok(of.value)}</> : <Dash />
+}
+const figureWords = (of: TokenFigure): string => of.known ? `${of.partial ? 'at least ' : ''}${fmtTok(of.value)}` : 'an unreported number of'
+
+/** Input, split into cache read, cache write and uncached input, beside output. Reads and writes are part of input. */
+export function tokenParts(tokens: UsageTokenTotals): { input: TokenFigure; output: TokenFigure; read: TokenFigure; write: TokenFigure; uncached: TokenFigure } {
+  const input = figure(tokens.input), output = figure(tokens.output), read = figure(tokens.cached), write = figure(tokens.cacheWrite)
+  return { input, output, read, write,
+    uncached: { value: Math.max(0, input.value - read.value - write.value), known: input.known && read.known, partial: input.partial || read.partial } }
+}
+
+/** The coloured pieces of input and output, each as wide as its amount. */
+function kindSegments(parts: ReturnType<typeof tokenParts>, className = ''): Record<'read' | 'write' | 'new' | 'out', ReactNode> {
+  const segment = (kind: string, amount: number): ReactNode => amount > 0 ? <i className={`${className}usage-kind--${kind}`} style={{ flexGrow: amount }} /> : null
+  return { read: segment('read', parts.read.value), write: segment('write', parts.write.value), new: segment('new', parts.uncached.value), out: segment('out', parts.output.value) }
 }
 
 export function TokenBar({ tokens, large = false, children }: { readonly tokens: UsageTokenTotals; readonly large?: boolean; readonly children?: ReactNode }): ReactNode {
   const parts = tokenParts(tokens)
-  const segment = (kind: string, amount: number): ReactNode => amount > 0 ? <i className={`usage-tokens__segment usage-kind--${kind}`} style={{ flexGrow: amount }} /> : null
-  const write = !parts.writeKnown ? <Dash /> : <>{parts.writePartial ? <small>at least </small> : null}{fmtTok(parts.write)}</>
-  const writeWords = `${parts.writePartial ? 'at least ' : ''}${parts.writeKnown ? fmtTok(parts.write) : 'an unreported number of'}`
+  const pieces = kindSegments(parts, 'usage-tokens__segment ')
   return <div className={`usage-tokens${large ? ' usage-tokens--large' : ''}`}>
     <div className="usage-tokens__brackets" aria-hidden="true">
-      <span className="usage-tokens__bracket" style={{ flexGrow: Math.max(1, parts.input) }}><span><b>{fmtTok(parts.input)}</b>input</span></span>
-      <span className="usage-tokens__bracket usage-tokens__bracket--output" style={{ flexGrow: Math.max(1, parts.output) }}><span><b>{fmtTok(parts.output)}</b>output</span></span>
+      <span className="usage-tokens__bracket" style={{ flexGrow: Math.max(1, parts.input.value) }}><span><b><Figure of={parts.input} /></b>input</span></span>
+      <span className="usage-tokens__bracket usage-tokens__bracket--output" style={{ flexGrow: Math.max(1, parts.output.value) }}><span><b><Figure of={parts.output} /></b>output</span></span>
     </div>
-    <div className="usage-tokens__bar usage-grow" role="img" aria-label={`${fmtTok(parts.input)} input tokens, including ${fmtTok(parts.read)} cache read and ${writeWords} cache write, then ${fmtTok(parts.output)} output tokens.`}>
-      <span className="usage-tokens__group" style={{ flexGrow: Math.max(1, parts.input) }}>{segment('read', parts.read)}{segment('write', parts.write)}{segment('new', parts.uncached)}</span>
-      <span className="usage-tokens__group" style={{ flexGrow: Math.max(1, parts.output) }}>{segment('out', parts.output)}</span>
+    <div className="usage-tokens__bar usage-grow" role="img" aria-label={`${figureWords(parts.input)} input tokens, including ${figureWords(parts.read)} cache read and ${figureWords(parts.write)} cache write, then ${figureWords(parts.output)} output tokens.`}>
+      <span className="usage-tokens__group" style={{ flexGrow: Math.max(1, parts.input.value) }}>{pieces.read}{pieces.write}{pieces.new}</span>
+      <span className="usage-tokens__group" style={{ flexGrow: Math.max(1, parts.output.value) }}>{pieces.out}</span>
     </div>
     <dl className="usage-tokens__legend">
-      <div><dt><i className="usage-kind--read" />Cache read</dt><dd>{fmtTok(parts.read)}</dd></div>
-      <div><dt><i className="usage-kind--write" />Cache write</dt><dd>{write}</dd></div>
-      <div><dt><i className="usage-kind--new" />Uncached input</dt><dd>{fmtTok(parts.uncached)}</dd></div>
-      <div><dt><i className="usage-kind--out" />Output</dt><dd>{fmtTok(parts.output)}</dd></div>
+      <div><dt><i className="usage-kind--read" />Cache read</dt><dd><Figure of={parts.read} /></dd></div>
+      <div><dt><i className="usage-kind--write" />Cache write</dt><dd><Figure of={parts.write} /></dd></div>
+      <div><dt><i className="usage-kind--new" />Uncached input</dt><dd><Figure of={parts.uncached} /></dd></div>
+      <div><dt><i className="usage-kind--out" />Output</dt><dd><Figure of={parts.output} /></dd></div>
     </dl>
     {children}
   </div>
@@ -168,8 +181,8 @@ export function TokenBar({ tokens, large = false, children }: { readonly tokens:
 export function CompositionBar({ tokens, maximum, reported }: { readonly tokens: UsageTokenTotals; readonly maximum: number; readonly reported: boolean }): ReactNode {
   if (!reported) return <span className="usage-composition usage-composition--unknown" aria-hidden="true" />
   const parts = tokenParts(tokens)
-  const segment = (kind: string, amount: number): ReactNode => amount > 0 ? <i className={`usage-kind--${kind}`} style={{ flexGrow: amount }} /> : null
-  return <span className="usage-composition usage-grow" style={{ '--usage-w': ((parts.input + parts.output) / Math.max(1, maximum)).toFixed(3) } as Style} aria-hidden="true">
-    {segment('read', parts.read)}{segment('write', parts.write)}{segment('new', parts.uncached)}{segment('out', parts.output)}
+  const pieces = kindSegments(parts)
+  return <span className="usage-composition usage-grow" style={{ '--usage-w': ((parts.input.value + parts.output.value) / Math.max(1, maximum)).toFixed(3) } as Style} aria-hidden="true">
+    {pieces.read}{pieces.write}{pieces.new}{pieces.out}
   </span>
 }

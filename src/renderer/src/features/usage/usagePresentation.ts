@@ -1,6 +1,6 @@
 import { canonicalModelId, servedModelName } from '../../../../shared/modelCatalog'
 import {
-  USAGE_TOKEN_FIELDS,
+  USAGE_TOKEN_FIELDS, usageWindowLength,
   type UsageActivityAggregate, type UsageClient, type UsageClientAggregate, type UsageDashboardRead, type UsageDailyAggregate,
   type UsageFieldTotal, type UsageHostRead, type UsageHourlyAggregate, type UsageLocalRead, type UsageModelAggregate,
   type UsageProviderAggregate, type UsageProviderId, type UsageQuotaRead, type UsageQuotaWindow, type UsageSource,
@@ -326,14 +326,8 @@ export interface UsageWindowView {
   readonly startedAt: number | undefined
 }
 function windowName(window: UsageQuotaWindow, providerId: UsageProviderId): { label: string; noun: string } {
-  const minutes = window.durationMinutes
-  let label: string, noun: string
-  if (minutes !== undefined && minutes % 10_080 === 0) { const n = minutes / 10_080; label = n === 1 ? 'Week' : `${n} weeks`; noun = n === 1 ? 'weekly window' : `${n}-week window` }
-  else if (minutes !== undefined && minutes % 1_440 === 0) { const n = minutes / 1_440; label = n === 1 ? 'Day' : `${n} days`; noun = n === 1 ? 'daily window' : `${n}-day window` }
-  else if (minutes !== undefined && minutes % 60 === 0) { const n = minutes / 60; label = `${n} hour${n === 1 ? '' : 's'}`; noun = `${n}-hour window` }
-  else if (minutes !== undefined) { label = `${minutes} minutes`; noun = `${minutes}-minute window` }
-  else if (window.kind === 'weekly') { label = 'Week'; noun = 'weekly window' }
-  else { label = window.label; noun = `${window.label.toLowerCase()} window` }
+  const length = usageWindowLength(window.durationMinutes)
+  let { label, noun } = length ?? (window.kind === 'weekly' ? { label: 'Week', noun: 'weekly window' } : { label: window.label, noun: `${window.label.toLowerCase()} window` })
   // A host that already qualifies its window ("Opus, week", "Week, with extra usage", "Other limit, week") says more than its length.
   if (window.modelId === undefined && (window.kind === 'model' || window.kind === 'other' || window.label.includes(','))) {
     return { label: window.label, noun: `${window.label.charAt(0).toLowerCase()}${window.label.slice(1)} window` }

@@ -201,6 +201,20 @@ export const usageQuotaWindowSchema = z.object({
   status: z.enum(['allowed', 'warning', 'limited']).optional(), observedAt: timestamp.optional(),
 }).strict()
 export type UsageQuotaWindow = z.infer<typeof usageQuotaWindowSchema>
+/**
+ * A window's length in words, as a label ("5 hours", "Week") and as the noun a sentence uses ("5-hour window").
+ * Main names windows with it and the page draws them with it, so the two never disagree.
+ */
+export function usageWindowLength(minutes: number | undefined): { label: string; noun: string } | undefined {
+  if (minutes === undefined || !Number.isSafeInteger(minutes) || minutes <= 0) return undefined
+  const plural = (n: number, one: string, many: string): string => n === 1 ? one : many
+  // A calendar month runs 28 to 31 days, so four weeks is a month too.
+  if (minutes >= 40_320 && minutes <= 44_640 && minutes % 1_440 === 0) return { label: 'Month', noun: 'monthly window' }
+  if (minutes % 10_080 === 0) { const n = minutes / 10_080; return { label: plural(n, 'Week', `${n} weeks`), noun: plural(n, 'weekly window', `${n}-week window`) } }
+  if (minutes % 1_440 === 0) { const n = minutes / 1_440; return { label: plural(n, 'Day', `${n} days`), noun: plural(n, 'daily window', `${n}-day window`) } }
+  if (minutes % 60 === 0) { const n = minutes / 60; return { label: plural(n, '1 hour', `${n} hours`), noun: `${n}-hour window` } }
+  return { label: plural(minutes, '1 minute', `${minutes} minutes`), noun: `${minutes}-minute window` }
+}
 export const usageQuotaReadSchema = z.object({
   providerId: usageProviderIdSchema, status: z.enum(['available', 'unavailable', 'error']),
   windows: z.array(usageQuotaWindowSchema).max(USAGE_QUOTA_WINDOWS_MAX), observedAt: timestamp.optional(), refreshable: z.boolean(),

@@ -48,9 +48,10 @@
 .usage-dates input { min-height: 32px; padding: 4px 9px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; color-scheme: inherit; }
 
 /* ---------- Menus ---------- */
-.usage-pop { position: fixed; z-index: 50; min-width: 190px; padding: 5px; border: 1px solid var(--tt-hairline); border-radius: 11px; background: var(--usage-pop); box-shadow: var(--tt-shadow-lg); font-family: var(--tt-font-ui); animation: usage-pop-in .14s ease-out; }
+.usage-pop { position: fixed; z-index: 50; min-width: 190px; max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; padding: 5px; border: 1px solid var(--tt-hairline); border-radius: 11px; background: var(--usage-pop); box-shadow: var(--tt-shadow-lg); font-family: var(--tt-font-ui); animation: usage-pop-in .14s ease-out; }
 .usage-pop__item { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 12px 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
 .usage-pop__item:is(:hover, :focus-visible) { background: var(--tt-hover); color: var(--tt-text); outline: none; }
+.usage-pop:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
 .usage-pop__item:disabled { opacity: .6; cursor: default; }
 .usage-pop__check { visibility: hidden; color: var(--tt-accent-text); }
 .usage-pop__item[aria-selected='true'] .usage-pop__check { visibility: visible; }
