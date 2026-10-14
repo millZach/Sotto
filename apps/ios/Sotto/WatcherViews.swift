@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import SottoCore
 
 // The Watcher tab (1B, ADR-0073 amended October 11, 2026): Watcher on the computer that runs it, with its Conversation
@@ -1165,34 +1166,47 @@ private struct WatcherPermissionSheet: View {
 
 // MARK: - Watched
 
-/// The threads Watcher works with: how many of how many it may, Stop all, each thread as a card that opens it, and the
-/// ones it no longer watches.
+/// The threads Watcher works with: on a computer whose watches last until the user stops them, what watching means,
+/// Watch a thread and Stop all, then each thread as a card that opens it, with what Watcher last did and Stop watching;
+/// on an older one, how many of how many it may, Stop all and the cards. Then the ones it no longer watches.
 private struct WatchedPane: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
     @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
     let stopAll: () -> Void
+    @State private var picking = false
     var body: some View {
         let page = model.watcherPage(hostID)
+        let manages = model.offersWatcherManage(hostID)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 FeedbackBanner().padding(.top, Space.s3)
                 if let page {
-                    meterRow(page).padding(.top, Space.s4)
+                    if manages { lead(page).padding(.top, Space.s4) } else { meterRow(page).padding(.top, Space.s4) }
                     if page.watched.isEmpty {
-                        Text("Watcher isn’t working with any threads now.").font(.sotto(.body)).foregroundStyle(Palette.muted)
-                            .fixedSize(horizontal: false, vertical: true).padding(.vertical, Space.s6)
+                        if !manages {
+                            Text("Watcher isn’t working with any threads now.").font(.sotto(.body)).foregroundStyle(Palette.muted)
+                                .fixedSize(horizontal: false, vertical: true).padding(.vertical, Space.s6)
+                        }
                     } else {
                         VStack(spacing: Space.s3) {
                             ForEach(page.watched, id: \.target.ref.id) { thread in
-                                WatchedCard(thread: thread, computer: computer(thread), listed: model.thread(thread.target.ref))
+                                let ref = thread.target.ref
+                                let stop: (() -> Void)? = manages ? { stopWatching(thread) } : nil
+                                WatchedCard(thread: thread, computer: computer(thread), listed: model.thread(ref),
+                                            doing: manages ? WatcherWords.doing(thread, in: page) : nil, stop: stop,
+                                            stopping: model.changingWatch(ref), canStop: model.canChangeWatch(ref))
                             }
                         }
                         .padding(.top, Space.s4)
                     }
-                    Text(WatcherWords.room(page)).font(.sotto(.small)).foregroundStyle(Palette.muted)
-                        .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s3)
+                    // Where watches last until the user stops them there is no count to fill; Watcher's limit is on
+                    // how many new threads it starts at once.
+                    if !manages {
+                        Text(WatcherWords.room(page)).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                            .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s3)
+                    }
                     if !page.noLongerWatched.isEmpty {
                         SectionHeading("No longer watched", count: page.noLongerWatched.count)
                         VStack(spacing: 0) {
@@ -1215,10 +1229,53 @@ private struct WatchedPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .refreshable { await model.readWatcher(hostID) }
+        // What a Stop watching press did, with Undo, over the tab bar.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            WatchToast(scope: nil, margin: EdgeInsets(top: 0, leading: Space.s3, bottom: Space.s2, trailing: Space.s3))
+        }
+        .sheet(isPresented: $picking) {
+            WatchPicker(hostID: hostID).presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        }
     }
 
     private func computer(_ thread: WatcherPage.WatchedThread) -> String {
         model.computerName(thread.target.hostId) ?? "another computer"
+    }
+
+    private func stopWatching(_ thread: WatcherPage.WatchedThread) {
+        Task { await model.setWatched(thread.target.ref, false, title: thread.title) }
+    }
+
+    /// What watching means here, then Watch a thread, with Stop all beside it while Watcher has threads it started.
+    private func lead(_ page: WatcherPage) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text(WatcherWords.watchedLead(page.watched.count)).font(.sotto(.body)).foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("watcher-watched-lead")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Space.s3) {
+                    watchButton
+                    stopButton(page)
+                }
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    watchButton
+                    stopButton(page)
+                }
+            }
+        }
+    }
+
+    private var watchButton: some View {
+        Button { picking = true } label: {
+            HStack(spacing: Space.s2) {
+                WatcherOwlMark(size: 18).foregroundStyle(Palette.accentText).accessibilityHidden(true)
+                Text("Watch a thread")
+            }
+        }
+        .buttonStyle(PillButtonStyle(kind: .soft, wide: true))
+        .disabled(!model.online(hostID))
+        .accessibilityHint("Shows the threads Watcher could watch")
+        .accessibilityIdentifier("watcher-watch-a-thread")
     }
 
     private func meterRow(_ page: WatcherPage) -> some View {
@@ -1235,7 +1292,7 @@ private struct WatchedPane: View {
         }
     }
 
-    /// "3 of 4 watched", with a cell for each thread Watcher may work with.
+    /// "3 of 4 watched", with a cell for each thread Watcher may work with, from a computer that keeps no standing watches.
     private func meter(_ page: WatcherPage) -> some View {
         HStack(spacing: Space.s2) {
             HStack(spacing: 3) {
@@ -1274,25 +1331,39 @@ private struct WatchedPane: View {
     }
 }
 
-/// A thread Watcher works with, as Threads draws a working card. It opens the thread where this iPhone lists it.
+/// A thread Watcher works with, as Threads draws a working card, with what Watcher last did with it. It opens the thread
+/// where this iPhone lists it. Where watching lasts until the user stops it, Stop watching sits at its foot.
 private struct WatchedCard: View {
     let thread: WatcherPage.WatchedThread
     let computer: String
     let listed: ThreadSummary?
+    let doing: String?
+    /// Stops watching the thread, on a computer that takes it from this iPhone.
+    let stop: (() -> Void)?
+    let stopping: Bool
+    let canStop: Bool
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            opener
+            if let stop { foot(stop) }
+        }
+        .overlay(alignment: .bottom) { if running { Runner() } }
+        .sottoCard(running ? .working : .plain)
+    }
+    @ViewBuilder private var opener: some View {
         if listed != nil {
-            NavigationLink(value: ThreadRoute(ref: thread.target.ref)) { card }
+            NavigationLink(value: ThreadRoute(ref: thread.target.ref)) { summary }
                 .buttonStyle(PressStyle())
                 .accessibilityLabel(spoken)
                 .accessibilityHint("Opens the thread")
                 .accessibilityIdentifier("watched-\(thread.target.ref.id)")
         } else {
-            card.accessibilityElement(children: .ignore).accessibilityLabel(spoken)
+            summary.accessibilityElement(children: .ignore).accessibilityLabel(spoken)
                 .accessibilityIdentifier("watched-\(thread.target.ref.id)")
         }
     }
     private var running: Bool { WatcherWords.status(thread) == "Working" }
-    private var card: some View {
+    private var summary: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s2) {
                 Light(tone: running ? .accent : thread.status == "error" ? .danger : .off, breathing: running)
@@ -1309,15 +1380,147 @@ private struct WatchedCard: View {
                 .padding(.top, Space.s2)
             PlaceLine(providerID: thread.provider, watched: true, text: "\(AgentNames.name(thread.provider)) on \(computer)")
                 .padding(.top, Space.s1)
+            if let doing {
+                Text(doing).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Space.s2)
+            }
         }
-        .padding(Space.s4)
+        .padding(.horizontal, Space.s4)
+        .padding(.top, Space.s4)
+        .padding(.bottom, stop == nil ? Space.s4 : Space.s2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .bottom) { if running { Runner() } }
-        .sottoCard(running ? .working : .plain)
         .contentShape(Rectangle())
     }
+    private func foot(_ stop: @escaping () -> Void) -> some View {
+        HStack(spacing: Space.s2) {
+            Spacer(minLength: 0)
+            Button(action: stop) {
+                HStack(spacing: 6) {
+                    if stopping { ProgressView().controlSize(.mini) }
+                    Text("Stop watching")
+                }
+            }
+            .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+            .disabled(!canStop)
+            .accessibilityLabel("Stop watching \(thread.title)")
+            .accessibilityIdentifier("watched-stop-\(thread.target.ref.id)")
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.bottom, Space.s3)
+    }
     private var spoken: String {
-        "\(thread.title), \(WatcherWords.status(thread)), \(AgentNames.name(thread.provider)) on \(computer)" + WatchedWords.spoken(true)
+        var words = "\(thread.title), \(WatcherWords.status(thread)), \(AgentNames.name(thread.provider)) on \(computer)" + WatchedWords.spoken(true)
+        if let doing { words += ". " + doing }
+        return words
+    }
+}
+
+/// Watch a thread: the threads this iPhone lists that Watcher could watch, as Threads orders them. A press watches one at
+/// once and closes the list; what it did is said with Undo.
+private struct WatchPicker: View {
+    @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
+    @Environment(\.dismiss) private var dismiss
+    let hostID: String
+    var body: some View {
+        let rows = model.watchableThreads
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                    Text("Watch a thread").font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: Space.s2)
+                    Button("Cancel") { dismiss() }
+                        .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                        .keyboardShortcut(.cancelAction)
+                }
+                Text("Watcher on \(model.name(hostID)) keeps it going and brings you its questions and permissions, until you stop it.")
+                    .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                if rows.isEmpty {
+                    Text("Every thread this iPhone can reach is watched already, or settled.").font(.sotto(.body)).foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true).padding(.vertical, Space.s6)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                            if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4) }
+                            pickRow(row)
+                        }
+                    }
+                    .sottoCard(.plain)
+                }
+            }
+            .padding(.horizontal, Space.gutter)
+            .padding(.top, Space.s6)
+            .padding(.bottom, Space.s6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .presentationBackground { SheetBackdrop(wash: false) }
+        .presentationCornerRadius(Radius.xl)
+    }
+    private func pickRow(_ row: HostedThread) -> some View {
+        let place = Words.place(row)
+        return Button {
+            dismiss()
+            Task { await model.setWatched(row.ref, true, title: row.thread.title) }
+        } label: {
+            HStack(alignment: .center, spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.thread.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    PlaceLine(providerID: row.thread.providerId, watched: false, text: place)
+                }
+                Spacer(minLength: Space.s2)
+                WatcherOwlMark(size: 18).foregroundStyle(Palette.accentText).accessibilityHidden(true)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .disabled(!model.canChangeWatch(row.ref))
+        .accessibilityLabel("Watch \(row.thread.title)")
+        .accessibilityValue(place)
+        .accessibilityIdentifier("watch-pick-\(row.ref.id)")
+    }
+}
+
+/// What the last Watch or Stop watching press did, for eight seconds, with Undo; over a thread's reply box for that
+/// thread (`scope`), or on Watched for any. It never takes focus: VoiceOver hears it, and Watch or Stop watching where the
+/// press was made is the way back once it has gone.
+struct WatchToast: View {
+    @EnvironmentObject var model: AppModel
+    /// The thread whose page shows it; nil shows it for any thread.
+    let scope: ThreadRef?
+    /// Room around it, only while it shows.
+    var margin = EdgeInsets()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        VStack(spacing: 0) {
+            if let notice = model.watchNotice, scope == nil || scope == notice.target {
+                HStack(spacing: Space.s3) {
+                    WatcherOwlMark(size: 18).foregroundStyle(Palette.accentText).accessibilityHidden(true)
+                    Text(notice.words).font(.sotto(.small)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Undo") { Task { await model.undoWatch(notice) } }
+                        .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                        .disabled(!model.canChangeWatch(notice.target))
+                        .accessibilityLabel(notice.undo)
+                        .accessibilityIdentifier("watch-undo")
+                }
+                .padding(.leading, Space.s4)
+                .padding(.trailing, Space.s2)
+                .padding(.vertical, Space.s1)
+                .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous), strong: true)
+                .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .bottom).combined(with: .opacity))
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("watch-toast")
+                .task(id: notice.id) { UIAccessibility.post(notification: .announcement, argument: notice.words) }
+                .padding(margin)
+            }
+        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.85), value: model.watchNotice)
     }
 }
 

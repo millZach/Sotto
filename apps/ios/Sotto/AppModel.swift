@@ -630,17 +630,19 @@ extension AppModel {
     }
 }
 
-// What Watcher may do without asking (ADR-0073, amended October 13, 2026; Zach's pick: control A). A computer that offers
-// `watcher-phone-manage` takes it from this iPhone and checks it again: a mode that lets Watcher act without asking needs
-// this iPhone's Can answer there. It answers nothing. Each change has its own request ID, so a lost acknowledgement reads
-// what the computer did under it; nothing is sent again on its own.
+// What Watcher may do without asking, and the threads it watches (ADR-0073, amended October 13, 2026; Zach's picks:
+// control A, mark B, watch B). A computer that offers `watcher-phone-manage` takes these from this iPhone and checks each
+// one again: a mode that lets Watcher act without asking needs this iPhone's Can answer there, and watching needs only
+// the pairing. None of it answers anything. Each change has its own request ID, so a lost acknowledgement reads what the
+// computer did under it; nothing is sent again on its own.
 extension AppModel {
     static let watcherManageFeature = WatcherWire.manageFeature
-    /// Where `watcherManaging` marks a change to Watcher's permissions on a computer.
+    /// Where `watcherManaging` marks a change to Watcher's permissions on a computer, and to a thread's watch.
     static func permissionKey(_ hostID: String) -> String { "permission/" + hostID }
+    static func watchKey(_ ref: ThreadRef) -> String { "watch/" + ref.id }
 
-    /// Whether this computer takes changes to Watcher's permissions from this iPhone. An older one shows its page without
-    /// them, and this iPhone offers none.
+    /// Whether this computer takes changes to Watcher's permissions and watches from this iPhone. An older one shows its
+    /// page without them, and this iPhone offers neither.
     func offersWatcherManage(_ hostID: String) -> Bool {
         offersWatcher(hostID) && live[hostID]?.features.contains(Self.watcherManageFeature) == true
     }
@@ -685,6 +687,79 @@ extension AppModel {
         if isUIFixture { await setFixtureWatcherPermission(mode, on: hostID); return }
         #endif
         _ = await manageWatcher(operation, on: hostID, unconfirmed: WatcherWords.permissionUnconfirmed(name(hostID)))
+    }
+
+    // MARK: Watching (watch B)
+
+    /// The computer whose Watcher takes Watch or Stop watching for this thread, or nil where none can: the one that
+    /// watches it; otherwise the thread's own computer when it runs Watcher, then the Watcher tab's. Watcher's own thread
+    /// is never offered.
+    func watchHost(for ref: ThreadRef) -> String? {
+        if computers.contains(where: { watcherPage($0.hostID)?.ownRef == ref }) { return nil }
+        if let watching = computers.first(where: { watcherSummary($0.hostID)?.watched.contains(ref.id) == true })?.hostID {
+            return offersWatcherManage(watching) ? watching : nil
+        }
+        if offersWatcherManage(ref.hostID) { return ref.hostID }
+        return watcherHostID.flatMap { offersWatcherManage($0) ? $0 : nil }
+    }
+    /// Whether Watch or Stop watching can be pressed for this thread now.
+    func canChangeWatch(_ ref: ThreadRef) -> Bool {
+        guard let host = watchHost(for: ref) else { return false }
+        return online(host) && !watcherManaging.contains(Self.watchKey(ref))
+    }
+    /// Whether a Watch or Stop watching press for this thread is on its way.
+    func changingWatch(_ ref: ThreadRef) -> Bool { watcherManaging.contains(Self.watchKey(ref)) }
+    /// What a watched thread's reply box says, or nil for one Watcher doesn't watch: where watching lasts until the user
+    /// stops it, that Watcher keeps it going, or waits while the user's own turn runs; on a computer that keeps no such
+    /// watches, that a send there takes it over, as before.
+    func watchedLine(_ ref: ThreadRef) -> String? {
+        guard let host = computers.first(where: { watcherSummary($0.hostID)?.watched.contains(ref.id) == true })?.hostID else { return nil }
+        guard offersWatcherManage(host) else { return WatchedWords.takeover }
+        return watcherSummary(host)?.paused.contains(ref.id) == true ? WatchedWords.paused : WatchedWords.standing
+    }
+    /// The threads this iPhone lists that Watcher could be given to watch, in the order Threads shows them: not settled,
+    /// not watched, on computers reached now, and never a Watcher's own thread.
+    var watchableThreads: [HostedThread] {
+        let groups = FocusThreads(lists)
+        return (groups.questions + groups.working + groups.recent).filter { row in
+            row.reachable && !watchedByWatcher(row.ref) && watchHost(for: row.ref) != nil
+        }
+    }
+    /// Watches the thread, or stops watching it, through the computer that runs Watcher. It asks nothing first; what it
+    /// did is said with Undo for a few seconds. Watching lasts until the user stops it, with no limit on how many. A
+    /// refusal is said in the computer's own words, and an answer lost on the way is read from its receipt.
+    func setWatched(_ ref: ThreadRef, _ watched: Bool, title: String? = nil) async {
+        guard canChangeWatch(ref), let host = watchHost(for: ref), watchedByWatcher(ref) != watched else { return }
+        let key = Self.watchKey(ref)
+        watcherManaging.insert(key)
+        defer { watcherManaging.remove(key) }
+        let named = title ?? thread(ref)?.title ?? watcherPage(host)?.watchedThreads.first { $0.target.ref == ref }?.title ?? "this thread"
+        let target = WatcherTarget(hostId: ref.hostID, threadId: ref.threadID)
+        let notice = WatchNotice(id: UUID(), hostID: host, target: ref, title: named, watched: watched)
+        #if DEBUG && os(iOS)
+        if isUIFixture { await watchFixtureThread(ref, watched, title: named, on: host); showWatchNotice(notice); return }
+        #endif
+        let operation = watched ? WatcherWire.watch(target: target) : WatcherWire.unwatch(target: target)
+        let outcome = await manageWatcher(operation, on: host, unconfirmed: WatcherWords.watchUnconfirmed(named, watched: watched, computer: name(host)))
+        if outcome == .applied { showWatchNotice(notice) }
+    }
+    /// Undo: the press taken back, as a press of its own the other way.
+    func undoWatch(_ notice: WatchNotice) async {
+        dismissWatchNotice(notice.id)
+        await setWatched(notice.target, !notice.watched, title: notice.title)
+    }
+    func dismissWatchNotice(_ id: UUID) {
+        if watchNotice?.id == id { watchNotice = nil }
+    }
+    /// Says what a press did for eight seconds, long enough to reach Undo; a newer press replaces it.
+    private func showWatchNotice(_ notice: WatchNotice) {
+        watchNotice = notice
+        watchNoticeDismissal?.cancel()
+        watchNoticeDismissal = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.dismissWatchNotice(notice.id)
+        }
     }
 
     // MARK: Carrying a change
@@ -1087,10 +1162,14 @@ struct HeldDetail {
     private var watcherRereads: Set<String> = []
     /// What each computer's Watcher page held when this iPhone last read it, for Watcher's own alerts.
     private var watcherWatches: [String: WatcherWatch] = [:]
-    /// Changes to Watcher's permissions on their way, by computer, until their computer answers (`AppModel.permissionKey`).
+    /// Watcher's permissions, by computer, and threads' watches, by thread, being changed until their computer answers
+    /// (`AppModel.permissionKey`, `AppModel.watchKey`).
     @Published private(set) var watcherManaging: Set<String> = []
     /// The mode just chosen for Watcher on each computer, shown on its chip while the computer takes it.
     @Published private(set) var watcherPermissionPicks: [String: String] = [:]
+    /// What the last Watch or Stop watching press did, said with Undo for a few seconds.
+    @Published private(set) var watchNotice: WatchNotice?
+    private var watchNoticeDismissal: Task<Void, Never>?
     /// This iPhone's own preferences: alert switches and new-thread defaults.
     var preferences = PhonePreferences()
     /// Posts local alerts. Nil until the app hands it over.
@@ -1446,10 +1525,10 @@ struct HeldDetail {
         return ["id": "login-account", "kind": "question", "text": "Which account should the login test sign in with?",
                 "options": none, "questions": [question]]
     }
-    /// The laptop's Watcher page: a morning's exchange with what Watcher did for each reply, three threads watched of
-    /// four it may, one it no longer watches, a reply in which Watcher changed two files itself, with its reason unless
-    /// `reasoned` is false, and Fix login test's question waiting. Watcher asks before actions. With `asks`, Watcher
-    /// itself waits for permission to run a command.
+    /// The laptop's Watcher page: a morning's exchange with what Watcher did for each reply, three threads watched until
+    /// the user stops them, one it no longer watches, a reply in which Watcher changed two files itself, with its reason
+    /// unless `reasoned` is false, and Fix login test's question waiting. Watcher asks before actions. With `asks`,
+    /// Watcher itself waits for permission to run a command.
     private static func fixtureWatcherPage(laptop: String, studio: String, mayAnswer: Bool, asks: Bool, reasoned: Bool,
                                            at: @escaping (Double) -> String) -> [String: Any] {
         let watcher: [String: String] = ["hostId": laptop, "threadId": "watcher"]
@@ -1481,6 +1560,10 @@ struct HeldDetail {
             ["target": target, "title": title, "provider": provider, "status": status, "connected": true, "watched": watched,
              "takenOver": false, "backgroundWorkCount": 0]
         }
+        let android: [String: String] = ["hostId": studio, "threadId": "android"]
+        let watches: [[String: Any]] = [(login, 39.0, 1), (notes, 30.0, 2), (android, 25.0, 3)].map { target, minutes, index -> [String: Any] in
+            ["id": "dddddddd-0000-4000-8000-00000000000\(index)", "target": target, "createdAt": at(minutes * 60), "generation": 1]
+        }
         // Sotto's own count of what Watcher changed in its reply, and its reason in its own words.
         let reason: Any = reasoned ? "A one-word typo in two files is smaller than briefing a thread." as Any : NSNull() as Any
         let change: [String: Any] = ["replyMessageId": "noted", "turnId": "turn-noted", "files": ["README.md", "docs/guide.md"], "fileCount": 2,
@@ -1488,7 +1571,7 @@ struct HeldDetail {
         let threads: [[String: Any]] = [
             watched(login, "Fix login test", "claude", "running", true),
             watched(notes, "Babysit #845 release notes", "codex", "running", true),
-            watched(["hostId": studio, "threadId": "android"], "Add Android share sheet", "claude", "running", true),
+            watched(android, "Add Android share sheet", "claude", "running", true),
             watched(["hostId": studio, "threadId": "webhook"], "Payment webhook retries", "codex", "idle", false)
         ]
         var cards: [[String: Any]] = [["target": login, "title": "Fix login test", "provider": "claude", "request": fixtureLoginQuestion,
@@ -1506,7 +1589,7 @@ struct HeldDetail {
                 "conversation": ["messages": messages, "earlierAvailable": false, "revision": 5],
                 "receiptGroups": groups, "watchedThreads": threads, "needsYou": cards,
                 "inFlight": 3, "inFlightLimit": 4, "working": !asks, "observedAt": at(0),
-                "runtimeMode": WatcherPermissions.first, "ownChanges": [change]]
+                "runtimeMode": WatcherPermissions.first, "standingWatches": watches, "ownChanges": [change]]
     }
     /// Changes the fixture's Watcher page as the laptop would, and shows it.
     private func changeFixtureWatcher(on hostID: String, _ change: (inout [String: Any]) -> Void) {
@@ -1530,6 +1613,34 @@ struct HeldDetail {
                 current["runtimeMode"] = page["runtimeMode"]
                 page["current"] = current
             }
+        }
+    }
+    /// The laptop watches the thread until the user stops it, or stops watching it, as it would: a watched row with its
+    /// standing watch, or the row no longer watched and its watch gone.
+    private func watchFixtureThread(_ ref: ThreadRef, _ watched: Bool, title: String, on hostID: String) async {
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        let target: [String: String] = ["hostId": ref.hostID, "threadId": ref.threadID]
+        let listed = thread(ref)
+        changeFixtureWatcher(on: hostID) { page in
+            var rows = page["watchedThreads"] as? [[String: Any]] ?? []
+            var watches = page["standingWatches"] as? [[String: Any]] ?? []
+            let same: ([String: Any]) -> Bool = { ($0["target"] as? [String: String]) == target }
+            watches.removeAll(where: same)
+            if let index = rows.firstIndex(where: same) {
+                rows[index]["watched"] = watched
+                rows[index]["takenOver"] = false
+            } else if watched {
+                var row: [String: Any] = ["target": target, "title": title, "status": listed?.status ?? "idle", "connected": true,
+                                          "watched": true, "takenOver": false, "backgroundWorkCount": 0]
+                if let provider = listed?.providerId { row["provider"] = provider }
+                rows.append(row)
+            }
+            if watched {
+                watches.append(["id": UUID().uuidString.lowercased(), "target": target, "generation": 1,
+                                "createdAt": ISO8601DateFormatter().string(from: Date())])
+            }
+            page["watchedThreads"] = rows
+            page["standingWatches"] = watches
         }
     }
     /// A pull to refresh reads nothing new from the fixture's computer, except in the journey that checks a reader of

@@ -34,6 +34,7 @@ struct ThreadView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: Space.s1) {
                     barPill
+                    if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title) }
                     if model.compactionOffered(ref) { ThreadMenu(ref: ref) }
                 }
             }
@@ -122,6 +123,41 @@ private struct ThreadStatePill: View {
         if state.workInProgress { return Palette.accent.opacity(Tint.accentPill) }
         if state == .failed { return Palette.danger.opacity(0.12) }
         return Palette.fillSoft
+    }
+}
+
+/// Watch beside the thread's state (watch B, Zach's pick on October 13, 2026): pressed while Watcher watches the thread,
+/// which then lasts until the user stops it here or on Watched, with no limit on how many. A press asks nothing first;
+/// what it did is said over the reply box with Undo. Its name stays Watch and its value says whether it is on. Only where
+/// a computer that runs Watcher takes it from this iPhone; at the largest text sizes it is the owl alone.
+private struct WatchToggle: View {
+    @EnvironmentObject var model: AppModel
+    let ref: ThreadRef
+    let title: String?
+    @Environment(\.dynamicTypeSize) private var typeSize
+    var body: some View {
+        let watched = model.watchedByWatcher(ref)
+        let compact = typeSize.isAccessibilitySize
+        Button { Task { await model.setWatched(ref, !watched, title: title) } } label: {
+            HStack(spacing: 6) {
+                if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: 17).accessibilityHidden(true) }
+                if !compact { Text("Watch").lineLimit(1) }
+            }
+            .font(.sotto(.small, .semibold))
+            .foregroundStyle(watched ? Palette.accentText : Palette.ink)
+            .padding(.horizontal, compact ? 0 : Space.s3)
+            .frame(minWidth: 32, minHeight: 32)
+            .background(watched ? Palette.accent.opacity(Tint.accentPill) : Palette.fillSoft, in: Capsule())
+            .overlay(Capsule().strokeBorder(watched ? Palette.accent.opacity(0.6) : Palette.hairline, lineWidth: 1))
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .disabled(!model.canChangeWatch(ref))
+        .accessibilityLabel("Watch")
+        .accessibilityValue(watched ? "On" : "Off")
+        .accessibilityHint(watched ? "Stops Watcher watching this thread" : "Watcher keeps this thread going until you stop it")
+        .accessibilityIdentifier("thread-watch")
     }
 }
 
@@ -1451,7 +1487,9 @@ private struct ReplyDock: View, Equatable {
                 problemNote(problem)
             }
             FollowupStack(ref: ref)
-            if model.watchedByWatcher(ref) { takeoverLine }
+            // What a Watch press just did, with Undo, in place of what watching means here.
+            if model.watchNotice?.target == ref { WatchToast(scope: ref) }
+            else if let line = model.watchedLine(ref) { watchedLine(line) }
             dock
         }
         .padding(.horizontal, Space.s3)
@@ -1459,11 +1497,13 @@ private struct ReplyDock: View, Equatable {
         .padding(.bottom, Space.s2)
     }
 
-    /// A direct instruction here takes the thread over from Watcher; opening it or answering its card doesn't.
-    private var takeoverLine: some View {
+    /// What watching means here: Watcher keeps the thread going, and waits while the user's own turn runs; or, on a
+    /// computer that keeps no standing watches, that a direct instruction here takes the thread over from Watcher.
+    /// Opening the thread or answering its card changes neither.
+    private func watchedLine(_ words: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             WatcherOwlMark(size: 13).accessibilityHidden(true)
-            Text(WatchedWords.takeover).fixedSize(horizontal: false, vertical: true)
+            Text(words).fixedSize(horizontal: false, vertical: true)
         }
         .font(.sotto(.small))
         .foregroundStyle(Palette.muted)
