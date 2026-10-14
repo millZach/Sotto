@@ -14,7 +14,6 @@ import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
-import type { AgentState } from '../../src/shared/agents'
 import type { WatcherRoomState } from '../../src/shared/watcherRoom'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { PERF_BENCH, median } from '../fixtures/perfBench'
@@ -33,7 +32,7 @@ describe.skipIf(!PERF_BENCH)('Watcher room reads from a real socket cache (#991)
     const nativeClone = globalThis.structuredClone
     let measuring = false
     let shellCalls = 0, shellClones = 0
-    let copied = new Map<AgentState, number>()
+    let copied = new Map<object, number>()
     const failures: unknown[] = []
     try {
       const remoteRoot = join(root, 'remote')
@@ -81,7 +80,7 @@ describe.skipIf(!PERF_BENCH)('Watcher room reads from a real socket cache (#991)
       globalThis.structuredClone = function <Value>(value: Value, options?: unknown): Value {
         if (measuring && value !== null && typeof value === 'object' && 'host' in value && 'configuration' in value) {
           shellClones++
-          const state = value as AgentState
+          const state = value
           copied.set(state, (copied.get(state) ?? 0) + 1)
         }
         return Reflect.apply(nativeClone, globalThis, [value, options]) as Value
