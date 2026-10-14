@@ -1,4 +1,4 @@
-import { annotateWatcherOwnChanges } from './watcherOwnChanges'
+import { annotateWatcherOwnChanges, withKeptWatcherChanges } from './watcherOwnChanges'
 import { summarizePullRequestChecks } from './pullRequestCheckState'
 import type { PullRequestObservation } from './watcherEvidence'
 import { threadsInCheckout } from './checkoutCandidates'
@@ -2483,12 +2483,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       } else {
         const nativeMessages = this.legacyMessages(merged, thread.messages)
         const retained = new Map(old?.messages.filter(message => message.watcherOwnChange || message.watcherObservedChanges).map(message => [message.id, message]) ?? [])
-        const messages = merged.kind === 'watcher' ? annotateWatcherOwnChanges({ ...merged, messages: nativeMessages.map(message => {
-          const previous = retained.get(message.id) ?? this.message(merged.id, message.id)
-          return previous ? { ...message,
-            ...(previous.watcherOwnChange && !message.watcherOwnChange ? { watcherOwnChange: previous.watcherOwnChange } : {}),
-            ...(previous.watcherObservedChanges && !message.watcherObservedChanges ? { watcherObservedChanges: previous.watcherObservedChanges } : {}) } : message
-        }) }) : nativeMessages
+        const messages = merged.kind === 'watcher' ? annotateWatcherOwnChanges({ ...merged, messages: nativeMessages.map(message =>
+          withKeptWatcherChanges(message, retained.get(message.id) ?? this.message(merged.id, message.id))) }) : nativeMessages
         merged.messages = this.record(merged, messages, old?.historyEpoch)
         merged.summary = this.threadSummary(merged, this.storeUnavailable ? merged.messages : messages)
       }

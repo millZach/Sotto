@@ -196,6 +196,16 @@ export function watcherOwnChanges(thread: AgentThread | undefined): WatcherOwnCh
   return messages.flatMap(message => { const mark = marks.get(message.id); return mark ? [mark] : [] })
 }
 
+/**
+ * A message with the Watcher change metadata it lacks taken from the copy Sotto kept of it: a provider's fresh read of a
+ * message never carries Sotto's own marks. The same message when nothing is missing.
+ */
+export function withKeptWatcherChanges(message: AgentMessage, kept: AgentMessage | undefined): AgentMessage {
+  const ownChange = message.watcherOwnChange === undefined ? kept?.watcherOwnChange : undefined
+  const observed = message.watcherObservedChanges === undefined ? kept?.watcherObservedChanges : undefined
+  return ownChange || observed ? { ...message, ...(ownChange ? { watcherOwnChange: ownChange } : {}), ...(observed ? { watcherObservedChanges: observed } : {}) } : message
+}
+
 /** Attach marks to history-owned assistant messages; the caller records changed messages through its history path. */
 export function annotateWatcherOwnChanges(thread: AgentThread): AgentMessage[] {
   const { messages, turns, files } = observedChanges(thread)
