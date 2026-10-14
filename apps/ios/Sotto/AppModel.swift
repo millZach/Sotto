@@ -192,11 +192,545 @@ extension AppModel {
     }
 }
 
+// Watcher on this iPhone (ADR-0073, amended October 11, 2026): the Watcher tab reads the page of the computer that runs
+// Watcher, which comes with each of its shells, and sends the user's own words, answers and Stop all to it. Watcher
+// answers nothing, and nothing here is sent again on its own.
+extension AppModel {
+    static let watcherFeature = WatcherWire.feature
+    static let watcherStopFeature = WatcherWire.stopFeature
+
+    /// Whether this computer runs Watcher and shows it to this iPhone: an Owl desktop, after this iPhone opted in.
+    func offersWatcher(_ hostID: String) -> Bool { live[hostID]?.features.contains(Self.watcherFeature) == true }
+    func offersWatcherStop(_ hostID: String) -> Bool { offersWatcher(hostID) && live[hostID]?.features.contains(Self.watcherStopFeature) == true }
+    /// The computer whose Watcher the Watcher tab shows: the one last chosen, by a Watcher alert or the menu in the tab's
+    /// header, while it still runs Watcher, and otherwise the first paired computer that runs one. With none, there is no
+    /// tab, and nothing else in the app changes.
+    var watcherHostID: String? {
+        if let chosen = chosenWatcherHost, offersWatcher(chosen) { return chosen }
+        return computers.first { offersWatcher($0.hostID) }?.hostID
+    }
+    /// Every paired computer whose Watcher this iPhone can show, in the order they were added.
+    var watcherHostIDs: [String] { computers.filter { offersWatcher($0.hostID) }.map(\.hostID) }
+    /// Shows this computer's Watcher on the Watcher tab.
+    func chooseWatcher(_ hostID: String) {
+        guard offersWatcher(hostID), chosenWatcherHost != hostID else { return }
+        chosenWatcherHost = hostID
+    }
+    /// Watcher's page, from `watcherStore`. A view that reads it watches that store, which publishes on its own: the
+    /// page's conversation grows with every shell while Watcher answers, and only the Watcher tab reads it.
+    func watcherPage(_ hostID: String) -> WatcherPage? { offersWatcher(hostID) ? watcherStore.pages[hostID] : nil }
+    /// What the rest of the app reads of Watcher's page, published on the model only when it changes.
+    private func watcherSummary(_ hostID: String) -> WatcherSummary? { offersWatcher(hostID) ? live[hostID]?.watcherSummary : nil }
+    /// The tab's dot and badge. A computer that can't be reached claims neither.
+    var watcherTab: WatcherTabState {
+        guard let hostID = watcherHostID, online(hostID) else { return WatcherTabState(working: false, needs: 0) }
+        let listed = Set(lists.flatMap { list in list.threads.map { ThreadRef(hostID: list.hostID, threadID: $0.id).id } })
+        return WatcherTabState(summary: watcherSummary(hostID), listed: { listed.contains($0.id) })
+    }
+    /// Whether Watcher works with this thread now: the owl after its provider's logo, and the line in its reply box.
+    func watchedByWatcher(_ ref: ThreadRef) -> Bool {
+        computers.contains { watcherSummary($0.hostID)?.watched.contains(ref.id) == true }
+    }
+    /// Every thread Watcher works with now, by `ThreadRef.id`, for a list to read once.
+    var watchedThreadIDs: Set<String> {
+        Set(computers.flatMap { computer in watcherSummary(computer.hostID)?.watched ?? [] })
+    }
+    /// The name a thread's computer goes by here, or nil for a computer this iPhone isn't paired with.
+    func computerName(_ hostID: String) -> String? { computer(hostID)?.name }
+    /// Watcher's model, as its computer names it: "Codex · GPT-6.1 Sol".
+    func watcherModel(_ hostID: String) -> String? {
+        guard let current = watcherPage(hostID)?.current else { return nil }
+        let model = live[hostID]?.shell?.host.models?.first { $0.id == current.modelId }?.name ?? current.modelId
+        return AgentNames.name(current.provider) + " · " + model
+    }
+
+    // MARK: Watcher's page
+
+    /// Reads Watcher's page again, when the user pulls to refresh, after an unconfirmed action, or when a hello came
+    /// without it. Every shell from the computer carries it otherwise. One read at a time on each computer; a request
+    /// during a read asks for one more after it, which runs even when this one fails or its connection changes. A read that
+    /// fails says so, on the page and in the box, until one works.
+    func readWatcher(_ hostID: String) async {
+        #if DEBUG && os(iOS)
+        if isUIFixture { refreshFixtureWatcher(on: hostID); return }
+        #endif
+        guard offersWatcher(hostID), online(hostID) else { return }
+        guard watcherReads.insert(hostID).inserted else { watcherRereads.insert(hostID); return }
+        defer { watcherReads.remove(hostID) }
+        repeat {
+            watcherRereads.remove(hostID)
+            guard online(hostID), let connection = connections[hostID], let epoch = generations[hostID] else { return }
+            // Drafts whose send has ended before this read is asked for: its page says where they stand.
+            let proof = watcherDrafts[hostID]?.endedSends ?? [:]
+            do {
+                let reply = try await connection.call(WatcherWire.read, as: WatcherPhoneResult.self)
+                // Over a connection that has since changed: its page is left, and a read asked for meanwhile still runs.
+                guard generations[hostID] == epoch else { continue }
+                switch reply {
+                case .ok(let page):
+                    if !applyWatcher(page, from: hostID, proof: proof) { setWatcherReadProblem(Self.watcherUnreadable(name(hostID)), on: hostID) }
+                case .refused(let refusal):
+                    setWatcherReadProblem(refusal.message, on: hostID)
+                }
+            } catch let refusal as HostRefusal {
+                if generations[hostID] == epoch { setWatcherReadProblem(refusal.localizedDescription, on: hostID) }
+                continue
+            } catch {
+                if generations[hostID] == epoch { setWatcherReadProblem(Self.watcherUnreadable(name(hostID)), on: hostID) }
+                continue
+            }
+        } while watcherRereads.contains(hostID)
+    }
+    static func watcherUnreadable(_ computer: String) -> String {
+        "Watcher on \(computer) couldn’t be read. Nothing was lost. Pull down to read it again."
+    }
+    /// Why Watcher's page couldn't be read, or nil once it is. Set only when it changes, so nothing redraws for nothing.
+    private func setWatcherReadProblem(_ problem: String?, on hostID: String) {
+        if watcherReadProblems[hostID] != problem { watcherReadProblems[hostID] = problem }
+    }
+    /// Takes a page from its computer, unless it names another computer or is older than the one shown. False when the
+    /// page doesn't belong to the computer that sent it.
+    /// `proof` holds the draft IDs whose send had ended when this page was asked for (see `WatcherDrafts.retire`).
+    @discardableResult private func applyWatcher(_ page: WatcherPage, from hostID: String, proof: [String: Int] = [:]) -> Bool {
+        guard offersWatcher(hostID), (try? page.validate(hostID: hostID)) != nil else { return false }
+        setWatcherReadProblem(nil, on: hostID)
+        if let shown = watcherStore.pages[hostID], page.isOlder(than: shown) { return true }
+        showWatcher(page, on: hostID)
+        noticeWatcher(page, from: hostID)
+        settleWatcherDraft(page, on: hostID, proof: proof)
+        // A card that left the page settles the answer this iPhone sent it, unless that answer is still being checked.
+        for item in scoped(hostID) where item.kind == "watcher-answer" {
+            if connecting.contains(hostID) || dispatchingOperations.keys.contains(item.id) || (deliveryChecks[hostID] ?? 0) > 0 { continue }
+            do { try settle(item, shell: live[hostID]?.shell) } catch { feedback = error.localizedDescription }
+        }
+        return true
+    }
+    /// Shows a page: the whole page on its own store, and only what the rest of the app reads on the model, so a growing
+    /// conversation redraws the Watcher tab and nothing else.
+    private func showWatcher(_ page: WatcherPage, on hostID: String) {
+        if watcherStore.pages[hostID] != page { watcherStore.pages[hostID] = page; publishOnModelIfComparing() }
+        update(hostID) { $0.watcherSummary = WatcherSummary(page) }
+    }
+    /// Watcher's own requests and errors alert under the switches every thread uses; its finished turns never do.
+    private func noticeWatcher(_ page: WatcherPage, from hostID: String) {
+        #if DEBUG && os(iOS)
+        if isUIFixture { return }
+        #endif
+        var watch = watcherWatches[hostID] ?? WatcherWatch()
+        let switches = AlertSwitches(needsYou: preferences.notifyNeedsYou, finished: preferences.notifyFinished, failed: preferences.notifyFailed)
+        // Quiet only for the Watcher on screen; another computer's Watcher still alerts while the tab is open.
+        let onScreen = foreground && watcherOnScreen && watcherHostID == hostID
+        let news = watch.observe(page, hostID: hostID, computer: name(hostID), onScreen: onScreen, switches: switches)
+        watcherWatches[hostID] = watch
+        guard let alerts, !news.isEmpty else { return }
+        for alert in news { alerts.post(alert, sound: preferences.notifySound) }
+    }
+
+    // MARK: Asking Watcher
+
+    /// The Watcher box's words live with the other reply boxes, under this key.
+    func watcherDraftKey(_ hostID: String) -> String { hostID + "/watcher" }
+    /// Why the Watcher box can't send now, in a sentence, or nil when it can. A computer that can't be reached says so in
+    /// its own banner.
+    func watcherSendHeld(_ hostID: String) -> String? {
+        guard online(hostID) else { return nil }
+        guard let page = watcherPage(hostID) else { return watcherReadProblems[hostID] ?? "Reading Watcher on \(name(hostID))…" }
+        guard let current = page.current else { return "Watcher isn’t running on \(name(hostID)). Start it in Sotto on \(name(hostID)), then ask it here." }
+        if !current.connected { return "\(AgentNames.name(current.provider)) isn’t connected on \(name(hostID)), so Watcher can’t take messages. Nothing was sent." }
+        if page.needsYou.contains(where: { page.isOwn($0) }) { return "Answer Watcher’s request first." }
+        return nil
+    }
+    /// Whether the Watcher box holds words it can send now.
+    func canSendToWatcher(_ hostID: String) -> Bool {
+        let text = drafts[watcherDraftKey(hostID)] ?? ""
+        return online(hostID) && watcherSendHeld(hostID) == nil && watcherSending[hostID] == nil
+            && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && text.utf16.count <= 20_000
+    }
+    /// Sends the box's words to Watcher as the user's own instruction, from this iPhone. Refused or unconfirmed, the words
+    /// go back in the box, or are kept under the conversation when newer words are there, and nothing is sent again on
+    /// its own. The same words keep the same draft ID until Watcher's
+    /// computer says it took them, through any other words sent in between, so sending them again after an unconfirmed
+    /// send can't deliver them twice, and a later page that says Watcher took them clears them.
+    func sendToWatcher(_ hostID: String) async {
+        guard canSendToWatcher(hostID), let computer = computer(hostID), let current = watcherPage(hostID)?.current else { return }
+        let key = watcherDraftKey(hostID)
+        let text = drafts[key] ?? ""
+        let draftID = watcherDrafts[hostID, default: WatcherDrafts()].id(for: text)
+        watcherSending[hostID] = text; drafts[key] = ""
+        defer {
+            watcherSending[hostID] = nil
+            watcherDrafts[hostID]?.end(draftID)
+            // The page read after a lost acknowledgement came while the words were still on their way, and may say
+            // Watcher took them: settled now, they leave the box.
+            if let page = watcherPage(hostID) { settleWatcherDraft(page, on: hostID, proof: [:]) }
+        }
+        #if DEBUG && os(iOS)
+        if isUIFixture { await sendToFixtureWatcher(text, on: hostID); watcherDrafts[hostID]?.resolve(draftID); return }
+        #endif
+        guard let connection = connections[hostID], let epoch = generations[hostID] else { restoreWatcherDraft(text, on: hostID, unconfirmed: false); return }
+        let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text)
+        do {
+            let reply = try await connection.call(operation, as: WatcherSendResult.self)
+            // A reply over a connection that has since changed doesn't say what happened to the words.
+            guard generations[hostID] == epoch else {
+                feedback = restoreWatcherDraft(text, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
+                return
+            }
+            switch reply {
+            case .ok(_, let state):
+                watcherDrafts[hostID]?.resolve(draftID)
+                applyWatcher(state, from: hostID)
+            case .refused(let refusal):
+                restoreWatcherDraft(text, on: hostID, unconfirmed: false)
+                feedback = refusal.message
+            }
+        } catch let refusal as HostRefusal {
+            restoreWatcherDraft(text, on: hostID, unconfirmed: false)
+            feedback = refusal.localizedDescription
+        } catch {
+            // Lost on its way, perhaps after Watcher took it. Its part on the wire has ended either way, so the page read
+            // now, after it on the same connection, says where the draft stands; the box waits until that read is done.
+            // A page that already says Watcher took it settles it; otherwise the words go back in the box, or under the
+            // conversation, and the page is read again.
+            watcherDrafts[hostID]?.end(draftID)
+            if watcherPage(hostID)?.delivery(of: draftID) == "accepted" {
+                watcherDrafts[hostID]?.resolve(draftID)
+            } else {
+                feedback = restoreWatcherDraft(text, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
+                await readWatcher(hostID)
+            }
+        }
+    }
+    static let watcherUnconfirmed = "Watcher didn’t confirm your message, so it’s back in the box. Check the conversation before you send it again."
+    static let watcherUnconfirmedSetAside = "Watcher didn’t confirm your message. It’s kept under the conversation, because the box has newer words. Check the conversation before you send it again."
+    /// Puts words that didn't reach Watcher, or that it didn't confirm, back in its box. When the user has written
+    /// something new there since, they are kept under the conversation instead, to be put back once the box is empty.
+    /// Says whether they went back in the box.
+    @discardableResult private func restoreWatcherDraft(_ text: String, on hostID: String, unconfirmed: Bool) -> Bool {
+        let key = watcherDraftKey(hostID)
+        let box = drafts[key] ?? ""
+        if box.isEmpty || box == text { drafts[key] = text; return true }
+        var kept = watcherSetAside[hostID] ?? []
+        kept.removeAll { $0.text == text }
+        kept.append(WatcherSetAside(text: text, unconfirmed: unconfirmed))
+        watcherSetAside[hostID] = kept
+        return false
+    }
+    /// Puts words kept under the conversation back in Watcher's box, once it is empty.
+    func restoreWatcherWords(_ words: WatcherSetAside, on hostID: String) {
+        let key = watcherDraftKey(hostID)
+        guard (drafts[key] ?? "").isEmpty, var kept = watcherSetAside[hostID], let index = kept.firstIndex(of: words) else { return }
+        drafts[key] = words.text
+        kept.remove(at: index)
+        watcherSetAside[hostID] = kept.isEmpty ? nil : kept
+    }
+    /// Words put back after an unconfirmed send leave the box once Watcher's computer says it took them. A page asked for
+    /// after their send ended (`proof`) also lets go of draft IDs it no longer shows on their way, so the same words sent
+    /// again later go as a new message. It runs while a send is on its way too: that send's draft hasn't ended, so no page
+    /// lets go of it, and the read after a lost acknowledgement is how its draft is settled.
+    private func settleWatcherDraft(_ page: WatcherPage, on hostID: String, proof: [String: Int]) {
+        guard watcherDrafts[hostID] != nil else { return }
+        let taken = watcherDrafts[hostID]?.retire(after: page, proof: proof) ?? []
+        guard !taken.isEmpty else { return }
+        let key = watcherDraftKey(hostID)
+        for sent in taken {
+            if drafts[key] == sent.text { drafts[key] = "" }
+            if let kept = watcherSetAside[hostID] {
+                let left = kept.filter { $0.text != sent.text }
+                if left != kept { watcherSetAside[hostID] = left.isEmpty ? nil : left }
+            }
+        }
+        if feedback == Self.watcherUnconfirmed || feedback == Self.watcherUnconfirmedSetAside { feedback = nil }
+    }
+
+    // MARK: Cards in Watcher's page (4B)
+
+    /// Where the answer to a card in Watcher's page goes, whether or not it can be answered now: through Watcher's page
+    /// for a thread on the computer that runs Watcher, or to the thread's own computer when this iPhone is paired with
+    /// it. Nil for a thread on a computer this iPhone isn't paired with.
+    func watcherCardPlace(_ card: WatcherPage.RequestCard, on hostID: String) -> RequestPlace? {
+        if card.target.hostId == hostID { return .watcher(hostID: hostID, target: card.target.ref) }
+        return computer(card.target.hostId) != nil ? .thread(card.target.ref) : nil
+    }
+    /// Whether a card in Watcher's page can be answered from here, with the request as the computer that holds it has it
+    /// now. A card for a thread on another computer is Watcher's copy, not that computer's word: it is answered only
+    /// while that computer, reached now, still holds the same request in that thread. Otherwise the card says why.
+    func watcherCardRoute(_ card: WatcherPage.RequestCard, on hostID: String) -> WatcherCardRoute {
+        guard let place = watcherCardPlace(card, on: hostID) else { return .note("Answer this one in Sotto on \(name(hostID)).") }
+        switch place {
+        case .watcher:
+            guard let request = waitingRequest(card.request.id, at: place) else { return .note(Self.requestNoLongerWaiting) }
+            return .answer(place, request)
+        case .thread(let ref):
+            let computer = name(ref.hostID)
+            guard online(ref.hostID) else { return .note("Reconnect to \(computer) to answer this one.") }
+            guard let request = waitingRequest(card.request.id, at: place), request.kind == card.request.kind else {
+                return .note("This request is no longer waiting on \(computer). Nothing was answered.")
+            }
+            return .answer(place, request)
+        }
+    }
+    /// Whether a card in Watcher's page can take an answer through Watcher's computer now. The computer checks Can answer
+    /// again. A card for a thread on another computer is answered there, through that computer's own pairing.
+    func canAnswerWatcherCard(_ card: WatcherPage.RequestCard, on hostID: String) -> Bool {
+        guard online(hostID), mayAnswer(hostID), card.mayAnswer, card.connected, card.request.supported, !answering(hostID),
+              card.target.hostId == hostID, watcherPage(hostID)?.card(card.target.ref, requestID: card.request.id) != nil else { return false }
+        return true
+    }
+    /// The answer this iPhone sent to a card in Watcher's page, while its computer hasn't confirmed it.
+    func watcherAnswerMarker(_ card: WatcherPage.RequestCard, on hostID: String) -> PendingOperation? {
+        scoped(hostID).first { $0.kind == "watcher-answer" && $0.threadID == card.target.threadId && $0.requestID == card.request.id }
+    }
+    /// Answers a card in Watcher's page as the user's own answer to the thread that asked, through the computer that runs
+    /// Watcher, which checks Can answer before it acts. Answering keeps the thread watched; Watcher answers nothing.
+    func answerWatcherCard(_ card: WatcherPage.RequestCard, on hostID: String, choice: String? = nil, text: String = "",
+                           answers: [String: QuestionAnswer] = [:]) async {
+        guard canAnswerWatcherCard(card, on: hostID), let computer = computer(hostID), let page = watcherPage(hostID) else { return }
+        let waiting = page.needsYou.filter { $0.target == card.target }.map(\.request)
+        do {
+            let command = try Commands.answer(threadID: card.target.threadId, request: card.request, currentRequests: waiting,
+                                              choice: choice, text: text, answers: answers)
+            guard case .object(let fields) = command else { throw ClientError.invalidRequest }
+            let request = try WatcherWire.answer(target: card.target, command: fields)
+            #if DEBUG && os(iOS)
+            if isUIFixture { settleFixtureWatcherCard(card, on: hostID); return }
+            #endif
+            guard let connection = connections[hostID] else { return }
+            let epoch = generations[hostID]
+            let operation = PendingOperation(hostID: hostID, clientID: computer.pairing.clientId, threadID: card.target.threadId,
+                                             requestID: card.request.id, kind: "watcher-answer")
+            try remember(operation)
+            dispatchingOperations[operation.id] = .some(epoch)
+            defer { dispatchingOperations[operation.id] = nil }
+            do {
+                // The request's ID is the marker's, so a lost acknowledgement reads this answer's own receipt.
+                let reply = try await connection.call(request, as: WatcherPhoneResult.self, id: operation.id)
+                guard generations[hostID] == epoch else { return }
+                switch reply {
+                case .ok(let state):
+                    applyWatcher(state, from: hostID)
+                    // Only this answer's own receipt says it reached the thread.
+                    await checkDelivery(hostID)
+                case .refused(let refusal):
+                    try rejectOperation(operation)
+                    feedback = refusal.message
+                }
+            } catch let error as HostRefusal {
+                guard generations[hostID] == epoch else { return }
+                if ["invalid_request", "stale_request", "forbidden", "busy"].contains(error.failure.code) { try rejectOperation(operation) }
+                if error.failure.code == "forbidden" { update(hostID) { $0.mayAnswer = false } }
+                feedback = error.failure.code == "stale_request"
+                    ? "That request changed before your answer reached it. Nothing was answered. Check the card again."
+                    : error.localizedDescription
+                await readWatcher(hostID)
+            } catch {
+                guard generations[hostID] == epoch else { return }
+                if let token = claimReceipt(operation.id, over: epoch) { await followReceipt(operation, on: connection, epoch: epoch, token: token) }
+            }
+            if generations[hostID] == epoch, pending.contains(where: { $0.id == operation.id }) {
+                operationFeedback("Your answer isn’t confirmed. Check the thread before you answer again. Nothing was resent.", operations: [operation.id])
+            }
+        } catch { feedback = error.localizedDescription }
+    }
+
+    // MARK: Stop all
+
+    /// Stop all's first step: what it would stop, for the user to confirm. Nothing is stopped yet.
+    func prepareWatcherStop(_ hostID: String) async -> WatcherStopPreview? {
+        guard offersWatcherStop(hostID), online(hostID), !watcherStopping.contains(hostID) else { return nil }
+        watcherStopping.insert(hostID)
+        defer { watcherStopping.remove(hostID) }
+        #if DEBUG && os(iOS)
+        if isUIFixture { return fixtureWatcherStopPreview(hostID) }
+        #endif
+        guard let connection = connections[hostID], let epoch = generations[hostID] else { return nil }
+        do {
+            let reply = try await connection.call(WatcherWire.prepareStop, as: WatcherStopPreviewResult.self)
+            guard generations[hostID] == epoch else { return nil }
+            switch reply {
+            case .ok(let preview): return preview
+            case .refused(let refusal): feedback = refusal.message; return nil
+            }
+        } catch let refusal as HostRefusal {
+            feedback = refusal.localizedDescription
+        } catch {
+            feedback = "Stop all couldn’t be checked on \(name(hostID)). Nothing was stopped. Try again."
+        }
+        return nil
+    }
+    /// Stops what the user confirmed: only threads Watcher started that it still works with. Each thread's result is said;
+    /// nothing is tried again on its own. The computer keeps what Stop all did under its request's ID for a few minutes,
+    /// so a lost acknowledgement reads that receipt rather than leave the outcome unsaid.
+    func confirmWatcherStop(_ preview: WatcherStopPreview, on hostID: String) async {
+        guard offersWatcherStop(hostID), online(hostID), !watcherStopping.contains(hostID) else { return }
+        watcherStopping.insert(hostID)
+        defer { watcherStopping.remove(hostID) }
+        let titles = Dictionary(preview.targets.map { (ThreadRef(hostID: $0.hostId, threadID: $0.threadId).id, $0.title) }, uniquingKeysWith: { first, _ in first })
+        #if DEBUG && os(iOS)
+        if isUIFixture { stopFixtureWatcher(preview, on: hostID, titles: titles); return }
+        #endif
+        guard let connection = connections[hostID], let epoch = generations[hostID] else { return }
+        let request = WatcherStopRequest(id: UUID().uuidString.lowercased(), titles: titles)
+        watcherStops[hostID] = request
+        do {
+            let reply = try await connection.call(WatcherWire.stop(confirmationID: preview.confirmationId), as: WatcherStopResult.self, id: request.id)
+            // Over a connection that has since changed, the outcome is read from the receipt once the computer is back.
+            guard generations[hostID] == epoch else { return }
+            watcherStops[hostID] = nil
+            switch reply {
+            case .ok(let state, let results):
+                applyWatcher(state, from: hostID)
+                feedback = WatcherWords.stopped(results, titles: titles)
+            case .refused(let refusal):
+                feedback = refusal.message
+            }
+        } catch let refusal as HostRefusal {
+            if watcherStops[hostID]?.id == request.id { watcherStops[hostID] = nil }
+            feedback = refusal.localizedDescription
+        } catch {
+            // Said until its receipt says more; a connection that is gone reads it once the computer is back.
+            feedback = Self.watcherStopUnconfirmed
+            await recoverWatcherStop(hostID)
+        }
+    }
+    static let watcherStopUnconfirmed = "Stop all isn’t confirmed. Check Watched before you stop anything again."
+    /// Reads what a Stop all whose acknowledgement was lost did, from the receipt its computer keeps under the request's
+    /// ID, then reads Watcher's page again. Still being carried out, or not read, it is kept and read again once the
+    /// computer is reached again. Nothing is stopped again.
+    func recoverWatcherStop(_ hostID: String) async {
+        guard let request = watcherStops[hostID], online(hostID), let connection = connections[hostID], let epoch = generations[hostID] else { return }
+        // One read of a Stop all receipt at a time on each connection to a computer. A read over a newer connection runs,
+        // since one over an older connection stops at its next read.
+        guard watcherStopRecoveries[hostID] != epoch else { return }
+        watcherStopRecoveries[hostID] = epoch
+        defer { if watcherStopRecoveries[hostID] == epoch { watcherStopRecoveries[hostID] = nil } }
+        let marked = watcherStopping.insert(hostID).inserted
+        defer { if marked { watcherStopping.remove(hostID) } }
+        var receipt: Receipt?
+        for read in 1...Self.receiptReads {
+            do { receipt = try await connection.call(["op": .string("receipt"), "commandId": .string(request.id)], as: Receipt.self) }
+            catch { receipt = nil; break }
+            guard generations[hostID] == epoch, watcherStops[hostID]?.id == request.id else { return }
+            guard receipt?.stillWorking == true, read < Self.receiptReads else { break }
+            do { try await receiptSleep(Self.receiptInterval) } catch { return }
+        }
+        guard generations[hostID] == epoch, watcherStops[hostID]?.id == request.id else { return }
+        if let receipt, !receipt.stillWorking {
+            // What it did, what the computer refused, or that the computer doesn't know it: settled either way.
+            watcherStops[hostID] = nil
+            switch receipt.watcherStop {
+            case .ok(let results)?: feedback = WatcherWords.stopped(results, titles: request.titles)
+            case .refused(let refusal)?: feedback = refusal.message
+            case nil: feedback = Self.watcherStopUnconfirmed
+            }
+        } else {
+            feedback = Self.watcherStopUnconfirmed
+        }
+        await readWatcher(hostID)
+    }
+}
+
+/// Whether a card in Watcher's page can be answered from here.
+enum WatcherCardRoute: Equatable {
+    /// Answered at this place, with the request as its computer holds it now.
+    case answer(RequestPlace, AgentRequest)
+    /// Not answered from here now, and why, in a sentence.
+    case note(String)
+}
+
+/// Where a waiting request lives, and so where its answer goes: its own thread, on its own computer, or a card in
+/// Watcher's page on the computer that runs Watcher (4B). Either way the answer is the user's own, to the thread that asked.
+enum RequestPlace: Equatable {
+    case thread(ThreadRef)
+    /// A card for `target`, a thread on `hostID`, the computer that runs Watcher.
+    case watcher(hostID: String, target: ThreadRef)
+    /// The computer this iPhone sends the answer to.
+    var hostID: String {
+        switch self {
+        case .thread(let ref): return ref.hostID
+        case .watcher(let hostID, _): return hostID
+        }
+    }
+    /// The thread that asked.
+    var asker: ThreadRef {
+        switch self {
+        case .thread(let ref): return ref
+        case .watcher(_, let target): return target
+        }
+    }
+}
+
+// The request sheet reads and answers a request wherever it waits.
+extension AppModel {
+    /// The request as its computer holds it now; nil once it is answered or replaced.
+    func waitingRequest(_ id: String, at place: RequestPlace) -> AgentRequest? {
+        switch place {
+        case .thread(let ref): return thread(ref)?.requests.first { $0.id == id }
+        case .watcher(let hostID, let target): return watcherPage(hostID)?.card(target, requestID: id)?.request
+        }
+    }
+    /// The asking thread's title and provider.
+    func requestOwner(_ place: RequestPlace) -> (title: String, providerID: String?)? {
+        switch place {
+        case .thread(let ref): return thread(ref).map { ($0.title, $0.providerId) }
+        case .watcher(let hostID, let target):
+            guard let page = watcherPage(hostID), let card = page.needsYou.first(where: { $0.target.ref == target }) else { return nil }
+            return (page.isOwn(card) ? "Watcher" : card.title, card.provider)
+        }
+    }
+    func mayAnswer(at place: RequestPlace) -> Bool {
+        switch place {
+        case .thread(let ref): return mayAnswer(ref.hostID)
+        case .watcher(let hostID, let target):
+            return mayAnswer(hostID) && target.hostID == hostID
+                && watcherPage(hostID)?.needsYou.contains { $0.target.ref == target && $0.mayAnswer } == true
+        }
+    }
+    func canAnswer(_ request: AgentRequest, at place: RequestPlace) -> Bool {
+        switch place {
+        case .thread(let ref): return canAnswer(request, in: ref)
+        case .watcher(let hostID, let target):
+            guard let card = watcherPage(hostID)?.card(target, requestID: request.id), card.request == request else { return false }
+            return canAnswerWatcherCard(card, on: hostID)
+        }
+    }
+    func answer(_ request: AgentRequest, at place: RequestPlace, choice: String? = nil, text: String = "", answers: [String: QuestionAnswer] = [:]) async {
+        switch place {
+        case .thread(let ref): await answer(request, in: ref, choice: choice, text: text, answers: answers)
+        case .watcher(let hostID, let target):
+            guard let card = watcherPage(hostID)?.card(target, requestID: request.id), card.request == request else { return }
+            await answerWatcherCard(card, on: hostID, choice: choice, text: text, answers: answers)
+        }
+    }
+    /// The answer this iPhone sent for the request, while its computer hasn't confirmed it.
+    func answerMarker(_ requestID: String, at place: RequestPlace) -> PendingOperation? {
+        switch place {
+        case .thread(let ref): return pending(for: ref).first { $0.kind == "answer" && $0.requestID == requestID }
+        case .watcher(let hostID, let target):
+            return scoped(hostID).first { $0.kind == "watcher-answer" && $0.threadID == target.threadID && $0.requestID == requestID }
+        }
+    }
+    /// Whether anything this iPhone sent there is still unconfirmed.
+    func hasPending(at place: RequestPlace) -> Bool {
+        switch place {
+        case .thread(let ref): return !pending(for: ref).isEmpty
+        case .watcher(let hostID, let target): return scoped(hostID).contains { $0.kind == "watcher-answer" && $0.threadID == target.threadID }
+        }
+    }
+}
+
 /// A computer step 1 of adding found at a private address, with the health it answered.
 struct FoundHost: Equatable {
     let endpoint: HostEndpoint; let health: Health
     /// The computer's own name, or its name on the tailnet from a host that sends none.
     var name: String { health.computerName ?? endpoint.machine }
+}
+
+/// A Stop all this iPhone confirmed: the request's ID, under which its computer keeps what it did for a few minutes, and
+/// the confirmed threads' titles, by `ThreadRef.id`, to say it with.
+struct WatcherStopRequest: Sendable {
+    let id: String
+    let titles: [String: String]
 }
 
 /// What this iPhone knows about one paired computer while the app runs. Nothing here is saved. Equatable, so a state
@@ -209,6 +743,9 @@ struct Live: Equatable {
     var features: [String] = []
     /// Why the last connection ended, for the computer's own page.
     var problem: String?
+    /// What the rest of the app reads of Watcher's page, from a computer that runs Watcher and offers it to this iPhone
+    /// (`watcher-phone`). The page itself is in `WatcherStore`.
+    var watcherSummary: WatcherSummary?
 }
 
 /// Where a photo comes from: a name for it and its original bytes, read when its turn comes.
@@ -274,6 +811,13 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
     @Published var held: HeldDetail?
 }
 
+/// Watcher's pages, by computer. A store of its own for the same reason: while Watcher answers, its conversation changes
+/// with every shell its computer sends, and only the Watcher tab reads it. The tab's dot and badge and the owl on watched
+/// threads read a summary on the model, which changes far less often.
+@MainActor final class WatcherStore: ObservableObject {
+    @Published var pages: [String: WatcherPage] = [:]
+}
+
 /// A thread's history as it was last read, and the thread it belongs to.
 struct HeldDetail {
     let ref: ThreadRef
@@ -328,6 +872,8 @@ struct HeldDetail {
     }
     /// The open thread's history, in `detailStore`, which publishes on its own in the same way.
     let detailStore = DetailStore()
+    /// Watcher's pages, in `watcherStore`, which publishes on its own in the same way.
+    let watcherStore = WatcherStore()
     private var openDetail: ThreadDetail? {
         get { detailStore.detail }
         set { detailStore.detail = newValue; publishOnModelIfComparing() }
@@ -366,7 +912,7 @@ struct HeldDetail {
     @Published private var receiptFollowers: [String: ReceiptFollower] = [:]
     private struct ReceiptFollower { let token: UUID; let generation: UUID? }
     /// The kinds that read as sending. A thread or project creation keeps its own sheet and its own wait.
-    private static let sendingKinds: Set<String> = ["reply", "queue", "answer", "terminal-answer", "interrupt", "steer", "remove", "compact"]
+    private static let sendingKinds: Set<String> = ["reply", "queue", "answer", "terminal-answer", "watcher-answer", "interrupt", "steer", "remove", "compact"]
     /// The kinds whose refusal the computer says only in its shell's error, said here as feedback.
     private static let queueActionKinds: Set<String> = ["steer", "remove", "compact"]
     /// A receipt the computer says is still being carried out is read again this often, this many times: about ten minutes.
@@ -399,6 +945,34 @@ struct HeldDetail {
     @Published var show = ComputerFilter.all
     /// A thread whose alert was tapped, for the tabs to open. They set it back to nil once it is open.
     @Published var alertOpened: ThreadRef?
+    /// A computer whose Watcher alert was tapped, for the tabs to open the Watcher tab. Set back to nil once it is open.
+    @Published var watcherAlertOpened: String?
+    /// The computer whose Watcher was last chosen for the Watcher tab, by its alert or the header's menu.
+    @Published private var chosenWatcherHost: String?
+    /// Words on their way to Watcher, by computer, shown under the conversation until Watcher takes them.
+    @Published private(set) var watcherSending: [String: String] = [:]
+    /// Words that didn't reach Watcher, or that it didn't confirm, while newer words were in its box, by computer, oldest
+    /// first. Each is offered back under the conversation, to go back in the box once it is empty. Nothing here is sent.
+    @Published private(set) var watcherSetAside: [String: [WatcherSetAside]] = [:]
+    /// Why each computer's Watcher page couldn't be read, until a read works.
+    @Published private(set) var watcherReadProblems: [String: String] = [:]
+    /// A Stop all whose outcome its computer hasn't told this iPhone yet, by computer.
+    private var watcherStops: [String: WatcherStopRequest] = [:]
+    /// The connection each computer's Stop all receipt is being read over now.
+    private var watcherStopRecoveries: [String: UUID] = [:]
+    /// Computers whose Stop all is being checked or carried out.
+    @Published private(set) var watcherStopping: Set<String> = []
+    /// Whether the Watcher tab is on screen, so its own alerts stay quiet there.
+    var watcherOnScreen = false
+    /// The draft IDs each computer's Watcher box sent with that Watcher hasn't been confirmed to take, with their exact
+    /// words: the same words sent again go with the same ID, even after other words, so the computer can't deliver them
+    /// twice. Other words get a new one.
+    private var watcherDrafts: [String: WatcherDrafts] = [:]
+    /// Computers whose page is being read, and ones asked to read again once that read is done.
+    private var watcherReads: Set<String> = []
+    private var watcherRereads: Set<String> = []
+    /// What each computer's Watcher page held when this iPhone last read it, for Watcher's own alerts.
+    private var watcherWatches: [String: WatcherWatch] = [:]
     /// This iPhone's own preferences: alert switches and new-thread defaults.
     var preferences = PhonePreferences()
     /// Posts local alerts. Nil until the app hands it over.
@@ -450,6 +1024,8 @@ struct HeldDetail {
     private var fixtureReconnecting = false
     private var fixtureDetails: [String: ThreadDetail] = [:]
     private var fixtureShells: [String: [String: Any]] = [:]
+    /// The laptop's Watcher page in the Watcher journeys, as the laptop would send it.
+    private var fixtureWatcher: [String: Any]?
     private func loadUIFixture() {
         isUIFixture = true
         if ProcessInfo.processInfo.arguments.contains("--reset-ui-preferences"), let bundle = Bundle.main.bundleIdentifier {
@@ -462,9 +1038,15 @@ struct HeldDetail {
         let laptop = "11111111-1111-4111-8111-111111111111"
         let studio = "22222222-2222-4222-8222-222222222222"
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("--ui-terminal-light") { UserDefaults.standard.set("light", forKey: PhonePreferenceKey.appearance) }
+        if arguments.contains("--ui-terminal-light") || arguments.contains("--ui-light") {
+            UserDefaults.standard.set("light", forKey: PhonePreferenceKey.appearance)
+        }
         // The question journey: the working thread asks a question, and the laptop lets this iPhone answer it.
         let asking = arguments.contains("--ui-question-while-reading")
+        // The Watcher journeys: the laptop runs Watcher, with two workers of its own and two on the studio Mac. With
+        // --ui-watcher-can-answer the laptop lets this iPhone answer; with --ui-watcher-asks Watcher itself is asking.
+        let watching = arguments.contains("--ui-watcher")
+        let watcherAnswers = watching && arguments.contains("--ui-watcher-can-answer")
         let caps: [String: Bool] = ["submit": false, "interrupt": false, "questions": false, "permissions": false, "projects": true, "threads": true]
         let answeringCaps: [String: Bool] = ["submit": false, "interrupt": false, "questions": true, "permissions": true, "projects": true, "threads": true]
         let rows: [(String, String, String, String, Int)] = [
@@ -510,6 +1092,19 @@ struct HeldDetail {
                     ["id": "reply", "role": "assistant", "text": "I have the context and am checking the details. The next update will summarize the changes and anything that needs your attention."]],
                 "activities": [["id": "read", "sequence": 1, "kind": "command", "status": "completed", "title": "Read project notes"]]])
         }
+        if watching {
+            // Watcher's two workers on the laptop: one it started, which asks which account to use, and one it sent a note.
+            let login: [String: Any] = ["id": "login", "hostId": laptop, "projectId": "sotto", "title": "Fix login test", "providerId": "claude",
+                "status": "running", "requests": [Self.fixtureLoginQuestion], "summary": ["lastMessageAt": at(3 * 60), "runningTurnStartedAt": at(22 * 60)]]
+            let notes: [String: Any] = ["id": "notes845", "hostId": laptop, "projectId": "sotto", "title": "Babysit #845 release notes",
+                "providerId": "codex", "status": "running", "requests": [], "summary": ["lastMessageAt": at(5 * 60), "runningTurnStartedAt": at(12 * 60)]]
+            threads[laptop, default: []] += [login, notes]
+            fixtureDetails[laptop + "/login"] = decode(ThreadDetail.self, ["threadId": "login", "revision": 1, "messages": [
+                ["id": "brief", "role": "user", "text": "The login test fails about one run in five. Find out why and make it pass every time.", "createdAt": at(22 * 60)],
+                ["id": "found", "role": "assistant", "text": "Overlapping runs share one test account, so one run signs the other out. Which account should it use?", "createdAt": at(3 * 60)]]])
+            fixtureDetails[laptop + "/notes845"] = decode(ThreadDetail.self, ["threadId": "notes845", "revision": 1, "messages": [
+                ["id": "brief", "role": "user", "text": "Write the release notes for #845 once its checks pass.", "createdAt": at(12 * 60)]]])
+        }
         // The working thread's own conversation: a review reply in Markdown and a follow-up, with the agent's steps
         // between them by time, the last one still running.
         let conversation: [[String: Any]] = [
@@ -542,7 +1137,7 @@ struct HeldDetail {
         fixtureSlowDetail = arguments.contains("--ui-slow-detail")
         fixtureReconnecting = arguments.contains("--ui-reconnecting")
         for (host, name) in [(laptop, "Laptop"), (studio, "Studio Mac")] {
-            let answers = (asking || arguments.contains("--ui-terminal-can-answer")) && host == laptop
+            let answers = (asking || arguments.contains("--ui-terminal-can-answer") || watcherAnswers) && host == laptop
             let hostCaps = answers ? answeringCaps : caps
             let pairing = decode(Pairing.self, ["v": 1, "hostId": host, "clientId": "ui-fixture", "token": "not-a-credential"])
             computers.append(SavedComputer(address: "https://fixture.invalid.ts.net", pairing: pairing, reportedName: name))
@@ -561,8 +1156,15 @@ struct HeldDetail {
             }
             fixtureShells[host] = shellObject
             let shell = decode(Shell.self, shellObject)
-            live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers,
-                features: arguments.contains("--ui-terminals") && host == laptop ? ["host-folders", "terminals"] : ["host-folders"])
+            var features = arguments.contains("--ui-terminals") && host == laptop ? ["host-folders", "terminals"] : ["host-folders"]
+            if watching && host == laptop { features += [Self.watcherFeature, Self.watcherStopFeature] }
+            live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: features)
+        }
+        if watching {
+            let page = Self.fixtureWatcherPage(laptop: laptop, studio: studio, mayAnswer: watcherAnswers,
+                                               asks: arguments.contains("--ui-watcher-asks"), at: at)
+            fixtureWatcher = page
+            showWatcher(decode(WatcherPage.self, page), on: laptop)
         }
         storageReady = true
         if arguments.contains("--ui-streaming") { streamFixture(host: laptop) }
@@ -710,6 +1312,162 @@ struct HeldDetail {
         confirmedAnswers.insert(ref.hostID + "/" + ref.threadID + "/" + request.id)
         feedback = "Answer sent."
     }
+
+    // MARK: Watcher in the simulator journeys
+
+    /// Fix login test asks which account to use: one question with two choices and room for the user's own words.
+    private static var fixtureLoginQuestion: [String: Any] {
+        let choices: [[String: String]] = [["id": "fresh", "label": "A fresh account for each run"],
+                                           ["id": "seeded", "label": "The seeded test user, one run at a time"]]
+        let question: [String: Any] = ["id": "account", "question": "Which account should the login test sign in with?",
+                                       "options": choices, "multiSelect": false, "allowFreeText": true, "required": true]
+        let none: [[String: String]] = []
+        return ["id": "login-account", "kind": "question", "text": "Which account should the login test sign in with?",
+                "options": none, "questions": [question]]
+    }
+    /// The laptop's Watcher page: a morning's exchange with what Watcher did for each reply, three threads watched of
+    /// four it may, one it no longer watches, and Fix login test's question waiting. With `asks`, Watcher itself waits
+    /// for permission to run a command.
+    private static func fixtureWatcherPage(laptop: String, studio: String, mayAnswer: Bool, asks: Bool,
+                                           at: @escaping (Double) -> String) -> [String: Any] {
+        let watcher: [String: String] = ["hostId": laptop, "threadId": "watcher"]
+        let login: [String: String] = ["hostId": laptop, "threadId": "login"]
+        let notes: [String: String] = ["hostId": laptop, "threadId": "notes845"]
+        let messages: [[String: Any]] = [
+            ["id": "ask-login", "role": "user", "createdAt": at(40 * 60),
+             "text": "The login test fails about one run in five. Start a thread to fix it on Claude Code, in a new worktree."],
+            ["id": "started-login", "role": "assistant", "createdAt": at(39 * 60), "text": "Started it. I’ll tell you what it finds."],
+            ["id": "ask-notes", "role": "user", "createdAt": at(14 * 60), "text": "How are the release notes for #845 doing?"],
+            ["id": "noted", "role": "assistant", "createdAt": at(13 * 60),
+             "text": "**Babysit #845 release notes** is waiting for the checks on #845. I asked it to tell me when they pass."],
+            ["id": "found", "role": "assistant", "createdAt": at(3 * 60),
+             "text": "**Fix login test** found the cause: overlapping runs share one account. It’s asking you which account to use. Only you can answer it."]
+        ]
+        func receipt(_ id: String, _ target: [String: String], _ title: String, _ provider: String, _ action: String, _ minutes: Double) -> [String: Any] {
+            ["operationId": id, "target": target, "title": title, "provider": provider, "action": action,
+             "deliveryState": "accepted", "createdAt": at(minutes * 60), "updatedAt": at(minutes * 60)]
+        }
+        let groups: [[String: Any]] = [
+            ["replyMessageId": "started-login", "requestId": "aaaaaaaa-0000-4000-8000-000000000001",
+             "rows": [receipt("bbbbbbbb-0000-4000-8000-000000000001", login, "Fix login test", "claude", "start", 39)]],
+            ["replyMessageId": "noted", "requestId": "aaaaaaaa-0000-4000-8000-000000000002",
+             "rows": [receipt("bbbbbbbb-0000-4000-8000-000000000002", notes, "Babysit #845 release notes", "codex", "send", 13)]]
+        ]
+        func watched(_ target: [String: String], _ title: String, _ provider: String, _ status: String, _ watched: Bool) -> [String: Any] {
+            ["target": target, "title": title, "provider": provider, "status": status, "connected": true, "watched": watched,
+             "takenOver": false, "backgroundWorkCount": 0]
+        }
+        let threads: [[String: Any]] = [
+            watched(login, "Fix login test", "claude", "running", true),
+            watched(notes, "Babysit #845 release notes", "codex", "running", true),
+            watched(["hostId": studio, "threadId": "android"], "Add Android share sheet", "claude", "running", true),
+            watched(["hostId": studio, "threadId": "webhook"], "Payment webhook retries", "codex", "idle", false)
+        ]
+        var cards: [[String: Any]] = [["target": login, "title": "Fix login test", "provider": "claude", "request": fixtureLoginQuestion,
+                                       "connected": true, "mayAnswer": mayAnswer]]
+        if asks {
+            let choices: [[String: String]] = [["id": "watcher-once", "label": "Allow once", "kind": "allow-once"],
+                                               ["id": "watcher-deny", "label": "Deny", "kind": "deny"]]
+            let request: [String: Any] = ["id": "watcher-checks", "kind": "permission", "text": "Wants to run gh pr checks 845.",
+                                          "options": [[String: String]](), "permissionChoices": choices, "context": ["command": "gh pr checks 845"]]
+            cards.append(["target": watcher, "title": "Watcher", "provider": "codex", "request": request, "connected": true, "mayAnswer": mayAnswer])
+        }
+        let current: [String: Any] = ["target": watcher, "provider": "codex", "modelId": "fixture-model", "reasoningEffort": "high",
+                                      "status": asks ? "idle" : "running", "connected": true]
+        return ["hostId": laptop, "current": current,
+                "conversation": ["messages": messages, "earlierAvailable": false, "revision": 5],
+                "receiptGroups": groups, "watchedThreads": threads, "needsYou": cards,
+                "inFlight": 3, "inFlightLimit": 4, "working": !asks, "observedAt": at(0)]
+    }
+    /// Changes the fixture's Watcher page as the laptop would, and shows it.
+    private func changeFixtureWatcher(on hostID: String, _ change: (inout [String: Any]) -> Void) {
+        guard var page = fixtureWatcher else { return }
+        change(&page)
+        page["observedAt"] = ISO8601DateFormatter().string(from: Date())
+        fixtureWatcher = page
+        if let decoded = try? JSONDecoder().decode(WatcherPage.self, from: JSONSerialization.data(withJSONObject: page)) {
+            showWatcher(decoded, on: hostID)
+        }
+    }
+    /// A pull to refresh reads nothing new from the fixture's computer, except in the journey that checks a reader of
+    /// earlier messages keeps their place: there Watcher says something new each time.
+    private func refreshFixtureWatcher(on hostID: String) {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-watcher-refresh-news") else { return }
+        appendFixtureWatcherMessage(["id": "refresh-" + UUID().uuidString, "role": "assistant",
+                                     "createdAt": ISO8601DateFormatter().string(from: Date()),
+                                     "text": "Nothing new needs you. Babysit #845 release notes is still waiting for its checks."], on: hostID)
+    }
+    private func appendFixtureWatcherMessage(_ message: [String: Any], on hostID: String, receipts: [String: Any]? = nil) {
+        changeFixtureWatcher(on: hostID) { page in
+            guard var conversation = page["conversation"] as? [String: Any] else { return }
+            conversation["messages"] = (conversation["messages"] as? [[String: Any]] ?? []) + [message]
+            conversation["revision"] = (conversation["revision"] as? Int ?? 0) + 1
+            page["conversation"] = conversation
+            if let receipts { page["receiptGroups"] = (page["receiptGroups"] as? [[String: Any]] ?? []) + [receipts] }
+        }
+    }
+    /// Watcher takes the words, then a moment later answers and sends Babysit #845 release notes a note.
+    private func sendToFixtureWatcher(_ text: String, on hostID: String) async {
+        let stamp = ISO8601DateFormatter()
+        appendFixtureWatcherMessage(["id": "phone-" + UUID().uuidString, "role": "user", "text": text, "createdAt": stamp.string(from: Date())], on: hostID)
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            self?.answerFixtureWatcher(on: hostID)
+        }
+    }
+    private func answerFixtureWatcher(on hostID: String) {
+        let stamp = ISO8601DateFormatter()
+        let reply = "phone-reply-" + UUID().uuidString
+        let notes: [String: String] = ["hostId": hostID, "threadId": "notes845"]
+        let row: [String: Any] = ["operationId": UUID().uuidString.lowercased(), "target": notes, "title": "Babysit #845 release notes",
+                                  "provider": "codex", "action": "send", "delivery": "queue", "deliveryState": "accepted",
+                                  "createdAt": stamp.string(from: Date()), "updatedAt": stamp.string(from: Date())]
+        appendFixtureWatcherMessage(["id": reply, "role": "assistant", "createdAt": stamp.string(from: Date()),
+                                     "text": "On it. I asked **Babysit #845 release notes** to tell me when the checks pass."],
+                                    on: hostID, receipts: ["replyMessageId": reply, "requestId": UUID().uuidString.lowercased(), "rows": [row]])
+    }
+    /// The fixture has no computer to carry the answer: once it is checked, the card leaves Watcher's page and its
+    /// thread, as it would when the computer confirmed it.
+    private func settleFixtureWatcherCard(_ card: WatcherPage.RequestCard, on hostID: String) {
+        changeFixtureWatcher(on: hostID) { page in
+            let cards = page["needsYou"] as? [[String: Any]] ?? []
+            page["needsYou"] = cards.filter { (($0["request"] as? [String: Any])?["id"] as? String) != card.request.id }
+        }
+        if card.target.hostId == hostID, thread(card.target.ref) != nil { try? settleFixtureAnswer(card.request, in: card.target.ref) }
+        confirmedAnswers.insert(hostID + "/" + card.target.threadId + "/" + card.request.id)
+        feedback = "Answer sent."
+    }
+    private func fixtureWatcherStopPreview(_ hostID: String) -> WatcherStopPreview? {
+        guard let page = watcherPage(hostID) else { return nil }
+        let targets: [[String: Any]] = page.watched.filter { !$0.takenOver }.map { thread -> [String: Any] in
+            var target: [String: Any] = ["hostId": thread.target.hostId, "threadId": thread.target.threadId, "title": thread.title]
+            if let provider = thread.provider { target["provider"] = provider }
+            return target
+        }
+        let preview: [String: Any] = ["status": "ok", "confirmationId": "cccccccc-0000-4000-8000-000000000001", "targets": targets,
+                                      "expiresAt": ISO8601DateFormatter().string(from: Date().addingTimeInterval(60))]
+        return try? JSONDecoder().decode(WatcherStopPreview.self, from: JSONSerialization.data(withJSONObject: preview))
+    }
+    private func stopFixtureWatcher(_ preview: WatcherStopPreview, on hostID: String, titles: [String: String]) {
+        let stopping = Set(preview.targets.map { $0.hostId + "/" + $0.threadId })
+        changeFixtureWatcher(on: hostID) { page in
+            let threads = page["watchedThreads"] as? [[String: Any]] ?? []
+            page["watchedThreads"] = threads.map { thread -> [String: Any] in
+                guard let target = thread["target"] as? [String: String], let host = target["hostId"], let id = target["threadId"],
+                      stopping.contains(host + "/" + id) else { return thread }
+                var stopped = thread; stopped["watched"] = false; stopped["status"] = "idle"
+                return stopped
+            }
+            page["inFlight"] = 0
+            page["working"] = false
+        }
+        let outcomes: [[String: Any]] = preview.targets.map { target in
+            ["target": ["hostId": target.hostId, "threadId": target.threadId], "status": "stopped", "message": "Stopped."]
+        }
+        let results = (try? JSONDecoder().decode([WatcherStopResult.StoppedTarget].self,
+                                                 from: JSONSerialization.data(withJSONObject: outcomes))) ?? []
+        feedback = WatcherWords.stopped(results, titles: titles)
+    }
     #endif
 
     // MARK: Reading
@@ -719,8 +1477,12 @@ struct HeldDetail {
     func status(_ hostID: String) -> ComputerStatus { live[hostID]?.status ?? .connecting }
     func online(_ hostID: String) -> Bool { status(hostID) == .online }
     func mayAnswer(_ hostID: String) -> Bool { live[hostID]?.mayAnswer ?? false }
-    /// The thread the user is reading now: the open thread while the app is on screen.
-    var threadOnScreen: ThreadRef? { foreground ? selected : nil }
+    /// The thread the user is reading now: the open thread while the app is on screen, or Watcher's own while its tab is.
+    var threadOnScreen: ThreadRef? {
+        guard foreground else { return nil }
+        if watcherOnScreen, let hostID = watcherHostID, let ref = watcherPage(hostID)?.ownRef { return ref }
+        return selected
+    }
     func problem(_ hostID: String) -> String? { live[hostID]?.problem }
     var anyConnecting: Bool { computers.contains { status($0.hostID) == .connecting } }
     /// Every computer as the lists read it, in the order they were added.
@@ -759,7 +1521,7 @@ struct HeldDetail {
     private func capabilities(for ref: ThreadRef) -> ProviderCapabilities? { provider(for: ref)?.capabilities ?? live[ref.hostID]?.shell?.host.capabilities }
     /// An answer this iPhone sent to that computer that it hasn't confirmed. Cards wait for it, so a card that
     /// moves under a finger after the first answer can't take a second tap meant for the first.
-    func answering(_ hostID: String) -> Bool { scoped(hostID).contains { $0.kind == "answer" || $0.kind == "terminal-answer" } }
+    func answering(_ hostID: String) -> Bool { scoped(hostID).contains { ["answer", "terminal-answer", "watcher-answer"].contains($0.kind) } }
     private func canAct(on ref: ThreadRef) -> Bool { online(ref.hostID) && thread(ref) != nil && pending(for: ref).isEmpty }
     /// Whether the reply box can send now. While the thread works, what it sends waits in the thread's queue.
     func canSend(_ ref: ThreadRef) -> Bool {
@@ -955,7 +1717,7 @@ struct HeldDetail {
             retries.values.forEach { $0.cancel() }; retries.removeAll(); retryAttempts.removeAll(); retryingSince.removeAll()
             active = false; pairGeneration = UUID(); working = false; holdDetail()
             for (hostID, connection) in connections { cancelTerminalObservationRetry(hostID); generations[hostID] = UUID(); connection.disconnect() }
-            connecting.removeAll(); watches.removeAll()
+            connecting.removeAll(); watches.removeAll(); watcherWatches.removeAll()
             // A computer that gave up stays given up: coming back connects only the others.
             live = live.mapValues { (state: Live) -> Live in
                 var next = state; next.mayAnswer = false
@@ -1005,11 +1767,14 @@ struct HeldDetail {
         retries.removeValue(forKey: hostID)?.cancel()
         cancelTerminalObservationRetry(hostID)
         let current = UUID(); generations[hostID] = current; connecting.insert(hostID)
-        shellSequences[hostID] = 0; watches[hostID] = nil
+        shellSequences[hostID] = 0; watches[hostID] = nil; watcherWatches[hostID] = nil
         defer { if generations[hostID] == current { connecting.remove(hostID) } }
         update(hostID) { $0.status = .connecting; $0.mayAnswer = false; $0.problem = nil }
         clearTerminalPreviews(hostID)
         if selected?.hostID == hostID { cancelDetailReload(); holdDetail(); detailProblem = nil }
+        var helloCarriedWatcher = false
+        // Hello's page is made after every send over an earlier connection ended: it says where their drafts stand.
+        let proof = watcherDrafts[hostID]?.endedSends ?? [:]
         do {
             guard let endpoint = saved.endpoint else { throw ClientError.invalidHost }
             let greeting = try await connection(hostID).connect(endpoint: endpoint, pairing: saved.pairing)
@@ -1021,6 +1786,8 @@ struct HeldDetail {
                 if $0.shell?.clientCapabilities == nil { $0.mayAnswer = greeting.value.capabilities.mayAnswer }
                 $0.features = greeting.value.features ?? []
             }
+            // Hello's shell was read before its features said whether this computer runs Watcher.
+            if let page = greeting.value.shell.watcher { applyWatcher(page, from: hostID, proof: proof); helloCarriedWatcher = true }
             wasOnline.insert(hostID)
             if let selected, selected.hostID == hostID, thread(selected) == nil { self.selected = nil }
         } catch {
@@ -1041,7 +1808,13 @@ struct HeldDetail {
         do { try await observeAndRead(hostID) }
         catch { if generations[hostID] == current { detailProblem = "This thread could not be loaded. Nothing was lost. Try again." } }
         try? await observeTerminals(hostID)
+        if generations[hostID] == current, !helloCarriedWatcher { await readWatcher(hostID) }
         await checkDelivery(hostID)
+        // A Stop all whose outcome is still unknown is read once this attempt is over: a computer still carrying it out
+        // can keep its receipt pending for minutes, and connecting must not wait on that.
+        if generations[hostID] == current, watcherStops[hostID] != nil {
+            Task { [weak self] in await self?.recoverWatcherStop(hostID) }
+        }
     }
     /// A connection that failed or was lost. A computer that has been online is tried again quietly, reading
     /// Connecting, until its quiet retries run out; any other gives up: it reads Can't reach it, with the problem on its
@@ -1094,7 +1867,7 @@ struct HeldDetail {
         made.onDisconnect = { [weak self] in
             guard let self else { return }
             cancelTerminalObservationRetry(hostID)
-            generations[hostID] = UUID(); connecting.remove(hostID); watches[hostID] = nil
+            generations[hostID] = UUID(); connecting.remove(hostID); watches[hostID] = nil; watcherWatches[hostID] = nil
             if selected?.hostID == hostID { cancelDetailReload() }
             connectionEnded(hostID, problem: ClientError.disconnected.localizedDescription, retrying: true)
         }
@@ -1220,7 +1993,9 @@ struct HeldDetail {
         generations[hostID] = UUID(); connecting.remove(hostID)
         connections[hostID]?.close(); connections[hostID] = nil
         let gone = Set(pending.filter { $0.hostID == hostID }.map(\.id))
-        computers = rest; live[hostID] = nil; pending = markers; watches[hostID] = nil
+        computers = rest; live[hostID] = nil; pending = markers; watches[hostID] = nil; watcherWatches[hostID] = nil; watcherStore.pages[hostID] = nil
+        if chosenWatcherHost == hostID { chosenWatcherHost = nil }
+        watcherDrafts[hostID] = nil; watcherSending[hostID] = nil; watcherSetAside[hostID] = nil; watcherStops[hostID] = nil; watcherReadProblems[hostID] = nil
         if selected?.hostID == hostID { cancelDetailReload(); selected = nil; openDetail = nil; detailProblem = nil }
         if detailStore.held?.ref.hostID == hostID { detailStore.held = nil }
         if show == .only(hostID) { show = .all }
@@ -1717,6 +2492,18 @@ struct HeldDetail {
             if feedback == nil || feedbackOperations.contains(item.id) { feedback = confirmed ? "Answer sent." : Self.requestNoLongerWaiting }
             return
         }
+        // An answer from a card in Watcher's page: its own receipt confirms it, and a card that left Watcher's page is no
+        // longer waiting. The thread may not be in this iPhone's list at all, Watcher's own included.
+        if item.kind == "watcher-answer" {
+            let confirmed = receipt?.confirmsAnswer == true
+            let page = watcherStore.pages[item.hostID]
+            let gone = page.map { page in !page.needsYou.contains { $0.target.threadId == item.threadID && $0.request.id == item.requestID } } ?? false
+            guard confirmed || gone else { return }
+            if confirmed, let request = item.requestID { confirmedAnswers.insert(item.hostID + "/" + item.threadID + "/" + request) }
+            try forgetMarker(item.id)
+            if feedback == nil || feedbackOperations.contains(item.id) { feedback = confirmed ? "Answer sent." : Self.requestNoLongerWaiting }
+            return
+        }
         // A phone-minted Sotto ID identifies this exact creation even after its receipt expired.
         if item.kind == "create-thread", shell?.host.threads.contains(where: { $0.id == item.threadID }) == true {
             try forgetMarker(item.id)
@@ -1951,10 +2738,11 @@ struct HeldDetail {
         guard let alerts else { return .undecided }
         return await alerts.permission()
     }
-    /// A tapped alert opens its thread, on a computer this iPhone still holds.
-    func openFromAlert(_ ref: ThreadRef) {
+    /// A tapped alert opens its thread, on a computer this iPhone still holds. Watcher's own alert opens the Watcher tab.
+    func openFromAlert(_ ref: ThreadRef, watcher: Bool = false) {
         guard computer(ref.hostID) != nil else { return }
-        alertOpened = ref
+        // Watcher's alert opens the Watcher tab on the computer it came from.
+        if watcher { chooseWatcher(ref.hostID); watcherAlertOpened = ref.hostID } else { alertOpened = ref }
     }
     /// Alerts for what is new in a computer's thread list: never for the first list after connecting, the thread
     /// on screen, a switch that is off, or the UI fixture. Nothing about a thread but its title reaches an alert.
@@ -1980,8 +2768,12 @@ struct HeldDetail {
         guard sequence > (shellSequences[hostID] ?? 0) else { return }
         shellSequences[hostID] = sequence
         let previousTerminals = live[hostID]?.shell?.terminals ?? []
+        // Watcher's page is taken from `next` below, into its own store. The shell kept here leaves it out, so Watcher's
+        // conversation growing doesn't change the computer's state, which nearly every view watches.
+        var kept = next
+        kept.watcher = nil
         update(hostID) {
-            $0.shell = next
+            $0.shell = kept
             if let allowed = next.clientCapabilities?.mayAnswer { $0.mayAnswer = allowed }
         }
         noticeChanges(next, from: hostID)
@@ -1997,10 +2789,12 @@ struct HeldDetail {
         for item in scoped(hostID) {
             // A connect, dispatch or solicited shell is followed by a receipt check. Keep its
             // answer markers through intervening pushes until their own receipts are read.
-            if item.kind == "answer" || item.kind == "terminal-answer", !reconcileAnswers || connecting.contains(hostID) || dispatchingOperations.keys.contains(item.id) || (deliveryChecks[hostID] ?? 0) > 0 { continue }
+            if ["answer", "terminal-answer", "watcher-answer"].contains(item.kind), !reconcileAnswers || connecting.contains(hostID) || dispatchingOperations.keys.contains(item.id) || (deliveryChecks[hostID] ?? 0) > 0 { continue }
             do { try settle(item, shell: next) }
             catch { feedback = error.localizedDescription }
         }
+        // Watcher's page comes with each shell from a computer that runs Watcher.
+        if let page = next.watcher { applyWatcher(page, from: hostID) }
         if let selected, selected.hostID == hostID, !next.host.threads.contains(where: { $0.id == selected.threadID }) {
             cancelDetailReload(); self.selected = nil; openDetail = nil; detailStore.held = nil; detailProblem = nil
         }
@@ -2027,7 +2821,7 @@ struct HeldDetail {
         } catch {
             let words = "The update from \(name(hostID)) could not be read. Reconnect to refresh it."
             connectionEnded(hostID, problem: words, retrying: false)
-            watches[hostID] = nil
+            watches[hostID] = nil; watcherWatches[hostID] = nil
             connections[hostID]?.disconnect(); feedback = words
         }
     }
