@@ -75,6 +75,13 @@ describe('Usage page', () => {
     await user.click(measure(/^From cache /u))
     expect(screen.getByRole('tabpanel', { name: /From cache/u })).toHaveTextContent('No input tokens in this range, so none came from cache.')
   })
+  it('keeps reported cache reads from reading as no token counts when input was not reported', async () => {
+    const host = localHost()
+    host.activity = { ...host.activity!, totals: activityRow(190, 10, 0, { ...tokens(), cached: { value: 100, knownRows: 1, rows: 1, partial: true } }) }
+    const { user } = await open(dashboard(host))
+    await user.click(measure(/^From cache /u))
+    expect(screen.getByRole('tabpanel', { name: /From cache/u })).toHaveTextContent("Input tokens weren't reported in this range, so the share from cache can't be worked out.")
+  })
   it('moves through the index with the arrow keys and opens each stage', async () => {
     const { user } = await open()
     measure(/^Prompts /u).focus()

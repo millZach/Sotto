@@ -1,6 +1,6 @@
 import React, { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
-import type { UsageModelAggregate, UsageProviderId } from '../../../../shared/usageDashboard'
+import { USAGE_TOKEN_FIELDS, type UsageModelAggregate, type UsageProviderId } from '../../../../shared/usageDashboard'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { roomKeyTarget } from '../../components/AppShell'
 import { DailyChart, Dash, HourGrid, Ring, Spark, TokenBar, dismissDisclosure, type DayValue } from './UsageCharts'
@@ -170,8 +170,8 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       const shown = [...reported].sort((a, b) => fieldValue(b.tokens.input) - fieldValue(a.tokens.input)).slice(0, 8)
         .sort((a, b) => fieldValue(b.tokens.cached) / fieldValue(b.tokens.input) - fieldValue(a.tokens.cached) / fieldValue(a.tokens.input))
       const rest = reported.length - shown.length
-      const { input, output } = totals.tokens
-      const unshared = input.value === undefined && output.value === undefined ? 'No token counts in this range.'
+      const { input } = totals.tokens
+      const unshared = USAGE_TOKEN_FIELDS.every(name => totals.tokens[name].value === undefined) ? 'No token counts in this range.'
         : input.value === undefined ? "Input tokens weren't reported in this range, so the share from cache can't be worked out."
           : input.value === 0 && !input.partial ? 'No input tokens in this range, so none came from cache.'
             : "Some token counts in this range weren't reported in full, so the share from cache can't be worked out."
