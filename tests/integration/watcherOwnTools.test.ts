@@ -9,6 +9,7 @@ import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { WATCHER_SYSTEM_PROMPT } from '../../src/main/agents/watcherPrompt'
 import { watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
+import { questionInstructions } from '../../src/main/agents/questionInstructions'
 import type { AgentHost, WatcherProfileTools } from '../../src/main/agents/host'
 import type { ScopedThreadTools } from '../../src/main/agents/threadToolServer'
 import type { AgentThread } from '../../src/shared/agents'
@@ -73,7 +74,7 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
     for (const record of launches) {
       const args = (record.params!.frame as { args: string[] }).args
       if (args.includes('--no-session-persistence')) continue
-      expect(flag(args, '--append-system-prompt')).toBe(WATCHER_SYSTEM_PROMPT)
+      expect(flag(args, '--append-system-prompt')).toBe(`${questionInstructions('AskUserQuestion', false)}\n\n${WATCHER_SYSTEM_PROMPT}`)
       expect(flag(args, '--permission-mode')).toBe('manual')
       expect(flag(args, '--permission-prompts')).toBe('host')
       expect(args).toContain('mcp__sotto_threads__list_threads')

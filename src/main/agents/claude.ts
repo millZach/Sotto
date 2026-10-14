@@ -21,6 +21,7 @@ import { ClaudeOriginJournal } from './claudeOriginJournal'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
+import { questionInstructions } from './questionInstructions'
 import { assertWatcherPermission, watcherThreadTools } from './watcherProviderTools'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
@@ -131,6 +132,8 @@ function settingsSteps(from: ClaudeSettings, to: ClaudeSettings): ClaudeSettings
   if (from.runtimeMode !== to.runtimeMode) steps.push({ field: 'runtimeMode', request: { subtype: 'set_permission_mode', mode: nativePermissionModes[to.runtimeMode] } })
   return steps
 }
+/** Appended to Claude Code's own system prompt on every thread process, Watcher's included (ADR-0080). */
+const CLAUDE_QUESTIONS = questionInstructions('AskUserQuestion', false)
 function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): string[] {
   // Two flags, and both are needed. `--permission-prompts host` only says prompts are not force-denied;
   // `--permission-prompt-tool stdio` is what makes this process the surface that answers them, the way
@@ -1244,7 +1247,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (generation !== this.generation || spare?.exited) { if (mcpConfig) await this.removeConfig(mcpConfig); throw new Error('Claude connection was cancelled.') }
     const toolArguments = mcpConfig ? ['--mcp-config', mcpConfig, ...toolAllowance(servers)] : []
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-      '--include-partial-messages', '--replay-user-messages', ...(profile ? ['--permission-mode', 'manual', '--permission-prompts', 'host', '--permission-prompt-tool', 'stdio'] : permissionArguments(alias.runtimeMode)), ...(profile ? ['--append-system-prompt', WATCHER_SYSTEM_PROMPT] : []),
+      '--include-partial-messages', '--replay-user-messages', ...(profile ? ['--permission-mode', 'manual', '--permission-prompts', 'host', '--permission-prompt-tool', 'stdio'] : permissionArguments(alias.runtimeMode)),
+      '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${WATCHER_SYSTEM_PROMPT}` : CLAUDE_QUESTIONS,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
     let runtime: Runtime
     try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,

@@ -58,7 +58,7 @@ No Mac is needed to put the app on an iPhone. `.github/workflows/ios-testflight.
 git tag ios-testflight-$(date +%Y%m%d-%H%M) && git push origin --tags
 ```
 
-About half an hour later the build appears in the TestFlight app on the phones of the internal testing group. The build number is the workflow's run number; the marketing version is `MARKETING_VERSION` in the Xcode project.
+About half an hour later the build appears in the TestFlight app on the phones of the internal testing group. External testers get it once it is added to the external group and passes Apple's Beta App Review. The build number is the workflow's run number; the marketing version is `MARKETING_VERSION` in the Xcode project.
 
 One-time setup, all in a browser plus `gh`. `bash apps/ios/Scripts/testflight-setup.sh` walks through steps 1 to 4, opening each page and storing the secrets without showing them:
 
@@ -68,7 +68,7 @@ One-time setup, all in a browser plus `gh`. `bash apps/ios/Scripts/testflight-se
 4. Store them as secrets of the `testflight` environment: `APP_STORE_CONNECT_KEY` (the `.p8` file's text), `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and `APPLE_TEAM_ID`.
 5. After the first upload, add yourself to an internal testing group under TestFlight in App Store Connect, and install the TestFlight app on the iPhone.
 
-No certificate or profile is stored anywhere: Xcode's automatic signing uses Apple's cloud-managed certificates, authorised by the key. Revoke the key in App Store Connect if the repository's secrets are ever in doubt. The app declares standard encryption only (`ITSAppUsesNonExemptEncryption` is false), because it uses the platform's TLS and Keychain and no cryptography of its own; review that if the implementation changes. External testing and the App Store need Apple's review and are not set up.
+No certificate or profile is stored anywhere: Xcode's automatic signing uses Apple's cloud-managed certificates, authorised by the key. Revoke the key in App Store Connect if the repository's secrets are ever in doubt. The app declares standard encryption only (`ITSAppUsesNonExemptEncryption` is false), because it uses the platform's TLS and Keychain and no cryptography of its own; review that if the implementation changes. External testing is open through the public link `https://testflight.apple.com/join/dJFTeyzp`, which first-run setup's **Get the iPhone beta** opens (`IPHONE_BETA_URL` in `src/shared/phones.ts`). The link accepts testers only while the external group has a build that passed Beta App Review and the link is turned on in App Store Connect. The App Store is not set up.
 
 On a Mac, the same archive can be made locally: open the project, set your team under Signing & Capabilities, and use Product > Archive, or run `apps/ios/Scripts/testflight.sh` with the environment it documents.
 
