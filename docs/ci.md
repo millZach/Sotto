@@ -329,6 +329,13 @@ starts a host, fetches and unpacks its archive, then stops and starts it again. 
 failure bound, not a latency assertion; production timeouts and the global test deadline
 are unchanged. See [the SSH test evidence](verification/ssh-readiness-test-budget.md).
 
+The terminal clipboard's two pure quoting cases stay in unit tests. Its real Windows
+PowerShell or POSIX shell round trip lives in integration tests, with a 60 s child-process
+deadline and a 75 s enclosing deadline. It closes unused stdin, connects cancellation to
+the child and drains that owned child on completion. A failure reports only fixed phase
+facts; no command arguments or output are logged. The exact-string assertion and the
+global deadline are unchanged. See [the shell fixture evidence](verification/terminal-clipboard-shell-budget.md).
+
 `vitest.config.ts` gives a test 15 s and an `expect.poll` 5 s, rather than vitest's 5 s and 1 s, and
 `tests/setup.ts` gives Testing Library's `findBy` and `waitFor` the same 5 s rather than their 1 s. Waiting
 is not the assertion: a runner takes several times longer over a provider round trip or a child process
