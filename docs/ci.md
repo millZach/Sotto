@@ -293,6 +293,7 @@ renderer tests for memoization and identical final markup run in CI.
 | Less than half of structuredClone | `tests/unit/main/cloneHostSnapshot.test.ts` | Median internal snapshot copy with 24 MiB of retained output; container isolation and the incremental-storage work bound are always checked. |
 | Less than whole-message rendering | `tests/perf/markdownRender.perf.test.tsx` | Total elapsed time for rendering a reply in 40 incremental chunks against re-parsing each whole prefix. |
 | Half the answer's 250 ms acknowledgement | `tests/perf/threadCommandLanes.perf.test.tsx` | Median time for one thread's settings change to reach main while another thread's answer waits on its provider. It is a timing benchmark, so it also needs `SOTTO_PERF_BENCH=1`. |
+| 400 ms All time, 150 ms for 30 days, 100 ms for a 5-hour window | `tests/perf/usageStoreQuery.perf.test.ts` | Median Usage store query over 400,000 bursty token rows and 6,000 prompts, each read after a write so none comes from the query cache. Its seed takes about 30 seconds, so it skips unless `SOTTO_PERF_ASSERT=1` or `SOTTO_PERF_BENCH=1` is set; with `SOTTO_PERF_BENCH=1` it also reports, without a budget, the worst case of one row per 15-minute bucket. |
 
 Run them by hand on an idle machine:
 
@@ -300,6 +301,7 @@ Run them by hand on an idle machine:
 $env:SOTTO_PERF_ASSERT = '1'
 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
 npx vitest run tests/perf/markdownRender.perf.test.tsx --maxWorkers=1
+npx vitest run tests/perf/usageStoreQuery.perf.test.ts --maxWorkers=1
 $env:SOTTO_PERF_BENCH = '1'
 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1
 ```
@@ -308,6 +310,7 @@ npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1
 SOTTO_PERF_ASSERT=1 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
 SOTTO_PERF_ASSERT=1 npx vitest run tests/perf/markdownRender.perf.test.tsx --maxWorkers=1
 SOTTO_PERF_ASSERT=1 SOTTO_PERF_BENCH=1 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1
+SOTTO_PERF_ASSERT=1 npx vitest run tests/perf/usageStoreQuery.perf.test.ts --maxWorkers=1
 ```
 
 One test is skipped by platform rather than gated: *preserves an occupied broken-symlink backup
