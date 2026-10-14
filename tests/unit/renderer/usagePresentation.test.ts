@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   fmtTok, formatField, longDay, pct, presentUsage, providerLimits, rangeBounds, rangeLabel, readAge, relativeDay, resetLong, resetShort, scopeHost, sentFrom,
-  sumFields, usagePlaces, windowView,
+  nounFor, sumFields, usagePlaces, windowView,
 } from '../../../src/renderer/src/features/usage/usagePresentation'
 import { servedModelName } from '../../../src/shared/modelCatalog'
 import { USAGE_NOW, USAGE_ZONE, dashboard, forgeHost, localHost, oldForgeHost } from '../../fixtures/renderer/usageReads'
@@ -13,6 +13,7 @@ describe('Usage numbers in words', () => {
     expect([999, 3_600, 12_400, 999_400, 999_600, 12_340_000, 123_400_000, 1_234_000_000, 57_189_988_615, 123_456_000_000].map(fmtTok))
       .toEqual(['999', '3,600', '12K', '999K', '1.0M', '12.3M', '123M', '1.2B', '57.2B', '123B'])
     expect([0, 0.004, 0.005, 0.794].map(pct)).toEqual(['0%', 'under 1%', '1%', '79%'])
+    expect([0, 1, 2].map(count => `${count} ${nounFor(count, 'prompt')}`)).toEqual(['0 prompts', '1 prompt', '2 prompts'])
   })
   it('keeps a known zero and marks a lower bound when another computer left a field out', () => {
     const combined = sumFields([{ value: 0, knownRows: 1, rows: 1, partial: false }, { knownRows: 0, rows: 2, partial: true }])

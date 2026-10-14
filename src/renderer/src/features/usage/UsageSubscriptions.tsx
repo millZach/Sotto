@@ -5,7 +5,7 @@ import { ProviderMark } from '../../agents/ProviderMark'
 import { Ring } from './UsageCharts'
 import type { UsagePage } from './usagePage'
 import {
-  LOW_LEFT, PROVIDER_NAMES, READ_OUTSIDE_SOTTO, fieldTokens, fieldValue, fmtInt, fmtTok, limitsMissing, predatesHistory, readAge, resetLong,
+  LOW_LEFT, PROVIDER_NAMES, READ_OUTSIDE_SOTTO, fieldTokens, nounFor, fieldValue, fmtInt, fmtTok, limitsMissing, predatesHistory, readAge, resetLong,
   unknownUseNote, type UsageProviderLimits, type UsageWindowView,
 } from './usagePresentation'
 
@@ -73,9 +73,9 @@ function Provider({ limits, page, busy, onReadAgain, since }: {
     const prompts = since.totals.prompts.total
     const tokens = since.totals.tokens.total
     if (!READ_OUTSIDE_SOTTO.has(providerId)) {
-      activity = <p className="usage-sub__activity">{prompts > 0 ? <>Since this window began: <b>{fmtInt(prompts)}</b> prompts in Sotto.</> : 'Since this window began: no prompts in Sotto.'} Sotto doesn't read {name}'s use outside Sotto.</p>
+      activity = <p className="usage-sub__activity">{prompts > 0 ? <>Since this window began: <b>{fmtInt(prompts)}</b> {nounFor(prompts, 'prompt')} in Sotto.</> : 'Since this window began: no prompts in Sotto.'} Sotto doesn't read {name}'s use outside Sotto.</p>
     } else if (prompts === 0 && fieldValue(tokens) === 0) activity = <p className="usage-sub__activity">Since this window began: nothing {onComputer}.</p>
-    else activity = <p className="usage-sub__activity">Since this window began: <b>{fmtInt(prompts)}</b> prompts and <b>{fieldTokens(tokens)}</b> tokens {onComputer}, <b>{fmtTok(since.sottoTokens)}</b> of them in Sotto.</p>
+    else activity = <p className="usage-sub__activity">Since this window began: <b>{fmtInt(prompts)}</b> {nounFor(prompts, 'prompt')} and <b>{fieldTokens(tokens)}</b> tokens {onComputer}, <b>{fmtTok(since.sottoTokens)}</b> of them in Sotto.</p>
   }
   return <section className="usage-sub" id={`usage-sub-${providerId}`} aria-labelledby={heading}>
     <div className="usage-sub__id">

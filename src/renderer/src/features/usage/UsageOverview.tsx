@@ -5,8 +5,8 @@ import { ProviderMark } from '../../agents/ProviderMark'
 import { roomKeyTarget } from '../../components/AppShell'
 import { DailyChart, Dash, HourGrid, Ring, Spark, TokenBar, dismissDisclosure, type DayValue } from './UsageCharts'
 import type { UsagePage } from './usagePage'
-import { PROVIDER_ORDER,
-  LOW_LEFT, NO_TOKENS, PROVIDER_NAMES, CLIENT_NAMES, fieldTokens, fieldValue, fmtInt, fmtTok, hourLabel, longDay, pct, readAge, resetLong, resetShort, sentFrom, share,
+import {
+  PROVIDER_ORDER, LOW_LEFT, NO_TOKENS, nounFor, PROVIDER_NAMES, CLIENT_NAMES, fieldTokens, fieldValue, fmtInt, fmtTok, hourLabel, longDay, pct, readAge, resetLong, resetShort, sentFrom, share,
   shortDay, usagePlaces, WEEKDAYS_PLURAL, WEEKDAYS_SHORT, type UsageProviderLimits,
 } from './usagePresentation'
 
@@ -128,7 +128,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
           ? <p className="usage-none">{devin.length > 0 ? "Devin doesn't report tokens. Prompts are still counted." : 'No tokens in this range.'}</p>
           : <TokenBar tokens={totals.tokens} large>
             {page.placesKnown ? <p className="usage-note">Subagents: <b>{fmtTok(summary.subAgentTokens)}</b> of these tokens.</p> : null}
-            {devin.length > 0 ? <p className="usage-note">Devin doesn't report tokens, so its <b>{fmtInt(devin.reduce((sum, row) => sum + row.prompts.total, 0))}</b> prompts aren't in these totals.</p> : null}
+            {devin.length > 0 ? <p className="usage-note">Devin doesn't report tokens, so its <b>{fmtInt(devin.reduce((sum, row) => sum + row.prompts.total, 0))}</b> {nounFor(devin.reduce((sum, row) => sum + row.prompts.total, 0), 'prompt')} aren't in these totals.</p> : null}
           </TokenBar>}
         <div className="usage-stage__sub">
           <div className="usage-chart-head"><h3>Per day</h3><span className="usage-legend"><span><i className="usage-kind--input" />Input</span><span><i className="usage-kind--out" />Output</span></span></div>
@@ -214,7 +214,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       for (const row of summary.hourly) { const day = grid[row.weekday]!; day[row.hour] = (day[row.hour] ?? 0) + row.prompts.user }
       const when = cell !== null
         ? <><b>{WEEKDAYS_PLURAL[cell.weekday]}, {hourLabel(cell.hour)} to {hourLabel(cell.hour + 1)}</b> · {fmtInt(grid[cell.weekday]![cell.hour]!)} prompt{grid[cell.weekday]![cell.hour] === 1 ? '' : 's'} in this range</>
-        : busiest !== undefined ? <>Busiest: <b>{WEEKDAYS_PLURAL[busiest.weekday]} around {hourLabel(busiest.hour)}</b>, {fmtInt(busiest.prompts.user)} prompts in this range</> : 'No prompts in this range.'
+        : busiest !== undefined ? <>Busiest: <b>{WEEKDAYS_PLURAL[busiest.weekday]} around {hourLabel(busiest.hour)}</b>, {fmtInt(busiest.prompts.user)} {nounFor(busiest.prompts.user, 'prompt')} in this range</> : 'No prompts in this range.'
       const onKey = (event: KeyboardEvent<HTMLDivElement>): void => {
         let { weekday, hour } = cell ?? { weekday: 0, hour: 9 }
         if (event.key === 'ArrowLeft') hour = Math.max(0, hour - 1)

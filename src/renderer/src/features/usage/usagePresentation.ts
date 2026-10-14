@@ -96,6 +96,8 @@ export function emptyActivity(): UsageActivityAggregate {
   return { tokens: Object.fromEntries(USAGE_TOKEN_FIELDS.map(field => [field, emptyField()])) as UsageTokenTotals,
     prompts: { user: 0, watcher: 0, wakeUp: 0, total: 0, steered: 0 }, tokenRecords: 0, partialTokenRecords: 0, undatedTokenRecords: 0, activeThreads: 0, activeDays: 0 }
 }
+/** A noun for a count: 1 prompt, 2 prompts. */
+export const nounFor = (count: number, noun: string): string => count === 1 ? noun : `${noun}s`
 export const isEmptyActivity = (row: UsageActivityAggregate): boolean => row.prompts.total === 0 && row.tokenRecords === 0
 
 function grouped<T>(rows: T[], key: (row: T) => string): T[][] {

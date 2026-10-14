@@ -5,7 +5,7 @@ import { roomKeyTarget } from '../../components/AppShell'
 import { CompositionBar, Dash, Spark } from './UsageCharts'
 import { About, EmptyUsage } from './UsageOverview'
 import type { UsagePage } from './usagePage'
-import { NO_TOKENS, PROVIDER_NAMES, fieldValue, fmtInt, fmtTok, isEmptyActivity, pct, relativeDay, share, sumActivity } from './usagePresentation'
+import { NO_TOKENS, nounFor, PROVIDER_NAMES, fieldValue, fmtInt, fmtTok, isEmptyActivity, pct, relativeDay, share, sumActivity } from './usagePresentation'
 
 const SORTS = [['prompts', 'Prompts'], ['tokens', 'Tokens'], ['cache', 'Cache']] as const
 type Sort = typeof SORTS[number][0]
@@ -40,7 +40,7 @@ export function Models({ page }: { readonly page: UsagePage }): ReactNode {
   }
   return <>
     <div className="usage-models-head">
-      <p className="usage-models-summary"><b>{fmtInt(rows.length)}</b> model{rows.length === 1 ? '' : 's'} · <b>{fmtInt(totals.prompts.total)}</b> prompts · <b>{tokenTotal === undefined ? '—' : fmtTok(tokenTotal)}</b> tokens · {page.rangeLabel}</p>
+      <p className="usage-models-summary"><b>{fmtInt(rows.length)}</b> model{rows.length === 1 ? '' : 's'} · <b>{fmtInt(totals.prompts.total)}</b> {nounFor(totals.prompts.total, 'prompt')} · <b>{tokenTotal === undefined ? '—' : fmtTok(tokenTotal)}</b> tokens · {page.rangeLabel}</p>
       <div className="usage-sort"><span id={label}>Sort by</span>
         <div ref={sorts} className="usage-seg usage-seg--small" role="radiogroup" aria-labelledby={label}>{SORTS.map(([key, name], index) => <button key={key} type="button" role="radio" className="tt-focusable"
           aria-checked={sort === key} tabIndex={sort === key ? 0 : -1} onClick={() => setSort(key)} onKeyDown={event => onSortKey(event, index)}>{name}</button>)}</div>
@@ -55,7 +55,7 @@ export function Models({ page }: { readonly page: UsagePage }): ReactNode {
         const name = page.modelName(row)
         const has = reported(row)
         const detail = `usage-model-${key.replace(/[^a-z0-9]+/giu, '-')}`
-        const words = `${name}, ${PROVIDER_NAMES[row.providerId]}: ${fmtInt(row.prompts.total)} prompts${has ? `, ${fmtTok(fieldValue(row.tokens.total))} tokens, ${share(fieldValue(row.tokens.cached), fieldValue(row.tokens.input))} from cache` : ', tokens not reported'}`
+        const words = `${name}, ${PROVIDER_NAMES[row.providerId]}: ${fmtInt(row.prompts.total)} ${nounFor(row.prompts.total, 'prompt')}${has ? `, ${fmtTok(fieldValue(row.tokens.total))} tokens, ${share(fieldValue(row.tokens.cached), fieldValue(row.tokens.input))} from cache` : ', tokens not reported'}`
         return <li key={key} className="usage-row" data-open={open || undefined} onKeyDown={event => {
           if (event.key !== 'Escape' || !open) return
           event.preventDefault(); event.stopPropagation(); setOpened(null)
