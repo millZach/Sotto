@@ -6,6 +6,7 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage } from '../../../src/shared/agents'
 import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
+import { clockLabel } from '../../../src/renderer/src/agents/threadFacts'
 
 const context: ActivityContext = { liveTurn: 'turn-1', running: true, connected: true, provider: 'codex', onDisclosure: () => undefined }
 const at = '2026-09-20T10:44:00.000Z'
@@ -150,5 +151,64 @@ describe('a pane holding the last turns of a long thread', () => {
     const order = ['user u0', 'Worked for 3m 34s', 'assistant a0', 'user u1', 'Worked for 29m 10s', 'assistant a1', 'user u2', 'assistant a2', 'npm run now']
     expect(order.map(text => transcript.indexOf(text))).toEqual([...order.map(text => transcript.indexOf(text))].sort((a, b) => a - b))
     expect(order.every(text => transcript.includes(text))).toBe(true)
+  })
+})
+
+describe('questions a folded reply asked (#1019)', () => {
+  const clock = (minute: number): string => `2026-10-14T10:${String(minute).padStart(2, '0')}:00.000Z`
+  const asking = 'Three investigators are tracing it. **Should Overview follow ADR-0078, or show every computer?** I will keep going meanwhile.'
+  const turn: AgentMessage[] = [
+    { id: 'u', role: 'user', text: 'Fix the Usage tab.', createdAt: clock(8) },
+    { id: 'a1', role: 'assistant', text: asking, createdAt: clock(12) },
+    { id: 'a2', role: 'assistant', text: 'The Models investigator is done. Is it fine? Yes: the alias and the model differ.', createdAt: clock(17) },
+    { id: 'a3', role: 'assistant', text: 'All three are back and the fixes are in. Want me to open the pull request?', createdAt: clock(24) },
+  ]
+  const activities: AgentActivity[] = [
+    { id: 'turn-u', turnId: 'u', afterMessageId: 'u', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', durationMs: 960_000 },
+    { id: 'c1', turnId: 'u', afterMessageId: 'a1', sequence: 1, kind: 'command', status: 'completed', title: 'Bash', command: 'npm test' },
+  ]
+  const finished: ActivityContext = { liveTurn: null, running: false, connected: true, provider: 'claude', onDisclosure: () => undefined }
+  const show = (messages: readonly AgentMessage[], running = false, context = finished) =>
+    render(<MessageList messages={[...messages]} provider="Claude Code" running={running} placement={placeActivities([...messages], [...messages], activities)} context={context} />)
+
+  it('quotes each question from a folded reply under the fold, and none from the final reply', () => {
+    show(turn)
+    const lifted = screen.getAllByRole('region', { name: /asked while working/u })
+    expect(lifted).toHaveLength(2)
+    expect(lifted[0]).toHaveTextContent(`Claude Code asked while working · ${clockLabel(Date.parse(clock(12)))}`)
+    expect(lifted[0]).toHaveTextContent('Should Overview follow ADR-0078, or show every computer?')
+    expect(lifted[1]).toHaveTextContent('Is it fine?')
+    expect(screen.queryByText('Want me to open the pull request?')).not.toBeInTheDocument()
+    const transcript = document.body.textContent ?? ''
+    const order = ['Fix the Usage tab.', 'Worked for', 'Should Overview follow', 'All three are back']
+    expect(order.map(text => transcript.indexOf(text))).toEqual([...order.map(text => transcript.indexOf(text))].sort((a, b) => a - b))
+    // The reply that asked is still folded: only its question is on screen.
+    expect(transcript).not.toContain('Three investigators are tracing it.')
+  })
+
+  it('opens the fold at the reply that asked, and hands it to the transcript', () => {
+    const sought: HTMLElement[] = []
+    show(turn, false, { ...finished, onSeek: message => sought.push(message) })
+    fireEvent.click(screen.getAllByRole('button', { name: /^Show where it asked, at /u })[0]!)
+    expect(screen.getByRole('button', { name: /Worked for/u })).toHaveAttribute('aria-expanded', 'true')
+    expect(sought).toHaveLength(1)
+    expect(sought[0]).toHaveAttribute('data-message-id', 'a1')
+    expect(sought[0]).toHaveAttribute('data-sought')
+    expect(sought[0]).toHaveAttribute('tabindex', '-1')
+    expect(sought[0]).toHaveTextContent('Three investigators are tracing it.')
+  })
+
+  it('lifts nothing while the turn runs, because nothing is folded', () => {
+    show(turn, true, { ...finished, liveTurn: 'u', running: true })
+    expect(screen.queryByRole('region', { name: /asked while working/u })).not.toBeInTheDocument()
+    expect(document.body.textContent).toContain('Three investigators are tracing it.')
+  })
+
+  it('says how many more questions a reply asked than it quotes', () => {
+    const many = Array.from({ length: 6 }, (_, index) => `Should I change part ${index + 1} too?`).join(' ')
+    show([turn[0]!, { ...turn[1]!, text: many }, turn[3]!])
+    const [lifted] = screen.getAllByRole('region', { name: /asked while working/u })
+    expect(lifted!.querySelectorAll('blockquote > p')).toHaveLength(4)
+    expect(lifted).toHaveTextContent('2 more questions in that reply.')
   })
 })

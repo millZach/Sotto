@@ -13,6 +13,19 @@
 .thread-work__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
 .thread-work__body { padding: 8px 0 4px; }
 .thread-work__body > .thread-activity:last-child { margin-bottom: 12px; }
+/* A question a folded reply asked, quoted under the fold so it is read; the attention edge says the reply wanted the user. */
+.thread-lifted { display: grid; justify-items: start; gap: 6px; margin: -6px 0 24px; padding: 12px 16px; border-left: 2px solid var(--tt-attention); border-radius: 0 var(--tt-radius-lg) var(--tt-radius-lg) 0; background: var(--tt-surface-sunken); }
+.thread-lifted__who { margin: 0; color: var(--tt-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.thread-lifted__questions { display: grid; gap: 6px; margin: 0; color: var(--tt-text); font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.thread-lifted__questions > p { margin: 0; }
+.thread-lifted__more { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.thread-lifted__where {
+  min-height: 24px; padding: 0; border: 0; border-radius: 2px; background: transparent; color: var(--tt-link); font: inherit; font-size: 13.5px; font-weight: 600;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; cursor: pointer;
+}
+/* The reply Show where it asked reached, marked for a moment; its focus ring sits outside the mark. */
+.thread-message[data-sought] { border-radius: 2px; background: color-mix(in srgb, var(--tt-attention) 12%, transparent); box-shadow: 0 0 0 10px color-mix(in srgb, var(--tt-attention) 12%, transparent); }
+.thread-message[tabindex='-1']:focus-visible { outline-offset: 12px; border-radius: 2px; }
 .thread-message + .thread-activity, .thread-message + .thread-activity-live, .thread-activity + .thread-activity-live { margin-top: -14px; }
 
 .thread-activity__summary {
@@ -97,6 +110,7 @@ button.thread-activity__toggle:hover { background: var(--tt-hover); }
 
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-activity__pulse[data-connected] { animation: thread-activity-pulse 1.6s ease-in-out infinite; }
+  :root:not([data-reduced-motion='on']) .thread-message[tabindex='-1'] { transition: background-color .5s ease, box-shadow .5s ease; }
 }
 @keyframes thread-activity-pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .thread-activity__chevron { transition: none; } }
