@@ -309,10 +309,11 @@ export class AgentControl {
     return this.commandShell(parsed, client, decisionId)
   }
   /** User-requested setup only, never exposed as a tool. */
-  commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>): Promise<AgentState> {
+  commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>, connectionGuard?: () => void): Promise<AgentState> {
     if (!this.watcherHooks) throw new Error('Watcher is unavailable.')
     const parsed = agentCommandSchema.parse(command)
-    this.watcherOrigins.set(parsed, { guard: () => { if (this.disposed) throw new Error('Sotto is stopping.') } })
+    const guard = () => { connectionGuard?.(); if (this.disposed) throw new Error('Sotto is stopping.') }
+    guard(); this.watcherOrigins.set(parsed, { guard })
     return this.admitCommandShell(parsed)
   }
   hasWatcherQueue(operationIds: ReadonlySet<string>): boolean { return this.followupStore.peek().items.some(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)) }
@@ -3042,6 +3043,7 @@ export class AgentControl {
         // thread starts its CLI only for the adapter to restart it with the new settings. Each adapter checks
         // the thread's status, requests and model itself before it changes anything.
         const validate = (): void => {
+          origin?.guard()
           const thread = this.thread(command.threadId)
           if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its pending requests before changing settings.')
           if (thread.nativeSessionStarted !== false && command.modelId && thread.providerId && resolveModel(this.state.host.models, command.modelId)?.providerId !== thread.providerId) throw new Error('Choose a model from this thread provider. Existing sessions cannot move between providers.')
@@ -3054,11 +3056,11 @@ export class AgentControl {
         if (command.modelId !== undefined || command.reasoningEffort !== undefined) {
           await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId,
             ...(command.modelId !== undefined ? { modelId: command.modelId } : {}),
-            ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}) }, turn, validate)
+            ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}) }, turn, validate, undefined, client, undefined, origin)
         }
-        if (command.runtimeMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, runtimeMode: command.runtimeMode }, turn, validate)
+        if (command.runtimeMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, runtimeMode: command.runtimeMode }, turn, validate, undefined, client, undefined, origin)
         // A provider that names its own permission modes takes them on their own command, as runtimeMode does.
-        if (command.providerMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, providerMode: command.providerMode }, turn, validate)
+        if (command.providerMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, providerMode: command.providerMode }, turn, validate, undefined, client, undefined, origin)
         this.say('Thread settings saved.')
         this.observe()
         return

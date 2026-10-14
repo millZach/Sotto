@@ -33,12 +33,15 @@ export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
   receiptGroups: z.array(z.object({ replyMessageId: z.string().nullable(), requestId: z.uuid(), rows: z.array(receipt) }).strict()),
   watchedThreads: z.array(z.object({ target: watcherThreadTargetSchema, title: z.string(), provider: providerIdSchema.nullable(),
     status: z.enum(['idle', 'running', 'error', 'unavailable']), connected: z.boolean(), watched: z.boolean(),
+    paused: z.boolean().optional(),
     takenOver: z.boolean(), backgroundWorkCount: z.number().int().nonnegative() }).strict()),
   needsYou: z.array(requestCard), inFlight: z.number().int().nonnegative(), inFlightLimit: z.number().int().min(1).max(8),
   working: z.boolean(), recoveryNotice: z.string().nullable(), observedAt: z.string(),
   draftDeliveries: z.array(z.object({ draftId: z.uuid(), status: z.enum(['queued', 'submitting', 'accepted', 'uncertain', 'failed']) }).strict()).optional(),
 }).strict()
 export const watcherPhoneResultSchema = z.union([z.object({ status: z.literal('ok'), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])
+export const watcherPhoneManageOutcomeSchema = z.union([z.object({ status: z.literal('ok') }).strict(), watcherRefusalSchema])
+export type WatcherPhoneManageOutcome = z.infer<typeof watcherPhoneManageOutcomeSchema>
 export const watcherPhoneSendResultSchema = z.union([z.object({ status: z.literal('ok'), draftId: z.uuid(), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])
 const stoppedTargets = z.array(z.object({ target: watcherThreadTargetSchema,
   status: z.enum(['stopped', 'requested', 'refused', 'uncertain']), message: z.string() }).strict())

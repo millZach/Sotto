@@ -65,6 +65,7 @@ it('accepts only owning-host state fields and never lets a projection lower budg
 
 it('keeps a validated accepted control receipt when its follow-up projection read fails', async () => {
   const f = await fixture(), operation = f.control.watcherRecord().operations[0]!
+  f.snapshot.threads[0]!.lastUserMessageId = operation.messageId!
   const input = { requestId: operation.requestId, retryKey: operation.retryKey, target: operation.target, delivery: 'now' as const, text: 'Synthetic send' }
   const receipt = { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'accepted', receiptId: operation.receiptId, cardId: operation.cardId }
   vi.mocked(f.remote.control).mockResolvedValue({ status: 'ok', receipt, limits: { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }, delivery: 'now' })
@@ -132,16 +133,16 @@ it('does not treat an unknown receipt in another client scope as proof of non-ad
     : { hostId: f.hostId, master: record.current!, revision: 'other-scope', observedAt: new Date().toISOString(), requests: [], operations: [], evidence: [] })
   await f.reconcile()
   expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('uncertain')
-  expect(f.watcher.state().inFlight).toBe(1)
+  expect(f.watcher.state().inFlight).toBe(0)
 })
 
-it.each(['removed', 'reads-unavailable'])('holds an uncertain slot when its host is %s', async unavailable => {
+it.each(['removed', 'reads-unavailable'])('holds an uncertain existing receipt without start capacity when its host is %s', async unavailable => {
   const f = await fixture()
   if (unavailable === 'removed') f.hosts.splice(0)
   else f.hosts[0]!.reads = false
   await f.reconcile(); f.watcher.observe(f.control.watcherSnapshot(), new Set())
   expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('uncertain')
-  expect(f.watcher.state().inFlight).toBe(1)
+  expect(f.watcher.state().inFlight).toBe(0)
   expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
 })
 

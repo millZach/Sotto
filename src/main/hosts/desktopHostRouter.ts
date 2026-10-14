@@ -26,7 +26,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -109,7 +109,7 @@ export class DesktopHostRouter {
     }
     return {
       hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => ({
-        hostId: host.hostId, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true,
+        hostId: host.hostId, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
         connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
         permissionCeiling: host.service.shell().configuration.newThreadRuntimeMode ?? 'approval-required' })),
       snapshot: id => {
@@ -239,7 +239,7 @@ export class DesktopHostRouter {
    * has cached, so it is read afresh.
    */
   private watch(connection: DesktopHostConnection): (() => void)[] {
-    const signature = (state: AgentState) => JSON.stringify([state.stale === true, state.host.connected, connection.service.supportsWatcherControl, connection.service.supportsWatcherReads])
+    const signature = (state: AgentState) => JSON.stringify([state.stale === true, state.host.connected, connection.service.supportsWatcherControl, connection.service.supportsWatcherReads, connection.service.supportsWatcherStandingWatch])
     let last = signature(connection.service.shell())
     const off = [connection.service.subscribe(state => {
       this.emit(connection.kind === 'local' ? { hostId: connection.hostId, state } : undefined)

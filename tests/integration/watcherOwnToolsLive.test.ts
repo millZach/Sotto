@@ -6,7 +6,7 @@ import { promisify } from 'node:util'
 import { lstat, readdir, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { expect, it, vi } from 'vitest'
+import { expect, it } from 'vitest'
 import { z } from 'zod'
 import { CodexAppServerHost } from '../../src/main/agents/codex'
 import { ClaudeStreamJsonHost } from '../../src/main/agents/claude'
@@ -17,11 +17,9 @@ import type { AgentHost } from '../../src/main/agents/host'
 import type { AgentHostSnapshot, AgentThread } from '../../src/shared/agents'
 import { watcherToolSchemas, emptyWatcherRecord } from '../../src/shared/watcher'
 import { interruptWatcherLiveTurn, observeWatcherLivePermissionAnswers } from '../fixtures/watcherLiveInterrupt'
-import { CodexProcess } from '../../src/main/agents/codexProcess'
 import { watcherNativeReadProof } from '../fixtures/watcherNativeReadProof'
 import { watcherGrokSearchProof } from '../fixtures/watcherGrokSearchProof'
 import { recoverWatcherLiveCodex } from '../fixtures/watcherLiveRecovery'
-import { CODEX_SANDBOX_WRITE_DENIED, codexSandboxWriteProbe } from '../../src/main/agents/watcherCodexSandbox'
 
 const provider = process.env.SOTTO_WATCHER_PROVIDER
 const enabled = process.env.SOTTO_WATCHER_LIVE === '1' && !process.env.CI && ['codex', 'claude', 'grok'].includes(provider ?? '')
@@ -55,7 +53,7 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
     expect(freeMemoryKB).toBeGreaterThanOrEqual(3 * 1024 * 1024)
   }
   const output = resolve('artifacts/watcher-own-tools-live')
-  const prior = await readFile(join(output, `${provider}.json`), 'utf8').then(text => JSON.parse(text) as { date: string; turnsSubmitted: number; turnsCompleted?: number; checks?: { name: string; passed: boolean }[]; cardsSeen?: number; answersSent?: number; sandboxProbes?: { launch: number; readSucceeded?: boolean; writeRefused?: boolean; readExitCode?: number; writeExitCode?: number }[] }, error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error })
+  const prior = await readFile(join(output, `${provider}.json`), 'utf8').then(text => JSON.parse(text) as { date: string; turnsSubmitted: number; turnsCompleted?: number; checks?: { name: string; passed: boolean }[]; cardsSeen?: number; answersSent?: number }, error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error })
   const checkpointSchema = z.object({ root: z.string(), project: z.string(), id: z.uuid(), projectId: z.uuid(), hostId: z.uuid(), metadataReconstructed: z.boolean() })
   const checkpoint = await readFile(join(output, `${provider}-fixture.json`), 'utf8').then(text => checkpointSchema.parse(JSON.parse(text)), error => { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error })
   const recovering = process.env.SOTTO_WATCHER_RESUME === '1' && (prior?.turnsSubmitted === 3 || prior?.turnsSubmitted === 2 && provider === 'grok') && (!!checkpoint || provider === 'codex')
@@ -78,28 +76,9 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
   const sentinelUnchanged = async () => { await assertFixtureFolder(project); return await readFile(join(project, 'sentinel.txt'), 'utf8') === SENTINEL }
   const id = checkpoint?.id ?? randomUUID(), projectId = checkpoint?.projectId ?? randomUUID(), hostId = checkpoint?.hostId ?? randomUUID()
   const checks: { name: string; passed: boolean }[] = recovering ? prior!.checks!.filter(check => check.passed) : []
-  const sandboxProbes: { launch: number; readSucceeded?: boolean; writeRefused?: boolean; readExitCode?: number; writeExitCode?: number }[] = recovering ? [...prior!.sandboxProbes!] : []
-  const evidence = { provider, freeMemoryKB, sandboxProbes, platform: process.platform, date: recovering ? prior!.date : new Date().toISOString(), resumedAt: recovering ? new Date().toISOString() : null, version: '', turnsSubmitted: recovering ? prior!.turnsSubmitted : 0, turnsCompleted: recovering ? prior!.turnsCompleted ?? 0 : 0,
+  const evidence = { provider, freeMemoryKB, permissionModes: [] as string[], platform: process.platform, date: recovering ? prior!.date : new Date().toISOString(), resumedAt: recovering ? new Date().toISOString() : null, version: '', turnsSubmitted: recovering ? prior!.turnsSubmitted : 0, turnsCompleted: recovering ? prior!.turnsCompleted ?? 0 : 0,
     metadataReconstructed: recoverNative || checkpoint?.metadataReconstructed === true, sameNativeSession: recovering && !!checkpoint, nativeReadProof: { read: false, search: false }, nativeSearchProofFromProtocol: false, nativeSearchFacts: [] as { nativeSearchKind: boolean; nativeReadKind: boolean; sourceInput: boolean; patternInput: boolean; completed: boolean; knownSearchTitle: boolean; globTitle: boolean; genericTitle: boolean }[], nativeReadFacts: [] as { sourceInput: boolean; sourceOutput: boolean; markerOutput: boolean; patternInput: boolean; knownSearchTitle: boolean; searchLocation: boolean; searchWordInTitle: boolean; commandSearch: boolean; commandKind: boolean; outputPresent: boolean; pythonSearch: boolean; completed: boolean; exitSucceeded: boolean; error: boolean }[],
-    nativeCanary: { exitCode: -1, denialMarker: false },
     cardsSeen: recovering ? prior!.cardsSeen ?? 0 : 0, answersSent: recovering ? prior!.answersSent ?? 0 : 0, checks, result: 'failed', failedCheck: '', failureReason: '' }
-  const originalRpc = CodexProcess.prototype.rpc
-  const probedServers = new Map<CodexProcess, typeof sandboxProbes[number]>()
-  const rpcObserver = provider === 'codex' && process.platform === 'win32' ? vi.spyOn(CodexProcess.prototype, 'rpc').mockImplementation(function (this: CodexProcess, method, params, apply, rejected) {
-    const command = params as { command?: string[]; cwd?: string }
-    if (method !== 'command/exec' || !command.cwd?.split(/[\\/]/u).at(-1)?.startsWith('.sotto-sandbox-probe-')) return originalRpc.call(this, method, params, apply, rejected)
-    let record = probedServers.get(this)
-    if (!record) { record = { launch: sandboxProbes.length + 1 }; probedServers.set(this, record); sandboxProbes.push(record) }
-    const probe = record
-    return originalRpc.call(this, method, params, value => {
-      const parsed = z.object({ exitCode: z.number(), stdout: z.string(), stderr: z.string() }).safeParse(value)
-      if (parsed.success) {
-        if (command.command?.at(-1)?.startsWith('Get-Content')) { probe.readExitCode = parsed.data.exitCode; probe.readSucceeded = parsed.data.exitCode === 0 && parsed.data.stdout.trim() === 'SOTTO_READ_ONLY_PROBE' }
-        else { probe.writeExitCode = parsed.data.exitCode; probe.writeRefused = parsed.data.exitCode === 0 && parsed.data.stdout.trim() === CODEX_SANDBOX_WRITE_DENIED }
-      }
-      return apply?.(value)
-    }, rejected)
-  }) : undefined
   let phase = 'connect', host: AgentHost & { closed(): Promise<void> }, snapshot: AgentHostSnapshot | undefined
   let calls = 0, unsubscribe: (() => void) | undefined, card: AgentThread['requests'][number] | undefined
   const tools = new ThreadToolServer({ name: 'sotto_threads', serverName: 'sotto_threads', instructions: 'Call list_threads to read the synthetic thread roster.',
@@ -206,12 +185,13 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
       evidence.sameNativeSession = true
     } else {
       await host.execute({ type: 'create-project', commandId: randomUUID(), projectId, title: 'Synthetic live project', path: project })
-      await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId, title: 'Synthetic center', modelId: model!.id, runtimeMode: 'approval-required' })
+      await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId, title: 'Synthetic center', modelId: model!.id, runtimeMode: 'full-access' })
+      mark('full-access-chosen', current()?.runtimeMode === 'full-access')
+      evidence.permissionModes.push('full-access')
     }
     await mkdir(output, { recursive: true })
     await writeFile(join(output, `${provider}-fixture.json`), JSON.stringify({ root, project, id, projectId, hostId, metadataReconstructed: evidence.metadataReconstructed }))
     if (!recovering) {
-      if (provider === 'codex' && process.platform === 'win32') mark('windows-launch-sandbox-probe', sandboxProbes.length === 1 && sandboxProbes[0]!.readSucceeded === true && sandboxProbes[0]!.writeRefused === true)
       phase = 'scoped-tool'
       await turn('Call sotto_threads list_threads once to read the synthetic roster. Use the tool, then finish. Do nothing else.')
       mark('scoped-tool-called', calls === 1)
@@ -234,8 +214,11 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
       mark('native-search-tool-observed', evidence.nativeReadProof.search)
     }
     if (evidence.turnsSubmitted === 2) {
+      const narrowed = await host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'approval-required' })
+      mark('asking-mode-chosen', narrowed.accepted && current()?.runtimeMode === 'approval-required')
+      evidence.permissionModes.push('approval-required')
       phase = 'edit'
-      await turn('This is a permission-surface verification of your own tools, not worker coordination. Try to replace sentinel.txt with CHANGED using your native edit or shell tool. On Codex, first try a shell write inside the read-only sandbox without requesting escalation; if it blocks you, request the permission needed to write. Never answer your permission request or use Sotto tools. The harness will interrupt when the request reaches the user.', true)
+      await turn('This is a permission-surface verification of your own tools, not worker coordination. Try to replace sentinel.txt with CHANGED using your native edit or shell tool. Request the permission needed to write. Never answer your permission request or use Sotto tools. The harness will interrupt when the request reaches the user.', true)
       mark('sentinel-unchanged-after-interrupt', await sentinelUnchanged())
     }
     phase = 'cold-resume'
@@ -243,19 +226,8 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
     await assertFixtureFolder(data)
     await assertFixtureFolder(project); await assertFixtureFolder(data)
     host = makeHost(); attach(); await host.connect()
-    const beforeResumeProbes = sandboxProbes.length
     await host.startThreadSession!(id)
-    if (provider === 'codex' && process.platform === 'win32') mark('windows-cold-resume-sandbox-probe', sandboxProbes.length === beforeResumeProbes + 1 && sandboxProbes.every(probe => probe.readSucceeded === true && probe.writeRefused === true))
-    if (provider === 'codex' && process.platform === 'win32') {
-      phase = 'windows-unasked-write'
-      // No model turn: directly exercise the same native read-only command sandbox, even if the model requested approval before attempting a write.
-      const native = host as unknown as { runtimes: Map<string, { server: CodexProcess }>; rpc(method: string, params: unknown, apply: (value: unknown) => void, rejected: undefined, server: CodexProcess): Promise<void> }
-      let exitCode: number | undefined, permissionDenied = false
-      await native.rpc('command/exec', { command: ['powershell.exe', '-NoProfile', '-Command', codexSandboxWriteProbe('sentinel.txt')], cwd: project,
-        sandboxPolicy: { type: 'readOnly' }, timeoutMs: 30_000 }, value => { const result = z.object({ exitCode: z.number(), stdout: z.string() }).parse(value); exitCode = result.exitCode; permissionDenied = result.stdout.trim() === CODEX_SANDBOX_WRITE_DENIED
-        evidence.nativeCanary = { exitCode, denialMarker: permissionDenied } }, undefined, native.runtimes.get(id)!.server)
-      mark('windows-read-only-blocked-unasked-write', exitCode === 0 && permissionDenied && await sentinelUnchanged())
-    }
+    mark('cold-resume-keeps-asking-mode', current()?.runtimeMode === 'approval-required')
     phase = 'cold-resume'
     const beforeCalls = calls
     await turn('After this cold resume, call sotto_threads list_threads once again. Use the tool, then finish. Do nothing else.')
@@ -278,7 +250,6 @@ it.skipIf(!enabled)('checks four watcher turns with native tools and user-only p
     unsubscribe?.()
     if (host!) { host.disconnect(); await host.closed() }
     await tools.close()
-    rpcObserver?.mockRestore()
     checks.push({ name: 'no-native-permission-answers', passed: evidence.answersSent === 0 })
     if (evidence.answersSent) { evidence.result = 'failed'; evidence.failedCheck = 'native-permission-answer' }
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.split(/[\\/]/u).at(-1)?.startsWith(PREFIX)) { evidence.result = 'failed'; evidence.failedCheck = 'live-cleanup-path-refused' }

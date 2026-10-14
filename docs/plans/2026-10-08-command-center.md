@@ -2,9 +2,21 @@
 
 Date: 2026-10-08. Branch inspected: `command-center`. Status: implementation plan, after voice removal. No implementation, build, test run or commit is part of this work.
 
+## October 13 amendment: permission modes, own changes and standing watches
+
+Zach approved control A, own-change mark B and watch B at `C:/Users/zache/AppData/Local/zstack-scratch/watcher-permission/index.html`. These decisions supersede every pinned asking-mode, request-lifetime watching and permanent direct-send takeover requirement below. Other room picks and human-only card answers stay in force.
+
+- Watcher offers ordinary provider runtime choices. First-ever is Ask for approval; later creation remembers Watcher's last choice independently. User widening/narrowing is admitted through desktop and phone; remembered session/always approvals remain refused.
+- Its prompt delegates changes to workers. Sotto independently attaches successful turn-attributed provider file-change paths/count to its reply, with a reason only from one exact `Watcher change reason: <reason>` line, otherwise It gave no reason. Store that mark with history-owned messages, never control metadata or logs.
+- A standing watch lasts until Stop watching and survives restart and request closure. Existing threads can be watched without sending; no watch count cap. Main supplies finished/cards/failure/quiet/Git news, and Watcher manages watched work on judgment without answering a card. In-flight capacity bounds starts. A direct user turn fences previous machine sends and pauses new automatic sends until that turn ends without removing the watch.
+- Host-qualified watch_thread/unwatch_thread and private desktop/phone operations establish/remove watches. Owning paired hosts enforce generation/user-turn fences through optional watcher-standing-watch; older hosts refuse. Phones negotiate optional watcher-phone-manage. Protocol remains v1 and stable serves/starts none of it.
+- A standing watch ID in wake news authorizes a new bounded continuation scope per Watcher turn, linked by standingWatchId; four prompts per target/turn, no retry reset and no revival of stopped scopes.
+
+This lane commits shared contracts first and implements main, host/wire and SottoCore decoders. Separate UI lanes build control A, mark B and watch B against that contract; this lane changes no renderer or SwiftUI views. Verification covers widening/narrowing, always refusal, reason/no reason, retention/privacy, watch persistence/withdrawal/capacity, human-send fences, paired owning hosts, feature negotiation and the stable gate.
+
 ## Outcome and acceptance checks
 
-Sotto gets one current **Watcher** on this computer: an ordinary Claude Code, Codex or Grok Build thread on the user's own account, with its provider's own tools/settings, a pinned asking mode and Sotto's thread tools. Its Overview opens over the room from **All threads**; the room has no sidebar (October 11). Its conversation lives in the room. Opening a worker opens its real thread pane beside the conversation; **Open in Threads** changes rooms. The switch is **Dictate | Watcher (owl only) | Threads** everywhere: in the sidebar foot, and floating at the bottom of Watcher's room.
+Sotto gets one current **Watcher** on this computer: an ordinary Claude Code, Codex or Grok Build thread on the user's own account, with its provider's own tools/settings, the user's chosen native permission mode and Sotto's thread tools. Its Overview opens over the room from **All threads**; the room has no sidebar (October 11). Its conversation lives in the room. Opening a worker opens its real thread pane beside the conversation; **Open in Threads** changes rooms. The switch is **Dictate | Watcher (owl only) | Threads** everywhere: in the sidebar foot, and floating at the bottom of Watcher's room.
 
 This follows [the research and its ideas](../research/2026-10-08-watcher.md), [the voice-removal plan](2026-10-08-remove-voice-control.md), and the A2 room chosen on October 8. Zach's October 9 owl and wording picks come from the [approved owl mock-up](C:/Users/zache/AppData/Local/zstack-scratch/owl-prototype/), which remains outside the repository. Opening a worker stays beside Watcher in this room; without a sidebar the two fit side by side at every size (Zach's October 11 picks from the [no-sidebar mock-up](C:/Users/zache/AppData/Local/zstack-scratch/watcher-room-no-sidebar/index.html)). Stop all asks before stopping only eligible threads Watcher started. No second window, Overview rail, voice or Agents room is planned.
 

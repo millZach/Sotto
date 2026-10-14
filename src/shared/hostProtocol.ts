@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
+import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema } from './watcherHost'
 import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
@@ -387,6 +387,7 @@ export interface HostReceipt {
   acceptedAnswer?: (HostAnswerTarget & { decisionId: string }) | undefined
   /** Exact Stop all outcome, including partial results, for this authenticated phone's request ID. */
   watcherStop?: WatcherPhoneStopOutcome | undefined
+  watcherManage?: WatcherPhoneManageOutcome | undefined
 }
 /** Written to host-listener.json and served, with `status`, as /v1/health. */
 export interface HostDescriptor extends HostAbout { v: 1; pid: number; hostId: string; port: number; sottoVersion: string; features: string[] }
@@ -438,4 +439,5 @@ export const hostPushSchema = z.discriminatedUnion('event', [
 ])
 export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional(),
   answerDelivered: z.boolean().optional(), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }).optional(),
+  watcherManage: watcherPhoneManageOutcomeSchema.optional().catch(undefined),
   watcherStop: watcherPhoneStopOutcomeSchema.optional().catch(undefined) })

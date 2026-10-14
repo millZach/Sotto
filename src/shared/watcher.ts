@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, providerIdSchema } from './agents'
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
+export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
 
 export const WATCHER_PROMPT_BYTES_MAX = 32 * 1_024
 export const WATCHER_READ_BYTES_MAX = 64 * 1_024
@@ -28,13 +29,9 @@ export type WatcherThreadTarget = z.infer<typeof watcherThreadTargetSchema>
 export type WatcherProjectTarget = z.infer<typeof watcherProjectTargetSchema>
 /** Durable assignment, independent of any one request. Contains no user or provider prose. */
 export const watcherStandingWatchSchema = z.object({ id: z.uuid(), target: watcherThreadTargetSchema,
-  createdAt: time, generation: counter, pausedByUserMessageId: id.nullable().optional(),
-  remoteOrigin: z.object({ clientId: id, masterHostId: z.uuid() }).strict().optional() }).strict()
+  createdAt: time, generation: counter, pausedByUserMessageId: id.nullable().optional(), lastUserMessageId: id.nullable().optional(),
+  remoteOrigin: z.object({ clientId: id, masterHostId: z.uuid(), masterCreationOperationId: z.uuid().optional(), masterCreatedAt: time.optional() }).strict().optional() }).strict()
 export type WatcherStandingWatch = z.infer<typeof watcherStandingWatchSchema>
-/** Derived from provider file-change activities, never from a shared checkout's aggregate diff. */
-export const watcherOwnChangeSchema = z.object({ replyMessageId: id, turnId: id, files: z.array(z.string().min(1).max(4_096)),
-  fileCount: counter, reason: shortText.nullable(), source: z.literal('provider-file-change') }).strict()
-export type WatcherOwnChange = z.infer<typeof watcherOwnChangeSchema>
 export const watcherPositionSchema = z.object({ historyEpoch: id, afterPosition: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER) }).strict()
 const permission = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('runtime'), mode: agentRuntimeModeSchema }).strict(),
@@ -197,6 +194,8 @@ export const watcherOperationSchema = z.object({ id: z.uuid(), requestId: z.uuid
   creationUncertain: z.literal(true).optional(), refusalCode: watcherRefusalCodeSchema.optional() }).strict().refine(item => !item.confirmedStop || item.action === 'stop', 'Only an explicit confirmed Stop can carry this marker.')
 export const watcherRecordSchema = z.object({ version: z.literal(1), current: watcherIdentitySchema.nullable(),
   lastRuntimeMode: agentRuntimeModeSchema.optional(), watches: z.array(watcherStandingWatchSchema).optional(),
+  watchFences: z.array(z.object({ id: z.uuid(), remoteOrigin: z.object({ clientId: id, masterHostId: z.uuid(), masterCreationOperationId: z.uuid().optional(), masterCreatedAt: time.optional() }).strict() }).strict()).optional(),
+  remoteMasters: z.array(z.object({ clientId: id, masterHostId: z.uuid(), creationOperationId: z.uuid(), createdAt: time }).strict()).max(1_000).optional(),
   creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
   history: z.array(watcherIdentitySchema).max(1_000), requests: z.array(watcherRequestSchema).max(10_000),
@@ -212,6 +211,8 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
   const unique = (values: string[]) => new Set(values).size === values.length
   if (!unique(record.requests.map(request => request.id)) || !unique(record.operations.map(operation => operation.id))
+    || !unique((record.watches ?? []).map(watch => key(watch.target))) || !unique((record.watches ?? []).map(watch => watch.id))
+    || !unique((record.remoteMasters ?? []).map(master => JSON.stringify([master.clientId, master.masterHostId])))
     || !unique(record.requests.map(request => JSON.stringify([key(request.watcher), request.rootUserMessageId])))
     || !unique(record.operations.map(operation => `${operation.requestId}:${operation.retryKey}`))
     || !unique(record.history.map(identity => key(identity.target))) || !unique(record.reservations.map(reservation => key(reservation.target)))

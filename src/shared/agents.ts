@@ -1,3 +1,4 @@
+import { watcherOwnChangeSchema, watcherObservedChangesSchema } from './watcherChanges'
 import { z } from 'zod'
 import { subagentSummarySchema } from './subagents'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
@@ -227,6 +228,8 @@ export const agentMessageSchema = z.object({
   id, role: z.enum(['user', 'assistant']), text: z.string(), createdAt: z.string(),
   commandId: z.string().optional(),
   attachments: z.array(agentAttachmentReferenceSchema).optional(),
+  watcherOwnChange: watcherOwnChangeSchema.optional().catch(undefined),
+  watcherObservedChanges: watcherObservedChangesSchema.optional().catch(undefined),
   /**
    * Set on a message Sotto made for a visual an agent drew (ADR-0056), whose ID starts `visual:` and whose text is the
    * visual's words. A visual this reader cannot read is dropped and the text stands in; an older reader drops the field.

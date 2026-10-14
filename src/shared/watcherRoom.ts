@@ -77,8 +77,9 @@ export interface WatcherBridge {
   prepareStopAll(): Promise<WatcherPrepareStopAllResult>
   stopAll(request: WatcherStopAllRequest): Promise<WatcherStopAllResult>
   setLimit(request: WatcherSetLimitRequest): Promise<WatcherRoomResult>
-  setPermission(request: WatcherSetPermissionRequest): Promise<WatcherRoomResult>
-  watchThread(request: WatcherWatchThreadRequest): Promise<WatcherRoomResult>
-  unwatchThread(request: WatcherWatchThreadRequest): Promise<WatcherRoomResult>
+  /** Older room stand-ins omit management. The real Owl preload supplies all three methods. */
+  setPermission?(request: WatcherSetPermissionRequest): Promise<WatcherRoomResult>
+  watchThread?(request: WatcherWatchThreadRequest): Promise<WatcherRoomResult>
+  unwatchThread?(request: WatcherWatchThreadRequest): Promise<WatcherRoomResult>
   onChanged(listener: (state: WatcherRoomState) => void): () => void
 }

@@ -4,6 +4,7 @@ import { watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend,
 import { watcherRefusal, watcherGuidancePrefix, WATCHER_GUIDANCE_SUFFIX, type WatcherService } from './watcher'
 import type { AgentControl } from './control'
 import type { ClientIdentity } from './hostService'
+import type { WatcherSetPermissionRequest, WatcherWatchThreadRequest } from '../../shared/watcherRoom'
 
 /** A phone reads the room, never the persisted control record or the desktop's aggregate shell. */
 export class WatcherPhoneService {
@@ -50,9 +51,12 @@ export class WatcherPhoneService {
       && request.watcher.hostId === room.current?.target.hostId && request.watcher.threadId === room.current?.target.threadId).map(request => request.id))
     const watchedThreads = room.watchedThreads.map(row => ({ target: row.target, title: row.title,
       provider: thread(row.target)?.providerId ?? null, status: row.status, connected: row.connected,
-      watched: row.participation.some(part => activeRequests.has(part.requestId) && part.state === 'participating' && !part.automationStopped),
+      watched: row.watched ?? row.participation.some(part => activeRequests.has(part.requestId) && part.state === 'participating' && !part.automationStopped),
+      paused: row.paused,
       takenOver: row.participation.some(part => part.state === 'taken-over'), backgroundWorkCount: row.backgroundWorkCount }))
-    const targets = [...room.watchedThreads.map(row => row.target), ...room.current ? [room.current.target] : []]
+    const targets = [...room.watchedThreads.filter(row => row.watched || row.participation.some(part =>
+      activeRequests.has(part.requestId) && part.state === 'participating' && !part.automationStopped)).map(row => row.target),
+    ...room.current ? [room.current.target] : []]
     const needsYou = targets.flatMap(target => {
       const owner = thread(target), connected = Boolean(owner?.clientConnected)
       return (owner?.requests ?? []).map(request => ({ target, title: owner!.title, provider: owner?.providerId ?? null,
@@ -68,6 +72,7 @@ export class WatcherPhoneService {
       target: room.current.target, provider: room.current.provider, ...room.currentOptions } : null,
     conversation: { messages, revision: detail?.revision ?? 0, earlierAvailable: Boolean(detail?.earlierAvailable || (detail?.messages.length ?? 0) > messages.length) },
     draftDeliveries: (this.control.shell().deliveries ?? []).filter(row => row.threadId === current?.id).map(row => ({ draftId: row.draftId, status: row.status })),
+    runtimeMode: room.runtimeMode, standingWatches: room.standingWatches, ownChanges: room.ownChanges,
     receiptGroups, watchedThreads, needsYou, inFlight: room.inFlight, inFlightLimit: room.inFlightLimit,
     working: room.currentOptions?.status === 'running' || room.inFlight > 0, recoveryNotice: room.recoveryNotice, observedAt: room.observedAt })
   }
@@ -110,6 +115,17 @@ export class WatcherPhoneService {
     return result.status === 'refused' ? result : { status: 'ok', state: this.state(mayAnswer()), results: result.results }
   }
   currentThreadId(): string | undefined { return this.watcher.state().current?.target.threadId }
+  async manage(action: 'permission' | 'watch' | 'unwatch', request: WatcherSetPermissionRequest | WatcherWatchThreadRequest,
+    client: ClientIdentity, guard: () => void, mayAnswer: () => boolean): Promise<WatcherPhoneResult> {
+    if (client.transport !== 'socket') return watcherRefusal('INVALID_INPUT', 'Watcher phone controls need a paired phone connection.')
+    guard()
+    const result = action === 'permission'
+      ? await this.watcher.setPermission(request as WatcherSetPermissionRequest, guard)
+      : action === 'watch' ? await this.watcher.watchThread(request as WatcherWatchThreadRequest, guard)
+        : await this.watcher.unwatchThread(request as WatcherWatchThreadRequest, guard)
+    guard()
+    return result.status === 'refused' ? result : this.get(mayAnswer())
+  }
   subscribe(listener: () => void): () => void { return this.watcher.subscribe(listener) }
   get(mayAnswer: boolean): WatcherPhoneResult { return { status: 'ok', state: this.state(mayAnswer) } }
 }

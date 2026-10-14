@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
-import { hostEntityKey } from '../../src/shared/clientIdentity'
+import { hostEntityKey, parseHostEntityKey } from '../../src/shared/clientIdentity'
 import { E2E_THREADS_NOW } from '../../src/shared/e2e'
 import { contrastRatio, parseThemeRgb } from '../../src/shared/themes/color'
 import { WATCHER_STAND_IN_KEY, type WatcherStandInSeed } from '../../src/renderer/src/e2e/watcherStandIn'
@@ -637,7 +637,7 @@ test.describe("Watcher's room on the built app", () => {
     test.setTimeout(3 * 60_000)
     const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-watcher-main-' })).directory
     const root = join(profile, 'native-fixture')
-    for (const folder of ['claude', 'codex']) await mkdir(join(root, folder), { recursive: true })
+    for (const folder of ['claude', 'codex', 'worker']) await mkdir(join(root, folder), { recursive: true })
     await writeFile(join(root, 'codex', 'script.json'), JSON.stringify({ reply: 'Watcher here. I will look at the release notes.' }))
     const previous = { root: process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT, executable: process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE }
     process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = root
@@ -673,6 +673,29 @@ test.describe("Watcher's room on the built app", () => {
           await expect(pane.locator('[data-role="user"]')).toHaveCount(1)
           const record = await page.evaluate(async () => (await window.sotto!.watcher!.get()))
           expect(record).toMatchObject({ status: 'ok', state: { current: { provider: 'codex' } } })
+          // Exercise the new core bridge in the built app. The separate UI lane owns the controls.
+          expect(await page.evaluate(async () => window.sotto!.watcher!.setPermission!({ runtimeMode: 'full-access' })))
+            .toMatchObject({ status: 'ok', state: { runtimeMode: 'full-access', currentOptions: { runtimeMode: 'full-access' } } })
+          expect(await page.evaluate(async () => window.sotto!.watcher!.setPermission!({ runtimeMode: 'approval-required' })))
+            .toMatchObject({ status: 'ok', state: { runtimeMode: 'approval-required', currentOptions: { runtimeMode: 'approval-required' } } })
+          const workerId = await page.evaluate(async path => {
+            const agents = window.sotto!.agents!
+            const opened = await agents.command({ type: 'create-project', title: 'Watch without sending', path, useExisting: true, provider: 'codex' })
+            if (opened.error || !opened.activeProjectId) throw new Error('Could not create the test worker project.')
+            const room = await window.sotto!.watcher!.get()
+            if (room.status !== 'ok' || !room.state.currentOptions) throw new Error('Watcher is unavailable.')
+            const created = await agents.command({ type: 'create-thread', projectId: opened.activeProjectId, modelId: room.state.currentOptions.modelId,
+              title: 'Standing watch worker', workingCopy: 'shared', runtimeMode: 'approval-required' })
+            if (created.error || !created.activeThreadId) throw new Error('Could not create the test worker.')
+            return created.activeThreadId
+          }, join(root, 'worker'))
+          const target = { hostId: record.status === 'ok' ? record.state.current!.target.hostId : '', threadId: parseHostEntityKey(workerId)?.id ?? workerId }
+          expect(await page.evaluate(async target => window.sotto!.watcher!.watchThread!({ target }), target))
+            .toMatchObject({ status: 'ok', state: { inFlight: 0, standingWatches: [expect.objectContaining({ target })] } })
+          const detail = await page.evaluate(async threadId => window.sotto!.agents!.threadDetail!(threadId), workerId)
+          expect(detail?.messages).toHaveLength(0)
+          expect(await page.evaluate(async target => window.sotto!.watcher!.unwatchThread!({ target }), target))
+            .toMatchObject({ status: 'ok', state: { standingWatches: [] } })
           // Watcher is its room's: not listed on the Threads page, and nothing there was selected for it.
           await switchTab(page, 'Threads').click()
           await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()

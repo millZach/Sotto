@@ -80,8 +80,17 @@ export class WatcherWakeUp {
   private active(thread: AgentThread): boolean { return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.backgroundWork?.length || thread.monitoring?.length) }
   private workers(includeClosed = false) {
     const record = this.options.record()
-    return record.requests.filter(request => (request.state === 'active' || includeClosed && request.state === 'closed') && targetKey(request.watcher) === (record.current ? targetKey(record.current.target) : ''))
+    const watches = record.current ? (record.watches ?? []).filter(watch => !watch.remoteOrigin) : []
+    const standing = watches.map(watch => {
+      const request: WatcherRecord['requests'][number] = { id: watch.id, watcher: record.current!.target, rootUserMessageId: `standing:${watch.id}`,
+        standingWatchId: watch.id, state: 'active', createdAt: watch.createdAt, closedAt: null, participants: [] }
+      const participant: WatcherRecord['requests'][number]['participants'][number] = { requestId: watch.id, target: watch.target,
+        startedBy: 'user', generation: watch.generation, state: 'participating', promptCount: 0 }
+      return { request, participant }
+    })
+    return [...standing, ...record.requests.filter(request => (request.state === 'active' || includeClosed && request.state === 'closed') && targetKey(request.watcher) === (record.current ? targetKey(record.current.target) : ''))
       .flatMap(request => request.participants.map(participant => ({ request, participant })))
+      .filter(({ participant }) => !watches.some(watch => targetKey(watch.target) === targetKey(participant.target)))]
   }
   private watchedTargets(): WatcherThreadTarget[] {
     return [...new Map(this.workers().filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
@@ -315,9 +324,10 @@ export class WatcherWakeUp {
   }
   due(event: WatcherEvent): boolean {
     if (!this.started || this.closed) return false
-    const record = this.options.record(), request = record.requests.find(item => item.id === event.requestId)
+    const record = this.options.record(), standing = this.workers().find(item => item.request.standingWatchId === event.requestId)
+    const request = standing?.request ?? record.requests.find(item => item.id === event.requestId)
     if (!record.current || !request || request.state !== 'active' && !(event.kind === 'taken-over' && request.state === 'closed') || targetKey(record.current.target) !== targetKey(request.watcher)) return false
-    const participant = request.participants.find(item => targetKey(item.target) === targetKey(event.target))
+    const participant = standing?.participant ?? request.participants.find(item => targetKey(item.target) === targetKey(event.target))
     if (!participant || participant.generation !== event.generation || participant.automationStopped) return false
     if (event.kind === 'taken-over') return participant.state === 'taken-over'
     if (participant.state !== 'participating') return false

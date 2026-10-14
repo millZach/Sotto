@@ -43,6 +43,7 @@ export default tseslint.config(
       'apps/omarchy/src/**',
       'apps/omarchy/pkg/**',
       'artifacts/e2e-runs/**',
+      'artifacts/watcher-permission-watch/**',
       'artifacts/omarchy-shell-integration/**',
       'artifacts/linux-window-minimum/**',
       'artifacts/linux-hyprland-paste/**',

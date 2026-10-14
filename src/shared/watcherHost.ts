@@ -24,6 +24,7 @@ export const watcherHostReadSchema = z.object({ master: watcherHostScopeSchema,
     z.object({ name: z.literal('read_operation'), input: watcherToolSchemas.read_operation.input }).strict(),
   ]).optional() }).strict()
 export const watcherHostProjectionSchema = z.object({ hostId: z.uuid(), master: watcherHostScopeSchema,
+  standingWatches: z.array(watcherStandingWatchSchema).optional(),
   revision: z.string().min(1).max(512), observedAt: z.string().datetime(),
   requests: z.array(watcherRequestSchema).max(1_000), operations: z.array(watcherOperationSchema).max(1_000),
   evidence: z.array(watcherEvidenceSchema).max(1_000),

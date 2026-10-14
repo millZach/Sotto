@@ -171,6 +171,12 @@ it('fences a phone direct send as takeover and binds Stop all previews to the ex
   await f.finish(worker.threadId)
   expect(await peer.call('direct', { op: 'command', command: { type: 'manual-send', threadId: worker.threadId, draftId: randomUUID(), text: 'Synthetic direct user input' } })).toMatchObject({ ok: true })
   expect(f.watcher.state().requests.at(-1)?.participants[0]?.state).toBe('taken-over')
+  const watch = f.watcher.state().standingWatches!.find(row => row.target.threadId === worker.threadId)!
+  expect(f.phone.state(false).watchedThreads.find(row => row.target.threadId === worker.threadId)).toMatchObject({ watched: true, paused: true })
+  for (const delivery of ['now', 'queue', 'steer']) {
+    expect(await f.watcher.invoke(f.target.threadId, 'send_to_thread', { requestId: watch.id, retryKey: randomUUID(),
+      target: worker, delivery, text: 'Synthetic automatic follow-up' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+  }
   expect(await peer.call('changed', { op: 'watcher-phone-stop-all', confirmationId })).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
   await f.finish(f.target.threadId); await peer.call('second-send', f.send(peer.paired.clientId)); const eligible = await f.start()
   const latest = await peer.call('latest', { op: 'watcher-phone-prepare-stop-all' })
@@ -261,7 +267,7 @@ it('reconciles a lost Stop all reply from a client-bound receipt with partial re
 })
 
 
-it('marks workers watched only for active requests belonging to the current host-qualified Watcher', async () => {
+it('keeps standing watches through stopped and closed requests until explicit unwatch', async () => {
   const f = await fixture(), peer = await f.pair()
   await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
   const watched = () => f.phone.state(false).watchedThreads.find(row => row.target.threadId === worker.threadId)!.watched
@@ -269,16 +275,13 @@ it('marks workers watched only for active requests belonging to the current host
   const preview = await peer.call('preview', { op: 'watcher-phone-prepare-stop-all' })
   await peer.call('stop', { op: 'watcher-phone-stop-all', confirmationId: (preview.result as { confirmationId: string }).confirmationId })
   expect(f.watcher.state().requests.at(-1)?.state).toBe('stopped')
-  expect(watched()).toBe(false)
-  const shell = await peer.call('after-stop', { op: 'shell' })
-  expect((shell.result as { host: { threads: { id: string; watchedByWatcher?: boolean }[] } }).host.threads.find(row => row.id === worker.threadId)?.watchedByWatcher).toBe(false)
-  // Historical participation remains retained, including a host-local ID collision with another master.
-  await f.control.updateWatcher(record => { const request = record.requests.at(-1)!; request.state = 'active'; request.closedAt = null; request.watcher.hostId = randomUUID() })
-  expect(watched()).toBe(false)
-  await f.control.updateWatcher(record => { const request = record.requests.at(-1)!; request.watcher = f.target; request.state = 'closed'; request.closedAt = new Date().toISOString() })
-  expect(watched()).toBe(false)
-  await f.control.updateWatcher(record => { const request = record.requests.at(-1)!; request.state = 'active'; request.closedAt = null })
   expect(watched()).toBe(true)
+  const shell = await peer.call('after-stop', { op: 'shell' })
+  expect((shell.result as { host: { threads: { id: string; watchedByWatcher?: boolean }[] } }).host.threads.find(row => row.id === worker.threadId)?.watchedByWatcher).toBe(true)
+  await f.control.updateWatcher(record => { const request = record.requests.at(-1)!; request.state = 'closed'; request.closedAt = new Date().toISOString() })
+  expect(watched()).toBe(true)
+  expect(await f.watcher.unwatchThread({ target: worker })).toMatchObject({ status: 'ok' })
+  expect(watched()).toBe(false)
 })
 
 it('keeps a phone Stop all preview valid when another phone opens many previews', async () => {
@@ -368,4 +371,47 @@ it('replays a phone worker answer after reconnect without answering again or req
     .toMatchObject({ ok: false, error: { code: 'forbidden' } })
   expect(f.native(worker.threadId).requests).toHaveLength(1)
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(1)
+})
+
+
+it('negotiates Watcher management separately and replays outcomes without undoing newer choices', async () => {
+  const f = await fixture(), old = await f.pair(), peer = await f.pair(['watcher-phone', 'watcher-phone-manage'])
+  expect(peer.hello).toMatchObject({ ok: true, result: { features: expect.arrayContaining(['watcher-phone-manage']) } })
+  f.workspace.adapters.codex.state.models[0]!.runtimeModes = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const change = { op: 'watcher-phone-set-permission', request: { runtimeMode: 'auto-accept-edits' } }
+  expect(await old.call('old-mode', change)).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  expect(await peer.call('mode', change)).toMatchObject({ ok: true, result: { status: 'ok', state: { runtimeMode: 'auto-accept-edits', current: { runtimeMode: 'auto-accept-edits' } } } })
+  expect(await peer.call('narrow', { op: 'watcher-phone-set-permission', request: { runtimeMode: 'approval-required' } })).toMatchObject({ ok: true, result: { status: 'ok' } })
+  peer.messages.splice(peer.messages.findIndex(message => message.id === 'mode'), 1)
+  expect(await peer.call('mode', change)).toMatchObject({ ok: true, result: { status: 'ok', state: { runtimeMode: 'approval-required' } } })
+  peer.messages.splice(peer.messages.findIndex(message => message.id === 'mode'), 1)
+  expect(await peer.call('mode', { ...change, request: { runtimeMode: 'auto' } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  expect(hostReceiptSchema.parse((await peer.call('mode-receipt', { op: 'receipt', commandId: 'mode' })).result)).toMatchObject({ status: 'completed', watcherManage: { status: 'ok' } })
+  expect(await peer.call('grant', { op: 'watcher-phone-set-permission', request: { runtimeMode: 'always' } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  const watch = { op: 'watcher-phone-watch', request: { target: worker } }
+  expect(await old.call('old-watch', watch)).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  expect(await peer.call('watch', watch)).toMatchObject({ ok: true, result: { status: 'ok', state: { standingWatches: expect.arrayContaining([expect.objectContaining({ target: worker })]) } } })
+  expect(f.phone.state(false).watchedThreads.find(row => row.target.threadId === worker.threadId)?.watched).toBe(true)
+  f.native(worker.threadId).requests = [{ id: 'unwatched-card', kind: 'question', text: 'Synthetic question', options: [] }]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.phone.state(false).needsYou.some(row => row.target.threadId === worker.threadId)).toBe(true)
+  expect(await peer.call('unwatch', { op: 'watcher-phone-unwatch', request: { target: worker } })).toMatchObject({ ok: true, result: { status: 'ok' } })
+  expect(f.phone.state(false).watchedThreads.find(row => row.target.threadId === worker.threadId)?.watched).toBe(false)
+  expect(f.phone.state(false).needsYou.some(row => row.target.threadId === worker.threadId)).toBe(false)
+  peer.messages.splice(peer.messages.findIndex(message => message.id === 'watch'), 1)
+  await peer.call('watch', watch)
+  expect(f.phone.state(false).standingWatches?.some(row => row.target.threadId === worker.threadId)).toBe(false)
+  const shell = await peer.call('watch-shell', { op: 'shell' })
+  expect((shell.result as { host: { threads: { id: string; watchedByWatcher?: boolean }[] } }).host.threads.find(row => row.id === worker.threadId)?.watchedByWatcher).toBe(false)
+})
+
+it('keeps own-change metadata attached to the Watcher reply in the phone projection', async () => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); await f.finish(f.target.threadId)
+  const ownChange = { replyMessageId: 'changed-reply', turnId: 'changed-turn', files: ['src/example.ts'], fileCount: 1, reason: null, source: 'provider-file-change' as const }
+  f.native(f.target.threadId).messages.push({ id: ownChange.replyMessageId, role: 'assistant', text: 'Changed a file.', createdAt: new Date().toISOString(), watcherOwnChange: ownChange })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.phone.state(false).ownChanges).toContainEqual(ownChange)
 })

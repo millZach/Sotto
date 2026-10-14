@@ -1441,10 +1441,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         ...(watcherEnabled ? { watcher: {
           get: async () => localRuntime?.watcher?.get() ?? unavailableWatcher(),
           open: request => localRuntime?.watcher?.open(request) ?? Promise.resolve(unavailableWatcher()),
+          setPermission: request => localRuntime?.watcher?.setPermission(request) ?? Promise.resolve(unavailableWatcher()),
+          watchThread: request => localRuntime?.watcher?.watchThread(request) ?? Promise.resolve(unavailableWatcher()),
+          unwatchThread: request => localRuntime?.watcher?.unwatchThread(request) ?? Promise.resolve(unavailableWatcher()),
           prepareStopAll: async () => localRuntime?.watcher?.prepareStopAll() ?? unavailableWatcher(),
           stopAll: request => localRuntime?.watcher?.stopAll(request.confirmationId) ?? Promise.resolve(unavailableWatcher()),
           setLimit: async request => { if (!localRuntime?.watcher) return unavailableWatcher(); await settingsCoordinator.updateSettings({ watcherInFlightLimit: request.limit }); return localRuntime.watcher.get() },
-        } satisfies Omit<import('../shared/watcherRoom').WatcherBridge, 'onChanged'> } : {}),
+        } satisfies Required<Omit<import('../shared/watcherRoom').WatcherBridge, 'onChanged'>> } : {}),
         settings: {
           get: () => settingsCoordinator.getSettings(),
           update: (patch) => { requireLocalHistoryCleanup(startupSettings.localHostEnabled, agentHistoryEnabled, patch.historyEnabled); return settingsCoordinator.updateSettings(patch) },

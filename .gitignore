@@ -122,6 +122,11 @@ coverage/
 playwright-report/
 test-results/
 artifacts/e2e-runs/
+artifacts/watcher-permission-watch/*
+!artifacts/watcher-permission-watch/room-main-sotto-dark-1280x800.png
+!artifacts/watcher-permission-watch/stable-dark-820x560.png
+!artifacts/watcher-permission-watch/owl-light-820x560.png
+!artifacts/watcher-permission-watch/checks.json
 .vite/
 .cache/
 

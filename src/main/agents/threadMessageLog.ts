@@ -82,6 +82,8 @@ function said(text: string): boolean { return text.trim().length > 0 }
 function metadataChanged(previous: AgentMessage, next: AgentMessage): boolean {
   return previous.createdAt !== next.createdAt || previous.commandId !== next.commandId
     || JSON.stringify(previous.attachments ?? []) !== JSON.stringify(next.attachments ?? [])
+    || JSON.stringify(previous.watcherOwnChange) !== JSON.stringify(next.watcherOwnChange)
+    || JSON.stringify(previous.watcherObservedChanges) !== JSON.stringify(next.watcherObservedChanges)
 }
 
 export class ThreadMessageLog {
@@ -254,6 +256,9 @@ export class ThreadMessageLog {
   private record(threadId: string, message: AgentMessage, held?: Map<string, AgentMessage>): void {
     const track = this.track(threadId)
     const existing = held ? held.get(message.id) : heldMessage(track, message.id)
+    const retained = existing ?? (track.lastAssistant?.id === message.id ? track.lastAssistant : track.lastUser?.id === message.id ? track.lastUser : undefined)
+    if (message.watcherOwnChange === undefined && retained?.watcherOwnChange) message = { ...message, watcherOwnChange: retained.watcherOwnChange }
+    if (message.watcherObservedChanges === undefined && retained?.watcherObservedChanges) message = { ...message, watcherObservedChanges: retained.watcherObservedChanges }
     if (!track.ids.has(message.id)) {
       if (track.empty.has(message.id)) {
         if (!said(message.text)) { track.empty.set(message.id, message.text); if (existing) Object.assign(existing, message); return }
@@ -333,7 +338,11 @@ export class ThreadMessageLog {
     // Only a list that covers everything the log knows is also what the window should hold.
     const current = this.track(threadId)
     if (!this.wanted(threadId)) { current.messages = undefined; return }
-    if (messages.length >= current.order.length) current.messages = messages.map(message => ({ ...message }))
+    if (messages.length >= current.order.length) current.messages = messages.map(message => ({ ...message,
+      ...(message.watcherOwnChange === undefined && held.get(message.id)?.watcherOwnChange
+        ? { watcherOwnChange: held.get(message.id)!.watcherOwnChange } : {}),
+      ...(message.watcherObservedChanges === undefined && held.get(message.id)?.watcherObservedChanges
+        ? { watcherObservedChanges: held.get(message.id)!.watcherObservedChanges } : {}) }))
   }
 
   /**
