@@ -557,6 +557,10 @@ artifacts/linux-release-command/*
 !artifacts/linux-release-command/SHA256SUMS.txt
 !artifacts/linux-release-command/stable-rejection.txt
 
+artifacts/certified-detail/*
+!artifacts/certified-detail/owl-dark-1280.png
+!artifacts/certified-detail/stable-light-820.png
+
 artifacts/stable-from-main/*
 !artifacts/stable-from-main/owl-features-stable.png
 !artifacts/stable-from-main/release-check.json

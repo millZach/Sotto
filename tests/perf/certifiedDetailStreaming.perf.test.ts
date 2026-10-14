@@ -34,6 +34,7 @@ const WINDOWS = 60
 
 async function measure(threads: number, enabled: boolean) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-certified-detail-'))
+  if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-certified-detail-')) throw new Error('Unexpected fixture directory')
   const ids = Array.from({ length: threads }, (_, i) => `stream-${i}`)
   const adapter = new StreamingAdapter({ ...structuredClone(EMPTY_AGENT_HOST), name: 'Synthetic', connected: true,
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, projects: true, threads: true, submit: true, observe: true },
@@ -76,7 +77,6 @@ async function measure(threads: number, enabled: boolean) {
     return Object.fromEntries(Object.keys(samples[0]!).map(key => [key, round(median(samples.map(value => value[key]!)), 3)]))
   } finally {
     offState(); offDetail(); statePublisher.dispose(); detailPublisher.dispose(); control.dispose(); workspace.disconnect(); await workspace.privacyChanged(); workspace.dispose()
-    if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-certified-detail-')) throw new Error('Unexpected fixture directory')
     await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 })
   }
 }

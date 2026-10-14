@@ -2,7 +2,6 @@
 // SOTTO_PERF_BENCH=1 npx vitest run tests/perf/certifiedDetail.perf.test.ts --maxWorkers=1 --disable-console-intercept
 import { performance } from 'node:perf_hooks'
 import { describe, expect, it } from 'vitest'
-import { AgentControl } from '../../src/main/agents/control'
 import { immutableActivities } from '../../src/main/agents/activitySnapshots'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentThread } from '../../src/shared/agents'
