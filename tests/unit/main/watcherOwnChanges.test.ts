@@ -253,4 +253,16 @@ describe('Watcher own changes', () => {
     expect(WATCHER_SYSTEM_PROMPT).toContain('Ping the user only')
     expect(WATCHER_SYSTEM_PROMPT).toContain('Never try to answer')
   })
+
+  it('describes the reason line exactly as Sotto reads it', () => {
+    // The prompt's own example, filled in as it says, is the line the room and the phone show as Watcher's reason.
+    const example = /^.*: (Watcher change reason: <reason>)$/mu.exec(WATCHER_SYSTEM_PROMPT)?.[1]
+    expect(example).toBe('Watcher change reason: <reason>')
+    const t = thread(); t.messages[1]!.text = `I fixed the typo myself.\n${example!.replace('<reason>', 'A one-word typo.')}`; t.activities = [change()]
+    expect(watcherOwnChanges(t)[0]?.reason).toBe('A one-word typo.')
+    // And it rules out each form Sotto does not read: a second line, anything before it, a fence, list or quote, a longer reason.
+    for (const rule of ['Give the reason once', 'with nothing before it', 'not in a code block, list or quote', 'on that one line, at most 2,000 characters']) {
+      expect(WATCHER_SYSTEM_PROMPT).toContain(rule)
+    }
+  })
 })
