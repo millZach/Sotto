@@ -129,6 +129,55 @@ describe('Muse maker updates', () => {
     expect(environment.MUSE_INSTALL_DIR).toBe('other'); expect(environment.MUSE_LOGIN).toBe('1')
   })
 
+  it('keeps the restricted Muse environment when the default runner starts a real installer child', async () => {
+    const install = await maker(), output = join(root, 'installer-environment.txt')
+    const parent = {
+      SOTTO_MUSE_UPDATE_PARENT_SECRET: 'fixture-parent-secret', META_API_KEY: 'fixture-parent-key',
+      MUSE_LAUNCHER_URL: 'https://parent-fixture.invalid', MUSE_LOGIN: '1', MUSE_NO_MODIFY_PATH: '0',
+    }
+    const environment = {
+      HOME: root, ...(process.platform === 'win32' ? { SystemRoot: process.env.SystemRoot ?? process.env.SYSTEMROOT } : {}),
+      META_API_KEY: 'fixture-caller-key', MUSE_LAUNCHER_URL: 'https://caller-fixture.invalid',
+      MUSE_INSTALL_DIR: 'caller-override', MUSE_CHANNEL: 'muse-canary', MUSE_LOGIN: '1', MUSE_NO_MODIFY_PATH: '0',
+    }
+    const before = { ...environment }
+    // The child records only presence flags and the installer's fixed, non-secret settings.
+    const script = process.platform === 'win32' ? [
+      "$ErrorActionPreference = 'Stop'",
+      '$observed = @(',
+      "  (Test-Path Env:SOTTO_MUSE_UPDATE_PARENT_SECRET).ToString().ToLowerInvariant()",
+      "  (Test-Path Env:META_API_KEY).ToString().ToLowerInvariant()",
+      "  (Test-Path Env:MUSE_LAUNCHER_URL).ToString().ToLowerInvariant()",
+      '  $env:MUSE_INSTALL_DIR', '  $env:MUSE_CHANNEL', '  $env:MUSE_UPGRADE_MODE', '  $env:MUSE_NO_MODIFY_PATH', '  $env:MUSE_LOGIN', ')',
+      `[System.IO.File]::WriteAllLines('${output.replace(/'/gu, "''")}', [string[]]$observed)`,
+    ].join('\n') : [
+      'set -eu', '{',
+      '  if [ "${SOTTO_MUSE_UPDATE_PARENT_SECRET+x}" = x ]; then printf "true\\n"; else printf "false\\n"; fi',
+      '  if [ "${META_API_KEY+x}" = x ]; then printf "true\\n"; else printf "false\\n"; fi',
+      '  if [ "${MUSE_LAUNCHER_URL+x}" = x ]; then printf "true\\n"; else printf "false\\n"; fi',
+      '  printf "%s\\n" "$MUSE_INSTALL_DIR" "$MUSE_CHANNEL" "$MUSE_UPGRADE_MODE" "$MUSE_NO_MODIFY_PATH" "$MUSE_LOGIN"',
+      `} > '${output.replace(/'/gu, "'\"'\"'")}'`,
+    ].join('\n')
+    const fetchImpl = vi.fn(async (url: string) => {
+      expect(url).toBe(process.platform === 'win32' ? 'https://dev.meta.ai/install.ps1' : 'https://dev.meta.ai/install.sh')
+      return new Response(script)
+    })
+    for (const [key, value] of Object.entries(parent)) vi.stubEnv(key, value)
+    try {
+      const result = await new ProviderClients({ fetchImpl }).install('muse', install.executable, environment)
+      expect(result.ok).toBe(true)
+      expect(fetchImpl).toHaveBeenCalledOnce()
+      const [parentSecretPresent, apiKeyPresent, launcherOverridePresent, installDirectory, channel, upgradeMode, noModifyPath, login]
+        = (await readFile(output, 'utf8')).trimEnd().split(/\r?\n/u)
+      expect({ parentSecretPresent, apiKeyPresent, launcherOverridePresent, installDirectory, channel, upgradeMode, noModifyPath, login }).toEqual({
+        parentSecretPresent: 'false', apiKeyPresent: 'false', launcherOverridePresent: 'false', installDirectory: install.directory,
+        channel: 'muse-canary', upgradeMode: '1', noModifyPath: '1', login: '0',
+      })
+      for (const [key, value] of Object.entries(parent)) expect(process.env[key]).toBe(value)
+      expect(environment).toEqual(before)
+    } finally { vi.unstubAllEnvs() }
+  })
+
   it('does not run an installer after a failed or oversized download', async () => {
     const install = await maker()
     const run = vi.fn(async () => ({ ok: true }))

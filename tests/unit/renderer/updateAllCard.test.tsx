@@ -53,6 +53,23 @@ function provideAgents(state: AgentState) {
 afterEach(() => { cleanup(); vi.clearAllMocks(); document.documentElement.style.removeProperty('--tt-corner-inset') })
 
 describe('the Update all card', () => {
+  it('queues this computer and every connected host in the same press', async () => {
+    provideApp({ ...available, phase: { phase: 'unsupported' } })
+    const mac = { ...forge, id: 'e1a50660-4f27-47bb-b4dd-1443a3f46a62', hostId: '36e5e84a-0304-4c25-b141-6915c65e31df', name: 'Mac' }
+    const state = agentState({ local: [behind()], forge: [behind({ id: 'codex' }), behind({ id: 'grok' })] })
+    const command = provideAgents({ ...state, host: { ...state.host, clientHosts: [
+      ...state.host.clientHosts ?? [], { ...state.host.clientHosts![0]!, hostId: mac.hostId },
+    ] } })
+    const hosts = hostsBridge({ hosts: [forge, mac], localHostEnabled: true, localHostRunning: true })
+    render(<UpdateAllCard hosts={hosts.asBridge} />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Update all/u }))
+    await waitFor(() => expect(hosts.bridge.updateClients).toHaveBeenCalledTimes(2))
+    expect(command).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['claude'] })
+    expect(hosts.bridge.updateClients).toHaveBeenCalledWith({ id: FORGE, action: 'update', providers: ['codex', 'grok'] })
+    expect(hosts.bridge.updateClients).toHaveBeenCalledWith({ id: mac.id, action: 'update', providers: ['codex', 'grok'] })
+    expect(hosts.bridge.command).not.toHaveBeenCalled()
+  })
+
   it('says nothing when everything is current', () => {
     provideApp({ ...available, phase: { phase: 'up-to-date' } })
     provideAgents(agentState())
