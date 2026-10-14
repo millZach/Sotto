@@ -42,9 +42,10 @@ export function watcherReplyAsShown(message: AgentMessage): string {
   const found = reasonLine(lines)
   if (!found || found.reason !== reason) return message.text
   const blank = (index: number): boolean => lines[index]!.trim() === ''
-  let start = found.index
-  const end = found.index + 1
+  let start = found.index, end = found.index + 1
   if (start > 0 && blank(start - 1) && (end === lines.length || blank(end))) start--
+  // Leading the reply, the line takes the blank line after it too, so the reply does not open on an empty line.
+  else if (start === 0 && end < lines.length && blank(end)) end++
   const before = lines.slice(0, start).flatMap((line, index) => index < start - 1 ? [line, breaks[index]!] : [line])
   const after = lines.slice(end).flatMap((line, index) => end + index < lines.length - 1 ? [line, breaks[end + index]!] : [line])
   const shown = [...before, ...(start > 0 && end < lines.length ? [breaks[start - 1]!] : []), ...after].join('')

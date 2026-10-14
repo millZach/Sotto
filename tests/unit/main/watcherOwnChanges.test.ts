@@ -259,6 +259,8 @@ describe('Watcher own changes', () => {
     ['I fixed it.\n\nWatcher change reason: Needed.', 'I fixed it.'],
     ['I fixed it.\r\n\r\nWatcher change reason: Needed.\r\n\r\nThen I told the worker.', 'I fixed it.\r\n\r\nThen I told the worker.'],
     ['Watcher change reason: Needed.\nI fixed it.', 'I fixed it.'],
+    ['Watcher change reason: Needed.\n\nI fixed it.', 'I fixed it.'],
+    ['Watcher change reason: Needed.\r\n\r\nI fixed it.\r\n\r\nThen I told the worker.', 'I fixed it.\r\n\r\nThen I told the worker.'],
     ['I fixed it.\nWatcher change reason: Needed.\nThen I told the worker.', 'I fixed it.\nThen I told the worker.'],
     ['I fixed it.  \n\n```text\nWatcher change reason: An example\n```\nWatcher change reason: Needed.\n',
       'I fixed it.  \n\n```text\nWatcher change reason: An example\n```\n'],
