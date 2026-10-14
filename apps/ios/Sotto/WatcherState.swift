@@ -38,6 +38,9 @@ extension WatcherPhoneState {
     /// The mark for a reply in which Watcher changed files itself, as its computer read it from the provider's own record
     /// of file changes in that turn.
     func ownChange(for replyID: String) -> OwnChange? { ownChanges?.first { $0.replyMessageId == replyID } }
+    /// What Watcher may do without asking: the choice its computer keeps for Watcher, which a new Watcher starts on, or
+    /// from a computer that keeps none, the current Watcher's own. The first Watcher ever asks first.
+    var permission: String { runtimeMode ?? current?.runtimeMode ?? WatcherPermissions.first }
     /// The card, if it is still waiting.
     func card(_ ref: ThreadRef, requestID: String) -> RequestCard? {
         needsYou.first { $0.target.ref == ref && $0.request.id == requestID }
@@ -290,6 +293,10 @@ enum WatcherWords {
         return "Stopped \(done.count) of \(results.count). " + rest.joined(separator: " ")
     }
 
+    static func permissionUnconfirmed(_ computer: String) -> String {
+        "\(computer) didn’t confirm the change to Watcher’s permissions. Check what they say before you change them again."
+    }
+
     // Watcher's own changes (mark B): Sotto's count of what the provider changed, and Watcher's reason in its own words.
 
     static func files(_ count: Int) -> String { count == 1 ? "1 file" : "\(count) files" }
@@ -298,6 +305,49 @@ enum WatcherWords {
     static func ownChangeToggle(_ count: Int, open: Bool) -> String {
         let what = count == 1 ? "the file" : "the \(files(count))"
         return (open ? "Hide " : "Show ") + what
+    }
+}
+
+/// What Watcher may do without asking (control A, Zach's pick on October 13, 2026): the four modes a thread has, with the
+/// names this iPhone's new-thread sheet gives them and a line for each. The computer that runs Watcher keeps the choice,
+/// and a new Watcher starts on it. Lasting grants stay refused in every mode.
+enum WatcherPermissions {
+    /// What the first Watcher ever starts on.
+    static let first = "approval-required"
+    static let modes = ["approval-required", "auto-accept-edits", "auto", "full-access"]
+    static let title = "What Watcher may do without asking"
+    /// What stays true in every mode, under the list.
+    static let foot = "When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread."
+    static func name(_ mode: String) -> String {
+        switch mode {
+        case "approval-required": return "Ask before actions"
+        case "auto-accept-edits": return "Allow edits"
+        case "auto": return "Allow actions"
+        case "full-access": return "Full access"
+        default: return mode
+        }
+    }
+    /// What Watcher does under a mode, in one line. Under Allow actions the provider decides, so the line names it.
+    static func line(_ mode: String, provider: String, computer: String) -> String {
+        switch mode {
+        case "auto-accept-edits": return "Edits files without asking. Asks before a command that changes something."
+        case "auto": return "\(provider) decides what to ask you about."
+        case "full-access": return "Edits files and runs any command without asking, anywhere on \(computer)."
+        default: return "Asks you before it edits a file or runs a command that changes something."
+        }
+    }
+    /// Whether a mode lets Watcher act without asking, which only an iPhone that may answer there can choose.
+    static func grants(_ mode: String) -> Bool { mode != first }
+    /// The modes Watcher's model offers, in Sotto's order; a model that names none, or no model yet, offers all four.
+    static func offered(_ model: ThreadModel?) -> [String] {
+        let listed = (model?.runtimeModes ?? []).filter { modes.contains($0) }
+        return listed.isEmpty ? modes : modes.filter { listed.contains($0) }
+    }
+    /// What stays in force while Watcher's provider hasn't confirmed the mode just chosen.
+    static func inForce(_ mode: String, provider: String) -> String { "\(provider) stays on \(name(mode)) until it confirms." }
+    /// Why the wider modes can't be chosen from this iPhone.
+    static func asksOnly(_ computer: String) -> String {
+        "This iPhone can’t answer on \(computer), so it can only keep Watcher asking first."
     }
 }
 

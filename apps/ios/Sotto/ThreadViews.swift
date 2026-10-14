@@ -2187,8 +2187,8 @@ private struct PermissionCommand: View {
     }
 }
 
-/// The request sheet's glass, solid under Reduce Transparency, with a warm wash at the top.
-private struct SheetBackdrop: View {
+/// The request sheet's glass, solid under Reduce Transparency, with a warm wash at the top. Watcher's sheets use it too.
+struct SheetBackdrop: View {
     let wash: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.colorScheme) private var scheme

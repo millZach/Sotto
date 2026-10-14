@@ -945,6 +945,8 @@ private struct WatcherDock: View {
                     .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     .accessibilityIdentifier("watcher-send-held")
             }
+            // Put away while the box is being written in, so a small phone keeps room for the conversation over the keyboard.
+            if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil, !focused { WatcherPermissionChip(hostID: hostID) }
             field
         }
         .padding(.horizontal, Space.s3)
@@ -1023,6 +1025,141 @@ private struct WatcherDock: View {
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: focused)
+    }
+}
+
+// MARK: - What Watcher may do without asking (control A)
+
+/// Watcher's permissions over the Ask Watcher box: a chip in this iPhone's own words, after the Threads composer's, that
+/// opens the four modes. A choice shows at once; until Watcher's provider confirms it, the chip's edge is dashed and the
+/// words beside it say what is still in force. A computer that refuses says why in its own words.
+private struct WatcherPermissionChip: View {
+    @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
+    let hostID: String
+    @State private var choosing = false
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        let caption = model.watcherPermissionInForce(hostID)
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: Space.s1) { chip(pending: caption != nil); captionText(caption) }
+            } else {
+                HStack(spacing: Space.s3) { chip(pending: caption != nil); captionText(caption) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sheet(isPresented: $choosing) {
+            WatcherPermissionSheet(hostID: hostID) { mode in
+                choosing = false
+                Task { await model.setWatcherPermission(mode, on: hostID) }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func chip(pending: Bool) -> some View {
+        let mode = model.watcherPermission(hostID)
+        let busy = model.watcherManaging.contains(AppModel.permissionKey(hostID))
+        let edge = StrokeStyle(lineWidth: 1, dash: pending ? [4, 3] : [])
+        return Button { choosing = true } label: {
+            HStack(spacing: 6) {
+                if busy { ProgressView().controlSize(.mini) }
+                Text(WatcherPermissions.name(mode)).lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).accessibilityHidden(true)
+            }
+            .font(.sotto(.small, .semibold))
+            .foregroundStyle(Palette.ink)
+            .padding(.horizontal, Space.s4)
+            .frame(minHeight: 44)
+            .glass(in: Capsule())
+            .overlay(Capsule().strokeBorder(pending ? Palette.accent.opacity(0.7) : Palette.hairline, style: edge))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressStyle())
+        .disabled(!model.canChangeWatcherPermission(hostID))
+        .accessibilityLabel("Watcher’s permissions")
+        .accessibilityValue(WatcherPermissions.name(mode))
+        .accessibilityHint("Opens what Watcher may do without asking")
+        .accessibilityIdentifier("watcher-permissions")
+    }
+
+    @ViewBuilder private func captionText(_ caption: String?) -> some View {
+        if let caption {
+            Text(caption).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("watcher-permissions-in-force")
+        }
+    }
+}
+
+/// The four modes, each with what Watcher does under it, the chosen one ticked; then what stays true in every mode. An
+/// iPhone without Can answer on that computer can choose only to keep Watcher asking first, and the sheet says so.
+private struct WatcherPermissionSheet: View {
+    @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
+    @Environment(\.dismiss) private var dismiss
+    let hostID: String
+    let choose: (String) -> Void
+
+    var body: some View {
+        let computer = model.name(hostID)
+        let provider = model.watcherPage(hostID)?.current.map { AgentNames.name($0.provider) }
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    Text(WatcherPermissions.title).font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(provider.map { "Watcher on \(computer), on \($0)" } ?? "Watcher on \(computer)")
+                        .font(.sotto(.small)).foregroundStyle(Palette.muted)
+                }
+                if !model.mayAnswer(hostID) {
+                    Text(WatcherPermissions.asksOnly(computer)).font(.sotto(.small)).foregroundStyle(Palette.warningText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("watcher-permissions-asks-only")
+                }
+                VStack(spacing: Space.s2) {
+                    ForEach(model.watcherPermissionModes(hostID), id: \.self) { mode in
+                        option(mode, provider: provider ?? "The provider", computer: computer)
+                    }
+                }
+                .padding(.top, Space.s1)
+                Text(WatcherPermissions.foot).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, Space.gutter)
+            .padding(.top, Space.s6)
+            .padding(.bottom, Space.s6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .presentationBackground { SheetBackdrop(wash: false) }
+        .presentationCornerRadius(Radius.xl)
+    }
+
+    private func option(_ mode: String, provider: String, computer: String) -> some View {
+        let chosen = model.watcherPermission(hostID) == mode
+        return Button { if chosen { dismiss() } else { choose(mode) } } label: {
+            HStack(alignment: .top, spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(WatcherPermissions.name(mode)).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+                    Text(WatcherPermissions.line(mode, provider: provider, computer: computer)).font(.sotto(.small))
+                        .foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: Space.s2)
+                if chosen {
+                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.accentText)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .buttonStyle(ChoiceStyle(chosen: chosen))
+        .disabled(!model.mayChooseWatcherPermission(mode, on: hostID) || !model.canChangeWatcherPermission(hostID))
+        .accessibilityAddTraits(chosen ? [.isSelected] : [])
+        .accessibilityIdentifier("watcher-permission-\(mode)")
     }
 }
 

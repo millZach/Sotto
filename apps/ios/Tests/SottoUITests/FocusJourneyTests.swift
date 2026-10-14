@@ -750,9 +750,9 @@ import XCTest
         let top = (header.exists ? header.frame.maxY : app.windows.firstMatch.frame.minY) + 16
         let tabs = app.tabBars.firstMatch
         var bottom = tabs.exists ? tabs.frame.minY : app.windows.firstMatch.frame.maxY
-        // The box's glass starts above its text; a held line or a message sits above the box.
+        // The box's glass starts above its text; a held line, a message or Watcher's permissions sit above the box.
         let dock: [(XCUIElement, CGFloat)] = [(byID("watcher-reply"), 20), (byID("watcher-send-held"), 8),
-                                              (app.buttons["Dismiss message"].firstMatch, 8)]
+                                              (app.buttons["Dismiss message"].firstMatch, 8), (app.buttons["watcher-permissions"], 8)]
         for (element, gap) in dock where element.exists { bottom = min(bottom, element.frame.minY - gap) }
         return (top, bottom)
     }
@@ -993,6 +993,27 @@ import XCTest
         XCTAssertTrue(own.label.contains("Watcher asks each time. It can’t be given lasting permission."))
         XCTAssertTrue(byID("watcher-send-held").exists, "Watcher waits for its own request before it takes more")
         capture("watcher-cannot-answer-dark")
+        // Watcher's permissions can only stay asking first from a phone that can't answer there.
+        let permissions = app.buttons["watcher-permissions"]
+        XCTAssertTrue(permissions.waitForExistence(timeout: 5))
+        XCTAssertEqual(permissions.value as? String, "Ask before actions")
+        permissions.tap()
+        XCTAssertTrue(byID("watcher-permissions-asks-only").waitForExistence(timeout: 5), "The list says why")
+        XCTAssertEqual(byID("watcher-permissions-asks-only").label, "This iPhone can’t answer on Laptop, so it can only keep Watcher asking first.")
+        for mode in ["auto-accept-edits", "auto", "full-access"] {
+            let option = app.buttons["watcher-permission-\(mode)"]
+            reveal(option)
+            XCTAssertFalse(option.isEnabled, "\(mode) can't be chosen from here")
+        }
+        let asking = app.buttons["watcher-permission-approval-required"]
+        reveal(asking, swipingDown: true)
+        XCTAssertTrue(asking.isEnabled)
+        XCTAssertTrue(asking.isSelected)
+        capture("watcher-permissions-asks-only-dark")
+        // Pressing the chosen mode closes the list and changes nothing.
+        asking.tap()
+        XCTAssertTrue(waitUntilGone(asking))
+        XCTAssertEqual(permissions.value as? String, "Ask before actions")
         let review = app.buttons["watcher-card-review"].firstMatch
         revealInWatcher(review)
         review.tap()
@@ -1049,6 +1070,86 @@ import XCTest
         app.buttons["watcher-section-watched"].tap()
         XCTAssertTrue(meter.waitForExistence(timeout: 5))
         capture("watcher-stopped-light")
+    }
+
+    /// A reply in which Watcher changed files itself carries one quiet line under it (mark B): how many, its reason or that
+    /// it gave none, and the files on request.
+    func testAReplyWhereWatcherChangedFilesItselfSaysSo() {
+        launch(Self.watcher)
+        openWatcher()
+        let line = byID("watcher-own-change")
+        XCTAssertTrue(line.waitForExistence(timeout: 5), "The line sits under the reply")
+        revealInWatcher(line)
+        XCTAssertTrue(line.label.contains("Watcher changed 2 files itself."), "Sotto's own count of what Watcher changed")
+        XCTAssertTrue(line.label.contains("Its reason: “A one-word typo in two files is smaller than briefing a thread.”"),
+                      "And Watcher's reason, as its claim")
+        let files = app.buttons["watcher-own-change-files"]
+        revealInWatcher(files)
+        XCTAssertEqual(files.label, "Show the 2 files")
+        XCTAssertFalse(labelled("docs/guide.md").exists, "The file names wait until asked for")
+        capture("watcher-own-change-dark")
+        files.tap()
+        XCTAssertTrue(labelled("docs/guide.md").waitForExistence(timeout: 5), "The files show on request")
+        XCTAssertTrue(labelled("README.md").exists)
+        XCTAssertEqual(files.label, "Hide the 2 files")
+        revealInWatcher(labelled("docs/guide.md"))
+        capture("watcher-own-change-files-dark")
+        watcherInLight()
+        revealInWatcher(line)
+        capture("watcher-own-change-light")
+        // A reply that gave no reason says so, in the needs-you ink.
+        launch(Self.watcher + ["--ui-watcher-no-reason"])
+        openWatcher()
+        XCTAssertTrue(line.waitForExistence(timeout: 5))
+        revealInWatcher(line)
+        XCTAssertTrue(line.label.contains("Watcher changed 2 files itself. It gave no reason."), "Watcher's reply said nothing of it")
+        capture("watcher-own-change-no-reason-dark")
+    }
+
+    /// Watcher's permissions sit over its box in this iPhone's own words (control A): the chip opens the four modes, a
+    /// choice shows at once, and until Watcher's provider confirms it the chip says what is still in force.
+    func testWatchersPermissionsChangeFromItsBox() {
+        launch(Self.watcher + ["--ui-watcher-can-answer"])
+        openWatcher()
+        let permissions = app.buttons["watcher-permissions"]
+        XCTAssertTrue(permissions.waitForExistence(timeout: 5), "Watcher's permissions sit over its box")
+        XCTAssertEqual(permissions.label, "Watcher’s permissions")
+        XCTAssertEqual(permissions.value as? String, "Ask before actions")
+        capture("watcher-permissions-dark")
+        permissions.tap()
+        XCTAssertTrue(text("What Watcher may do without asking").waitForExistence(timeout: 5))
+        let asking = app.buttons["watcher-permission-approval-required"]
+        XCTAssertTrue(asking.isSelected, "The mode in force is ticked")
+        XCTAssertTrue(asking.label.contains("Asks you before it edits a file or runs a command that changes something."),
+                      "Each mode says what Watcher does under it")
+        let edits = app.buttons["watcher-permission-auto-accept-edits"]
+        reveal(edits)
+        XCTAssertTrue(edits.isEnabled, "With Can answer, a wider mode can be chosen")
+        XCTAssertFalse(byID("watcher-permissions-asks-only").exists)
+        capture("watcher-permissions-sheet-dark")
+        edits.tap()
+        XCTAssertTrue(waitUntilGone(edits), "Choosing closes the list")
+        let chosen = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Allow edits"), object: permissions)
+        XCTAssertEqual(XCTWaiter.wait(for: [chosen], timeout: 5), .completed, "The chip says the choice at once")
+        let inForce = byID("watcher-permissions-in-force")
+        XCTAssertTrue(inForce.waitForExistence(timeout: 5), "Until Codex confirms it, the chip says what is still in force")
+        XCTAssertEqual(inForce.label, "Codex stays on Ask before actions until it confirms.")
+        capture("watcher-permissions-pending-dark")
+        XCTAssertTrue(waitUntilGone(inForce), "Once Codex confirms it, nothing more is said")
+        XCTAssertEqual(permissions.value as? String, "Allow edits")
+        watcherInLight()
+        XCTAssertTrue(permissions.waitForExistence(timeout: 5))
+        capture("watcher-permissions-light")
+        permissions.tap()
+        let picked = app.buttons["watcher-permission-auto-accept-edits"]
+        XCTAssertTrue(picked.waitForExistence(timeout: 5))
+        reveal(picked)
+        XCTAssertTrue(picked.isSelected)
+        capture("watcher-permissions-sheet-light")
+        // Pressing the chosen mode closes the list and changes nothing.
+        picked.tap()
+        XCTAssertTrue(waitUntilGone(picked))
+        XCTAssertEqual(permissions.value as? String, "Allow edits")
     }
 
     /// A reply in which Watcher changed files itself carries one quiet line under it (mark B): how many, its reason or that

@@ -630,6 +630,120 @@ extension AppModel {
     }
 }
 
+// What Watcher may do without asking (ADR-0073, amended October 13, 2026; Zach's pick: control A). A computer that offers
+// `watcher-phone-manage` takes it from this iPhone and checks it again: a mode that lets Watcher act without asking needs
+// this iPhone's Can answer there. It answers nothing. Each change has its own request ID, so a lost acknowledgement reads
+// what the computer did under it; nothing is sent again on its own.
+extension AppModel {
+    static let watcherManageFeature = WatcherWire.manageFeature
+    /// Where `watcherManaging` marks a change to Watcher's permissions on a computer.
+    static func permissionKey(_ hostID: String) -> String { "permission/" + hostID }
+
+    /// Whether this computer takes changes to Watcher's permissions from this iPhone. An older one shows its page without
+    /// them, and this iPhone offers none.
+    func offersWatcherManage(_ hostID: String) -> Bool {
+        offersWatcher(hostID) && live[hostID]?.features.contains(Self.watcherManageFeature) == true
+    }
+
+    // MARK: Watcher's permissions (control A)
+
+    /// What Watcher may do without asking on this computer, as its chip says it: the mode just chosen while the computer
+    /// takes it, then the one the computer keeps for Watcher.
+    func watcherPermission(_ hostID: String) -> String {
+        watcherPermissionPicks[hostID] ?? watcherPage(hostID)?.permission ?? WatcherPermissions.first
+    }
+    /// The modes Watcher's model offers on this computer, in Sotto's order.
+    func watcherPermissionModes(_ hostID: String) -> [String] {
+        let current = watcherPage(hostID)?.current
+        return WatcherPermissions.offered(current.flatMap { current in live[hostID]?.shell?.host.models?.first { $0.id == current.modelId } })
+    }
+    /// What is still in force while Watcher's provider hasn't confirmed the mode chosen; nil once it has, and before
+    /// Watcher runs, when nothing is.
+    func watcherPermissionInForce(_ hostID: String) -> String? {
+        guard let current = watcherPage(hostID)?.current, let mode = current.runtimeMode, mode != watcherPermission(hostID) else { return nil }
+        return WatcherPermissions.inForce(mode, provider: AgentNames.name(current.provider))
+    }
+    /// Whether the chip can be pressed now: once Watcher's page is read, and while no other change to it is on its way.
+    func canChangeWatcherPermission(_ hostID: String) -> Bool {
+        offersWatcherManage(hostID) && online(hostID) && watcherPage(hostID) != nil && !watcherManaging.contains(Self.permissionKey(hostID))
+    }
+    /// Whether this iPhone may choose `mode` there: asking first always, and a mode that lets Watcher act without asking
+    /// only under this iPhone's Can answer on that computer, which the computer checks again.
+    func mayChooseWatcherPermission(_ mode: String, on hostID: String) -> Bool {
+        !WatcherPermissions.grants(mode) || mayAnswer(hostID)
+    }
+    /// Sets what Watcher may do without asking. The chip shows the choice at once; the computer keeps it for Watcher, and
+    /// a new Watcher starts on it. Refused, the chip goes back and the computer's words say why.
+    func setWatcherPermission(_ mode: String, on hostID: String) async {
+        guard canChangeWatcherPermission(hostID), mode != watcherPermission(hostID), mayChooseWatcherPermission(mode, on: hostID),
+              watcherPermissionModes(hostID).contains(mode), let operation = try? WatcherWire.setPermission(runtimeMode: mode) else { return }
+        let key = Self.permissionKey(hostID)
+        watcherManaging.insert(key)
+        watcherPermissionPicks[hostID] = mode
+        defer { watcherManaging.remove(key); watcherPermissionPicks[hostID] = nil }
+        #if DEBUG && os(iOS)
+        if isUIFixture { await setFixtureWatcherPermission(mode, on: hostID); return }
+        #endif
+        _ = await manageWatcher(operation, on: hostID, unconfirmed: WatcherWords.permissionUnconfirmed(name(hostID)))
+    }
+
+    // MARK: Carrying a change
+
+    enum WatcherManageOutcome: Equatable { case applied, refused, unconfirmed }
+    /// Sends one change under its own request ID and shows the page that comes back. A refusal says why in the computer's
+    /// words. An acknowledgement lost on the way reads that request's receipt, and then the page.
+    private func manageWatcher(_ operation: [String: JSONValue], on hostID: String, unconfirmed: String) async -> WatcherManageOutcome {
+        guard let connection = connections[hostID], let epoch = generations[hostID] else {
+            feedback = "Sotto can’t reach \(name(hostID)) now. Nothing changed."
+            return .refused
+        }
+        let id = UUID().uuidString.lowercased()
+        do {
+            switch try await connection.call(operation, as: WatcherPhoneResult.self, id: id) {
+            case .ok(let state):
+                // A page older than the one shown is left unshown; the change took either way.
+                applyWatcher(state, from: hostID)
+                return .applied
+            case .refused(let refusal):
+                feedback = refusal.message
+                return .refused
+            }
+        } catch let refusal as HostRefusal {
+            feedback = refusal.localizedDescription
+            return .refused
+        } catch {
+            return await recoverWatcherManage(id, on: hostID, over: connection, epoch: epoch, unconfirmed: unconfirmed)
+        }
+    }
+    /// Reads what the computer did with a change whose acknowledgement was lost, from the receipt it keeps under the
+    /// request's ID for a few minutes, then reads Watcher's page. A receipt it no longer has, or one that can't be read,
+    /// leaves the change unconfirmed and says so; the page shows how things stand.
+    private func recoverWatcherManage(_ id: String, on hostID: String, over connection: HostConnection, epoch: UUID,
+                                      unconfirmed: String) async -> WatcherManageOutcome {
+        var receipt: Receipt?
+        if generations[hostID] == epoch {
+            for read in 1...Self.receiptReads {
+                do { receipt = try await connection.call(["op": .string("receipt"), "commandId": .string(id)], as: Receipt.self) }
+                catch { receipt = nil; break }
+                guard generations[hostID] == epoch, receipt?.stillWorking == true, read < Self.receiptReads else { break }
+                do { try await receiptSleep(Self.receiptInterval) } catch { break }
+            }
+        }
+        var outcome = WatcherManageOutcome.unconfirmed
+        if generations[hostID] == epoch, let receipt, !receipt.stillWorking {
+            switch receipt.watcherManage {
+            case .ok?: outcome = .applied
+            case .refused(let refusal)?: feedback = refusal.message; outcome = .refused
+            case nil: feedback = unconfirmed
+            }
+        } else {
+            feedback = unconfirmed
+        }
+        await readWatcher(hostID)
+        return outcome
+    }
+}
+
 /// Whether a card in Watcher's page can be answered from here.
 enum WatcherCardRoute: Equatable {
     /// Answered at this place, with the request as its computer holds it now.
@@ -973,6 +1087,10 @@ struct HeldDetail {
     private var watcherRereads: Set<String> = []
     /// What each computer's Watcher page held when this iPhone last read it, for Watcher's own alerts.
     private var watcherWatches: [String: WatcherWatch] = [:]
+    /// Changes to Watcher's permissions on their way, by computer, until their computer answers (`AppModel.permissionKey`).
+    @Published private(set) var watcherManaging: Set<String> = []
+    /// The mode just chosen for Watcher on each computer, shown on its chip while the computer takes it.
+    @Published private(set) var watcherPermissionPicks: [String: String] = [:]
     /// This iPhone's own preferences: alert switches and new-thread defaults.
     var preferences = PhonePreferences()
     /// Posts local alerts. Nil until the app hands it over.
@@ -1136,6 +1254,8 @@ struct HeldDetail {
         }
         fixtureSlowDetail = arguments.contains("--ui-slow-detail")
         fixtureReconnecting = arguments.contains("--ui-reconnecting")
+        // Watcher's model offers all four modes in the Watcher journeys, as Codex does.
+        let modes: [String] = watching ? WatcherPermissions.modes : ["approval-required", "full-access"]
         for (host, name) in [(laptop, "Laptop"), (studio, "Studio Mac")] {
             let answers = (asking || arguments.contains("--ui-terminal-can-answer") || watcherAnswers) && host == laptop
             let hostCaps = answers ? answeringCaps : caps
@@ -1145,7 +1265,7 @@ struct HeldDetail {
                 "threads": threads[host] ?? [], "projects": [["id": "sotto", "title": "Sotto", "path": "D:\\Talk to Text Application"],
                     ["id": "panel", "title": "Panel tools", "path": "D:\\Engineering\\Panel tools"], ["id": "house", "title": "House", "path": "D:\\House"]],
                 "models": [["id": "fixture-model", "name": "GPT-6.1 Sol", "provider": "Codex", "providerId": "codex", "ready": true,
-                    "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "high", "runtimeModes": ["approval-required", "full-access"]]],
+                    "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes]],
                 "providers": [["id": "codex", "connection": "connected", "capabilities": hostCaps]], "capabilities": hostCaps]]
             if arguments.contains("--ui-terminals"), host == laptop {
                 shellObject["terminals"] = Self.fixtureTerminals
@@ -1157,7 +1277,7 @@ struct HeldDetail {
             fixtureShells[host] = shellObject
             let shell = decode(Shell.self, shellObject)
             var features = arguments.contains("--ui-terminals") && host == laptop ? ["host-folders", "terminals"] : ["host-folders"]
-            if watching && host == laptop { features += [Self.watcherFeature, Self.watcherStopFeature] }
+            if watching && host == laptop { features += [Self.watcherFeature, Self.watcherStopFeature, Self.watcherManageFeature] }
             live[host] = Live(status: host == laptop ? .online : .unreachable, shell: shell, mayAnswer: answers, features: features)
         }
         if watching {
@@ -1328,8 +1448,8 @@ struct HeldDetail {
     }
     /// The laptop's Watcher page: a morning's exchange with what Watcher did for each reply, three threads watched of
     /// four it may, one it no longer watches, a reply in which Watcher changed two files itself, with its reason unless
-    /// `reasoned` is false, and Fix login test's question waiting. With `asks`, Watcher itself waits for
-    /// permission to run a command.
+    /// `reasoned` is false, and Fix login test's question waiting. Watcher asks before actions. With `asks`, Watcher
+    /// itself waits for permission to run a command.
     private static func fixtureWatcherPage(laptop: String, studio: String, mayAnswer: Bool, asks: Bool, reasoned: Bool,
                                            at: @escaping (Double) -> String) -> [String: Any] {
         let watcher: [String: String] = ["hostId": laptop, "threadId": "watcher"]
@@ -1381,12 +1501,12 @@ struct HeldDetail {
             cards.append(["target": watcher, "title": "Watcher", "provider": "codex", "request": request, "connected": true, "mayAnswer": mayAnswer])
         }
         let current: [String: Any] = ["target": watcher, "provider": "codex", "modelId": "fixture-model", "reasoningEffort": "high",
-                                      "status": asks ? "idle" : "running", "connected": true]
+                                      "status": asks ? "idle" : "running", "connected": true, "runtimeMode": WatcherPermissions.first]
         return ["hostId": laptop, "current": current,
                 "conversation": ["messages": messages, "earlierAvailable": false, "revision": 5],
                 "receiptGroups": groups, "watchedThreads": threads, "needsYou": cards,
                 "inFlight": 3, "inFlightLimit": 4, "working": !asks, "observedAt": at(0),
-                "ownChanges": [change]]
+                "runtimeMode": WatcherPermissions.first, "ownChanges": [change]]
     }
     /// Changes the fixture's Watcher page as the laptop would, and shows it.
     private func changeFixtureWatcher(on hostID: String, _ change: (inout [String: Any]) -> Void) {
@@ -1396,6 +1516,20 @@ struct HeldDetail {
         fixtureWatcher = page
         if let decoded = try? JSONDecoder().decode(WatcherPage.self, from: JSONSerialization.data(withJSONObject: page)) {
             showWatcher(decoded, on: hostID)
+        }
+    }
+    /// The laptop keeps the mode for Watcher a moment after it is chosen, and Watcher's provider confirms it a moment later,
+    /// so the chip says what is still in force between the two.
+    private func setFixtureWatcherPermission(_ mode: String, on hostID: String) async {
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        changeFixtureWatcher(on: hostID) { $0["runtimeMode"] = mode }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            self?.changeFixtureWatcher(on: hostID) { page in
+                guard var current = page["current"] as? [String: Any] else { return }
+                current["runtimeMode"] = page["runtimeMode"]
+                page["current"] = current
+            }
         }
     }
     /// A pull to refresh reads nothing new from the fixture's computer, except in the journey that checks a reader of

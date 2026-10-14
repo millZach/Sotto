@@ -247,10 +247,11 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     }
 }
 extension HostConnection {
-    /// The snapshot hello, opting in to Watcher's page (`watcher-phone`) and its Stop all (`watcher-phone-stop-all`), now
-    /// that the Watcher tab can show them. Only an Owl desktop that runs Watcher offers them; any other computer reads the
-    /// names and offers nothing new.
-    nonisolated static var hello: [String: JSONValue] { WatcherWire.hello }
+    /// The snapshot hello, opting in to Watcher's page (`watcher-phone`), its Stop all (`watcher-phone-stop-all`) and its
+    /// permission and watch controls (`watcher-phone-manage`), now that the Watcher tab can show them and read what a
+    /// change did after a lost acknowledgement. Only an Owl desktop that runs Watcher offers them; any other computer reads
+    /// the names and offers nothing new.
+    nonisolated static var hello: [String: JSONValue] { WatcherWire.managementHello }
     /// What a request that failed means: a timeout's cause, by what the request was for.
     nonisolated static func requestFailure(operation: String) -> ClientError {
         switch operation {
