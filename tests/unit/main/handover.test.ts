@@ -19,6 +19,8 @@ const conversation = (count: number, length = 0): AgentMessage[] => Array.from({
 const options = (patch: Partial<HandoverOptions> = {}): HandoverOptions =>
   ({ source: { threadId: 'thread-1', title: 'Fix the login page', provider: 'claude' }, historyKept: true, ...patch })
 /** The carried messages' words in the order the handover shows them. */
+/** The history after the opening paragraph: what the budget pays for. */
+const body = (text: string): string => text.slice(text.indexOf('\n\n') + 2)
 const said = (text: string): string[] => [...text.matchAll(/^(?:Ask|Answer) \d+/gm)].map(match => match[0])
 
 describe('handover', () => {
@@ -40,8 +42,7 @@ describe('handover', () => {
     const messages = conversation(40, 200)
     const budget = 3_000
     const { text, summary } = buildHandover(messages, options({ budget }))
-    const body = text.slice(text.indexOf('\n\n') + 2)
-    expect(body.length).toBeLessThanOrEqual(budget + 200)
+    expect(body(text).length).toBeLessThanOrEqual(budget)
     // The first request, a gap, then an unbroken run of the newest messages.
     expect(summary.carried[0]).toBe('u0')
     const recent = summary.carried.slice(1)
@@ -56,9 +57,9 @@ describe('handover', () => {
 
   it('always keeps the first message and the latest request and answer, even when they leave room for little else', () => {
     const messages = conversation(30, 500)
-    const { summary } = buildHandover(messages, options({ budget: 2_200 }))
-    // Each message is just within its quarter share, so the three kept ones and one more fill the budget.
-    expect(summary.carried).toEqual(['u0', 'a28', 'u29', 'a29'])
+    const { summary } = buildHandover(messages, options({ budget: 2_400 }))
+    // Each message is just within its quarter share, and the three kept ones leave too little for a fourth.
+    expect(summary.carried).toEqual(['u0', 'u29', 'a29'])
     expect(summary.tooLong).toEqual([])
     expect(summary.answered).toBe(true)
   })
@@ -81,6 +82,15 @@ describe('handover', () => {
     // Named where it was: between the first request and the second.
     expect(text.indexOf('Ask 0')).toBeLessThan(text.indexOf('Left out whole'))
     expect(text.indexOf('Left out whole')).toBeLessThan(text.indexOf('Ask 1'))
+  })
+
+  it('charges the notices for long messages against the budget too', () => {
+    const messages = Array.from({ length: 400 }, (_, index) => message(`m${index}`, index % 2 === 0 ? 'user' : 'assistant', 'z'.repeat(6_500)))
+    const { text, summary } = buildHandover(messages, options())
+    expect(body(text).length).toBeLessThanOrEqual(HANDOVER_BUDGET)
+    expect(summary.tooLong.length).toBeGreaterThan(3)
+    expect(summary.tooLong.length + summary.notCarried).toBe(400)
+    expect(summary.tooLong.map(entry => entry.messageId)).toEqual(expect.arrayContaining(['m0', 'm398', 'm399']))
   })
 
   it('names an oversized latest request rather than cutting it', () => {
@@ -135,7 +145,8 @@ describe('handover', () => {
   })
 
   it('counts the messages it never read between the first request and the newest history', () => {
-    const { text, summary } = buildHandover({ earliest: [message('u0', 'user', 'Ask 0')], newest: conversation(2).slice(2), total: 50 }, options())
+    const newest = conversation(2).slice(2).map((entry, index) => ({ ordinal: 48 + index, message: entry }))
+    const { text, summary } = buildHandover({ messages: [{ ordinal: 0, message: message('u0', 'user', 'Ask 0') }, ...newest], total: 50 }, options())
     expect(summary).toMatchObject({ total: 50, carried: ['u0', 'u1', 'a1'], notCarried: 47 })
     expect(text).toContain('[47 messages here are not carried.]')
   })
@@ -170,6 +181,41 @@ describe('reading a handover from the thread store', () => {
     expect(read.text).toBe(whole.text)
     expect(read.summary.carried[0]).toBe('u0')
     expect(read.summary.total).toBe(800)
+  })
+
+  it('keeps the latest request and answer when the agent wrote more after it than the budget holds', async () => {
+    const threads = await store()
+    const messages = [
+      ...conversation(3),
+      ...Array.from({ length: 60 }, (_, index) => message(`p${index}`, 'assistant', `Progress ${index}${'.'.repeat(500)}`)),
+    ]
+    threads.appendMany('thread-1', messages.map(entry => ({ kind: 'message-added', at: entry.createdAt, message: entry })))
+    const read = readHandover(threads, { source })
+    expect(read.summary.carried).toEqual(expect.arrayContaining(['u0', 'u2', 'p59']))
+    expect(read.summary.answered).toBe(true)
+    expect(read.text).toBe(buildHandover(messages, { source, historyKept: true }).text)
+  })
+
+  it('keeps the first user message when the thread opened with many messages before it', async () => {
+    const threads = await store()
+    const messages = [
+      ...Array.from({ length: 60 }, (_, index) => message(`n${index}`, 'assistant', `Note ${index}${'.'.repeat(500)}`)),
+      ...conversation(80, 500),
+    ]
+    threads.appendMany('thread-1', messages.map(entry => ({ kind: 'message-added', at: entry.createdAt, message: entry })))
+    const read = readHandover(threads, { source })
+    expect(read.summary.carried[0]).toBe('u0')
+    expect(read.text).toBe(buildHandover(messages, { source, historyKept: true }).text)
+  })
+
+  it('names a wake-up from the store as Sotto, not the user', async () => {
+    const threads = await store()
+    const messages = [...conversation(1), message('w1', 'user', 'Checks passed'), message('a1', 'assistant', 'Answer 1')]
+    threads.appendMany('thread-1', messages.map(entry => ({ kind: 'message-added', at: entry.createdAt, message: entry })))
+    threads.addWakeUp('thread-1', 'w1')
+    const { text } = readHandover(threads, { source })
+    expect(text).toContain('Sotto, waking the thread, ')
+    expect(text.match(/The user, /g)).toHaveLength(1)
   })
 
   it('names tool records the store holds without carrying them', async () => {

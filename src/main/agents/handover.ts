@@ -1,4 +1,4 @@
-import { isVisualMessage, PROVIDER_LABELS, type AgentMessage, type ProviderId } from '../../shared/agents'
+import { isVisualMessage, PROVIDER_LABELS, type AgentAttachmentReference, type AgentMessage, type ProviderId } from '../../shared/agents'
 import type { ThreadStore } from './threadStore'
 
 /**
@@ -41,14 +41,15 @@ export interface HandoverOptions {
   readonly toolRecords?: number | undefined
 }
 
+/** One message read for a handover, with its place among all the thread's messages, counting from 0 at the oldest. */
+export interface PlacedMessage { readonly ordinal: number; readonly message: AgentMessage }
+
 /**
- * What a handover is built from. A short thread is read whole into `newest`. A long one is read from both ends: the
- * oldest messages up to the first user message, and the newest until the budget would be spent. `total` counts the
- * messages between them that were never read.
+ * What a handover is built from when the whole thread was not read: the messages that were, each in its place, and how
+ * many the thread holds. The places not read are counted as not carried.
  */
 export interface HandoverHistory {
-  readonly earliest: readonly AgentMessage[]
-  readonly newest: readonly AgentMessage[]
+  readonly messages: readonly PlacedMessage[]
   readonly total: number
 }
 
@@ -83,30 +84,32 @@ export interface Handover {
   readonly summary: HandoverSummary
 }
 
-/** One message in the order the handover reasons about: its place among the thread's messages, read or not. */
-interface Placed { readonly ordinal: number; readonly message: AgentMessage }
-
 export function buildHandover(history: HandoverHistory | readonly AgentMessage[], options: HandoverOptions): Handover {
-  const { earliest, newest, total: claimed } = isHistory(history) ? history : { earliest: [], newest: history, total: history.length }
-  const total = Math.max(claimed, earliest.length + newest.length)
-  const placed: Placed[] = [
-    ...earliest.map((message, index) => ({ ordinal: index, message })),
-    ...newest.map((message, index) => ({ ordinal: total - newest.length + index, message })),
-  ]
+  const read = isHistory(history) ? history : { messages: history.map((message, ordinal) => ({ ordinal, message })), total: history.length }
+  const placed = [...read.messages].sort((left, right) => left.ordinal - right.ordinal)
+  const total = Math.max(read.total, (placed.at(-1)?.ordinal ?? -1) + 1)
   const visuals = placed.filter(entry => isVisualMessage(entry.message))
   const written = placed.filter(entry => !isVisualMessage(entry.message))
-  const budget = Math.max(0, Math.floor(options.budget ?? HANDOVER_BUDGET))
-  const share = Math.floor(budget / SHARE_DIVISOR)
+  const budget = budgetOf(options)
+  const share = shareOf(budget)
   const speaker = speakerFor(options.source.provider)
 
-  const carried = new Set<Placed>()
-  const tooLong = new Set<Placed>()
-  let remaining = budget
+  const carried = new Set<PlacedMessage>()
+  const tooLong = new Set<PlacedMessage>()
+  // The gap note after the last message shown is the one no message pays for.
+  let remaining = budget - GAP_ALLOWANCE
   /** Carries one message if it fits. Says `spent` when it is within its share but the budget has run out. */
-  const offer = (entry: Placed | undefined): 'carried' | 'too-long' | 'spent' | 'seen' => {
+  const offer = (entry: PlacedMessage | undefined): 'carried' | 'too-long' | 'spent' | 'seen' => {
     if (entry === undefined || carried.has(entry) || tooLong.has(entry)) return 'seen'
-    const cost = renderMessage(entry.message, speaker).length + SEPARATOR.length
-    if (cost > share) { tooLong.add(entry); return 'too-long' }
+    const cost = costOf(entry.message, speaker)
+    if (cost > share) {
+      // Naming it costs its notice, so a thread of long messages cannot fill the handover with notices.
+      const notice = renderOmission(entry.message, speaker).length + SEPARATOR.length + GAP_ALLOWANCE
+      if (notice > remaining) return 'spent'
+      tooLong.add(entry)
+      remaining -= notice
+      return 'too-long'
+    }
     if (cost > remaining) return 'spent'
     carried.add(entry)
     remaining -= cost
@@ -125,8 +128,7 @@ export function buildHandover(history: HandoverHistory | readonly AgentMessage[]
   const shown = written.filter(entry => carried.has(entry) || tooLong.has(entry))
   const carriedEntries = shown.filter(entry => carried.has(entry))
   const visualOrdinals = new Set(visuals.map(entry => entry.ordinal))
-  const attachments = carriedEntries.flatMap(entry => entry.message.attachments ?? [])
-  const images = attachments.filter(attachment => attachment.mimeType.startsWith('image/')).length
+  const attached = tally(carriedEntries.flatMap(entry => entry.message.attachments ?? []))
   const summary: HandoverSummary = {
     total,
     carried: carriedEntries.map(entry => entry.message.id),
@@ -134,8 +136,8 @@ export function buildHandover(history: HandoverHistory | readonly AgentMessage[]
       messageId: message.id, role: message.role, createdAt: message.createdAt, characters: message.text.length,
     })),
     notCarried: total - carried.size - tooLong.size - visuals.length,
-    images,
-    files: attachments.length - images,
+    images: attached.images,
+    files: attached.files,
     visuals: visuals.length,
     toolRecords: Math.max(0, Math.floor(options.toolRecords ?? 0)),
     historyKept: options.historyKept,
@@ -160,48 +162,70 @@ export function buildHandover(history: HandoverHistory | readonly AgentMessage[]
 }
 
 /** The structural slice of the thread store a handover reads. */
-export type HandoverStore = Pick<ThreadStore, 'readMessages' | 'readForwardMessages' | 'messageCount' | 'activityCount' | 'ephemeral'>
+export type HandoverStore = Pick<ThreadStore, 'readMessages' | 'messageIdentities' | 'message' | 'wakeUps' | 'activityCount' | 'ephemeral'>
 
 /**
  * Reads one thread's messages and builds its handover. It reads back from the newest message only until the messages
- * within their share would more than fill the budget, then the oldest messages up to the first user message, so a
- * long thread costs about what a short one does. With Keep local history off the store is the in-memory one, and the
- * handover says so.
+ * within their share would more than fill the budget, then reads the first user message, the latest request and its
+ * answer by themselves wherever they are, so a long thread costs about what a short one does. Places come from the
+ * thread's message identities, which carry no words. With Keep local history off the store is the in-memory one, and
+ * the handover says so.
  */
 export function readHandover(store: HandoverStore, options: Omit<HandoverOptions, 'historyKept' | 'toolRecords'>): Handover {
   const { threadId } = options.source
-  const budget = Math.max(0, Math.floor(options.budget ?? HANDOVER_BUDGET))
-  const share = Math.floor(budget / SHARE_DIVISOR)
-  const total = store.messageCount(threadId)
-  const newest: AgentMessage[] = []
-  let firstPosition: number | undefined
-  let earlierAvailable = false
+  const budget = budgetOf(options)
+  const share = shareOf(budget)
+  const speaker = speakerFor(options.source.provider)
+  const identities = store.messageIdentities(threadId)
+  const total = identities.length
+  // The projection does not keep which messages were Sotto's wake-ups; the store's own record does (ADR-0061).
+  const wakeUps = store.wakeUps(threadId)
+  const authored = (message: AgentMessage): AgentMessage => wakeUps.has(message.id) ? { ...message, wakeUp: true } : message
+  const placed = new Map<number, AgentMessage>()
+  let beforePosition: number | undefined
   let fitting = 0
   for (;;) {
-    const window = store.readMessages(threadId, { limit: READ_PAGE, ...(firstPosition === undefined ? {} : { beforePosition: firstPosition }) })
+    const window = store.readMessages(threadId, { limit: READ_PAGE, ...(beforePosition === undefined ? {} : { beforePosition }) })
     if (window.messages.length === 0) break
-    newest.unshift(...window.messages)
-    firstPosition = window.firstPosition
-    earlierAvailable = window.earlierAvailable
-    for (const message of window.messages) if (message.text.length < share) fitting += message.text.length
-    if (!earlierAvailable || fitting > budget || newest.length >= READ_MAX) break
+    const start = total - placed.size - window.messages.length
+    window.messages.forEach((message, index) => {
+      placed.set(start + index, authored(message))
+      const cost = costOf(message, speaker)
+      if (cost <= share) fitting += cost
+    })
+    beforePosition = window.firstPosition
+    if (!window.earlierAvailable || fitting > budget || placed.size >= READ_MAX) break
   }
-  const earliest: AgentMessage[] = []
-  if (earlierAvailable && firstPosition !== undefined) {
-    for (const { message, position } of store.readForwardMessages(threadId, -1, READ_PAGE).messages) {
-      if (position >= firstPosition) break
-      earliest.push(message)
-      if (message.role === 'user') break
-    }
-    // No user message among the oldest page: the first request is somewhere unread, and the handover counts it there.
-    if (earliest.at(-1)?.role !== 'user') earliest.length = 0
+  const latestRequest = identities.findLastIndex(identity => identity.role === 'user')
+  const answer = identities.findLastIndex(identity => identity.role === 'assistant')
+  const kept = [identities.findIndex(identity => identity.role === 'user'), latestRequest, ...(answer > latestRequest ? [answer] : [])]
+  for (const ordinal of kept) {
+    if (ordinal < 0 || placed.has(ordinal)) continue
+    const message = store.message(threadId, identities[ordinal]!.id)
+    if (message !== undefined) placed.set(ordinal, authored(message))
   }
-  return buildHandover({ earliest, newest, total }, {
+  return buildHandover({ messages: [...placed].map(([ordinal, message]) => ({ ordinal, message })), total }, {
     ...options, historyKept: !store.ephemeral, toolRecords: store.activityCount(threadId),
   })
 }
 
 const SEPARATOR = '\n\n'
+/** Room for the note that may stand before a message to say how many messages before it are not carried. */
+const GAP_ALLOWANCE = 50
+
+function budgetOf(options: Pick<HandoverOptions, 'budget'>): number {
+  return Math.max(0, Math.floor(options.budget ?? HANDOVER_BUDGET))
+}
+
+function shareOf(budget: number): number {
+  return Math.floor(budget / SHARE_DIVISOR)
+}
+
+/** How many of some attachments are images, and how many are other files. */
+function tally(attachments: readonly AgentAttachmentReference[]): { images: number; files: number } {
+  const images = attachments.filter(attachment => attachment.mimeType.startsWith('image/')).length
+  return { images, files: attachments.length - images }
+}
 
 function isHistory(value: HandoverHistory | readonly AgentMessage[]): value is HandoverHistory {
   return !Array.isArray(value)
@@ -223,13 +247,17 @@ function count(n: number, one: string): string {
   return `${n.toLocaleString('en-US')} ${n === 1 ? one : `${one}s`}`
 }
 
+/** What one message takes from the budget: its heading, its words, any attachment note, and room for a gap note before it. */
+function costOf(message: AgentMessage, speaker: (message: AgentMessage) => string): number {
+  return renderMessage(message, speaker).length + SEPARATOR.length + GAP_ALLOWANCE
+}
+
 function renderMessage(message: AgentMessage, speaker: (message: AgentMessage) => string): string {
   const lines = [`${speaker(message)}, ${when(message.createdAt)}:`, message.text.trim().length === 0 ? '(No words.)' : message.text]
-  const attached = message.attachments ?? []
-  if (attached.length > 0) {
-    const images = attached.filter(attachment => attachment.mimeType.startsWith('image/')).length
-    const kinds = [images > 0 ? count(images, 'image') : '', attached.length > images ? count(attached.length - images, 'file') : ''].filter(Boolean)
-    lines.push(`(This message had ${kinds.join(' and ')} attached. ${attached.length === 1 ? 'It is' : 'They are'} not carried.)`)
+  const { images, files } = tally(message.attachments ?? [])
+  if (images + files > 0) {
+    const kinds = [images > 0 ? count(images, 'image') : '', files > 0 ? count(files, 'file') : ''].filter(Boolean)
+    lines.push(`(This message had ${kinds.join(' and ')} attached. ${images + files === 1 ? 'It is' : 'They are'} not carried.)`)
   }
   return lines.join('\n')
 }
