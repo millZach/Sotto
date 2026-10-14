@@ -68,6 +68,13 @@ describe('Usage page', () => {
     expect(screen.getByRole('tabpanel', { name: /Prompts/u })).toHaveTextContent('About 7 a day')
   })
 
+  it('says why the share from cache is missing rather than calling reported tokens absent', async () => {
+    const host = localHost()
+    host.activity = { ...host.activity!, totals: activityRow(190, 10, 0, tokens(0, 500, 0, 0)) }
+    const { user } = await open(dashboard(host))
+    await user.click(measure(/^From cache /u))
+    expect(screen.getByRole('tabpanel', { name: /From cache/u })).toHaveTextContent('No input tokens in this range, so none came from cache.')
+  })
   it('moves through the index with the arrow keys and opens each stage', async () => {
     const { user } = await open()
     measure(/^Prompts /u).focus()

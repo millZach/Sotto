@@ -71,8 +71,8 @@ export function cacheShare(tokens: UsageTokenTotals): string | undefined {
 /** One token figure as a share of another: undefined when either is unknown, and "about" when either is incomplete. */
 export function fieldShare(part: UsageFieldTotal, whole: UsageFieldTotal): string | undefined {
   if (part.value === undefined || whole.value === undefined || whole.value <= 0) return undefined
-  const figure = share(part.value, whole.value)
-  return (part.partial || whole.partial) && !figure.startsWith('under') ? `about ${figure}` : figure
+  // Incomplete figures can't support "under 1%" either, so their share is only rounded.
+  return part.partial || whole.partial ? `about ${Math.round(part.value / whole.value * 100)}%` : share(part.value, whole.value)
 }
 /** Names in a sentence: "forge", "forge and mac", "forge, mac and studio". */
 export const joinNames = (names: readonly string[]): string => names.length <= 1 ? names[0] ?? '' : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`

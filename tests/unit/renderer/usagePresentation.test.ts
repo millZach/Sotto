@@ -44,7 +44,9 @@ describe('Usage numbers in words', () => {
     const partial = { value: 250, knownRows: 1, rows: 2, partial: true }
     const whole = { value: 500, knownRows: 2, rows: 2, partial: false }
     expect([fieldShare(exact, whole), fieldShare(partial, whole), fieldShare(exact, { ...whole, partial: true })]).toEqual(['50%', 'about 50%', 'about 50%'])
-    expect(fieldShare({ value: 1, knownRows: 1, rows: 2, partial: true }, { value: 1_000, knownRows: 1, rows: 1, partial: false })).toBe('under 1%')
+    // Missing work could make a small share much larger, so an incomplete one is only rounded.
+    expect(fieldShare({ value: 1, knownRows: 1, rows: 2, partial: true }, { value: 1_000, knownRows: 1, rows: 1, partial: false })).toBe('about 0%')
+    expect(fieldShare({ value: 1, knownRows: 1, rows: 1, partial: false }, { value: 1_000, knownRows: 1, rows: 1, partial: false })).toBe('under 1%')
     expect([fieldShare({ knownRows: 0, rows: 1, partial: true }, whole), fieldShare(exact, { value: 0, knownRows: 1, rows: 1, partial: false })]).toEqual([undefined, undefined])
     expect(['forge', 'forge,mac', 'forge,mac,studio'].map(names => joinNames(names.split(',')))).toEqual(['forge', 'forge and mac', 'forge, mac and studio'])
   })

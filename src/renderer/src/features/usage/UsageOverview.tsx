@@ -170,8 +170,11 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       const shown = [...reported].sort((a, b) => fieldValue(b.tokens.input) - fieldValue(a.tokens.input)).slice(0, 8)
         .sort((a, b) => fieldValue(b.tokens.cached) / fieldValue(b.tokens.input) - fieldValue(a.tokens.cached) / fieldValue(a.tokens.input))
       const rest = reported.length - shown.length
-      const unshared = totals.tokens.input.value !== undefined && totals.tokens.input.value > 0
-        ? "Some input in this range wasn't reported in full, so its share from cache can't be worked out." : 'No token counts in this range.'
+      const { input, output } = totals.tokens
+      const unshared = input.value === undefined && output.value === undefined ? 'No token counts in this range.'
+        : input.value === undefined ? "Input tokens weren't reported in this range, so the share from cache can't be worked out."
+          : input.value === 0 && !input.partial ? 'No input tokens in this range, so none came from cache.'
+            : "Some token counts in this range weren't reported in full, so the share from cache can't be worked out."
       stage = summary.cacheShare === undefined ? <>{head('Cache reads')}<p className="usage-none">{unshared}</p></> : <>
         {head('Cache reads')}
         <div className="usage-cache">
