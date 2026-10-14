@@ -191,9 +191,6 @@ export class CodexAppServerHost implements AgentHost {
       throw refusal
     }
   }
-  private policy(_id: string, mode?: AgentRuntimeMode) {
-    return runtimePolicy(mode)
-  }
   private async threadConfiguration(id: string, effort?: string) {
     const generation = this.generation
     const profile = await this.checkLaunchProfile(id)
@@ -1036,7 +1033,7 @@ export class CodexAppServerHost implements AgentHost {
       // Resume restores the conversation, never its transcript: turns are read when the
       // thread is opened, so resuming costs the same for a long thread and a short one.
       await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true,
-        ...(!alias.pendingSettings ? { model: alias.modelId, modelProvider: 'openai', ...this.policy(id, alias.runtimeMode) } : {}),
+        ...(!alias.pendingSettings ? { model: alias.modelId, modelProvider: 'openai', ...runtimePolicy(alias.runtimeMode) } : {}),
         ...await this.threadConfiguration(id, alias.pendingSettings ? undefined : alias.reasoningEffort),
         developerInstructions: await this.projectInstructions(alias.cwd, id) }, async value => {
         if (alias.pendingSettings) return this.applySettings(id, value)
@@ -1246,7 +1243,7 @@ export class CodexAppServerHost implements AgentHost {
     const desired = alias.pendingSettings
     if (!desired) return
     const response = settingsObservation.parse(value)
-    const policy = this.policy(id, desired.runtimeMode)
+    const policy = runtimePolicy(desired.runtimeMode)
     const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
     if (response.model !== desired.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer || response.sandbox.type !== sandboxType
       || desired.reasoningEffort !== undefined && response.reasoningEffort !== desired.reasoningEffort) {
@@ -1355,9 +1352,9 @@ export class CodexAppServerHost implements AgentHost {
         this.reaper.touch(command.threadId)
         await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
           developerInstructions,
-          ...this.policy(command.threadId, command.runtimeMode), ...await this.threadConfiguration(command.threadId, command.reasoningEffort), ephemeral: false, historyMode: 'legacy' }, async value => {
+          ...runtimePolicy(command.runtimeMode), ...await this.threadConfiguration(command.threadId, command.reasoningEffort), ephemeral: false, historyMode: 'legacy' }, async value => {
           const response = settingsResponse.parse(value)
-          const policy = this.policy(command.threadId, command.runtimeMode)
+          const policy = runtimePolicy(command.runtimeMode)
           const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
           if (response.model !== command.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer
             || response.sandbox.type !== sandboxType || command.reasoningEffort !== undefined && response.reasoningEffort !== command.reasoningEffort) throw new Error('Codex did not confirm the requested thread options.')
@@ -1409,7 +1406,7 @@ export class CodexAppServerHost implements AgentHost {
           const modelId = command.modelId ?? alias.modelId
           const reasoningEffort = effortAfterChange(this.state, command, alias.reasoningEffort)
           const mode = command.runtimeMode ?? alias.runtimeMode ?? 'auto-accept-edits'
-          const policy = this.policy(id, mode)
+          const policy = runtimePolicy(mode)
           const previousPendingSettings = alias.pendingSettings
           const desired = { modelId, reasoningEffort, runtimeMode: mode }
           const generation = this.generation
@@ -1562,8 +1559,8 @@ export class CodexAppServerHost implements AgentHost {
             markSendStage(command.commandId, 'written')
             try {
               await this.rpc('turn/start', { threadId: alias.codexThreadId, cwd: alias.cwd, clientUserMessageId: command.messageId,
-                input, approvalPolicy: this.policy(id, alias.runtimeMode).approvalPolicy,
-                approvalsReviewer: this.policy(id, alias.runtimeMode).approvalsReviewer,
+                input, approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
+                approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
                 ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}) }, value => {
                 const { turn } = z.object({ turn: turnSchema }).parse(value)
                 origin.turnId = turn.id
