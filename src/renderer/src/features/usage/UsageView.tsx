@@ -231,9 +231,8 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   else if (tab === 'subscriptions') body = <Subscriptions page={page} refreshing={refreshing} onReadAgain={providerId => void readAgain(providerId)} />
   else if (noHistory) body = <>{tab === 'overview' ? <Glance page={page} /> : null}<NoHistory name={joinNames(read.hosts.map(host => hostName(host.hostId)))} /></>
   else if (tab === 'models') body = <Models page={page} />
-  else if (isEmptyActivity(summary.totals)) body = <><Glance page={page} /><EmptyUsage {...(page.cleared
-    ? { title: 'Nothing recorded yet', detail: 'Usage starts counting again with your next prompt.' }
-    : { title: 'Nothing in this range', detail: 'Try a longer range, another provider or Everywhere.' })} /></>
+  // As the approved design has it, a cleared computer with nothing new replaces the index; an empty range keeps it.
+  else if (page.cleared && isEmptyActivity(summary.totals)) body = <><Glance page={page} /><EmptyUsage title="Nothing recorded yet" detail="Usage starts counting again with your next prompt." /></>
   else body = <Overview page={page} />
 
   return <section className="usage-view" aria-label="Usage"><div ref={scroll} className="usage-scroll"><div className="usage-page">
