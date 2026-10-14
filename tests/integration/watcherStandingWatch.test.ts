@@ -627,6 +627,28 @@ it('ends the pause once the user’s own queued prompt settles after its turn ha
   expect(f.control.watcherRecord().watches![0]!.pausedByUserMessageId).toBeNull()
 })
 
+it('never leaves Watcher’s live permission and its saved choice apart when the guard, the save or the provider fails', async () => {
+  const f = await fixture()
+  const live = () => f.control.watcherSnapshot().threads.find(thread => thread.id === f.watcherId())?.runtimeMode ?? 'approval-required'
+  const saved = () => f.control.watcherRecord().lastRuntimeMode
+  const before = { live: live(), saved: saved() }
+  expect(before.live).toBe('approval-required')
+  // The save fails: the live thread is not widened.
+  vi.spyOn(f.control, 'updateWatcher').mockRejectedValueOnce(new Error('Synthetic save failure'))
+  expect(await f.service.setPermission({ runtimeMode: 'full-access' })).toMatchObject({ status: 'refused' })
+  expect({ live: live(), saved: saved() }).toEqual(before)
+  // The phone loses Can answer at the save: the same.
+  expect(await f.service.setPermission({ runtimeMode: 'full-access' }, () => { throw new Error('Synthetic revoked phone') })).toMatchObject({ status: 'refused' })
+  expect({ live: live(), saved: saved() }).toEqual(before)
+  // The provider refuses the change: the saved choice goes back too.
+  vi.spyOn(f.control, 'commandForWatcherRoom').mockResolvedValueOnce({ ...f.control.shell(), error: 'Synthetic provider refusal' })
+  expect(await f.service.setPermission({ runtimeMode: 'full-access' })).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE' })
+  expect({ live: live(), saved: saved() }).toEqual(before)
+  // And a change that works moves both.
+  expect(await f.service.setPermission({ runtimeMode: 'full-access' })).toMatchObject({ status: 'ok' })
+  expect({ live: live(), saved: saved() }).toEqual({ live: 'full-access', saved: 'full-access' })
+})
+
 it('persists the remembered permission before first creation and permits widening and narrowing', async () => {
   const f = await fixture(false, false)
   expect(await f.service.setPermission({ runtimeMode: 'full-access' })).toMatchObject({ status: 'ok', state: { current: null, runtimeMode: 'full-access' } })

@@ -301,8 +301,21 @@ export class WatcherService implements WatcherControlHooks {
         if (!thread && (!model?.ready || model.providerId !== current.provider)) refuse('PROVIDER_UNAVAILABLE', 'Reconnect Watcher’s chosen provider before changing its pending permission mode.', true)
         if (!model?.runtimeModes?.includes(parsed.data.runtimeMode)) refuse('PERMISSION_NOT_COMPARABLE', 'This model does not offer that permission mode.')
         if (thread) {
-          const result = await this.options.control.commandForWatcherRoom({ type: 'configure-thread', threadId: thread.id, runtimeMode: parsed.data.runtimeMode }, guard)
-          if (result.error) refuse('PROVIDER_UNAVAILABLE', 'Watcher’s permissions could not be changed. Check its provider and try again.', true)
+          // Guarded and saved before the live thread changes, so a refused guard or a failed save leaves it as it was.
+          // A change the provider then refuses takes the saved choice back, and the two never disagree.
+          const previous = record.lastRuntimeMode
+          await this.options.control.updateWatcher(next => { guard?.(); next.lastRuntimeMode = parsed.data.runtimeMode })
+          let changed = false
+          try { changed = !(await this.options.control.commandForWatcherRoom({ type: 'configure-thread', threadId: thread.id, runtimeMode: parsed.data.runtimeMode }, guard)).error }
+          finally {
+            if (!changed) await this.options.control.updateWatcher(next => {
+              if (next.lastRuntimeMode !== parsed.data.runtimeMode) return
+              if (previous === undefined) delete next.lastRuntimeMode
+              else next.lastRuntimeMode = previous
+            })
+          }
+          if (!changed) refuse('PROVIDER_UNAVAILABLE', 'Watcher’s permissions could not be changed. Check its provider and try again.', true)
+          this.scheduleRemote(); this.publish(); return this.get()
         }
       }
       await this.options.control.updateWatcher(record => { guard?.(); record.lastRuntimeMode = parsed.data.runtimeMode })
