@@ -1123,6 +1123,35 @@ final class WatcherModelTests: XCTestCase {
         model.phase(.background)
     }
 
+    @MainActor func testUndoGoesBackToTheComputerWhoseWatcherTookThePress() async throws {
+        // Both computers run Watcher. The laptop's Watcher watches a thread on forge.
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(workerCard: false), forge: "")
+        let remote = ThreadRef(hostID: forge, threadID: "r")
+        let onForge = { (spec: Spec) -> String in
+            self.page(spec).replacingOccurrences(of: #"{"hostId":"\#(self.laptop)","threadId":"t"}"#, with: #"{"hostId":"\#(self.forge)","threadId":"r"}"#)
+        }
+        let watching = try shell(onForge(Spec(workerCard: false, observedAt: "2026-10-11T09:01:00.000Z", standing: true)), mayAnswer: true)
+        HostConnection.shells[laptop] = watching
+        try connection.push(.shell(watching.decode(Shell.self)))
+        await until { model.watchedByWatcher(remote) }
+        XCTAssertEqual(model.watchHost(for: remote), laptop, "Stop watching goes to the computer that watches it")
+        let stopped = onForge(Spec(workerCard: false, watched: false, observedAt: "2026-10-11T09:02:00.000Z"))
+        manage({ _, _ in try self.ok(stopped) }, read: { stopped })
+        await model.setWatched(remote, false)
+        let notice = try XCTUnwrap(model.watchNotice)
+        XCTAssertEqual(notice.hostID, laptop)
+        // Nothing watches it now, so a new press would go to forge, the thread's own computer. Undo goes back to the laptop.
+        XCTAssertEqual(model.watchHost(for: remote), forge)
+        let watchedAgain = onForge(Spec(workerCard: false, observedAt: "2026-10-11T09:03:00.000Z", standing: true))
+        manage({ _, _ in try self.ok(watchedAgain) }, read: { watchedAgain })
+        await model.undoWatch(notice)
+        XCTAssertEqual(try calls("watcher-phone-watch").first?.operation["request"],
+                       .object(["target": .object(["hostId": .string(forge), "threadId": .string("r")])]), "Undo went to the laptop's Watcher")
+        let forgeConnection = try XCTUnwrap(HostConnection.instances.last { $0.hostID == forge })
+        XCTAssertTrue(forgeConnection.watcherCalls.filter { $0.operation["op"] == .string("watcher-phone-watch") }.isEmpty, "And not to forge's")
+        model.phase(.background)
+    }
+
     @MainActor func testARefusedOrUnconfirmedWatchSaysSoAndIsNeverSentAgain() async throws {
         let model = try await fixture(features: Self.manageFeatures, spec: Spec(watched: false))
         manage({ _, _ in

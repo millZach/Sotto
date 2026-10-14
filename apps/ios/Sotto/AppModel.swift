@@ -737,8 +737,10 @@ extension AppModel {
     /// Watches the thread, or stops watching it, through the computer that runs Watcher. It asks nothing first; what it
     /// did is said with Undo for a few seconds. Watching lasts until the user stops it, with no limit on how many. A
     /// refusal is said in the computer's own words, and an answer lost on the way is read from its receipt.
-    func setWatched(_ ref: ThreadRef, _ watched: Bool, title: String? = nil) async {
-        guard canChangeWatch(ref), let host = watchHost(for: ref), watchedByWatcher(ref) != watched else { return }
+    /// `recorded` names the computer whose Watcher took an earlier press, for Undo to go back to it, never to another.
+    func setWatched(_ ref: ThreadRef, _ watched: Bool, title: String? = nil, on recorded: String? = nil) async {
+        guard let host = recorded ?? watchHost(for: ref), offersWatcherManage(host), online(host),
+              !watcherManaging.contains(Self.watchKey(ref)), watchedByWatcher(ref) != watched else { return }
         let key = Self.watchKey(ref)
         watcherManaging.insert(key)
         defer { watcherManaging.remove(key) }
@@ -752,10 +754,11 @@ extension AppModel {
         let outcome = await manageWatcher(operation, on: host, unconfirmed: WatcherWords.watchUnconfirmed(named, watched: watched, computer: name(host)))
         if outcome == .applied { showWatchNotice(notice) }
     }
-    /// Undo: the press taken back, as a press of its own the other way.
+    /// Undo: the press taken back, as a press of its own the other way, on the computer whose Watcher took it. If the
+    /// Watcher tab has moved to another computer since, Undo still goes to that one, never to the newly chosen one.
     func undoWatch(_ notice: WatchNotice) async {
         dismissWatchNotice(notice.id)
-        await setWatched(notice.target, !notice.watched, title: notice.title)
+        await setWatched(notice.target, !notice.watched, title: notice.title, on: notice.hostID)
     }
     func dismissWatchNotice(_ id: UUID) {
         if watchNotice?.id == id { watchNotice = nil }
