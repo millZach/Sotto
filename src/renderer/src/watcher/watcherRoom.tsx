@@ -131,17 +131,26 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   // A first message sent before Watcher existed goes to it from here, so leaving the room cannot lose it.
   useFirstMessageDelivery(enabled ? agents : null, currentThreadId)
   // The contract keeps these three optional for stand-ins written before them, so the room asks before offering them.
-  const optional = bridge as Partial<Pick<WatcherBridge, 'setPermission' | 'watchThread' | 'unwatchThread'>> | undefined
-  const canSetPermission = live && typeof optional?.setPermission === 'function'
-  const canWatch = live && typeof optional?.watchThread === 'function' && typeof optional.unwatchThread === 'function'
+  // Main's own preload supplies all three.
+  const manage = useMemo(() => {
+    const { setPermission, watchThread, unwatchThread } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
+    return {
+      setPermission: setPermission === undefined ? null : (request: Parameters<typeof setPermission>[0]) => setPermission.call(bridge, request),
+      watch: watchThread === undefined || unwatchThread === undefined ? null : {
+        watchThread: (request: Parameters<typeof watchThread>[0]) => watchThread.call(bridge, request),
+        unwatchThread: (request: Parameters<typeof unwatchThread>[0]) => unwatchThread.call(bridge, request),
+      },
+    }
+  }, [live, bridge])
   const latest = useRef(agentState)
   useEffect(() => { latest.current = agentState })
   const actions = useMemo<WatchActions | null>(() => {
-    if (!enabled || !canWatch || bridge === undefined) return null
+    const watch = manage.watch
+    if (!enabled || watch === null) return null
     const set = async (target: WatcherThreadTarget, title: string, watched: boolean): Promise<void> => {
       let refusal: string | null
       try {
-        refusal = settle(await (watched ? bridge.watchThread({ target }) : bridge.unwatchThread({ target })))
+        refusal = settle(await (watched ? watch.watchThread({ target }) : watch.unwatchThread({ target })))
       } catch {
         refusal = watched ? `Sotto could not reach Watcher, so ${title} is not watched. Try again.` : `Sotto could not reach Watcher, so ${title} is still watched. Try again.`
       }
@@ -156,16 +165,16 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
         if (thread !== undefined && target !== null) await set(target, thread.title, watched)
       },
     }
-  }, [enabled, canWatch, bridge, settle])
+  }, [enabled, manage, settle])
   const value = useMemo<WatcherRoom | null>(() => !enabled ? null : {
     status: !live ? 'unavailable' : answered ? 'ready' : 'loading',
     state, error, currentThreadId, watchedThreadIds, pausedThreadIds, settle,
     open: live ? request => bridge.open(request) : null,
     setLimit: live ? request => bridge.setLimit(request) : null,
-    setPermission: canSetPermission ? request => bridge.setPermission(request) : null,
-    watchThread: canWatch ? request => bridge.watchThread(request) : null,
-    unwatchThread: canWatch ? request => bridge.unwatchThread(request) : null,
-  }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, pausedThreadIds, settle, bridge, canSetPermission, canWatch])
+    setPermission: manage.setPermission,
+    watchThread: manage.watch?.watchThread ?? null,
+    unwatchThread: manage.watch?.unwatchThread ?? null,
+  }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, pausedThreadIds, settle, bridge, manage])
   return <WatcherRoomContext.Provider value={value}>
     <WatchedThreadsContext.Provider value={enabled ? watchedThreadIds : NONE}>
       <WatchActionsContext.Provider value={actions}>{children}</WatchActionsContext.Provider>
