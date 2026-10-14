@@ -307,6 +307,7 @@ private struct WatcherConversationPane: View {
                                     switch item {
                                     case .message(let message): WatcherMessage(message: message)
                                     case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
+                                    case .ownChange(let change): WatcherOwnChangeLine(change: change)
                                     }
                                 }
                                 .id(item.id)
@@ -634,6 +635,89 @@ private struct ReceiptRow: View {
         if let delivery = WatcherWords.delivery(row) { words += ", " + delivery }
         else if let thread { words += ", " + ThreadState(thread).words }
         return words
+    }
+}
+
+// MARK: - What Watcher changed itself (mark B)
+
+/// One quiet line under a reply in which Watcher changed files itself (Zach's pick on October 13, 2026, mark B): how many,
+/// from the provider's own record of file changes in that turn, so it is there whatever the reply says; then Watcher's
+/// reason in its own words, or that it gave none, in the needs-you ink, since Watcher is meant to hand changes to a
+/// thread. The file names show on request.
+private struct WatcherOwnChangeLine: View {
+    let change: WatcherPage.OwnChange
+    @State private var open = false
+    @Environment(\.sottoTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .footnote) private var indent: CGFloat = 21
+    private var count: Int { max(change.fileCount, change.files.count) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.warningText)
+                    .accessibilityHidden(true)
+                words.fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("watcher-own-change")
+            if !change.files.isEmpty {
+                Button { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { open.toggle() } } label: {
+                    HStack(spacing: 4) {
+                        Text(WatcherWords.ownChangeToggle(count, open: open))
+                        Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: 11, weight: .semibold))
+                            .accessibilityHidden(true)
+                    }
+                    .font(.sotto(.small, .semibold))
+                    .foregroundStyle(Palette.accentText)
+                    .frame(minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PressStyle())
+                .padding(.leading, indent)
+                .accessibilityIdentifier("watcher-own-change-files")
+                if open { files.padding(.leading, indent) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// "Watcher changed 2 files itself." and its reason, or that it gave none, as one run of words.
+    private var words: Text {
+        let head: Text = Text(WatcherWords.ownChangeHeadline(count) + " ").font(.sotto(.small, .semibold)).foregroundStyle(theme.color(.ink))
+        guard let reason = change.reason else {
+            let none: Text = Text("It gave no reason.").font(.sotto(.small)).foregroundStyle(theme.color(.warningText))
+            return head + none
+        }
+        let said: Text = Text("Its reason: ").font(.sotto(.small)).foregroundStyle(theme.color(.muted))
+        let words: Text = Text("“\(reason)”").font(.sotto(.small)).foregroundStyle(theme.color(.ink))
+        return head + said + words
+    }
+
+    /// The files, as the provider named them, and how many more it changed without naming them.
+    private var files: some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            Rectangle().fill(Palette.hairline).frame(width: 2).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: Space.s1) {
+                ForEach(change.files, id: \.self) { file in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "doc").font(.system(size: 12)).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                        Text(file).font(.mono).foregroundStyle(Palette.ink).lineLimit(2).truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+                }
+                if count > change.files.count {
+                    Text("and \(WatcherWords.files(count - change.files.count)) more").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                }
+            }
+        }
+        .padding(.vertical, Space.s1)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Files Watcher changed")
+        .accessibilityIdentifier("watcher-own-change-list")
     }
 }
 

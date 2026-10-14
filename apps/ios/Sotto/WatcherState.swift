@@ -35,6 +35,9 @@ extension WatcherPhoneState {
     var watched: [WatchedThread] { watchedThreads.filter(\.watched) }
     var noLongerWatched: [WatchedThread] { watchedThreads.filter { !$0.watched } }
     func isWatched(_ ref: ThreadRef) -> Bool { watchedThreads.contains { $0.watched && $0.target.ref == ref } }
+    /// The mark for a reply in which Watcher changed files itself, as its computer read it from the provider's own record
+    /// of file changes in that turn.
+    func ownChange(for replyID: String) -> OwnChange? { ownChanges?.first { $0.replyMessageId == replyID } }
     /// The card, if it is still waiting.
     func card(_ ref: ThreadRef, requestID: String) -> RequestCard? {
         needsYou.first { $0.target.ref == ref && $0.request.id == requestID }
@@ -167,21 +170,25 @@ struct WatcherTabState: Equatable {
 
 // MARK: - The conversation
 
-/// A message in Watcher's conversation, or what Watcher did for one of its replies.
+/// A message in Watcher's conversation, what Watcher did for one of its replies, or the line saying it changed files
+/// itself in one.
 enum WatcherItem: Identifiable, Equatable {
     case message(Message)
     case receipts(WatcherPage.ReceiptGroup, attached: Bool)
+    case ownChange(WatcherPage.OwnChange)
     var id: String {
         switch self {
         case .message(let message): return "message/" + message.id
         case .receipts(let group, _): return "receipts/" + group.key
+        case .ownChange(let change): return "own/" + change.replyMessageId
         }
     }
 }
 
 enum WatcherConversation {
-    /// Messages in order, each reply followed by what Watcher did for it (2B). A group whose reply isn't in the
-    /// conversation is never attached to another reply: it stands alone, placed by when it happened.
+    /// Messages in order, each reply followed by what Watcher did for it (2B), then by the line saying it changed files
+    /// itself, when it did (mark B). A group whose reply isn't in the conversation is never attached to another reply: it
+    /// stands alone, placed by when it happened. A mark whose reply isn't there is left out: it says nothing on its own.
     static func items(_ page: WatcherPage) -> [WatcherItem] {
         let messages = page.conversation.messages
         let ids = Set(messages.map(\.id))
@@ -211,6 +218,9 @@ enum WatcherConversation {
         for (index, message) in messages.enumerated() {
             items.append(.message(message))
             items += (attached[message.id] ?? []).map { .receipts($0, attached: true) }
+            if message.role == "assistant", let change = page.ownChange(for: message.id), max(change.fileCount, change.files.count) > 0 {
+                items.append(.ownChange(change))
+            }
             items += (after[index] ?? []).map { .receipts($0, attached: false) }
         }
         return items + trailing.map { .receipts($0, attached: false) }
@@ -278,6 +288,16 @@ enum WatcherWords {
             return outcome.status == "uncertain" ? "\(title) isn’t confirmed." : "\(title): \(outcome.message)"
         }
         return "Stopped \(done.count) of \(results.count). " + rest.joined(separator: " ")
+    }
+
+    // Watcher's own changes (mark B): Sotto's count of what the provider changed, and Watcher's reason in its own words.
+
+    static func files(_ count: Int) -> String { count == 1 ? "1 file" : "\(count) files" }
+    static func ownChangeHeadline(_ count: Int) -> String { "Watcher changed \(files(count)) itself." }
+    /// The press that shows the file names, and folds them again.
+    static func ownChangeToggle(_ count: Int, open: Bool) -> String {
+        let what = count == 1 ? "the file" : "the \(files(count))"
+        return (open ? "Hide " : "Show ") + what
     }
 }
 

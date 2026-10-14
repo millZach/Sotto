@@ -1162,7 +1162,8 @@ struct HeldDetail {
         }
         if watching {
             let page = Self.fixtureWatcherPage(laptop: laptop, studio: studio, mayAnswer: watcherAnswers,
-                                               asks: arguments.contains("--ui-watcher-asks"), at: at)
+                                               asks: arguments.contains("--ui-watcher-asks"),
+                                               reasoned: !arguments.contains("--ui-watcher-no-reason"), at: at)
             fixtureWatcher = page
             showWatcher(decode(WatcherPage.self, page), on: laptop)
         }
@@ -1326,20 +1327,23 @@ struct HeldDetail {
                 "options": none, "questions": [question]]
     }
     /// The laptop's Watcher page: a morning's exchange with what Watcher did for each reply, three threads watched of
-    /// four it may, one it no longer watches, and Fix login test's question waiting. With `asks`, Watcher itself waits
-    /// for permission to run a command.
-    private static func fixtureWatcherPage(laptop: String, studio: String, mayAnswer: Bool, asks: Bool,
+    /// four it may, one it no longer watches, a reply in which Watcher changed two files itself, with its reason unless
+    /// `reasoned` is false, and Fix login test's question waiting. With `asks`, Watcher itself waits for
+    /// permission to run a command.
+    private static func fixtureWatcherPage(laptop: String, studio: String, mayAnswer: Bool, asks: Bool, reasoned: Bool,
                                            at: @escaping (Double) -> String) -> [String: Any] {
         let watcher: [String: String] = ["hostId": laptop, "threadId": "watcher"]
         let login: [String: String] = ["hostId": laptop, "threadId": "login"]
         let notes: [String: String] = ["hostId": laptop, "threadId": "notes845"]
+        let fixed = reasoned ? "I fixed “npm instal” in README.md and docs/guide.md myself: a one-word typo in two files is smaller than briefing a thread."
+            : "The install line is fixed."
         let messages: [[String: Any]] = [
             ["id": "ask-login", "role": "user", "createdAt": at(40 * 60),
              "text": "The login test fails about one run in five. Start a thread to fix it on Claude Code, in a new worktree."],
             ["id": "started-login", "role": "assistant", "createdAt": at(39 * 60), "text": "Started it. I’ll tell you what it finds."],
             ["id": "ask-notes", "role": "user", "createdAt": at(14 * 60), "text": "How are the release notes for #845 doing?"],
             ["id": "noted", "role": "assistant", "createdAt": at(13 * 60),
-             "text": "**Babysit #845 release notes** is waiting for the checks on #845. I asked it to tell me when they pass."],
+             "text": "**Babysit #845 release notes** is waiting for the checks on #845. I asked it to tell me when they pass. " + fixed],
             ["id": "found", "role": "assistant", "createdAt": at(3 * 60),
              "text": "**Fix login test** found the cause: overlapping runs share one account. It’s asking you which account to use. Only you can answer it."]
         ]
@@ -1357,6 +1361,10 @@ struct HeldDetail {
             ["target": target, "title": title, "provider": provider, "status": status, "connected": true, "watched": watched,
              "takenOver": false, "backgroundWorkCount": 0]
         }
+        // Sotto's own count of what Watcher changed in its reply, and its reason in its own words.
+        let reason: Any = reasoned ? "A one-word typo in two files is smaller than briefing a thread." as Any : NSNull() as Any
+        let change: [String: Any] = ["replyMessageId": "noted", "turnId": "turn-noted", "files": ["README.md", "docs/guide.md"], "fileCount": 2,
+                                     "reason": reason, "source": "provider-file-change"]
         let threads: [[String: Any]] = [
             watched(login, "Fix login test", "claude", "running", true),
             watched(notes, "Babysit #845 release notes", "codex", "running", true),
@@ -1377,7 +1385,8 @@ struct HeldDetail {
         return ["hostId": laptop, "current": current,
                 "conversation": ["messages": messages, "earlierAvailable": false, "revision": 5],
                 "receiptGroups": groups, "watchedThreads": threads, "needsYou": cards,
-                "inFlight": 3, "inFlightLimit": 4, "working": !asks, "observedAt": at(0)]
+                "inFlight": 3, "inFlightLimit": 4, "working": !asks, "observedAt": at(0),
+                "ownChanges": [change]]
     }
     /// Changes the fixture's Watcher page as the laptop would, and shows it.
     private func changeFixtureWatcher(on hostID: String, _ change: (inout [String: Any]) -> Void) {

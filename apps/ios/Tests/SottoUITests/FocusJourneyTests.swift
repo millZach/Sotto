@@ -1051,6 +1051,40 @@ import XCTest
         capture("watcher-stopped-light")
     }
 
+    /// A reply in which Watcher changed files itself carries one quiet line under it (mark B): how many, its reason or that
+    /// it gave none, and the files on request.
+    func testAReplyWhereWatcherChangedFilesItselfSaysSo() {
+        launch(Self.watcher)
+        openWatcher()
+        let line = byID("watcher-own-change")
+        XCTAssertTrue(line.waitForExistence(timeout: 5), "The line sits under the reply")
+        revealInWatcher(line)
+        XCTAssertTrue(line.label.contains("Watcher changed 2 files itself."), "Sotto's own count of what Watcher changed")
+        XCTAssertTrue(line.label.contains("Its reason: “A one-word typo in two files is smaller than briefing a thread.”"),
+                      "And Watcher's reason, as its claim")
+        let files = app.buttons["watcher-own-change-files"]
+        revealInWatcher(files)
+        XCTAssertEqual(files.label, "Show the 2 files")
+        XCTAssertFalse(labelled("docs/guide.md").exists, "The file names wait until asked for")
+        capture("watcher-own-change-dark")
+        files.tap()
+        XCTAssertTrue(labelled("docs/guide.md").waitForExistence(timeout: 5), "The files show on request")
+        XCTAssertTrue(labelled("README.md").exists)
+        XCTAssertEqual(files.label, "Hide the 2 files")
+        revealInWatcher(labelled("docs/guide.md"))
+        capture("watcher-own-change-files-dark")
+        watcherInLight()
+        revealInWatcher(line)
+        capture("watcher-own-change-light")
+        // A reply that gave no reason says so, in the needs-you ink.
+        launch(Self.watcher + ["--ui-watcher-no-reason"])
+        openWatcher()
+        XCTAssertTrue(line.waitForExistence(timeout: 5))
+        revealInWatcher(line)
+        XCTAssertTrue(line.label.contains("Watcher changed 2 files itself. It gave no reason."), "Watcher's reply said nothing of it")
+        capture("watcher-own-change-no-reason-dark")
+    }
+
     /// Settings on this iPhone: the look, alerts off until turned on, another theme, light, compact and larger text.
     func testSettingsThemeAppearanceDensityAndAlerts() {
         app.tabBars.buttons["Settings"].tap()

@@ -50,6 +50,9 @@ final class WatcherModelTests: XCTestCase {
         var deliveries: [String: String] = [:]
         /// Watcher's answer so far, after its first reply.
         var answer: String?
+        /// The files Watcher changed itself in its reply `started`, and the reason it gave, if any.
+        var changed: [String] = []
+        var reason: String?
     }
     private static let workerRequest = #"{"id":"q1","kind":"question","text":"Which account?","options":[{"id":"a","label":"A fresh account"},{"id":"b","label":"The seeded user"}]}"#
     private static let ownRequest = #"{"id":"p1","kind":"permission","text":"Wants to run gh pr checks 845.","options":[]}"#
@@ -69,13 +72,19 @@ final class WatcherModelTests: XCTestCase {
         }
         let deliveries = spec.deliveries.map { draft, status in #"{"draftId":"\#(draft)","status":"\#(status)"}"# }.joined(separator: ",")
         let answer = spec.answer.map { #",{"id":"more","role":"assistant","text":"\#($0)","createdAt":"2026-10-11T08:02:00.000Z"}"# } ?? ""
+        var extra = ""
+        if !spec.changed.isEmpty {
+            let files = spec.changed.map { #""\#($0)""# }.joined(separator: ",")
+            let reason = spec.reason.map { #""\#($0)""# } ?? "null"
+            extra += #","ownChanges":[{"replyMessageId":"started","turnId":"turn","files":[\#(files)],"fileCount":\#(spec.changed.count),"reason":\#(reason),"source":"provider-file-change"}]"#
+        }
         return #"""
         {"hostId":"\#(laptop)","current":{"target":{"hostId":"\#(laptop)","threadId":"w"},"provider":"codex","modelId":"m","reasoningEffort":"high","status":"\#(spec.status)","connected":true},
          "conversation":{"messages":[{"id":"ask","role":"user","text":"Fix the login test.","createdAt":"2026-10-11T08:00:00.000Z"},{"id":"started","role":"assistant","text":"Started it.","createdAt":"2026-10-11T08:01:00.000Z"}\#(answer)],"earlierAvailable":false,"revision":\#(spec.answer == nil ? 2 : 3)},
          "receiptGroups":[{"replyMessageId":"started","requestId":"aaaaaaaa-0000-4000-8000-000000000001","rows":[{"operationId":"bbbbbbbb-0000-4000-8000-000000000001","target":{"hostId":"\#(laptop)","threadId":"t"},"title":"Fix login test","provider":"claude","action":"start","deliveryState":"accepted","createdAt":"2026-10-11T08:01:00.000Z","updatedAt":"2026-10-11T08:01:00.000Z"}]}],
          "watchedThreads":[{"target":{"hostId":"\#(laptop)","threadId":"t"},"title":"Fix login test","provider":"claude","status":"running","connected":true,"watched":\#(spec.watched),"takenOver":\#(spec.takenOver),"backgroundWorkCount":0}],
          "needsYou":[\#(cards.joined(separator: ","))],"inFlight":1,"inFlightLimit":4,"working":\#(spec.working),"observedAt":"\#(spec.observedAt)",
-         "draftDeliveries":[\#(deliveries)]}
+         "draftDeliveries":[\#(deliveries)]\#(extra)}
         """#
     }
     private func decoded(_ spec: Spec = Spec()) throws -> WatcherPage {
@@ -908,6 +917,7 @@ final class WatcherModelTests: XCTestCase {
             switch item {
             case .message(let message): return message.id
             case .receipts(let group, let attached): return group.requestId + (attached ? "" : " alone")
+            case .ownChange(let change): return "own " + change.replyMessageId
             }
         }
         XCTAssertEqual(order, ["g3 alone", "m1", "r1", "g1", "m2", "g2 alone", "r2"],
@@ -915,5 +925,28 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(WatcherWords.meter(try decoded()), "1 of 4 watched")
         XCTAssertEqual(WatcherWords.room(try decoded()), "3 more can start. A thread waiting on you still counts.")
     }
-}
 
+    // MARK: What Watcher changed itself (mark B)
+
+    func testALineSaysWhenWatcherChangedFilesItselfUnderThatReply() throws {
+        let silent = try decoded(Spec(changed: ["README.md", "docs/guide.md"]))
+        let order = WatcherConversation.items(silent).map(\.id)
+        XCTAssertEqual(order, ["message/ask", "message/started", "receipts/aaaaaaaa-0000-4000-8000-000000000001/started", "own/started"],
+                       "After the reply and what Watcher did for it")
+        guard case .ownChange(let change)? = WatcherConversation.items(silent).last else { return XCTFail("No line") }
+        XCTAssertNil(change.reason, "It gave no reason")
+        XCTAssertEqual(WatcherWords.ownChangeHeadline(change.fileCount), "Watcher changed 2 files itself.")
+        XCTAssertEqual(WatcherWords.ownChangeToggle(2, open: false), "Show the 2 files")
+        XCTAssertEqual(WatcherWords.ownChangeToggle(2, open: true), "Hide the 2 files")
+        XCTAssertEqual(WatcherWords.ownChangeToggle(1, open: false), "Show the file")
+        XCTAssertEqual(WatcherWords.ownChangeHeadline(1), "Watcher changed 1 file itself.")
+        let said = try decoded(Spec(changed: ["README.md"], reason: "A one-word typo is smaller than briefing a thread."))
+        XCTAssertEqual(said.ownChange(for: "started")?.reason, "A one-word typo is smaller than briefing a thread.")
+        // A mark whose reply isn't in the conversation says nothing on its own.
+        let gone = page(Spec(changed: ["README.md"])).replacingOccurrences(of: #""replyMessageId":"started","turnId""#, with: #""replyMessageId":"elsewhere","turnId""#)
+        let orphan = try JSONDecoder().decode(WatcherPage.self, from: Data(gone.utf8))
+        XCTAssertFalse(WatcherConversation.items(orphan).contains { if case .ownChange = $0 { return true } else { return false } })
+        XCTAssertTrue(WatcherConversation.items(try decoded()).allSatisfy { if case .ownChange = $0 { return false } else { return true } },
+                      "A reply in which Watcher changed nothing has no line")
+    }
+}
