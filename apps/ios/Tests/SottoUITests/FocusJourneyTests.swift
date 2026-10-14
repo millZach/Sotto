@@ -206,7 +206,8 @@ import XCTest
     /// Grows the open sheet to its full height, as a person does to read the rest of its list: its grabber dragged to the
     /// top of the screen and held there, so the sheet settles at full height. At half height a drag on the list grows the
     /// sheet instead of scrolling it, and `reveal`'s short, slow drags let it fall back each time: on CI's SE, Full access
-    /// stayed below the screen through forty of them. iOS gives its grabber no identifier, so it is found by its name.
+    /// stayed below the screen through forty of them. iOS gives its grabber no identifier, so it is found by its name, and
+    /// its height read from its value: "Sheet Grabber", "Half screen" and "Expanded" are iOS 26's English words for them.
     private func expandSheet() {
         let grabber = app.buttons["Sheet Grabber"].firstMatch
         XCTAssertTrue(grabber.waitForExistence(timeout: 5), "The sheet shows its grabber")
