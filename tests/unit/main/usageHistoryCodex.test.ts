@@ -197,6 +197,26 @@ describe('Codex history reader', () => {
     expect(sink.sum('input')).toBe(170)
     expect([...sink.rows().values()].filter(row => row.threadId === usageHistoryThreadId('codex', 'pass-bottom')).map(row => row.tokens.input)).toEqual([20])
   })
+  it('counts a copy once when an earlier pass read the subagent it copied two generations down', async () => {
+    const top = codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } })
+    const first = codexTokenCount({ at: t(6), total: { input: 150, output: 15 }, last: { input: 50, output: 5 } })
+    const second = codexTokenCount({ at: t(8), total: { input: 170, output: 17 }, last: { input: 20, output: 2 } })
+    const root = await home()
+    await writeFile(rollout(root, '2026-09-20T10-00-00-deep-top'), jsonl([codexMeta({ id: 'deep-top', originator: 'Codex Desktop', at: t(0) }), top]))
+    await writeFile(rollout(root, '2026-09-20T10-05-00-deep-a'), jsonl([
+      codexMeta({ id: 'deep-a', originator: 'Codex Desktop', at: t(5), parent: 'deep-top', threadSource: 'subagent' }), top, first]))
+    await writeFile(rollout(root, '2026-09-20T10-07-00-deep-b'), jsonl([
+      codexMeta({ id: 'deep-b', originator: 'Codex Desktop', at: t(7), parent: 'deep-a', threadSource: 'subagent' }), top, first, second]))
+    const sink = memorySink()
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(170)
+    // A later subagent names the top thread but begins with the history of the subagent two generations down.
+    await writeFile(rollout(root, '2026-09-20T10-10-00-deep-c'), jsonl([
+      codexMeta({ id: 'deep-c', originator: 'Codex Desktop', at: t(10), parent: 'deep-top', threadSource: 'subagent' }), top, first, second,
+      codexTokenCount({ at: t(11), total: { input: 180, output: 18 }, last: { input: 10, output: 1 } })]))
+    await scan(root, sink)
+    expect(sink.sum('input')).toBe(180)
+  })
   it('keeps every later request of a subagent when another session has a request with the same figures', async () => {
     const top = codexTokenCount({ at: t(2), total: { input: 100, output: 10 }, last: { input: 100, output: 10 } })
     const shared = { total: { input: 180, output: 18 }, last: { input: 30, output: 3 } }

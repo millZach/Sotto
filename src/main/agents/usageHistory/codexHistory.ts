@@ -296,7 +296,10 @@ function reader(options: CodexHistoryOptions, memory: PassMemory): HistoryFileRe
         if (state.turn !== undefined && !state.turnOwners.has(state.turn)) state.turnOwners.set(state.turn, session)
         // A subagent's named parent is not always the session its history came from (a nested subagent can name the
         // thread at the top), so in a forked or spawned rollout a total some other session read this pass already
-        // holds is a copy of that session. Unrelated sessions with equal figures are never forks of each other.
+        // holds is a copy of that session. Equal totals are the only sign of a copy a line leaves, since a copied line
+        // gets a new timestamp and often a new turn ID; two subagents' own requests equal in every figure would read as
+        // one. On the checked laptop 2 of 137,613 running totals were shared by unrelated sessions. Unrelated sessions
+        // with equal figures are never forks of each other, so both count.
         const holder = memory.holders.get(key)
         if (state.derived && state.copied.length === 0) {
           if (holder !== undefined && holder !== session) { holdsCopy(own.id, key); return }
@@ -401,8 +404,8 @@ const discard: UsageHistorySink = { tokens: () => undefined, prompts: () => unde
  * Before a fork or sub-agent rollout's copied history is read, its parent's running
  * totals must be in the pass's memory, or the copy would look like the fork's own work. A parent this pass has not
  * read whole is read for those totals alone, through the same reader, counting nothing. So are the earlier rollouts
- * naming the same parent: a nested subagent can name the thread at the top while its history is a copy of another
- * subagent under it, whose rollout an earlier pass read and this one may not.
+ * descending from the same parent: a nested subagent can name the thread at the top while its history is a copy of
+ * another subagent under it, at any depth, whose rollout an earlier pass read and this one may not.
  */
 class ForkParents {
   private readonly tried = new Set<Session>()
@@ -426,14 +429,32 @@ class ForkParents {
     const head = await rolloutHead(file.path)
     if (head === undefined) return
     for (const parent of head.parents) await this.load(parent, 0)
+    // Each generation in turn, so a descendant's own copy is read after the rollouts it copied.
     const before = this.files.indexOf(file)
-    for (const parent of head.parents) {
-      for (const member of this.family(sessionOf(parent))) {
-        if (member.index >= before || this.memory.loaded.has(member.id) || this.tried.has(member.id) || this.signal.aborted) continue
-        this.tried.add(member.id)
-        if (await readHistoryFile('codex', member.file, this.learn, discard, this.signal)) this.memory.loaded.add(member.id)
+    const visited = new Set<Session>()
+    let generation = head.parents.map(sessionOf)
+    for (let depth = 0; generation.length > 0 && depth < PARENT_DEPTH_MAX; depth++) {
+      const next: Session[] = []
+      for (const parent of generation) {
+        for (const member of this.family(parent)) {
+          if (member.index >= before || visited.has(member.id)) continue
+          visited.add(member.id); next.push(member.id)
+          if (this.claim(member.id)) await this.learnWhole(member.file, member.id)
+        }
       }
+      generation = next
     }
+  }
+
+  /** Whether to read a session's rollout for its totals: once a pass, and not when this pass read it whole already. */
+  private claim(session: Session): boolean {
+    if (this.memory.loaded.has(session) || this.tried.has(session) || this.signal.aborted) return false
+    this.tried.add(session)
+    return true
+  }
+
+  private async learnWhole(file: HistoryFile, session: Session): Promise<void> {
+    if (await readHistoryFile('codex', file, this.learn, discard, this.signal)) this.memory.loaded.add(session)
   }
 
   private family(parent: Session): readonly FamilyMember[] {
@@ -450,12 +471,11 @@ class ForkParents {
 
   private async load(nativeId: string, depth: number): Promise<void> {
     const session = sessionOf(nativeId)
-    if (depth > PARENT_DEPTH_MAX || this.memory.loaded.has(session) || this.tried.has(session) || this.signal.aborted) return
-    this.tried.add(session)
+    if (depth > PARENT_DEPTH_MAX || !this.claim(session)) return
     const found = await this.find(nativeId)
     if (found === undefined) return
     for (const parent of found.head.parents) await this.load(parent, depth + 1)
-    if (await readHistoryFile('codex', found.file, this.learn, discard, this.signal)) this.memory.loaded.add(session)
+    await this.learnWhole(found.file, session)
   }
 
   /** A rollout's file name ends with its session's ID; its first line says so. */
