@@ -203,6 +203,26 @@ import XCTest
         add(diagnostic)
         XCTAssertTrue(reached, "The control must remain reachable and meet the requested visibility by scrolling")
     }
+    /// Grows the open sheet to its full height, as a person does to read the rest of its list: its grabber dragged to the
+    /// top of the screen and held there, so the sheet settles at full height. At half height a drag on the list grows the
+    /// sheet instead of scrolling it, and `reveal`'s short, slow drags let it fall back each time: on CI's SE, Full access
+    /// stayed below the screen through forty of them. iOS gives its grabber no identifier, so it is found by its name.
+    private func expandSheet() {
+        let grabber = app.buttons["Sheet Grabber"].firstMatch
+        XCTAssertTrue(grabber.waitForExistence(timeout: 5), "The sheet shows its grabber")
+        let window = app.windows.firstMatch
+        let origin = window.coordinate(withNormalizedOffset: .zero)
+        for _ in 0..<2 where grabber.value as? String != "Expanded" {
+            let top = origin.withOffset(CGVector(dx: grabber.frame.midX - window.frame.minX, dy: 40))
+            grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .press(forDuration: 0.1, thenDragTo: top, withVelocity: .slow, thenHoldForDuration: 0.3)
+            let expanded = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Expanded"), object: grabber)
+            if XCTWaiter.wait(for: [expanded], timeout: 10) == .completed { break }
+        }
+        let value = grabber.value as? String ?? "no value"
+        if value != "Expanded" { explain("sheet-not-expanded", "grabber \(grabber.frame), value \(value)") }
+        XCTAssertEqual(value, "Expanded", "Dragging the grabber to the top grows the sheet to its full height")
+    }
     private func waitForRenderedOrientation(landscape: Bool) {
         var consecutiveMatches = 0
         var samples: [String] = []
@@ -1033,6 +1053,8 @@ import XCTest
         permissions.tap()
         XCTAssertTrue(byID("watcher-permissions-asks-only").waitForExistence(timeout: 5), "The list says why")
         XCTAssertEqual(byID("watcher-permissions-asks-only").label, "This iPhone can’t answer on Laptop, so it can only keep Watcher asking first.")
+        // The list runs past half the SE's screen, so the sheet is grown to read every mode in it.
+        expandSheet()
         for mode in ["auto-accept-edits", "auto", "full-access"] {
             let option = app.buttons["watcher-permission-\(mode)"]
             reveal(option)
@@ -1237,6 +1259,8 @@ import XCTest
         let pick = app.buttons["watch-pick-\(laptop)/shortcuts"]
         XCTAssertTrue(pick.waitForExistence(timeout: 5), "Watch a thread lists the threads Watcher could watch")
         XCTAssertFalse(app.buttons["watch-pick-\(laptop)/login"].exists, "Not one it watches already")
+        // Add keyboard shortcuts comes after the release, iPhone and wiring threads, at the half-height sheet's foot on the SE.
+        expandSheet()
         reveal(pick)
         XCTAssertEqual(pick.label, "Watch Add keyboard shortcuts")
         capture("watcher-watch-a-thread-dark")
