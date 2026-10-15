@@ -145,7 +145,7 @@ describe("requires SOTTO_DEVIN_LIVE=1 on Windows", () => {
       const pendingId = (await thread()).requests[0]!.id
       const before = JSON.parse(await readFile(join(data, 'devin-threads.json'), 'utf8'))[id].devinSessionId
       // Select only the ACP child launched with this test's unique owned profile; never print command lines.
-      const profile = join(data, 'devin', 'approval-policy-v1.json').replaceAll("'", "''")
+      const profile = devinPolicyPath(data, 'nothing').replaceAll("'", "''")
       const query = "@(Get-CimInstance Win32_Process -Filter \"Name = 'devin.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains('" + profile + "') -and $_.CommandLine -match '(?:^|\\s)acp(?:\\s|$)' } | Select-Object -ExpandProperty ProcessId) | ConvertTo-Json -Compress"
       const raw = execFileSync('powershell.exe', ['-NoProfile', '-EncodedCommand', Buffer.from(query, 'utf16le').toString('base64')], { windowsHide: true, encoding: 'utf8', timeout: 15_000, stdio: ['ignore', 'pipe', 'ignore'] })
       const value: unknown = JSON.parse(raw)

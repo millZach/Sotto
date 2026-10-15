@@ -49,3 +49,28 @@ Acceptance still comes from native evidence and an uncertain prompt is still nev
 This makes delivery evidence weaker in one respect, which is accepted. A prompt taken on the stream is reported accepted before any replay has shown its dispatch identity. The replay still confirms it afterwards: on one read of the adapter's own once the turn ends however it ends, on any other read of the thread before that, or at the latest just before the next send. The coordinator's read after an accepted send is not one of them, since the workspace answers it from the echo it already holds (#765). A replay that does not match the saved digest then leaves that dispatch uncertain, says so as a provider notice, and refuses the next send; it does not turn the earlier send back into an uncertain one. While a turn runs, the poll reads it at the busy pace only until the turn shows it was taken; after that the thread's own stream carries it and the poll reads it at the idle pace.
 
 The replay's size limit (ADR-0016) is met only where a replay is read. A send to a held thread with every dispatch confirmed reads none, so a thread whose history has grown past the limit is found at the next replay read instead. A poll that fails on it says so as a provider notice; the read that confirms the next turn fails the same way, which leaves that dispatch unconfirmed, so the send after it reads the replay first and is refused. The limit can therefore stop a thread a prompt or two later than it did; nothing is resent either way.
+
+## Amendment: Devin's telemetry export is pinned off, and a newer Devin says so (October 14, 2026, #1045)
+
+Devin CLI 3000.11.1 added OpenTelemetry export, and `_cognition.ai/config/read` began returning a top-level `otel` block. The readback refuses any block it does not know, so updating Devin stopped every Devin thread. The refusal also reached the provider tile only as "Devin sent an invalid response.", because the process treated a readback that throws as a garbled reply. Nothing was lost, but nothing could run.
+
+Sotto's owned profiles now pin export off with `"otel": { "enabled": false }`. An owned profile is never rewritten, since a changed one is refused, so this is a new profile version: `approval-policy-v2.json`, with `-edits` and `-everything` beside it. The asking profile keeps the unsuffixed name of its version, which amends ADR-0022's note that it keeps the original file name. Version 1 files are left where they are, unused. The pin is explicit rather than inferred from no endpoint being set. Before this, export stayed off only because nothing named a destination, and a destination added later would have started it.
+
+What the pin does was checked on Windows on October 14. Neither run sent `session/prompt`, and no Devin turn ran.
+
+- **3000.11.3 reads the block from the `--config` profile.** With an endpoint pointing at a local listener and an empty session open, it posted to `/v1/logs` and `/v1/metrics`. With the same endpoint and `enabled: false`, it posted nothing.
+- **The pinned 3000.10.31 accepts the key.** It initialises, its readback passes, and `plugins list` and `mcp list` answer as before.
+- **Both CLIs connect through the adapter with the new profile.** The run went through the integration lists, `initialize`, `session/new` and the readback, then `session/delete`. 3000.11.3 connects as a newer, unverified version, as the tile already says for one.
+
+The readback accepts four answers and refuses everything else, any endpoint, header or resource attribute included:
+
+- `otel` absent, because a CLI older than the block may drop it.
+- The block exactly as the profile writes it.
+- The pinned block filled in with defaults, which 3000.11.3 usually reports.
+- The CLI's own default, `enabled: true` with no destination and every other field at its default.
+
+The last two answers were not steady. 3000.11.3 sometimes read back its own default while the profile pinned export off, and 3000.10.31 sometimes left the block out and sometimes echoed it. Both behaviours came in runs a few minutes apart, and nothing Sotto controls explained them. None of the four answers can export. Export needs an endpoint in the block. `devinEnvironment` passes Devin no `OTEL_*` variable, and Devin's own documentation says a variable cannot start export without one. Refusing the default block would have made Devin threads stop at random, which is the failure this amendment fixes.
+
+A refusal is now worded for the user. It reaches the provider tile, or the send it stops, as it is (`DevinRefusal`), and nothing has been sent when it does. A block that would export says Devin is set to export telemetry, which Sotto's profile turns off. Any other top-level block the readback has never seen says the Devin version is newer than the one Sotto checked, and that the threads are kept. A block Sotto knows that reads back wrong keeps the old refusal.
+
+This changes nothing else in this decision. `DEVIN_CLI_VERSION` stays at 3000.10.31. Sotto still passes Devin no tool servers; that is E12 (#1040), which this unblocks.

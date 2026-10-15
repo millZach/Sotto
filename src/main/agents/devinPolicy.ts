@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { withCliPath } from './cliLookup'
+import { DEVIN_CLI_VERSION, DevinRefusal } from './devinRpc'
 
 // This is Sotto's approval policy, not Devin's similarly named Ask mode. The profile is what decides:
 // the pinned compatibility experiment shows an ask standing whatever conversation mode Devin is in, with
@@ -27,12 +28,31 @@ const permissionsFor = (allows: DevinAllowance): { allow: string[]; deny: string
   ask: allows === 'everything' ? [] : allows === 'edits' ? [...ACTIONS] : [...EDITS, ...ACTIONS],
 })
 
+// The profile's own version, in its file name. Version 2 adds `otel`: an owned profile is never rewritten (a changed
+// one is refused), so changing what it says means a new file. Version 1 files are left where they are, unused.
+const PROFILE_VERSION = 2
+// `version` below is Devin's own config schema version, not the profile's.
 const policyFor = (allows: DevinAllowance): Record<string, unknown> => ({
   version: 1,
   permissions: permissionsFor(allows),
   read_config_from: { agents_standard: false, cursor: false, windsurf: false, claude: false, copilot: false, opencode: false, zed: false },
   hooks: {}, mcpServers: {}, auto_update: false, subagents_enabled: false,
+  // OpenTelemetry export, from Devin CLI 3000.11.1. Off, so the promise does not rest on no endpoint being set.
+  // The pinned 3000.10.31 accepts the key and drops it from its readback.
+  otel: { enabled: false },
 })
+// 3000.11.3 reads `otel` back with every field filled in with its default. It reports the pinned `enabled: false`,
+// but has also been seen reporting its own default, `enabled: true`, while the profile pins it off. Both are accepted,
+// as is the profile's own block exactly as written, because none of them can export: export needs an endpoint in this
+// block, Sotto passes Devin no OTEL_* variable (devinEnvironment), and Devin's documentation says a variable cannot
+// start export without one. Anything else, any endpoint, header or attribute included, is refused.
+const otelDefaults = {
+  endpoint: null, logs_endpoint: null, metrics_endpoint: null, headers: {}, logs_headers: {}, metrics_headers: {},
+  resource_attributes: {}, timeout_ms: null, log_export_interval_ms: null, metric_export_interval_ms: null,
+  disable_user_prompt_logging: false, disable_tool_logging: false,
+}
+const otelWithoutExport = [{ enabled: false }, { enabled: false, ...otelDefaults }, { enabled: true, ...otelDefaults }]
+const otelExportsNothing = (value: unknown): boolean => otelWithoutExport.some(shape => isDeepStrictEqual(value, shape))
 // Native config/read expands the user profile with defaults. Only these known
 // fields may accompany the exact owned settings; routing and execution defaults
 // must remain unchanged. On-disk profiles still accept no extra fields at all.
@@ -47,21 +67,29 @@ const presentationFields = new Set(['theme_mode', 'theme_auto_detect', 'pty_for_
   'show_path', 'include_gitignored_files', 'respect_gitignore', 'attribution', 'unicode_mode', 'legacy_terminal', 'disable_osc',
   'skip_workspace_trust', 'notify', 'mouse_capture', 'show_hints'])
 
-function normalizedProfileMatches(config: Record<string, unknown>, policy: Record<string, unknown>): boolean {
-  if (!Object.entries(policy).every(([key, value]) => isDeepStrictEqual(config[key], value))) return false
+/** How a readback compares with the owned profile. `newer` is a top-level block Sotto has never checked. */
+type Readback = 'matches' | 'differs' | 'telemetry' | 'newer'
+
+function compareNormalizedProfile(config: Record<string, unknown>, policy: Record<string, unknown>): Readback {
+  if (!Object.entries(policy).every(([key, value]) => key === 'otel' || isDeepStrictEqual(config[key], value))) return 'differs'
+  // A CLI older than the block drops it; a newer one must read it back as exporting nothing.
+  if (Object.hasOwn(config, 'otel') && !otelExportsNothing(config.otel)) return 'telemetry'
+  let unknown = false
   for (const [key, value] of Object.entries(config)) {
     if (Object.hasOwn(policy, key)) continue
-    if (Object.hasOwn(normalizedRoutes, key)) { if (!isDeepStrictEqual(value, normalizedRoutes[key])) return false }
+    if (Object.hasOwn(normalizedRoutes, key)) { if (!isDeepStrictEqual(value, normalizedRoutes[key])) return 'differs' }
     else if (key === 'agent') {
       const agent = object(value)
       if (!agent || !isDeepStrictEqual(Object.keys(agent).sort(), ['model', 'preferred_family_models', 'show_history_on_continue', 'thinking', 'model_mixture', 'compaction_threshold_tokens', 'codex_tools'].sort())
         || agent.model !== null || !isDeepStrictEqual(agent.preferred_family_models, {}) || agent.model_mixture !== null
-        || agent.compaction_threshold_tokens !== null || agent.codex_tools !== false || typeof agent.show_history_on_continue !== 'boolean') return false
+        || agent.compaction_threshold_tokens !== null || agent.codex_tools !== false || typeof agent.show_history_on_continue !== 'boolean') return 'differs'
       const thinking = object(agent.thinking)
-      if (!thinking || Object.keys(thinking).length !== 1 || typeof thinking.mode !== 'string') return false
-    } else if (!presentationFields.has(key) || (value !== null && !['string', 'boolean'].includes(typeof value))) return false
+      if (!thinking || Object.keys(thinking).length !== 1 || typeof thinking.mode !== 'string') return 'differs'
+    } else if (presentationFields.has(key)) { if (value !== null && !['string', 'boolean'].includes(typeof value)) return 'differs' }
+    else unknown = true
   }
-  return true
+  // Judged last, so a block Sotto knows that reads back wrong is reported as that rather than as a newer version.
+  return unknown ? 'newer' : 'matches'
 }
 
 const preparing = new Map<string, Promise<void>>()
@@ -105,7 +133,8 @@ export async function assertDevinWorkingDirectory(cwd?: string, configDirectory 
 
 /** The file an allowance is written to. One file each, so a thread's file says what it was allowed. */
 export function devinPolicyPath(userDataDirectory: string, allows: DevinAllowance): string {
-  return resolve(userDataDirectory, 'devin', allows === 'nothing' ? 'approval-policy-v1.json' : `approval-policy-v1-${allows}.json`)
+  const name = `approval-policy-v${PROFILE_VERSION}`
+  return resolve(userDataDirectory, 'devin', allows === 'nothing' ? `${name}.json` : `${name}-${allows}.json`)
 }
 
 /**
@@ -158,10 +187,13 @@ function object(value: unknown): Record<string, unknown> | undefined {
 export function verifyDevinPolicy(result: unknown, profile: DevinProfile): void {
   const response = object(result)
   const config = object(response?.config)
-  const matches = typeof response?.configPath === 'string' && isAbsolute(response.configPath)
-    && resolve(response.configPath) === resolve(profile.path)
-    && config && normalizedProfileMatches(config, policyFor(profile.allows))
-  if (!matches) throw new Error('Devin did not confirm the Sotto approval profile. Your thread is kept. Reconnect with the supported Devin version.')
+  const readback = typeof response?.configPath === 'string' && isAbsolute(response.configPath)
+    && resolve(response.configPath) === resolve(profile.path) && config
+    ? compareNormalizedProfile(config, policyFor(profile.allows)) : 'differs'
+  // Refusals, not garbled replies: DevinRpc passes them on as they are, so these words reach the provider's tile.
+  if (readback === 'telemetry') throw new DevinRefusal('Devin is set to export telemetry, which Sotto’s profile turns off. Nothing was sent, and your threads are kept. Remove the otel settings Devin reads, then reconnect.')
+  if (readback === 'newer') throw new DevinRefusal(`This Devin version is newer than the one Sotto checked, and it has settings Sotto has not checked. Nothing was sent, and your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} until Sotto checks this version.`)
+  if (readback !== 'matches') throw new DevinRefusal('Devin did not confirm the Sotto approval profile. Your thread is kept. Reconnect with the supported Devin version.')
 }
 
 /** Version-pinned CLI output, deliberately fail-closed instead of parsing names. */

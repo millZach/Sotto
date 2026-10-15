@@ -129,7 +129,15 @@ createInterface({ input: process.stdin }).on('line', line => {
   const configPath = process.argv[process.argv.indexOf('--config') + 1]
   let config = {}
   try { config = JSON.parse(readFileSync(configPath, 'utf8')) } catch { violate('Missing owned config') }
-  result(frame.id, { config, configPath })
+  // 3000.10.31 accepts the profile's `otel` block and leaves it out of the readback. A script can answer as 3000.11.3
+  // does instead: `otel: 'profile'` reads back the profile's block filled in with defaults, `otel: 'default'` the CLI's
+  // own default block whatever the profile says, and an object exactly that. `newBlock` adds a block Sotto never checked.
+  const { otel, ...older } = config
+  const otelDefaults = { endpoint: null, logs_endpoint: null, metrics_endpoint: null, headers: {}, logs_headers: {}, metrics_headers: {},
+   resource_attributes: {}, timeout_ms: null, log_export_interval_ms: null, metric_export_interval_ms: null,
+   disable_user_prompt_logging: false, disable_tool_logging: false }
+  const readOtel = script.otel === 'profile' ? { enabled: true, ...otelDefaults, ...otel } : script.otel === 'default' ? { enabled: true, ...otelDefaults } : script.otel
+  result(frame.id, { config: { ...older, ...(readOtel ? { otel: readOtel } : {}), ...(script.newBlock ? { future_block: { enabled: true } } : {}) }, configPath })
  } else if (frame.method === 'session/new') {
   if (!p.cwd || !Array.isArray(p.mcpServers) || p.mcpServers.length) violate('Invalid session setup')
   const sessionId = randomUUID(); const session = { cwd: p.cwd, model: 'fixture-model', messages: [] }
