@@ -877,3 +877,24 @@ it('gives no work-settled news for a paired host that does not report its work c
   expect(kinds(f.delivered)).toEqual(['turn-finished'])
   expect(watcherNewsText(f.delivered[0]!)).not.toContain('work-settled')
 })
+
+it('names the operation a finished turn answers on its finish and work-settled news, as an identity only', async () => {
+  const operationId = randomUUID()
+  const answers = vi.fn((target: { threadId: string }, thread: AgentThread) => target.threadId === thread.id ? operationId : undefined)
+  const f = fixture(true, undefined, { answers })
+  f.thread.backgroundWork = [backgroundTask(1)]; finish(f.thread); f.wakes.observe()
+  await f.advance(2_000)
+  f.thread.backgroundWork = []; f.wakes.observe(); await f.advance(2_000)
+  const events = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'turn-finished' || event.kind === 'work-settled')
+  expect(events.map(event => [event.kind, event.operationId])).toEqual([['turn-finished', operationId], ['work-settled', operationId]])
+  expect(watcherNewsText(f.delivered[0]!)).toContain(`This turn answers operation ${operationId}; read_operation gives its outcome and reply.`)
+  expect(answers).toHaveBeenCalledWith(centerTarget, expect.objectContaining({ id: f.thread.id }))
+})
+
+it('names no operation for a turn no brief of Watcher\'s began', async () => {
+  const f = fixture(true, undefined, { answers: () => undefined })
+  finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  const finished = f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!
+  expect(finished.operationId).toBeUndefined()
+  expect(watcherNewsText(f.delivered[0]!)).not.toContain('answers operation')
+})

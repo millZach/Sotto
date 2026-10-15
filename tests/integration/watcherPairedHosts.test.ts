@@ -26,6 +26,7 @@ import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 import { codexFixture } from '../fixtures/codexFixture'
 import { heldOperation } from '../fixtures/deferred'
 import type { CodexAppServerHost } from '../../src/main/agents/codex'
+import { markTurnActivity } from '../../src/main/agents/turnActivity'
 
 const remote = useSocketHostFixture()
 const cleanups: (() => Promise<void>)[] = []
@@ -903,4 +904,44 @@ it('rechecks the owning stopped request just before a prepared paired provider w
     expect(await send).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
     expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(1)
   } finally { gate.release(); await send }
+})
+
+it('reads a paired worker\'s outcome and reply through exact host reads, and an older host\'s as unknown', async () => {
+  const f = await master()
+  expect(f.router.watcherHosts().hosts()).toEqual([expect.objectContaining({ hostId: f.pairing.hostId, outcomes: true })])
+  const input = f.start(), first = await f.call('start_thread', input)
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
+  const reads = vi.spyOn(f.socket, 'watcherRead')
+  const operationId = first.receipt.operationId
+  const read = async (id = operationId) => {
+    const result = await f.call('read_operation', { operationId: id })
+    if (result.status !== 'ok') throw new Error(`read-refused: ${result.code}`)
+    return result
+  }
+  expect(await read()).toMatchObject({ outcome: 'working', reference: { target: first.target } })
+  expect(reads.mock.calls.some(([request]) => request.call?.name === 'read_operation' && request.outcomes === true)).toBe(true)
+  // The owning host's provider ends the turn its brief began, naming it by that brief's message.
+  const native = (await remote.native.snapshot()).threads.find(item => item.title === input.title)!
+  const brief = native.messages.find(message => message.role === 'user')!
+  remote.native.event({ type: 'ready', threadId: native.id, text: 'Synthetic remote reply',
+    activities: markTurnActivity([], { provider: 'codex', turnId: brief.id, status: 'completed' }) })
+  await f.socket.command({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(async () => expect(await read()).toMatchObject({ outcome: 'answered', reference: { target: first.target, turnMessageId: brief.id },
+    reply: { from: 'worker', text: 'Synthetic remote reply' } }))
+  // The desktop keeps the host's outcome as identities only.
+  expect(f.control.watcherRecord().operations.find(item => item.id === operationId)).toMatchObject({ outcome: 'answered', turnMessageId: brief.id })
+  expect(JSON.stringify(f.control.watcherRecord())).not.toContain('Synthetic remote reply')
+  // A host that does not list watcher-outcomes is not asked for them, and its accepted brief reads as unknown.
+  vi.spyOn(f.socket, 'supportsWatcherOutcomes', 'get').mockReturnValue(false)
+  const second = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic second brief', delivery: 'now' })
+  if (second.status !== 'ok') throw new Error(`send-refused: ${second.code}`)
+  await vi.waitFor(async () => expect((await read(second.receipt.operationId)).receipt.deliveryState).toBe('accepted'))
+  reads.mockClear()
+  const older = await read(second.receipt.operationId)
+  expect(older).toMatchObject({ outcome: 'unknown', outcomeNote: expect.stringMatching(/does not report outcomes/u) })
+  expect(older.reply).toBeUndefined()
+  expect(reads.mock.calls.filter(([request]) => request.call?.name === 'read_operation').every(([request]) => request.outcomes === undefined)).toBe(true)
+  // Projections never carry outcomes, so a desktop from before them still reads the host.
+  const projection = await f.socket.watcherRead({ master: f.watcher.state().current! }) as WatcherHostProjection
+  expect(projection.operations.every(item => item.outcome === undefined && item.replyMessageId === undefined)).toBe(true)
 })

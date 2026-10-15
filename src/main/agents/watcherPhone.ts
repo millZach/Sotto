@@ -41,7 +41,8 @@ export class WatcherPhoneService {
       group.rows.push({ operationId: operation.id, target: operation.target, title: worker?.title ?? 'Unavailable thread',
         provider: worker?.providerId ?? null, action: operation.action, deliveryState: operation.deliveryState,
         createdAt: operation.createdAt, updatedAt: operation.updatedAt,
-        ...(operation.delivery ? { delivery: operation.delivery } : {}), ...(operation.refusalCode ? { refusalCode: operation.refusalCode } : {}) })
+        ...(operation.delivery ? { delivery: operation.delivery } : {}), ...(operation.refusalCode ? { refusalCode: operation.refusalCode } : {}),
+        ...(operation.outcome ? { outcome: operation.outcome } : {}) })
     }
     // Main's own mark, as the room and the Threads page read it: a standing watch, or taking part in an active request.
     // A phone from before standing watches says a send there takes the thread over, which holds only for a thread watched

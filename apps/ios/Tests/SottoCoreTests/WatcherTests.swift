@@ -23,6 +23,13 @@ final class WatcherTests: XCTestCase {
         XCTAssertTrue(accepts.contains(.string(WatcherWire.manageFeature)))
         guard case .ok? = try decode(Receipt.self, #"{"status":"completed","watcherManage":{"status":"ok"}}"#).watcherManage else { return XCTFail("Missing management outcome") }
     }
+    func testReceiptOutcomeStaysOptionalForOlderComputers() throws {
+        let old = try decode(WatcherPhoneState.self, state)
+        XCTAssertNil(old.receiptGroups.first?.rows.first?.outcome)
+        let reported = state.replacingOccurrences(of: #""deliveryState":"accepted","#, with: #""deliveryState":"accepted","outcome":"answered","#)
+        XCTAssertNotEqual(reported, state)
+        XCTAssertEqual(try decode(WatcherPhoneState.self, reported).receiptGroups.first?.rows.first?.outcome, "answered")
+    }
     private let host = "00000000-0000-4000-8000-000000000001"
     private let state = #"{"hostId":"00000000-0000-4000-8000-000000000001","current":{"target":{"hostId":"00000000-0000-4000-8000-000000000001","threadId":"watcher"},"provider":"codex","modelId":"model","reasoningEffort":null,"status":"running","connected":true},"conversation":{"messages":[{"id":"reply","role":"assistant","text":"Started a worker.","createdAt":"2026-10-11T10:00:00Z"}],"revision":4,"earlierAvailable":false},"receiptGroups":[{"requestId":"request","replyMessageId":"reply","rows":[{"operationId":"operation","target":{"hostId":"00000000-0000-4000-8000-000000000002","threadId":"worker"},"title":"Worker","provider":"claude","action":"start","deliveryState":"accepted","createdAt":"2026-10-11T10:00:00Z","updatedAt":"2026-10-11T10:00:01Z"}]}],"watchedThreads":[{"target":{"hostId":"00000000-0000-4000-8000-000000000002","threadId":"worker"},"title":"Worker","provider":"claude","status":"idle","connected":true,"watched":true,"takenOver":false,"backgroundWorkCount":0}],"needsYou":[{"target":{"hostId":"00000000-0000-4000-8000-000000000002","threadId":"worker"},"title":"Worker","provider":"claude","request":{"id":"permission","kind":"permission","text":"Run tests?","options":[],"permissionChoices":[{"id":"once","label":"Allow once","kind":"allow-once"}]},"connected":true,"mayAnswer":false}],"inFlight":1,"inFlightLimit":4,"working":true,"recoveryNotice":null,"observedAt":"2026-10-11T10:00:00Z","draftDeliveries":[{"draftId":"draft","status":"accepted"}],"futureDisplayField":true}"#
     private func decode<T: Decodable>(_ type: T.Type, _ text: String) throws -> T { try JSONDecoder().decode(type, from: Data(text.utf8)) }
