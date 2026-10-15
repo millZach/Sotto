@@ -12,6 +12,11 @@ sidebar foot, a card in the corner) they chose variant c, the corner card.
 On Owl it takes over from the client update card (ADR-0042) and the host update pill (ADR-0040). Both stay as they are
 on stable, and the updaters behind them are unchanged.
 
+Amended October 14, 2026, by the owner's choice: a host updates to the version this computer is downloading, before
+Sotto restarts (decision 6), and the card's list became the press's steps. Of three layouts in
+`docs/prototypes/update-all-hosts-together-prototype.html` (stacked rows, one block per machine, steps) they chose
+variant c, "Steps".
+
 ## Context
 
 Three things in Sotto go out of date, and each had its own place: the update control for Sotto itself (Windows only),
@@ -26,9 +31,22 @@ it does not touch the app or its servers.
 **1. One card in the corner.** With the `update-all` Owl feature on, a card appears in the window's bottom-right
 corner, where the client update card was, whenever any of these is true: Sotto has a release to download, is
 downloading one or has one ready to install; a client on this computer or on a connected host is behind; or a host
-runs an older Sotto than this computer asks for. It lists them by machine (Sotto, this computer, then each host) with
-what is installed and what a press installs. It pops up by itself when something new appears. Its chevron folds it
+runs an older Sotto than this computer asks for. It pops up by itself when something new appears. Its chevron folds it
 into a pill that says where things stand, and Not now hides it until something new is published or Sotto restarts.
+
+October 14, 2026 amendment: the list is the press's steps, in the order it runs them, as an ordered list with a thin
+rail between the marks that turns green once a step is done. **Download Sotto Owl** (its detail begins "This computer
+·"), each client (**Update Codex**, with its own installed and published versions and "This computer ·" or the host's
+name before its detail), each host's own update (**Update forge's host**) after that host's clients, and last
+**Restart Sotto**, which reads "Last. Sotto asks before it restarts." until the restart is ready and then says what it
+installs and what happens to the threads on this computer that it stops. The head carries Sotto's own versions once
+("installed → published"), or how far a press has come ("1 of 5 done", the restart counted), while it runs. Each
+sentence is said once: what a step says is not repeated below the list, and a note stays below only when no step says
+it ("Threads keep working while clients update.", or that a host still waiting for its threads is offered again if
+Sotto restarts first). Try again, Stop N threads and update, Cancel update and Copy commands stay inside their step. A
+host's step shows its versions only when they are not Sotto's pair in the head. Earlier the list was grouped by machine
+with the versions in a right-hand column, which squeezed the sentence beside a long Owl version into a column a few
+letters wide.
 
 **2. Update all, one press.** It starts Sotto's download, puts every client Sotto can install into its machine's update
 line (on this computer and on each connected host that offers client updates), and updates each host that needs it.
