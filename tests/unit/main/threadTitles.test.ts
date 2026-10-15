@@ -30,8 +30,11 @@ async function coordinator(options: {
   logFailure?: (code: string, detail: string) => void
   /** Gives first-message titles under these settings; absent, no thread is given one. */
   firstMessageTitles?: AppSettings
+  /** Sets what the providers already hold before Sotto first sees them, as a real provider keeps its sessions across a restart. */
+  beforeConnect?: (adapters: Awaited<ReturnType<typeof workspaceFixture>>['adapters']) => void
 } = {}) {
   const workspace = await workspaceFixture(options.root)
+  options.beforeConnect?.(workspace.adapters)
   if (options.root === undefined) removals.push(workspace.remove)
   const credentials = await testCredentials(workspace.root, { mode: 'unavailable' })
 
@@ -352,9 +355,12 @@ describe('naming a thread from its first message while the first turn runs', () 
     await vi.waitFor(() => expect(before.titles).toHaveBeenCalledOnce())
 
     await savedForReopening(before)
-    const reopened = await coordinator({ root: before.root, firstMessageTitles: DEFAULT_SETTINGS, writeThreadTitle: async () => null })
-    reply(reopened.adapters.codex)
+    // The provider still holds the exchange when Sotto starts again; the fake forgets its sessions, so it is told.
+    const reopened = await coordinator({ root: before.root, firstMessageTitles: DEFAULT_SETTINGS, writeThreadTitle: async () => null,
+      beforeConnect: adapters => reply(adapters.codex) })
     await reopened.control.command({ type: 'refresh' })
+    // A name offered for the thread lands before the check, so a wrong one cannot arrive just after it.
+    await reopened.control.closed()
     expect(titled(reopened.control, threadId)).toMatchObject({ title: 'Workshop' })
     expect(titled(reopened.control, threadId).titledFromFirstMessage).toBeUndefined()
   })
