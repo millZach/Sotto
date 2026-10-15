@@ -1,5 +1,5 @@
 import React from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentClientHost, type AgentState, type ProviderClientUpdate } from '../../../src/shared/agents'
 import type { UpdateStatus } from '../../../src/shared/contracts'
@@ -82,9 +82,10 @@ describe('the Update all card', () => {
     const command = provideAgents(agentState({ local: [behind()], forge: [behind({ id: 'codex', installed: '0.51.0', published: '0.52.1' })] }))
     const hosts = hostsBridge({ hosts: [forge], localHostEnabled: true, localHostRunning: true, updates: [hostUpdate()] })
     const view = render(<UpdateAllCard hosts={hosts.asBridge} />)
-    await screen.findByText('forge')
+    await screen.findByRole('listitem', { name: 'Update forge’s host, to do' })
     expect(screen.getByRole('region', { name: 'Updates' })).toBeTruthy()
-    expect(screen.getByText('Sotto, 2 clients and forge')).toBeTruthy()
+    // Sotto's versions are said once, in the head; the button says what one press updates.
+    expect(screen.getByText('0.1.37-owl.20261012.1 → 0.1.37-owl.20261013.1')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Update all: Sotto, 2 clients and forge' }))
     await waitFor(() => expect(actions.downloadUpdate).toHaveBeenCalledTimes(1))
     expect(command).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['claude'] })
@@ -115,7 +116,7 @@ describe('the Update all card', () => {
     provideAgents(agentState({ working: true }))
     render(<UpdateAllCard hosts={hostsBridge({ hosts: [], localHostEnabled: true, localHostRunning: true }).asBridge} />)
     expect(screen.getByText('Restart to finish')).toBeTruthy()
-    expect(screen.getByText('1 thread on this computer is working. It stops for the restart and carries on after it.')).toBeTruthy()
+    expect(screen.getByRole('listitem', { name: 'Restart Sotto, ready' })).toHaveTextContent('Installs 0.1.37-owl.20261013.1. 1 working thread here stops and resumes after.')
     fireEvent.click(screen.getByRole('button', { name: 'Restart Sotto now and install 0.1.37-owl.20261013.1' }))
     await waitFor(() => expect(actions.installUpdate).toHaveBeenCalledTimes(1))
   })
@@ -151,7 +152,7 @@ describe('the Update all card', () => {
     const command = provideAgents({ ...state, clientUpdates: undefined, connections: [{ hostId: LOCAL, name: 'This computer', kind: 'local', connected: true }],
       host: { ...state.host, clientHosts: [{ hostId: LOCAL, connected: true, models: [], capabilities: caps, clientUpdates: [behind()] }] } })
     render(<UpdateAllCard hosts={hostsBridge({ hosts: [], localHostEnabled: true, localHostRunning: true }).asBridge} />)
-    expect(screen.getByRole('region', { name: 'This computer' })).toHaveTextContent('Claude Code')
+    expect(screen.getByRole('listitem', { name: 'Update Claude Code, to do' })).toHaveTextContent('This computer')
     fireEvent.click(screen.getByRole('button', { name: 'Update all: 1 client' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['claude'], hostId: LOCAL }))
   })
@@ -173,7 +174,7 @@ describe('the Update all card', () => {
     provideAgents(agentState())
     render(<UpdateAllCard hosts={hostsBridge({ hosts: [], localHostEnabled: true, localHostRunning: true }).asBridge} />)
     fireEvent.click(screen.getByRole('button', { name: /^Update all/u }))
-    await screen.findByText('The download did not finish. Nothing was installed. Try again.')
+    await screen.findByText('This computer · The download did not finish. Nothing was installed. Try again.')
     act(() => requestUpdateAll())
     await waitFor(() => expect(actions.downloadUpdate).toHaveBeenCalledTimes(2))
   })
@@ -184,5 +185,96 @@ describe('the Update all card', () => {
     render(<UpdateAllCard hosts={hostsBridge({ hosts: [], localHostEnabled: true, localHostRunning: true }).asBridge} />)
     act(() => requestUpdateAll())
     await waitFor(() => expect(actions.downloadUpdate).toHaveBeenCalledTimes(1))
+  })
+
+  it('covers a host the releases page is still being asked about with one press, and offers the restart only after its update (Sol, review)', async () => {
+    const actions = provideApp(available)
+    provideAgents(agentState())
+    const onOwl = { ...forge, version: '0.1.37-owl.20261012.1' } as HostStatus
+    const base: HostsState = { hosts: [onOwl], localHostEnabled: true, localHostRunning: true }
+    const hosts = hostsBridge({ ...base, updateChecks: [FORGE] })
+    const view = render(<UpdateAllCard hosts={hosts.asBridge} />)
+    expect(await screen.findByRole('listitem', { name: 'Update forge’s host, checking for its update' })).toHaveTextContent('Checking the releases page for its update…')
+    // Pressed before the answer: Sotto downloads, and forge is not started yet, so it is aimed at what the answer says.
+    fireEvent.click(screen.getByRole('button', { name: 'Update all: Sotto and forge' }))
+    await waitFor(() => expect(actions.downloadUpdate).toHaveBeenCalledTimes(1))
+    expect(hosts.bridge.command).not.toHaveBeenCalled()
+    // Sotto's download finishes first: the press still runs, and nothing offers the restart.
+    provideApp({ ...available, phase: { phase: 'downloaded', version: '0.1.37-owl.20261013.1', problem: null } })
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    expect(screen.getByText('Updating')).toBeTruthy()
+    expect(screen.getByText('1 of 3 done')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Restart Sotto now/u })).toBeNull()
+    // The releases page has forge's host: it joins the press, and still no restart until its update is done.
+    const offer = hostUpdate({ from: '0.1.37-owl.20261012.1', to: '0.1.37-owl.20261013.1' })
+    hosts.change({ ...base, updates: [offer] })
+    await waitFor(() => expect(hosts.bridge.command).toHaveBeenCalledWith({ type: 'host-update', id: FORGE, action: 'update' }))
+    expect(hosts.bridge.command).toHaveBeenCalledTimes(1)
+    hosts.change({ ...base, updates: [{ ...offer, phase: 'updating', step: 'download' }] })
+    expect(screen.getByRole('listitem', { name: 'Update forge’s host, in progress' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Restart Sotto now/u })).toBeNull()
+    hosts.change({ ...base, hosts: [{ ...onOwl, version: offer.to }], updates: [{ ...offer, phase: 'done', from: offer.to }] })
+    expect(await screen.findByRole('button', { name: 'Restart Sotto now and install 0.1.37-owl.20261013.1' })).toBeTruthy()
+    expect(screen.getByRole('listitem', { name: 'Update forge’s host, done' })).toBeTruthy()
+  })
+
+  it('starts a host once when its clients finish as its check ends, in the same change (review)', async () => {
+    provideApp({ ...available, phase: { phase: 'downloaded', version: '0.1.37-owl.20261013.1', problem: null } })
+    provideAgents(agentState({ forge: [behind({ id: 'codex', installed: '0.51.0', published: '0.52.1' })] }))
+    const offer = hostUpdate({ from: '0.1.35', to: '0.1.37' })
+    const base: HostsState = { hosts: [forge], localHostEnabled: true, localHostRunning: true, updates: [offer] }
+    const hosts = hostsBridge(base)
+    const view = render(<UpdateAllCard hosts={hosts.asBridge} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Update all: 1 client and forge' }))
+    await waitFor(() => expect(hosts.bridge.updateClients).toHaveBeenCalledTimes(1))
+    // The releases page is asked about forge again while its client updates, so the press waits for that answer too.
+    hosts.change({ ...base, updateChecks: [FORGE] })
+    expect(screen.getByRole('listitem', { name: 'Update forge’s host, checking for its update' })).toBeTruthy()
+    provideAgents(agentState({ forge: [behind({ id: 'codex', state: 'updating' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    // The client finishes as the answer comes: forge is started once.
+    provideAgents(agentState({ forge: [behind({ id: 'codex', installed: '0.52.1', behind: false, state: 'updated', ranAt: 'now' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    hosts.change(base)
+    await waitFor(() => expect(hosts.bridge.command).toHaveBeenCalledWith({ type: 'host-update', id: FORGE, action: 'update' }))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(hosts.bridge.command).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets a host leave the press when the releases page has nothing for it, and then asks to restart', async () => {
+    provideApp({ ...available, phase: { phase: 'downloaded', version: '0.1.37-owl.20261013.1', problem: null } })
+    provideAgents(agentState())
+    const base: HostsState = { hosts: [forge], localHostEnabled: true, localHostRunning: true }
+    const hosts = hostsBridge({ ...base, updateChecks: [FORGE] })
+    render(<UpdateAllCard hosts={hosts.asBridge} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Update all: forge' }))
+    expect(await screen.findByText('Updating')).toBeTruthy()
+    hosts.change(base)
+    expect(await screen.findByRole('button', { name: 'Restart Sotto now and install 0.1.37-owl.20261013.1' })).toBeTruthy()
+    expect(screen.queryByRole('listitem', { name: /forge’s host/u })).toBeNull()
+    expect(hosts.bridge.command).not.toHaveBeenCalled()
+  })
+
+  it('lists the press as ordered steps, each named with how it stands, in the order the press runs them (ADR-0077, layout C)', async () => {
+    provideApp(available)
+    provideAgents(agentState({ local: [behind({ id: 'codex', installed: '0.47.2', published: '0.48.0' })], forge: [behind({ installed: '2.4.0', published: '2.4.1' })] }))
+    const hosts = hostsBridge({ hosts: [forge], localHostEnabled: true, localHostRunning: true, updates: [hostUpdate({ from: '0.1.37-owl.20261012.1', to: '0.1.37-owl.20261013.1' })] })
+    render(<UpdateAllCard hosts={hosts.asBridge} />)
+    const list = await screen.findByRole('list', { name: 'Steps, in order' })
+    expect(list.tagName).toBe('OL')
+    const steps = within(list).getAllByRole('listitem')
+    expect(steps.map(step => step.getAttribute('aria-label'))).toEqual([
+      'Download Sotto Owl, to do', 'Update Codex, to do', 'Update Claude Code, to do', 'Update forge’s host, to do', 'Restart Sotto, comes last',
+    ])
+    expect(steps[1]).toHaveTextContent('0.47.2 → 0.48.0')
+    // Its versions and sentence describe it, for a reader that announces only the name.
+    expect(steps[1]).toHaveAccessibleDescription('0.47.2 → 0.48.0 This computer')
+    expect(steps[3]).toHaveAccessibleDescription('Restarts forge’s host, so its threads are unavailable for a few seconds.')
+    expect(steps[2]).toHaveTextContent('forge')
+    // The host's sentence is its step's alone, and the rail between the marks has nothing to read.
+    expect(screen.getAllByText('Restarts forge’s host, so its threads are unavailable for a few seconds.')).toHaveLength(1)
+    expect(screen.queryByText(/restarts, so its threads/u)).toBeNull()
+    expect(screen.getByText('Threads keep working while clients update.')).toBeTruthy()
+    expect(steps.every(step => step.querySelector('.update-all__mark')!.getAttribute('aria-hidden') === 'true')).toBe(true)
   })
 })

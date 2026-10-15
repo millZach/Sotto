@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 import { ProviderUnavailable } from '../../src/main/agents/providerProblem'
@@ -14,6 +14,9 @@ import type { AgentHostSnapshot, ProviderId } from '../../src/shared/agents'
  *
  * - `codex.fail`: Codex's next upgrade drops its download, once.
  * - `grok.hold`: Grok Build's install step waits until the file is gone, so its second step can be seen.
+ *
+ * What an update installed is kept in `installed.json` there too, so a host that a host update restarts finds the
+ * clients as they were left, as a real install would (ADR-0077).
  */
 export const INSTALLED: Readonly<Record<'claude' | 'codex' | 'grok', string>> = { claude: '2.1.281', codex: '0.155.1', grok: '1.0.41' }
 export const PUBLISHED: Readonly<Record<'claude' | 'codex' | 'grok', string>> = { claude: '2.1.284', codex: '0.158.0', grok: '1.0.43' }
@@ -37,7 +40,9 @@ class NotInstalled extends E2EAgentHost {
 export function clientUpdateHost(directory: string, home: string) {
   const miseData = join(home, '.local', 'share', 'mise')
   const installs = join(miseData, 'installs')
-  const disk: Record<string, string> = { ...INSTALLED }
+  const installed = join(directory, 'installed.json')
+  const disk: Record<string, string> = { ...INSTALLED, ...existsSync(installed) ? JSON.parse(readFileSync(installed, 'utf8')) as Record<string, string> : {} }
+  const record = (): void => writeFileSync(installed, JSON.stringify(disk))
   for (const id of ['claude', 'codex', 'grok'] as const) {
     mkdirSync(join(installs, FOLDERS[id], INSTALLED[id]), { recursive: true })
     writeFileSync(join(installs, FOLDERS[id], '.mise.backend.toml'), `short = "${TOOLS[id]}"\n`)
@@ -73,13 +78,14 @@ export function clientUpdateHost(directory: string, home: string) {
           String.raw`C:\Users\John Smith\AppData\codex.exe: The process cannot access the file. connection reset by peer`].join('\n')
         return { ok: false, detail: installerDetail(said)!, printed: installerOutput(said)! }
       }
-      if (id !== 'grok') disk[id] = PUBLISHED[id]
+      if (id !== 'grok') { disk[id] = PUBLISHED[id]; record() }
       return { ok: true, stdout: '' }
     }
     if (!args[0]?.endsWith('postinstall.js')) return { ok: false, detail: 'The journey ran something other than mise or the install step.' }
     // Grok Build's install step: the new program reaches ~/.grok/bin only now.
     while (existsSync(join(directory, 'grok.hold'))) await wait(100)
     disk.grok = PUBLISHED.grok
+    record()
     return { ok: true, stdout: '' }
   }
   const clients = new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => true,

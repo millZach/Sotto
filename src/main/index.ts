@@ -116,7 +116,8 @@ import { SpeechModelStore } from './asr/speechModelStore'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
 import type { SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
-import { UpdateService } from './updates/updateService'
+import { UpdateService, waitingVersion } from './updates/updateService'
+import { e2eUpdater } from './updates/e2eUpdater'
 import { platformProfile, windowFrostFor, type WidgetAlwaysOnTopLevel } from './platformProfile'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
@@ -158,7 +159,7 @@ import {
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
 import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
-import { hostReleaseVersion } from './hosts/hostReleaseVersion'
+import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleaseVersion'
 import { WATCHER_CHANGED, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
 import type { DictationCommand } from '../shared/contracts'
@@ -592,6 +593,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const museEnabled = owlFeatures.muse
   const usageEnabled = owlFeatures.usage
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || museEnabled)
+  // With Update all on, the host version the update this computer is downloading brings, which a host may run before
+  // Sotto restarts (ADR-0077 decision 6). It stays undefined on stable, where hosts follow the running version alone.
+  let waitingAppVersion: string | undefined
+  let waitingHostVersion: string | undefined
+  let waitingPhase: string | undefined
   let repaintOmarchy: () => void = () => undefined
   const omarchyTheme = new OmarchyThemeMonitor(platform, homedir(),
     () => repaintOmarchy(), logOperational)
@@ -803,6 +809,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
   const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, museEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
+    waitingClientVersion: () => waitingHostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),
@@ -1157,12 +1164,25 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // must never reach the network. Everywhere else the service resolves to the
   // 'unsupported' phase without constructing electron-updater at all.
   const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
+  // A development end-to-end run can be offered an update of its own, which downloads nothing and never installs.
+  const updateStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_APP_UPDATE'] : undefined
   const updates = new UpdateService({
     currentVersion: appRunningVersion, owlFeatures, watcherEnabled,
     getSettings: () => settings.get(),
-    ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : {}),
+    // With Update all on, the restart waits for a host update under way, which it would otherwise cut off (ADR-0077).
+    ...(owlFeatures['update-all'] ? { restartHold: () => hostUpdates.restartHold() } : {}),
+    ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : updateStandIn ? { createUpdater: () => e2eUpdater(updateStandIn) } : {}),
     onStatusChanged: (status) => {
       windows.sendToMain(UPDATE_STATUS, status)
+      // Update all aims each host at the version this computer is downloading, once its archive is published (ADR-0077).
+      // Only a change of phase passes on, never a download's progress, so a page that did not answer is not asked again
+      // on every tick.
+      if (owlFeatures['update-all'] && status.phase.phase !== waitingPhase) {
+        waitingPhase = status.phase.phase
+        waitingAppVersion = waitingVersion(status.phase, waitingAppVersion)
+        waitingHostVersion = waitingAppVersion === undefined ? undefined : updateHostReleaseVersion(waitingAppVersion, usageEnabled || museEnabled)
+        hostUpdates.pending(waitingHostVersion)
+      }
     },
   })
 
