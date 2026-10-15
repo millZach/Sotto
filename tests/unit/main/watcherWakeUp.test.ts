@@ -851,3 +851,17 @@ it('keeps a turn unsettled while a restart has left its sub-agents unknown', asy
   recovered.observe(); recovered.observe(); await recovered.drained()
   expect(kinds(delivered)).toEqual(['work-settled'])
 })
+
+it('holds work-settled news when work starts again before delivery and sends it once after the final zero', async () => {
+  const f = fixture()
+  f.thread.providerId = 'claude'; f.thread.backgroundWork = [backgroundTask(1), backgroundTask(2)]; finish(f.thread); f.wakes.observe()
+  await f.advance(2_000)
+  f.thread.backgroundWork = []; f.wakes.observe(); await f.advance(500)
+  // Inside the batch window the turn's work starts again, so "the turn is done" would be false.
+  f.thread.backgroundWork = [backgroundTask(3), backgroundTask(4)]; f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished'])
+  f.thread.backgroundWork = []; f.wakes.observe(); await f.advance(2_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished', 'work-settled'])
+  f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished', 'work-settled'])
+})
