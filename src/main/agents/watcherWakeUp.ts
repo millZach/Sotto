@@ -96,6 +96,11 @@ export class WatcherWakeUp {
     return snapshot.connected && thread.clientConnected !== false && isThreadProviderConnected(snapshot, thread)
   }
   private active(thread: AgentThread): boolean { return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.backgroundWork?.length || thread.monitoring?.length) }
+  /**
+   * The thread's work is confirmed ended: nothing running and nothing unknown. A sub-agent a restart left unknown may still
+   * be running, so it keeps the turn unsettled until its provider says how it ended.
+   */
+  private workSettled(thread: AgentThread): boolean { return watcherBackgroundWorkCount(thread) === 0 && !thread.subagentSummary?.unknown }
   /** Records a finished turn whose work is still running, so it is owed one work-settled event when that work ends. */
   private oweWorkSettled(scope: string): void {
     this.owedWorkSettled.delete(scope); this.owedWorkSettled.add(scope)
@@ -265,7 +270,7 @@ export class WatcherWakeUp {
         if (finished) {
           this.event(finished.status === 'failed' ? 'turn-failed' : 'turn-finished', target, [finished.id, finished.status],
             { turnId: finished.id, backgroundWorkCount, evidenceIds: this.evidence.read(target).filter(item => item.turnId === finished.id).map(item => item.id) })
-          if (!backgroundWorkCount) this.event('work-settled', target, [finished.id], { turnId: finished.id, backgroundWorkCount })
+          if (this.workSettled(thread)) this.event('work-settled', target, [finished.id], { turnId: finished.id, backgroundWorkCount })
         }
         for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
           { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })

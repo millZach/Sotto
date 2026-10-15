@@ -838,3 +838,16 @@ it('reads a queued busy finish after a restart as owed its work-settled news', a
   recovered.start(); await recovered.drained()
   expect(kinds(delivered)).toEqual(['work-settled'])
 })
+
+it('keeps a turn unsettled while a restart has left its sub-agents unknown', async () => {
+  const f = fixture()
+  codexSubAgents(f.thread, 2); finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  const { recovered, delivered } = restarted(f)
+  // A restart cannot see how running sub-agents ended, so the roster holds them as unknown, not finished.
+  f.thread.subagentSummary = { total: 2, working: 0, completed: 0, failed: 0, interrupted: 0, unknown: 2 }
+  recovered.start(); recovered.observe(); await recovered.drained()
+  expect(kinds(delivered)).toEqual([])
+  f.thread.subagentSummary = { total: 2, working: 0, completed: 2, failed: 0, interrupted: 0, unknown: 0 }
+  recovered.observe(); recovered.observe(); await recovered.drained()
+  expect(kinds(delivered)).toEqual(['work-settled'])
+})
