@@ -230,6 +230,18 @@ export const usageLocalHostReadSchema = z.object({
   quotas: z.array(usageQuotaReadSchema).max(providers.length), persistence: z.enum(['saved', 'failed']).optional(),
 }).strict()
 export type UsageLocalHostRead = z.infer<typeof usageLocalHostReadSchema>
+/**
+ * A read for a desktop from before history import (ADR-0083), whose strict schemas refuse the place rows, the history
+ * status and each aggregate's last day. Everything else it knows is unchanged.
+ */
+export function usageReadBeforeHistory(read: UsageLocalHostRead): UsageLocalHostRead {
+  if (read.activity === undefined) return read
+  const withoutDay = <T extends { lastDay?: string | undefined }>(row: T): T => { const copy = { ...row }; delete copy.lastDay; return copy }
+  const activity = { ...read.activity, metadata: { ...read.activity.metadata }, totals: withoutDay(read.activity.totals),
+    providers: read.activity.providers.map(withoutDay), models: read.activity.models.map(withoutDay), daily: read.activity.daily.map(withoutDay) }
+  delete activity.clients; delete activity.metadata.history
+  return { ...read, activity }
+}
 export const usageHostReadSchema = usageLocalHostReadSchema.extend({
   hostId: identity, status: z.enum(['ready', 'unsupported', 'offline', 'error']),
 }).strict()
