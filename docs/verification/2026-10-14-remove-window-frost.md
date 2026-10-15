@@ -25,7 +25,19 @@ October 14, 2026, for ADR-0084. Windows 11, from `chore/remove-window-frost`.
 - `settings-appearance.png`, `settings-appearance-light.png`, `appearance-system-dark.png` and `appearance-system-light.png`: the Appearance page is shorter by the Glass opacity slider.
 - `threads-new-thread-chooser-light.png`: the project chooser dialog is solid instead of 80% glass over the blurred room.
 
-Every other capture `npm run design:capture` rewrote was put back, so no unrelated baseline moved. The manifest's hashes for twelve captures (`onboarding-step-2-look`, nine theme captures and the two Threads search captures) did not match the committed images on the base, so `scripts/verify-design-captures.mjs` failed there. The manifest now records the committed images' hashes; no image changed. After the regeneration the appearance, pages and threads specs pass, and the scaling and widget specs fail exactly as they do on the base. Because those two specs stop at their first failure, their later captures were not compared on either side.
+Every other capture `npm run design:capture` rewrote was put back, so no unrelated baseline moved. The manifest's hashes for twelve captures (`onboarding-step-2-look`, nine theme captures and the two Threads search captures) did not match the committed images on the base, so `scripts/verify-design-captures.mjs` failed there. The manifest now records the committed images' hashes; no image changed. After the regeneration the appearance, pages and threads specs pass.
+
+`npm run design:verify` still fails on this branch, and it fails the same way on `main` at e3e7e2c34 without this change. Two specs fail there before this branch touches anything:
+
+- `design-capture-scaling.spec.ts` fails at `scale-125-onboarding.png`, a one-pixel layout shift.
+- `design-capture-voice-widget.spec.ts` fails at `widget-idle-light.png`, the widget drawn two pixels taller.
+
+Both specs stop at their first failure, so these captures were not compared, on this branch or on `main`:
+
+- Scaling: the rest of 125% (`scale-125-dictate`, `-widget-light`, `-widget-dark`, `-history`, `-settings`, `-help`, `-dictate-light` and `-settings-light`) and the same nine captures at 150% and 200%, starting with `scale-150-onboarding` and `scale-200-onboarding`. The nine 100% captures were compared and passed.
+- Widget: `widget-permission-light` and `widget-cancelled-light`, and the whole dark test, which did not run: `widget-idle-dark`, `widget-permission-dark` and `widget-cancelled-dark`.
+
+`design:verify` runs `scripts/verify-design-captures.mjs` only when every capture passes, so the manifest check was run on its own here. It verified 144 tuples.
 
 ## Not verified
 
