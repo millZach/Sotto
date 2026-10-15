@@ -1,4 +1,5 @@
 import { clientUpdateEnumerationUsesMuse, commandUsesMuse, modelsWithoutMuse, museWatcherRefusal, threadUsesMuse, watcherRequestUsesMuse } from '../agents/museGate'
+import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { visibleWatcherState, withoutThreads } from '../../shared/watcherVisibility'
 import { parsePublicProviderEntityId } from '../../shared/agents'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts } from '../../shared/watcherHost'
@@ -28,7 +29,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -112,6 +113,19 @@ export class DesktopHostRouter {
     const museHeld = (host: DesktopHostConnection, request: WatcherHostRead | WatcherHostControl) => this.options.museEnabled !== true
       && watcherRequestUsesMuse(request, host.service.shell().host, this.dormantMuseIds.get(host.hostId))
     return {
+      ...this.options.watcherEnabled === true && this.options.streamingPublishCost === true ? { roomThreads: (id: string, ids: readonly string[]) => {
+        const entry = this.hosts.get(id)?.connection
+        if (!entry || entry.kind !== 'remote') return undefined
+        const connected = !this.reconnecting.has(id) && entry.available?.() !== false
+        if (!entry.service.watcherRoomThreads) {
+          const snapshot = this.visibleState(entry.service.shell(), id).host
+          return watcherRoomInputs(snapshot, ids, this.options.museEnabled === true, this.dormantMuseIds.get(id))
+            .map(thread => ({ ...thread, connected: connected && thread.connected }))
+        }
+        return entry.service.watcherRoomThreads(ids)
+          .filter(thread => this.options.museEnabled === true || !this.dormantMuseIds.get(id)?.has(thread.id))
+          .map(thread => ({ ...thread, connected: connected && thread.connected }))
+      } } : {},
       hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => ({
         hostId: host.hostId, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
         connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
@@ -169,7 +183,7 @@ export class DesktopHostRouter {
   private readonly draftPass: { running: boolean; gap: ReturnType<typeof setTimeout> | undefined; wanted: RequestDraftRecovery | undefined; disposed: boolean } =
     { running: false, gap: undefined, wanted: undefined, disposed: false }
 
-  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean; museEnabled?: boolean } = {}) {}
+  constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean; museEnabled?: boolean; streamingPublishCost?: boolean } = {}) {}
 
   setUsageSavedHosts(hostIds: readonly string[]): void { this.usageSavedHostIds = [...new Set(hostIds)].slice(0, USAGE_HOSTS_MAX) }
   private usageHostIds(requested?: string[]): string[] {

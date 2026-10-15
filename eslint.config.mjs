@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/watcher-room-state/**',
       'artifacts/certified-detail/**',
       'artifacts/window-thread-shell/**',
       'artifacts/watcher-phone-wire/**',

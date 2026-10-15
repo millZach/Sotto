@@ -1,5 +1,7 @@
 # Usage in Sotto Owl
 
+Superseded in part October 14, 2026: [the Usage rework](2026-10-14-usage-rework.md) verifies the page rebuilt to C · Focus and the counting rules of [ADR-0083](../adr/0083-usage-counts-every-clients-work-on-each-computer.md). The captures below show the first build.
+
 October 13, 2026. Local verification of [issue #976](https://github.com/millZach/Sotto/issues/976) on `feat/usage-dashboard`. The reviewed implementation and fixture fixes are at `1b013f26ea4a7fdaa4f9b2932203464f447ad8e2`, following the integrated implementation at `c745c6e4a90193aa238ce9d97a9f97557066e327`. All four required gates and actual Windows package checks passed on that feature revision; both final review verdicts had zero unresolved findings. No installer or host was installed or published.
 
 Zach chose both native subscription limits and Sotto activity, Overview first, numeric history independent of conversation history, a separate Clear action and all connected computers. He selected **C: Focus** from the Opus 5.5 pass launched at xhigh. The [plan](../plans/2026-10-12-usage-dashboard.md) records the accepted prototype and archive; [ADR-0078](../adr/0078-usage-keeps-numeric-history-on-its-own-host.md) records the numeric and authority boundaries.
