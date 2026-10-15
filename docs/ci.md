@@ -342,10 +342,13 @@ facts; no command arguments or output are logged. The exact-string assertion and
 global deadline are unchanged. See [the shell fixture evidence](verification/terminal-clipboard-shell-budget.md).
 
 `vitest.config.ts` gives a test 15 s and an `expect.poll` 5 s, rather than vitest's 5 s and 1 s, and
-`tests/setup.ts` gives Testing Library's `findBy` and `waitFor` the same 5 s rather than their 1 s. Waiting
-is not the assertion: a runner takes several times longer over a provider round trip or a child process
-start than a developer machine, and a deadline that expires there describes the machine. Something that
-is genuinely wrong still fails, a few seconds later.
+`tests/setup.ts` gives Testing Library's `findBy` and `waitFor`, and vitest's own `vi.waitFor` and
+`vi.waitUntil`, the same 5 s rather than their 1 s. No vitest setting raises `vi.waitFor` or `vi.waitUntil`,
+so the setup file wraps them: a call that names no timeout gets 5 s, and a call that passes its own timeout
+or interval keeps it. `tests/unit/fixtures/suiteWaitDeadline.test.ts` and its `.node` twin check that the
+wrapper holds in jsdom and node files. Waiting is not the assertion: a runner takes several times longer
+over a provider round trip or a child process start than a developer machine, and a deadline that expires
+there describes the machine. Something that is genuinely wrong still fails, a few seconds later.
 
 The same rule applies to the fake-provider fixtures' acknowledgement deadline (`requestTimeoutMs` in
 `tests/fixtures/claudeFixture.ts`, `codexFixture.ts` and `fakeGrokThreadFixture.ts`). That one deadline
