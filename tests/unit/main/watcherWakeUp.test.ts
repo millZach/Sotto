@@ -13,7 +13,7 @@ import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/w
 
 const cleanups: (() => void)[] = []
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()) })
-function fixture(start = true, progress?: WatcherWakeOptions['progress']) {
+function fixture(start = true, progress?: WatcherWakeOptions['progress'], options: Partial<WatcherWakeOptions> = {}) {
   let clock = Date.parse('2026-10-11T10:00:00Z')
   const timers = new Set<{ at: number; callback: () => void }>()
   const record = watcherRecordFixture()
@@ -27,7 +27,7 @@ function fixture(start = true, progress?: WatcherWakeOptions['progress']) {
   const remember = vi.fn(async (ids: string[]) => { record.wakeEventIds = [...record.wakeEventIds ?? [], ...ids] })
   const wakes = new WatcherWakeUp({ now: () => clock, snapshot: () => snapshot, record: () => record, prune,
     schedule: (callback, delay) => { const timer = { at: clock + delay, callback }; timers.add(timer); return () => { timers.delete(timer) } },
-    deliver, remember, failed, canDeliver, ...progress ? { progress } : {} })
+    deliver, remember, failed, canDeliver, ...progress ? { progress } : {}, ...options })
   cleanups.push(() => wakes.close())
   if (start) wakes.start()
   const advance = async (ms: number) => {
@@ -864,4 +864,16 @@ it('holds work-settled news when work starts again before delivery and sends it 
   expect(kinds(f.delivered)).toEqual(['turn-finished', 'work-settled'])
   f.wakes.observe(); await f.advance(10_000)
   expect(kinds(f.delivered)).toEqual(['turn-finished', 'work-settled'])
+})
+
+it('gives no work-settled news for a paired host that does not report its work counts', async () => {
+  const f = fixture(true, undefined, { reportsWork: hostId => hostId !== centerTarget.hostId })
+  f.thread.providerId = 'claude'; f.thread.backgroundWork = [backgroundTask(1), backgroundTask(2)]; finish(f.thread); f.wakes.observe()
+  await f.advance(2_000)
+  // Missing counts are unknown, not none running: the finish carries no count and claims nothing about the work.
+  const finished = f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!
+  expect(finished).not.toHaveProperty('backgroundWorkCount')
+  delete f.thread.backgroundWork; f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished'])
+  expect(watcherNewsText(f.delivered[0]!)).not.toContain('work-settled')
 })

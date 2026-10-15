@@ -35,7 +35,7 @@ export type WatcherHostProjection = z.infer<typeof watcherHostProjectionSchema>
 
 /** Main-only routing seam. All IDs are owning-host IDs, never client UI keys. */
 export interface WatcherRemoteHosts {
-  hosts(): { hostId: string; control: boolean; reads: boolean; standingWatch?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
+  hosts(): { hostId: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
   snapshot(hostId: string): AgentHostSnapshot | undefined

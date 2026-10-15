@@ -84,15 +84,20 @@ it('negotiates host-v1 features only for recorded desktops and never for stable 
   expect(health.v).toBe(1); expect(health.features).toContain('watcher-control'); expect(health.features).toContain('watcher-reads')
   const general = await pairedDesktop(false)
   expect(general.hello.features).not.toContain('watcher-control')
+  expect(general.socket.supportsWatcherWorkSettled).toBe(false)
+  // A recorded desktop learns the host reports the work counts work-settled news needs.
+  const recorded = await pairedDesktop()
+  expect(recorded.hello.features).toContain('watcher-work-settled'); expect(recorded.socket.supportsWatcherWorkSettled).toBe(true)
   const raw = general.socket as unknown as { call(op: HostOperation): Promise<unknown> }
   await expect(raw.call({ op: 'watcher-read', request: { master: { target: { hostId: randomUUID(), threadId: 'forged' }, projectId: 'forged', provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() } } })).rejects.toMatchObject({ code: 'forbidden' })
   const stable = await pairedDesktop(true, false)
-  expect(stable.socket.supportsWatcherControl).toBe(false)
+  expect(stable.socket.supportsWatcherControl).toBe(false); expect(stable.socket.supportsWatcherWorkSettled).toBe(false)
   await expect(stable.socket.watcherRead({ master: { target: { hostId: randomUUID(), threadId: 'master' }, projectId: 'master', provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() } })).rejects.toMatchObject({ code: 'invalid_request' })
 })
 
 it('starts, reads positions, sends, stops and settles through the owning host without selecting it', async () => {
   const f = await master(), selected = f.router.shell().activeThreadId, input = f.start()
+  expect(f.router.watcherHosts().hosts()).toEqual([expect.objectContaining({ hostId: f.pairing.hostId, workSettled: true })])
   const first = await f.call('start_thread', input)
   expect(first).toMatchObject({ status: 'ok', limits: { inFlightLimit: 1, promptCount: 1 } })
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')

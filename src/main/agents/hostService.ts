@@ -73,6 +73,8 @@ export interface HostService {
   readonly supportsWatcherControl?: boolean
   readonly supportsWatcherReads?: boolean
   readonly supportsWatcherStandingWatch?: boolean
+  /** The host's threads report the background work counts work-settled news needs; without it they are unknown. */
+  readonly supportsWatcherWorkSettled?: boolean
   subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
   watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown>
