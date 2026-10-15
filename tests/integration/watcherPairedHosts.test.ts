@@ -348,13 +348,49 @@ it('routes steer and queue by turn identity and fences a native takeover before 
   const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic fenced queue' })
   expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   await native.driver.typeInProvider(nativeId, 'Synthetic native instruction')
-  await native.driver.completeTurn(nativeId, 'Synthetic completion')
+  // The background poll can finish before it discovers this rollout. Establish takeover before releasing the queue.
+  await native.adapter.refreshThread(nativeId)
   await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+  await native.driver.completeTurn(nativeId, 'Synthetic completion')
   await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === (queued.status === 'ok' ? queued.receipt.operationId : ''))?.deliveryState).toBe('failed'))
   const written = await native.driver.requests()
   expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
   expect(written.filter(item => item.method === 'turn/steer')).toHaveLength(1)
   expect(written.filter(item => item.method === 'request/answer')).toHaveLength(0)
+}, 60_000)
+
+it('fences native input arriving at a prepared paired queue writer before another turn starts', async () => {
+  // Only the writer's targeted read can ingest the native input added while preparation is held.
+  const native = await codexFixture(undefined, false, 10_000, { pollIntervalMs: 600_000 }); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const target = first.target
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === target.threadId)?.lastTurn?.status).toBe('running'))
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  const gate = heldOperation(), prepare = native.adapter.prepareSkillInput.bind(native.adapter)
+  vi.spyOn(native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => {
+    const result = await prepare(...args)
+    if (args[1] === 'Synthetic held native queue') await gate.wait()
+    return result
+  })
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic held native queue' })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  if (queued.status !== 'ok') throw new Error('queue-refused')
+  try {
+    await native.driver.completeTurn(nativeId, 'Synthetic completion before late input')
+    await gate.entered
+    await native.typeUnseen(nativeId, 'Synthetic native input after preparation')
+    gate.release()
+    const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+    await vi.waitFor(() => expect(owner.state().watchedThreads.find(item => item.target.threadId === target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+    await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
+    const written = await native.driver.requests()
+    expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
+    expect(written.filter(item => item.method === 'turn/steer')).toHaveLength(0)
+    expect(written.filter(item => item.method === 'request/answer')).toHaveLength(0)
+  } finally { gate.release() }
 }, 60_000)
 
 it('refuses changed operation identities and master ceilings on the owning host', async () => {
