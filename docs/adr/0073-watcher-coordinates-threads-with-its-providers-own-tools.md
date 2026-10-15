@@ -145,6 +145,21 @@ The bounded source cache retains up to three hundred facts per target, enough fo
 Recovery compares actual source changes against the bounded cache, so projection omissions are not removals. First materialization remains unknown until the saved occurrence is reconciled; explicit new/removed PR associations and changed already-observed facts still supersede it. Before the newest checkpoint is published, retained captures are offered to the private restorer; only a capture referenced by the waiting occurrence seeds its comparison. This lets a newer saved capture supersede older waiting news without replaying unrelated historical captures.
 
 Recovery and dispatch checks retain prompt charges from stopped/closed legacy scopes. Only an exact authored echo, accepted Send or possibly-written uncertainty opens another budget; saving a failed intent grants none. Owning-host withdrawal is checked inside admission and again at the writer. Own-change marks span same-turn steers under exact native/Sotto turn anchors, and transcript replay cannot move an already-observed file tool into a later steer.
+
+## October 14, 2026: owned desktop room publication (#991)
+
+This amendment defines the gated desktop room path. Measurement and verification are recorded in the Step 5 performance and verification notes.
+
+The desktop room uses the established 50 ms leading/trailing publish window only when the existing Watcher and streaming-publish-cost startup answers are both true. Both answers are checked before the new scheduler, capture or cached-input reader exists. Stable keeps prior behavior and saved records whole; no new switch is added.
+
+The first room is sent immediately. Each later event in that window captures an owned complete room and replaces the pending capture. The trailing deadline delivers the newest capture even after quiet; it does not read a newer source state or repeat a quiet room. Direct Get, Open, Stop all preview, Stop all, limit, permission-mode, Watch and Stop watching operations flush prior pending desktop room notifications when they settle, including rejection or a synchronous throw. Their own original result or error is retained. Schema and authority checks keep their existing boundaries.
+
+Room state reads requested remote thread facts through a main-only owned cached input: title, status, connectivity, workspace settlement, background count and request identities/kinds. Requested targets share one read per owning host. Connectivity is reused for evidence freshness. Unknown targets remain unavailable; retained disconnected cache keeps its cached status and facts with connected=false. An older local service without the optional reader uses one existing visible snapshot. No wire feature or authority is added. Public shell reads and operation/observer helpers keep their ownership contracts, and socket ingestion/merge is unchanged.
+
+Only desktop room notifications are coalesced. Observations, evidence, news, wakes, admission, permission answers, display presentation and phone/socket events retain their timing. Local room projection already avoided whole-shell cloning. Bounded Watcher-record copies, owned room captures and non-room remote snapshot clones remain separate costs.
+
+An absent or destroyed window has no retry loop; a fresh complete Get recovers state. Cleanup removes the subscription and cancels the pending deadline. Equal observation times retain existing arrival ordering. This changes neither event-news batching nor the quiet-episode rule.
+
 ## October 14, 2026: the request note
 
 On October 13, 2026 Zach saw his own message in Watcher's room end with a long line Sotto had added: `[Sotto Watcher request: …]`, with the request ID, the local host and every known project ID. He wants that routing to happen in the background and his bubble to show only what he typed. Listing every project also cost tokens on every message. This replaces that line; request identity, budgets, receipts, takeover and wake-ups are unchanged.
