@@ -95,7 +95,7 @@ export class WatcherWakeUp {
   private connected(snapshot: AgentHostSnapshot, thread: AgentThread): boolean {
     return snapshot.connected && thread.clientConnected !== false && isThreadProviderConnected(snapshot, thread)
   }
-  private active(thread: AgentThread): boolean { return thread.status === 'running' || thread.lastTurn?.status === 'running' || watcherBackgroundWorkCount(thread) > 0 }
+  private active(thread: AgentThread): boolean { return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.backgroundWork?.length || thread.monitoring?.length) }
   /** Records a finished turn whose work is still running, so it is owed one work-settled event when that work ends. */
   private oweWorkSettled(scope: string): void {
     this.owedWorkSettled.delete(scope); this.owedWorkSettled.add(scope)
