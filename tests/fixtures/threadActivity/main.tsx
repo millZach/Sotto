@@ -34,9 +34,31 @@ const DIFF = [
 /** The settled turn's middle reply, asking something on the way and carrying on: the question the fold lifts (#1019). */
 const ASKING = 'The writer patches the length marker only when the stream closes, so the player stops at the placeholder length. **Should I also patch it on a timer for a stream that never closes, or leave that for now?** Patching it after every chunk meanwhile.'
 
-function messages(live: boolean, asked = false): AgentThread['messages'] {
+/** A made-up screenshot drawn on a canvas, so the fixture ships no image files. */
+function screenshot(hue: number, title: string, width: number, height: number): string {
+  const canvas = document.createElement('canvas')
+  canvas.width = width; canvas.height = height
+  const context = canvas.getContext('2d')!
+  context.fillStyle = `hsl(${hue} 12% 9%)`; context.fillRect(0, 0, width, height)
+  context.fillStyle = `hsl(${hue} 12% 14%)`; context.fillRect(0, 0, width, 56); context.fillRect(0, 56, width * 0.16, height)
+  context.fillStyle = `hsl(${hue} 10% 30%)`
+  for (let row = 0; row < 9; row++) context.fillRect(width * 0.2, 150 + row * (height - 300) / 9, width * (0.55 - (row % 3) * 0.1), 16)
+  context.fillStyle = `hsl(${hue} 60% 75%)`; context.font = '600 34px sans-serif'; context.fillText(title, width * 0.2, 115)
+  return canvas.toDataURL('image/png')
+}
+
+/** The three screenshots the first message carries in the images scenario. */
+function attachedScreenshots(): NonNullable<AgentThread['messages'][number]['attachments']> {
+  return [
+    { id: 'shot-1', name: 'image.png', mimeType: 'image/png', sizeBytes: 459_776, preview: { dataUrl: screenshot(220, 'Preview stops at 0:02', 1600, 1000) } },
+    { id: 'shot-2', name: 'image.png', mimeType: 'image/png', sizeBytes: 411_648, preview: { dataUrl: screenshot(190, 'Length marker 0x7FFF', 1600, 1000) } },
+    { id: 'shot-3', name: 'settings.png', mimeType: 'image/png', sizeBytes: 45_056, preview: { dataUrl: screenshot(160, 'Audio settings', 1200, 420) } },
+  ]
+}
+
+function messages(live: boolean, asked = false, images = false): AgentThread['messages'] {
   const base: AgentThread['messages'] = [
-    { id: 'm1', role: 'user', createdAt: at(10), text: 'The WAV preview stalls after two seconds. Find out why, fix it and run the tests.' },
+    { id: 'm1', role: 'user', createdAt: at(10), text: 'The WAV preview stalls after two seconds. Find out why, fix it and run the tests.', ...(images ? { attachments: attachedScreenshots() } : {}) },
     { id: 'm2', role: 'assistant', createdAt: at(12), text: asked ? ASKING : 'The writer patches the length marker only when the stream closes, so the player stops at the placeholder length. Patching it after every chunk instead.' },
     { id: 'm3', role: 'assistant', createdAt: at(14), text: 'Fixed. The length marker is patched after every chunk, so playback no longer stops at two seconds. Lint flagged one `let` that I changed to `const`; the three new tests pass.' },
   ]
@@ -106,7 +128,7 @@ function state(scenario: Scenario): AgentState {
   const steered = scenario === 'steered' ? steeredTurns() : undefined
   const thread: AgentThread = {
     id: THREAD, title: 'WAV preview stall', projectId: 'workshop', modelId: steered ? 'claude:sonnet' : 'codex:gpt', status: live ? 'running' : 'idle', nativeSessionStarted: true,
-    updatedAt: at(live || steered ? 59 : 14), messages: steered?.messages ?? messages(live, scenario === 'asked'), requests: [],
+    updatedAt: at(live || steered ? 59 : 14), messages: steered?.messages ?? messages(live, scenario === 'asked', scenario === 'images'), requests: [],
     activities: steered?.activities ?? (live ? liveActivities() : settledActivities(scenario === 'restored')),
   }
   return threadsStateFixture({

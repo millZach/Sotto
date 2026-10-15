@@ -1,16 +1,20 @@
-import React, { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Element, ElementContent, Root } from 'hast'
 import { Check, Copy, FileText, Image as ImageIcon } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { agentAttachmentPreviewDataSchema, type AgentAttachmentReference } from '../../../shared/agents'
+import type { AgentAttachmentReference } from '../../../shared/agents'
 import { externalLinkSchema } from '../../../shared/externalLinks'
 import { MermaidDiagram } from './diagrams/MermaidDiagram'
 import { isFenceClosed } from '../../../shared/diagramSource'
-import { useTransientFlag, writeClipboard } from './richActions'
+import { useCopyImage, useTransientFlag, writeClipboard } from './richActions'
+import { useAttachmentSource, type AttachmentOrigin } from './attachmentSources'
+import { AttachmentViewer } from './AttachmentViewer'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
 import './rich-messages.css'
+
+export type { AttachmentOrigin } from './attachmentSources'
 
 /** Anything the Threads page can show for one attachment: a full reference, or the `{ id, name }` of a pending send. */
 export type MessageAttachment = Pick<AgentAttachmentReference, 'id' | 'name'>
@@ -73,73 +77,6 @@ export function attachmentTypeLabel(mimeType: string | undefined): string | null
   const subtype = mimeType.split(';')[0]!.split('/')[1] ?? ''
   const label = subtype.replace(/^(?:x-|vnd\.)/u, '').split(/[+.]/u)[0]!.replace(/[^a-z0-9-]/giu, '').slice(0, 12).toUpperCase()
   return label || 'File'
-}
-
-// Raster data URLs are ASCII (one byte per character); other retained strings use two.
-const PREVIEW_CACHE_BYTES = 8 * 1024 * 1024
-function evictPreviews<T extends { size: number }>(cache: Map<string, T>, limit: number): void {
-  let bytes = 0
-  for (const entry of cache.values()) bytes += entry.size
-  for (const [key, entry] of cache) {
-    if (cache.size <= limit && bytes <= PREVIEW_CACHE_BYTES) break
-    cache.delete(key); bytes -= entry.size
-  }
-}
-const validatedPreviews = new Map<string, { valid: boolean; size: number }>()
-const VALIDATED_PREVIEW_CACHE = 48
-
-/** The preview as an image source only when it is a validated raster data URL. */
-function trustedPreviewSource(dataUrl: string | undefined): string | null {
-  if (typeof dataUrl !== 'string') return null
-  let entry = validatedPreviews.get(dataUrl)
-  if (entry === undefined) {
-    const valid = agentAttachmentPreviewDataSchema.safeParse({ dataUrl }).success
-    entry = { valid, size: dataUrl.length * (valid ? 1 : 2) }
-    if (entry.size <= PREVIEW_CACHE_BYTES) {
-      validatedPreviews.set(dataUrl, entry)
-      evictPreviews(validatedPreviews, VALIDATED_PREVIEW_CACHE)
-    }
-  }
-  return entry.valid ? dataUrl : null
-}
-
-/** The message a submitted attachment belongs to, which is how main finds its preview bytes. */
-export interface AttachmentOrigin { readonly threadId: string; readonly messageId: string }
-
-// Published state carries markers alone; cache fetched images within count and byte bounds.
-const fetchedPreviews = new Map<string, { source: Promise<string | null>; size: number }>()
-const pendingPreviews = new Map<string, { source: Promise<string | null>; size: number }>()
-const FETCHED_PREVIEW_CACHE = 64
-
-function requestPreview(origin: AttachmentOrigin, attachmentId: string): Promise<string | null> {
-  const key = JSON.stringify([origin.threadId, origin.messageId, attachmentId])
-  const cached = fetchedPreviews.get(key) ?? pendingPreviews.get(key)
-  if (cached) return cached.source
-  const bridge = window.sotto?.agents
-  const pending: Promise<string | null> = bridge?.attachmentPreview
-    ? bridge.attachmentPreview({ threadId: origin.threadId, messageId: origin.messageId, attachmentId })
-      .then(result => trustedPreviewSource(result?.dataUrl), () => null)
-    : Promise.resolve(null)
-  const entry = { source: pending, size: key.length * 2 }
-  // Deduplicate reads separately: an unknown result cannot evict a retained image yet.
-  if (entry.size <= PREVIEW_CACHE_BYTES) {
-    pendingPreviews.set(key, entry)
-    evictPreviews(pendingPreviews, FETCHED_PREVIEW_CACHE)
-  }
-  // A preview main could not hand over may exist later; only the bytes themselves are worth keeping.
-  void pending.then(source => {
-    // An evicted request may finish after another request for the same image was cached.
-    if (pendingPreviews.get(key) !== entry) return
-    pendingPreviews.delete(key)
-    if (source !== null) {
-      entry.size += source.length
-      if (entry.size <= PREVIEW_CACHE_BYTES) {
-        fetchedPreviews.set(key, entry)
-        evictPreviews(fetchedPreviews, FETCHED_PREVIEW_CACHE)
-      }
-    }
-  })
-  return pending
 }
 
 interface LinkActions {
@@ -383,33 +320,61 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
   </LinkContext.Provider>
 })
 
-function AttachmentTile({ attachment, origin }: { attachment: MessageAttachment; origin?: AttachmentOrigin | undefined }): ReactNode {
-  // An unsent draft holds its own bytes; a submitted image arrives as a marker and is fetched here.
-  const inline = attachment.preview && 'dataUrl' in attachment.preview ? attachment.preview.dataUrl : undefined
-  const marked = Boolean(attachment.preview && 'available' in attachment.preview)
-  // undefined while the request is still out, so a pending tile does not claim the preview is unavailable.
-  const [fetched, setFetched] = useState<string | null | undefined>(undefined)
-  const threadId = origin?.threadId
-  const messageId = origin?.messageId
-  useEffect(() => {
-    setFetched(undefined)
-    if (inline !== undefined || !marked || threadId === undefined || messageId === undefined) return
-    let live = true
-    void requestPreview({ threadId, messageId }, attachment.id).then(source => { if (live) setFetched(source) })
-    return () => { live = false }
-  }, [inline, marked, threadId, messageId, attachment.id])
-  const dataUrl = inline ?? fetched ?? undefined
-  const source = useMemo(() => trustedPreviewSource(dataUrl), [dataUrl])
+/** The name a tile shows: bidirectional controls dropped, so "gpj.exe" cannot read as "exe.jpg". */
+const attachmentName = (attachment: MessageAttachment): string => attachment.name.replace(BIDI_CONTROLS, '') || 'Attachment'
+const attachmentDetails = (attachment: MessageAttachment): string =>
+  [attachmentTypeLabel(attachment.mimeType), formatAttachmentSize(attachment.sizeBytes)].filter(Boolean).join(' · ')
+
+/**
+ * One attachment. An image that can be shown is a button: a press opens it large, and right-click, Shift+F10 or the
+ * ContextMenu key offers Open image and Copy image.
+ */
+function AttachmentTile({ attachment, origin, onOpen, onShown }: {
+  attachment: MessageAttachment; origin?: AttachmentOrigin | undefined; onOpen: (from: HTMLElement) => void
+  /** Whether the tile is showing its image, which is what puts it in the viewer. */
+  onShown: (id: string, shown: boolean) => void
+}): ReactNode {
+  const { source, awaiting } = useAttachmentSource(attachment, origin)
   const [failed, setFailed] = useState(false)
   useEffect(() => setFailed(false), [source])
-  const name = attachment.name.replace(BIDI_CONTROLS, '') || 'Attachment'
+  const showing = Boolean(source) && !failed
+  useEffect(() => onShown(attachment.id, showing), [onShown, attachment.id, showing])
+  const [menuAt, setMenuAt] = useState<{ readonly x: number; readonly y: number } | null>(null)
+  const [feedback, copyImage] = useCopyImage()
+  const frame = useRef<HTMLButtonElement>(null)
+  const name = attachmentName(attachment)
   const isImage = attachment.mimeType?.startsWith('image/') ?? false
-  const details = [attachmentTypeLabel(attachment.mimeType), formatAttachmentSize(attachment.sizeBytes)].filter(Boolean).join(' · ')
-  if (source && !failed) return <figure className="rich-attachment rich-attachment--image" role="listitem">
-    <div className="rich-attachment__frame"><img src={source} alt={name} decoding="async" draggable={false} onError={() => setFailed(true)} /></div>
-    <figcaption><span className="rich-attachment__name" title={name}>{name}</span>{details && <span className="rich-attachment__meta">{details}</span>}</figcaption>
-  </figure>
-  const awaiting = inline === undefined && marked && fetched === undefined && threadId !== undefined && messageId !== undefined
+  const details = attachmentDetails(attachment)
+  if (source && !failed) {
+    const openMenu = (point: { readonly x: number; readonly y: number } | null): void => {
+      const rect = frame.current?.getBoundingClientRect()
+      setMenuAt(point ?? { x: rect?.left ?? 0, y: (rect?.bottom ?? 0) + 4 })
+    }
+    const menuItems: LinkMenuItem[] = [
+      { id: 'open', label: 'Open image', run: () => { if (frame.current) onOpen(frame.current) } },
+      { id: 'copy', label: 'Copy image', run: () => copyImage(source) },
+    ]
+    return <figure className="rich-attachment rich-attachment--image" role="listitem">
+      <button type="button" ref={frame} className="rich-attachment__frame tt-focusable" aria-label={`Open ${name}`} title="Open image · Right-click to copy"
+        aria-haspopup="menu" aria-expanded={menuAt ? true : undefined}
+        onClick={event => onOpen(event.currentTarget)}
+        onContextMenu={event => {
+          event.preventDefault()
+          // A keyboard-invoked context menu reports no pointer position, so it opens beside the image.
+          openMenu(event.clientX === 0 && event.clientY === 0 ? null : { x: event.clientX, y: event.clientY })
+        }}
+        onKeyDown={event => {
+          if (!(event.key === 'F10' && event.shiftKey) && event.key !== 'ContextMenu') return
+          event.preventDefault()
+          openMenu(null)
+        }}>
+        <img src={source} alt={name} decoding="async" draggable={false} onError={() => setFailed(true)} />
+      </button>
+      <figcaption><span className="rich-attachment__name" title={name}>{name}</span>
+        {(feedback ?? details) && <span className="rich-attachment__meta" role="status" aria-live="polite">{feedback ?? details}</span>}</figcaption>
+      {menuAt ? <LinkMenu at={menuAt} label={`Image: ${name}`} items={menuItems} returnFocus={frame.current} onClose={() => setMenuAt(null)} /> : null}
+    </figure>
+  }
   const reason = !attachment.mimeType || awaiting ? null : !isImage ? 'No preview for this file type' : failed ? 'Preview could not be shown' : 'Preview unavailable'
   return <div className="rich-attachment rich-attachment--file" role="listitem">
     {isImage || !attachment.mimeType ? <ImageIcon size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
@@ -422,11 +387,25 @@ function AttachmentTile({ attachment, origin }: { attachment: MessageAttachment;
 
 /** Submitted images with their name, type and size; metadata alone when no trusted preview exists. */
 export function AttachmentPreviews({ attachments, notice, origin }: AttachmentPreviewsProps): ReactNode {
+  const [open, setOpen] = useState<{ readonly id: string; readonly from: HTMLElement } | null>(null)
+  const [shown, setShown] = useState<ReadonlySet<string>>(() => new Set())
+  const onShown = useCallback((id: string, showing: boolean) => setShown(current => {
+    if (current.has(id) === showing) return current
+    const next = new Set(current)
+    if (showing) next.add(id); else next.delete(id)
+    return next
+  }), [])
   if (!attachments.length && !notice) return null
+  // The viewer steps through the message's images that its tiles are showing; one whose bytes are gone stays out.
+  const images = attachments.filter(attachment => shown.has(attachment.id))
+    .map(attachment => ({ id: attachment.id, preview: attachment.preview, name: attachmentName(attachment), details: attachmentDetails(attachment) }))
   return <div className="rich-attachments">
     {!!attachments.length && <div className="rich-attachments__list" role="list" aria-label={attachments.length === 1 ? 'Attachment' : `${attachments.length} attachments`}>
-      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} />)}
+      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} onShown={onShown} onOpen={from => setOpen({ id: attachment.id, from })} />)}
     </div>}
     {notice && <p className="rich-attachments__notice" role="note">{notice}</p>}
+    {open && images.some(image => image.id === open.id)
+      ? <AttachmentViewer images={images} origin={origin} startId={open.id} anchor={open.from} onClose={() => setOpen(null)} />
+      : null}
   </div>
 }
