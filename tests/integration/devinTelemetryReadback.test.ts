@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest'
 import { devinPolicyPath } from '../../src/main/agents/devinPolicy'
 import { DEVIN_CLI_VERSION } from '../../src/main/agents/devinRpc'
 import { devinFixture } from '../fixtures/devinFixture'
+import { devinOtelDefaults } from '../fixtures/devinOtel.mjs'
 
 // Devin CLI 3000.11.1 added an `otel` block to `_cognition.ai/config/read` (#1045). The fake answers as 3000.10.31 by
 // default, leaving the block out; these scripts make it answer as 3000.11.3 does.
@@ -36,13 +37,11 @@ it('connects the pinned version, which leaves otel out of its readback', async (
   expect(connected.verifiedVersion).toBeUndefined()
 })
 
-it('refuses a Devin that would export telemetry, in plain words, before any session exists', async () => {
-  await f.script({ otel: { enabled: true, endpoint: 'https://private-value.invalid', logs_endpoint: null, metrics_endpoint: null, headers: {},
-    logs_headers: {}, metrics_headers: {}, resource_attributes: {}, timeout_ms: null, log_export_interval_ms: null, metric_export_interval_ms: null,
-    disable_user_prompt_logging: false, disable_tool_logging: false }, cliVersion: '3000.11.3' })
+it('refuses a Devin whose telemetry settings Sotto did not set, in plain words, before any session exists', async () => {
+  await f.script({ otel: { enabled: true, ...devinOtelDefaults, endpoint: 'https://private-value.invalid' }, cliVersion: '3000.11.3' })
   const refused = await f.host.connect()
   expect(refused.connected).toBe(false)
-  expect(refused.error).toBe('Devin is set to export telemetry, which Sotto’s profile turns off. Nothing was sent, and your threads are kept. Remove the otel settings Devin reads, then reconnect.')
+  expect(refused.error).toBe('Devin reports telemetry settings that Sotto’s profile does not set, such as a collector to send to. Nothing was sent, and your threads are kept. Remove the otel settings Devin reads, then reconnect.')
   expect(await methods('session/new')).toHaveLength(0)
 })
 

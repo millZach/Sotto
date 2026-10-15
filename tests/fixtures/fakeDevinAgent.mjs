@@ -3,6 +3,7 @@ import { clearInterval } from 'node:timers'
 import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import { devinOtelDefaults as otelDefaults } from './devinOtel.mjs'
 
 // Synthetic ACP peer grounded in the native 3000.10.31 experiment. Only fixture data is recorded.
 const root = process.argv[2]
@@ -133,9 +134,6 @@ createInterface({ input: process.stdin }).on('line', line => {
   // does instead: `otel: 'profile'` reads back the profile's block filled in with defaults, `otel: 'default'` the CLI's
   // own default block whatever the profile says, and an object exactly that. `newBlock` adds a block Sotto never checked.
   const { otel, ...older } = config
-  const otelDefaults = { endpoint: null, logs_endpoint: null, metrics_endpoint: null, headers: {}, logs_headers: {}, metrics_headers: {},
-   resource_attributes: {}, timeout_ms: null, log_export_interval_ms: null, metric_export_interval_ms: null,
-   disable_user_prompt_logging: false, disable_tool_logging: false }
   const readOtel = script.otel === 'profile' ? { enabled: true, ...otelDefaults, ...otel } : script.otel === 'default' ? { enabled: true, ...otelDefaults } : script.otel
   result(frame.id, { config: { ...older, ...(readOtel ? { otel: readOtel } : {}), ...(script.newBlock ? { future_block: { enabled: true } } : {}) }, configPath })
  } else if (frame.method === 'session/new') {

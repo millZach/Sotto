@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { assertDevinWorkingDirectory, devinPolicyPath, prepareDevinPolicy, verifyDevinMcpList, verifyDevinPluginList, verifyDevinPolicy } from '../../../src/main/agents/devinPolicy'
 import { DEVIN_CLI_VERSION, DevinRefusal } from '../../../src/main/agents/devinRpc'
+import { devinOtelDefaults as otelDefaults } from '../../fixtures/devinOtel.mjs'
 import { setup } from '../../fixtures/devinPolicyFixture'
 
 it('writes only its owned profile and confirms the native normalized readback', async () => {
@@ -160,11 +161,6 @@ it('refuses unknown normalized fields and native routing or execution overrides'
   expect(() => verifyDevinPolicy({ config: { ...config, api_url: 'https://example.invalid' }, configPath: path }, profile)).toThrow(/newer than the one Sotto checked/u)
 })
 
-// What Devin CLI 3000.11.3 reads back for the profile's `otel` block: every field filled in.
-const otelDefaults = { endpoint: null, logs_endpoint: null, metrics_endpoint: null, headers: {}, logs_headers: {}, metrics_headers: {},
-  resource_attributes: {}, timeout_ms: null, log_export_interval_ms: null, metric_export_interval_ms: null,
-  disable_user_prompt_logging: false, disable_tool_logging: false }
-
 it('pins telemetry export off in every owned profile', async () => {
   const { userData, cwd, nativeConfig } = await setup()
   for (const allows of ['nothing', 'edits', 'everything'] as const) {
@@ -201,7 +197,7 @@ it('refuses telemetry export that has a destination or settings of its own, in p
     try { verifyDevinPolicy({ config: { ...config, otel }, configPath: profile.path }, profile) } catch (error) { refusal = error }
     expect(refusal).toBeInstanceOf(DevinRefusal)
     const message = (refusal as Error).message
-    expect(message).toMatch(/export telemetry.*Nothing was sent, and your threads are kept\. Remove the otel settings/u)
+    expect(message).toMatch(/telemetry settings that Sotto’s profile does not set.*Nothing was sent, and your threads are kept\. Remove the otel settings/u)
     expect(message).not.toContain('private-value')
   }
 })

@@ -191,7 +191,7 @@ export function verifyDevinPolicy(result: unknown, profile: DevinProfile): void 
     && resolve(response.configPath) === resolve(profile.path) && config
     ? compareNormalizedProfile(config, policyFor(profile.allows)) : 'differs'
   // Refusals, not garbled replies: DevinRpc passes them on as they are, so these words reach the provider's tile.
-  if (readback === 'telemetry') throw new DevinRefusal('Devin is set to export telemetry, which Sotto’s profile turns off. Nothing was sent, and your threads are kept. Remove the otel settings Devin reads, then reconnect.')
+  if (readback === 'telemetry') throw new DevinRefusal('Devin reports telemetry settings that Sotto’s profile does not set, such as a collector to send to. Nothing was sent, and your threads are kept. Remove the otel settings Devin reads, then reconnect.')
   if (readback === 'newer') throw new DevinRefusal(`This Devin version is newer than the one Sotto checked, and it has settings Sotto has not checked. Nothing was sent, and your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} until Sotto checks this version.`)
   if (readback !== 'matches') throw new DevinRefusal('Devin did not confirm the Sotto approval profile. Your thread is kept. Reconnect with the supported Devin version.')
 }

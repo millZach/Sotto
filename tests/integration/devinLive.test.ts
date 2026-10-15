@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DevinRejected, DevinRpc, devinEnvironment, findDevinExecutable } from '../../src/main/agents/devinRpc'
+import { DevinRejected, DevinRpc, devinEnvironment, findDevinExecutable, readDevinVersion } from '../../src/main/agents/devinRpc'
 import { DevinAcpHost } from '../../src/main/agents/devin'
 import { devinPolicyPath } from '../../src/main/agents/devinPolicy'
 
@@ -196,4 +196,36 @@ describe("requires SOTTO_DEVIN_LIVE=1 on Windows", () => {
       await rm(root, { recursive: true, force: true })
     }
   }, 180_000)
+})
+
+// #1045: one connect with the owned profile that pins telemetry export off, and no prompt, so it costs no Devin turn.
+// SOTTO_DEVIN_EXECUTABLE points it at another Devin CLI, such as 3000.11.3 unpacked from its zip, without installing it.
+describe("requires SOTTO_DEVIN_LIVE=1", () => {
+  it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1')('connects with telemetry export pinned off and reads it back as exporting nothing, without a prompt', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-devin-live-'))
+    if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-devin-live-')) throw new Error('Unexpected temporary directory')
+    const data = join(root, 'sotto')
+    await mkdir(data)
+    const executable = process.env['SOTTO_DEVIN_EXECUTABLE'] || await findDevinExecutable()
+    if (!executable) throw new Error('Devin CLI was not found')
+    const host = new DevinAcpHost(data, { executable })
+    try {
+      const connected = await host.connect()
+      expect(connected.connected, connected.error ?? 'refused without a reason').toBe(true)
+      expect(JSON.parse(await readFile(devinPolicyPath(data, 'nothing'), 'utf8')).otel).toEqual({ enabled: false })
+      // The adapter's own readback passed; this one is read again so the block can be checked here. Never printed.
+      let otel: unknown = 'unread'
+      const probe = new DevinRpc(executable, ['--config', devinPolicyPath(data, 'nothing'), 'acp'], join(data, 'devin', 'catalog'), devinEnvironment(), 30_000, () => undefined, () => undefined)
+      try {
+        await probe.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'sotto', version: '0.0.0' } })
+        await probe.request('_cognition.ai/config/read', {}, value => { otel = (value as { config?: { otel?: unknown } }).config?.otel })
+      } finally { probe.close(); await probe.closed }
+      const block = otel as Record<string, unknown> | undefined
+      expect(block === undefined || (!block['endpoint'] && !block['logs_endpoint'] && !block['metrics_endpoint'])).toBe(true)
+      console.info('devin-live-telemetry', { version: await readDevinVersion(executable), otelReadBack: block === undefined ? 'absent' : block['enabled'] === false ? 'off' : 'default' })
+    } finally {
+      host.disconnect(); await host.closed()
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 120_000)
 })
