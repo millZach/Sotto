@@ -14,7 +14,7 @@ import { museVersionForExecutable } from './museClientInstall'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
 import { preserveLegacyAliases } from './legacyAliases'
 import { museItemActivity, museItemDeltaSchema, museItemEventSchema, museItemSchema, musePlanActivity, museTerminal, museTurnCompletedSchema, museTurnEventSchema, type MuseItem } from './museActivity'
-import { museApprovalChoice, museApprovalDecidedSchema, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MusePending } from './museRequests'
+import { museApprovalChoice, museApprovalDecidedSchema, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museServerSuffix, museSessionServerName, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MuseApproval, type MusePending } from './museRequests'
 import { MUSE_CLI_VERSION, MUSE_MSP_VERSION, MuseRejected, MuseRpc, MuseTooOld, MuseUncertain, MuseUnreadable, MuseUnsupported, findMuseExecutable, museCommandId, museEnvironment, type MuseFrame } from './museRpc'
 import { needsPerson, unreadableRequest } from './nativeRequests'
 import { OpenSessions } from './openSessions'
@@ -25,7 +25,9 @@ import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotP
 import { ReadsBeforeSend } from './readsBeforeSend'
 import { markSendStage } from './sendStages'
 import { SessionReaper } from './sessionReaper'
+import type { BrowserAgentTools } from './browserAgentServer'
 import { ThreadMessageLog } from './threadMessageLog'
+import { scopedThreadServers, TOOL_WAIT_HEADER, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
@@ -70,6 +72,7 @@ type Alias = z.infer<typeof aliasSchema>
 const initializeSchema = z.looseObject({
   serverInfo: z.looseObject({ name: z.string(), version: z.string().min(1).max(64) }),
   schema: z.looseObject({ version: z.number() }),
+  grantedCapabilities: z.array(z.string()).default([]),
 })
 type MuseClient = z.infer<typeof initializeSchema>
 const modelEntrySchema = z.looseObject({
@@ -120,7 +123,42 @@ function clientRefusal(client: MuseClient): MuseUnsupported | undefined {
 /** How Sotto spawns the native client: one MSP host per thread (`muse serve`, ADR-0038, ADR-0079). */
 export function museServeArguments(): string[] { return ['serve'] }
 
-interface ThreadProcess { rpc: MuseRpc; ready: Promise<ThreadProcess>; clientRevision: number; turnRevision: number; closing: boolean; lost: boolean; sessionId?: string; resync?: Promise<void> }
+/** The capability a host grants before it takes tool servers on `session/start` and `session/resume` (ADR-0079). */
+const SESSION_MCP = 'sessionMcp'
+/**
+ * How long Muse waits for one tool call, in seconds. It has no per-session setting and `muse serve -c` takes no key for
+ * it, so each of Sotto's servers is told instead, and a tool that waits for the user returns inside it (ADR-0079).
+ */
+const MUSE_TOOL_WAIT_SECONDS = 300
+/** One of Sotto's servers in MSP's form: loopback streamable HTTP with its bearer token, required for the session to run. */
+function museToolServer(server: ThreadMcpServer): Record<string, unknown> {
+  return { transport: 'streamableHttp', url: server.url, mode: 'required',
+    headers: { ...Object.fromEntries(server.headers.map(header => [header.name, header.value])), [TOOL_WAIT_HEADER]: String(MUSE_TOOL_WAIT_SECONDS) } }
+}
+
+/**
+ * The one `session/start` a thread makes, the same on every try: its replay after a lost acknowledgement must match the
+ * first byte for byte, or Muse refuses it (`command_id_conflict`).
+ */
+function startParams(alias: Alias, tools: { config?: unknown }): Record<string, unknown> {
+  return { commandId: alias.startCommandId, workspaceRoot: alias.cwd, modelId: alias.modelId,
+    ...(alias.runtimeMode ? { approvalMode: MSP_MODE[alias.runtimeMode] } : {}), ...tools }
+}
+
+interface ThreadProcess {
+  rpc: MuseRpc; ready: Promise<ThreadProcess>; clientRevision: number; turnRevision: number; closing: boolean; lost: boolean; sessionId?: string; resync?: Promise<void>
+  /** Whether this host granted `sessionMcp`, so its sessions may be given Sotto's tool servers. */
+  sessionMcp?: boolean
+  /**
+   * Set once this host has built the thread's session runtime, by a start or the first resume, with the names of the
+   * Sotto tools it was given. Later resumes on the same host send no servers: Muse keeps the ones it was built with,
+   * and refuses a different set (`session_configuration_conflict`).
+   */
+  tools?: ReadonlySet<string>
+  /** Approvals for this session's own Sotto tools that Sotto is answering, or answered and Muse may ask again at a later stage. */
+  admitting?: Set<string>
+  admitted?: Map<string, MuseApproval>
+}
 type Pending = MusePending & { rpc: MuseRpc; answerCommandId?: string }
 interface Fold {
   /** The newest copy of each item, so a delta or an update folds onto what came before it. */
@@ -189,6 +227,86 @@ export class MuseMspHost implements AgentHost {
     if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason }
     if (entry) this.closeProcess(entry)
     this.emit()
+  }
+  private browserTools: BrowserAgentTools | undefined
+  useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
+  private threadTools: readonly ScopedThreadTools[] = []
+  useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
+  /**
+   * What the next `session/start` or `session/resume` on this host carries: Sotto's own tool servers for the thread
+   * (the browser's, and each scoped server that answers for it, ADR-0056) the first time the host builds the session's
+   * runtime, as Claude Code, Codex and Grok Build get them. Nothing when the host did not grant `sessionMcp`, for a
+   * personal chat, or once the runtime is built: a cold resume needs them again, because Muse keeps none across hosts.
+   */
+  private async sessionTools(id: string, entry: ThreadProcess): Promise<{ params: { config?: { mcpServers: Record<string, unknown> } }; tools: ReadonlySet<string> }> {
+    if (entry.tools) return { params: {}, tools: entry.tools }
+    if (!entry.sessionMcp || this.aliases[id]?.kind === 'personal') return { params: {}, tools: new Set() }
+    const generation = this.generation
+    const servers: { server: ThreadMcpServer; names: readonly string[] }[] = []
+    if (this.browserTools) servers.push({ server: await this.browserTools.mcpServer(id), names: this.browserTools.definitions.map(tool => tool.name) })
+    for (const { server, tools } of await scopedThreadServers(this.threadTools, id)) servers.push({ server, names: tools.definitions.map(tool => tool.name) })
+    this.assertGeneration(generation)
+    if (!servers.length) return { params: {}, tools: new Set() }
+    // Each server goes by a name only this run's thread knows, so a user's own server cannot show its tool names (ADR-0079).
+    let suffix = this.serverSuffixes.get(id)
+    if (!suffix) { suffix = museServerSuffix(); this.serverSuffixes.set(id, suffix) }
+    const named = servers.map(({ server, names }) => ({ server, names, name: museSessionServerName(server.name, suffix) }))
+    return {
+      params: { config: { mcpServers: Object.fromEntries(named.map(({ server, name }) => [name, museToolServer(server)])) } },
+      tools: new Set(named.flatMap(({ name, names }) => names.map(tool => museToolName(name, tool)))),
+    }
+  }
+  /**
+   * The suffix each thread's Sotto tool servers carry on Muse, for this run. It stays the same for the run, so a start
+   * replayed after a lost acknowledgement matches the first, and is never saved: a new run names them afresh.
+   */
+  private readonly serverSuffixes = new Map<string, string>()
+  /**
+   * What a host built a thread's session runtime with. A thread on a host that did not grant session tool servers says
+   * so, and Sotto offers no control that would need its tools; a personal chat never takes them and says nothing.
+   */
+  private builtWith(id: string, entry: ThreadProcess, tools: ReadonlySet<string>): void {
+    entry.tools = tools
+    if (!this.aliases[id]) return
+    const thread = this.thread(id)
+    if (!entry.sessionMcp && this.aliases[id]?.kind !== 'personal') thread.sottoToolsWithheld = true
+    else delete thread.sottoToolsWithheld
+  }
+  /** An approval as it reaches the thread: one for this session's own Sotto tools is answered here, every other is shown. */
+  private present(pending: MusePending, entry: ThreadProcess): void {
+    if (pending.kind === 'approval' && this.admitOwnTool(pending, entry)) return
+    this.showRequest(pending, entry)
+  }
+  /**
+   * Answer Muse's prompt before a call to one of this session's own Sotto tools with its one-time allow (ADR-0079), as
+   * Grok's adapter answers Grok's (ADR-0020, ADR-0035). It admits the agent to Sotto's own endpoint and nothing more; the
+   * tools still ask the user wherever they always do. A request already shown is the user's to answer, and one Sotto
+   * could not answer is shown after all. The decision is not awaited here: its reply comes on the frame queue.
+   */
+  private admitOwnTool(pending: Extract<MusePending, { kind: 'approval' }>, entry: ThreadProcess): boolean {
+    const alias = this.aliases[pending.threadId]
+    if (!alias?.museSessionId || alias.kind === 'personal' || !entry.tools?.size || this.pending.has(pending.request.id)) return false
+    const choiceId = museToolAdmission(pending.approval, entry.tools)
+    if (!choiceId) return false
+    const admitting = entry.admitting ??= new Set(), admitted = entry.admitted ??= new Map()
+    if (admitting.has(pending.request.id)) return true
+    admitting.add(pending.request.id)
+    admitted.set(pending.approval.approvalId, pending.approval)
+    const generation = this.generation, threadId = pending.threadId, approvalId = pending.approval.approvalId
+    void entry.rpc.request('approval/decide', {
+      commandId: museCommandId(), sessionId: alias.museSessionId, approvalId,
+      choiceId, requirementId: pending.approval.currentRequirementId,
+    }).then(ack => { museApprovalDecidedSchema.parse(ack) }).catch(error => {
+      if (generation !== this.generation || this.processes.get(threadId) !== entry) return
+      if (error instanceof MuseRejected && error.kind === 'approvalAlreadyResolved') return
+      // The approval moved on before this answer reached it, perhaps by an update Sotto had no stage for yet: read
+      // what Muse holds now, which admits the current stage or shows it.
+      if (error instanceof MuseRejected && error.kind === 'approvalRequirementStale') { void this.resync(threadId, entry).catch(() => undefined); return }
+      // Resolved meanwhile, or a later stage took over this approval: there is nothing left to show.
+      if (admitted.get(approvalId) !== pending.approval) return
+      admitted.delete(approvalId); this.showRequest(pending, entry)
+    }).finally(() => { admitting.delete(pending.request.id) })
+    return true
   }
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
@@ -298,9 +416,13 @@ export class MuseMspHost implements AgentHost {
     const exit = rpc.closed.finally(() => { this.exits.delete(exit) }); this.exits.add(exit)
     return rpc
   }
-  /** Ask a host which client it is. Whether Sotto will drive it is `clientRefusal`'s answer. */
+  /**
+   * Ask a host which client it is, and for session tool servers: a client that does not know the capability simply
+   * leaves it out of its grant, so asking costs nothing at the floor. Whether Sotto will drive it is `clientRefusal`'s answer.
+   */
   private async identify(rpc: MuseRpc): Promise<MuseClient> {
-    const client = initializeSchema.parse(await rpc.request('initialize', { clientInfo: { name: 'sotto', title: 'Sotto', version: appVersion } }))
+    const client = initializeSchema.parse(await rpc.request('initialize', { clientInfo: { name: 'sotto', title: 'Sotto', version: appVersion },
+      capabilities: { requestedCapabilities: [SESSION_MCP] } }))
     rpc.notify('initialized')
     return client
   }
@@ -345,6 +467,7 @@ export class MuseMspHost implements AgentHost {
         const client = await this.identify(entry.rpc)
         const refusal = clientRefusal(client)
         if (refusal) throw refusal
+        entry.sessionMcp = client.grantedCapabilities.includes(SESSION_MCP)
       } catch (error) {
         if (this.processes.get(id) === entry) this.processes.delete(id)
         this.closeProcess(entry)
@@ -572,7 +695,7 @@ export class MuseMspHost implements AgentHost {
           this.recordRequestChange(pending)
         }
       }
-      for (const approval of restored) this.showRequest(approval, entry)
+      for (const approval of restored) this.present(approval, entry)
       if (changed) this.emit()
     } finally { releaseRead() }
   }
@@ -593,10 +716,20 @@ export class MuseMspHost implements AgentHost {
       this.assertGeneration(generation)
       if (this.processes.get(id) !== entry) throw new MuseUncertain('Muse thread process changed before its session could open.')
       if (!alias.museSessionId && alias.startCommandId) {
-        const started = sessionStartSchema.parse(await entry.rpc.request('session/start', {
-          commandId: alias.startCommandId, workspaceRoot: alias.cwd, modelId: alias.modelId,
-          ...(alias.runtimeMode ? { approvalMode: MSP_MODE[alias.runtimeMode] } : {}),
-        }))
+        const tools = await this.sessionTools(id, entry)
+        this.assertGeneration(generation)
+        const start = () => entry.rpc.request('session/start', startParams(alias, tools.params))
+        let reply: unknown
+        try { reply = await start() } catch (error) {
+          if (!(error instanceof MuseRejected && error.reason === 'command_id_conflict')) throw error
+          // The first start reached Muse carrying tool servers this run cannot repeat: a restart gives them a new
+          // address and token, and Muse refuses a changed replay. Sotto never learned that session, so no turn ran in
+          // it; a fresh start loses nothing and leaves an empty session behind in Muse.
+          alias.startCommandId = museCommandId(); await this.persist()
+          reply = await start()
+        }
+        const started = sessionStartSchema.parse(reply)
+        this.builtWith(id, entry, tools.tools)
         alias.museSessionId = started.session.sessionId
         entry.sessionId = alias.museSessionId
         this.confirmSession(id, alias, started.session)
@@ -605,9 +738,12 @@ export class MuseMspHost implements AgentHost {
       if (!alias.museSessionId) return
       entry.sessionId = alias.museSessionId
       const turnRevision = entry.turnRevision
+      const tools = await this.sessionTools(id, entry)
+      this.assertGeneration(generation)
       const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', {
-        commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false,
+        commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false, ...tools.params,
       }))
+      this.builtWith(id, entry, tools.tools)
       if (this.processes.get(id) !== entry) return
       this.assertGeneration(generation)
       const items = resumed.history.items ?? resumed.history.snapshot?.state.items
@@ -628,7 +764,7 @@ export class MuseMspHost implements AgentHost {
           if (generation !== this.generation || this.processes.get(id) !== entry) return
           const restored = [...listed.approvals.map(approval => museApprovalPending(id, approval)),
             ...listed.userInputs.map(input => museUserInputPending(id, input))].filter(pending => this.requestUnchanged(pending, revision))
-          for (const pending of restored) this.showRequest(pending, entry)
+          for (const pending of restored) this.present(pending, entry)
         } finally { releaseRead() }
       }
       this.loaded.add(id); this.log.pin(id); this.reaper.touch(id); this.emit()
@@ -914,7 +1050,7 @@ export class MuseMspHost implements AgentHost {
           if (!sessionOf(parsed)) return
           await this.refuseWatcher(owner, rpc)
           if (!current()) return
-          this.showRequest(museApprovalPending(owner, parsed), entry)
+          this.present(museApprovalPending(owner, parsed), entry)
           return
         }
         case 'approval/updated': {
@@ -924,12 +1060,17 @@ export class MuseMspHost implements AgentHost {
             && candidate.threadId === owner && candidate.approval.approvalId === parsed.approvalId)
           if (pending?.kind === 'approval') {
             this.showRequest(museApprovalRefreshed(pending, parsed), entry)
+          } else {
+            // A later stage of an approval Sotto admitted is admitted the same way, by the subject it now names.
+            const admitted = entry.admitted?.get(parsed.approvalId)
+            if (admitted) this.present(museApprovalRefreshed(museApprovalPending(owner, admitted), parsed), entry)
           }
           return
         }
         case 'approval/resolved': {
           const parsed = approvalResolvedSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
+          entry.admitted?.delete(parsed.approvalId)
           this.recordNativeRequestChange(owner, 'approval', parsed.approvalId)
           for (const pending of [...this.pending.values()]) if (pending.kind === 'approval'
             && pending.threadId === owner && pending.approval.approvalId === parsed.approvalId) this.removeRequest(pending)
@@ -1068,11 +1209,11 @@ export class MuseMspHost implements AgentHost {
         try { entry = await this.threadProcess(command.threadId); this.assertGeneration(generation) } catch (error) { releaseCreate(); throw error }
         try { this.aliases[command.threadId] = alias; await this.persist() } catch (error) { releaseCreate(); throw error }
         try {
+          const tools = await this.sessionTools(command.threadId, entry)
+          this.assertGeneration(generation)
           watcherGuard?.()
-          const started = sessionStartSchema.parse(await entry.rpc.request('session/start', {
-            commandId: alias.startCommandId, workspaceRoot: alias.cwd, modelId: alias.modelId,
-            ...(alias.runtimeMode ? { approvalMode: MSP_MODE[alias.runtimeMode] } : {}),
-          }))
+          const started = sessionStartSchema.parse(await entry.rpc.request('session/start', startParams(alias, tools.params)))
+          this.builtWith(command.threadId, entry, tools.tools)
           alias.museSessionId = started.session.sessionId
           entry.sessionId = alias.museSessionId
           this.confirmSession(command.threadId, alias, started.session)
@@ -1357,7 +1498,7 @@ export class MuseMspHost implements AgentHost {
       for (const pending of unchanged) {
         if (pending.kind === 'approval' ? !openApprovals.has(pending.approval.approvalId) : !openInputs.has(pending.input.userInputId)) this.removeRequest(pending)
       }
-      for (const pending of restored) this.showRequest(pending, entry)
+      for (const pending of restored) this.present(pending, entry)
     } finally { releaseRead() }
   }
   /** A resume can prove that work ended even when the stream lost its terminal event; its outcome remains unknown. */

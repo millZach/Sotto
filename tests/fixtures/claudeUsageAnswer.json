@@ -1,0 +1,17 @@
+{
+  "session": { "total_cost_usd": 12.5, "total_api_duration_ms": 1, "total_duration_ms": 1, "total_lines_added": 3, "total_lines_removed": 4, "model_usage": {} },
+  "subscription_type": "max",
+  "rate_limits_available": true,
+  "rate_limits": {
+    "five_hour": { "utilization": 41, "resets_at": "2099-10-14T20:00:00.000Z" },
+    "seven_day": { "utilization": 6, "resets_at": "2099-10-21T13:00:00.000Z" },
+    "seven_day_oauth_apps": { "utilization": 13, "resets_at": "2099-10-21T13:00:00.000Z" },
+    "seven_day_opus": null,
+    "seven_day_sonnet": { "utilization": null, "resets_at": null },
+    "model_scoped": [{ "display_name": "Fable", "utilization": 0, "resets_at": "2099-10-21T13:00:00.000Z" }],
+    "extra_usage": { "is_enabled": false, "monthly_limit": 5000, "used_credits": 1234, "utilization": 24.68, "currency": "USD" },
+    "tangerine_blossom": { "utilization": 77, "resets_at": "2099-10-15T00:00:00.000Z", "dollars": 99 }
+  },
+  "quiet_otter": { "spend_usd": 42 },
+  "behaviors": null
+}

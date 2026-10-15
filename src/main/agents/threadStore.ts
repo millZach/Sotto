@@ -10,6 +10,7 @@ import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type Thr
 import { isImmutableActivities } from './activitySnapshots'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
+import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
 
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
 export const FIRST_WINDOW_TURNS = 10
@@ -384,6 +385,11 @@ export class ThreadStore {
 
   markSubagentWordsMoved(): void {
     writeMeta(this.requireOpen(), 'subagentWordsMoved', '1')
+  }
+
+  /** Usage's history import (ADR-0083): each user message's identity, instant and wake-up mark. Reads no text. */
+  visitUserMessageInstants(visitor: (message: StoredUserMessageInstant) => void, before?: string): void {
+    visitUserMessageInstants(this.requireOpen(), visitor, before)
   }
 
   /** True once an authoritative list has been stored, even when that list is empty. */
