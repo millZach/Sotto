@@ -13,8 +13,10 @@ the greeting, every pane centring its own new thread, the placeholder left as it
 - `threadGreeting.logic.ts` holds the eleven lines and the three timed ones (morning, evening, late night), picks one
   the first time the window shows a thread, keeps it while the window is open, and never opens two new threads in a
   row on the same line.
-- `ThreadTranscript` decides when a thread greets: nothing sent, nothing pending or queued, history loaded, not
-  working or compacting, no request and no older history to show, and not Watcher's own conversation. It draws
+- `ThreadTranscript` decides when a thread greets: nothing sent, nothing pending or queued, history loaded and its
+  summary counting no messages, idle rather than working or failed, not settled or archived, not compacting, no request
+  and no older history to show, and not Watcher's own conversation. The last four of those were added after Sotto's bug
+  bot showed a resumed, archived or failed empty thread greeted as new. It draws
   `ThreadGreeting` through a portal into a slot the pane keeps directly above the composer. Every other empty case
   keeps the line it had.
 - `ThreadPane` adds a balance element under the composer. While the slot holds a greeting, `threads.css` gives the

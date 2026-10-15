@@ -40,8 +40,12 @@ interface Lift { readonly at: number; readonly top: number; readonly left: strin
  * greeting, the composer slides from where it stood to its place at the bottom and widens as it goes; with motion
  * reduced it is simply there. A greeting emptied any other way, such as a message from the phone, moves at once.
  */
-function useComposerLift(slot: HTMLElement | null, compose: React.RefObject<HTMLDivElement | null>): () => void {
+function useComposerLift(slot: HTMLElement | null, compose: React.RefObject<HTMLDivElement | null>, threadId: string): () => void {
   const lift = useRef<Lift | null>(null)
+  const slide = useRef<Animation | undefined>(undefined)
+  // The pane is reused for the next thread. Its composer forgets a send the last thread never started, before the
+  // emptied slot is heard, and stops a slide still under way.
+  useLayoutEffect(() => () => { lift.current = null; slide.current?.cancel(); slide.current = undefined }, [threadId])
   useEffect(() => {
     if (slot === null) return
     const observer = new MutationObserver(() => {
@@ -52,7 +56,7 @@ function useComposerLift(slot: HTMLElement | null, compose: React.RefObject<HTML
       if (element === null || performance.now() - from.at > LIFT_WINDOW_MS) return
       const style = getComputedStyle(element)
       const rise = from.top - element.getBoundingClientRect().top
-      element.animate?.([
+      slide.current = element.animate?.([
         { transform: `translateY(${rise}px)`, paddingLeft: from.left, paddingRight: from.right },
         { transform: 'translateY(0)', paddingLeft: style.paddingLeft, paddingRight: style.paddingRight },
       ], { duration: 320, easing: 'cubic-bezier(.2, .8, .2, 1)' })
@@ -143,7 +147,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   /** Where a new thread's greeting stands, directly above the composer. */
   const [greetingSlot, setGreetingSlot] = useState<HTMLElement | null>(null)
   const compose = useRef<HTMLDivElement>(null)
-  const liftComposer = useComposerLift(greetingSlot, compose)
+  const liftComposer = useComposerLift(greetingSlot, compose, row.thread.id)
   const submissions = useSubmissions(store)
   // The pane only needs to know whether a draft exists. Subscribing to its text
   // re-renders the transcript and header synchronously on every keystroke.

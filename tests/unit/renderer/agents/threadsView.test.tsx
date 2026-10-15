@@ -217,11 +217,17 @@ describe('ThreadsView workspace', () => {
     if (!reduced) expect(animate.mock.contexts[0]).toHaveClass('thread-workspace__compose')
   })
 
-  it('keeps the working line in the transcript for a new thread that is already working', () => {
+  for (const [name, change] of [
+    ['already working', { status: 'running' }],
+    ['failed', { status: 'error' }],
+    ['archived', { archivedAt: '2026-10-14T12:00:00.000Z' }],
+    ['counting messages its history has not drawn yet', { historyStatus: undefined, summary: { messageCount: 12 } }],
+  ] as const) it(`keeps the transcript's own line for an empty thread that is ${name}`, () => {
     const state = stateFixture()
     const thread = state.host.threads.find(item => item.id === state.activeThreadId)!
-    Object.assign(thread, { messages: [], activities: [], requests: [], historyStatus: 'ready', status: 'running', earlierAvailable: false, compaction: undefined })
+    Object.assign(thread, { messages: [], activities: [], requests: [], historyStatus: 'ready', status: 'idle', earlierAvailable: false, compaction: undefined }, change)
     renderThreads(state)
+    expect(screen.getByLabelText('Thread transcript')).toBeInTheDocument()
     expect(document.querySelector('.thread-greeting')).toBeNull()
   })
 

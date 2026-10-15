@@ -22,6 +22,7 @@ import { isResumeNoteText } from '../../../shared/restartResume'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
+import { isThreadClosed } from '../../../shared/threadActivity'
 import { ThreadGreeting } from './ThreadGreeting'
 import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
@@ -574,10 +575,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   }
 
   const empty = !thread.messages.length && !pending.length && !queuedEchoes.length && !recovery.length && !showsActivity
-  // A thread nothing has been sent to greets above its composer instead. Watcher's own conversation, a working or
-  // compacting thread, and one with a request or older history to show keep the line in the transcript.
+  // A thread nothing has been sent to greets above its composer instead. Watcher's own conversation, a working,
+  // failed, compacting, settled or archived thread, one with a request or older history to show, and one whose summary
+  // counts messages not drawn yet keep the line in the transcript.
   const greets = empty && greetingSlot !== undefined && !watcher && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
-    && thread.status !== 'running' && thread.compaction?.status !== 'running' && thread.requests.length === 0 && !thread.earlierAvailable
+    && thread.status === 'idle' && !isThreadClosed(thread) && (thread.summary?.messageCount ?? 0) === 0
+    && thread.compaction?.status !== 'running' && thread.requests.length === 0 && !thread.earlierAvailable
   return <div className="thread-transcript">
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} tabIndex={0} role="log" aria-live="off"
       aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>

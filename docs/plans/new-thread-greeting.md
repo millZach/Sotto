@@ -12,8 +12,8 @@ Acceptance checks:
   of "What is next for this thread?". A timed line shows only at its time of day.
 - The greeting and composer stand in the middle of the pane, the composer no wider than 720px. The first send slides
   the composer to the bottom and widens it; reduced motion moves it at once.
-- A working or compacting thread, one with a request or older history, and Watcher's own conversation keep the line
-  they had.
+- A working, failed, compacting, settled or archived thread, one with a request, older history or messages not yet
+  drawn, and Watcher's own conversation keep the line they had.
 - Theme tokens only; dark, light and reduced motion checked at 1600x1000, 1280x800 and 820x560, with nothing clipped
   at the minimum and the option pickers still inside the window.
 
