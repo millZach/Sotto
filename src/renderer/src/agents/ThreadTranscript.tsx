@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { flushSync } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, MessageSquare } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
 import { isThreadBusy, isVisualMessage, type AgentFollowup, type AgentMessage, type AgentState } from '../../../shared/agents'
@@ -22,6 +22,8 @@ import { isResumeNoteText } from '../../../shared/restartResume'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
+import { isThreadClosed } from '../../../shared/threadActivity'
+import { ThreadGreeting } from './ThreadGreeting'
 import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
@@ -411,8 +413,10 @@ export function reachesJumpBand(scroller: HTMLElement): boolean {
  * reading older messages keeps its place and offers Jump to latest. Showing earlier messages keeps
  * the message under the reader where it was.
  */
-export function ThreadTranscript({ row, state, command, store, followSignal, children, watcher = false }: {
+export function ThreadTranscript({ row, state, command, store, followSignal, children, watcher = false, greetingSlot }: {
   readonly row: ThreadRow
+  /** Where a new thread's greeting goes, directly above the composer. Without one, the thread keeps the plain empty line. */
+  readonly greetingSlot?: HTMLElement | null
   /** Watcher's own conversation: its replies are Watcher's. */
   readonly watcher?: boolean
   readonly state: AgentState
@@ -571,6 +575,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   }
 
   const empty = !thread.messages.length && !pending.length && !queuedEchoes.length && !recovery.length && !showsActivity
+  // A thread nothing has been sent to greets above its composer instead. Watcher's own conversation, a working,
+  // failed, compacting, settled or archived thread, one with a request or older history to show, and one whose summary
+  // counts messages not drawn yet keep the line in the transcript.
+  const greets = empty && greetingSlot !== undefined && !watcher && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
+    && thread.status === 'idle' && !isThreadClosed(thread) && (thread.summary?.messageCount ?? 0) === 0
+    && thread.compaction?.status !== 'running' && thread.requests.length === 0 && !thread.earlierAvailable
   return <div className="thread-transcript">
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} tabIndex={0} role="log" aria-live="off"
       aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>
@@ -585,7 +595,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
             : null}
         {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined} />
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
-            : thread.historyStatus === 'error' || !empty ? null
+            : thread.historyStatus === 'error' || !empty || greets ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.compaction?.status === 'running' ? 'Compacting the context.' : thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
         {/* A prompt on its way sits where it will be read, and the working line under it counts from the press. */}
         {sending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
@@ -596,6 +606,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {children}
       </div>
     </div>
+    {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} />, greetingSlot) : null}
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}
     {(away || unseen) && !requestUnderJump ? <button type="button" className="thread-transcript__jump tt-focusable" data-unseen={unseen || undefined} onClick={toEnd}>
       <ArrowDown size={16} aria-hidden="true" />{unseen ? 'New messages' : 'Jump to latest'}

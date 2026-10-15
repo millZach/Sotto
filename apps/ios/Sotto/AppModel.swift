@@ -891,7 +891,7 @@ extension AppModel {
         switch place {
         case .thread(let ref): return canAnswer(request, in: ref)
         case .watcher(let hostID, let target):
-            guard let card = watcherPage(hostID)?.card(target, requestID: request.id), card.request == request else { return false }
+            guard let card = watcherPage(hostID)?.card(target, requestID: request.id), card.request.asksTheSame(as: request) else { return false }
             return canAnswerWatcherCard(card, on: hostID)
         }
     }
@@ -899,7 +899,7 @@ extension AppModel {
         switch place {
         case .thread(let ref): await answer(request, in: ref, choice: choice, text: text, answers: answers)
         case .watcher(let hostID, let target):
-            guard let card = watcherPage(hostID)?.card(target, requestID: request.id), card.request == request else { return }
+            guard let card = watcherPage(hostID)?.card(target, requestID: request.id), card.request.asksTheSame(as: request) else { return }
             await answerWatcherCard(card, on: hostID, choice: choice, text: text, answers: answers)
         }
     }
@@ -1741,6 +1741,9 @@ struct HeldDetail {
     // MARK: Reading
 
     func computer(_ hostID: String) -> SavedComputer? { computers.first { $0.hostID == hostID } }
+    /// Where a computer's question pages open (ADR-0085): the address its connection reached, which can be phone access's
+    /// other port, else the one it was saved with.
+    func pageEndpoint(_ hostID: String) -> HostEndpoint? { connections[hostID]?.reached ?? computer(hostID)?.endpoint }
     func name(_ hostID: String) -> String { computer(hostID)?.name ?? "the computer" }
     func status(_ hostID: String) -> ComputerStatus { live[hostID]?.status ?? .connecting }
     func online(_ hostID: String) -> Bool { status(hostID) == .online }
