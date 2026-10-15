@@ -97,6 +97,11 @@ it('sets a stopped wake-up for Watcher alone going again behind the user’s fol
     // Not sent again: new news is a reason to try once more.
     await store.edit('thread', store.peek().items[0]!.id)
     await store.claim(id); await store.settle(id, 'failed', 'Synthetic send failure')
+    // A thread's own facts moving only keep the news current: they never send it again, mid-turn or otherwise.
+    const evidence: WakeUpNews = { source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
+      events: [{ id: 'evidence', requestId: randomUUID(), target: { hostId, threadId: 'worker' }, generation: 0, kind: 'evidence-changed', evidenceIds: ['fact'], revision: 'revision', observedAt: new Date().toISOString() }] }
+    await store.queueWakeUp('thread', evidence, word)
+    expect(store.peek().items[0]).toMatchObject({ id, status: 'failed' })
     await store.queueWakeUp('thread', news('second'), word)
     expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
     // An unknown send is never sent twice.

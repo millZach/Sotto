@@ -222,8 +222,10 @@ export class FollowupStore {
         const folded = foldWakeUpNews(waiting.news ?? [], wakeUpNewsSchema.parse(news))
         // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
         // A resume note is the review a paused queue waits for: the turn it follows did not finish, and it says so.
-        // News for Watcher is a reason to try a wake-up again that no one is shown, and so no one can resend.
-        const resumes = isRestartNews(news) || isWatcherNews(news) && waiting.status === 'failed' && isWatcherOnlyWakeUp({ wakeUp: true, news: folded })
+        // News that needs Watcher's attention tries a wake-up again that no one is shown, and so no one can resend.
+        // A thread's facts alone only keep its news current: they never send it, mid-turn or otherwise.
+        const attention = isWatcherNews(news) && news.events.some(event => event.kind !== 'evidence-changed')
+        const resumes = isRestartNews(news) || attention && waiting.status === 'failed' && isWatcherOnlyWakeUp({ wakeUp: true, news: folded })
           ? { status: 'queued' as const, error: undefined } : {}
         const next = queuedSchema.parse({ ...waiting, news: folded, text: word(folded), updatedAt: now, ...resumeAfterTurnId ? { resumeAfterTurnId } : {}, ...resumes })
         state.items = state.items.map(item => item === waiting ? next : item)
