@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed October 14, 2026, for Zach's decision. Nothing here is accepted until he says so, and nothing is built until then. Zach settled the shape on October 14 in the Watcher engine ticket map (#1023): ordinary threads can start threads, sharing Watcher's starts limit, with the user's typing pausing it (decision 2), and later that day that delegation goes two levels deep (decision 11), and the word is **delegation**, with its **outcome** (decision 3). This record proposes the rest, for #1029 (ticket E6). It amends [ADR-0073](0073-watcher-coordinates-threads-with-its-providers-own-tools.md)'s start authority and keeps [ADR-0004](0004-authority-in-policy-records.md) whole. It is an Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)).
+Accepted by Zach on October 14, 2026. It is built with #1029 (ticket E6). Zach settled the shape on October 14 in the Watcher engine ticket map (#1023): ordinary threads can start threads, sharing Watcher's starts limit, with the user's typing pausing it (decision 2), and later that day that delegation goes two levels deep (decision 11), and the word is **delegation**, with its **outcome** (decision 3). This record settles the rest. It amends [ADR-0073](0073-watcher-coordinates-threads-with-its-providers-own-tools.md)'s start authority and keeps [ADR-0004](0004-authority-in-policy-records.md) whole. It is an Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)).
 
 ## Context
 

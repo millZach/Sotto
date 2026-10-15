@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed October 14, 2026, for Zach's decision. Nothing here is accepted until he says so, and nothing is built until then. Zach decided on October 14 that workers can start on any machine connected to the desktop and that code moves directly over the SSH link rather than through GitHub (decision 6 of the Watcher engine ticket map, #1023). This record proposes how, for #1033 (ticket E10), from a spike run the same day against forge. It is an Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)).
+Accepted by Zach on October 14, 2026. It is built with #1033 (ticket E10). Zach decided on October 14 that workers can start on any machine connected to the desktop and that code moves directly over the SSH link rather than through GitHub (decision 6 of the Watcher engine ticket map, #1023). This record settles how, from a spike run the same day against forge. It is an Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)).
 
 ## Context
 
