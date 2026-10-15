@@ -6,6 +6,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentHost } from '../../src/main/agents/host'
+import { WatcherEvidenceStore } from '../../src/main/agents/watcherEvidence'
 import { watcherTurnOutcome } from '../../src/main/agents/watcherOutcomes'
 import type { WatcherOperation } from '../../src/shared/watcher'
 import { claudeFixture } from '../fixtures/claudeFixture'
@@ -114,6 +115,26 @@ describe.each(['claude', 'codex'] as const)('%s', provider => {
 })
 
 describe('claude', () => {
+  it('proves an ordinary worker\'s answer by Claude Code\'s own turn ID, so its turn-finished evidence goes with it', async () => {
+    // The fixture's threads are ordinary workers, not Watcher's own runtime.
+    const w = await worker('claude')
+    const start = await w.brief('now', 'Synthetic brief')
+    await w.f.driver.completeTurn(w.id, 'Synthetic worker reply')
+    await w.idle()
+    await expect.poll(() => w.outcome(start)).toMatchObject({ outcome: 'answered', turnMessageId: start.messageId })
+    const thread = await w.thread(), answered = await w.outcome(start)
+    // Claude Code names its turn by its own ID, not Sotto's message ID, and the outcome carries that native ID.
+    expect(thread.lastTurn).toMatchObject({ status: 'completed', messageId: start.messageId })
+    expect(thread.lastTurn!.id).not.toBe(start.messageId)
+    expect(answered?.nativeTurnId).toBe(thread.lastTurn!.id)
+    // The native turn-finished fact is recorded under that ID, so a read of the outcome finds it.
+    const evidence = new WatcherEvidenceStore(), target = { hostId: randomUUID(), threadId: w.id }
+    evidence.observeThread(thread, target, new Date().toISOString())
+    const turnIds = new Set([answered?.turnMessageId, answered?.nativeTurnId])
+    expect(evidence.read(target).filter(item => item.turnId !== undefined && turnIds.has(item.turnId)))
+      .toEqual([expect.objectContaining({ source: 'native-turn', fact: 'turn-finished', turnId: thread.lastTurn!.id })])
+  })
+
   it('follows a turn Claude Code cut for Watcher\'s own steer into the turn the steer runs as', async () => {
     const w = await worker('claude')
     const first = await w.brief('now', 'Synthetic brief')

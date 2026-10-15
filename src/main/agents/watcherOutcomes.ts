@@ -34,7 +34,7 @@ function turnsOf(thread: AgentThread, messages: readonly AgentMessage[]): Turn[]
     if (anchor !== undefined) turns.set(anchor, { anchor, turnId: activity.turnId, status: activity.status, steered: activity.steered === true, startedAt: activity.startedAt })
   }
   // The thread's newest turn as its provider reports it, which can be ahead of the activity record. Only an exact match
-  // of identities ties the two: the Sotto anchor a Watcher adapter reports, or the same ID.
+  // of identities ties the two: the Sotto anchor an adapter reports, or the same ID.
   const last = thread.lastTurn
   if (last) {
     const anchor = user(last.messageId) ?? user(last.id)
