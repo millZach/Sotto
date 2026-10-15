@@ -248,16 +248,6 @@ describe('terminal colours', () => {
     expect(terminalTheme(root, resolve)).toMatchObject({ background: '#050706', foreground: '#dfe4e1', cursor: '#58b6ec', selectionBackground: '#58b6ec52', selectionInactiveBackground: '#58b6ec2e' })
   })
 
-  it('keeps the background colour at zero alpha when see-through, so contrast is still measured against it', () => {
-    const root = document.documentElement
-    root.dataset.theme = 'dark'
-    paint(root, TERMINAL_LIGHT)
-    const solid = terminalTheme(root, resolve)
-    const seeThrough = terminalTheme(root, resolve, true)
-    expect(seeThrough.background).toBe(`${solid.background}00`)
-    expect(seeThrough).toMatchObject({ foreground: solid.foreground, cursorAccent: solid.cursorAccent, red: solid.red })
-  })
-
   it('never hands xterm a value the page cannot paint', () => {
     const root = document.documentElement
     root.dataset.theme = 'light'

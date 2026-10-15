@@ -48,7 +48,7 @@ import { WatcherRoomProvider } from './watcher/watcherRoom'
 import { WatcherView } from './watcher/WatcherView'
 import type { WatcherBridge } from '../../shared/watcherRoom'
 import { ThemeEditorHost } from './features/settings/themes/ThemeEditor'
-import { appearancePreview, applyAppearance, frostAvailable, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark, useSystemReducesTransparency } from './state/appearance'
+import { appearancePreview, applyAppearance, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark } from './state/appearance'
 
 const recoveryMessages = {
   DESKTOP_CLIPBOARD_UNAVAILABLE: 'Sotto could not use wl-clipboard. It used its own clipboard instead, so other apps may not see the text. Install wl-clipboard, then copy again.',
@@ -99,9 +99,8 @@ export function applyDocumentPreferences(
   settings: AppSettings | null,
   root: HTMLElement = document.documentElement,
   systemDark: boolean = systemPrefersDark(),
-  canFrost: boolean = frostAvailable(),
 ): void {
-  if (settings !== null) applyAppearance(appearancePreview.effective(settings), root, systemDark, appearancePreview.draft, canFrost)
+  if (settings !== null) applyAppearance(appearancePreview.effective(settings), root, systemDark, appearancePreview.draft)
   if (settings?.reducedMotion === 'on') root.dataset.reducedMotion = 'on'
   else delete root.dataset.reducedMotion
 }
@@ -150,7 +149,6 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   const microphoneReleaseTailRef = useRef<Promise<void>>(Promise.resolve())
   const microphoneReleasesRef = useRef(new WeakMap<MicrophoneTestController, Promise<void>>())
   const systemDark = useSystemPrefersDark()
-  const reducesTransparency = useSystemReducesTransparency()
   const appearanceEdits = useAppearancePreviewVersion()
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null)
   const [themeNotice, setThemeNotice] = useState<ToastMessage | null>(null)
@@ -209,9 +207,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   // Layout effect: a new appearance is on the root before the browser paints
   // the render that selected it, so the choice and the room never disagree.
   useLayoutEffect(() => {
-    applyDocumentPreferences(app.settings, document.documentElement, systemDark, window.sotto?.canFrostWindow === true && !reducesTransparency)
+    applyDocumentPreferences(app.settings, document.documentElement, systemDark)
     if (app.settings) setTerminalPreferences(app.settings, app.actions.updateSettings)
-  }, [app.settings, app.actions, systemDark, reducesTransparency, appearanceEdits])
+  }, [app.settings, app.actions, systemDark, appearanceEdits])
 
   useEffect(() => {
     const search = (event: KeyboardEvent): void => {

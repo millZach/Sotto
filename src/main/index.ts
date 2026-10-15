@@ -69,7 +69,7 @@ import {
 } from 'electron'
 import { spawn } from 'node:child_process'
 import { appendFile, rename, stat, writeFile } from 'node:fs/promises'
-import { homedir, release as osRelease } from 'node:os'
+import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 
 import {
@@ -116,8 +116,9 @@ import { SpeechModelStore } from './asr/speechModelStore'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
 import type { SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
-import { UpdateService } from './updates/updateService'
-import { platformProfile, windowFrostFor, type WidgetAlwaysOnTopLevel } from './platformProfile'
+import { UpdateService, waitingVersion } from './updates/updateService'
+import { e2eUpdater } from './updates/e2eUpdater'
+import { platformProfile, type WidgetAlwaysOnTopLevel } from './platformProfile'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
 import { migrateLegacyUserData } from './storage/migrateLegacyUserData'
@@ -158,7 +159,7 @@ import {
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
 import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
-import { hostReleaseVersion } from './hosts/hostReleaseVersion'
+import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleaseVersion'
 import { WATCHER_CHANGED, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
 import type { DictationCommand } from '../shared/contracts'
@@ -414,18 +415,6 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     this.window.setIgnoreMouseEvents(ignore, options)
   }
 
-  setBackgroundColor(color: string): void {
-    this.window.setBackgroundColor(color)
-  }
-
-  setBackgroundMaterial(material: 'acrylic' | 'none'): void {
-    this.window.setBackgroundMaterial(material)
-  }
-
-  setVibrancy(type: 'under-window' | null): void {
-    this.window.setVibrancy(type)
-  }
-
   onNavigation(
     event: NavigationEventName,
     listener: (event: { preventDefault(): void }, details: { readonly url: string }) => void,
@@ -592,6 +581,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const museEnabled = owlFeatures.muse
   const usageEnabled = owlFeatures.usage
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || museEnabled)
+  // With Update all on, the host version the update this computer is downloading brings, which a host may run before
+  // Sotto restarts (ADR-0077 decision 6). It stays undefined on stable, where hosts follow the running version alone.
+  let waitingAppVersion: string | undefined
+  let waitingHostVersion: string | undefined
+  let waitingPhase: string | undefined
   let repaintOmarchy: () => void = () => undefined
   const omarchyTheme = new OmarchyThemeMonitor(platform, homedir(),
     () => repaintOmarchy(), logOperational)
@@ -676,8 +670,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       void widgetPlacementStore.save(placement)
       linuxDictationShell?.place(placement.edge)
     },
-    windowFrost: windowFrostFor(profile.platform, osRelease()),
-    frostedWindow: () => workingCopySettings.frostedWindow,
   })
   // This explicit development-only path drives the real adapter through a scripted ACP child.
   const devinFixtureRoot = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_DEVIN_ROOT'] : undefined
@@ -804,6 +796,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
   const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, museEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
+    waitingClientVersion: () => waitingHostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),
@@ -1158,12 +1151,25 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // must never reach the network. Everywhere else the service resolves to the
   // 'unsupported' phase without constructing electron-updater at all.
   const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
+  // A development end-to-end run can be offered an update of its own, which downloads nothing and never installs.
+  const updateStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_APP_UPDATE'] : undefined
   const updates = new UpdateService({
     currentVersion: appRunningVersion, owlFeatures, watcherEnabled,
     getSettings: () => settings.get(),
-    ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : {}),
+    // With Update all on, the restart waits for a host update under way, which it would otherwise cut off (ADR-0077).
+    ...(owlFeatures['update-all'] ? { restartHold: () => hostUpdates.restartHold() } : {}),
+    ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : updateStandIn ? { createUpdater: () => e2eUpdater(updateStandIn) } : {}),
     onStatusChanged: (status) => {
       windows.sendToMain(UPDATE_STATUS, status)
+      // Update all aims each host at the version this computer is downloading, once its archive is published (ADR-0077).
+      // Only a change of phase passes on, never a download's progress, so a page that did not answer is not asked again
+      // on every tick.
+      if (owlFeatures['update-all'] && status.phase.phase !== waitingPhase) {
+        waitingPhase = status.phase.phase
+        waitingAppVersion = waitingVersion(status.phase, waitingAppVersion)
+        waitingHostVersion = waitingAppVersion === undefined ? undefined : updateHostReleaseVersion(waitingAppVersion, usageEnabled || museEnabled)
+        hostUpdates.pending(waitingHostVersion)
+      }
     },
   })
 
@@ -1237,7 +1243,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     async onSettingsChanged(settings): Promise<void> {
       const grantDefaultChanged = settings.browserWithoutAsking !== workingCopySettings.browserWithoutAsking
       const babysittingChanged = settings.babysitPullRequests !== workingCopySettings.babysitPullRequests
-      if (settings.frostedWindow !== workingCopySettings.frostedWindow) windows.setMainWindowFrosted(settings.frostedWindow)
       workingCopySettings = settings
       worktreeCleanup?.settingsChanged()
       phoneAccess.settingsChanged()

@@ -151,10 +151,10 @@ regenerated baselines.
 ## Opt-in appearance and theme captures
 
 `npm run test:e2e` builds and runs the ordinary Electron suite with one worker.
-Six specs save appearance, theme or terminal drawer captures only when their
+Five specs save appearance, theme or terminal drawer captures only when their
 evidence variable is set. The four theme specs skip entirely without it; the
-frosted window and terminal drawer specs still run their checks in the ordinary
-suite and only skip the captures. These captures are developer evidence, not part of the ordinary suite or CI.
+terminal drawer spec still runs its checks in the ordinary suite and only skips
+the captures. These captures are developer evidence, not part of the ordinary suite or CI.
 Build first with `npm run build`, then enable the spec you want to capture:
 
 ```sh
@@ -162,7 +162,6 @@ SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/theme-library-evidence.spec.ts
 SOTTO_APPEARANCE_EVIDENCE=1 npx playwright test tests/e2e/appearance-evidence.spec.ts
 SOTTO_THEME_EVIDENCE=1 npx playwright test tests/e2e/theme-palettes-evidence.spec.ts
 SOTTO_THEME_BRANDING_EVIDENCE=1 npx playwright test tests/e2e/theme-branding-evidence.spec.ts
-SOTTO_FROST_EVIDENCE=1 npx playwright test tests/e2e/frosted-window.spec.ts
 SOTTO_PANE_TERMINAL_EVIDENCE=1 npx playwright test tests/e2e/pane-terminal.spec.ts
 ```
 
@@ -180,7 +179,6 @@ finally { Remove-Item Env:SOTTO_THEMES_E2E }
 | `appearance-evidence.spec.ts` | `artifacts/verification/phase-1-appearance/` |
 | `theme-palettes-evidence.spec.ts` | `artifacts/verification/sotto-palettes/` |
 | `theme-branding-evidence.spec.ts` | `artifacts/phase-three-theme-branding/` |
-| `frosted-window.spec.ts` | `artifacts/frosted-window/` (git-ignored: screen captures show the desktop behind the window) |
 | `pane-terminal.spec.ts` | `artifacts/pane-terminal/` |
 
 The appearance spec's optional whole-screen capture additionally needs

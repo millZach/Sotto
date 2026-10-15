@@ -1,7 +1,7 @@
 /* Sotto Owl's night sky (ADR-0072), behind the sidebar header of an Owl build: a faint night band behind the top row
    and the search field that fades into the sidebar just under the field, the accent glowing behind the tile, and
    eleven tiny stars around the tile and behind the toolbar. It is paint, not content. The band is the sidebar's own
-   background, so a frosted window frosts it like the rest (frost.css). The stars lie under every control without a
+   background. The stars lie under every control without a
    stacking context of their own: the sky is positioned and comes first, and the top row and the search field are
    positioned after it, so they paint over it. The list below starts past the glow's reach. The stars catch no press
    and have no app region of their own, so the drag strip, the toolbar and the field behave exactly as they do

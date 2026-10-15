@@ -343,16 +343,6 @@ test.describe('Sotto Owl night sky on the built app', () => {
         await holdOwlSky(launched.page)
         await header(launched, `header-owl-sotto-dark-mac-${width}.png`)
       }
-      // A frosted window frosts the band with the rest of the sidebar: the night at the sidebar's solidity, not over it.
-      const frosted = await launched.page.evaluate(() => {
-        document.documentElement.dataset.frost = ''
-        const image = getComputedStyle(document.querySelector('aside.thread-nav[data-mode]')!).backgroundImage
-        delete document.documentElement.dataset.frost
-        return image
-      })
-      expect(frosted).toMatch(/^linear-gradient\(/u)
-      expect(frosted).toMatch(/\/ 0\.\d+\)/u)
-      result.frosted = frosted
       recorded.set('owl-mac-layout', result)
     }))
   })

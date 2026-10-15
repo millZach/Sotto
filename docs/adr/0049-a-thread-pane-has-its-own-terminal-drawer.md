@@ -16,7 +16,7 @@ The drawer's shells run in the same main-process service as the Tools panel's te
 
 Ctrl+J, or Cmd+J on a Mac, toggles the drawer of the pane the key lands in, or of the selected thread's pane when that pane is on screen. It acts on nothing in Terminal mode or on another page. A drawer's own terminal passes Ctrl+J to the page instead of the shell. The Tools panel's terminal and Terminal mode's terminals keep Ctrl+J for their shells. When the dictation hotkey is Ctrl+J, the drawer leaves the chord to it and the button's title stops naming it. With output search closed, Escape belongs to the shell. Output search and terminal text-size shortcuts are shared with Terminal mode and Tools (#881); dictation keeps any conflicting chord. A drawer is hidden with its button, its Hide terminal drawer control (a panel-closing icon, unlike the tab's X, which ends a shell), or Ctrl+J. Hiding from inside the drawer puts focus back in the pane.
 
-Under a Frosted window the drawer paints `--tt-frost-terminal`, a little more solid than the room. Its terminal draws its background at zero alpha, so xterm still measures text contrast against the theme's terminal colour.
+Under a Frosted window the drawer painted `--tt-frost-terminal`, a little more solid than the room, and its terminal drew its background at zero alpha. ADR-0084 removed the Frosted window on October 14, 2026: the drawer now paints the theme's terminal colour and its terminal is opaque.
 
 ## Consequences
 

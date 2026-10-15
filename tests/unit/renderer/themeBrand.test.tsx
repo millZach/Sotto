@@ -10,7 +10,7 @@ import { BUILT_IN_THEMES, DEFAULT_THEME_ID, getThemeColorsForMode, parseThemeFil
 import type { ThemeAppearance } from '../../../src/shared/themes/palettes'
 
 const choice = (patch: Partial<AppearanceChoice> = {}): AppearanceChoice => ({
-  appearance: 'dark', lightTheme: 'nocturne', darkTheme: 'nocturne', appearanceContrast: 100, glassOpacity: 80, frostedWindow: false, frostSeeThrough: 40, effortColor: 'ember', customThemes: [], ...patch,
+  appearance: 'dark', lightTheme: 'nocturne', darkTheme: 'nocturne', appearanceContrast: 100, effortColor: 'ember', customThemes: [], ...patch,
 })
 
 function builtIn(id: string, mode: ThemeAppearance) {

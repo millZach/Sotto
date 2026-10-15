@@ -1,5 +1,7 @@
 # Main-window themes replace the accent
 
+October 14, 2026 amendment: [ADR-0084](0084-the-window-and-its-surfaces-are-always-solid.md) removes the Glass opacity setting. `glassOpacity` is gone, `--tt-glass` and `--tt-glass-field` are the theme's solid overlay and field colours, and no `--theme-glass-opacity` reaches the root. What follows about glass describes it before that.
+
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The voice sphere described below has been removed. Theme roles, the Sotto mark and the dictation widget retain the selected palettes.
 
 Accepted September 13, 2026 for the Phase 3 theme replacement. The user rejected the accent chooser and asked for T3 Code's Themes capability instead. This supersedes the `accent` half of ADR-0009. The `appearance` mode (System, Light or Dark) stays as ADR-0009 describes, and so does the rule that the widget's `theme` setting is not the main window's look.
@@ -44,4 +46,4 @@ The selected light and dark palettes also colour the Sotto mark, the voice spher
 
 ## Consequences
 
-The accent capture tuples in the design gate became one tuple per built-in theme in each room. Other workers' E2E specs that still pass `accent` keep working because the key is ignored. The window's native `backgroundColor` is still black, as ADR-0009 notes, except while the Frosted window setting is on (ADR-0048). Any new surface must take its colours from `--tt-*` tokens, or the theme and contrast settings will skip it.
+The accent capture tuples in the design gate became one tuple per built-in theme in each room. Other workers' E2E specs that still pass `accent` keep working because the key is ignored. The window's native `backgroundColor` is still black, as ADR-0009 notes. ADR-0048's Frosted window setting changed that while it was on, until ADR-0084 removed it. Any new surface must take its colours from `--tt-*` tokens, or the theme and contrast settings will skip it.
