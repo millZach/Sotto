@@ -191,25 +191,17 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
   return pairs.map(({ name, ink, on }) => ({ name, ratio: Number(contrastRatio(parseThemeRgb(ink, BLACK), parseThemeRgb(on, BLACK)).toFixed(2)) }))
 }
 
-async function capture(launched: LaunchedSotto, name: string): Promise<void> {
+/** The window, settled and with the night held still, into one evidence folder. */
+async function captureInto(folder: string, launched: LaunchedSotto, name: string): Promise<void> {
   await settle(launched.page)
   await holdOwlSky(launched.page)
-  await captureWindow(launched.app, resolve(evidenceRoot, name))
+  await captureWindow(launched.app, resolve(folder, name))
 }
-
-/** The same, for the handover's own folder. */
-async function captureHandover(launched: LaunchedSotto, name: string): Promise<void> {
-  await settle(launched.page)
-  await holdOwlSky(launched.page)
-  await captureWindow(launched.app, resolve(handoverEvidence, name))
-}
-
-/** The same, for the permissions, own changes and watching note's own folder. */
-async function captureNote(launched: LaunchedSotto, name: string): Promise<void> {
-  await settle(launched.page)
-  await holdOwlSky(launched.page)
-  await captureWindow(launched.app, resolve(permissionEvidence, name))
-}
+const capture = (launched: LaunchedSotto, name: string): Promise<void> => captureInto(evidenceRoot, launched, name)
+/** The permissions, own changes and watching note's own folder. */
+const captureNote = (launched: LaunchedSotto, name: string): Promise<void> => captureInto(permissionEvidence, launched, name)
+/** The handover's own folder. */
+const captureHandover = (launched: LaunchedSotto, name: string): Promise<void> => captureInto(handoverEvidence, launched, name)
 
 /**
  * Sotto Owl over the fake Codex app server the integration tests use, with nothing seeded, so the room reads main's own

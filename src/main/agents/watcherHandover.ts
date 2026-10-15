@@ -3,6 +3,7 @@ import type { AgentHostSnapshot, AgentMessage, AgentThread, HandoverCounts } fro
 import type { WatcherHandoverProvenance, WatcherIdentity, WatcherRequest } from '../../shared/watcher'
 import type { HandoverSummary } from './handover'
 import { projectWatcherMessages } from './watcherMessageDisplay'
+import { watcherReplyAsShown } from './watcherOwnChanges'
 import { watcherMessageRequests, watcherTextAsTyped } from './watcherRequestNote'
 
 /**
@@ -85,11 +86,13 @@ export function watcherHandoversShown(snapshot: AgentHostSnapshot, requests: rea
 }
 
 /**
- * One message of an earlier Watcher conversation as its pane shows it, for a handover of that conversation: without a
- * handover it carried itself, without a line Sotto put after the user's words, and cut at its display proof. A handover
- * of a handover would only repeat an older conversation, so the newer one carries the user's words alone.
+ * One message of an earlier Watcher conversation as its pane shows it, for a handover of that conversation: a reply
+ * without the reason line its own-change line shows; a user message without a handover it carried itself, without a line
+ * Sotto put after the user's words, and cut at its display proof. A handover of a handover would only repeat an older
+ * conversation, so the newer one carries the user's words alone.
  */
 export function watcherMessageAsShown(hostId: string, threadId: string, message: AgentMessage, requests: readonly WatcherRequest[]): AgentMessage {
+  if (message.role === 'assistant') { const text = watcherReplyAsShown(message); return text === message.text ? message : { ...message, text } }
   if (message.role !== 'user') return message
   const proof = proofsOf(requests).get(`${threadId}\n${message.id}`)
   let shown = proof ? split(message, proof) : message

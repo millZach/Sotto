@@ -286,7 +286,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     try {
       const refusal = settle(await open({ provider, modelId }))
       setReplacing(refusal === null ? null : { provider, refusal })
-    } catch { setReplacing({ provider, refusal: 'Sotto could not start a new Watcher. Nothing was changed.' }) }
+    } catch { setReplacing({ provider, refusal: 'Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.' }) }
   }
   /** What the window has drawn from main's published state: the confirmed values a press is measured against. */
   const drawn = settingValues(state, thread)

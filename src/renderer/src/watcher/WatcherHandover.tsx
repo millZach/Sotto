@@ -51,7 +51,7 @@ export function watcherSendGate(calls: WatcherHandoverCalls | null | undefined, 
   return {
     label: 'Continue with the handover',
     prepare: async draftId => {
-      try { return settle(await calls.continueWith({ draftId })) } catch { return 'Sotto could not reach Watcher, so nothing was sent. Retry sends your message to the new Watcher.' }
+      try { return settle(await calls.continueWith({ draftId })) } catch { return 'Sotto could not reach Watcher, so nothing was sent. Send your message again.' }
     },
   }
 }
@@ -68,12 +68,25 @@ export function WatcherHandoverOffer({ room, offer, composerId }: {
   const [reading, setReading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const readButton = useRef<HTMLButtonElement>(null)
+  const strip = useRef<HTMLElement>(null)
+  const putAway = useRef<() => void>(() => undefined)
   const regionId = useId()
   const { carried, leftOut } = handoverLedger(offer.counts)
   // A provider change remounts the composer under the pointer or the keyboard; focus that went nowhere goes back to it.
   useEffect(() => {
     if (document.activeElement === null || document.activeElement === document.body) document.getElementById(composerId)?.focus()
   }, [composerId])
+  // Escape from the composer under the strip puts the offer away too, once nothing open there has taken the key.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      const area = strip.current?.closest('.thread-workspace__compose')
+      if (event.key !== 'Escape' || event.defaultPrevented || !(event.target instanceof Node) || !area?.contains(event.target) || strip.current?.contains(event.target)) return
+      event.preventDefault()
+      putAway.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const calls = room.handover
   if (calls === null) return null
   const toggle = async (): Promise<void> => {
@@ -83,16 +96,17 @@ export function WatcherHandoverOffer({ room, offer, composerId }: {
     try {
       const read = await calls.read()
       if (read.status === 'ok') { setText(read.text); setOpen(true) } else setError(read.message)
-    } catch { setError('Sotto could not read the handover. Nothing was sent. Try again.') }
+    } catch { setError('Sotto could not read the handover. Nothing was sent. Press Read it to try again.') }
     finally { setReading(false) }
   }
   const dismiss = async (): Promise<void> => {
     setError(null)
     document.getElementById(composerId)?.focus()
     try { const refusal = room.settle(await calls.dismiss()); if (refusal !== null) setError(refusal) }
-    catch { setError('Sotto could not put the handover away. Nothing was sent; it still goes with your next message.') }
+    catch { setError('Sotto could not put the handover away, so it still goes with your next message. Nothing was sent. Press X to try again.') }
   }
-  return <section className="watcher-handover" aria-label="Handover of the last Watcher"
+  putAway.current = () => { void dismiss() }
+  return <section ref={strip} className="watcher-handover" aria-label="Handover of the last Watcher"
     onKeyDown={event => {
       if (event.key !== 'Escape') return
       event.preventDefault(); event.stopPropagation()

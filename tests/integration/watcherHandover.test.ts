@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { HANDOVER_CLOSE } from '../../src/main/agents/watcherHandover'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
@@ -126,11 +126,48 @@ describe('Watcher’s handover after a provider change', () => {
     const f = await fixture()
     await f.exchange('Check the visual gate.', 'It flakes on the third run.')
     const next = await f.toClaude()
-    expect(f.service.continueWithHandover({ draftId: randomUUID() })).toMatchObject({ status: 'ok' })
+    const chosen = randomUUID()
+    expect(f.service.continueWithHandover({ draftId: chosen })).toMatchObject({ status: 'ok' })
     // A different draft, as a send from the phone would be: no handover, and the offer goes.
     expect((await f.send(next.threadId, 'Something else first.')).error).toBeNull()
     expect(f.sends('claude').map(command => command.text)).toEqual(['Something else first.'])
     expect(f.service.state().handover).toBeNull()
+    const native = f.nativeOf('claude', next.threadId)
+    native.status = 'idle'; native.lastTurn = { id: randomUUID(), status: 'completed' }
+    await f.refresh('claude')
+    // The draft the user chose to continue with is refused rather than sent without the handover, and a retry goes bare.
+    expect((await f.send(next.threadId, 'Carry on.', chosen)).error).toMatch(/^Another message reached the new Watcher first/u)
+    expect(f.sends('claude')).toHaveLength(1)
+    expect((await f.send(next.threadId, 'Carry on.', chosen)).error).toBeNull()
+    expect(f.sends('claude').map(command => command.text)).toEqual(['Something else first.', 'Carry on.'])
+  })
+
+  it('a provider change finished on a second try still offers the handover', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the footer links thread.', 'Watching Footer links.')
+    const claude = f.control.shell().host.models.find(item => item.providerId === 'claude')!
+    const original = f.control.commandForWatcherRoom.bind(f.control)
+    let failed = false
+    const spy = vi.spyOn(f.control, 'commandForWatcherRoom').mockImplementation(async (command, guard) => {
+      if (command.type === 'create-thread' && !failed) { failed = true; return { ...f.control.get(), error: 'Claude Code did not start.' } }
+      return original(command, guard)
+    })
+    expect(await f.service.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE' })
+    expect(f.service.state().handover).toBeNull()
+    expect(await f.service.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'ok', state: { current: { provider: 'claude' } } })
+    spy.mockRestore()
+    expect(f.service.state().handover).toMatchObject({ source: f.first, provider: 'codex', counts: { carried: 2 } })
+  })
+
+  it('offers nothing for a conversation that said nothing, even when an earlier one did', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the release.', 'Watching it.')
+    await f.toClaude()
+    expect(f.service.state().handover).not.toBeNull()
+    // Claude's Watcher said nothing before the next change, so there is nothing of its to hand over.
+    await f.control.commandShell({ type: 'connect', provider: 'grok' })
+    const grok = f.control.shell().host.models.find(item => item.providerId === 'grok')!
+    expect(await f.service.open({ provider: 'grok', modelId: grok.id })).toMatchObject({ status: 'ok', state: { current: { provider: 'grok' }, handover: null } })
   })
 
   it('revives no stopped request: the handover starts a request of its own', async () => {

@@ -76,7 +76,7 @@ function cutUtf8(text: string, bytes: number): string {
   while (end > 0 && (encoded[end]! & 0xc0) === 0x80) end--
   return new TextDecoder().decode(encoded.subarray(0, end))
 }
-const HANDOVER_UNREADABLE = 'Sotto could not read the last Watcher’s history, so there is no handover to show. Nothing was sent.'
+const HANDOVER_UNREADABLE = 'Sotto could not read the last Watcher’s history, so there is no handover to show. Nothing was sent. Its conversation is still in Watcher history on the Threads page; put the offer away to start the new Watcher without it.'
 const HOST_WITHOUT_OUTCOMES = 'This host does not report outcomes, so Sotto cannot say how this ended. Update Sotto on that host, or read the thread.'
 function refuse(code: WatcherRefusal['code'], message: string, retryable = false): never { throw new Refusal({ ...watcherRefusal(code, message, retryable), ...(code === 'CURSOR_EXPIRED' ? { restartCursor: 'restart' } : {}) }) }
 
@@ -111,6 +111,8 @@ export class WatcherService implements WatcherControlHooks {
    */
   private handoverOffer: { readonly source: WatcherIdentity; readonly to: WatcherThreadTarget; readonly counts: HandoverCounts
     acceptedDraftId?: string; sendingCommandId?: string } | null = null
+  /** Drafts chosen to carry a handover that another send to the new Watcher overtook. */
+  private readonly overtakenHandovers = new Set<string>()
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
     limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void }) {
@@ -351,17 +353,14 @@ export class WatcherService implements WatcherControlHooks {
     return this.options.host.watcherHandover(source.target.threadId, message => watcherMessageAsShown(source.target.hostId, source.target.threadId, message, requests))
   }
   /**
-   * After a provider change, offers a handover of the conversation the new Watcher replaced when that one has history.
-   * One with none passes on an offer still standing for it, so trying providers one after another keeps the handover of
-   * the last conversation that said anything. A history that cannot be read offers nothing.
+   * After a provider change, offers a handover of the conversation the new Watcher replaced, when that one has history.
+   * Any earlier offer goes with it. A history that cannot be read offers nothing.
    */
   private offerHandover(previous: WatcherIdentity, to: WatcherThreadTarget): void {
-    const standing = this.handoverOffer && key(this.handoverOffer.to) === key(previous.target) ? this.handoverOffer : null
     this.handoverOffer = null
     let handover: Handover | undefined
     try { handover = this.buildHandover(previous) } catch { handover = undefined }
     if (handover && handover.summary.total > 0) this.handoverOffer = { source: previous, to, counts: handoverCounts(handover.summary) }
-    else if (handover && standing) this.handoverOffer = { source: standing.source, to, counts: standing.counts }
   }
   /** The offer, while it is still for the current Watcher. */
   private currentOffer(): NonNullable<WatcherService['handoverOffer']> | null {
@@ -372,7 +371,7 @@ export class WatcherService implements WatcherControlHooks {
   readHandover(): WatcherHandoverRead {
     try {
       const offer = this.currentOffer()
-      if (!offer) refuse('TARGET_CHANGED', 'There is no handover to read: the new Watcher has had its first message, or the offer was put away.')
+      if (!offer) refuse('TARGET_CHANGED', 'There is no handover to read: the new Watcher has had its first message, or the offer was put away. The last Watcher’s conversation is in Watcher history on the Threads page.')
       const handover = this.buildHandover(offer.source)
       if (!handover || handover.summary.total === 0) refuse('HISTORY_UNAVAILABLE', HANDOVER_UNREADABLE)
       return { status: 'ok', text: handoverPrefix(handover.text).trimEnd(), counts: handoverCounts(handover.summary) }
@@ -387,7 +386,7 @@ export class WatcherService implements WatcherControlHooks {
       if (!offer) refuse('TARGET_CHANGED', 'The handover is no longer offered, so nothing was sent. Retry sends your message to the new Watcher without it.')
       offer.acceptedDraftId = parsed.data.draftId
       return this.get()
-    } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('TARGET_CHANGED', 'Sotto could not take the handover. Nothing was sent.') }
+    } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('TARGET_CHANGED', 'Sotto could not take the handover. Nothing was sent. Send your message again.', true) }
   }
   /** Puts the offer away. Nothing is sent, and the new Watcher's first message goes without a handover. */
   dismissHandover(): WatcherRoomResult {
@@ -401,9 +400,17 @@ export class WatcherService implements WatcherControlHooks {
    * asked for the handover, and the next send goes without it.
    */
   private handoverFor(threadId: string, commandId: string, draftId: string | undefined): { prefix: string; provenance: NonNullable<WatcherRequest['handover']> } | undefined {
+    if (draftId !== undefined && this.overtakenHandovers.delete(draftId)) {
+      refuse('TARGET_CHANGED', 'Another message reached the new Watcher first, so the handover is no longer offered and nothing was sent. Retry sends your message without it.')
+    }
     const offer = this.currentOffer()
     if (!offer || offer.to.threadId !== threadId) return undefined
-    if (offer.acceptedDraftId === undefined || offer.acceptedDraftId !== draftId) { this.handoverOffer = null; return undefined }
+    if (offer.acceptedDraftId === undefined || offer.acceptedDraftId !== draftId) {
+      // The user chose to continue with a draft that has not gone yet: when it comes, it is refused rather than sent bare.
+      if (offer.acceptedDraftId !== undefined) this.overtakenHandovers.add(offer.acceptedDraftId)
+      this.handoverOffer = null
+      return undefined
+    }
     let built: Handover | undefined
     try { built = this.buildHandover(offer.source) } catch { built = undefined }
     if (!built || built.summary.total === 0) {
@@ -649,7 +656,10 @@ export class WatcherService implements WatcherControlHooks {
         if (record.creation.identity.provider !== input.provider || record.creation.modelId !== input.modelId
           || record.creation.reasoningEffort !== input.reasoningEffort) refuse('TARGET_CHANGED', 'Watcher creation is pending with another choice. Reopen that choice before changing it.')
         await this.finishCreation(record.creation.identity, input)
-        this.recoveryNotice = null; return this.get()
+        // A replacement whose creation stopped part-way and is finished now offers the replaced conversation's handover too.
+        const replaced = record.history.at(-1)
+        if (replaced && previous && key(previous.target) === key(record.creation.identity.target) && replaced.provider !== previous.provider) this.offerHandover(replaced, previous.target)
+        this.recoveryNotice = null; this.publish(); return this.get()
       }
       if (!previous || previous.provider !== input.provider) this.creationPermission(model)
       if (previous) {
@@ -2066,5 +2076,5 @@ export class WatcherService implements WatcherControlHooks {
     }
     this.publish(); return { status: 'ok', state: this.state(), results }
   }
-  close(): void { this.closed = true; this.handoverOffer = null; this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
+  close(): void { this.closed = true; this.handoverOffer = null; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
 }

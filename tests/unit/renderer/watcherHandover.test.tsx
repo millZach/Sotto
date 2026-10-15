@@ -186,6 +186,29 @@ describe('the handover over the new Watcher’s composer', () => {
     expect(within(pane).getByRole('button', { name: 'Send prompt' })).toBeInTheDocument()
   })
 
+  it('puts the offer away on Escape from the composer under it, once nothing open there takes the key', async () => {
+    const user = userEvent.setup()
+    const { bridge, command } = renderRoom(roomState())
+    const pane = await watcherPane()
+    await user.click(within(pane).getByRole('textbox', { name: 'Watcher message' }))
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(bridge.dismissHandover).toHaveBeenCalledTimes(1))
+    expect(within(pane).getByRole('textbox', { name: 'Watcher message' })).toHaveFocus()
+    expect(sends(command)).toHaveLength(0)
+  })
+
+  it('leaves the offer when Escape closes something open in the composer', async () => {
+    const user = userEvent.setup()
+    const { bridge } = renderRoom(roomState())
+    const pane = await watcherPane()
+    const chip = within(pane).getByRole('combobox', { name: 'Watcher’s permissions' })
+    await user.click(chip)
+    await user.keyboard('{Escape}')
+    expect(chip).toHaveFocus()
+    expect(bridge.dismissHandover).not.toHaveBeenCalled()
+    expect(within(pane).getByRole('region', { name: 'Handover of the last Watcher' })).toBeInTheDocument()
+  })
+
   it('puts the offer away from its X, sending nothing', async () => {
     const { bridge, command } = renderRoom(roomState())
     const pane = await watcherPane()
