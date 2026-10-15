@@ -2695,6 +2695,7 @@ export class AgentControl {
             // A Watcher send's outcome is read from its queue item, and a takeover's queue cancel removes a failed item.
             // The native input that refused this send also takes the thread over, so Watcher records the outcome now,
             // before that cancel can run; read later, the operation would stay dispatching with nothing left to settle it.
+            // The store makes its changes one after another, so a cancel asked meanwhile has not started yet.
             if (first.watcherOperationId) { this.syncFollowups(); this.observeWatcher(this.state.host) }
           }
         } finally { await this.finishTurn(turn, failure) }
@@ -3756,6 +3757,7 @@ export class AgentControl {
   private hasDraft(): boolean { return Boolean(this.state.draft.trim() || this.state.draftAttachments?.length) }
   /** Lets Watcher read the threads and the queue as they stand, with Sotto's own sends known as its own. */
   private observeWatcher(snapshot: AgentHostSnapshot): void {
+    if (this.disposed) return
     this.watcherHooks?.observe(snapshot, new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
       ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])]))
   }
