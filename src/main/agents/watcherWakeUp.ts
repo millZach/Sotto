@@ -35,6 +35,8 @@ export interface WatcherWakeOptions {
   progress?: (target: WatcherThreadTarget) => string | undefined
   /** Whether a host reports its threads' background work counts. Absent means every host does; one that does not reads as unknown. */
   reportsWork?: (hostId: string) => boolean
+  /** The Watcher start or send a thread's newest turn answers, so its news can name that operation. */
+  answers?: (target: WatcherThreadTarget, thread: AgentThread) => string | undefined
   restoredEvents?: () => readonly WatcherEvent[]
   canDeliver: (target: WatcherThreadTarget) => boolean
   deliver: (news: WatcherNews) => Promise<void>; prune: () => Promise<void>
@@ -289,12 +291,15 @@ export class WatcherWakeUp {
         if (changedEvidence) this.evidenceChanged(target, before, added)
         const turn = thread.lastTurn, finished = finishedTurn(thread)
         if (finished) {
+          // The news names the delegation this turn answers, when there is one. The name is an identity, never words.
+          const operationId = this.options.answers?.(target, thread)
+          const answers = operationId ? { operationId } : {}
           // A host that does not report the counts sends no count: unknown, never none running. Unknown sub-agents count, so
           // a finish while they are unresolved says the turn is not done and is owed work-settled news.
           this.event(finished.status === 'failed' ? 'turn-failed' : 'turn-finished', target, [finished.id, finished.status],
-            { turnId: finished.id, ...this.reportsWork(target.hostId) ? { backgroundWorkCount: watcherBackgroundWorkCount(thread) } : {},
+            { turnId: finished.id, ...answers, ...this.reportsWork(target.hostId) ? { backgroundWorkCount: watcherBackgroundWorkCount(thread) } : {},
               evidenceIds: this.evidence.read(target).filter(item => item.turnId === finished.id).map(item => item.id) })
-          if (this.workSettled(thread, target.hostId)) this.event('work-settled', target, [finished.id], { turnId: finished.id, backgroundWorkCount: 0 })
+          if (this.workSettled(thread, target.hostId)) this.event('work-settled', target, [finished.id], { turnId: finished.id, ...answers, backgroundWorkCount: 0 })
         }
         for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
           { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })
