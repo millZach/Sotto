@@ -176,9 +176,20 @@ export class FollowupStore {
       await new AtomicJsonStore(path, input => input, () => ({})).write(value)
     }
   }
-  cancelWatcher(operationIds: ReadonlySet<string>): Promise<void> {
-    return this.change(state => { state.items = state.items.filter(item => !item.watcherOperationId || !operationIds.has(item.watcherOperationId)
-      || item.status === 'dispatching' || item.status === 'uncertain') })
+  /**
+   * Removes the named Watcher items that can no longer be sent, keeping any whose dispatch is still unresolved. Answers the
+   * operations whose removed item had already failed: a dispatch can fail just ahead of the cancel in this lane, and once
+   * its item is gone that failure is nowhere else to read.
+   */
+  async cancelWatcher(operationIds: ReadonlySet<string>): Promise<string[]> {
+    let failed: string[] = []
+    await this.change(state => {
+      const cancelled = state.items.filter(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)
+        && item.status !== 'dispatching' && item.status !== 'uncertain')
+      failed = cancelled.flatMap(item => item.status === 'failed' ? [item.watcherOperationId!] : [])
+      state.items = state.items.filter(item => !cancelled.includes(item))
+    })
+    return failed
   }
   edit(threadId: string, itemId: string, update?: Pick<AgentFollowup, 'text' | 'attachments' | 'skills' | 'files'>): Promise<void> {
     return this.change(state => {

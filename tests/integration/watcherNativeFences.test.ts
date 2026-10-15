@@ -164,3 +164,43 @@ it('fences a wake-up at the native writer when Watcher stops its worker during p
     expect(f.control.shell().followups!.find(item => item.threadId === f.target.threadId && item.wakeUp)).toMatchObject({ status: 'failed', wakeUp: true })
   } finally { gate.release() }
 }, 60_000)
+
+// A takeover keeps a dispatching item and removes a failed one, and Watcher read the failure from that item at the next
+// snapshot. An idle thread may send none, and a failed item the takeover removed left its send dispatching for good.
+it.each(['while it is dispatching', 'just after its failure is saved'])('fails a queued send whose dispatch fails when the user takes over %s, without another snapshot', async when => {
+  const f = await fixture(), gate = heldOperation()
+  const queued = (await f.tools.call(f.id, 'send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: f.target, delivery: 'queue', text: 'Synthetic failing queue' })).structuredContent!
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  const operationId = (queued.receipt as { operationId: string }).operationId
+  const prepare = f.native.adapter.prepareSkillInput.bind(f.native.adapter)
+  vi.spyOn(f.native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => {
+    const result = await prepare(...args)
+    if (args[1] === 'Synthetic failing queue') { await gate.wait(); throw new Error('Synthetic preparation failure') }
+    return result
+  })
+  const service = f.service as unknown as { takeover(threadId: string, reason: string): void }
+  const takeover = () => service.takeover(f.target.threadId, 'native-user-send')
+  // Taken over just as the failure is saved, the takeover's cancel runs right behind it in the queue's lane.
+  const store = (f.control as unknown as { followupStore: { settle(id: string, status: string, error?: string): Promise<void> } }).followupStore
+  const settle = store.settle.bind(store)
+  vi.spyOn(store, 'settle').mockImplementation((id, status, error) => {
+    const saved = settle(id, status, error)
+    if (status === 'failed' && when !== 'while it is dispatching') takeover()
+    return saved
+  })
+  try {
+    await f.native.driver.completeTurn(f.binding.sessionId, 'Synthetic completion before the queue')
+    await gate.entered
+    expect(f.service.state().receipts.find(item => item.id === operationId)?.deliveryState).toBe('dispatching')
+    // No snapshot reaches Watcher from here, as when the thread is idle and nothing polls it.
+    vi.spyOn(f.service, 'observe').mockImplementation(() => undefined)
+    if (when === 'while it is dispatching') takeover()
+    gate.release()
+    await vi.waitFor(() => expect(f.service.state().receipts.find(item => item.id === operationId)?.deliveryState).toBe('failed'))
+    expect(f.service.state().watchedThreads.find(item => item.target.threadId === f.target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send')
+    // The first prompt stays counted; the failed queued one is refunded once.
+    expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
+    const messageId = f.service.state().receipts.find(item => item.id === operationId)!.messageId; expect(messageId).toBeTruthy()
+    expect((await f.native.driver.requests()).some(item => item.method === 'turn/start' && item.params?.clientUserMessageId === messageId)).toBe(false)
+  } finally { gate.release() }
+}, 60_000)

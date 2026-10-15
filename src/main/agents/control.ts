@@ -331,7 +331,10 @@ export class AgentControl {
   }
   hasWatcherQueue(operationIds: ReadonlySet<string>): boolean { return this.followupStore.peek().items.some(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)) }
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
-    await this.followupStore.cancelWatcher(operationIds); this.syncFollowups(); this.observe(); await this.persist(); this.publish()
+    const failed = await this.followupStore.cancelWatcher(operationIds)
+    // Watcher reads a queued send's failure from its item, which is gone now, so it hears the failure here instead.
+    if (failed.length) this.watcherHooks?.queueFailed?.(new Set(failed))
+    this.syncFollowups(); this.observe(); await this.persist(); this.publish()
   }
   private readonly dormantThreadIds = new Set<string>()
   private readonly dormantWatcherIds = new Set<string>()
@@ -2655,7 +2658,12 @@ export class AgentControl {
           else if (claimed || first.watcherOperationId) {
             const item = this.followupStore.get().items.find(i => i.id === first.id)
             const accepted = item?.messageId && this.thread(threadId).messages.some(m => m.role === 'user' && m.id === item.messageId)
-            await this.followupStore.settle(first.id, accepted ? 'accepted' : this.outbox.some(o => o.id === item?.commandId) ? 'uncertain' : 'failed', failure)
+            const outcome = accepted ? 'accepted' : this.outbox.some(o => o.id === item?.commandId) ? 'uncertain' : 'failed'
+            await this.followupStore.settle(first.id, outcome, failure)
+            // Watcher hears its send failed now. A snapshot would tell it too, but an idle thread may not send one for a while.
+            if (outcome === 'failed' && first.watcherOperationId && this.watcherHooks?.queueFailed) {
+              this.watcherHooks.queueFailed(new Set([first.watcherOperationId])); await this.persist()
+            }
           }
         } finally { await this.finishTurn(turn, failure) }
       })().catch(() => { this.state.error = 'Could not save follow-up delivery state. Refresh before making changes.' })

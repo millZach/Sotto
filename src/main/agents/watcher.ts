@@ -765,11 +765,7 @@ export class WatcherService implements WatcherControlHooks {
         }
         if (delivery?.status === 'accepted' || operation.messageId && thread?.messages.some(item => item.role === 'user' && item.id === operation.messageId)) operation.deliveryState = 'accepted'
         else if (delivery?.status === 'uncertain' && !this.active.has(operation.id)) operation.deliveryState = 'uncertain'
-        else if (this.options.control.shell().followups?.some(item => item.draftId === operation.draftId && item.status === 'failed')) {
-          const refusal = this.dispatchRefusals.get(operation.id)?.result.code
-          this.recordOutcome(next, operation, 'failed', refusal ?? operation.refusalCode ?? 'PROVIDER_UNAVAILABLE')
-          this.dispatchRefusals.delete(operation.id)
-        }
+        else if (this.options.control.shell().followups?.some(item => item.draftId === operation.draftId && item.status === 'failed')) this.recordQueueFailure(next, operation)
       }
       next.reservations = next.reservations.filter(reservation => {
         if (reservation.target.hostId !== this.hostId()) return true
@@ -1134,6 +1130,19 @@ export class WatcherService implements WatcherControlHooks {
     this.observe(this.options.control.watcherSnapshot(), new Set())
     return this.operationResult(name, this.record().operations.find(item => item.id === operation.id)!, input)
   }
+  queueFailed(operationIds: ReadonlySet<string>): void {
+    // Never throws: the queue has already removed or failed the items, and its caller still has to save and publish that.
+    const hostId = this.options.control.hostId()
+    this.options.control.mutateWatcher(record => {
+      for (const operation of record.operations) if (operationIds.has(operation.id) && operation.target.hostId === hostId
+        && operation.deliveryState !== 'accepted' && operation.deliveryState !== 'failed') this.recordQueueFailure(record, operation)
+    })
+  }
+  private recordQueueFailure(record: WatcherRecord, operation: WatcherOperation): void {
+    const refusal = this.dispatchRefusals.get(operation.id)?.result.code
+    this.recordOutcome(record, operation, 'failed', refusal ?? operation.refusalCode ?? 'PROVIDER_UNAVAILABLE')
+    this.dispatchRefusals.delete(operation.id)
+  }
   private recordOutcome(record: WatcherRecord, operation: WatcherOperation, state: WatcherOperation['deliveryState'], code?: WatcherRefusal['code']): void {
     const wasFailed = operation.deliveryState === 'failed'
     const creationUncertain = operation.action === 'start' && this.options.host.watcherCreationPhase(operation.target.threadId) === 'starting'
@@ -1150,7 +1159,8 @@ export class WatcherService implements WatcherControlHooks {
     operation.updatedAt = now()
   }
   private refundPrompt(record: WatcherRecord, operation: WatcherOperation, code: WatcherRefusal['code']): void {
-    if ((operation.action !== 'start' && operation.action !== 'send') || ['THREAD_TAKEN_OVER', 'REQUEST_NOT_ACTIVE', 'NOT_CURRENT_WATCHER'].includes(code)) return
+    // A failure heard twice, from the queue and again from a snapshot, refunds once.
+    if ((operation.action !== 'start' && operation.action !== 'send') || operation.promptRefunded || ['THREAD_TAKEN_OVER', 'REQUEST_NOT_ACTIVE', 'NOT_CURRENT_WATCHER'].includes(code)) return
     operation.promptRefunded = true
     const participant = record.requests.find(item => item.id === operation.requestId)!.participants.find(item => key(item.target) === key(operation.target))!
     participant.promptCount = Math.max(0, participant.promptCount - 1)
