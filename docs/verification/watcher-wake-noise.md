@@ -53,5 +53,25 @@ files and 345 tests skipped) in 29 minutes; `npm run notices:verify` verified
 and 497 tests; `npx playwright test tests/e2e/watcher.spec.ts
 tests/e2e/watcher-gate.spec.ts` passed all 22 journeys in 2.0 minutes.
 
+## After merging main's work-settled news
+
+Main then brought work-settled news (#1050). It wakes Watcher, since it is the
+second half of a busy turn's end, and what a finished turn's background work
+changes rides with it instead of waiting for the next turn. Two new cases in
+`tests/unit/main/watcherWakeUp.test.ts` check this. The first fails without the
+fold. Both also check that the busy finish's words and the work-settled words
+travel in the background note.
+
+From merge `adc208b06`: typecheck, lint, notices:verify, build, test:socket
+(23 files, 497 tests) and the 22 Watcher journeys passed. The full suite passed
+863 files and 11,276 tests, with one failure: `fences native input arriving at
+a prepared paired queue writer before another turn starts` in
+`tests/integration/watcherPairedHosts.test.ts`, new on main in #1053. Rerun
+alone, it fails the same way. It also failed three runs out of three on main's
+own source, even with a fifteen-second deadline. The owning host's failed
+receipt either never reaches the master's paired listener or is never
+recorded, so the master's receipt stays `dispatching`. This branch does not
+cause it, and it is not fixed here.
+
 No live provider, remote machine or installed release was used, and no look
 changed: the pane shows Watcher's reply where the bubble was.
