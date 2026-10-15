@@ -23,7 +23,9 @@ export const watcherHostReadSchema = z.object({ master: watcherHostScopeSchema,
     z.object({ name: z.literal('list_working_copies'), input: watcherToolSchemas.list_working_copies.input }).strict(),
     z.object({ name: z.literal('read_thread'), input: watcherToolSchemas.read_thread.input }).strict(),
     z.object({ name: z.literal('read_operation'), input: watcherToolSchemas.read_operation.input }).strict(),
-  ]).optional() }).strict()
+  ]).optional(),
+  // Sent only to a host that lists watcher-outcomes: its read_operation then carries the delegation's outcome and reply.
+  outcomes: z.literal(true).optional() }).strict()
 export const watcherHostProjectionSchema = z.object({ hostId: z.uuid(), master: watcherHostScopeSchema,
   standingWatches: z.array(watcherStandingWatchSchema).optional(),
   revision: z.string().min(1).max(512), observedAt: z.string().datetime(),
@@ -41,7 +43,7 @@ export type WatcherRoomThreadInput = Pick<WatcherRoomState['watchedThreads'][num
 }
 
 export interface WatcherRemoteHosts {
-  hosts(): { hostId: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
+  hosts(): { hostId: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
   snapshot(hostId: string): AgentHostSnapshot | undefined

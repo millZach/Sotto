@@ -57,6 +57,22 @@ export const WATCHER_REFUSAL_CODES = [
 ] as const
 export const watcherRefusalCodeSchema = z.enum(WATCHER_REFUSAL_CODES)
 export const watcherDeliveryStateSchema = z.enum(['queued', 'dispatching', 'accepted', 'failed', 'uncertain'])
+/**
+ * Where one delegation (a start or send) stands, as Sotto observed it (CONTEXT.md, **Outcome**). `background`: its turn
+ * ended with background work still running. `paused`: the user's own turn in that thread holds it. `unknown`: Sotto cannot
+ * prove what happened, as after a restart mid-turn; never guessed as answered.
+ */
+export const WATCHER_OUTCOMES = ['working', 'background', 'answered', 'failed', 'stopped', 'paused', 'unknown'] as const
+export const watcherOutcomeSchema = z.enum(WATCHER_OUTCOMES)
+export type WatcherOutcome = z.infer<typeof watcherOutcomeSchema>
+/** A reply read back for a delegation is cut to this, so a whole operation read stays inside the read bound. */
+export const WATCHER_REPLY_BYTES_MAX = 32 * 1_024
+/**
+ * Text-free: the thread, the turn that answers the delegation (the Sotto user message it began with and, when the provider
+ * proves it, the provider's own turn ID) and that turn's final reply message.
+ */
+export const watcherOutcomeReferenceSchema = z.object({ target: watcherThreadTargetSchema, turnMessageId: id.optional(),
+  nativeTurnId: id.optional(), replyMessageId: id.optional() }).strict()
 export const watcherLimitsSchema = z.object({ inFlight: counter, inFlightLimit: z.number().int().min(1).max(8),
   promptCount: z.number().int().min(0).max(WATCHER_PROMPTS_PER_THREAD), promptLimit: z.literal(WATCHER_PROMPTS_PER_THREAD) }).strict()
 export const watcherDeliveryReceiptSchema = z.object({ operationId: z.uuid(), target: watcherThreadTargetSchema,
@@ -165,7 +181,13 @@ export const watcherToolSchemas = {
   },
   read_operation: {
     input: z.object({ operationId: z.uuid() }).strict(),
-    output: result({ ...receiptResult, action: z.enum(['start', 'send', 'stop', 'settle']), state: operationState }),
+    // The outcome fields are optional: stop and settle carry none, and an older owning host sends none.
+    output: boundedRead(result({ ...receiptResult, action: z.enum(['start', 'send', 'stop', 'settle']), state: operationState,
+      outcome: watcherOutcomeSchema.optional(), reference: watcherOutcomeReferenceSchema.optional(), outcomeNote: shortText.min(1).optional(),
+      // The worker's own words for the turn that answered, never Sotto's evidence.
+      reply: z.object({ from: z.literal('worker'), messageId: id, text: utf8(WATCHER_REPLY_BYTES_MAX), createdAt: time, truncated: z.boolean() }).strict().optional(),
+      replyUnavailable: z.object({ reason: z.enum(['history-off', 'not-retained']), message: shortText.min(1) }).strict().optional(),
+      evidence: z.array(watcherEvidenceSchema).max(100).optional() })),
   },
 } as const
 export type WatcherToolName = keyof typeof watcherToolSchemas
@@ -203,7 +225,11 @@ export const watcherOperationSchema = z.object({ id: z.uuid(), requestId: z.uuid
   receiptId: id, cardId: id, creationReceiptId: id.optional(), firstPromptReceiptId: id.optional(), commandId: id.optional(),
   draftId: z.uuid().optional(), messageId: id.optional(), itemId: id.optional(), expectedTurnId: id.optional(), expectedLastUserMessageId: id.optional(), anchorMessageId: id.optional(), toolCallId: id.optional(),
   confirmedStop: z.literal(true).optional(),
-  creationUncertain: z.literal(true).optional(), refusalCode: watcherRefusalCodeSchema.optional() }).strict().refine(item => !item.confirmedStop || item.action === 'stop', 'Only an explicit confirmed Stop can carry this marker.')
+  creationUncertain: z.literal(true).optional(), refusalCode: watcherRefusalCodeSchema.optional(),
+  // The owning host's observed outcome of an accepted start or send, and its text-free result reference. Never sent to
+  // another host: each host observes its own threads, and a paired desktop copies them from exact operation reads.
+  outcome: watcherOutcomeSchema.optional(), outcomeAt: time.optional(), turnMessageId: id.optional(), nativeTurnId: id.optional(),
+  replyMessageId: id.optional() }).strict().refine(item => !item.confirmedStop || item.action === 'stop', 'Only an explicit confirmed Stop can carry this marker.')
 export const watcherRecordSchema = z.object({ version: z.literal(1), current: watcherIdentitySchema.nullable(),
   promptTurns: z.array(watcherPromptTurnSchema).max(10_000).optional(),
   lastRuntimeMode: agentRuntimeModeSchema.optional(), watches: z.array(watcherStandingWatchSchema).optional(),

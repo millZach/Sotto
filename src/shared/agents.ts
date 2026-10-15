@@ -383,7 +383,7 @@ export const agentThreadSchema = z.object({
   resumeCompactionDismissed: z.boolean().optional(),
   /** Native outcome evidence for queue admission; never an authority to replay work. */
   lastTurn: z.object({ id: z.string(), status: z.enum(['running', 'completed', 'interrupted', 'failed']),
-    /** Exact Sotto user anchor when a Watcher adapter's native turn ID differs from its activity ID. */
+    /** Exact Sotto user anchor when an adapter's native turn ID differs from its activity ID, as Claude's does. */
     messageId: z.string().optional() }).optional(),
   /** Omitted by providers that already supply history; absence means ready. */
   historyStatus: z.enum(['loading', 'ready', 'error']).optional(), historyError: z.string().optional(),

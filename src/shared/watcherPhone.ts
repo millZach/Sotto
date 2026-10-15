@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { agentMessageSchema, agentRequestSchema, agentQuestionAnswersSchema, providerIdSchema, agentRuntimeModeSchema } from './agents'
-import { watcherRefusalSchema, watcherThreadTargetSchema, watcherPhoneOriginSchema, watcherOwnChangeSchema, watcherStandingWatchSchema } from './watcher'
+import { watcherRefusalSchema, watcherThreadTargetSchema, watcherPhoneOriginSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherOutcomeSchema } from './watcher'
 export { watcherPhoneOriginSchema } from './watcher'
 import { watcherStopAllPreviewSchema } from './watcherRoom'
 
@@ -20,7 +20,9 @@ export const watcherPhoneAnswerSchema = z.object({ target: watcherThreadTargetSc
 const receipt = z.object({ operationId: z.uuid(), target: watcherThreadTargetSchema, title: z.string(),
   provider: providerIdSchema.nullable(), action: z.enum(['start', 'send', 'stop', 'settle']),
   delivery: z.enum(['now', 'queue', 'steer']).optional(), deliveryState: z.enum(['queued', 'dispatching', 'accepted', 'failed', 'uncertain']),
-  createdAt: z.string(), updatedAt: z.string(), refusalCode: z.string().optional() }).strict()
+  createdAt: z.string(), updatedAt: z.string(), refusalCode: z.string().optional(),
+  // Optional for older phones, which ignore it: where a start or send stands (ADR-0073, October 14, 2026: outcomes).
+  outcome: watcherOutcomeSchema.optional() }).strict()
 const requestCard = z.object({ target: watcherThreadTargetSchema, title: z.string(), provider: providerIdSchema.nullable(),
   request: agentRequestSchema, connected: z.boolean(), mayAnswer: z.boolean() }).strict()
 export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),

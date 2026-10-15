@@ -49,6 +49,9 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
         public let target: WatcherTarget; public let title: String; public let provider: String?
         public let action: String; public let delivery: String?; public let deliveryState: String
         public let createdAt: String; public let updatedAt: String; public let refusalCode: String?
+        /// Where a start or send stands: working, background, answered, failed, stopped, paused or unknown. Nil from a
+        /// computer that reports none, and for a stop or settle.
+        public let outcome: String?
     }
     public struct WatchedThread: Decodable, Equatable, Sendable {
         public let target: WatcherTarget; public let title: String; public let provider: String?

@@ -349,8 +349,6 @@ export interface SottoBridge {
   readonly memory?: import('./memory').MemoryBridge
   readonly agents?: import('./agents').AgentWireBridge
   readonly platform: SottoPlatform
-  /** Whether the system draws a frosted material behind this window, so the Frosted window setting can take effect (ADR-0048). */
-  readonly canFrostWindow?: boolean
 
   listRecoveryNotices(): Promise<readonly RecoveryNotice[]>
   onRecoveryNotice(listener: (notice: RecoveryNotice) => void): Unsubscribe

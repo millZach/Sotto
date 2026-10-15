@@ -172,11 +172,11 @@ it('goes straight on to a prompt that waited behind a turn Claude Code gave itse
   await expect.poll(async () => (await thread(f)).backgroundWork?.length).toBe(1)
   expect((await thread(f)).status).toBe('running')
   expect(await sent).toEqual({ accepted: true })
-  expect((await thread(f)).lastTurn).toEqual({ id: origin, status: 'running' })
+  expect((await thread(f)).lastTurn).toEqual({ id: origin, status: 'running', messageId: 'prompt' })
   expect(await promptTurn(f)).toBe('running')
   await f.driver.completeTurn('thread', 'Nothing new.')
   await expect.poll(async () => promptTurn(f)).toBe('completed')
-  expect((await thread(f)).lastTurn).toEqual({ id: origin, status: 'completed' })
+  expect((await thread(f)).lastTurn).toEqual({ id: origin, status: 'completed', messageId: 'prompt' })
 })
 
 it('stops a turn Claude Code started on its own without calling it a failure', async () => {
