@@ -1845,11 +1845,16 @@ export class WatcherService implements WatcherControlHooks {
     const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,
       ...(this.options.machineFacts ? await read(this.options.machineFacts, MACHINE_FACTS_UNREAD) : unknown(MACHINE_FACTS_UNREAD)),
       inFlight: this.inFlight(record, this.hostId()), inFlightLimit }
-    const remotes = await Promise.all((this.remote?.hosts() ?? []).filter(host => host.hostId !== this.hostId()).slice(0, WATCHER_MACHINES_MAX - 1).map(async host => ({
-      hostId: host.hostId, name: host.name?.trim().slice(0, 200) || 'Paired machine', thisComputer: false, connected: host.connected,
-      ...!host.connected ? { factsState: 'not-connected' as const, facts: null, note: MACHINE_NOT_CONNECTED, runningThreads: null }
-        : host.facts && this.remote?.machineFacts ? await read(() => this.remote!.machineFacts!(host.hostId), MACHINE_FACTS_OLDER) : unknown(MACHINE_FACTS_OLDER),
-      inFlight: this.inFlight(record, host.hostId), inFlightLimit })))
+    const notConnected = { factsState: 'not-connected' as const, facts: null, note: MACHINE_NOT_CONNECTED, runningThreads: null }
+    const stillConnected = (hostId: string) => this.remote?.hosts().some(item => item.hostId === hostId && item.connected) === true
+    const remotes = await Promise.all((this.remote?.hosts() ?? []).filter(host => host.hostId !== this.hostId()).slice(0, WATCHER_MACHINES_MAX - 1).map(async host => {
+      const facts = !host.connected ? notConnected
+        : host.facts && this.remote?.machineFacts ? await read(() => this.remote!.machineFacts!(host.hostId), MACHINE_FACTS_OLDER) : unknown(MACHINE_FACTS_OLDER)
+      // A connection that dropped while its facts were read is not connected, whatever the read came back with.
+      const connected = host.connected && stillConnected(host.hostId)
+      return { hostId: host.hostId, name: host.name?.trim().slice(0, 200) || 'Paired machine', thisComputer: false, connected,
+        ...connected ? facts : notConnected, inFlight: this.inFlight(record, host.hostId), inFlightLimit }
+    }))
     return { status: 'ok', machines: [local, ...remotes], observedAt: now() }
   }
   private async listWorkingCopies(input: WatcherToolInput<'list_working_copies'>) {

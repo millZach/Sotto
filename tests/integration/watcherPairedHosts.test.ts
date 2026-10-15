@@ -127,10 +127,17 @@ it('lists This computer and each paired machine with its facts, running threads 
     note: expect.stringContaining('Update Sotto on it') })
   expect(asked).not.toHaveBeenCalled()
   socket.features = features
-  // A host that is not connected says so rather than reading its last facts as current.
-  Object.assign(f.connection, { available: () => false })
+  // A connection that drops while its facts are read reads not connected, not as the facts it sent before dropping.
+  asked.mockImplementationOnce(async () => {
+    const report = await SocketHostService.prototype.hostFacts.call(f.socket)
+    Object.assign(f.connection, { available: () => false })
+    return report
+  })
   expect((await machines())[1]).toMatchObject({ connected: false, factsState: 'not-connected', facts: null, runningThreads: null, inFlight: 1 })
-  expect(asked).not.toHaveBeenCalled()
+  expect(asked).toHaveBeenCalledTimes(1)
+  // A host that is not connected says so rather than reading its last facts as current, and is not asked.
+  expect((await machines())[1]).toMatchObject({ connected: false, factsState: 'not-connected', facts: null, runningThreads: null, inFlight: 1 })
+  expect(asked).toHaveBeenCalledTimes(1)
 })
 
 it('starts, reads positions, sends, stops and settles through the owning host without selecting it', async () => {

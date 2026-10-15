@@ -9,6 +9,8 @@ import { desktopWindowClient, type HostService } from '../../src/main/agents/hos
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { SCREENSHOT_NOT_ITS_TYPE, type AgentCommand, type AgentModel, type AgentThreadDetail, type AgentThreadDetailUpdate } from '../../src/shared/agents'
 import { hostVersionMismatch, type HostOperation } from '../../src/shared/hostProtocol'
+import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
+import { HOST_FACTS_REFRESH_MS } from '../../src/shared/hostFacts'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
@@ -51,7 +53,7 @@ describe('staged images over the socket (ADR-0031)', () => {
 })
 
 describe('host facts over the socket (#1031)', () => {
-  it('answers a desktop with its machine’s facts and running threads, and reads memory again only after the refresh window', async () => {
+  it('answers a desktop with its machine’s facts and running threads, and its last reading when asked again at once', async () => {
     const { client } = await pair()
     expect(client.supportsHostFacts).toBe(true)
     const family = ({ win32: 'windows', darwin: 'macos', linux: 'linux' } as Record<string, string>)[process.platform] ?? null
@@ -60,6 +62,28 @@ describe('host facts over the socket (#1031)', () => {
     expect(first.facts.logicalCpuCount).toBeGreaterThan(0)
     // Asked again at once, the host answers its last reading rather than reading the machine again.
     expect((await client.hostFacts()).facts.observedAt).toBe(first.facts.observedAt)
+  })
+
+  it('carries a fresh memory reading across the socket once the refresh window has passed, and the last one inside it', async () => {
+    let free = 9 * 1024 ** 3, at = Date.parse('2026-10-15T12:00:00.000Z')
+    const source = new HostFactsSource({ now: () => new Date(at), readFile: async () => 'PRETTY_NAME="Omarchy"\nVERSION_ID="4.0.4"\n',
+      os: { platform: () => 'linux', release: () => '6.17.1', version: () => '#1 SMP', machine: () => 'x86_64', totalmem: () => 16 * 1024 ** 3, freemem: () => free, cpus: () => Array.from({ length: 16 }, () => ({})) } })
+    const service: HostService = {
+      shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
+      command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
+      supportsHostFacts: true, hostFacts: () => hostMachineReport(source, [{ status: 'running' }]),
+    }
+    const server = await startSocketServer({ service, pairing: fixture.host.pairing })
+    try {
+      const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
+      const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+      await client.connect()
+      expect(await client.hostFacts()).toMatchObject({ runningThreads: 1, facts: { os: { family: 'linux', name: 'Omarchy', version: '4.0.4' }, freeMemoryBytes: 9 * 1024 ** 3 } })
+      free = 2 * 1024 ** 3; at += HOST_FACTS_REFRESH_MS - 1
+      expect((await client.hostFacts()).facts.freeMemoryBytes).toBe(9 * 1024 ** 3)
+      at += 1
+      expect((await client.hostFacts()).facts).toMatchObject({ freeMemoryBytes: 2 * 1024 ** 3, observedAt: new Date(at).toISOString() })
+    } finally { await server.close() }
   })
 
   it('is not offered by an older host, which reads unknown, nor by the desktop’s phone listener', async () => {

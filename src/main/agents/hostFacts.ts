@@ -130,18 +130,16 @@ export async function readHostFacts(sources: HostFactsSources = {}): Promise<Hos
 
 /**
  * One machine's facts as a host keeps them (#1031). The operating system, architecture and CPU count are read once, when
- * the host starts; memory is read again when facts are asked for and the last reading is at least `refreshMs` old.
+ * the host starts; memory is read again when facts are asked for and the last reading is at least `HOST_FACTS_REFRESH_MS` old.
  * Nothing reads on a timer, so a host nobody asks spends nothing.
  */
 export class HostFactsSource {
   private first: Promise<HostFacts> | undefined
   private latest: HostFacts | undefined
   private readonly system: HostFactsSystem
-  private readonly refreshMs: number
 
-  constructor(private readonly sources: HostFactsSources & { readonly refreshMs?: number } = {}) {
+  constructor(private readonly sources: HostFactsSources = {}) {
     this.system = sources.os ?? nodeOs
-    this.refreshMs = sources.refreshMs ?? HOST_FACTS_REFRESH_MS
   }
 
   /** Reads everything the first time; later calls answer the latest facts, with memory read again when that reading is old. */
@@ -152,7 +150,7 @@ export class HostFactsSource {
     const now = this.sources.now?.() ?? new Date()
     const age = now.getTime() - Date.parse(latest.observedAt)
     // A clock that went backwards reads again rather than trusting a reading from the future.
-    this.latest = age >= this.refreshMs || age < 0 ? hostFactsSchema.parse({ ...latest, observedAt: now.toISOString(), ...memory(this.system) }) : latest
+    this.latest = age >= HOST_FACTS_REFRESH_MS || age < 0 ? hostFactsSchema.parse({ ...latest, observedAt: now.toISOString(), ...memory(this.system) }) : latest
     return this.latest
   }
 }
