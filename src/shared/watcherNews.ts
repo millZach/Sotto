@@ -6,9 +6,12 @@ export const WATCHER_BATCH_MAX_MS = 5_000
 export const WATCHER_NEWS_BYTES_MAX = 16 * 1_024
 export const WATCHER_NEWS_TARGETS_MAX = 50
 
-/** Text-free observed identities. A request reference opens its owning thread, never an answer card here. */
+/**
+ * Text-free observed identities. A request reference opens its owning thread, never an answer card here.
+ * `work-settled` comes once per turn that finished with background work or monitoring still running, when that reaches zero.
+ */
 export const watcherEventSchema = z.object({
-  id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed']),
+  id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled']),
   requestId: z.uuid(), target: watcherThreadTargetSchema, generation: z.number().int().nonnegative(),
   observedAt: z.iso.datetime(), turnId: z.string().max(512).optional(), messageId: z.string().max(512).optional(),
   requestCardId: z.string().max(512).optional(), requestCardKind: z.enum(['question', 'permission']).optional(),

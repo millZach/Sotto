@@ -30,6 +30,7 @@ export function foldWatcherNews(earlier: WatcherNews | undefined, later: Watcher
 export const requestRevision = (request: unknown): string => observationDigest(request)
 const words: Record<WatcherEvent['kind'], string> = {
   'turn-finished': 'The foreground turn finished. This is not review or merge approval.',
+  'work-settled': 'The background work and monitoring this turn left running have ended, so the turn is done. This is not review or merge approval.',
   'turn-failed': 'The provider confirmed that this turn failed. Read the thread for its error.',
   'needs-user': 'Open this thread to answer its request. Only the user can answer.',
   quiet: 'No progress was observed for twenty minutes of connected work.',
@@ -39,7 +40,8 @@ const words: Record<WatcherEvent['kind'], string> = {
 }
 export function watcherNewsText(news: WatcherNews): string {
   const opening = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.'
-  const lines = news.events.map(event => `${JSON.stringify(event.target)}: ${words[event.kind]} Use requestId ${event.requestId} for this thread. [${event.id}]`)
+  const lines = news.events.map(event => `${JSON.stringify(event.target)}: ${words[event.kind]}${(event.kind === 'turn-finished' || event.kind === 'turn-failed') && event.backgroundWorkCount
+    ? ` Background work or monitoring is still running (${event.backgroundWorkCount}), so the turn is not done until Sotto sends work-settled news for it.` : ''} Use requestId ${event.requestId} for this thread. [${event.id}]`)
   let count = lines.length
   while (count >= 0) {
     const omitted = news.omitted + lines.length - count
