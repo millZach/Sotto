@@ -49,6 +49,7 @@ import { resolveFilesBinding } from '../files/binding'
 import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
 import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './sottoRequests'
+import { QuestionPages, type QuestionPageTarget } from './questionPages'
 import { watcherRepliesAsShown } from './watcherOwnChanges'
 import { watcherMessageRequests, watcherMessagesAsTyped } from './watcherRequestNote'
 import { FinishedUnread } from './finishedUnread'
@@ -389,6 +390,12 @@ export class AgentControl {
   private disposed = false
   /** Requests Sotto owns, merged into their threads (ADR-0035); absent until main gives the coordinator some. */
   private sottoRequests: SottoThreadRequests | undefined
+  /** The pages found for each question, which every client offers to open and the host's page route serves (ADR-0085). */
+  private readonly questionPages = new QuestionPages({
+    messages: threadId => this.dependencies.host.threadMessages?.(threadId),
+    // Found pages are taken like a new snapshot, so the question carries them at once.
+    changed: () => this.acceptSnapshot(this.state.host),
+  })
   private unsubscribeSottoRequests: (() => void) | undefined
   private visibleCommandError: unknown
   private setCommandError(error: unknown, message: string | null): void {
@@ -652,7 +659,8 @@ export class AgentControl {
   }
   /**
    * A host's snapshot as everything in Sotto shows it: Watcher's threads only where the gate allows them (ADR-0072), its
-   * user messages as typed (ADR-0073), and Sotto's own requests among the provider's (ADR-0035).
+   * user messages as typed (ADR-0073), Sotto's own requests among the provider's (ADR-0035), and the pages found for
+   * each question on it (ADR-0085).
    */
   private shownSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
     if (this.dependencies.watcherEnabled !== true) {
@@ -669,8 +677,11 @@ export class AgentControl {
     // One display path for Watcher's own threads, in its pane, Copy and the phone alike: the user's messages without a line
     // Sotto put after them, and Watcher's replies without the reason line their own-change line already shows.
     snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(snapshot, watcherMessageRequests(this.watcher.requests)))
-    return this.sottoRequests ? withSottoRequests(snapshot, this.sottoRequests.requests()) : snapshot
+    if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
+    return this.questionPages.decorate(snapshot)
   }
+  /** What a question page's token opens, for the host's page route and this computer's window (ADR-0085). */
+  questionPage(token: string): QuestionPageTarget | undefined { return this.questionPages.target(token) }
   /**
    * The threads some client shows now (ADR-0046). The host service says which: every client's observed threads, the
    * desktop window's only while it has the focus. Showing a thread is what reads its finish, on every client at once,

@@ -74,7 +74,7 @@ public enum Commands {
     public static func answer(threadID: String, request: AgentRequest, currentRequests: [AgentRequest],
                               choice: String? = nil, text: String = "", answers: [String: QuestionAnswer] = [:]) throws -> JSONValue {
         guard request.supported, let current = currentRequests.first(where: { $0.id == request.id }),
-              current.supported, current == request else { throw ClientError.invalidRequest }
+              current.supported, current.asksTheSame(as: request) else { throw ClientError.invalidRequest }
         var result: [String: JSONValue] = ["type": .string("answer"), "threadId": .string(threadID), "requestId": .string(request.id), "answer": .string(text)]
         if request.kind == "permission" {
             if current.permissionChoices == nil {

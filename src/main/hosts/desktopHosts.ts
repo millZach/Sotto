@@ -94,7 +94,11 @@ interface LiveHost { via: HostVia; launcher?: SshHostLauncher; ssh?: SshHostConn
   /** Set when a move to the tailnet left this connect while a press still ran on its SSH connection, which closes after it. */
   closeWhenIdle?: boolean }
 /** Where a socket opens: the address, and the host that must answer there. A tailnet connection's health check is shorter. */
-interface SocketTarget { readonly url: string; readonly expectedHostId: string; readonly healthTimeoutMs?: number }
+interface SocketTarget {
+  readonly url: string; readonly expectedHostId: string; readonly healthTimeoutMs?: number
+  /** The address a browser on this computer reaches the same listener at, when the socket's own is not one. */
+  readonly browserUrl?: string
+}
 /** A pending reconnect. `timer` is absent while the first attempt of a launch or a switch-on runs. */
 interface Retry { timer: ReturnType<typeof setTimeout> | undefined; attempt: number; active: LiveHost | undefined
   /** Set for the first attempt after a switch-on or an edit, which reads Connecting… rather than Reconnecting…. */
@@ -936,7 +940,7 @@ export class DesktopHosts {
     const retry = this.retries.get(host.id)
     this.status.set(host.id, { ...this.status.get(host.id), ...this.fields(host), phase: 'connecting', reconnecting: retry !== undefined && !retry.first, via: 'tailnet', error: undefined,
       step: undefined, tailscale: undefined, fix: undefined, reason: undefined, checked: undefined, version: undefined, addTailnet: undefined }); this.emit()
-    try { await this.openSocket(host, active, { url: this.resolveTailnet(address), expectedHostId: host.hostId!, healthTimeoutMs: TAILNET_HEALTH_MS }) }
+    try { await this.openSocket(host, active, { url: this.resolveTailnet(address), browserUrl: address, expectedHostId: host.hostId!, healthTimeoutMs: TAILNET_HEALTH_MS }) }
     catch (error) {
       await active.socket?.close().catch(() => undefined)
       if (this.live.get(host.id) !== active) return 'superseded'
@@ -1230,6 +1234,8 @@ export class DesktopHosts {
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),
       gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request), gitPullRequest: request => socket.gitPullRequest(request),
       hostFolders: request => socket.hostFolders(request), offersClientUpdates: () => socket.offersClientUpdates(), offersBabysitting: () => socket.supportsBabysitting,
+      // A question's pages are served by the host's own listener, which this computer reaches where its socket does (ADR-0085).
+      pageAddress: token => new URL(`/page/${token}/`, target.browserUrl ?? target.url).href,
       // A thread's Files, Changes and Agents, read on the host (ADR-0025, October 5 amendment).
       threadFiles: request => socket.threadFiles(request), threadFilePreview: request => socket.threadFilePreview(request),
       gitChanges: request => socket.gitChanges(request), gitReview: request => socket.gitReview(request),
@@ -1384,7 +1390,7 @@ export class DesktopHosts {
     return next.moving
   }
   private async move(host: SavedHost, from: LiveHost, next: LiveHost, address: string, hostId: string): Promise<boolean> {
-    try { await this.openSocket(host, next, { url: this.resolveTailnet(address), expectedHostId: hostId, healthTimeoutMs: TAILNET_HEALTH_MS }, from) }
+    try { await this.openSocket(host, next, { url: this.resolveTailnet(address), browserUrl: address, expectedHostId: hostId, healthTimeoutMs: TAILNET_HEALTH_MS }, from) }
     catch (error) {
       await next.socket?.close().catch(() => undefined)
       delete next.moving

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
   watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetLimitRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
 import { externalLinkSchema } from '../../shared/externalLinks'
+import { questionPageOpenSchema, type QuestionPageOpen, type QuestionPageOpenResult } from '../../shared/questionPageOpen'
 import { systemSettingsPaneSchema, type SystemSettingsPane } from '../../shared/systemSettings'
 
 import {
@@ -13,6 +14,7 @@ import {
   APP_QUIT,
   APP_SHOW,
   EXTERNAL_LINK_OPEN,
+  QUESTION_PAGE_OPEN,
   SYSTEM_SETTINGS_OPEN,
   DICTATION_REQUEST,
   HISTORY_ADD,
@@ -331,6 +333,8 @@ export interface RegisterIpcDependencies {
   readonly app: AppIpcService
   readonly trustedSenders: () => readonly TrustedIpcSender[]
   readonly openExternalLink?: (url: string) => Promise<void>
+  /** Opens one of a question's pages on this computer (ADR-0085). */
+  readonly openQuestionPage?: (input: QuestionPageOpen) => Promise<QuestionPageOpenResult>
   /** Present only on macOS, where a permission lives in a System Settings pane. */
   readonly openSystemSettings?: (pane: SystemSettingsPane) => Promise<void>
   readonly dictation?: DictationIpcService
@@ -567,6 +571,10 @@ export function registerIpc(
     register(EXTERNAL_LINK_OPEN, externalLinkSchema, 1, async url => {
       if (!dependencies.openExternalLink) return UNAVAILABLE
       try { await dependencies.openExternalLink(url); return OK } catch { return UNAVAILABLE }
+    })
+    register(QUESTION_PAGE_OPEN, questionPageOpenSchema, 1, async input => {
+      if (!dependencies.openQuestionPage) return UNAVAILABLE
+      try { return await dependencies.openQuestionPage(input) } catch { return UNAVAILABLE }
     })
     register(SYSTEM_SETTINGS_OPEN, systemSettingsPaneSchema, 1, async pane => {
       if (!dependencies.openSystemSettings) return UNAVAILABLE
