@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { AgentThread } from './agents'
+import { getReleaseTrack } from './releaseTrack'
 
 /**
  * A host update (ADR-0040): this computer puts its own Sotto version on a remote host that runs an older one, from
@@ -31,7 +32,10 @@ export interface HostUpdateState {
   /** The saved host's ID, which every action names. */
   readonly id: string
   readonly name: string
-  /** The Sotto version the host runs, and this computer's, which an update installs. */
+  /**
+   * The Sotto version the host runs, and the one an update installs: this computer's, or with Update all on the one this
+   * computer is downloading, once its host archive is published (ADR-0077 decision 6).
+   */
   readonly from: string
   readonly to: string
   readonly phase: HostUpdatePhase
@@ -67,6 +71,19 @@ export function hostArchiveName(version: string, platform = 'linux', arch = 'x64
 }
 /** A release number, the only form a version folder or the `current` pointer may take. */
 export const HOST_VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?$/u
+/** Full Owl build order for the explicit host target; protocol v1's general version comparison stays unchanged. */
+export function compareOwlHostTarget(hostVersion: string, targetVersion: string): -1 | 0 | 1 | undefined {
+  if (getReleaseTrack(targetVersion) !== 'owl' || !HOST_VERSION_PATTERN.test(hostVersion)) return undefined
+  const parts = (value: string): bigint[] => value.split(/\.|-owl\./u).map(value => BigInt(value))
+  const host = parts(hostVersion), target = parts(targetVersion)
+  for (let i = 0; i < 3; i++) { if (host[i]! < target[i]!) return -1; if (host[i]! > target[i]!) return 1 }
+  // A same-core stable host can be explicitly moved to this chosen Owl build.
+  if (host.length === 3) return -1
+  for (let i = 3; i < 5; i++) { if (host[i]! < target[i]!) return -1; if (host[i]! > target[i]!) return 1 }
+  return 0
+}
+/** A host's system as its launch script names it and an archive name ends with it: `linux-x64`. */
+export const HOST_SYSTEM_PATTERN = /^[a-z0-9]+-[a-z0-9]+$/u
 /** An archive name as `hostArchiveName` writes it, for a name a host reports back. */
 export const HOST_ARCHIVE_PATTERN = /^Sotto-host-(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?-[a-z0-9]+-[a-z0-9]+\.tar\.gz$/u
 

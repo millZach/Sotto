@@ -122,9 +122,14 @@ export class OutputService {
     }
 
     const snapshot = { ...options }
-    const delivery = this.deliveryTail.then(() => this.deliverImmediately(text, snapshot))
-    this.deliveryTail = delivery.then(() => undefined, () => undefined)
-    return delivery
+    return this.afterDeliveries(() => this.deliverImmediately(text, snapshot))
+  }
+
+  /** Runs `work` once every delivery before it has finished, so another clipboard write cannot replace text waiting to be pasted. */
+  afterDeliveries<T>(work: () => T | Promise<T>): Promise<T> {
+    const run = this.deliveryTail.then(work)
+    this.deliveryTail = run.then(() => undefined, () => undefined)
+    return run
   }
 
   private async deliverImmediately(

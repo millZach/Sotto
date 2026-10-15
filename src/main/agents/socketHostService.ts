@@ -2,7 +2,8 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { z } from 'zod'
-import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection } from '../../shared/watcherHost'
+import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRoomThreadInput } from '../../shared/watcherHost'
+import { watcherRoomInputs } from './watcherRoomInput'
 import { type WatcherIdentity, watcherToolSchemas } from '../../shared/watcher'
 import { SocketFrames } from '../../host/socketFrames'
 import { PROVIDER_CONNECTION_NOTICES, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
@@ -22,6 +23,8 @@ import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSc
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
+import { compareOwlHostTarget } from '../../shared/hostUpdates'
+import { getReleaseTrack } from '../../shared/releaseTrack'
 import { requestQuestionsDigest } from './requestDrafts'
 import { version as sourceVersion } from '../../../package.json'
 import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
@@ -47,9 +50,15 @@ export class WrongHostError extends HostConnectionError {
 export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
   watcherEnabled?: boolean
+  streamingPublishCost?: boolean
   museEnabled?: boolean
   /** The running packaged version, which may override the source manifest during stable packaging. */
   clientVersion?: string
+  /**
+   * The host version the update this computer is downloading brings (ADR-0077 decision 6). A host that already runs it
+   * was updated ahead of this computer's restart, so the version sentence says to restart Sotto rather than to update it.
+   */
+  waitingVersion?: () => string | undefined
   retainedDrafts?: RetainedDraftStore
   retainedRegistrationId?: string
   /**
@@ -136,6 +145,10 @@ export class SocketHostService implements HostService {
   private retainedRefreshRequested = false
   private wireAdmission: Promise<void> | undefined
   constructor(private readonly options: SocketHostServiceOptions) {
+    if (options.watcherEnabled === true && options.streamingPublishCost === true) this.watcherRoomThreads = ids => {
+      if (!this.cached) throw new Error('Connect to the host before reading its state.')
+      return watcherRoomInputs(this.cached.host, ids, options.museEnabled === true, this.dormantMuseThreads)
+    }
     this.endpoint('/v1/health'); this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true, museEnabled: options.museEnabled === true })
     this.retainedRegistrationId = options.retainedRegistrationId
       ?? (options.expectedHostId ? this.retainedDrafts.registrationForHost(options.expectedHostId) : undefined)
@@ -242,7 +255,7 @@ export class SocketHostService implements HostService {
     })
     if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError('This host connection was closed.', 'disconnected') }
     try {
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
@@ -325,10 +338,25 @@ export class SocketHostService implements HostService {
   }
   /** Whether the host runs another Sotto version than this client, by what it advertised. */
   private skewed(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion }
-  /** The version sentence for this host, which says which side to bring up to date. */
-  private mismatch(): string { return hostVersionMismatch(this.clientVersion, this.hostVersion, this.options.owned ?? false) }
-  /** Whether the host last advertised a later Sotto than this client: stopping it would not help. */
-  hostIsNewer(): boolean { return hostIsNewer(this.hostVersion, this.clientVersion) }
+  /**
+   * The version sentence for this host, which says which side to bring up to date. A host already on the version this
+   * computer is downloading needs nothing: this computer's restart brings the two together.
+   */
+  private mismatch(): string {
+    if (this.aheadForRestart()) return `This host already runs Sotto ${this.hostVersion}, which this computer installs when Sotto restarts. Nothing on the host was lost. Restart Sotto to finish its update, then try again.`
+    return hostVersionMismatch(this.clientVersion, this.hostVersion, this.options.owned ?? false, this.hostIsNewer())
+  }
+  /** Whether the host runs the version this computer's waiting update brings, ahead of this computer (ADR-0077). */
+  aheadForRestart(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion && this.hostVersion === this.options.waitingVersion?.() }
+  /**
+   * Whether the host last advertised a later Sotto than this client: stopping it would not help. By release number, and
+   * by Owl build order when both sides run Owl, so a later Owl build of the same release counts as newer (ADR-0077).
+   */
+  hostIsNewer(): boolean {
+    if (hostIsNewer(this.hostVersion, this.clientVersion)) return true
+    const host = this.hostVersion
+    return host !== undefined && getReleaseTrack(host) === 'owl' && getReleaseTrack(this.clientVersion) === 'owl' && compareOwlHostTarget(host, this.clientVersion) === 1
+  }
   /** The Sotto version the host last advertised on this connection, if it said one. */
   sottoVersion(): string | undefined { return this.hostVersion }
   /** Reads what the host answered; from a host of another version, an answer this client cannot read is named as skew. */
@@ -473,6 +501,8 @@ export class SocketHostService implements HostService {
     const shell = this.shell()
     return { ...shell, host: { ...shell.host, threads: shell.host.threads.map(thread => { const detail = this.details.get(thread.id); return detail ? { ...thread, messages: detail.messages, activities: detail.activities } : thread }) } }
   }
+  /** Allocated only when both startup gates allow the owned room read. */
+  readonly watcherRoomThreads?: (threadIds: readonly string[]) => WatcherRoomThreadInput[]
   /** A thread's kind from the cached shell, without copying it; before a shell arrives it refuses as `shell()` does (#917). */
   threadKind(threadId: string): AgentThread['kind'] {
     if (!this.cached) throw new Error('Connect to the host before reading its state.')
@@ -535,6 +565,9 @@ export class SocketHostService implements HostService {
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
   get supportsWatcherControl(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-control') }
   get supportsWatcherReads(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-reads') }
+  get supportsWatcherStandingWatch(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-standing-watch') }
+  get supportsWatcherWorkSettled(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-work-settled') }
+  get supportsWatcherOutcomes(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-outcomes') }
   private museWatcherHeld(request: WatcherHostRead | WatcherHostControl): boolean {
     return this.options.museEnabled !== true && watcherRequestUsesMuse(request, this.cached?.host, this.dormantMuseThreads)
   }
@@ -553,6 +586,7 @@ export class SocketHostService implements HostService {
   }
   async watcherRead(request: WatcherHostRead): Promise<unknown> {
     if (!this.supportsWatcherReads) throw new HostConnectionError('Update this host before Watcher reads its threads.', 'invalid_request')
+    if (request.standingWatches !== undefined && !this.supportsWatcherStandingWatch) throw new HostConnectionError('Update this host before Watcher watches its threads. Nothing was changed.', 'invalid_request')
     if (this.museWatcherHeld(request)) return museWatcherRefusal()
     const result = await this.call({ op: 'watcher-read', request })
     if (request.call) return watcherToolSchemas[request.call.name].output.parse(result)
@@ -1012,7 +1046,10 @@ export class SocketHostService implements HostService {
   get supportsUsage(): boolean { return this.features.includes('usage-dashboard') }
   async usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')
-    return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-read', query: usageLocalQuerySchema.parse(query) }, undefined, undefined, 15000))
+    // A host from before history import refuses the place and window filters its strict query does not know (ADR-0083).
+    const { sources, since, ...older } = usageLocalQuerySchema.parse(query)
+    const sent = this.features.includes('usage-history') ? { ...older, ...(sources ? { sources } : {}), ...(since ? { since } : {}) } : older
+    return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-read', query: sent }, undefined, undefined, 15000))
   }
   async usageRefresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')

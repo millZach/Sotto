@@ -6,8 +6,11 @@ import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotP
 import { isDeepStrictEqual } from 'node:util'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { NativeUsage, type NativeUsageContext } from './nativeUsage'
+import { scanClaudeHistory } from './usageHistory/claudeHistory'
+import type { UsageHistorySink } from './usageHistory/sink'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
-import { mergeClaudeQuota, parseClaudeQuota, unavailableProviderQuota } from './providerQuota'
+import { unavailableProviderQuota } from './providerQuota'
+import { ClaudeLimits, type ClaudeControl } from './claudeLimits'
 import { compactionPending, compactionSchema } from '../../shared/compaction'
 import { randomUUID } from 'node:crypto'
 import { readdir, rm, writeFile } from 'node:fs/promises'
@@ -22,7 +25,7 @@ import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHos
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { questionInstructions } from './questionInstructions'
-import { assertWatcherPermission, watcherThreadTools } from './watcherProviderTools'
+import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -189,7 +192,17 @@ type Spare = { sessionId: string; cwd: string; settings: ClaudeSettings; frames:
 /** Which of Sotto's scoped servers answered for a session, in order: a spare is adopted only by a start that gets the same. */
 const scopedNames = (servers: readonly { tools: ScopedThreadTools }[]): string => servers.map(({ tools }) => tools.name).join('\n')
 /** `client` is the client generation the CLI was launched from: see `clientUpdated`. */
-type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number; watcher: boolean }
+type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number; watcher: boolean
+  /**
+   * A Watcher's request note and the words of the prompt it was written with. Only that prompt's UserPromptSubmit hook
+   * takes it as context: a steer, or a turn Claude Code starts itself, never does.
+   */
+  requestNote?: { readonly note: string; readonly text: string } | undefined }
+/**
+ * The one hook a Watcher's CLI is started with (ADR-0073): UserPromptSubmit, answered on this process's own control
+ * channel with the request note as the prompt's additional context, so the note never joins the user's words.
+ */
+const WATCHER_REQUEST_HOOK = 'sotto_watcher_request'
 
 /** A read of a thread's transcript from its first byte into a seeded log (`ClaudeStreamJsonHost.replays`). */
 interface Replay {
@@ -209,7 +222,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (id: string, visitor: (record: UsageTokenObservation) => void) => void
   readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
-  private quota: UsageQuotaRead | undefined
+  readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
+  /** Claude's account limits: read on demand through get_usage, with Claude Code's passive events between reads (ADR-0083). */
+  private readonly limits = new ClaudeLimits()
+  /** Runtimes whose CLI has answered initialize, so get_usage can go over a live thread's channel. */
+  private readonly initializedRuntimes = new WeakSet<Runtime>()
   private readonly usageGroups = new Map<string, { id: string; startedAt?: string | undefined }>()
   private readonly usageEnabled: boolean
   private launchProfiles: ThreadLaunchProfiles | undefined
@@ -332,6 +349,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly interrupting = new Set<string>()
   /** The threads whose settings change is being dispatched now: the part of `dispatching` a refusal names as such. */
   private readonly configuring = new Set<string>()
+  private readonly configurationGuards = new Map<string, () => void>()
+  private readonly configurationLaunches = new Set<string>()
   /** The error each thread's failed turn put on the provider, so that thread's next finished turn can take it down again. */
   private readonly turnFailures = new Map<string, string>()
   /** The classification on a turn's last assistant message, when Claude Code gave one for a failed API call. */
@@ -400,9 +419,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (options.usageEnabled) {
       this.subscribeUsage = listener => this.usage.subscribeUsage(listener)
       this.visitUsage = (id, visitor) => this.usage.visitUsage(id, visitor)
-      this.readProviderQuota = async providerId => providerId !== 'claude' ? unavailableProviderQuota(providerId, 'unsupported')
-        : !this.state.connected ? unavailableProviderQuota('claude', 'not-connected')
-          : this.quota ?? unavailableProviderQuota('claude', 'refresh-unavailable')
+      this.scanUsageHistory = (sink, signal) => this.scanHistory(sink, signal)
+      this.readProviderQuota = async (providerId, refresh) => {
+        if (providerId !== 'claude') return unavailableProviderQuota(providerId, 'unsupported')
+        if (!this.state.connected) return unavailableProviderQuota('claude', 'not-connected')
+        const control = this.limitsControl()
+        return this.limits.read(refresh, {
+          ...(control ? { control } : {}), ...(this.executable ? { executable: this.executable } : {}),
+          prefixArgs: this.options.args ?? [], environment: this.client.environment(), workingDirectory: this.options.userDataPath,
+        })
+      }
     }
     // Compact: it holds every thread's record and every origin, and is rewritten whole.
     this.aliasStore = AtomicJsonStore.compact(join(options.userDataPath, 'claude-threads.json'), preserveLegacyAliases(z.record(z.string(), aliasSchema).parse), () => ({}))
@@ -482,7 +508,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.trackClosure(this.persist().catch(() => undefined))
   }
   async connect(): Promise<AgentHostSnapshot> {
-    if (this.usageEnabled) { this.quota = undefined; this.usageGroups.clear() }
+    if (this.usageEnabled) { this.limits.clear(); this.usageGroups.clear() }
     this.disconnect(); await this.closed()
     const generation = this.generation
     await this.removeLeftoverConfigs()
@@ -565,6 +591,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!version) throw new Error('Claude Code was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect Claude Code again to try the new version.')
     // Set together, so a CLI is launched either from the old client and counted old, or from the new one.
     this.executable = executable; this.clientRevision++
+    this.limits.clientChanged()
     this.state.version = version
     for (const id of this.runtimes.keys()) this.outdated.add(id)
     // A spare nobody has used yet runs the old client too; the thread's first send starts the new one.
@@ -775,7 +802,6 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const generation = this.generation
     if ('threadId' in command && await this.watcherProfile(command.threadId, 'modelId' in command ? command.modelId : undefined)) {
       assertWatcherPermission(command)
-      if (command.type === 'create-thread') command = { ...command, runtimeMode: 'approval-required' }
     }
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     // A command that ends (an answer, a stop, a dispatch let go) may leave an outdated CLI free to stop.
@@ -841,7 +867,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         return { accepted: true }
       } finally { this.dispatching.delete(id) }
     }
-    if (command.type === 'configure-thread') return this.configure(id, command)
+    if (command.type === 'configure-thread') return this.configure(id, command, watcherGuard)
     if (command.type === 'send') {
       validatePromptAttachments(this.state, alias.modelId, command.attachments)
       const checkLatestUserMessage = (): void => {
@@ -892,10 +918,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
           if (!this.completedOrigins.has(origin.uuid)) { thread.status = 'running'; this.markTurn(id, 'running') }
           this.acknowledgements.get(origin.uuid)?.()
         })
-        thread.status = 'running'; thread.lastTurn = { id: origin.uuid, status: 'running' }
+        thread.status = 'running'; thread.lastTurn = { id: origin.uuid, status: 'running', messageId: origin.messageId }
         try {
           markSendStage(command.commandId, 'written')
           if (this.usageEnabled) this.usageGroups.set(id, { id: origin.uuid, startedAt: new Date().toISOString() })
+          // Only this prompt's own note, or none: a wake-up or an ordinary send never carries an earlier request's.
+          runtime.requestNote = runtime.watcher && command.watcherRequestNote ? { note: command.watcherRequestNote, text: nativeText } : undefined
           const delivery = runtime.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } })
           this.emit(); await delivery
         }
@@ -914,6 +942,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const pending = runtime.requests.get(command.requestId)
       if (!pending) throw new Error('That request is no longer pending.')
       if (runtime.answerWrites.get(pending.id) === 'pending' || runtime.answered.has(pending.id) && runtime.answerWrites.get(pending.id) !== 'failed') return { accepted: false, uncertain: true }
+      if (runtime.watcher) assertWatcherPermissionChoice(pending.request, command.permissionChoice)
       const answer = claudeAnswer(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
       // Only another explicit user answer retries uncertain delivery. Clearing the marker while
       // it is in flight keeps a concurrent answer from sending a second response.
@@ -969,7 +998,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         await runtime.protocol.control({ subtype: 'interrupt' }); this.interrupting.delete(id); this.clearMonitoring(id)
         // A steer Claude Code still holds runs next, so the thread goes on to it, or has already; the stop names the turn it stopped.
         const next = thread.lastTurn?.id !== stopping?.id || [...this.steers.values()].some(steer => steer.threadId === id && !steer.unconfirmed)
-        if (!next) { thread.status = 'idle'; thread.lastTurn = { id: thread.lastTurn?.id ?? command.commandId, status: 'interrupted' } }
+        if (!next) { thread.status = 'idle'; thread.lastTurn = { id: thread.lastTurn?.id ?? command.commandId, status: 'interrupted', ...(stopping?.messageId ? { messageId: stopping.messageId } : {}) } }
         this.markTurn(id, 'interrupted', stopping && alias.origins.find(origin => origin.uuid === stopping.id)?.messageId)
         this.emit(); return { accepted: true }
       }
@@ -983,7 +1012,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * request, or no CLI running, falls back to starting the CLI again with the new settings, which is the one
    * path that waits for background work. Accepted means the CLI confirmed the change or the restart finished.
    */
-  private async configure(id: string, command: ConfigureCommand): Promise<AgentHostResult> {
+  private async configure(id: string, command: ConfigureCommand, watcherGuard?: () => void): Promise<AgentHostResult> {
     const alias = this.aliases[id]!, thread = this.threads.get(id)!
     validateThreadOptions(this.state, command, alias.modelId)
     if (this.configuring.has(id)) throw new Error('Wait for this thread’s settings change to finish.')
@@ -991,13 +1020,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const before = settingsOf(alias)
     const after: ClaudeSettings = { modelId: command.modelId ?? before.modelId, reasoningEffort: effortAfterChange(this.state, command, before.reasoningEffort),
       runtimeMode: command.runtimeMode ?? before.runtimeMode }
+    watcherGuard?.()
     this.dispatching.add(id); this.configuring.add(id)
+    if (watcherGuard) this.configurationGuards.set(id, () => { watcherGuard(); this.configurationLaunches.add(id) })
     try {
       // A CLI still starting is the one the change should reach, once it has.
       const runtime = this.starting.has(id) ? await this.starting.get(id)!.catch(() => undefined) : this.runtimes.get(id)
-      const steps = runtime && !runtime.watcher && this.runtimes.get(id) === runtime ? settingsSteps(before, after) : undefined
+      const steps = runtime && this.runtimes.get(id) === runtime ? settingsSteps(before, after) : undefined
       if (runtime && steps) {
-        const live = await this.applySteps(runtime, before, after, steps)
+        const live = await this.applySteps(runtime, before, after, steps, watcherGuard)
         if (live.outcome === 'applied') return await this.settleSettings(id, command, after)
         if (live.outcome === 'uncertain') return await this.unconfirmedSettings(id, runtime, command, after, SETTINGS_UNCONFIRMED)
         this.options.logEvent?.('claude-settings-live-rejected')
@@ -1011,13 +1042,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
           }
         }
       }
-      return await this.restartWithSettings(id, command, after)
-    } finally { this.dispatching.delete(id); this.configuring.delete(id) }
+      return await this.restartWithSettings(id, command, after, watcherGuard)
+    } finally { this.dispatching.delete(id); this.configuring.delete(id); this.configurationGuards.delete(id); this.configurationLaunches.delete(id) }
   }
   /** Send each step in turn and stop at the first the CLI does not confirm; `reached` is what it confirmed. */
-  private async applySteps(runtime: Runtime, from: ClaudeSettings, to: ClaudeSettings, steps: readonly ClaudeSettingsStep[]): Promise<{ outcome: 'applied' | 'rejected' | 'uncertain'; reached: ClaudeSettings }> {
+  private async applySteps(runtime: Runtime, from: ClaudeSettings, to: ClaudeSettings, steps: readonly ClaudeSettingsStep[], watcherGuard?: () => void): Promise<{ outcome: 'applied' | 'rejected' | 'uncertain'; reached: ClaudeSettings }> {
     let reached = from
     for (const step of steps) {
+      watcherGuard?.()
       try { await runtime.protocol.control(step.request) }
       catch (error) { return { outcome: error instanceof ClaudeRejected ? 'rejected' : 'uncertain', reached } }
       reached = { ...reached, [step.field]: to[step.field] }
@@ -1065,17 +1097,26 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * Start the CLI again with the new settings: the path when no CLI is running or the running one refused a
    * request. A restart ends the agents or commands the CLI is still running for this thread, so it waits for them.
    */
-  private async restartWithSettings(id: string, command: ConfigureCommand, settings: ClaudeSettings): Promise<AgentHostResult> {
+  private async restartWithSettings(id: string, command: ConfigureCommand, settings: ClaudeSettings, watcherGuard?: () => void): Promise<AgentHostResult> {
     const alias = this.aliases[id]!, thread = this.threads.get(id)!
     if (thread.backgroundWork?.length) throw new Error(backgroundWorkRunning(thread.backgroundWork, 'changing its settings'))
     const runtime = this.runtimes.get(id)
     // Recorded before the old CLI is let go. Once it leaves `runtimes`, anything that opens the thread (the
     // window watching it, a read) starts a CLI once the old one has exited, and that CLI must launch with these
     // settings: the start below joins it rather than launching another, and accepted has to mean the CLI runs them.
-    this.recordSettings(alias, command, settings)
-    if (runtime) await this.stopRuntime(id, runtime)
-    await this.persist(); this.showSettings(id)
-    await this.start(id); this.emit()
+    watcherGuard?.()
+    const before = { modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode }
+    try {
+      this.recordSettings(alias, command, settings)
+      if (runtime) await this.stopRuntime(id, runtime)
+      await this.persist(); this.showSettings(id)
+      await this.start(id); this.emit()
+    } catch (error) {
+      if (watcherGuard && !this.configurationLaunches.has(id)) {
+        Object.assign(alias, before); await this.persist(); this.showSettings(id); this.emit()
+      }
+      throw error
+    }
     this.options.logEvent?.('claude-settings-applied-restart')
     return { accepted: true, snapshot: this.view(command.historyFromEvents) }
   }
@@ -1235,11 +1276,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (generation !== this.generation || spare?.exited) { if (mcpConfig) await this.removeConfig(mcpConfig); throw new Error('Claude connection was cancelled.') }
     const toolArguments = mcpConfig ? ['--mcp-config', mcpConfig, ...toolAllowance(servers)] : []
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-      '--include-partial-messages', '--replay-user-messages', ...(profile ? ['--permission-mode', 'manual', '--permission-prompts', 'host', '--permission-prompt-tool', 'stdio'] : permissionArguments(alias.runtimeMode)),
+      '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
       '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${WATCHER_SYSTEM_PROMPT}` : CLAUDE_QUESTIONS,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
     let runtime: Runtime
-    try { runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
+    try {
+      this.configurationGuards.get(id)?.()
+      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
         // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.
@@ -1264,7 +1307,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         if (cut) thread.status = 'error'
         this.dropSteers(id)
         if (turn?.status === 'running') {
-          thread.lastTurn = { id: turn.id, status: 'failed' }; this.completedOrigins.add(turn.id)
+          thread.lastTurn = { ...turn, status: 'failed' }; this.completedOrigins.add(turn.id)
           // A prompt still waiting for its echo was not confirmed, so its send reports uncertain now rather than at the deadline.
           this.acknowledgements.get(turn.id)?.(false)
           this.markTurn(id, 'failed', saved?.origins.find(origin => origin.uuid === turn.id)?.messageId, SESSION_ENDED)
@@ -1274,13 +1317,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (spare) spare.runtime = runtime; else this.runtimes.set(id, runtime)
     this.trackClosure(runtime.protocol.closed.then(async () => { if (mcpConfig) await this.removeConfig(mcpConfig) }))
     let initialized: ClaudeFrame
-    try { initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'] }) }
+    try { initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: profile ? { UserPromptSubmit: [{ hookCallbackIds: [WATCHER_REQUEST_HOOK] }] } : {},
+      sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'] }) }
     // A spare is not the thread's CLI, so it is stopped as one: only a thread on its session ID waits for its exit.
     catch (error) {
       void (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime))
       throw error
     }
     if (generation !== this.generation) { await (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime)); throw new Error('Claude connection was cancelled.') }
+    this.initializedRuntimes.add(runtime)
     return { runtime, initialized }
   }
   /**
@@ -1427,7 +1472,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       void this.guardWatcherRequest(id, frame, runtime).then(allowed => {
         const pending = !requestId || checking?.delete(requestId)
         if (allowed && pending && runtime && this.runtimes.get(id) === runtime) this.frameAfterProfileCheck(id, frame)
-      }).catch(() => { if (requestId) checking?.delete(requestId) })
+      }).catch(() => {
+        if (requestId) checking?.delete(requestId)
+        // A prompt waits on its hook's answer: one Sotto no longer vouches for still gets one, without the note.
+        if (requestId && object(frame.request)?.subtype === 'hook_callback') void this.reply(runtime, requestId, {}).catch(() => undefined)
+      })
       return
     }
     this.frameAfterProfileCheck(id, frame)
@@ -1439,12 +1488,19 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.checkProfileContinuation(id, generation, runtime)
     return true
   }
+  /** A live thread's control channel for get_usage: a current-client runtime that has answered initialize. Spares are not threads' CLIs. */
+  private limitsControl(): ClaudeControl | undefined {
+    for (const runtime of this.runtimes.values()) {
+      if (runtime.clientRevision === this.clientRevision && this.initializedRuntimes.has(runtime)) return request => runtime.protocol.control(request)
+    }
+    return undefined
+  }
   private frameAfterProfileCheck(id: string, frame: ClaudeFrame): void {
     this.reaper.touch(id)
     const runtime = this.runtimes.get(id)!; const thread = this.threads.get(id)!; const alias = this.aliases[id]!
     if (typeof frame.session_id === 'string' && frame.session_id !== alias.sessionId) return
     if (this.usageEnabled && frame.type === 'rate_limit_event') {
-      this.quota = mergeClaudeQuota(this.quota, parseClaudeQuota(frame, new Date().toISOString())); return
+      this.limits.observe(frame); return
     }
     let monitoring = this.monitoring.get(id)
     if (!monitoring) { monitoring = new ClaudeMonitoring(); this.monitoring.set(id, monitoring) }
@@ -1456,6 +1512,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (typeof frame.claude_code_version === 'string' && runtime.clientRevision === this.clientRevision) this.state.version = frame.claude_code_version
       this.checkApprovalSurface(frame)
       this.queries.add(id)
+    }
+    const hook = frame.type === 'control_request' ? object(frame.request) : undefined
+    if (hook?.subtype === 'hook_callback' && typeof frame.request_id === 'string') {
+      // Only a Watcher's CLI registers a hook, and its note goes once, as context for the prompt it was written with.
+      const input = object(hook.input), pending = runtime.requestNote
+      const note = runtime.watcher && pending && hook.callback_id === WATCHER_REQUEST_HOOK && input?.hook_event_name === 'UserPromptSubmit'
+        && (typeof input.prompt !== 'string' || input.prompt.trim() === pending.text.trim()) ? pending.note : undefined
+      if (note !== undefined) runtime.requestNote = undefined
+      void this.reply(runtime, frame.request_id, note ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: note } } : {}).catch(() => undefined)
+      return
     }
     if (frame.type === 'control_request') {
       if (typeof frame.request_id === 'string' && runtime.answered.has(frame.request_id)) return
@@ -1504,9 +1570,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (alias.origins.some(origin => origin.uuid === uuid)) {
         // A steer read into the running turn is part of it. One held past that turn's end starts the next, as any prompt does.
         const steer = this.steers.get(uuid); this.steers.delete(uuid)
+        const messageId = steer ? alias.origins.find(origin => origin.uuid === uuid)?.messageId : undefined
         if (steer && !steer.carried) this.foldedSteers.add(uuid)
         // Its turn is its own message's, though a later steer may already be shown.
-        else if (!this.completedOrigins.has(uuid)) { thread.status = 'running'; if (steer) thread.lastTurn = { id: uuid, status: 'running' }; this.markTurn(id, 'running', steer ? alias.origins.find(origin => origin.uuid === uuid)?.messageId : undefined) }
+        else if (!this.completedOrigins.has(uuid)) { thread.status = 'running'; if (steer) thread.lastTurn = { id: uuid, status: 'running', ...(messageId ? { messageId } : {}) }; this.markTurn(id, 'running', messageId) }
         this.acknowledgements.get(uuid)?.()
       }
     }
@@ -1558,10 +1625,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, this.assistantErrors.get(id)) : null
       if (origin) {
         this.completedOrigins.add(origin)
-        thread.lastTurn = { id: origin, status }
+        const messageId = !selfTurn ? alias.origins.find(value => value.uuid === origin)?.messageId : undefined
+        thread.lastTurn = { id: origin, status, ...(messageId ? { messageId } : {}) }
         // A turn Claude Code gave itself answers no message of Sotto's. The newest message may be a steer whose own
         // turn has not begun, so it has no record to settle here.
-        if (!selfTurn) this.markTurn(id, status, alias.origins.find(value => value.uuid === origin)?.messageId, failure ?? undefined, steered)
+        if (!selfTurn) this.markTurn(id, status, messageId, failure ?? undefined, steered)
       }
       this.assistantErrors.delete(id)
       // A prompt of Sotto's that Claude Code held behind its own turn starts next, so the thread goes straight on to it,
@@ -1884,9 +1952,21 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const thread = this.ensureActivityHistory(id)!
     let projector = this.activity.get(id)
     if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch)); this.activity.set(id, projector) }
-    const turnId = this.lastUserMessageId(id) ?? 'native-history'
+    const watcherTurn = live && this.runtimes.get(id)?.watcher && thread.lastTurn?.status === 'running' ? thread.lastTurn.messageId : undefined
+    const turnId = watcherTurn ?? this.lastUserMessageId(id) ?? 'native-history'
     const rows = projector.apply(thread.activities ?? [], frame, turnId, this.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
-    if (rows.length) thread.activities = rows
+    if (rows.length) {
+      // Transcript replay may place a tool after a folded steer. Its already-observed tool identity
+      // still belongs to the native turn that wrote it; replay must not move it to the steer.
+      if (!live && this.resolvedWatcherProfiles.has(id)) {
+        const observed = new Map((thread.activities ?? []).map(activity => [activity.id, activity]))
+        thread.activities = rows.map(activity => {
+          const previous = observed.get(activity.id) ?? this.history?.activity?.(id, activity.id, this.aliases[id]?.historyEpoch)
+          return activity.kind === 'file-change' && previous?.kind === 'file-change' && previous.turnId !== 'native-history'
+            && previous.turnId !== activity.turnId ? { ...activity, turnId: previous.turnId } : activity
+        })
+      } else thread.activities = rows
+    }
   }
   /** The turn a record read now belongs to: the newest user message, or the newest one a replay has reached. */
   private lastUserMessageId(id: string): string | undefined {
@@ -1999,6 +2079,27 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * store's journal generation or later are folded: an older one was in the store's hands when it was written whole.
    * A store with no generation, from before there was one, folds every line once.
    */
+  /**
+   * Claude Code's own transcripts on this computer, for Usage (ADR-0083). Every session this adapter ever ran for a
+   * thread, its rewound lineage included, reports under that thread; any other session under a hashed identity.
+   * Reads the saved thread records without changing them, so it never waits on or starts a connection.
+   */
+  private async scanHistory(sink: UsageHistorySink, signal: AbortSignal): Promise<void> {
+    const owned = new Map<string, string>()
+    const own = (aliases: Record<string, Alias>): void => {
+      for (const [id, alias] of Object.entries(aliases)) {
+        if (alias.kind === 'personal') continue
+        owned.set(alias.sessionId, id)
+        for (const earlier of alias.lineage ?? []) if (!owned.has(earlier.sessionId)) owned.set(earlier.sessionId, id)
+        if (alias.rollbackPending?.targetSessionId && !owned.has(alias.rollbackPending.targetSessionId)) owned.set(alias.rollbackPending.targetSessionId, id)
+      }
+    }
+    try { own(await this.aliasStore.read()) } catch { /* What this process holds still counts. */ }
+    own(this.aliases)
+    const home = this.options.claudeHome ?? (this.options.environment ?? process.env).CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+    await scanClaudeHistory({ home, owned }, sink, signal)
+  }
+
   private async readAliases(): Promise<Record<string, Alias>> {
     const { aliases, journal, stored } = await this.inAliasOrder(async () => {
       const aliases = await this.aliasStore.read()

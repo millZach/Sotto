@@ -166,6 +166,29 @@ describe('OutputService', () => {
     expect(writes).toEqual(['dictation', 'history'])
   })
 
+  it('holds other clipboard work, such as Copy image, until dictation waiting to paste is pasted', async () => {
+    const { promise: blocked, resolve: release } = deferred<void>()
+    const { promise: entered, resolve: reached } = deferred<void>()
+    let clipboard = ''
+    const pasted: string[] = []
+    const harness = createHarness({
+      clipboard: { writeText: text => { clipboard = text } },
+      process: { run: async () => { reached(); await blocked; pasted.push(clipboard); return true } },
+    })
+
+    const dictation = harness.service.deliver('dictation', { autoPaste: true, pasteDelayMs: 0 })
+    await entered
+    const image = harness.service.afterDeliveries(() => { clipboard = 'image'; return 'copied image' })
+    await Promise.resolve()
+    expect(clipboard).toBe('dictation')
+    release()
+
+    await expect(dictation).resolves.toBe('pasted')
+    await expect(image).resolves.toBe('copied image')
+    expect(pasted).toEqual(['dictation'])
+    expect(clipboard).toBe('image')
+  })
+
   it('pastes concurrent deliveries in order using their own text', async () => {
     let clipboard = ''
     const pasted: string[] = []

@@ -69,7 +69,7 @@ import {
 } from 'electron'
 import { spawn } from 'node:child_process'
 import { appendFile, rename, stat, writeFile } from 'node:fs/promises'
-import { homedir, release as osRelease } from 'node:os'
+import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 
 import {
@@ -116,8 +116,9 @@ import { SpeechModelStore } from './asr/speechModelStore'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
 import type { SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
-import { UpdateService } from './updates/updateService'
-import { platformProfile, windowFrostFor, type WidgetAlwaysOnTopLevel } from './platformProfile'
+import { UpdateService, waitingVersion } from './updates/updateService'
+import { e2eUpdater } from './updates/e2eUpdater'
+import { platformProfile, type WidgetAlwaysOnTopLevel } from './platformProfile'
 import { RecoveryNoticeCenter } from './storage/recoveryNoticeCenter'
 import { createStorageRepositories } from './storage/repositories'
 import { migrateLegacyUserData } from './storage/migrateLegacyUserData'
@@ -158,7 +159,7 @@ import {
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
 import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
-import { hostReleaseVersion } from './hosts/hostReleaseVersion'
+import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleaseVersion'
 import { WATCHER_CHANGED, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
 import type { DictationCommand } from '../shared/contracts'
@@ -188,6 +189,7 @@ import { registerUsageIpc } from './agents/usageIpc'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
+import { createWatcherRoomDesktop } from './agents/watcherRoomDesktop'
 import { AgentStateBroadcaster } from './agents/agentStateBroadcast'
 import { registerAgentIpc } from './agents/ipc'
 import { desktopWindowClient } from './agents/hostService'
@@ -413,18 +415,6 @@ class ElectronBrowserWindowAdapter implements BrowserWindowLike {
     this.window.setIgnoreMouseEvents(ignore, options)
   }
 
-  setBackgroundColor(color: string): void {
-    this.window.setBackgroundColor(color)
-  }
-
-  setBackgroundMaterial(material: 'acrylic' | 'none'): void {
-    this.window.setBackgroundMaterial(material)
-  }
-
-  setVibrancy(type: 'under-window' | null): void {
-    this.window.setVibrancy(type)
-  }
-
   onNavigation(
     event: NavigationEventName,
     listener: (event: { preventDefault(): void }, details: { readonly url: string }) => void,
@@ -591,6 +581,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const museEnabled = owlFeatures.muse
   const usageEnabled = owlFeatures.usage
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || museEnabled)
+  // With Update all on, the host version the update this computer is downloading brings, which a host may run before
+  // Sotto restarts (ADR-0077 decision 6). It stays undefined on stable, where hosts follow the running version alone.
+  let waitingAppVersion: string | undefined
+  let waitingHostVersion: string | undefined
+  let waitingPhase: string | undefined
   let repaintOmarchy: () => void = () => undefined
   const omarchyTheme = new OmarchyThemeMonitor(platform, homedir(),
     () => repaintOmarchy(), logOperational)
@@ -675,8 +670,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       void widgetPlacementStore.save(placement)
       linuxDictationShell?.place(placement.edge)
     },
-    windowFrost: windowFrostFor(profile.platform, osRelease()),
-    frostedWindow: () => workingCopySettings.frostedWindow,
   })
   // This explicit development-only path drives the real adapter through a scripted ACP child.
   const devinFixtureRoot = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_DEVIN_ROOT'] : undefined
@@ -774,7 +767,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The runtime builds the worktree cleanup (ADR-0041). Only the local host has worktrees on this
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, museEnabled,
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, museEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
   })
   quitHandles.hostRouter = hostRouter
@@ -801,7 +794,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, museEnabled, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, museEnabled, clientVersion: hostVersion,
+  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, museEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
+    waitingClientVersion: () => waitingHostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
     ...(sshStandIn ? { launcher: () => new SshHostLauncher({ spawn: sshStandIn }) } : {}),
@@ -1079,6 +1073,25 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     keepWidgetVisibleDuringPaste: platform === 'linux',
     ...(platform === 'linux' ? { preparePasteText: sanitizeLinuxPasteText } : {}),
   })
+  // Copy image waits for any dictation still being pasted, and only an image Electron can read reaches the clipboard.
+  // A test run never touches the real clipboard. Linux goes through wl-copy like text does. Under Wayland a wl-copy
+  // that fails is reported, because Electron's own write may not reach other apps there and would claim a copy that
+  // never happened; without Wayland, Electron's write is the clipboard.
+  const imageClipboard = {
+    writePng: (png: Buffer): Promise<void> => output.afterDeliveries(async () => {
+      const image = nativeImage.createFromBuffer(png)
+      if (image.isEmpty()) throw new Error('Unreadable image')
+      if (e2eState !== null) return
+      if (linuxClipboard !== null) {
+        const written = await linuxClipboard.writePng(png).then(() => true, (error: unknown) => {
+          if (process.env.WAYLAND_DISPLAY) throw error
+          return false
+        })
+        if (written) return
+      }
+      clipboard.writeImage(image)
+    }),
+  }
 
   const copyOutput = async (text: string): Promise<void> => {
     await output.deliver(text, { autoPaste: false, pasteDelayMs: 0 })
@@ -1137,12 +1150,25 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // must never reach the network. Everywhere else the service resolves to the
   // 'unsupported' phase without constructing electron-updater at all.
   const updatesSupported = app.isPackaged && e2eConfiguration === null && profile.inAppUpdates
+  // A development end-to-end run can be offered an update of its own, which downloads nothing and never installs.
+  const updateStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_APP_UPDATE'] : undefined
   const updates = new UpdateService({
     currentVersion: appRunningVersion, owlFeatures, watcherEnabled,
     getSettings: () => settings.get(),
-    ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : {}),
+    // With Update all on, the restart waits for a host update under way, which it would otherwise cut off (ADR-0077).
+    ...(owlFeatures['update-all'] ? { restartHold: () => hostUpdates.restartHold() } : {}),
+    ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : updateStandIn ? { createUpdater: () => e2eUpdater(updateStandIn) } : {}),
     onStatusChanged: (status) => {
       windows.sendToMain(UPDATE_STATUS, status)
+      // Update all aims each host at the version this computer is downloading, once its archive is published (ADR-0077).
+      // Only a change of phase passes on, never a download's progress, so a page that did not answer is not asked again
+      // on every tick.
+      if (owlFeatures['update-all'] && status.phase.phase !== waitingPhase) {
+        waitingPhase = status.phase.phase
+        waitingAppVersion = waitingVersion(status.phase, waitingAppVersion)
+        waitingHostVersion = waitingAppVersion === undefined ? undefined : updateHostReleaseVersion(waitingAppVersion, usageEnabled || museEnabled)
+        hostUpdates.pending(waitingHostVersion)
+      }
     },
   })
 
@@ -1216,7 +1242,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     async onSettingsChanged(settings): Promise<void> {
       const grantDefaultChanged = settings.browserWithoutAsking !== workingCopySettings.browserWithoutAsking
       const babysittingChanged = settings.babysitPullRequests !== workingCopySettings.babysitPullRequests
-      if (settings.frostedWindow !== workingCopySettings.frostedWindow) windows.setMainWindowFrosted(settings.frostedWindow)
       workingCopySettings = settings
       worktreeCleanup?.settingsChanged()
       phoneAccess.settingsChanged()
@@ -1447,17 +1472,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, resetThreadDelivery: agentStateBroadcaster.resetThreadDelivery, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
-      const cleanupWatcher = localRuntime?.watcher?.subscribe(state => windows.sendToMain(WATCHER_CHANGED, state))
-      const unavailableWatcher = () => ({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE',
-        message: 'Turn on Run the local host in Settings and restart Sotto to use Watcher.', retryable: true } as const)
+      const desktopWatcher = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
+        watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state),
+        setLimit: limit => settingsCoordinator.updateSettings({ watcherInFlightLimit: limit }) })
       const cleanup = registerIpc(ipcMain, {
-        ...(watcherEnabled ? { watcher: {
-          get: async () => localRuntime?.watcher?.get() ?? unavailableWatcher(),
-          open: request => localRuntime?.watcher?.open(request) ?? Promise.resolve(unavailableWatcher()),
-          prepareStopAll: async () => localRuntime?.watcher?.prepareStopAll() ?? unavailableWatcher(),
-          stopAll: request => localRuntime?.watcher?.stopAll(request.confirmationId) ?? Promise.resolve(unavailableWatcher()),
-          setLimit: async request => { if (!localRuntime?.watcher) return unavailableWatcher(); await settingsCoordinator.updateSettings({ watcherInFlightLimit: request.limit }); return localRuntime.watcher.get() },
-        } satisfies Omit<import('../shared/watcherRoom').WatcherBridge, 'onChanged'> } : {}),
+        ...(desktopWatcher ? { watcher: desktopWatcher.bridge } : {}),
         settings: {
           get: () => settingsCoordinator.getSettings(),
           update: (patch) => { requireLocalHistoryCleanup(startupSettings.localHostEnabled, agentHistoryEnabled, patch.historyEnabled); return settingsCoordinator.updateSettings(patch) },
@@ -1500,6 +1519,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           publishWidgetState,
         },
         output,
+        imageClipboard,
         transcriptPolish: {
           polish: (text, asr) => transcriptPolish.polish(text, asr),
         },
@@ -1563,7 +1583,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         transcription.dispose()
         speechModelStore?.dispose()
         updates.dispose()
-        cleanupWatcher?.()
+        desktopWatcher?.dispose()
         cleanup()
       }
       if (e2eState === null) return cleanupNativeIpc

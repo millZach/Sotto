@@ -13,6 +13,8 @@ interface TextClipboard extends ClipboardAdapter {
 interface WaylandClipboard extends TextClipboard {
   /** Mirror the last successful desktop write for terminals using Shift+Insert. */
   copyToPrimary(): Promise<void>
+  /** Puts a PNG on the desktop clipboard; throws when wl-copy cannot. */
+  writePng(png: Buffer): Promise<void>
 }
 
 /** wl-copy forks its selection owner. Only wait for the parent, never its stdout. */
@@ -29,7 +31,7 @@ export function createWaylandClipboard(
     fallbackReported = true
     onFallback()
   }
-  const run = (executable: string, args: readonly string[], text?: string): Promise<string> =>
+  const run = (executable: string, args: readonly string[], text?: string | Buffer): Promise<string> =>
     new Promise((resolve, reject) => {
       let child: ChildProcess | undefined
       let timeout: ReturnType<typeof setTimeout> | undefined
@@ -78,7 +80,8 @@ export function createWaylandClipboard(
           timeout = setTimeout(() => {
             finish(false)
           }, CLIPBOARD_PROCESS_TIMEOUT_MS)
-          if (text !== undefined) child.stdin?.end(text, 'utf8')
+          if (typeof text === 'string') child.stdin?.end(text, 'utf8')
+          else if (text !== undefined) child.stdin?.end(text)
         }
       } catch {
         finish(false)
@@ -102,6 +105,9 @@ export function createWaylandClipboard(
     async copyToPrimary(): Promise<void> {
       if (desktopText === undefined) throw new Error('Desktop clipboard unavailable')
       await run('wl-copy', ['--primary', '--type', 'text/plain;charset=utf-8'], desktopText)
+    },
+    async writePng(png): Promise<void> {
+      await run('wl-copy', ['--type', 'image/png'], png)
     },
     canPaste: () => desktopClipboardWritten,
     async readText(): Promise<string> {

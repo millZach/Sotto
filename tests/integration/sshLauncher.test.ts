@@ -362,9 +362,10 @@ it('opens an admin connection only to a running host, starts none, and names the
   const started = await launcher.connect(configuration)
   hosts.push((JSON.parse(await readFile(descriptor, 'utf8')) as { pid: number }).pid)
   expect(started.node).toMatch(/node(\.exe)?$/iu)
+  expect(started.system).toBe(`${process.platform}-${process.arch}`)
   await started.close()
   const admin = await launcher.connect(configuration, {}, { start: false })
-  expect(admin).toMatchObject({ owned: true, hostId: started.hostId, node: started.node })
+  expect(admin).toMatchObject({ owned: true, hostId: started.hostId, node: started.node, system: started.system })
   expect(await admin.hostAdminToken()).toBe('remote-only-secret')
   expect(await admin.stopHost()).toBe(true)
 })
@@ -479,7 +480,8 @@ async function installedFlat(path: string): Promise<void> {
 }
 const runningHost = async (path: string): Promise<number> => (JSON.parse(await readFile(join(path, 'data', 'sotto', 'host-listener.json'), 'utf8')) as { pid: number }).pid
 it('updates a host it started over SSH: the host downloads and checks, unpacks beside it, and restarts into the new version', async () => {
-  // Each start gets the 30 seconds a real one does: the restart starts a host while the whole suite runs beside it.
+  // Each start keeps its production budget. The whole update, like the readiness and password journeys,
+  // needs a test deadline that outlives one valid start, as well as the download, unpack and restart.
   const { launcher, path, spawns } = await fixture('run', { readyTimeoutMs: 30_000 })
   await installedFlat(path)
   const connection = await launcher.connect(configuration)
@@ -502,7 +504,7 @@ it('updates a host it started over SSH: the host downloads and checks, unpacks b
     for (const item of updates) expect(item.stdinSha256).toBe(SCRIPT_SHA)
     expect(await readFile(join(path, 'opt', 'sotto release', 'current'), 'utf8')).toBe('9.9.9\n')
   } finally { await page.close() }
-})
+}, 150_000)
 it('copies an archive to the host over SSH with the receive script and the archive on stdin', async () => {
   const { launcher, path, spawns } = await fixture('run')
   await installedFlat(path)

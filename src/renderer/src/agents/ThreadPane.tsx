@@ -23,7 +23,8 @@ import { ThreadBabysitting, ThreadMonitor, ThreadHeld, ThreadWaitingCommand, Thr
 import { ornamentPose } from './threadActivityView'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 import { useWatchedThread } from '../watcher/watcherRoom'
-import { WatchedBadge, WatcherOwl } from '../watcher/WatcherOwl'
+import { WatchedBadge } from '../watcher/WatcherOwl'
+import { WatchedNote, WatchHeaderToggle, WatchToast } from '../watcher/WatchControls'
 
 type Command = AgentConnection['command']
 
@@ -77,13 +78,15 @@ export interface ThreadPaneProps {
    * changes, with no skills, branch toolbar, Git action or thread menu, since Watcher coordinates rather than works.
    */
   readonly watcherHeader?: ReactNode
+  /** In Watcher's own pane, what stands in its conversation's place (the Watched view); its own requests stay under it. */
+  readonly watcherBody?: ReactNode
 }
 
 /**
  * One thread's view: header and controls, its own transcript position and its own composer.
  * Everything here acts on `row.thread.id`; a split workspace mounts one per open thread.
  */
-export function ThreadPane({ row, state, command, store, focused, promptId, error, onClose, onOpenBeside, workingCopy, actions, notice, drawer, now, watcherHeader }: ThreadPaneProps): ReactNode {
+export function ThreadPane({ row, state, command, store, focused, promptId, error, onClose, onOpenBeside, workingCopy, actions, notice, drawer, now, watcherHeader, watcherBody }: ThreadPaneProps): ReactNode {
   const [followSignal, setFollowSignal] = useState(0)
   const [renaming, setRenaming] = useState(false)
   const renameReturn = useRef<HTMLElement | null>(null)
@@ -196,6 +199,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         </span>
       </div>
       <div className="thread-workspace__actions">
+        {/* Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
+        {thread.kind === 'watcher' || thread.kind === 'watcher-history' ? null : <WatchHeaderToggle threadId={thread.id} title={thread.title} />}
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
         {!closed ? <GitActionButton thread={thread} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {actions}
@@ -207,7 +212,11 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {thread.historySaveNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.historySaveNotice}</p> : null}
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
     {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
-    <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane}>
+    {ownPane && watcherBody != null ? <div className="thread-transcript">
+      {watcherBody}
+      <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
+        onAnswer={focusAnswerComposer} />
+    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
       {!isThreadClosed(thread) && !thread.remoteHost && !ownPane ? <CloudIphoneRequest threadId={thread.id} threadTitle={thread.title} onAnswer={focusAnswerComposer} /> : null}
@@ -216,8 +225,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         live={closed ? [] : thread.requests} provider={row.provider}
         observation={state.connection === 'connecting' ? 'loading' : !rowConnected ? 'disconnected' : thread.historyStatus === 'loading' ? 'loading' : thread.historyStatus === 'error' ? 'unavailable' : 'ready'}
         observed={JSON.stringify([rowConnected, state.connection, thread.historyStatus, thread.status, closed, thread.requests.map(request => [request.id, request.delivery, request.questions])])} />
-    </ThreadTranscript></ThreadWebLinks>
+    </ThreadTranscript></ThreadWebLinks>}
     <div className="thread-workspace__compose">
+      {/* What a Watch or Stop watching press did, just above the focused pane's composer (Owl only). */}
+      {focused ? <WatchToast /> : null}
       {notice}
       <div className="git-action-notice-slot" ref={setGitNoticeSlot} />
       {/* The branch under this thread moved since its last send. Nothing is refused; the notice waits for a draft to continue. */}
@@ -230,8 +241,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {/* The row under the composer is compaction's alone. Side by side it keeps one line even when compaction has
           nothing to say, so panes keep their composers at the same height whether or not one has been compacted. */}
       <div className="thread-pane__meta">
-        {/* Said before a send, not after: a direct instruction here ends Watcher's part in this thread (ADR-0073). */}
-        {watched ? <p className="watched-note"><WatcherOwl size={13} /><span>Watched by Watcher. If you send here, Watcher stops sending to it.</span></p> : null}
+        {/* Said before a send, not after: what watching means here, and Stop watching. */}
+        {ownPane ? null : <WatchedNote threadId={thread.id} title={thread.title} />}
         <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
           connected={rowConnected && !closed} blocked={threadBusy} command={command} />
       </div>

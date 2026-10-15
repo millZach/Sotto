@@ -6,20 +6,6 @@ export type ApplicationMenuTemplate = 'none' | 'macos'
 
 export type WidgetAlwaysOnTopLevel = 'normal' | 'floating' | 'screen-saver'
 
-/** The system material a frosted main window draws behind the room (ADR-0048). */
-export type WindowFrost = 'acrylic' | 'vibrancy'
-
-/**
- * Windows draws acrylic behind a window from Windows 11 22H2 (build 22621); earlier builds have nothing to draw,
- * so the setting is not offered there. Every macOS Sotto runs on has window vibrancy.
- */
-export function windowFrostFor(platform: SottoPlatform, release: string): WindowFrost | null {
-  if (platform === 'darwin') return 'vibrancy'
-  if (platform !== 'win32') return null
-  const build = Number(release.split('.')[2])
-  return Number.isInteger(build) && build >= 22_621 ? 'acrylic' : null
-}
-
 export interface TrafficLightPosition {
   readonly x: number
   readonly y: number

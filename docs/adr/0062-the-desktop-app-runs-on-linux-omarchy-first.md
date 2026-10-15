@@ -49,7 +49,7 @@ That press also authorizes quiet startup refreshes of Sotto’s unchanged keys a
 **A Linux platform profile** (built in #848 for #835). `SottoPlatform` gains `linux`. Other platforms still fall back to the Windows profile on purpose (`src/shared/platform.ts`), and are not supported. The profile has:
 
 - the colour app icon from `build/icon.png`, sized for the tray and bundled into `out/`, so it is packaged with the app;
-- no frost;
+- no frost (since ADR-0084, no platform has it);
 - no in-app updater;
 - the `gnome-libsecret` password store, unless the user passed one or the desktop is KDE, where Chromium's own choice stands;
 - login items kept away from Electron's, which do nothing on Linux. Launch when you sign in is disabled until the package provides it (#841).

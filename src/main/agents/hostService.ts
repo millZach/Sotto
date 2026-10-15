@@ -1,5 +1,5 @@
 import { userInfo } from 'node:os'
-import type { WatcherHostControl, WatcherHostRead, WatcherHostProjection } from '../../shared/watcherHost'
+import type { WatcherHostControl, WatcherHostRead, WatcherHostProjection, WatcherRoomThreadInput } from '../../shared/watcherHost'
 import type { WatcherIdentity } from '../../shared/watcher'
 import type { WatcherService } from './watcher'
 import type { WatcherPhoneService } from './watcherPhone'
@@ -72,8 +72,14 @@ export interface HostService {
   usageClear?(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult>
   readonly supportsWatcherControl?: boolean
   readonly supportsWatcherReads?: boolean
+  readonly supportsWatcherStandingWatch?: boolean
+  /** The host's threads report the background work counts work-settled news needs; without it they are unknown. */
+  readonly supportsWatcherWorkSettled?: boolean
+  /** The host's exact operation reads carry a delegation's outcome and reply; without it a desktop reads them as unknown. */
+  readonly supportsWatcherOutcomes?: boolean
   subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
+  watcherRoomThreads?(threadIds: readonly string[]): WatcherRoomThreadInput[]
   watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown>
   watcherRead?(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown>
   watcherProjection?(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection
@@ -191,6 +197,7 @@ export class LocalHostService implements HostService {
   readonly supportsUsage: boolean
   get supportsWatcherControl(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherReads(): boolean { return this.options.watcher !== undefined }
+  get supportsWatcherStandingWatch(): boolean { return this.options.watcher !== undefined }
   watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown> { return this.options.watcher!.admitRemote(request, client.clientId, guard) }
   watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown> { return this.options.watcher!.readRemote(request, client.clientId, guard) }
   watcherProjection(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection { return this.options.watcher!.remoteProjection(request.master, client.clientId) }

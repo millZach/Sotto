@@ -1,0 +1,22 @@
+{
+  "head": "1681abdb50a75056bdf724addae5c6549c488044",
+  "hashes": {
+    "tests/perf/watcherRoomRemote.perf.test.ts": "83349983d2a14ffab190f471dbe99583fec86e510e4ca1321490b0c67ba67e81",
+    "tests/fixtures/windowThreadShellPipeline.ts": "a5c1cf62c53959c33c1161d392049cabaeaa5190ce3bbd42030332cde543def0",
+    "src/main/agents/watcher.ts": "a9051caa5b433ac1a4f9267916f50981992287eefbafc622da24ba625f73454b",
+    "src/main/agents/socketHostService.ts": "5899d6fa1894c317372d09a28c33c3cb97b6a940ad9e65e6dc29aa65ec232d78",
+    "src/main/hosts/desktopHostRouter.ts": "4cf982e694ac56ea0f23516956f846e9423cc776208718b746e638f6450d6a63"
+  },
+  "started": "2026-10-14T23:38:53.704Z",
+  "wrapperPid": 23868,
+  "childPid": 55636,
+  "command": [
+    "C:\\Program Files\\nodejs\\node.exe",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "tests/perf/watcherRoomRemote.perf.test.ts",
+    "--maxWorkers=1",
+    "--disable-console-intercept"
+  ],
+  "cwd": "D:/Talk to Text Application/.worktrees/perf-watcher-room-state"
+}

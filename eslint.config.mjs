@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/watcher-room-state/**',
       'artifacts/certified-detail/**',
       'artifacts/window-thread-shell/**',
       'artifacts/watcher-phone-wire/**',
@@ -32,6 +33,7 @@ export default tseslint.config(
       'artifacts/sotto-owl-branding/**',
       'artifacts/sotto-owl-night-sky/**',
       'artifacts/watcher-room/**',
+      'artifacts/watcher-permission/**',
       'artifacts/terminal-truths/**',
       'artifacts/voice-control-removal/merged-setup/**',
       'artifacts/skill-pill-composer/**',
@@ -44,6 +46,7 @@ export default tseslint.config(
       'apps/omarchy/src/**',
       'apps/omarchy/pkg/**',
       'artifacts/e2e-runs/**',
+      'artifacts/watcher-permission-watch/**',
       'artifacts/immediate-client-updates/**',
       'artifacts/omarchy-shell-integration/**',
       'artifacts/linux-window-minimum/**',
@@ -122,7 +125,6 @@ export default tseslint.config(
       'artifacts/terminal-search-links-zoom/**',
       'artifacts/terminal-search-repaint/**',
       'artifacts/thread-sidebar/**',
-      'artifacts/frosted-window/**',
       'artifacts/forge-hand-test/**',
       'artifacts/effort-furnace/**',
       'artifacts/effort-slider/**',

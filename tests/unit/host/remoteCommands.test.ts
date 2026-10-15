@@ -83,6 +83,8 @@ describe('remote command allow-list', () => {
       // Neither becomes an ordinary remote command or grants answer authority.
       'watcher-control', 'watcher-read',
       'watcher-phone-read', 'watcher-phone-send', 'watcher-phone-answer', 'watcher-phone-prepare-stop-all', 'watcher-phone-stop-all',
+      // Optional phone management: pairing admits watching; permissive mode changes recheck Can answer.
+      'watcher-phone-set-permission', 'watcher-phone-watch', 'watcher-phone-unwatch',
       // A thread's Files, Changes and Agents: reads only, never commands (ADR-0025, October 5 amendment).
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)

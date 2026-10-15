@@ -10,7 +10,7 @@ describe('Usage preload', () => {
     const ipc = preloadElectron().ipcRenderer
     expect(createSottoBridge(ipc, 'win32').usage).toBeUndefined()
     expect(createSottoWidgetBridge(ipc, 'win32')).not.toHaveProperty('usage')
-    const bridge = createSottoBridge(ipc, 'win32', false, false, true).usage!
+    const bridge = createSottoBridge(ipc, 'win32', false, true).usage!
     expect(Object.isFrozen(bridge)).toBe(true)
     expect(Object.keys(bridge).sort()).toEqual(['clear', 'read', 'refresh'])
     ipc.invoke.mockResolvedValue({ hosts: [] })

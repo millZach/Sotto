@@ -20,6 +20,8 @@ final class WatcherModelTests: XCTestCase {
     private let laptop = "00000000-0000-4000-8000-000000000001"
     private let forge = "00000000-0000-4000-8000-000000000009"
     private static let watcherFeatures = ["host-folders", "watcher-phone", "watcher-phone-stop-all"]
+    /// An Owl desktop that also takes Watcher's permissions and watches from this iPhone.
+    private static let manageFeatures = watcherFeatures + ["watcher-phone-manage"]
     private let receiptPause = ReceiptPause()
     private var suites: [String] = []
     override func tearDown() {
@@ -50,6 +52,17 @@ final class WatcherModelTests: XCTestCase {
         var deliveries: [String: String] = [:]
         /// Watcher's answer so far, after its first reply.
         var answer: String?
+        /// What Watcher may do without asking, as its computer keeps it for Watcher, and as the current Watcher has it.
+        var runtimeMode: String?
+        var currentMode: String?
+        /// Whether `t` has a standing watch, which lasts until the user stops it, and whether the user's own turn there
+        /// holds it.
+        var standing = false
+        var paused = false
+        var inFlight = 1
+        /// The files Watcher changed itself in its reply `started`, and the reason it gave, if any.
+        var changed: [String] = []
+        var reason: String?
     }
     private static let workerRequest = #"{"id":"q1","kind":"question","text":"Which account?","options":[{"id":"a","label":"A fresh account"},{"id":"b","label":"The seeded user"}]}"#
     private static let ownRequest = #"{"id":"p1","kind":"permission","text":"Wants to run gh pr checks 845.","options":[]}"#
@@ -69,13 +82,25 @@ final class WatcherModelTests: XCTestCase {
         }
         let deliveries = spec.deliveries.map { draft, status in #"{"draftId":"\#(draft)","status":"\#(status)"}"# }.joined(separator: ",")
         let answer = spec.answer.map { #",{"id":"more","role":"assistant","text":"\#($0)","createdAt":"2026-10-11T08:02:00.000Z"}"# } ?? ""
+        let currentMode = spec.currentMode.map { #","runtimeMode":"\#($0)""# } ?? ""
+        let paused = spec.paused ? #","paused":true"# : ""
+        var extra = spec.runtimeMode.map { #","runtimeMode":"\#($0)""# } ?? ""
+        if spec.standing {
+            let hold = spec.paused ? #","pausedByUserMessageId":"human""# : ""
+            extra += #","standingWatches":[{"id":"eeeeeeee-0000-4000-8000-000000000001","target":{"hostId":"\#(laptop)","threadId":"t"},"createdAt":"2026-10-11T08:01:00.000Z","generation":1\#(hold)}]"#
+        }
+        if !spec.changed.isEmpty {
+            let files = spec.changed.map { #""\#($0)""# }.joined(separator: ",")
+            let reason = spec.reason.map { #""\#($0)""# } ?? "null"
+            extra += #","ownChanges":[{"replyMessageId":"started","turnId":"turn","files":[\#(files)],"fileCount":\#(spec.changed.count),"reason":\#(reason),"source":"provider-file-change"}]"#
+        }
         return #"""
-        {"hostId":"\#(laptop)","current":{"target":{"hostId":"\#(laptop)","threadId":"w"},"provider":"codex","modelId":"m","reasoningEffort":"high","status":"\#(spec.status)","connected":true},
+        {"hostId":"\#(laptop)","current":{"target":{"hostId":"\#(laptop)","threadId":"w"},"provider":"codex","modelId":"m","reasoningEffort":"high","status":"\#(spec.status)","connected":true\#(currentMode)},
          "conversation":{"messages":[{"id":"ask","role":"user","text":"Fix the login test.","createdAt":"2026-10-11T08:00:00.000Z"},{"id":"started","role":"assistant","text":"Started it.","createdAt":"2026-10-11T08:01:00.000Z"}\#(answer)],"earlierAvailable":false,"revision":\#(spec.answer == nil ? 2 : 3)},
          "receiptGroups":[{"replyMessageId":"started","requestId":"aaaaaaaa-0000-4000-8000-000000000001","rows":[{"operationId":"bbbbbbbb-0000-4000-8000-000000000001","target":{"hostId":"\#(laptop)","threadId":"t"},"title":"Fix login test","provider":"claude","action":"start","deliveryState":"accepted","createdAt":"2026-10-11T08:01:00.000Z","updatedAt":"2026-10-11T08:01:00.000Z"}]}],
-         "watchedThreads":[{"target":{"hostId":"\#(laptop)","threadId":"t"},"title":"Fix login test","provider":"claude","status":"running","connected":true,"watched":\#(spec.watched),"takenOver":\#(spec.takenOver),"backgroundWorkCount":0}],
-         "needsYou":[\#(cards.joined(separator: ","))],"inFlight":1,"inFlightLimit":4,"working":\#(spec.working),"observedAt":"\#(spec.observedAt)",
-         "draftDeliveries":[\#(deliveries)]}
+         "watchedThreads":[{"target":{"hostId":"\#(laptop)","threadId":"t"},"title":"Fix login test","provider":"claude","status":"running","connected":true,"watched":\#(spec.watched),"takenOver":\#(spec.takenOver),"backgroundWorkCount":0\#(paused)}],
+         "needsYou":[\#(cards.joined(separator: ","))],"inFlight":\#(spec.inFlight),"inFlightLimit":4,"working":\#(spec.working),"observedAt":"\#(spec.observedAt)",
+         "draftDeliveries":[\#(deliveries)]\#(extra)}
         """#
     }
     private func decoded(_ spec: Spec = Spec()) throws -> WatcherPage {
@@ -908,6 +933,7 @@ final class WatcherModelTests: XCTestCase {
             switch item {
             case .message(let message): return message.id
             case .receipts(let group, let attached): return group.requestId + (attached ? "" : " alone")
+            case .ownChange(let change): return "own " + change.replyMessageId
             }
         }
         XCTAssertEqual(order, ["g3 alone", "m1", "r1", "g1", "m2", "g2 alone", "r2"],
@@ -915,5 +941,320 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(WatcherWords.meter(try decoded()), "1 of 4 watched")
         XCTAssertEqual(WatcherWords.room(try decoded()), "3 more can start. A thread waiting on you still counts.")
     }
-}
 
+    // MARK: What Watcher may do without asking (control A)
+
+    /// The computer's answer to a set-permission, watch or unwatch: Watcher's page as it stands after the change. Reads
+    /// return `read`. Every management operation is kept, with its request ID.
+    @MainActor private func manage(_ after: @escaping (String, [String: JSONValue]) throws -> JSONValue, read: @escaping () -> String,
+                                   sent: @escaping ([String: JSONValue], String) -> Void = { _, _ in }) {
+        HostConnection.watcherHandler = { op, operation, id in
+            if op == "watcher-phone-read" { return try self.ok(read()) }
+            sent(operation, id)
+            return try after(op, operation)
+        }
+    }
+    @MainActor private func calls(_ op: String) throws -> [(operation: [String: JSONValue], id: String)] {
+        try connection.watcherCalls.filter { $0.operation["op"] == .string(op) }
+    }
+
+    @MainActor func testWatchersPermissionChangesThroughItsComputerAndSaysWhatIsStillInForce() async throws {
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(status: "idle", runtimeMode: "approval-required", currentMode: "approval-required"))
+        XCTAssertTrue(model.offersWatcherManage(laptop))
+        XCTAssertEqual(model.watcherPermission(laptop), "approval-required")
+        XCTAssertEqual(WatcherPermissions.name(model.watcherPermission(laptop)), "Ask before actions", "In this iPhone's own words")
+        XCTAssertEqual(model.watcherPermissionModes(laptop), WatcherPermissions.modes, "A model that names none offers all four")
+        XCTAssertNil(model.watcherPermissionInForce(laptop))
+        // The computer keeps the choice for Watcher at once; Watcher's provider hasn't confirmed it yet.
+        let kept = page(Spec(status: "idle", observedAt: "2026-10-11T09:01:00.000Z", runtimeMode: "full-access", currentMode: "approval-required"))
+        manage({ _, _ in try self.ok(kept) }, read: { kept })
+        XCTAssertTrue(model.mayChooseWatcherPermission("full-access", on: laptop))
+        await model.setWatcherPermission("full-access", on: laptop)
+        let sent = try calls("watcher-phone-set-permission")
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertEqual(sent.first?.operation["request"], .object(["runtimeMode": .string("full-access")]))
+        XCTAssertEqual(model.watcherPermission(laptop), "full-access", "The chip says the choice")
+        XCTAssertEqual(model.watcherPermissionInForce(laptop), "Codex stays on Ask before actions until it confirms.")
+        XCTAssertTrue(model.watcherManaging.isEmpty)
+        XCTAssertTrue(model.watcherPermissionPicks.isEmpty)
+        XCTAssertNil(model.feedback)
+        // Once the provider confirms it, nothing more is said.
+        try push(Spec(status: "idle", observedAt: "2026-10-11T09:02:00.000Z", runtimeMode: "full-access", currentMode: "full-access"))
+        await until { model.watcherPermissionInForce(laptop) == nil }
+        XCTAssertNil(model.watcherPermissionInForce(laptop))
+        // The same choice again sends nothing.
+        await model.setWatcherPermission("full-access", on: laptop)
+        XCTAssertEqual(try calls("watcher-phone-set-permission").count, 1)
+        model.phase(.background)
+    }
+
+    @MainActor func testWatchersPermissionIsFixedWhileWatcherWorksOrItsOwnRequestWaits() async throws {
+        // Watcher's turn runs: its computer would refuse a change, so the chip waits and nothing is sent.
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(status: "running", runtimeMode: "approval-required", currentMode: "approval-required"))
+        XCTAssertTrue(model.watcherPermissionFixed(laptop))
+        XCTAssertFalse(model.canChangeWatcherPermission(laptop))
+        await model.setWatcherPermission("auto-accept-edits", on: laptop)
+        XCTAssertTrue(try calls("watcher-phone-set-permission").isEmpty)
+        XCTAssertEqual(WatcherPermissions.fixed, "Fixed while Watcher works.")
+        // Its turn over, a request of its own still waits on the user.
+        try push(Spec(status: "idle", ownCard: true, observedAt: "2026-10-11T09:01:00.000Z", runtimeMode: "approval-required", currentMode: "approval-required"))
+        await until { model.watcherPage(laptop)?.needsYou.contains { model.watcherPage(laptop)?.isOwn($0) == true } == true }
+        XCTAssertTrue(model.watcherPermissionFixed(laptop))
+        // Nothing waits: the chip can be pressed again.
+        try push(Spec(status: "idle", observedAt: "2026-10-11T09:02:00.000Z", runtimeMode: "approval-required", currentMode: "approval-required"))
+        await until { !model.watcherPermissionFixed(laptop) }
+        XCTAssertFalse(model.watcherPermissionFixed(laptop))
+        XCTAssertTrue(model.canChangeWatcherPermission(laptop))
+        model.phase(.background)
+    }
+
+    @MainActor func testAPhoneWithoutCanAnswerCanOnlyKeepWatcherAskingFirst() async throws {
+        let model = try await fixture(features: Self.manageFeatures, mayAnswer: false,
+                                      spec: Spec(status: "idle", mayAnswer: false, runtimeMode: "auto", currentMode: "auto"))
+        XCTAssertEqual(model.watcherPermission(laptop), "auto")
+        for mode in ["auto-accept-edits", "auto", "full-access"] {
+            XCTAssertFalse(model.mayChooseWatcherPermission(mode, on: laptop), "\(mode) lets Watcher act without asking")
+        }
+        XCTAssertTrue(model.mayChooseWatcherPermission("approval-required", on: laptop))
+        XCTAssertEqual(WatcherPermissions.asksOnly("Laptop"), "This iPhone can’t answer on Laptop, so it can only keep Watcher asking first.")
+        let narrowed = page(Spec(status: "idle", mayAnswer: false, observedAt: "2026-10-11T09:01:00.000Z", runtimeMode: "approval-required", currentMode: "approval-required"))
+        manage({ _, _ in try self.ok(narrowed) }, read: { narrowed })
+        await model.setWatcherPermission("full-access", on: laptop)
+        XCTAssertTrue(try calls("watcher-phone-set-permission").isEmpty, "A wider mode is never sent from a phone that can't answer")
+        await model.setWatcherPermission("approval-required", on: laptop)
+        XCTAssertEqual(try calls("watcher-phone-set-permission").first?.operation["request"], .object(["runtimeMode": .string("approval-required")]),
+                       "Asking first needs only the pairing")
+        XCTAssertEqual(model.watcherPermission(laptop), "approval-required")
+        model.phase(.background)
+    }
+
+    @MainActor func testARefusedPermissionPutsTheChipBackAndSaysWhy() async throws {
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(status: "idle", runtimeMode: "approval-required", currentMode: "approval-required"))
+        let before = page(Spec(status: "idle"))
+        manage({ _, _ in
+            try self.json(#"{"status":"refused","code":"PERMISSION_TOO_WIDE","message":"This phone needs Can answer to let Watcher act without asking. Nothing changed.","retryable":false}"#)
+        }, read: { before })
+        await model.setWatcherPermission("auto-accept-edits", on: laptop)
+        XCTAssertEqual(model.feedback, "This phone needs Can answer to let Watcher act without asking. Nothing changed.",
+                       "The computer's refusal, in its own words")
+        XCTAssertEqual(model.watcherPermission(laptop), "approval-required", "The chip goes back")
+        XCTAssertTrue(model.watcherManaging.isEmpty)
+        model.phase(.background)
+    }
+
+    @MainActor func testALostPermissionAcknowledgementReadsItsReceiptAndIsNeverSentAgain() async throws {
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(status: "idle", runtimeMode: "approval-required", currentMode: "approval-required"))
+        let kept = page(Spec(status: "idle", observedAt: "2026-10-11T09:01:00.000Z", runtimeMode: "auto", currentMode: "auto"))
+        // The computer makes the change and keeps its outcome under the request's ID; the acknowledgement is lost.
+        manage({ _, _ in throw ClientError.uncertain }, read: { kept }, sent: { _, id in
+            HostConnection.receipts[id] = try? self.json(#"{"status":"completed","watcherManage":{"status":"ok"}}"#)
+        })
+        await model.setWatcherPermission("auto", on: laptop)
+        XCTAssertEqual(try calls("watcher-phone-set-permission").count, 1, "Nothing is sent again on its own")
+        XCTAssertTrue(try connection.operations.contains("receipt"), "Its receipt is read")
+        XCTAssertFalse(try calls("watcher-phone-read").isEmpty, "And then Watcher's page")
+        XCTAssertEqual(model.watcherPermission(laptop), "auto")
+        XCTAssertNil(model.feedback, "The receipt says it took")
+
+        // A receipt the computer no longer has leaves the change unconfirmed, and says so.
+        manage({ _, _ in throw ClientError.uncertain }, read: { kept })
+        await model.setWatcherPermission("approval-required", on: laptop)
+        XCTAssertEqual(try calls("watcher-phone-set-permission").count, 2)
+        XCTAssertEqual(model.feedback, WatcherWords.permissionUnconfirmed("Laptop"))
+        XCTAssertEqual(model.feedback, "Laptop didn’t confirm the change to Watcher’s permissions. Check what they say before you change them again.")
+        XCTAssertEqual(model.watcherPermission(laptop), "auto", "The page read after it says how things stand")
+        model.phase(.background)
+    }
+
+    @MainActor func testAnOlderComputerOffersNoPermissionOrWatchControls() async throws {
+        let model = try await fixture(spec: Spec(watched: false))
+        XCTAssertFalse(model.offersWatcherManage(laptop))
+        XCTAssertFalse(model.canChangeWatcherPermission(laptop))
+        await model.setWatcherPermission("full-access", on: laptop)
+        XCTAssertNil(model.watchHost(for: worker), "No computer here takes Watch from this iPhone")
+        XCTAssertFalse(model.canChangeWatch(worker))
+        await model.setWatched(worker, true)
+        XCTAssertTrue(try connection.watcherCalls.isEmpty, "Nothing was asked of the computer")
+        // Its watched threads keep the takeover line it has always had.
+        try push(Spec(observedAt: "2026-10-11T09:01:00.000Z"))
+        await until { model.watchedByWatcher(worker) }
+        XCTAssertEqual(model.watchedLine(worker), WatchedWords.takeover)
+        model.phase(.background)
+    }
+
+    // MARK: Watching (watch B)
+
+    @MainActor func testWatchAndStopWatchingGoThroughWatchersComputerWithUndo() async throws {
+        // Watcher already has as many threads in flight as it may start: watching has no limit.
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(watched: false, inFlight: 4))
+        XCTAssertFalse(model.watchedByWatcher(worker))
+        XCTAssertEqual(model.watchHost(for: worker), laptop)
+        XCTAssertTrue(model.canChangeWatch(worker))
+        XCTAssertNil(model.watchHost(for: ThreadRef(hostID: laptop, threadID: "w")), "Watcher's own thread is never offered")
+        XCTAssertEqual(model.watchableThreads.map(\.ref), [worker])
+        var watched = false
+        manage({ op, _ in
+            watched = op == "watcher-phone-watch"
+            return try self.ok(self.page(Spec(watched: watched, observedAt: watched ? "2026-10-11T09:01:00.000Z" : "2026-10-11T09:02:00.000Z",
+                                              standing: watched, inFlight: 4)))
+        }, read: { self.page(Spec(watched: watched, observedAt: "2026-10-11T09:00:30.000Z", standing: watched, inFlight: 4)) })
+        await model.setWatched(worker, true)
+        let watch = try calls("watcher-phone-watch")
+        XCTAssertEqual(watch.count, 1)
+        XCTAssertEqual(watch.first?.operation["request"], .object(["target": .object(["hostId": .string(laptop), "threadId": .string("t")])]))
+        XCTAssertTrue(model.watchedByWatcher(worker), "The owl follows its logo now")
+        XCTAssertEqual(model.watchedLine(worker), WatchedWords.standing)
+        XCTAssertEqual(model.watchedLine(worker), "Watched by Watcher. It keeps this thread going and brings you its questions and permissions.")
+        let notice = try XCTUnwrap(model.watchNotice, "What the press did is said, with Undo")
+        XCTAssertEqual(notice.words, "Watcher is watching Fix login test.")
+        XCTAssertEqual(notice.undo, "Undo: stop watching Fix login test")
+        XCTAssertTrue(model.watchableThreads.isEmpty, "A watched thread isn't offered again")
+        XCTAssertTrue(model.watcherManaging.isEmpty)
+
+        // Undo is a press the other way.
+        await model.undoWatch(notice)
+        XCTAssertEqual(try calls("watcher-phone-unwatch").first?.operation["request"],
+                       .object(["target": .object(["hostId": .string(laptop), "threadId": .string("t")])]))
+        XCTAssertFalse(model.watchedByWatcher(worker))
+        XCTAssertNil(model.watchedLine(worker))
+        XCTAssertEqual(model.watchNotice?.words, "Watcher stopped watching Fix login test.")
+        XCTAssertEqual(model.watchNotice?.undo, "Undo: watch Fix login test again")
+        XCTAssertEqual(try calls("watcher-phone-watch").count, 1, "Nothing went twice")
+        model.phase(.background)
+    }
+
+    @MainActor func testUndoGoesBackToTheComputerWhoseWatcherTookThePress() async throws {
+        // Both computers run Watcher. The laptop's Watcher watches a thread on forge.
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(workerCard: false), forge: "")
+        let remote = ThreadRef(hostID: forge, threadID: "r")
+        let onForge = { (spec: Spec) -> String in
+            self.page(spec).replacingOccurrences(of: #"{"hostId":"\#(self.laptop)","threadId":"t"}"#, with: #"{"hostId":"\#(self.forge)","threadId":"r"}"#)
+        }
+        let watching = try shell(onForge(Spec(workerCard: false, observedAt: "2026-10-11T09:01:00.000Z", standing: true)), mayAnswer: true)
+        HostConnection.shells[laptop] = watching
+        try connection.push(.shell(watching.decode(Shell.self)))
+        await until { model.watchedByWatcher(remote) }
+        XCTAssertEqual(model.watchHost(for: remote), laptop, "Stop watching goes to the computer that watches it")
+        let stopped = onForge(Spec(workerCard: false, watched: false, observedAt: "2026-10-11T09:02:00.000Z"))
+        manage({ _, _ in try self.ok(stopped) }, read: { stopped })
+        await model.setWatched(remote, false)
+        let notice = try XCTUnwrap(model.watchNotice)
+        XCTAssertEqual(notice.hostID, laptop)
+        // Nothing watches it now, so a new press would go to forge, the thread's own computer. Undo goes back to the laptop.
+        XCTAssertEqual(model.watchHost(for: remote), forge)
+        let watchedAgain = onForge(Spec(workerCard: false, observedAt: "2026-10-11T09:03:00.000Z", standing: true))
+        manage({ _, _ in try self.ok(watchedAgain) }, read: { watchedAgain })
+        await model.undoWatch(notice)
+        XCTAssertEqual(try calls("watcher-phone-watch").first?.operation["request"],
+                       .object(["target": .object(["hostId": .string(forge), "threadId": .string("r")])]), "Undo went to the laptop's Watcher")
+        let forgeConnection = try XCTUnwrap(HostConnection.instances.last { $0.hostID == forge })
+        XCTAssertTrue(forgeConnection.watcherCalls.filter { $0.operation["op"] == .string("watcher-phone-watch") }.isEmpty, "And not to forge's")
+        model.phase(.background)
+    }
+
+    @MainActor func testARefusedOrUnconfirmedWatchSaysSoAndIsNeverSentAgain() async throws {
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(watched: false))
+        manage({ _, _ in
+            try self.json(#"{"status":"refused","code":"HOST_DISCONNECTED","message":"Sotto can’t reach the thread’s computer. Nothing changed.","retryable":true}"#)
+        }, read: { self.page(Spec(watched: false)) })
+        await model.setWatched(worker, true)
+        XCTAssertEqual(model.feedback, "Sotto can’t reach the thread’s computer. Nothing changed.")
+        XCTAssertNil(model.watchNotice, "A refused press says nothing took")
+        XCTAssertFalse(model.watchedByWatcher(worker))
+
+        // Lost on the way, and its receipt says the computer refused it.
+        manage({ _, _ in throw ClientError.uncertain }, read: { self.page(Spec(watched: false)) }, sent: { _, id in
+            HostConnection.receipts[id] = try? self.json(#"{"status":"completed","watcherManage":{"status":"refused","code":"UNKNOWN_TARGET","message":"That thread isn’t there any more. Nothing changed.","retryable":false}}"#)
+        })
+        await model.setWatched(worker, true)
+        XCTAssertEqual(model.feedback, "That thread isn’t there any more. Nothing changed.")
+        XCTAssertNil(model.watchNotice)
+        // Lost again, with no receipt to read.
+        manage({ _, _ in throw ClientError.uncertain }, read: { self.page(Spec(watched: false)) })
+        await model.setWatched(worker, true)
+        XCTAssertEqual(model.feedback, WatcherWords.watchUnconfirmed("Fix login test", watched: true, computer: "Laptop"))
+        XCTAssertEqual(model.feedback, "Laptop didn’t confirm that Watcher is watching Fix login test. Check Watched before you try again.")
+        XCTAssertEqual(try calls("watcher-phone-watch").count, 3, "One send for each press, never again on its own")
+        model.phase(.background)
+    }
+
+    @MainActor func testAThreadWatchedOnlyForARequestIsPromisedNothingPastTheUsersOwnSend() async throws {
+        // The computer keeps standing watches, but `t` is watched only because it takes part in Watcher's request.
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(standing: false))
+        XCTAssertTrue(model.watchedByWatcher(worker))
+        XCTAssertEqual(model.watchedLine(worker), WatchedWords.takeover)
+        XCTAssertEqual(model.watchedLine(worker), "Watched by Watcher. If you send here, Watcher stops sending to it.")
+        // Under a standing watch it is kept going until the user stops it.
+        try push(Spec(observedAt: "2026-10-11T09:01:00.000Z", standing: true))
+        await until { model.watchedLine(worker) == WatchedWords.standing }
+        XCTAssertEqual(model.watchedLine(worker), WatchedWords.standing)
+        XCTAssertEqual(WatcherWords.watchedLead(1, standing: 0),
+                       "Watcher keeps this thread going on its own and brings you its questions and permissions. It is watched for a request: if you send to it yourself, Watcher stops sending to it.")
+        XCTAssertEqual(WatcherWords.watchedLead(3, standing: 1),
+                       "Watcher keeps these 3 threads going on its own and brings you their questions and permissions. A thread you watch stays watched until you stop it. One watched for a request stops when you send to it yourself.")
+        model.phase(.background)
+    }
+
+    @MainActor func testAWatchedThreadsReplyBoxSaysWatcherWaitsWhileTheUsersTurnRuns() async throws {
+        let model = try await fixture(features: Self.manageFeatures, spec: Spec(standing: true, paused: true))
+        XCTAssertTrue(model.watchedByWatcher(worker))
+        XCTAssertEqual(model.watchedLine(worker), WatchedWords.paused)
+        XCTAssertEqual(model.watchedLine(worker), "Watched by Watcher. It waits while your own turn here runs, then keeps this thread going.")
+        XCTAssertEqual(model.watchHost(for: worker), laptop, "Stop watching goes to the computer that watches it")
+        try push(Spec(observedAt: "2026-10-11T09:01:00.000Z", standing: true))
+        await until { model.watchedLine(worker) == WatchedWords.standing }
+        XCTAssertEqual(model.watchedLine(worker), WatchedWords.standing, "Once the turn ends, Watcher keeps it going")
+        model.phase(.background)
+    }
+
+    func testWatchedSaysWhatWatcherLastDidAndWhatWatchingMeans() throws {
+        let started = try XCTUnwrap(try decoded(Spec(standing: true)).watched.first)
+        let at = try XCTUnwrap(WatcherWords.clock("2026-10-11T08:01:00.000Z"))
+        XCTAssertEqual(WatcherWords.doing(started, in: try decoded(Spec(standing: true))), "Watcher started it at \(at).",
+                       "From Watcher's own receipt for the thread")
+        let paused = try decoded(Spec(standing: true, paused: true))
+        XCTAssertEqual(WatcherWords.doing(try XCTUnwrap(paused.watched.first), in: paused), "You sent here yourself. Watcher waits until that turn ends.")
+        // A thread watched with nothing sent yet says since when.
+        let json = page(Spec(standing: true)).replacingOccurrences(of: #""threadId":"t"},"title":"Fix login test","provider":"claude","action""#,
+                                                                   with: #""threadId":"other"},"title":"Other","provider":"claude","action""#)
+        let quiet = try JSONDecoder().decode(WatcherPage.self, from: Data(json.utf8))
+        XCTAssertEqual(WatcherWords.doing(try XCTUnwrap(quiet.watched.first), in: quiet), "Watching since \(at). Nothing sent yet.")
+        XCTAssertEqual(WatcherWords.watchedLead(0), "Watcher watches no threads yet. Watch one here or from its page, and Watcher keeps it going until you stop it.")
+        XCTAssertEqual(WatcherWords.watchedLead(1), "Watcher keeps this thread going on its own and brings you its questions and permissions. It stays watched until you stop it.")
+        XCTAssertEqual(WatcherWords.watchedLead(7), "Watcher keeps these 7 threads going on its own and brings you their questions and permissions. Each stays watched until you stop it.")
+    }
+
+    // MARK: What Watcher changed itself (mark B)
+
+    func testALineSaysWhenWatcherChangedFilesItselfUnderThatReply() throws {
+        let silent = try decoded(Spec(changed: ["README.md", "docs/guide.md"]))
+        let order = WatcherConversation.items(silent).map(\.id)
+        XCTAssertEqual(order, ["message/ask", "message/started", "receipts/aaaaaaaa-0000-4000-8000-000000000001/started", "own/started"],
+                       "After the reply and what Watcher did for it")
+        guard case .ownChange(let change)? = WatcherConversation.items(silent).last else { return XCTFail("No line") }
+        XCTAssertNil(change.reason, "It gave no reason")
+        XCTAssertEqual(WatcherWords.ownChangeHeadline(change.fileCount), "Watcher changed 2 files itself.")
+        XCTAssertEqual(WatcherWords.ownChangeToggle(2, open: false), "Show the 2 files")
+        XCTAssertEqual(WatcherWords.ownChangeToggle(2, open: true), "Hide the 2 files")
+        XCTAssertEqual(WatcherWords.ownChangeToggle(1, open: false), "Show the file")
+        XCTAssertEqual(WatcherWords.ownChangeHeadline(1), "Watcher changed 1 file itself.")
+        let said = try decoded(Spec(changed: ["README.md"], reason: "A one-word typo is smaller than briefing a thread."))
+        XCTAssertEqual(said.ownChange(for: "started")?.reason, "A one-word typo is smaller than briefing a thread.")
+        // A mark whose reply isn't in the conversation says nothing on its own.
+        let gone = page(Spec(changed: ["README.md"])).replacingOccurrences(of: #""replyMessageId":"started","turnId""#, with: #""replyMessageId":"elsewhere","turnId""#)
+        let orphan = try JSONDecoder().decode(WatcherPage.self, from: Data(gone.utf8))
+        XCTAssertFalse(WatcherConversation.items(orphan).contains { if case .ownChange = $0 { return true } else { return false } })
+        XCTAssertTrue(WatcherConversation.items(try decoded()).allSatisfy { if case .ownChange = $0 { return false } else { return true } },
+                      "A reply in which Watcher changed nothing has no line")
+    }
+
+    func testWatcherPermissionWordsFollowTheiPhonesOwn() {
+        XCTAssertEqual(WatcherPermissions.modes.map(WatcherPermissions.name), ["Ask before actions", "Allow edits", "Allow actions", "Full access"])
+        XCTAssertEqual(WatcherPermissions.line("auto", provider: "Codex", computer: "Laptop"), "Codex decides what to ask you about.")
+        XCTAssertEqual(WatcherPermissions.line("full-access", provider: "Codex", computer: "Laptop"),
+                       "Edits files and runs any command without asking, anywhere on Laptop.")
+        XCTAssertEqual(WatcherPermissions.foot, "When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.")
+        XCTAssertFalse(WatcherPermissions.grants("approval-required"))
+        XCTAssertTrue(WatcherPermissions.grants("auto-accept-edits"))
+    }
+}

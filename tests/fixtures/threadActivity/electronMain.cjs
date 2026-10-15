@@ -1,7 +1,7 @@
 // Test-only Electron entry: loads the built thread activity fixture with the production window security posture.
 /* global require, process, __dirname */
 /* eslint-disable @typescript-eslint/no-require-imports -- Electron bootstrap is CommonJS. */
-const { app, BrowserWindow, ipcMain, clipboard } = require('electron')
+const { app, BrowserWindow, ipcMain, clipboard, nativeImage } = require('electron')
 const { resolve, join } = require('node:path')
 const { mkdtempSync, rmSync } = require('node:fs')
 const { tmpdir } = require('node:os')
@@ -12,9 +12,17 @@ app.setPath('userData', profile)
 app.on('quit', () => { try { rmSync(profile, { recursive: true, force: true }) } catch { /* Chromium may still hold files. */ } })
 if (process.env.SOTTO_ACTIVITY_FIXTURE_SCALE) app.commandLine.appendSwitch('force-device-scale-factor', process.env.SOTTO_ACTIVITY_FIXTURE_SCALE)
 
-globalThis.activityFixture = { opened: [], copied: [], navigations: [] }
+globalThis.activityFixture = { opened: [], copied: [], copiedImages: [], navigations: [] }
 ipcMain.handle('activity-fixture:open-link', (_event, url) => { globalThis.activityFixture.opened.push(url); return 'copied' })
 ipcMain.handle('activity-fixture:deliver-output', (_event, request) => { globalThis.activityFixture.copied.push(request.text); clipboard.writeText(String(request.text)); return 'copied' })
+// Copy image as main does it: the PNG is decoded and written, and its size recorded for the spec.
+ipcMain.handle('activity-fixture:copy-image', (_event, request) => {
+  const image = nativeImage.createFromDataURL(String(request.dataUrl))
+  if (image.isEmpty()) return { ok: false, reason: 'unavailable' }
+  clipboard.writeImage(image)
+  globalThis.activityFixture.copiedImages.push(image.getSize())
+  return { ok: true }
+})
 
 app.whenReady().then(() => {
   const window = new BrowserWindow({

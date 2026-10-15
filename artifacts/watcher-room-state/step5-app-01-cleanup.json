@@ -1,0 +1,17 @@
+{
+    "at":  "2026-10-14T18:12:19.1045887-07:00",
+    "keeperIdentity":  {
+                           "commandLine":  "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"D:/Talk to Text Application/.zstack/perf-991-remaining/step5-room-keep-awake.ps1\" ",
+                           "pid":  46816,
+                           "started":  "2026-10-14T18:10:09.6400121-07:00",
+                           "creation":  "2026-10-14T18:10:09.2328410-07:00",
+                           "script":  "D:/Talk to Text Application/.zstack/perf-991-remaining/step5-room-keep-awake.ps1"
+                       },
+    "keeperAbsent":  true,
+    "childAbsent":  true,
+    "proofProcesses":  [
+
+                       ],
+    "head":  "1681abdb50a75056bdf724addae5c6549c488044",
+    "clean":  true
+}

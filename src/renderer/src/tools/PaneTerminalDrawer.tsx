@@ -66,11 +66,10 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
   const shortcut = usePaneTerminalShortcut()
   const [searchOpen, setSearchOpen] = useState(false)
   useLayoutEffect(() => { setDrawerShortcut(shortcut) }, [shortcut])
-  // A drawer's terminal leaves the drawer's chord to the page, and turns see-through with the frosted room.
+  // A drawer's terminal leaves the drawer's chord to the page.
   const factory = useMemo<TerminalViewFactory | null>(() => baseFactory && (handlers => baseFactory({
     ...handlers,
     isPageShortcut: isDrawerShortcut,
-    followsFrost: true,
     onSearchVisibilityChange: visible => { setSearchOpen(visible); handlers.onSearchVisibilityChange?.(visible) },
   })), [baseFactory])
   const root = useRef<HTMLDivElement>(null)

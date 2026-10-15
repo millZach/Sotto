@@ -58,6 +58,11 @@ export interface UpdateServiceDependencies {
    */
   readonly createUpdater?: () => UpdaterAdapter | null
   readonly onStatusChanged?: (status: UpdateStatus) => void
+  /**
+   * Why the restart into a downloaded update must wait, such as a host update under way that the restart would cut off
+   * (ADR-0077); undefined when nothing holds it. The sentence becomes the download's problem, and nothing quits.
+   */
+  readonly restartHold?: () => string | undefined
   readonly now?: () => number
   readonly startupDelayMs?: number
   readonly intervalMs?: number
@@ -110,6 +115,16 @@ export function describeProblem(error: unknown): string | null {
   const firstLine = raw.split(/\r?\n/u).map((line) => line.trim()).find((line) => line.length > 0)
   if (firstLine === undefined) return null
   return firstLine.length > MAX_PROBLEM_LENGTH ? `${firstLine.slice(0, MAX_PROBLEM_LENGTH - 1).trimEnd()}…` : firstLine
+}
+
+/**
+ * The version this computer has been offered, is downloading or has downloaded, which Update all aims a host at
+ * (ADR-0077 decision 6). A check under way keeps the version before it, so the check every few minutes does not take a
+ * host off the card and put it back; a check that finds nothing newer, or fails with nothing offered, ends it.
+ */
+export function waitingVersion(phase: UpdatePhase, before: string | undefined): string | undefined {
+  if (phase.phase === 'available' || phase.phase === 'downloading' || phase.phase === 'downloaded') return phase.version
+  return phase.phase === 'checking' ? before : undefined
 }
 
 function samePhase(left: UpdatePhase, right: UpdatePhase): boolean {
@@ -259,6 +274,8 @@ export class UpdateService {
     if (this.disposed) return UNAVAILABLE
     const adapter = this.ensureAdapter()
     if (adapter === null || this.phase.phase !== 'downloaded') return UNAVAILABLE
+    const held = this.dependencies.restartHold?.()
+    if (held !== undefined) { this.setPhase({ phase: 'downloaded', version: this.phase.version, problem: held }); return UNAVAILABLE }
     this.installing = true
     this.installRefusal = null
     let thrown: string | null = null

@@ -8,6 +8,10 @@ import { join } from 'node:path'
 // suppressNotifications), `control.json` (one driver action at a time), `oneshot.json` (side-writing text).
 // A process started with --no-session-log is one of Sotto's memory-only hosts (connect probe or side call):
 // its frames are recorded apart, in oneshot.jsonl, and its sessions are never durable.
+// Session tool servers (`config.mcpServers`) need the `sessionMcp` capability, granted when asked for unless
+// script.json says `sessionMcp: false`. A host that builds a session's runtime with servers connects to each one,
+// as Muse does, and records what it listed as `fixture/mcp-tools`. A later resume on the same host may leave the
+// servers out, or repeat them exactly; a different set is refused, as Muse refuses it.
 const root = process.argv[2]
 const ephemeral = process.argv.includes('--no-session-log')
 const path = name => join(root, name)
@@ -70,14 +74,15 @@ function advanceApproval(approval) {
 }
 function requestApproval(session, action) {
   const approvalId = `approval-${randomUUID()}`
-  const approval = { approvalId, sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', toolName: 'bash', toolCallId: `call-${approvalId}`,
-    itemId: `item-${approvalId}`, rawArgs: JSON.stringify({ command: action.text }), streamSeq: 1, subject: { kind: 'shell', command: action.text },
+  const tool = action.toolName !== undefined
+  const approval = { approvalId, sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', toolName: tool ? action.toolName : 'bash', toolCallId: `call-${approvalId}`,
+    itemId: `item-${approvalId}`, rawArgs: JSON.stringify(tool ? {} : { command: action.text }), streamSeq: 1, subject: tool ? { kind: 'tool', toolName: action.toolName } : { kind: 'shell', command: action.text },
     warnings: [], judge: { lane: 'policy', verdict: 'prompt', adopted: true }, requirements: [{ approvalId, sourceIndex: 0, promptSeq: 1, status: 'current' }],
     availableChoices: [{ choiceId: 'yes', decision: 'approved', label: 'Allow once', scope: 'once' }, { choiceId: 'no', decision: 'denied', label: 'Deny', scope: 'once' }],
     currentRequirementId: { approvalId, sourceIndex: 0 }, askedAt: stamp(), fixtureCommand: action.text,
     fixtureStages: action.stages ?? 1, fixtureUpdateTiming: action.updateTiming ?? 'before' }
   session.pendingApprovals = [...(session.pendingApprovals ?? []), approval]; save()
-  notify('approval/requested', approval)
+  if (!read('script.json', {}).suppressApproval) notify('approval/requested', approval)
 }
 function addItem(session, item, tell = true) {
   const at = session.items.findIndex(candidate => candidate.itemId === item.itemId)
@@ -144,11 +149,41 @@ function check() {
     pendingListReply?.(); pendingListReply = undefined
   } else if (action.type === 'permission') {
     requestApproval(session, action)
+  } else if (action.type === 'tool-permission') {
+    if (!session.activeTurnId) openTurn(session, undefined, 'A turn that calls a tool')
+    requestApproval(session, action)
   }
 }
 setInterval(check, 20)
 record({ method: 'fixture/process', params: { pid: process.pid, version: startup.cliVersion ?? '1.1.1', args: process.argv.slice(3), environment: Object.fromEntries(Object.entries(process.env).filter(([key]) => ['META_API_KEY'].includes(key))) } })
 process.on('exit', () => { for (const sessionId of held) holding(sessionId, false); save() })
+let granted = []
+/** What this host built each session's runtime with: the servers' JSON, or null for none. */
+const loadedServers = new Map()
+const capabilityRequired = id => send({ id, error: { code: -32010, message: 'capability required', data: { kind: 'capabilityRequired', capability: 'sessionMcp' } } })
+async function listServerTools(sessionId, servers) {
+  for (const [name, server] of Object.entries(servers)) {
+    const post = async (body, id) => {
+      const response = await globalThis.fetch(server.url, { method: 'POST', headers: { ...server.headers, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', ...(id === undefined ? {} : { id }), ...body }) })
+      return id === undefined ? undefined : (await response.json()).result
+    }
+    try {
+      await post({ method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'fixture', version: '1' } } }, 1)
+      await post({ method: 'notifications/initialized' })
+      const listed = await post({ method: 'tools/list', params: {} }, 2)
+      record({ method: 'fixture/mcp-tools', params: { sessionId, server: name, transport: server.transport, mode: server.mode, wait: server.headers?.['Sotto-Tool-Wait'] ?? null,
+        tools: listed.tools.map(tool => ({ name: tool.name, readOnly: tool.annotations?.readOnlyHint === true })) } })
+    } catch { record({ method: 'fixture/mcp-tools', params: { sessionId, server: name, failed: true } }) }
+  }
+}
+/** Build a session's runtime on this host, or check a later resume against it. False when Muse would refuse the config. */
+function load(sessionId, config) {
+  const servers = config?.mcpServers && Object.keys(config.mcpServers).length ? config.mcpServers : null
+  if (loadedServers.has(sessionId)) return config?.mcpServers === undefined || loadedServers.get(sessionId) === JSON.stringify(servers)
+  loadedServers.set(sessionId, JSON.stringify(servers))
+  if (servers) void listServerTools(sessionId, servers)
+  return true
+}
 const textOf = input => (input ?? []).filter(part => part?.type === 'text').map(part => part.text).join('')
 createInterface({ input: process.stdin }).on('line', line => {
   check()
@@ -157,10 +192,13 @@ createInterface({ input: process.stdin }).on('line', line => {
   const p = frame.params ?? {}; const script = read('script.json', {})
   const result = value => send({ id: frame.id, result: value })
   const fail = (kind, message, reason) => send({ id: frame.id, error: { code: -32602, message, data: { kind, ...(reason ? { reason } : {}) } } })
-  if (frame.method === 'initialize') result({ serverInfo: { name: 'muse-code-fixture', title: 'Muse fixture', version: startup.cliVersion ?? '1.1.1' }, schema: { family: 'msp', version: startup.schemaVersion ?? 1 }, sessionDurability: { state: 'durable' }, userAgent: 'fixture', museHome: root, workspaceTrust: { state: 'untrusted' }, subagentControl: { state: 'disabled' }, requests: {}, notifications: {} })
-  else if (frame.method === 'initialized') { /* A notification. */ }
+  if (frame.method === 'initialize') {
+    granted = script.sessionMcp !== false && startup.sessionMcp !== false && (p.capabilities?.requestedCapabilities ?? []).includes('sessionMcp') ? ['sessionMcp'] : []
+    result({ grantedCapabilities: granted, serverInfo: { name: 'muse-code-fixture', title: 'Muse fixture', version: startup.cliVersion ?? '1.1.1' }, schema: { family: 'msp', version: startup.schemaVersion ?? 1 }, sessionDurability: { state: 'durable' }, userAgent: 'fixture', museHome: root, workspaceTrust: { state: 'untrusted' }, subagentControl: { state: 'disabled' }, requests: {}, notifications: {} })
+  } else if (frame.method === 'initialized') { /* A notification. */ }
   else if (frame.method === 'model/list') result({ models: MODELS, defaultModelId: MODELS.find(model => model.isDefault)?.modelId ?? null, source: script.models ? 'resolvedAuthContext' : startup.catalogSource ?? 'resolvedAuthContext' })
   else if (frame.method === 'session/start') {
+    if (p.config?.mcpServers && !granted.includes('sessionMcp')) { capabilityRequired(frame.id); return }
     if (script.ceiling && ['allowAll', 'onRequest'].includes(p.approvalMode)) { fail('commandRejected', 'Refused by the fixture ceiling', 'approval_mode_ceiling'); return }
     let sessionId = p.sessionId
     if (!sessionId && !ephemeral) {
@@ -176,12 +214,15 @@ createInterface({ input: process.stdin }).on('line', line => {
       if (!ephemeral) locked(() => { const all = stored(); all.starts[p.commandId] = sessionId; (all.startRequests ??= {})[p.commandId] = JSON.stringify(p); all.sessions[sessionId] = session; writeFileSync(path('native-sessions.json'), JSON.stringify(all)) })
       held.add(sessionId); holding(sessionId, true)
     }
+    if (!load(sessionId, p.config)) { fail('commandRejected', 'Session tool servers conflict with the loaded runtime', 'session_configuration_conflict'); return }
     if (!ephemeral && script.loseStartAckOnce) { writeFileSync(path('script.json'), JSON.stringify({ ...script, loseStartAckOnce: false })); return }
     result({ session: view(session), viewCursor: cursor(session) })
   } else if (frame.method === 'session/resume') {
     if (script.rejectResume) { fail('commandRejected', 'Scripted resume refusal'); return }
+    if (p.config?.mcpServers && !granted.includes('sessionMcp')) { capabilityRequired(frame.id); return }
     const session = hold(p.sessionId)
     if (!session) { fail('sessionNotFound', 'Unknown session'); return }
+    if (!load(session.sessionId, p.config)) { fail('commandRejected', 'Session tool servers conflict with the loaded runtime', 'session_configuration_conflict'); return }
     held.add(session.sessionId); holding(session.sessionId, true)
     const pendingRequests = [...(session.pendingApprovals ?? []).map(item => ({ kind: 'approval', approvalId: item.approvalId })),
       ...(session.pendingInputs ?? []).map(item => ({ kind: 'userInput', userInputId: item.userInputId }))]

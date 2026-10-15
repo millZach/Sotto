@@ -176,18 +176,15 @@ describe('main-window theme tokens', () => {
     expect(soft('canvas')).toEqual(standard('canvas'))
   })
 
-  it('paints glass as the overlay surface at the chosen opacity', () => {
-    for (const glass of [40, 80, 100]) {
-      const declarations = rootDeclarations('dark', 'nocturne', { glass }, tokenBlocks)
-      expect(resolveColor('--tt-glass', declarations).a).toBeCloseTo(glass / 100, 5)
-    }
-    // Text stays readable on the most transparent glass, painted over the room.
+  it('paints glass solid: the overlay surface, and the field under the composer (ADR-0084)', () => {
     for (const mode of MODES) {
-      const declarations = rootDeclarations(mode, 'nocturne', { glass: 40 }, tokenBlocks)
-      const canvas = resolveColor('--tt-canvas', declarations)
-      const text = over(resolveColor('--tt-text', declarations), canvas)
+      const declarations = rootDeclarations(mode, 'nocturne', {}, tokenBlocks)
+      expect(resolveColor('--tt-glass', declarations), `${mode} glass`).toEqual(resolveColor('--tt-surface-overlay', declarations))
+      expect(resolveColor('--tt-glass-field', declarations), `${mode} glass field`).toEqual(resolveColor('--tt-field', declarations))
       for (const surface of ['--tt-glass', '--tt-glass-field']) {
-        expect(contrast(text, over(resolveColor(surface, declarations), canvas)), `${mode} text on ${surface}`).toBeGreaterThanOrEqual(4.5)
+        const painted = resolveColor(surface, declarations)
+        expect(painted.a, `${mode} ${surface} is opaque`).toBe(1)
+        expect(contrast(resolveColor('--tt-text', declarations), painted), `${mode} text on ${surface}`).toBeGreaterThanOrEqual(4.5)
       }
     }
     const dark = rootDeclarations('dark', 'nocturne', {}, tokenBlocks)
@@ -244,7 +241,6 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/styles/global.css',
       'src/renderer/src/styles/crossing-settings.css',
       'src/renderer/src/styles/glass.css',
-      'src/renderer/src/styles/frost.css',
       'src/renderer/src/agents/agents.css',
       'src/renderer/src/agents/modelPicker.css',
       'src/renderer/src/agents/effortPicker.css',

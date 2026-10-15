@@ -421,3 +421,139 @@ describe('attachment previews', () => {
     expect(attachmentTypeLabel('<script>')).toBe('File')
   })
 })
+
+describe('image viewer', () => {
+  const images = [
+    { id: 'one', name: 'first.png', mimeType: 'image/png', sizeBytes: 900, preview: { dataUrl: PNG } },
+    { id: 'two', name: 'second.png', mimeType: 'image/png', sizeBytes: 2048, preview: { dataUrl: PNG } },
+    { id: 'doc', name: 'notes.pdf', mimeType: 'application/pdf', sizeBytes: 12_000 },
+  ]
+  const inPane = () => render(<section className="thread-pane"><header><button type="button">Pane control</button></header><AttachmentPreviews attachments={images} /></section>)
+
+  it('opens a sent image over its pane, steps through the message images and returns focus on Escape', async () => {
+    const user = userEvent.setup()
+    const { container } = inPane()
+    const pane = container.querySelector<HTMLElement>('.thread-pane')!
+    const header = pane.querySelector<HTMLElement>('header')!
+    const thumbnail = screen.getByRole('button', { name: 'Open first.png' })
+    await user.click(thumbnail)
+    const viewer = screen.getByRole('dialog', { name: /first\.png/u })
+    expect(viewer.parentElement).toBe(pane)
+    expect(viewer).toHaveAttribute('data-scope', 'pane')
+    expect(header.inert).toBe(true)
+    expect(within(viewer).getByRole('img', { name: 'first.png' })).toHaveAttribute('src', PNG)
+    expect(viewer).toHaveTextContent('PNG · 900 B · 1 of 2')
+    const strip = within(viewer).getByRole('group', { name: 'Images in this message' })
+    // The PDF has no picture, so the strip holds the two images.
+    expect(within(strip).getAllByRole('button')).toHaveLength(2)
+    expect(document.activeElement).toBe(within(viewer).getByRole('group', { name: 'Image view' }))
+
+    // Zoomed in or not, Left and Right step through the images.
+    await user.keyboard('+')
+    expect(within(viewer).getByRole('button', { name: 'Fit to view' })).toHaveAttribute('aria-pressed', 'false')
+    await user.keyboard('{ArrowRight}')
+    expect(within(viewer).getByRole('img', { name: 'second.png' })).toBeInTheDocument()
+    expect(within(strip).getByRole('button', { name: 'Show second.png, 2 of 2' })).toHaveAttribute('aria-current', 'true')
+    await user.keyboard('{ArrowRight}')
+    expect(within(viewer).getByRole('img', { name: 'first.png' })).toBeInTheDocument()
+    await user.click(within(strip).getByRole('button', { name: 'Show second.png, 2 of 2' }))
+    expect(viewer).toHaveTextContent('PNG · 2 KB · 2 of 2')
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(header.inert).toBe(false)
+    expect(document.activeElement).toBe(thumbnail)
+  })
+
+  it('keeps Tab inside the viewer', async () => {
+    const user = userEvent.setup()
+    inPane()
+    await user.click(screen.getByRole('button', { name: 'Open first.png' }))
+    const viewer = screen.getByRole('dialog')
+    within(viewer).getByRole('button', { name: 'Show second.png, 2 of 2' }).focus()
+    await user.tab()
+    expect(viewer.contains(document.activeElement)).toBe(true)
+    within(viewer).getByRole('button', { name: 'Zoom out' }).focus()
+    await user.tab({ shift: true })
+    expect(viewer.contains(document.activeElement)).toBe(true)
+  })
+
+  it('copies the image through main, from the viewer and from the thumbnail menu', async () => {
+    const user = userEvent.setup()
+    const copyImage = vi.fn(async (): Promise<{ ok: true } | { ok: false; reason: 'unavailable' }> => ({ ok: true }))
+    ;(window as { sotto?: unknown }).sotto = { copyImage }
+    inPane()
+    await user.click(screen.getByRole('button', { name: 'Open first.png' }))
+    const viewer = screen.getByRole('dialog')
+    await user.click(within(viewer).getByRole('button', { name: 'Copy image' }))
+    await waitFor(() => expect(viewer.querySelector('.rich-code__status')).toHaveTextContent('Copied image'))
+    expect(copyImage).toHaveBeenCalledWith({ dataUrl: PNG })
+    await user.keyboard('{Control>}c{/Control}')
+    await waitFor(() => expect(copyImage).toHaveBeenCalledTimes(2))
+    await user.keyboard('{Escape}')
+
+    const thumbnail = screen.getByRole('button', { name: 'Open first.png' })
+    thumbnail.focus()
+    await user.keyboard('{Shift>}{F10}{/Shift}')
+    const menu = screen.getByRole('menu', { name: 'Image: first.png' })
+    expect(within(menu).getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Open image', 'Copy image'])
+    await user.click(within(menu).getByRole('menuitem', { name: 'Copy image' }))
+    await waitFor(() => expect(copyImage).toHaveBeenCalledTimes(3))
+    expect(await screen.findByText('Copied image')).toBeInTheDocument()
+
+    copyImage.mockResolvedValueOnce({ ok: false, reason: 'unavailable' })
+    thumbnail.focus()
+    await user.keyboard('{Shift>}{F10}{/Shift}')
+    await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Copy image' }))
+    expect(await screen.findByText('Could not copy the image. Try again.')).toBeInTheDocument()
+
+    thumbnail.focus()
+    await user.keyboard('{Shift>}{F10}{/Shift}')
+    await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Open image' }))
+    expect(screen.getByRole('dialog', { name: /first\.png/u })).toBeInTheDocument()
+  })
+
+  it('shows the result of the latest copy, not an older one that fails later', async () => {
+    const user = userEvent.setup()
+    let failFirst: (() => void) | undefined
+    const copyImage = vi.fn()
+      .mockImplementationOnce(() => new Promise(resolve => { failFirst = () => resolve({ ok: false, reason: 'unavailable' }) }))
+      .mockResolvedValue({ ok: true })
+    ;(window as { sotto?: unknown }).sotto = { copyImage }
+    inPane()
+    await user.click(screen.getByRole('button', { name: 'Open first.png' }))
+    const viewer = screen.getByRole('dialog')
+    const copy = within(viewer).getByRole('button', { name: 'Copy image' })
+    await user.click(copy)
+    await user.click(copy)
+    const status = viewer.querySelector('.rich-code__status')!
+    await waitFor(() => expect(status).toHaveTextContent('Copied image'))
+    await act(async () => { failFirst!() })
+    expect(status).toHaveTextContent('Copied image')
+  })
+
+  it('leaves an image it cannot show out of the viewer and its strip', async () => {
+    const user = userEvent.setup()
+    render(<section className="thread-pane"><AttachmentPreviews attachments={[
+      images[0]!,
+      { id: 'gone', name: 'gone.png', mimeType: 'image/png', sizeBytes: 2048, preview: { dataUrl: 'data:image/png;base64,bm90IGFuIGltYWdl' } },
+    ]} /></section>)
+    await user.click(screen.getByRole('button', { name: 'Open first.png' }))
+    const viewer = screen.getByRole('dialog')
+    expect(viewer).not.toHaveTextContent('1 of 2')
+    expect(within(viewer).queryByRole('group', { name: 'Images in this message' })).toBeNull()
+    await user.keyboard('{ArrowRight}')
+    expect(within(viewer).getByRole('img', { name: 'first.png' })).toBeInTheDocument()
+  })
+
+  it('opens over the window when the message is not in a pane, and shows one image without a strip', async () => {
+    const user = userEvent.setup()
+    render(<AttachmentPreviews attachments={[images[0]!]} />)
+    await user.click(screen.getByRole('button', { name: 'Open first.png' }))
+    const viewer = screen.getByRole('dialog')
+    expect(viewer.parentElement).toBe(document.body)
+    expect(viewer).toHaveAttribute('data-scope', 'window')
+    expect(viewer).not.toHaveTextContent('1 of 1')
+    expect(within(viewer).queryByRole('group', { name: 'Images in this message' })).toBeNull()
+  })
+})

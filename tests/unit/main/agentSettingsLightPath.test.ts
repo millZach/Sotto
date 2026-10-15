@@ -11,6 +11,7 @@ import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { testCredentials } from '../../fixtures/testCredentials'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
+import { heldOperation } from '../../fixtures/deferred'
 
 /**
  * The coordinator's light path for thread settings (#318): no read before the change, the adapter's own snapshot
@@ -30,6 +31,11 @@ afterEach(async () => {
 /** A provider whose reads, watches and commands are recorded in the order they happen. */
 class SettingsHost extends E2EAgentHost {
   timeline: string[] = []
+  beforeWatcherWrite: (() => Promise<void>) | undefined
+  async executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> {
+    await this.beforeWatcherWrite?.(); guard()
+    return this.execute(command)
+  }
   /** Hand back the snapshot a confirmed settings change produced, as Codex, Grok and Devin do. */
   handsBackSnapshot = true
   /** Answer with an unknown result without applying the change, carrying a snapshot that claims it anyway. */
@@ -82,6 +88,28 @@ async function fixture() {
 const thread = (state: { host: AgentHostSnapshot }) => state.host.threads.find(item => item.id === 'workshop')
 
 describe('thread settings light path', () => {
+  it('carries a phone room permission guard through preparation to the native writer', async () => {
+    const f = await fixture(), gate = heldOperation()
+    f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+      guardOperation: () => undefined, preserveUserQueue: () => false })
+    let connected = true
+    const guard = () => { if (!connected) throw new Error('Synthetic phone disconnected') }
+    const before = thread(f.control.shell())!.runtimeMode
+    f.host.timeline = []; f.host.beforeWatcherWrite = gate.wait
+    const change = f.control.commandForWatcherRoom({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'full-access' }, guard)
+    try {
+      await gate.entered
+      connected = false; gate.release()
+      expect((await change).error).toContain('phone disconnected')
+      expect(thread(f.control.shell())!.runtimeMode).toBe(before)
+      expect(f.host.timeline).not.toContain('execute:configure-thread')
+    } finally { gate.release(); await change }
+    f.host.beforeWatcherWrite = undefined; connected = true
+    expect((await f.control.commandForWatcherRoom({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'full-access' }, guard)).error).toBeNull()
+    expect((await f.control.commandForWatcherRoom({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'approval-required' }, guard)).error).toBeNull()
+    expect(thread(f.control.shell())!.runtimeMode).toBe('approval-required')
+  })
+
   it('reads the thread zero times when the adapter hands back its snapshot, and exactly once when it does not', async () => {
     const f = await fixture()
     f.host.timeline = []

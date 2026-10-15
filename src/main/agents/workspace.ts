@@ -1,3 +1,4 @@
+import { annotateWatcherOwnChanges, withKeptWatcherChanges } from './watcherOwnChanges'
 import { modelsWithoutMuse } from './museGate'
 import { summarizePullRequestChecks } from './pullRequestCheckState'
 import type { PullRequestObservation } from './watcherEvidence'
@@ -14,9 +15,11 @@ import { cloneActivitySnapshot, immutableActivities, immutableModels, isImmutabl
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, providerTakesSottoTools, PROVIDER_LABELS, isVisualMessage, parsePublicProviderEntityId, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, parsePublicProviderEntityId, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
-import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
+import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
+import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink, type UsageRecordedUserMessage } from './usageHistory/sink'
+import type { UserMessageInstantSource } from './usageHistory/sottoPrompts'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
@@ -136,11 +139,11 @@ export type VisualAddition =
   | { readonly added: false; readonly reason: 'unknown-thread' | 'history-unavailable' | 'turn-limit' | 'thread-limit' }
 
 /** How much of a message the last publish left behind: enough to tell an append from a rewrite. */
-interface MessageMark { readonly id: string; readonly length: number; readonly attachments: number; readonly tail: string }
+interface MessageMark { readonly id: string; readonly length: number; readonly attachments: number; readonly tail: string; readonly watcherChanges: string }
 /** The characters of a message kept for comparison; a rewrite of the same length still differs here. */
 const TAIL = 24
 const markOf = (message: AgentMessage): MessageMark =>
-  ({ id: message.id, length: message.text.length, attachments: message.attachments?.length ?? 0, tail: message.text.slice(-TAIL) })
+  ({ id: message.id, length: message.text.length, attachments: message.attachments?.length ?? 0, tail: message.text.slice(-TAIL), watcherChanges: JSON.stringify([message.watcherOwnChange ?? null, message.watcherObservedChanges ?? null]) })
 
 /** A record read back from disk: one still running there was an unfinished observation, not a live process. */
 function savedRecord(activity: AgentActivity): AgentActivity {
@@ -205,8 +208,8 @@ function expandProviderModes(models: AgentModel[]): void {
 }
 
 function organizationOnly(thread: AgentThread, keepActivities = false): AgentThread {
-  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, ...rest } = thread
-  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen
+  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, sottoToolsWithheld, ...rest } = thread
+  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen; void sottoToolsWithheld
   return { ...rest, messages: [], ...(keepActivities && activities ? { activities: retainedActivities(activities) } : {}) }
 }
 
@@ -328,6 +331,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
   readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   /**
    * What each thread babysits, with what it was last told, by thread (ADR-0061 decision 10). Saved on the thread's record
@@ -1270,16 +1274,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Whether a thread may draw a visual: one this host holds, on a provider that can receive Sotto's tool servers. */
   admitsVisuals(threadId: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    return thread !== undefined && this.visible(thread) && providerTakesSottoTools(thread.providerId)
+    return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread)
   }
   /**
    * Whether an agent in this thread is offered Sotto's pull request tools (ADR-0061 decision 2): a thread this host holds,
-   * on Claude Code, Codex or Grok Build. Devin's client takes no server of Sotto's, so its threads are babysat only from
-   * the Pull request surface (decision 11).
+   * on Claude Code, Codex, Grok Build or Muse (ADR-0079). Devin's client takes no server of Sotto's, so its threads are
+   * babysat only from the Pull request surface (decision 11).
    */
   admitsBabysitting(threadId: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    return thread !== undefined && this.visible(thread) && (thread.providerId === 'claude' || thread.providerId === 'codex' || thread.providerId === 'grok')
+    return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread)
   }
   /** The thread's branch's own pull request as the host last read it, and its linked ones, by URL (ADR-0061 decision 5). */
   threadPullRequests(threadId: string): { branch: string | undefined; linked: string[] } {
@@ -1361,6 +1365,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (this.ready && this.threadVisible(threadId)) inner.visitUsage!(threadId, visitor)
     }
     if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh) => inner.readProviderQuota!(providerId, refresh)
+    if (inner.scanUsageHistory) this.scanUsageHistory = async (sink, signal) => {
+      await this.initialize()
+      // A Sotto thread's rows follow its visibility, as its live rows do; work outside Sotto has no thread to hide.
+      const visible = <T extends { threadId: string }>(record: T): T | undefined =>
+        isUsageHistoryThreadId(record.threadId) || this.ready && this.threadVisible(record.threadId) ? record : undefined
+      await inner.scanUsageHistory!(mappedSink(sink, { token: visible, prompt: visible }), signal)
+    }
     this.launchProfiles = new WatcherLaunchProfiles(directory, () => this.hostId,
       id => this.state.snapshot.threads.find(thread => thread.id === id), watcherEnabled)
     inner.useLaunchProfiles?.({ profileFor: async id => { await this.initialize(); return this.launchProfiles.profileFor(id) } })
@@ -1729,9 +1740,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (mark === undefined) { events.push(added(message)); continue }
       if (mark.id !== message.id) return reset()
       const attachments = message.attachments?.length ?? 0
-      if (mark.length === message.text.length && mark.attachments === attachments && mark.tail === message.text.slice(-TAIL)) continue
+      if (mark.length === message.text.length && mark.attachments === attachments && mark.tail === message.text.slice(-TAIL)
+        && mark.watcherChanges === JSON.stringify([message.watcherOwnChange ?? null, message.watcherObservedChanges ?? null])) continue
       // A true append leaves the characters the store already holds exactly where they were.
       if (message.text.length > mark.length && mark.attachments === attachments
+        && mark.watcherChanges === JSON.stringify([message.watcherOwnChange ?? null, message.watcherObservedChanges ?? null])
         && message.text.slice(Math.max(0, mark.length - TAIL), mark.length) === mark.tail) {
         events.push({ kind: 'message-text-appended', at, messageId: message.id, appendText: message.text.slice(mark.length) })
       } else events.push({ kind: 'message-replaced', at, message })
@@ -1852,7 +1865,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Give every thread an event touched its window again, and its summary from the projection. */
   private applyEvents(): void {
     this.writeEvents()
-    if (this.eventChanged.size === 0) return
+    if (this.eventChanged.size === 0) { this.markWatcherReplies(); return }
     const changed = [...this.eventChanged]
     this.eventChanged.clear()
     for (const id of changed) {
@@ -1861,6 +1874,25 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (this.watched.has(id) || !this.declared) this.loadWindow(id)
       else { thread.messages = []; delete thread.earlierAvailable; thread.summary = this.threadSummary(thread) }
     }
+    this.markWatcherReplies()
+  }
+  /** Retain observed changes from history even while no pane holds Watcher's message window. */
+  private markWatcherReplies(): void {
+    if (!this.eventSourced || !this.watcherEnabled) return
+    let changed = false
+    for (const thread of this.state.snapshot.threads) if (thread.kind === 'watcher') {
+      // Pane visibility cannot decide whether early edits survive the activity window. This temporary
+      // history read includes the current user turn without putting a background transcript in the shell.
+      const messages = thread.messages.length ? thread.messages : this.readWindow(thread.id, FIRST_WINDOW_TURNS)?.messages
+      if (!messages?.length) continue
+      const annotated = annotateWatcherOwnChanges({ ...thread, messages })
+      for (const [index, message] of annotated.entries()) if (message !== messages[index]) {
+        this.recordEvent(thread.id, { kind: 'message-replaced', at: new Date().toISOString(), message })
+        changed = true
+      }
+      if (thread.messages.length) thread.messages = annotated
+    }
+    if (changed) this.writeEvents()
   }
   /** Every message the store holds for a thread, for an adapter about to read its provider's history. */
   messageIdentities(threadId: string): readonly StoredMessageIdentity[] {
@@ -2078,6 +2110,26 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     if (thread?.messages.some(message => message.id === messageId && message.role === 'user')) return true
     return !this.storeUnavailable && this.threadStore.hasRecordedUserMessage(threadId, messageId)
+  }
+
+  /**
+   * Sotto's own stored user messages created before `before`, for the Usage history import (ADR-0083): identities,
+   * instants, the thread's provider and model and whether babysitting sent each. The store query names no text column.
+   * False until the thread store can be read.
+   */
+  visitRecordedUserMessages(visitor: (message: UsageRecordedUserMessage) => void, before?: string): boolean {
+    if (!this.ready || this.storeUnavailable) return false
+    const store = this.threadStore as ThreadStore & Partial<UserMessageInstantSource>
+    if (typeof store.visitUserMessageInstants !== 'function') return false
+    this.writeEvents()
+    const threads = new Map(this.state.snapshot.threads.map(thread => [thread.id, thread]))
+    store.visitUserMessageInstants(message => {
+      const thread = threads.get(message.threadId)
+      if (!thread || !isUsageProviderId(thread.providerId) || !this.threadVisible(thread.id)) return
+      visitor({ threadId: thread.id, messageId: message.messageId, providerId: thread.providerId, modelId: thread.modelId || 'unknown',
+        at: message.at, wakeUp: message.wakeUp })
+    }, before)
+    return true
   }
 
   /** Flush once and recover exact numeric identities without reading a transcript for each pending intent. */
@@ -2473,7 +2525,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         merged.messages = old?.messages ?? []
         merged.summary = old?.summary ?? this.threadSummary(merged)
       } else {
-        const messages = this.legacyMessages(merged, thread.messages)
+        const nativeMessages = this.legacyMessages(merged, thread.messages)
+        const retained = new Map(old?.messages.filter(message => message.watcherOwnChange || message.watcherObservedChanges).map(message => [message.id, message]) ?? [])
+        const messages = merged.kind === 'watcher' ? annotateWatcherOwnChanges({ ...merged, messages: nativeMessages.map(message =>
+          withKeptWatcherChanges(message, retained.get(message.id) ?? this.message(merged.id, message.id))) }) : nativeMessages
         merged.messages = this.record(merged, messages, old?.historyEpoch)
         merged.summary = this.threadSummary(merged, this.storeUnavailable ? merged.messages : messages)
       }
@@ -2499,6 +2554,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     this.heldForInput.clear()
     this.dirty = true
+    // Capture each Watcher observation before another source update can evict an early edit, or a save
+    // can release idle activity. Native events supply its turn anchor even when no pane is observing it.
+    if (this.eventSourced && this.watcherEnabled && this.state.snapshot.threads.some(thread => {
+      if (thread.kind !== 'watcher') return false
+      const old = previousThreads.get(thread.id)
+      return this.pendingEvents.has(thread.id) || thread.activities !== old?.activities || thread.status !== old?.status
+        || thread.lastTurn?.id !== old?.lastTurn?.id || thread.lastTurn?.status !== old?.lastTurn?.status
+    })) this.applyEvents()
   }
   /** Queues one trailing re-read of this thread's worktree; a burst of records still reads the folder once. */
   private scheduleWorktreeRefresh(threadId: string): void {
@@ -3098,7 +3161,6 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if ('threadId' in command) {
       if (commandProfile) {
         assertWatcherPermission(command)
-        if (command.type === 'create-thread') command = { ...command, runtimeMode: 'approval-required' }
       }
       if (commandProfile && (command.type === 'create-thread' && (command.workingCopy === 'independent' || command.existingWorktreePath !== undefined))) {
         throw new Error('Watcher’s asking mode and working folder cannot be changed. Choose only its model and effort.')

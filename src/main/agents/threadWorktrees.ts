@@ -25,7 +25,25 @@ export function runWorktreeGitProcess(cwd: string, args: string[], options: { ex
       if (!child.pid) return
       stopping = process.platform === 'win32'
         ? new Promise<void>((done, fail) => { execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, error => error ? fail(error) : done()) })
-        : new Promise<void>((done, fail) => { try { process.kill(-child.pid!, 'SIGKILL'); done() } catch (error) { fail(error) } })
+        : new Promise<void>((done, fail) => {
+          // kill only sends the signal: a killed grandchild can still be finishing a write, and stays in the group
+          // until its new parent reaps it. Wait until the whole group is gone; one that outlives the wait keeps the folder.
+          const until = Date.now() + 5_000
+          const gone = (signal: NodeJS.Signals | 0): boolean => {
+            try { process.kill(-child.pid!, signal); return false } catch (error) {
+              if ((error as NodeJS.ErrnoException).code === 'ESRCH') return true
+              throw error
+            }
+          }
+          const wait = (): void => {
+            try {
+              if (gone(0)) done()
+              else if (Date.now() > until) fail(new Error('The Git process group outlived its kill.'))
+              else setTimeout(wait, 10)
+            } catch (error) { fail(error) }
+          }
+          try { if (gone('SIGKILL')) done(); else wait() } catch (error) { fail(error) }
+        })
       void stopping.catch(() => reject(new Error('Git took too long and its checkout processes could not be stopped. The folder was kept.')))
     }
     const collect = (target: Buffer[], chunk: Buffer): void => {
