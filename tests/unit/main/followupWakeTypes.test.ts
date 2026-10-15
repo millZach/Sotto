@@ -104,6 +104,12 @@ it('sets a stopped wake-up for Watcher alone going again behind the user’s fol
     expect(store.peek().items[0]).toMatchObject({ id, status: 'failed' })
     await store.queueWakeUp('thread', news('second'), word)
     expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
+    // A wake-up a Stop paused starts again on news that needs Watcher, too.
+    await store.pause('thread', 'Synthetic stop')
+    await store.queueWakeUp('thread', evidence, word)
+    expect(store.peek().items[0]).toMatchObject({ id, status: 'paused' })
+    await store.queueWakeUp('thread', news('third'), word)
+    expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
     // An unknown send is never sent twice.
     await store.claim(id); await store.settle(id, 'uncertain', 'Synthetic unknown send')
     await store.reviveWakeUp(id, 'turn-after')

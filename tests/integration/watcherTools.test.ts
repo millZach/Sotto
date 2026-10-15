@@ -749,6 +749,33 @@ it('lets a paused wake-up no one is shown go on by itself once Watcher finishes 
     && command.watcherNews?.includes('Open this thread to answer'))).toBe(true), { timeout: 15_000 })
 })
 
+it('starts a stopped wake-up no one is shown again on news that needs Watcher, and tries a failed send again while Watcher rests', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  await f.finish(started.target.threadId)
+  expect(await f.service.watchThread({ target: started.target })).toMatchObject({ status: 'ok' })
+  const worker = f.native(started.target.threadId)
+  worker.requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
+  // The user stops Watcher, which pauses its queue; Watcher takes no turn after that.
+  expect((await f.control.commandShell({ type: 'interrupt', threadId: f.id })).error).toBeNull()
+  await vi.waitFor(() => expect(queued(f).find(item => item.threadId === f.id && item.wakeUp)).toMatchObject({ status: 'paused' }))
+  // The provider refuses the first send that follows.
+  const master = f.workspace.registry.byThread(f.id)!.sessionId, execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  let refused = 0
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+    if (command.type === 'send' && command.threadId === master && command.watcherNews && refused++ === 0) throw new Error('Synthetic native pre-write failure')
+    return execute(command)
+  })
+  // The worker's turn fails, its question still open: news that needs Watcher, so the paused wake-up goes again, and after the refusal, again.
+  worker.status = 'error'; worker.lastTurn = { id: 'stranded-turn', status: 'failed' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master
+    && command.watcherNews?.includes('turn failed') && command.watcherNews.includes('Open this thread to answer'))).toBe(true), { timeout: 15_000 })
+  expect(refused).toBeGreaterThanOrEqual(2)
+}, 30_000)
+
 it('withdraws answered worker news while retaining the user queue before a busy master wake-up', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')

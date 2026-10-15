@@ -276,6 +276,8 @@ export class AgentControl {
    */
   private readonly threadPrompts = new Map<string, number>()
   private readonly pumping = new Set<string>()
+  /** How often each stopped wake-up no one is shown has been tried again by itself in this run: at most WAKE_UP_RETRIES. */
+  private readonly wakeRetries = new Map<string, number>()
   private state: AgentState
   private outbox: Saved['outbox'] = []
   private watcher: WatcherRecord = emptyWatcherRecord()
@@ -2644,14 +2646,21 @@ export class AgentControl {
         ?? items.find(item => item.threadId === threadId)!
       if (first.news?.some(isWatcherNews) && !this.watcherHooks?.wakeReady?.()) continue
       // A wake-up holding only Watcher's news is shown nowhere, so no one can resume or remove it. It goes again by itself
-      // once Watcher finishes a turn after it stopped, or at once when it is holding the thread's other items up; one
-      // whose send is unknown, and no longer being reconciled, is let go.
+      // once Watcher finishes a turn after it stopped, or at once when it is holding the thread's other items up; one that
+      // failed to send is tried again while Watcher rests, a few times; one whose send is unknown, and no longer being
+      // reconciled, is let go.
       if (isWatcherOnlyWakeUp(first) && thread && ['paused', 'failed', 'uncertain'].includes(first.status)
         && !this.outbox.some(item => item.id === first.commandId)
         && !thread.messages.some(message => message.role === 'user' && message.id === first.messageId)) {
-        const finished = thread.status !== 'running' && thread.lastTurn?.status === 'completed' && thread.lastTurn.id !== first.resumeAfterTurnId
+        const resting = !isThreadTurnRunning(thread) && !thread.requests.length
+        const finished = resting && thread.lastTurn?.status === 'completed' && thread.lastTurn.id !== first.resumeAfterTurnId
         const holding = first.status === 'failed' && items.some(item => item.threadId === threadId && item.id !== first.id)
-        if (first.status === 'uncertain' || finished || holding) {
+        const retry = first.status === 'failed' && resting && (this.wakeRetries.get(first.id) ?? 0) < WAKE_UP_RETRIES
+        if (first.status === 'uncertain' || finished || holding || retry) {
+          if (retry && !finished && !holding) {
+            this.wakeRetries.set(first.id, (this.wakeRetries.get(first.id) ?? 0) + 1)
+            while (this.wakeRetries.size > 1_000) this.wakeRetries.delete(this.wakeRetries.keys().next().value!)
+          }
           this.pumping.add(threadId)
           let revived = false
           void this.followupStore.reviveWakeUp(first.id, thread.lastTurn?.id ?? UNKNOWN_TURN).then(() => { revived = true })
@@ -2756,8 +2765,20 @@ export class AgentControl {
           }
         } finally { await this.finishTurn(turn, failure) }
       })().catch(() => { this.state.error = 'Could not save follow-up delivery state. Refresh before making changes.' })
-        .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (requeued || this.followupStore.peek().items.find(i => i.threadId === threadId)?.id !== first.id) this.pumpFollowups() })
+        .finally(() => {
+          this.syncFollowups(); this.publish(); this.pumping.delete(threadId)
+          if (requeued || this.followupStore.peek().items.find(i => i.threadId === threadId)?.id !== first.id) this.pumpFollowups()
+          // Nothing may change after a hidden wake-up fails to send, so its tries again are timed (WAKE_UP_RETRIES).
+          const after = this.followupStore.peek().items.find(item => item.id === first.id)
+          if (after && isWatcherOnlyWakeUp(after) && after.status === 'failed' && (this.wakeRetries.get(after.id) ?? 0) < WAKE_UP_RETRIES) this.retryWakeUpLater()
+        })
     }
+  }
+  private wakeRetryTimer: ReturnType<typeof setTimeout> | undefined
+  private retryWakeUpLater(): void {
+    if (this.wakeRetryTimer || this.disposed) return
+    this.wakeRetryTimer = setTimeout(() => { this.wakeRetryTimer = undefined; this.pumpFollowups() }, WAKE_UP_RETRY_MS)
+    this.wakeRetryTimer.unref?.()
   }
   private async interruptThread(command: Extract<AgentCommand, { type: 'interrupt' }>): Promise<AgentState> {
     const turn = this.beginTurn({ source: 'command', commandType: 'interrupt', text: '', threadId: command.threadId,
@@ -3976,6 +3997,7 @@ export class AgentControl {
   }
   dispose(): void {
     this.disposed = true
+    if (this.wakeRetryTimer) { clearTimeout(this.wakeRetryTimer); this.wakeRetryTimer = undefined }
     // No snapshot is accepted from here on, so no first output can be seen: the records waiting for one are written now.
     this.firstOutputs.closeAll()
     // A held broadcast dies with the control: its listeners are going away, and a run that
@@ -4008,6 +4030,10 @@ export class AgentControl {
  * One broadcast per animation frame. Below what a person can see, so no state looks late, and
  * far fewer full copies of every thread's history than a streaming provider would otherwise force.
  */
+/** How many times a wake-up holding only Watcher's news is tried again by itself after a failed send, while Watcher rests. */
+const WAKE_UP_RETRIES = 3
+/** How long such a wake-up waits before it is tried again, so a provider that refuses at once is not asked in a loop. */
+const WAKE_UP_RETRY_MS = 3_000
 export const AGENT_STATE_BROADCAST_INTERVAL_MS = 16
 
 /**
