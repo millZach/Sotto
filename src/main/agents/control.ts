@@ -13,13 +13,14 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
-  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
-  type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type ProviderClientUpdate, type SubscriptionProvider,
+  providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
+  type AgentMessage, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
 import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
-import { queuedWakeUpText, isRestartNews, isWatcherNews, type WakeUpNews } from './wakeUp'
+import { queuedWakeUpText, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
+import { watcherWakeUpShown, watcherWakeUpsAsShown } from './watcherNews'
 import type { UsagePromptRecorder } from './usageService'
 import { isUsageProviderId } from '../../shared/usageDashboard'
 import type { WatcherEvent } from '../../shared/watcherNews'
@@ -721,8 +722,9 @@ export class AgentControl {
     if (this.migrationSaveFailure) state.error = this.migrationSaveFailure
     state.obsoleteDrafts = structuredClone(this.persistedObsoleteDrafts)
     state.host.threads = state.host.threads.map(thread => {
-      const presented = this.presentedMessages(thread)
-      return this.finishedUnread.publish(presented === thread.messages ? thread : { ...thread, messages: [...presented] })
+      const presented = this.presentedMessages(thread), summary = thread.summary && this.presentedSummary(thread)
+      return this.finishedUnread.publish(presented === thread.messages && summary === thread.summary ? thread
+        : { ...thread, messages: [...presented], ...(summary ? { summary } : {}) })
     })
     state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
@@ -792,7 +794,7 @@ export class AgentControl {
     const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, ...(shared ? { models: EMPTY_MODELS } : {}), threads: threads.map(thread => this.finishedUnread.publish({
       ...thread, messages: EMPTY_MESSAGES,
       ...(thread.activities === undefined ? {} : { activities: EMPTY_ACTIVITIES }),
-      summary: threadSummaryOf(thread),
+      summary: this.presentedSummary(thread),
     })) } }
     const state = structuredClone(bare)
     if (shared) state.host.models = models
@@ -853,10 +855,28 @@ export class AgentControl {
     if (thread.activities === undefined) return undefined
     return this.dependencies.host.paneActivities?.(thread.id, thread.activities) ?? thread.activities
   }
-  /** Display only; every native state, receipt and history reader keeps the complete provider message. */
+  /**
+   * Display only; every native state, receipt and history reader keeps the complete provider message. Watcher's
+   * conversation shows the user's messages as typed and none of Sotto's news for Watcher (ADR-0073).
+   */
   private presentedMessages(thread: AgentThread): readonly AgentMessage[] {
     if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') return thread.messages
-    return this.watcherMessageDisplay?.project(this.state.host.hostId, thread.id, thread.messages) ?? thread.messages
+    return watcherWakeUpsAsShown(this.watcherMessageDisplay?.project(this.state.host.hostId, thread.id, thread.messages) ?? thread.messages)
+  }
+  /**
+   * A thread row's summary. A Watcher row never quotes Sotto's news for Watcher: its last message, when the host
+   * recorded it as a wake-up, is quoted as the conversation shows it, or not at all.
+   */
+  private presentedSummary(thread: AgentThread): AgentThreadSummary {
+    if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') return threadSummaryOf(thread)
+    if (!thread.summary) return summarizeThread({ messages: [...this.presentedMessages(thread)], ...(thread.activities ? { activities: [...thread.activities] } : {}) })
+    const last = thread.summary.lastUser
+    if (!last || !thread.wakeUpMessageIds?.includes(last.id)) return thread.summary
+    const shown = watcherWakeUpShown({ ...last, role: 'user', wakeUp: true })
+    if (shown?.text === last.text) return thread.summary
+    const rest = { ...thread.summary }
+    delete rest.lastUser
+    return shown ? { ...rest, lastUser: { ...last, text: shown.text } } : rest
   }
   /** Which threads main pushes detail for: what the window says it is looking at, plus work it must see land. */
   private detailTargets(): string[] {
@@ -876,8 +896,10 @@ export class AgentControl {
   private detailRevision(thread: AgentThread): number {
     const activities = this.paneActivities(thread)
     const presented = this.presentedMessages(thread)
+    // A shown message can be shorter than its provider message, or not shown at all (-1).
+    const shown = presented === thread.messages ? undefined : new Map(presented.map(message => [message.id, message.text.length]))
     const messages = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
-      .map((message, index) => `${message.id}:${message.text.length}:${presented[index]!.text.length}:${message.attachments?.length ?? 0}`).join(',')
+      .map(message => `${message.id}:${message.text.length}:${shown ? shown.get(message.id) ?? -1 : message.text.length}:${message.attachments?.length ?? 0}`).join(',')
     if (this.dependencies.streamingPublishCost === true && isImmutableActivities(activities)) {
       const held = this.certifiedDetailRevisions.get(thread.id)
       if (held && held.messages === messages && held.activities.length === activities!.length
@@ -2504,7 +2526,8 @@ export class AgentControl {
   }
   private syncFollowups(): void {
     const { items, receipts } = this.followupStore.get()
-    this.state.followups = items.map(withoutNews); this.state.followupReceipts = receipts.map(({ threadId, draftId }) => ({ threadId, draftId }))
+    // A wake-up holding only Watcher's news is Sotto's background action: no queue, transcript or phone shows it.
+    this.state.followups = items.filter(item => !isWatcherOnlyWakeUp(item)).map(withoutNews); this.state.followupReceipts = receipts.map(({ threadId, draftId }) => ({ threadId, draftId }))
     // A crash between the two stores leaves both copies. Durable queue ownership wins
     // only for the submitted revision; newer draft revisions are never touched.
     const owned = [...receipts, ...items]
@@ -2575,6 +2598,23 @@ export class AgentControl {
       const first = items.find(item => item.threadId === threadId && item.messageId && thread?.messages.some(message => message.role === 'user' && message.id === item.messageId))
         ?? items.find(item => item.threadId === threadId)!
       if (first.news?.some(isWatcherNews) && !this.watcherHooks?.wakeReady?.()) continue
+      // A wake-up holding only Watcher's news is shown nowhere, so no one can resume or remove it. It goes again by itself
+      // once Watcher finishes a turn after it stopped, or at once when it is holding the thread's other items up; one
+      // whose send is unknown, and no longer being reconciled, is let go.
+      if (isWatcherOnlyWakeUp(first) && thread && ['paused', 'failed', 'uncertain'].includes(first.status)
+        && !this.outbox.some(item => item.id === first.commandId)
+        && !thread.messages.some(message => message.role === 'user' && message.id === first.messageId)) {
+        const finished = thread.status !== 'running' && thread.lastTurn?.status === 'completed' && thread.lastTurn.id !== first.resumeAfterTurnId
+        const holding = first.status === 'failed' && items.some(item => item.threadId === threadId && item.id !== first.id)
+        if (first.status === 'uncertain' || finished || holding) {
+          this.pumping.add(threadId)
+          let revived = false
+          void this.followupStore.reviveWakeUp(first.id, thread.lastTurn?.id ?? 'unknown').then(() => { revived = true })
+            .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
+            .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (revived) this.pumpFollowups() })
+          continue
+        }
+      }
       // Native idle status can precede turn/completed. A still-running outcome is
       // neither permission to dispatch nor a terminal failure requiring review.
       const terminalBlocked = thread && thread.status !== 'running' && thread.lastTurn?.status !== 'running'
@@ -2644,8 +2684,10 @@ export class AgentControl {
           const writeGuard = item.news?.some(isWatcherNews) ? () => { validate(); queueGuard?.() } : queueGuard
           // The turn this starts is the resumed one, which counts the resumes before it (ADR-0076 decision 6).
           if (item.news?.some(isRestartNews)) this.restartHooks?.sending(threadId)
+          // Watcher's news goes beside the message, as its request note does, never in it (ADR-0073).
+          const watcherNews = item.wakeUp && item.news ? watcherWakeUpNote(item.news) : undefined
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
-            expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
+            expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}), ...(watcherNews ? { watcherNews } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
             this.localClient, undefined, undefined, writeGuard)
           await this.followupStore.settle(item.id, 'accepted')
         } catch (error) {

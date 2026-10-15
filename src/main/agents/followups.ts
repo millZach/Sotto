@@ -7,7 +7,7 @@ import { agentAttachmentHandleSchema, agentAttachmentSchema, agentFollowupSchema
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { StageInline } from './attachmentStore'
 import { pullRequestKey } from '../../shared/gitPullRequests'
-import { wakeUpNewsSchema, foldWakeUpNews, isBabysitNews, isRestartNews, WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
+import { wakeUpNewsSchema, foldWakeUpNews, isBabysitNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */
 export const LOST_IMAGES = 'An image in this follow-up was no longer kept when Sotto started, so the follow-up was paused rather than sent without it. Attach the image again or remove the follow-up.'
@@ -215,7 +215,9 @@ export class FollowupStore {
         const folded = foldWakeUpNews(waiting.news ?? [], wakeUpNewsSchema.parse(news))
         // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
         // A resume note is the review a paused queue waits for: the turn it follows did not finish, and it says so.
-        const resumes = isRestartNews(news) ? { status: 'queued' as const, error: undefined } : {}
+        // News for Watcher is a reason to try a wake-up again that no one is shown, and so no one can resend.
+        const resumes = isRestartNews(news) || isWatcherNews(news) && waiting.status === 'failed' && isWatcherOnlyWakeUp({ wakeUp: true, news: folded })
+          ? { status: 'queued' as const, error: undefined } : {}
         const next = queuedSchema.parse({ ...waiting, news: folded, text: word(folded), updatedAt: now, ...resumeAfterTurnId ? { resumeAfterTurnId } : {}, ...resumes })
         state.items = state.items.map(item => item === waiting ? next : item)
       } else {
@@ -264,6 +266,21 @@ export class FollowupStore {
       Object.assign(item, { news: kept, text: word(kept), status: item.status === 'dispatching' ? 'queued' : item.status, updatedAt: new Date().toISOString() })
       delete item.commandId; delete item.messageId
       if (item.status === 'queued') delete item.error
+    })
+  }
+  /**
+   * Sets a stopped wake-up holding only Watcher's news going again, since no one is shown it to resume or remove it:
+   * one paused or not sent waits again behind the thread's other items, after `turnId`; one whose send is unknown is let
+   * go, as an unknown send is never sent twice, and its news was already told.
+   */
+  reviveWakeUp(id: string, turnId: string): Promise<void> {
+    return this.change(state => {
+      const item = state.items.find(candidate => candidate.id === id)
+      if (!item || !isWatcherOnlyWakeUp(item) || !['paused', 'failed', 'uncertain'].includes(item.status)) return false
+      if (item.status === 'uncertain') { state.items = state.items.filter(candidate => candidate !== item); return }
+      Object.assign(item, { status: 'queued', resumeAfterTurnId: turnId, updatedAt: new Date().toISOString() })
+      delete item.error; delete item.commandId; delete item.messageId
+      state.items = [...state.items.filter(candidate => candidate !== item), item]
     })
   }
   pause(threadId: string, error: string): Promise<void> {

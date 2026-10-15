@@ -7,6 +7,7 @@ import { expect, expectTypeOf, it, vi } from 'vitest'
 import { FollowupStore, type WordWakeUp } from '../../../src/main/agents/followups'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { isBabysitNews, isWatcherNews, queuedWakeUpText, type WakeUpNews } from '../../../src/main/agents/wakeUp'
+import { WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 
 it('requires stored-news callbacks to handle both babysitting and Watcher news', () => {
   expectTypeOf<WordWakeUp>().toEqualTypeOf<(news: readonly WakeUpNews[]) => string>()
@@ -72,5 +73,40 @@ it.each(['paused', 'failed'] as const)('retains a %s wake-up explanation when pr
     await store.resume('thread')
     expect(store.peek().items[0]).toMatchObject({ status: 'queued' })
     expect(store.peek().items[0]!.error).toBeUndefined()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+it('sets a stopped wake-up for Watcher alone going again behind the user’s follow-ups, retries one not sent on new news, and lets an unknown one go', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
+  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
+  try {
+    const store = new FollowupStore(directory); await store.load()
+    const hostId = randomUUID(), word: WordWakeUp = items => queuedWakeUpText(items, { tool: true })
+    const news = (id: string): WakeUpNews => ({ source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
+      events: [{ id, requestId: randomUUID(), target: { hostId, threadId: 'worker' }, generation: 0, kind: 'turn-finished', turnId: id, observedAt: new Date().toISOString() }] })
+    await store.queueWakeUp('thread', news('first'), word)
+    const id = store.peek().items[0]!.id
+    expect(store.peek().items[0]!.text).toBe(WATCHER_WAKE_UP_PROMPT)
+    // Not sent, with the user's follow-up queued behind it while it was going.
+    await store.claim(id)
+    await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text: 'Synthetic user follow-up', attachments: [] })
+    await store.settle(id, 'failed', 'Synthetic send failure')
+    await store.reviveWakeUp(id, 'turn-after')
+    expect(store.peek().items.map(item => [item.text, item.status])).toEqual([['Synthetic user follow-up', 'queued'], [WATCHER_WAKE_UP_PROMPT, 'queued']])
+    expect(store.peek().items[1]).toMatchObject({ resumeAfterTurnId: 'turn-after' })
+    // Not sent again: new news is a reason to try once more.
+    await store.edit('thread', store.peek().items[0]!.id)
+    await store.claim(id); await store.settle(id, 'failed', 'Synthetic send failure')
+    await store.queueWakeUp('thread', news('second'), word)
+    expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
+    // An unknown send is never sent twice.
+    await store.claim(id); await store.settle(id, 'uncertain', 'Synthetic unknown send')
+    await store.reviveWakeUp(id, 'turn-after')
+    expect(store.peek().items).toEqual([])
+    // A user's own follow-up is never revived.
+    await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text: 'Synthetic paused follow-up', attachments: [] })
+    await store.pause('thread', 'Synthetic pause')
+    await store.reviveWakeUp(store.peek().items[0]!.id, 'turn-after')
+    expect(store.peek().items[0]).toMatchObject({ status: 'paused' })
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

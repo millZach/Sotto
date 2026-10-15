@@ -50,6 +50,7 @@ import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTo
 const SESSION_ENDED = 'Codex stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 /** The source key of Watcher's request note in a turn's `additionalContext` (experimental; codex-cli 0.162.1's schema). */
 const WATCHER_REQUEST_CONTEXT = 'sotto_watcher_request'
+const WATCHER_NEWS_CONTEXT = 'sotto_watcher_news'
 const clientInfo = { clientInfo: { name: 'sotto', title: 'Sotto threads', version: '1.0' }, capabilities: { experimentalApi: true } }
 const threadPolicy = { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write' } as const
 // Codex's previous policy is auto-accept-edits; preserve it for old aliases and
@@ -1565,9 +1566,11 @@ export class CodexAppServerHost implements AgentHost {
                 input, approvalPolicy: runtimePolicy(alias.runtimeMode).approvalPolicy,
                 approvalsReviewer: runtimePolicy(alias.runtimeMode).approvalsReviewer,
                 ...(alias.reasoningEffort ? { effort: alias.reasoningEffort } : {}),
-                // Watcher's request note is the application's context for this turn, beside the user's input rather than in it.
-                ...(command.watcherRequestNote && this.watcherProfiles.has(id)
-                  ? { additionalContext: { [WATCHER_REQUEST_CONTEXT]: { value: command.watcherRequestNote, kind: 'application' } } } : {}) }, value => {
+                // Watcher's request note, or a wake-up's news, is the application's context for this turn, beside the input rather than in it.
+                ...((command.watcherRequestNote || command.watcherNews) && this.watcherProfiles.has(id)
+                  ? { additionalContext: command.watcherRequestNote
+                    ? { [WATCHER_REQUEST_CONTEXT]: { value: command.watcherRequestNote, kind: 'application' } }
+                    : { [WATCHER_NEWS_CONTEXT]: { value: command.watcherNews, kind: 'application' } } } : {}) }, value => {
                 const { turn } = z.object({ turn: turnSchema }).parse(value)
                 origin.turnId = turn.id
                 if (this.usageEnabled) this.usageTurnStarts.set(JSON.stringify([id, turn.id]), origin.createdAt)

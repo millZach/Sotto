@@ -6,8 +6,9 @@ import { WATCHER_QUIET_MS, watcherOverview } from '../../../src/shared/watcherOv
 import type { WatcherNews } from '../../../src/shared/watcherNews'
 import { WatcherWakeUp, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
-import { foldWatcherNews, watcherNewsText } from '../../../src/main/agents/watcherNews'
-import { queuedWakeUpText, wakeUpText } from '../../../src/main/agents/wakeUp'
+import { foldWatcherNews, watcherNewsText, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
+import { RESUME_NOTE } from '../../../src/shared/restartResume'
+import { queuedWakeUpText, wakeUpText, watcherWakeUpNote } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/watcher'
 
@@ -175,8 +176,12 @@ it('fits combined sources within the provider message limit and preserves babysi
   expect(queuedWakeUpText(prs, { tool: true })).toBe(wakeUpText(prs, { tool: true }))
   const mixed = queuedWakeUpText([...prs, news], { tool: true })
   expect(mixed.length).toBeLessThanOrEqual(100_000)
-  expect(mixed).toContain('Sotto saw changes')
   expect(mixed).toContain('Pull request #1')
+  // Watcher's news goes beside the message, never in it; a wake-up of nothing else sends Sotto's short message.
+  expect(mixed).not.toContain('Sotto saw changes')
+  expect(watcherWakeUpNote([...prs, news])).toBe(watcherNewsText(news))
+  expect(queuedWakeUpText([news], { tool: true })).toBe(WATCHER_WAKE_UP_PROMPT)
+  expect(watcherWakeUpNote(prs)).toBeUndefined()
 })
 
 
@@ -798,4 +803,26 @@ it('removes paired PR facts and Landing only after the connected owning roster e
   expect(f.wakes.evidence.read(centerTarget, true, f.now()).some(fact => fact.githubAutoMergeEnabled)).toBe(true)
   await f.advance(2_000)
   expect(f.delivered.at(-1)!.events).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'evidence-changed', target })]))
+})
+
+it('shows Watcher’s conversation without Sotto’s news for it, by the host’s record of its wake-ups and never by text alone', () => {
+  const f = fixture(); f.thread.requests = [{ id: 'card', kind: 'question', text: 'secret', options: [] }]; f.wakes.observe()
+  const news = watcherNewsText({ source: 'watcher', watcher: f.record.current!.target, events: f.wakes.news(), omitted: 0 })
+  const message = (id: string, text: string, wakeUp = true) => ({ id, role: 'user' as const, text, createdAt: centerTime, ...wakeUp ? { wakeUp: true as const } : {} })
+  const reply = { id: 'reply', role: 'assistant' as const, text: news, createdAt: centerTime }
+  const babysitting = message('babysitting', 'Sotto is babysitting a pull request for this thread, and it needs you.')
+  const messages = [
+    message('now', WATCHER_WAKE_UP_PROMPT), // This build's wake-up for Watcher.
+    message('grok', `${WATCHER_WAKE_UP_PROMPT}\n\n[${news}]`), // Grok Build's, with the news on its one line.
+    message('earlier', news), // An earlier build's, with the news in the message.
+    message('resumed', `${RESUME_NOTE}\n\n${news}`), // An earlier build's resume note with news after it.
+    babysitting, reply,
+    message('typed', news, false), message('typed-prompt', WATCHER_WAKE_UP_PROMPT, false), // The user's own words, whatever they say.
+  ]
+  const shown = watcherWakeUpsAsShown(messages)
+  expect(shown.map(item => [item.id, item.text])).toEqual([['resumed', RESUME_NOTE], ['babysitting', babysitting.text], ['reply', news],
+    ['typed', news], ['typed-prompt', WATCHER_WAKE_UP_PROMPT]])
+  expect(watcherWakeUpsAsShown([babysitting, reply])).toEqual([babysitting, reply])
+  const plain = [reply]
+  expect(watcherWakeUpsAsShown(plain)).toBe(plain)
 })
