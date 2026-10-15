@@ -7,6 +7,7 @@ import { isImmutableActivities, subscribeActivitySnapshots } from '../../src/mai
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import type { AgentHostSnapshot } from '../../src/shared/agents'
 import { describeAdapterContract } from './adapterContract'
+import { devinPolicyPath } from '../../src/main/agents/devinPolicy'
 import { devinFixture, devinFixtureSkips } from '../fixtures/devinFixture'
 
 describeAdapterContract('Devin ACP', session => devinFixture(undefined, undefined, undefined, session), devinFixtureSkips)
@@ -335,7 +336,7 @@ describe('Devin dispatch and decision boundaries', () => {
     await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId, providerMode: 'bypass' })
     expect(await thread()).toMatchObject({ providerMode: 'bypass', runtimeMode: 'full-access' })
     // The grant lives in a profile of its own, written and confirmed before the thread runs under it.
-    const profile = JSON.parse(await readFile(join(f.root, 'devin', 'approval-policy-v1-everything.json'), 'utf8'))
+    const profile = JSON.parse(await readFile(devinPolicyPath(f.root, 'everything'), 'utf8'))
     expect(profile.permissions).toMatchObject({ ask: [] })
     expect(profile.permissions.allow).toEqual(expect.arrayContaining(['edit', 'exec']))
     // The session is left stopped; the next action resumes it under the new profile and sets it back to the

@@ -1052,7 +1052,21 @@ test.describe("Watcher's room on the built app", () => {
       await page.getByRole('combobox', { name: 'Threads in flight' }).selectOption('3')
       await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('3')
       await expect.poll(async () => (await page.evaluate(() => window.sotto!.getSettings())).watcherInFlightLimit).toBe(3)
+      // Ordinary Settings updates supply no room reply. The populated room's limit overrides the Settings fallback,
+      // so this select needs the final quiet notification rather than a test get() flushing the desktop publisher.
+      await page.evaluate(async () => {
+        await window.sotto!.updateSettings({ watcherInFlightLimit: 1 })
+        await window.sotto!.updateSettings({ watcherInFlightLimit: 2 })
+      })
+      await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('2')
       await page.keyboard.press('Escape')
+      // A fresh renderer recovers the current limit and prompt. Get and notifications may both participate.
+      await page.reload()
+      await openRoom(page)
+      await page.getByRole('button', { name: 'More Watcher actions' }).click()
+      await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('2')
+      await page.keyboard.press('Escape')
+      await expect(watcherPane(page).locator('[data-role="user"] .rich-message')).toHaveText(original)
       await settle(page)
       expect(await pageBoundProblems(page)).toEqual([])
       await capture(launched, 'room-main-sotto-dark-1280x800.png')

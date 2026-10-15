@@ -1,5 +1,5 @@
 import { userInfo } from 'node:os'
-import type { WatcherHostControl, WatcherHostRead, WatcherHostProjection } from '../../shared/watcherHost'
+import type { WatcherHostControl, WatcherHostRead, WatcherHostProjection, WatcherRoomThreadInput } from '../../shared/watcherHost'
 import type { WatcherIdentity } from '../../shared/watcher'
 import type { WatcherService } from './watcher'
 import type { WatcherPhoneService } from './watcherPhone'
@@ -75,6 +75,7 @@ export interface HostService {
   readonly supportsWatcherStandingWatch?: boolean
   subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
+  watcherRoomThreads?(threadIds: readonly string[]): WatcherRoomThreadInput[]
   watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown>
   watcherRead?(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown>
   watcherProjection?(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection

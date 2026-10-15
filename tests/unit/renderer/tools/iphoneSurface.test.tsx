@@ -138,4 +138,22 @@ describe('the test iPhone surface', () => {
     expect(await screen.findByText('This provider does not support Sotto browser tools.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Share with agent' })).not.toBeInTheDocument()
   })
+
+  it('offers a Muse thread the same sharing as the other providers, now that Muse takes Sotto’s tools', async () => {
+    const browser = fakeBrowser([page()])
+    const state = threadsStateFixture()
+    state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, providerId: 'muse' as const } : thread)
+    await setup(browser.bridge, { state })
+    expect(await screen.findByRole('button', { name: 'Share with agent' })).toBeInTheDocument()
+    expect(screen.queryByText('This provider does not support Sotto browser tools.')).not.toBeInTheDocument()
+  })
+
+  it('offers no Share control on a Muse thread whose client withheld Sotto’s tools', async () => {
+    const browser = fakeBrowser([page()])
+    const state = threadsStateFixture()
+    state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, providerId: 'muse' as const, sottoToolsWithheld: true as const } : thread)
+    await setup(browser.bridge, { state })
+    expect(await screen.findByText('This provider does not support Sotto browser tools.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Share with agent' })).not.toBeInTheDocument()
+  })
 })
