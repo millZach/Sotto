@@ -32,6 +32,8 @@ type State = { items: QueuedFollowup[]; receipts: z.infer<typeof receiptsSchema>
 const storedSchema = z.object({ items: z.array(queuedSchema.extend({ attachments: z.array(z.union([agentAttachmentHandleSchema, agentAttachmentSchema])) })), receipts: receiptsSchema })
 /** How a wake-up's news is worded, given all of it: the store folds news and the caller words it (`wakeUpText`). */
 export type WordWakeUp = (news: readonly WakeUpNews[]) => string
+/** The review token of an item queued while the thread rested on no turn Sotto had read. */
+export const UNKNOWN_TURN = 'unknown'
 /** Sotto's wake-up still waiting in a queue (ADR-0061 decision 8): one that has not started to send. */
 export const isWaitingWakeUp = (item: Pick<QueuedFollowup, 'wakeUp' | 'status'>): boolean => item.wakeUp === true && ['queued', 'paused', 'failed'].includes(item.status)
 /** Sotto's wake-up waiting in this thread's queue. */
@@ -276,6 +278,14 @@ export class FollowupStore {
       for (const item of state.items) if (item.threadId === threadId && ['paused', 'failed'].includes(item.status)) {
         item.status = 'queued'; if (turnId) item.resumeAfterTurnId = turnId; delete item.error
       }
+    })
+  }
+  /** Binds a wake-up that was queued against no turn to the turn the thread turned out to rest on. */
+  followTurn(id: string, turnId: string): Promise<void> {
+    return this.change(state => {
+      const item = state.items.find(candidate => candidate.id === id)
+      if (!item?.wakeUp || item.resumeAfterTurnId !== UNKNOWN_TURN) return false
+      Object.assign(item, { resumeAfterTurnId: turnId, updatedAt: new Date().toISOString() })
     })
   }
   claim(id: string, mode: 'send' | 'steer' = 'send'): Promise<void> {

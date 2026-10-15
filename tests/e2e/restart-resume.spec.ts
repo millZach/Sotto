@@ -15,7 +15,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { fakeClaudeLaunches, fakeClaudePrompts as prompts, fakeClaudeSessionFolder } from '../fixtures/fakeClaudeRecords'
-import { writeProviderAction } from '../fixtures/providerRecords'
+import { parseProviderRecords, writeProviderAction } from '../fixtures/providerRecords'
 import { onReleaseTrack } from './support/releaseTrack'
 import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
@@ -23,6 +23,20 @@ const evidence = evidenceDirectory('artifacts/restart-resume')
 const recorded = async (profile: string): Promise<string[]> => {
   const file = await readFile(join(profile, 'restart-resume.json'), 'utf8').catch(() => '{"working":[]}')
   return (JSON.parse(file) as { working: { threadId: string }[] }).working.map(item => item.threadId)
+}
+/** A fresh profile whose app finds the fake CLIs under its `native-fixture` folder, and how to put everything back. */
+async function nativeFixtureProfile() {
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-restart-resume-' })).directory
+  const root = join(profile, 'native-fixture')
+  for (const folder of ['claude', 'codex', 'project']) await mkdir(join(root, folder), { recursive: true })
+  const previous = { SOTTO_E2E_NATIVE_FIXTURE_ROOT: process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT, SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE: process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE }
+  process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = root
+  process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = process.execPath
+  const restore = async (): Promise<void> => {
+    for (const [key, value] of Object.entries(previous)) if (value === undefined) delete process.env[key]; else process.env[key] = value
+    await removeOwnedE2EProfile(profile)
+  }
+  return { profile, root, project: join(root, 'project'), restore }
 }
 async function openThread(page: Page, title: string) {
   await openThreads(page)
@@ -33,15 +47,9 @@ async function openThread(page: Page, title: string) {
 
 test('a thread working when Sotto quits carries on, with the resume note, when Sotto opens again', async () => {
   test.setTimeout(240_000)
-  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-restart-resume-' })).directory
-  const root = join(profile, 'native-fixture')
+  const { profile, root, project, restore } = await nativeFixtureProfile()
   const claude = join(root, 'claude')
-  const project = join(root, 'project')
-  for (const folder of ['claude', 'codex', 'project']) await mkdir(join(root, folder), { recursive: true })
   await mkdir(evidence, { recursive: true })
-  const previous = { root: process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT, executable: process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE }
-  process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = root
-  process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = process.execPath
   let launched: LaunchedSotto | undefined
   try {
     await onReleaseTrack('owl', async () => {
@@ -96,7 +104,7 @@ test('a thread working when Sotto quits carries on, with the resume note, when S
       expect(launches.at(-1)!.resume).toBe(true)
       expect(launches.at(-1)!.session).toBe(launches[0]!.session)
       const log = await readFile(join(fakeClaudeSessionFolder(claude, project), `${launches[0]!.session}.jsonl`), 'utf8')
-      const sent = log.trim().split('\n').map(line => JSON.parse(line) as { type?: string; message?: { content?: unknown } })
+      const sent = parseProviderRecords<{ type?: string; message?: { content?: unknown } }>(log)
         .filter(frame => frame.type === 'user').map(frame => typeof frame.message?.content === 'string' ? frame.message.content
           : (frame.message?.content as { type: string; text?: string }[] | undefined)?.find(item => item.type === 'text')?.text)
       expect(sent).toEqual(['Write a long essay on the history of the lighthouse.', RESUME_NOTE])
@@ -128,31 +136,22 @@ test('a thread working when Sotto quits carries on, with the resume note, when S
     })
   } finally {
     if (launched) await closeSotto(launched)
-    for (const [key, value] of [['SOTTO_E2E_NATIVE_FIXTURE_ROOT', previous.root], ['SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE', previous.executable]] as const) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value
-    }
-    await removeOwnedE2EProfile(profile)
+    await restore()
   }
 })
 
 /** The Codex requests Sotto made, in order: the fake app-server's journal of every frame it was sent. */
-const codexRequests = async (codex: string): Promise<{ method?: string; params?: Record<string, unknown> }[]> =>
-  (await readFile(join(codex, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as { method?: string; params?: Record<string, unknown> })
+const codexRequests = async (codex: string) =>
+  parseProviderRecords<{ method?: string; params?: Record<string, unknown> }>(await readFile(join(codex, 'requests.jsonl'), 'utf8').catch(() => ''))
 const codexPrompts = async (codex: string): Promise<string[]> => (await codexRequests(codex)).filter(request => request.method === 'turn/start')
   .map(request => (request.params?.input as { type: string; text?: string }[] | undefined)?.find(item => item.type === 'text')?.text ?? '')
 
 test('a Codex thread working when Sotto quits is sent the resume note when Sotto opens again', async () => {
   test.setTimeout(240_000)
-  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-restart-resume-' })).directory
-  const root = join(profile, 'native-fixture')
+  const { profile, root, project, restore } = await nativeFixtureProfile()
   const codex = join(root, 'codex')
-  const project = join(root, 'project')
-  for (const folder of ['claude', 'codex', 'project']) await mkdir(join(root, folder), { recursive: true })
   // No scripted reply: the fake app-server holds each turn open until the test completes it.
   await writeFile(join(codex, 'script.json'), '{}')
-  const previous = { root: process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT, executable: process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE }
-  process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = root
-  process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = process.execPath
   let launched: LaunchedSotto | undefined
   try {
     await onReleaseTrack('owl', async () => {
@@ -209,9 +208,6 @@ test('a Codex thread working when Sotto quits is sent the resume note when Sotto
     })
   } finally {
     if (launched) await closeSotto(launched)
-    for (const [key, value] of [['SOTTO_E2E_NATIVE_FIXTURE_ROOT', previous.root], ['SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE', previous.executable]] as const) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value
-    }
-    await removeOwnedE2EProfile(profile)
+    await restore()
   }
 })

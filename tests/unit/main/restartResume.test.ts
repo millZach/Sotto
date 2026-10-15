@@ -158,6 +158,30 @@ class UnreadHost extends Host {
   }
 }
 
+/** The read before the resume note fails once, as a Codex app-server that is still starting can. */
+class FirstReadFailsHost extends UnreadHost {
+  failed = false
+  override async refreshThread(threadId: string) {
+    if (threadId === 'workshop' && !this.failed) { this.failed = true; throw new Error('The thread could not be read.') }
+    return super.refreshThread(threadId)
+  }
+}
+const queueRestartNote = (store: FollowupStore) => store.queueWakeUp('workshop', { source: 'restart', since: new Date().toISOString(), resumes: 1 } satisfies RestartNews,
+  items => queuedWakeUpText(items, { tool: false }), 'unknown')
+/** A queue whose first item an earlier build queued against no turn and left "Not sent", and a coordinator over it. */
+async function startWithFailed(host: Host, seed: (store: FollowupStore) => Promise<void>) {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
+  const store = new FollowupStore(root); await store.load(); await seed(store)
+  const stuck = store.peek().items[0]!
+  await store.claim(stuck.id)
+  await store.settle(stuck.id, 'failed', 'The thread is no longer ready. Review it and resume its queue when ready.')
+  const credentials = await testCredentials(root, { mode: 'unavailable' })
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner }); controls.push(control)
+  control.useRestartResume({ due: () => true, sending: () => undefined, unsent: () => undefined })
+  await control.start(); await control.command({ type: 'connect' })
+  return control
+}
+
 describe('a thread whose history is read only after Sotto restarts', () => {
   it('sends the resume note when the first read finds the turn the restart cut off, unopened', async () => {
     const host = new UnreadHost({ id: 't1', status: 'interrupted' })
@@ -201,25 +225,44 @@ describe('a thread whose history is read only after Sotto restarts', () => {
   })
 
   it('sends a note that an earlier build left failed once the user resumes the queue', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
-    const store = new FollowupStore(root); await store.load()
-    const restart: RestartNews = { source: 'restart', since: new Date().toISOString(), resumes: 1 }
-    await store.queueWakeUp('workshop', restart, items => queuedWakeUpText(items, { tool: false }), 'unknown')
-    const stuck = store.peek().items[0]!
-    await store.claim(stuck.id)
-    await store.settle(stuck.id, 'failed', 'The thread is no longer ready. Review it and resume its queue when ready.')
     const host = new Host()
     await host.connect()
     host.update('workshop', { status: 'idle', lastTurn: { id: 't1', status: 'interrupted' } })
-    const credentials = await testCredentials(root, { mode: 'unavailable' })
-    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner }); controls.push(control)
-    control.useRestartResume({ due: () => true, sending: () => undefined, unsent: () => undefined })
-    await control.start(); await control.command({ type: 'connect' })
+    const control = await startWithFailed(host, queueRestartNote)
     expect(control.get().followups).toEqual([expect.objectContaining({ status: 'failed', wakeUp: true })])
     expect(sends(host)).toEqual([])
     await control.command({ type: 'resume-followups', threadId: 'workshop' })
     await expect.poll(() => sends(host).length).toBe(1)
     expect(sends(host)[0]).toMatchObject({ threadId: 'workshop', wakeUp: true, text: RESUME_NOTE })
+  })
+
+  it('sends the resume note when the read before it fails and the queue’s own read finds the turn the restart cut off', async () => {
+    const host = new FirstReadFailsHost({ id: 't1', status: 'interrupted' })
+    const f = await fixture({ saved: [stopped()], host })
+    await expect.poll(() => sends(f.host).length).toBe(1)
+    expect(host.failed).toBe(true)
+    expect(sends(f.host)[0]).toMatchObject({ threadId: 'workshop', wakeUp: true, text: RESUME_NOTE })
+    await expect.poll(() => f.control.get().followups ?? []).toEqual([])
+  })
+
+  it('sends a failed note once the user resumes the queue of a thread whose turns are not read yet', async () => {
+    const host = new UnreadHost({ id: 't1', status: 'interrupted' })
+    const control = await startWithFailed(host, queueRestartNote)
+    expect(host.reads).toBe(0)
+    await control.command({ type: 'resume-followups', threadId: 'workshop' })
+    await expect.poll(() => sends(host).length).toBe(1)
+    expect(sends(host)[0]).toMatchObject({ threadId: 'workshop', wakeUp: true, text: RESUME_NOTE })
+    await expect.poll(() => control.get().followups ?? []).toEqual([])
+  })
+
+  it('sends a user’s failed prompt once they resume the queue of a thread whose turns are not read yet', async () => {
+    const host = new UnreadHost({ id: 't1', status: 'interrupted' })
+    const control = await startWithFailed(host, store => store.enqueue({ threadId: 'workshop', draftId: randomUUID(), text: 'Then add the tests.', attachments: [], resumeAfterTurnId: 'unknown' }))
+    expect(host.reads).toBe(0)
+    await control.command({ type: 'resume-followups', threadId: 'workshop' })
+    await expect.poll(() => sends(host).length).toBe(1)
+    expect(sends(host)[0]).toMatchObject({ threadId: 'workshop', text: 'Then add the tests.' })
+    expect(sends(host)[0]?.wakeUp).toBeUndefined()
   })
 })
 

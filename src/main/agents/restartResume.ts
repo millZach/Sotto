@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { isThreadProviderConnected, type AgentState, type AgentThread } from '../../shared/agents'
 import { isResumeNoteText, RESUMES_IN_A_ROW_MAX, type RestartNews } from '../../shared/restartResume'
-import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
 /** A record older than this is cleared unsent when Sotto starts (ADR-0076 decision 4). */
@@ -128,8 +128,7 @@ export class RestartResume {
     for (const thread of host.threads) {
       if (this.dormant(thread.id)) continue
       const connected = host.connected && isThreadProviderConnected(host, thread)
-      // Native idle can come before the turn's completion, so a turn still reported running counts as working.
-      const running = connected && (thread.status === 'running' || thread.lastTurn?.status === 'running')
+      const running = connected && isThreadTurnRunning(thread)
       const record = this.working.get(thread.id)
       if (this.pending.has(thread.id)) {
         if (!connected) continue
@@ -173,7 +172,7 @@ export class RestartResume {
       () => {
         if (this.frozen || this.dormant(thread.id) || this.working.get(thread.id) !== record) return
         const current = this.options.control.get().host.threads.find(item => item.id === thread.id)
-        if (current && (current.status === 'running' || current.lastTurn?.status === 'running')) this.working.set(thread.id, this.started(thread.id, record.resumes))
+        if (current && isThreadTurnRunning(current)) this.working.set(thread.id, this.started(thread.id, record.resumes))
         else this.working.delete(thread.id)
       },
     ).finally(() => { this.pending.delete(thread.id); this.delivering.delete(thread.id); this.handing.delete(handing); this.save() })
