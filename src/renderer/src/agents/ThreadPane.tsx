@@ -25,8 +25,52 @@ import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCom
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchedNote, WatchHeaderToggle, WatchToast } from '../watcher/WatchControls'
+import { prefersReducedMotion } from '../state/reducedMotion'
 
 type Command = AgentConnection['command']
+
+/** How long a send may take to empty the greeting and still carry the composer down with it. */
+const LIFT_WINDOW_MS = 2_000
+
+/** Where the composer stood when a send left the greeting, so it can settle from there rather than jump. */
+interface Lift { readonly at: number; readonly top: number; readonly left: string; readonly right: string }
+
+/**
+ * A new thread holds its greeting and composer in the middle of the pane. When a send from this pane empties the
+ * greeting, the composer slides from where it stood to its place at the bottom and widens as it goes; with motion
+ * reduced it is simply there. A greeting emptied any other way, such as a message from the phone, moves at once.
+ */
+function useComposerLift(slot: HTMLElement | null, compose: React.RefObject<HTMLDivElement | null>, threadId: string): () => void {
+  const lift = useRef<Lift | null>(null)
+  const slide = useRef<Animation | undefined>(undefined)
+  // The pane is reused for the next thread. Its composer forgets a send the last thread never started, before the
+  // emptied slot is heard, and stops a slide still under way.
+  useLayoutEffect(() => () => { lift.current = null; slide.current?.cancel(); slide.current = undefined }, [threadId])
+  useEffect(() => {
+    if (slot === null) return
+    const observer = new MutationObserver(() => {
+      const from = lift.current
+      const element = compose.current
+      if (from === null || slot.firstElementChild !== null) return
+      lift.current = null
+      if (element === null || performance.now() - from.at > LIFT_WINDOW_MS) return
+      const style = getComputedStyle(element)
+      const rise = from.top - element.getBoundingClientRect().top
+      slide.current = element.animate?.([
+        { transform: `translateY(${rise}px)`, paddingLeft: from.left, paddingRight: from.right },
+        { transform: 'translateY(0)', paddingLeft: style.paddingLeft, paddingRight: style.paddingRight },
+      ], { duration: 320, easing: 'cubic-bezier(.2, .8, .2, 1)' })
+    })
+    observer.observe(slot, { childList: true })
+    return () => observer.disconnect()
+  }, [slot, compose])
+  return () => {
+    const element = compose.current
+    if (element === null || slot?.firstElementChild == null || prefersReducedMotion()) return
+    const style = getComputedStyle(element)
+    lift.current = { at: performance.now(), top: element.getBoundingClientRect().top, left: style.paddingLeft, right: style.paddingRight }
+  }
+}
 
 /**
  * The thread's pending requests, each answered by its own ID in this pane and nowhere else on the page.
@@ -100,6 +144,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const [gitExplained, setGitExplained] = useState<string | null>(null)
   /** Where the Git action draws its notice: above the composer, in the pane's own flow. */
   const [gitNoticeSlot, setGitNoticeSlot] = useState<HTMLElement | null>(null)
+  /** Where a new thread's greeting stands, directly above the composer. */
+  const [greetingSlot, setGreetingSlot] = useState<HTMLElement | null>(null)
+  const compose = useRef<HTMLDivElement>(null)
+  const liftComposer = useComposerLift(greetingSlot, compose, row.thread.id)
   const submissions = useSubmissions(store)
   // The pane only needs to know whether a draft exists. Subscribing to its text
   // re-renders the transcript and header synchronously on every keystroke.
@@ -216,7 +264,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {watcherBody}
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
-    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane}>
+    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
       {!isThreadClosed(thread) && !thread.remoteHost && !ownPane ? <CloudIphoneRequest threadId={thread.id} threadTitle={thread.title} onAnswer={focusAnswerComposer} /> : null}
@@ -226,7 +274,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         observation={state.connection === 'connecting' ? 'loading' : !rowConnected ? 'disconnected' : thread.historyStatus === 'loading' ? 'loading' : thread.historyStatus === 'error' ? 'unavailable' : 'ready'}
         observed={JSON.stringify([rowConnected, state.connection, thread.historyStatus, thread.status, closed, thread.requests.map(request => [request.id, request.delivery, request.questions])])} />
     </ThreadTranscript></ThreadWebLinks>}
-    <div className="thread-workspace__compose">
+    <div className="thread-greeting-slot" ref={setGreetingSlot} />
+    <div className="thread-workspace__compose" ref={compose}>
       {/* What a Watch or Stop watching press did, just above the focused pane's composer (Owl only). */}
       {focused ? <WatchToast /> : null}
       {notice}
@@ -236,7 +285,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {ownPane ? null : <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />}
       <ThreadRequests kind="question" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
-      <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} focused={focused} onExplainedError={setToolbarExplained} onSend={() => setFollowSignal(signal => signal + 1)}
+      <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} focused={focused} onExplainedError={setToolbarExplained} onSend={() => { liftComposer(); setFollowSignal(signal => signal + 1) }}
         watcher={ownPane} />
       {/* The row under the composer is compaction's alone. Side by side it keeps one line even when compaction has
           nothing to say, so panes keep their composers at the same height whether or not one has been compacted. */}
@@ -247,6 +296,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           connected={rowConnected && !closed} blocked={threadBusy} command={command} />
       </div>
     </div>
+    {/* Under a greeting, the room below the composer matches the room above, so the two sit in the middle. */}
+    <div className="thread-pane__balance" aria-hidden="true" />
     {drawer}
   </>
 }

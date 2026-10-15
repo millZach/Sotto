@@ -13,7 +13,7 @@ import { writeClipboard } from './richActions'
 import { isCompositionKey } from './composerKeys'
 import { branchLabel, chordClaimed, chordMatches, createRefName, newWorktreeDraft, offersCreate, pickOutcome, pullRequestTitle, refBadges, switchFailure, TOOLBAR_SHORTCUTS, toolbarApplies, workspaceChoice, workspaceLabel, workspaceLocked, workspaceOptionId, workspaceOptions, type ToolbarThread, type WorkspaceChoice } from './branchToolbar.logic'
 import type { ThreadRow } from './threadFacts'
-import { listedHosts } from './HostBadge'
+import { threadHostName } from './HostBadge'
 import './branchToolbar.css'
 
 type Command = AgentConnection['command']
@@ -138,9 +138,7 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
 
   if (!toolbarApplies(thread)) return null
   const pullRequest = thread.worktree?.git?.pullRequest ?? null
-  // Named as the host list names it, so a remote host alone is still called by its name, not by a stand-in.
-  const listed = listedHosts(state).find(item => item.hostId === row.thread.hostId)
-  const hostName = listed?.name ?? (thread.remoteHost ? thread.hostLabel ?? 'Remote host' : 'This computer')
+  const hostName = threadHostName(state, row.thread)
   const draftWorktree = newWorktreeDraft(thread)
   return <div className="branch-toolbar" role="group" aria-label="Branch toolbar" data-busy={busy ?? undefined}>
     <LabelPill icon={thread.remoteHost ? Server : Laptop} label="Run on" value={hostName}

@@ -1,0 +1,355 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: how should a new thread greet you before its first send? Zach (October 14) wants a random, a bit
+  playful line in place of "What is next for this thread?", a project line under it, and the composer up where
+  the eye is until the thread starts.
+
+    now  As it ships: icon and "What is next for this thread?" at the top of the transcript, composer at the bottom.
+    a    Centered. Greeting, project line and composer sit together as one block in the middle of the pane.
+    b    Higher. The same block, about 40% of the way down, so it lands nearer eye level.
+
+  In a and b the first send fades the greeting and slides the composer down to its usual place; with reduced
+  motion it moves at once.
+
+  Bar: ← → (or the arrow keys outside the composer) switch variants. New thread starts over with another greeting.
+  Width sets how wide a new thread's composer is; the first send widens it to the usual 900px.
+  Size frames the app at the sizes AGENTS.md asks for. Two panes puts an ongoing thread beside the new one.
+  Light flips the palette. Motion toggles reduced motion.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — new thread greeting, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-field: oklch(0.145 0.008 265); --tt-surface-elevated: oklch(0.185 0.008 265); --tt-sunken: oklch(0.13 0.008 265);
+  --tt-text: oklch(0.985 0.005 280); --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714 0.104 183); --tt-on-accent: oklch(0.16 0.012 190); --tt-attention: oklch(0.8 0.13 80);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent); --tt-selected: color-mix(in oklab, oklch(0.714 0.104 183) 16%, transparent);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-field: oklch(0.99 0.003 85); --tt-surface-elevated: oklch(0.955 0.006 85); --tt-sunken: oklch(0.965 0.005 85);
+  --tt-text: oklch(0.2 0.01 265); --tt-text-2: oklch(0.36 0.012 265); --tt-text-muted: oklch(0.45 0.012 265);
+  --tt-hairline: oklch(0.88 0.006 85); --tt-field-border: oklch(0.78 0.01 85);
+  --tt-accent: oklch(0.52 0.1 183); --tt-on-accent: oklch(0.99 0.003 85); --tt-attention: oklch(0.55 0.13 70);
+  --tt-hover: oklch(0.93 0.02 185); --tt-selected: oklch(0.93 0.03 185);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: #050506; color: var(--tt-text); font: 14px/1.5 var(--tt-font); overflow: auto; }
+button { font: inherit; color: inherit; }
+button:focus-visible, textarea:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+svg { flex: none; }
+.stage { min-height: 100%; display: grid; place-items: center; }
+.app { display: grid; grid-template-columns: 300px 1fr; width: 100vw; height: 100vh; background: var(--tt-canvas); overflow: hidden; }
+.app[data-framed] { box-shadow: 0 0 0 1px #333, 0 20px 60px rgb(0 0 0 / 50%); }
+.app[data-narrow] { grid-template-columns: 220px 1fr; }
+
+/* Sidebar, roughly as it ships. */
+.side { border-right: 1px solid var(--tt-hairline); background: var(--tt-sunken); padding: 12px 8px; overflow: hidden; min-width: 0; }
+.side .search { height: 34px; border: 1px solid var(--tt-hairline); border-radius: 9px; display: flex; align-items: center; gap: 8px; padding: 0 10px; color: var(--tt-text-muted); font-size: 13.5px; margin: 40px 2px 14px; }
+.side .proj { display: flex; align-items: center; gap: 6px; padding: 4px 8px 8px; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 9px 12px; border-radius: 10px; color: var(--tt-text-2); font-size: 14px; }
+.row .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--tt-text); }
+.row .when { font-size: 12.5px; color: var(--tt-text-muted); }
+.row .s { grid-column: 1 / -1; justify-self: end; font-size: 12.5px; color: var(--tt-text-muted); }
+.row .s[data-working] { color: var(--tt-accent); }
+.row[data-current] { background: var(--tt-selected); }
+
+/* Panes. */
+.panes { display: grid; grid-template-columns: 1fr; min-width: 0; min-height: 0; }
+.panes[data-two] { grid-template-columns: 1fr 1fr; }
+.panes[data-two] .pane + .pane { border-left: 1px solid var(--tt-hairline); }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pane[hidden] { display: none; }
+.head { flex: none; height: 50px; display: flex; align-items: center; gap: 10px; padding: 0 20px; white-space: nowrap; overflow: hidden; font-size: 13.5px; color: var(--tt-text-muted); }
+.head b { font-size: 16px; font-weight: 500; color: var(--tt-text); }
+.head .crumb { display: inline-flex; align-items: center; gap: 6px; }
+
+.body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.scroll { flex: 1 1 0; overflow-y: auto; min-height: 0; padding: 0 20px; }
+.spacer { flex: 0 0 0; }
+.greet { display: none; }
+
+/* As it ships. */
+.today { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 80px 0 40px; text-align: center; color: var(--tt-text-muted); }
+.today h3 { margin: 2px 0; color: var(--tt-text); font-size: 16px; font-weight: 500; letter-spacing: -.3px; }
+.today p { margin: 0; font-size: 13px; }
+
+/* a and b: the greeting block. The transcript's scroller is the space above it, the spacer the space below. */
+.body[data-empty][data-variant='a'] .scroll, .body[data-empty][data-variant='b'] .scroll { flex: 1 1 0; overflow: hidden; }
+.body[data-empty][data-variant='a'] .spacer { flex: 1 1 0; }
+.body[data-empty][data-variant='b'] .scroll { flex-grow: 2; }
+.body[data-empty][data-variant='b'] .spacer { flex: 3 1 0; }
+.body[data-empty][data-variant='a'] .greet, .body[data-empty][data-variant='b'] .greet { display: flex; }
+.greet { flex: none; flex-direction: column; align-items: center; gap: 8px; padding: 0 20px 22px; text-align: center; transition: opacity .16s ease-out; }
+.greet h2 { margin: 0; font-size: 28px; font-weight: 500; letter-spacing: -.5px; line-height: 1.2; color: var(--tt-text); text-wrap: balance; }
+.greet .where { display: inline-flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 12px; font-size: 13px; color: var(--tt-text-muted); }
+.greet .where span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.greet[data-leaving] { opacity: 0; }
+.app[data-narrow] .greet h2, .panes[data-two] .greet h2 { font-size: 23px; }
+
+/* A new thread's composer is narrower than a started one's; the first send widens it as it settles. */
+.body[data-empty][data-variant='a'] .compose__inner, .body[data-empty][data-variant='b'] .compose__inner { max-width: var(--new-width, 640px); }
+
+/* Transcript after the first send. */
+.transcript { max-width: 880px; margin: 0 auto; padding: 28px 0 24px; font-size: 15.5px; }
+.msg { margin: 0 0 22px; }
+.msg[data-role='user'] { margin-left: max(24px, 14%); padding: 12px 16px; background: var(--tt-surface-elevated); border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; white-space: pre-wrap; }
+.msg[data-role='agent'] p { margin: 0 0 10px; color: var(--tt-text); }
+.live { display: flex; gap: 8px; align-items: center; color: var(--tt-text-muted); font-size: 14px; }
+.live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-accent); }
+.fade-in { animation: fade .24s ease-out both; }
+@keyframes fade { from { opacity: 0; transform: translateY(6px); } }
+
+/* Composer, roughly as it ships. */
+.compose { flex: none; padding: 0 20px 22px; }
+.compose__inner { max-width: 900px; margin: 0 auto; transition: max-width .32s cubic-bezier(.2,.8,.2,1); border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-field); padding: 12px 14px 10px; }
+.compose textarea { display: block; width: 100%; min-height: 54px; resize: none; border: 0; background: transparent; color: var(--tt-text); font: 15px/1.5 var(--tt-font); padding: 2px 4px; outline: none; }
+.compose textarea::placeholder { color: var(--tt-text-muted); }
+.tools { display: flex; align-items: center; gap: 8px; margin-top: 6px; min-width: 0; }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 15px; font-size: 13.5px; color: var(--tt-text-2); white-space: nowrap; }
+.tools .clip { color: var(--tt-text-muted); display: inline-flex; padding: 0 4px; }
+.tools .send { margin-left: auto; width: 32px; height: 32px; border-radius: 50%; border: 0; display: grid; place-items: center; background: var(--tt-accent); color: var(--tt-on-accent); cursor: pointer; }
+.tools .send:disabled { background: var(--tt-surface-elevated); color: var(--tt-text-muted); cursor: default; }
+.pane[data-tight] .pill:nth-of-type(n+3), .app[data-narrow] .pane[data-tight] .pill:nth-of-type(n+2) { display: none; }
+
+/* Prototype chrome. */
+.bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 22px; max-width: calc(100vw - 24px);
+  background: #111; color: #fff; font: 600 12.5px system-ui, sans-serif; box-shadow: 0 8px 26px rgb(0 0 0 / 45%); z-index: 20; }
+.bar button, .bar select { background: #2a2a2a; color: #fff; border: 0; border-radius: 14px; height: 28px; padding: 0 11px; cursor: pointer; font: inherit; }
+.bar #label { padding: 0 4px; text-align: center; }
+.statebox { position: fixed; right: 12px; top: 12px; max-width: 320px; padding: 8px 10px; border-radius: 8px; background: #111; color: #cfd; font: 11.5px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; opacity: .88; z-index: 19; }
+:root[data-motion='reduced'] *, :root[data-motion='reduced'] *::before { transition: none !important; animation: none !important; }
+@media (prefers-reduced-motion: reduce) { *, *::before { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="stage"><div class="app" id="app">
+  <aside class="side" aria-label="Threads">
+    <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Search threads</div>
+    <div class="proj"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>Talk to Text Application</div>
+    <div class="row"><span class="t">Fix Codex wake-ups, retry on lost turns</span><span class="when">2m 18s</span><span class="s" data-working>Working</span></div>
+    <div class="row" id="otherRow"><span class="t">Fix usage tab bugs and match prototype</span><span class="when">7:45 pm</span><span class="s">Babysitting #1047</span></div>
+    <div class="row"><span class="t">Review T3 orchestrator notes</span><span class="when">17m 01s</span><span class="s">Waiting</span></div>
+    <div class="row" data-current id="newRow"><span class="t" id="newTitle">New thread</span><span class="when" id="newWhen"></span><span class="s" id="newState">Done</span></div>
+  </aside>
+  <div class="panes" id="panes">
+    <section class="pane" id="otherPane" hidden>
+      <div class="head"><b>Fix usage tab bugs and match prototype</b><span>/ Talk to Text Application</span></div>
+      <div class="body">
+        <div class="scroll"><div class="transcript">
+          <div class="msg" data-role="user">The usage tab still shows yesterday's total after midnight. Fix it and match the approved prototype.</div>
+          <div class="msg" data-role="agent"><p>Found it: the day boundary is read once when the tab opens, so a tab left open across midnight keeps the old day.</p><p>I moved the boundary into the hook that refreshes the totals, and opened #1047. Babysitting it now.</p></div>
+        </div></div>
+        <div class="compose"><div class="compose__inner">
+          <textarea rows="2" placeholder="What would you like to do next?" aria-label="Prompt for Fix usage tab bugs"></textarea>
+          <div class="tools"><span class="clip"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></span>
+            <span class="pill">Opus 5.5</span><span class="pill">High</span><span class="pill">Auto</span>
+            <button class="send" type="button" disabled aria-label="Send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button></div>
+        </div></div>
+      </div>
+    </section>
+    <section class="pane" id="pane">
+      <div class="head"><b id="headTitle">New thread</b><span class="crumb">/ Talk to Text Application</span>
+        <span class="crumb"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>main</span></div>
+      <div class="body" id="body">
+        <div class="scroll" id="scroll"><div id="scrollContent"></div></div>
+        <div class="greet" id="greet">
+          <h2 id="greeting"></h2>
+          <div class="where">
+            <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>Talk to Text Application</span>
+            <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>main</span>
+            <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/></svg>This computer</span>
+          </div>
+        </div>
+        <div class="compose" id="compose"><div class="compose__inner">
+          <textarea id="prompt" rows="2" placeholder="What would you like to do next?" aria-label="Prompt for New thread"></textarea>
+          <div class="tools"><span class="clip"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></span>
+            <span class="pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/></svg>Runs on this computer</span>
+            <span class="pill">Opus 5.5</span><span class="pill">High</span><span class="pill">Auto</span>
+            <button class="send" id="send" type="button" disabled aria-label="Send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button></div>
+        </div></div>
+        <div class="spacer" id="spacer"></div>
+      </div>
+    </section>
+  </div>
+</div></div>
+
+<div class="statebox" id="state" aria-live="polite"></div>
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <button type="button" id="prev" aria-label="Previous variant">←</button>
+  <span id="label"></span>
+  <button type="button" id="next" aria-label="Next variant">→</button>
+  <button type="button" id="again">New thread</button>
+  <select id="size" aria-label="Window size">
+    <option value="fill">Fill window</option><option value="1600x1000">1600×1000</option><option value="1280x800">1280×800</option><option value="820x560">820×560 (minimum)</option>
+  </select>
+  <select id="width" aria-label="New thread composer width">
+    <option value="560">Width 560</option><option value="640" selected>Width 640</option><option value="720">Width 720</option><option value="900">Width 900 (as today)</option>
+  </select>
+  <button type="button" id="two" aria-pressed="false">Two panes</button>
+  <button type="button" id="theme">Light</button>
+  <button type="button" id="motion">Motion: on</button>
+</div>
+
+<script>
+const VARIANTS = [
+  { key: 'now', name: 'As it ships' },
+  { key: 'a', name: 'Centered' },
+  { key: 'b', name: 'Higher (about 40% down)' },
+]
+// A bit playful, still Sotto's voice: short, plain, no exclamation marks.
+const GREETINGS = [
+  "What's on your mind?",
+  'Ready when you are.',
+  "Let's make something.",
+  'What are we building?',
+  'Where should we start?',
+  "What's the plan?",
+  'Got something in mind?',
+  'What needs fixing?',
+  "Let's get into it.",
+  'Point me at a problem.',
+  'Something to build, fix or figure out?',
+]
+const TIMED = () => {
+  const hour = new Date().getHours()
+  if (hour >= 5 && hour < 12) return ["Morning. What's first?"]
+  if (hour >= 17 && hour < 22) return ["Evening. What's left?"]
+  if (hour >= 22 || hour < 5) return ['Up late. What are we making?']
+  return []
+}
+const $ = id => document.getElementById(id)
+const params = new URLSearchParams(location.search)
+const state = {
+  variant: VARIANTS.some(v => v.key === params.get('variant')) ? params.get('variant') : 'a',
+  phase: 'empty', greeting: '', size: 'fill', two: false, width: params.get('width') ?? '640',
+}
+const reduced = () => document.documentElement.dataset.motion === 'reduced' || matchMedia('(prefers-reduced-motion: reduce)').matches
+
+function pickGreeting() {
+  const pool = [...GREETINGS, ...TIMED()].filter(line => line !== state.greeting)
+  state.greeting = pool[Math.floor(Math.random() * pool.length)]
+}
+
+function render() {
+  const v = VARIANTS.find(x => x.key === state.variant)
+  $('label').textContent = `${v.key} — ${v.name}`
+  const body = $('body')
+  body.dataset.variant = state.variant
+  body.toggleAttribute('data-empty', state.phase === 'empty')
+  $('greeting').textContent = state.greeting
+  if (state.phase === 'empty') {
+    $('scrollContent').innerHTML = state.variant === 'now'
+      ? `<div class="today"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><h3>What is next for this thread?</h3><p>Write a prompt below to continue.</p></div>`
+      : ''
+  }
+  // Framing.
+  const app = $('app')
+  if (state.size === 'fill') { app.style.width = ''; app.style.height = ''; app.removeAttribute('data-framed') }
+  else { const [w, h] = state.size.split('x'); app.style.width = w + 'px'; app.style.height = h + 'px'; app.setAttribute('data-framed', '') }
+  app.toggleAttribute('data-narrow', state.size === '820x560')
+  document.documentElement.style.setProperty('--new-width', state.width + 'px')
+  $('width').value = state.width
+  $('panes').toggleAttribute('data-two', state.two)
+  $('otherPane').hidden = !state.two
+  for (const pane of document.querySelectorAll('.pane')) pane.toggleAttribute('data-tight', state.two || state.size === '820x560')
+  $('two').setAttribute('aria-pressed', String(state.two))
+  showState()
+}
+
+function showState() {
+  $('state').textContent = [
+    `variant   ${state.variant}`,
+    `thread    ${state.phase === 'empty' ? 'new, nothing sent' : 'started'}`,
+    `greeting  ${state.variant === 'now' ? '(fixed line)' : state.greeting}`,
+    `width     ${state.phase === 'empty' && state.variant !== 'now' ? state.width + 'px, widens to 900px on send' : '900px'}`,
+    `size      ${state.size}${state.two ? ', two panes' : ''}`,
+    `motion    ${reduced() ? 'reduced' : 'on'}`,
+  ].join('\n')
+}
+
+function setVariant(key) {
+  state.variant = key
+  const url = new URL(location.href); url.searchParams.set('variant', key); history.replaceState(null, '', url)
+  render()
+}
+const step = d => setVariant(VARIANTS[(VARIANTS.findIndex(v => v.key === state.variant) + d + VARIANTS.length) % VARIANTS.length].key)
+
+function newThread() {
+  state.phase = 'empty'
+  pickGreeting()
+  $('prompt').value = ''; $('send').disabled = true
+  $('greet').removeAttribute('data-leaving')
+  $('headTitle').textContent = 'New thread'; $('newTitle').textContent = 'New thread'
+  $('newState').textContent = 'Done'; $('newState').removeAttribute('data-working'); $('newWhen').textContent = ''
+  render()
+  $('prompt').focus()
+}
+
+async function send() {
+  const text = $('prompt').value.trim()
+  if (!text || state.phase !== 'empty') return
+  const compose = $('compose')
+  const animate = !reduced() && state.variant !== 'now'
+  if (animate) { $('greet').setAttribute('data-leaving', ''); await new Promise(r => setTimeout(r, 140)) }
+  const before = compose.getBoundingClientRect().top
+  state.phase = 'started'
+  $('scrollContent').innerHTML = `<div class="transcript"><div class="msg fade-in" data-role="user"></div><div class="live fade-in" id="live" hidden>Working · 0s</div></div>`
+  $('scrollContent').querySelector('.msg').textContent = text
+  $('prompt').value = ''; $('send').disabled = true
+  render()
+  if (animate) {
+    // FLIP: start the composer where it was and let it settle at the bottom.
+    const delta = before - compose.getBoundingClientRect().top
+    compose.animate([{ transform: `translateY(${delta}px)` }, { transform: 'translateY(0)' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)' })
+  }
+  const title = text.split(/\s+/).slice(0, 6).join(' ')
+  $('headTitle').textContent = title; $('newTitle').textContent = title
+  $('newState').textContent = 'Working'; $('newState').setAttribute('data-working', ''); $('newWhen').textContent = '0s'
+  setTimeout(() => { const live = $('live'); if (live) live.hidden = false }, 500)
+}
+
+$('prompt').addEventListener('input', () => { $('send').disabled = !$('prompt').value.trim() || state.phase !== 'empty' })
+$('prompt').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } })
+$('send').addEventListener('click', send)
+$('prev').addEventListener('click', () => step(-1))
+$('next').addEventListener('click', () => step(1))
+$('again').addEventListener('click', newThread)
+$('size').addEventListener('change', e => { state.size = e.target.value; render() })
+$('width').addEventListener('change', e => {
+  state.width = e.target.value
+  const url = new URL(location.href); url.searchParams.set('width', state.width); history.replaceState(null, '', url)
+  render()
+})
+$('two').addEventListener('click', () => { state.two = !state.two; render() })
+$('theme').addEventListener('click', () => {
+  const light = document.documentElement.dataset.theme !== 'light'
+  document.documentElement.dataset.theme = light ? 'light' : 'dark'
+  $('theme').textContent = light ? 'Dark' : 'Light'
+})
+$('motion').addEventListener('click', () => {
+  const r = document.documentElement.dataset.motion !== 'reduced'
+  document.documentElement.dataset.motion = r ? 'reduced' : 'on'
+  $('motion').textContent = r ? 'Motion: reduced' : 'Motion: on'
+  showState()
+})
+addEventListener('keydown', e => {
+  if (e.target.closest('textarea, input, select, [contenteditable]')) return
+  if (e.key === 'ArrowLeft') step(-1)
+  if (e.key === 'ArrowRight') step(1)
+})
+newThread()
+</script>
+</body>
+</html>
