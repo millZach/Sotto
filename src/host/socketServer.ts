@@ -193,6 +193,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-work-settled' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'terminals' || options.terminals !== undefined)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)

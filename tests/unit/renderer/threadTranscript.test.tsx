@@ -55,6 +55,12 @@ describe('message copy control', () => {
     expect(controls[1]).toHaveAccessibleName('Copy reply as Markdown')
     const writing = document.querySelectorAll('.thread-message')[2]!
     expect(writing.querySelectorAll('.thread-message__copy')).toHaveLength(0)
+    // It sits in the bottom-left corner: after the message's words, not in its header, so Tab reaches it last.
+    for (const control of controls) {
+      const article = control.closest('article')!
+      expect(article.querySelector('header')!.contains(control)).toBe(false)
+      expect(article.querySelector('.rich-message')!.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
   })
 
   it('copies the source Markdown on press and confirms for a moment', async () => {

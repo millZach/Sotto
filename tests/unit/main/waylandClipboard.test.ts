@@ -37,6 +37,24 @@ describe('Wayland clipboard', () => {
     expect(h.notice).not.toHaveBeenCalled()
   })
 
+  it('writes PNG bytes unchanged as image/png, and fails rather than falling back to text', async () => {
+    const h = harness()
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00, 0xc3])
+    const input: Buffer[] = []
+    h.child.stdin!.on('data', chunk => input.push(chunk))
+    const write = h.clipboard.writePng(png)
+    expect(h.spawn).toHaveBeenCalledWith('wl-copy', ['--type', 'image/png'], { shell: false, stdio: ['pipe', 'ignore', 'ignore'] })
+    expect(Buffer.concat(input).equals(png)).toBe(true)
+    h.child.emit('close', 0, null)
+    await write
+
+    const failed = harness()
+    const refused = failed.clipboard.writePng(png)
+    failed.child.emit('close', 1, null)
+    await expect(refused).rejects.toThrow('Desktop clipboard unavailable')
+    expect(failed.fallback.writeText).not.toHaveBeenCalled()
+  })
+
   it('mirrors the exact desktop text to PRIMARY on stdin without a shell or stdout pipe', async () => {
     const h = harness()
     const text = '-café\n"$(no)"; `no` 🚀'

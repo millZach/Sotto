@@ -52,6 +52,7 @@ import {
   HISTORY_SEARCH,
   HOTKEY_GET,
   HOTKEY_REPLACE,
+  OUTPUT_COPY_IMAGE,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
@@ -413,6 +414,8 @@ export function createSottoBridge(
       invokeParsed(renderer, WIDGET_PUBLISH, commandResultSchema, state),
     deliverOutput: (request) =>
       invokeParsed(renderer, OUTPUT_DELIVER, outputResultSchema, request),
+    copyImage: (request) =>
+      invokeParsed(renderer, OUTPUT_COPY_IMAGE, commandResultSchema, request),
 
     polishTranscript: (request) =>
       invokeParsed(renderer, TRANSCRIPT_POLISH, transcriptPolishResultSchema, request),

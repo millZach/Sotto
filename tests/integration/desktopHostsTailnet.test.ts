@@ -73,7 +73,7 @@ class FixtureSsh extends SshHostLauncher {
     this.options = options
     const which = options.start === false ? 'admin' : 'ssh'
     const about = await descriptor()
-    return { url: 'http://127.0.0.1:' + host.descriptor!.port, hostId: about.hostId, owned: true, route: { hostname: 'forge', identityFiles: [] },
+    return { url: 'http://127.0.0.1:' + host.descriptor!.port, hostId: about.hostId, owned: true, route: { hostname: 'forge', identityFiles: [] }, system: 'linux-x64',
       ...(about.tailnetAddress ? { tailnetAddress: about.tailnetAddress } : {}),
       close: async () => undefined,
       showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: about.hostId }),
@@ -159,6 +159,16 @@ describe('a tailnet connection (ADR-0053)', () => {
     // The threads are the host's, on the Threads page, over the tailnet.
     const thread = await remoteThread()
     expect(row(thread)).toMatchObject({ clientConnected: true })
+  })
+
+  it('keeps the system the launch reported with the tailnet entry, so a host update knows it after a relaunch over the tailnet (ADR-0077)', async () => {
+    const remote = await add()
+    expect(await saved()).toEqual([expect.objectContaining({ id: remote.id, prefer: 'tailnet', system: 'linux-x64' })])
+    await relaunch()
+    await onTailnet()
+    // No launch ran: the tailnet connection has the system from the entry.
+    expect(launchers).toEqual([])
+    expect(manager.updateCandidates()).toEqual([expect.objectContaining({ id: remote.id, system: 'linux-x64' })])
   })
 
   it('leaves a host with no Tailscale running on SSH at Add host, with its tailnet connections off again', async () => {

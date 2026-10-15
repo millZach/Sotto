@@ -27,6 +27,8 @@ export interface AdminConnectionsOptions {
   readonly report: (id: string, report: AdminSignInReport) => void
   /** The Node the host's launch script ran under, for the command that revokes this computer there by hand. */
   readonly node: (id: string, node: string) => void
+  /** The host's system as its launch script named it, which names the archive a host update downloads (ADR-0077). */
+  readonly system?: (id: string, system: string) => void
   /** A host whose ID is not the one saved: the error the press fails with. */
   readonly identityChanged: () => Error
   readonly idleMs?: number
@@ -98,6 +100,7 @@ export class AdminConnections {
       }, { start: false, ...(host.removeBoot ? { removeBoot: true } : {}) })
       if (host.hostId && connection.hostId !== host.hostId) { await connection.close(); throw this.options.identityChanged() }
       if (connection.node) this.options.node(host.id, connection.node)
+      if (connection.system) this.options.system?.(host.id, connection.system)
       return connection
     } finally {
       // Whatever the sign-in left on the row goes with it.

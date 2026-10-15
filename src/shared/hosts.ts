@@ -173,6 +173,11 @@ export interface HostsState {
    * user answered Not now for is left out until Sotto next starts.
    */
   updates?: HostUpdateState[]
+  /**
+   * With Update all on (ADR-0077), saved hosts behind the version this computer is downloading whose host archive the
+   * releases page has not answered for yet. Each may be offered that version in a moment. Absent when there is none.
+   */
+  updateChecks?: string[]
   /** Each remote host's phone access, as this computer last read it from that host (ADR-0050). */
   phones?: HostPhonesView[]
   /**

@@ -2,6 +2,8 @@
 
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The voice gate described below has been removed. Update remains an explicit user action, with the same host restart, busy-work and recovery rules.
 
+October 14, 2026 amendment: with Update all on ([ADR-0077](0077-update-all-updates-sotto-its-clients-and-hosts-together.md), decision 6), a host's target is the host version of the Sotto this computer is downloading, once the releases page has that host archive, so a host updates before Sotto restarts and runs ahead of this computer until then. A host newer than its target is still left alone. Stable, and the pill and panel, keep this computer's own version as the target.
+
 October 12, 2026 amendment: [ADR-0078](0078-usage-keeps-numeric-history-on-its-own-host.md) adds matching Owl host archives for Usage on connected computers. An Owl desktop with Usage or Muse enabled targets its own full Owl version (ADR-0079 adds Muse); other clients keep their previous target. For that target, an equal-core stable host can explicitly switch to Owl, and Owl dates and daily numbers compare numerically. Equal or newer Owl hosts are left alone. Version folders and `current` accept only strict stable or Owl versions; immutable installations, checksum checks, manifest/version agreement, busy-host questions and rollback remain in force. A host gates collection from its own packaged version, never the requesting client's track.
 
 ## Status

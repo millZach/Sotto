@@ -163,14 +163,16 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `terminals`: only the desktop's phone listener offers Terminal mode rows. Opting in adds `shell.terminals`;
  * `terminal-approval` reads a bounded live approval preview, `observe-terminals` reports foreground details, and
  * `answer-terminal` delivers one exact reviewed answer through the local hook (ADR-0066). No screen stream or input.
+ * `watcher-work-settled`: the host's threads report their background work, monitoring and sub-agent counts, so a desktop's
+ * Watcher can say when a finished turn's work has ended (ADR-0073). A host that does not list it reads as unknown, not idle.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads', 'watcher-standing-watch']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled']
 /**
  * A client update as a client that does not accept `client-updates` can read it: the mise channel, which such a client
  * does not know, reads as one it will not drive, and a client waiting in the update line reads as not started. Every
@@ -255,10 +257,11 @@ function compareSottoVersions(hostVersion: string | undefined, clientVersion: st
  * so nothing on it is lost. The last sentence is the way out, and it depends on which side is behind:
  * Connect starts whatever is in the host installation folder, so an older host needs this computer's
  * version put there before it is stopped, and a newer one needs this computer updated instead.
- * `owned` says whether Sotto started the host, and so whether Stop host is there to press.
+ * `owned` says whether Sotto started the host, and so whether Stop host is there to press. `newer` is whether the host
+ * is ahead, by release number unless the caller orders Owl builds too.
  */
-export function hostVersionMismatch(clientVersion: string, hostVersion: string | undefined, owned: boolean): string {
-  if (hostIsNewer(hostVersion, clientVersion)) return 'This host is running a newer version of Sotto than this computer. Nothing on the host was lost. Update Sotto on this computer, then connect again.'
+export function hostVersionMismatch(clientVersion: string, hostVersion: string | undefined, owned: boolean, newer = hostIsNewer(hostVersion, clientVersion)): string {
+  if (newer) return 'This host is running a newer version of Sotto than this computer. Nothing on the host was lost. Update Sotto on this computer, then connect again.'
   const stop = owned ? 'press Stop host' : 'stop the host on that machine'
   // A host that said which older Sotto it runs is offered an update on the Threads page (ADR-0040).
   const update = hostIsOlder(hostVersion, clientVersion) ? 'Update it from the Threads page, or put' : 'Put'
