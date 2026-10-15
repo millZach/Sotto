@@ -163,12 +163,47 @@ describe('ThreadsView workspace', () => {
     thread.messages = []; thread.historyStatus = 'loading'
     const { rerender, command } = renderThreads(state)
     expect(screen.getByRole('status')).toHaveTextContent('Loading messages')
+    expect(document.querySelector('.thread-greeting')).toBeNull()
     expect(screen.queryByText('What is next for this thread?')).not.toBeInTheDocument()
     thread.historyStatus = 'error'; thread.historyError = 'Connection interrupted'
     rerender(<ThreadsView now={NOW} />)
     expect(screen.getByRole('alert')).toHaveTextContent('Connection interrupted')
     fireEvent.click(screen.getByRole('button', { name: 'Retry loading messages' }))
     expect(command).toHaveBeenCalledWith({ type: 'refresh' })
+  })
+
+  it('greets a thread nothing has been sent to above its composer, and lets the greeting go on the first send', () => {
+    const state = stateFixture()
+    const thread = state.host.threads.find(item => item.id === state.activeThreadId)!
+    Object.assign(thread, { messages: [], activities: [], requests: [], historyStatus: 'ready', status: 'idle', earlierAvailable: false, compaction: undefined })
+    const project = state.host.projects.find(item => item.id === thread.projectId)!
+    const { rerender } = renderThreads(state)
+    const greeting = document.querySelector<HTMLElement>('.thread-greeting')!
+    expect(greeting).not.toBeNull()
+    // Outside the transcript, directly above the composer, with where the work will happen under the line.
+    expect(screen.getByLabelText('Thread transcript')).not.toContainElement(greeting)
+    expect(greeting.parentElement!.nextElementSibling).toHaveClass('thread-workspace__compose')
+    expect(within(greeting).getByRole('heading', { level: 3 }).textContent).toMatch(/\S/u)
+    expect(greeting).toHaveTextContent(`Project ${project.title}`)
+    expect(greeting).toHaveTextContent('Runs on This computer')
+    expect(screen.queryByText('What is next for this thread?')).not.toBeInTheDocument()
+    // The same thread keeps its line through a redraw.
+    const line = within(greeting).getByRole('heading', { level: 3 }).textContent
+    rerender(<ThreadsView now={NOW} />)
+    expect(document.querySelector('.thread-greeting h3')).toHaveTextContent(line!)
+
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Start the work.')
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
+    expect(document.querySelector('.thread-greeting')).toBeNull()
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Start the work.')
+  })
+
+  it('keeps the working line in the transcript for a new thread that is already working', () => {
+    const state = stateFixture()
+    const thread = state.host.threads.find(item => item.id === state.activeThreadId)!
+    Object.assign(thread, { messages: [], activities: [], requests: [], historyStatus: 'ready', status: 'running', earlierAvailable: false, compaction: undefined })
+    renderThreads(state)
+    expect(document.querySelector('.thread-greeting')).toBeNull()
   })
 
   it('bounds initial transcript rendering and reveals earlier messages on request', () => {

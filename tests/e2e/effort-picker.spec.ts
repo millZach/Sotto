@@ -152,7 +152,7 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     const focusAfterEscape = await page.evaluate(() => ({ tag: document.activeElement?.tagName, label: document.activeElement?.getAttribute('aria-label') }))
     await expect(chip, JSON.stringify(focusAfterEscape)).toBeFocused()
     await chip.click()
-    await page.getByRole('heading', { name: 'What is next for this thread?', exact: true }).click()
+    await page.getByRole('log', { name: 'Thread transcript' }).click({ position: { x: 12, y: 12 } })
     await expect(card).toHaveCount(0)
     await chip.click()
     // Ultrathink is the card's last control; Tab from it leaves the card, and the card closes behind it.
