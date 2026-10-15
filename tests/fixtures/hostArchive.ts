@@ -44,19 +44,20 @@ export function hostRelease(version: string, entry: string, options: { readonly 
 
 /**
  * A stand-in releases page. `files` maps a path such as `/v1.2.3/<archive>` to its bytes, read on each request so a test
- * can change what it publishes; anything else is a 404. `delayMs` holds each answer back, so a download can be watched.
+ * can change what it publishes; anything else is a 404. `delayMs` holds each answer back, so a download can be watched,
+ * and `hold`, when given, keeps an answer until the promise it returns for that request settles.
  */
-export async function releasesPage(files: Map<string, Uint8Array | string>, delayMs = 0): Promise<{ readonly url: string; readonly requests: string[]; close(): Promise<void>; server: Server }> {
+export async function releasesPage(files: Map<string, Uint8Array | string>, delayMs = 0, hold?: (request: { readonly method: string; readonly path: string }) => Promise<void> | undefined): Promise<{ readonly url: string; readonly requests: string[]; close(): Promise<void>; server: Server }> {
   const requests: string[] = []
   const server = createServer((request, response) => {
     const path = decodeURIComponent(new URL(request.url ?? '/', 'http://127.0.0.1').pathname)
     requests.push(path)
-    setTimeout(() => {
+    void Promise.resolve(hold?.({ method: request.method ?? 'GET', path })).then(() => setTimeout(() => {
       const body = files.get(path)
       if (body === undefined) { response.statusCode = 404; response.end('Not Found'); return }
       response.setHeader('content-type', 'application/octet-stream')
       response.end(body)
-    }, delayMs)
+    }, delayMs))
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()

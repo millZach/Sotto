@@ -180,7 +180,8 @@
 .rich-attachments__list { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
 .rich-attachment { min-width: 0; margin: 0; color: var(--tt-text-2); }
 .rich-attachment--image { display: flex; flex-direction: column; gap: 6px; width: 208px; }
-.rich-attachment__frame { display: flex; align-items: center; justify-content: center; width: 208px; height: 140px; overflow: hidden; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-md); background: var(--tt-surface-sunken); }
+.rich-attachment__frame { display: flex; align-items: center; justify-content: center; width: 208px; height: 140px; padding: 0; overflow: hidden; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-md); background: var(--tt-surface-sunken); color: inherit; font: inherit; cursor: zoom-in; transition: border-color 120ms ease; }
+.rich-attachment__frame:hover, .rich-attachment__frame[aria-expanded='true'] { border-color: var(--tt-hairline); }
 .rich-attachment__frame img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
 .rich-attachment figcaption, .rich-attachment__text { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
 .rich-attachment__name { overflow: hidden; color: var(--tt-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
@@ -204,3 +205,41 @@
 :root[data-reduced-motion='on'] .rich-message[data-streaming] > :is(ul, ol):nth-last-child(2) > li:last-child::after,
 :root[data-reduced-motion='on'] .rich-code__copy[data-copied] svg { animation: none; }
 :root[data-reduced-motion='on'] .rich-code__copy { transition: none; }
+
+/* ---- image viewer ---- */
+/* A message's images, large, over the thread pane they were sent in; the window when there is no pane. */
+
+.attachment-viewer {
+  --rich-muted: var(--tt-text-muted);
+  --rich-strong: var(--tt-text);
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  background: var(--tt-canvas);
+  color: var(--tt-text);
+  opacity: 1;
+  transition: opacity 140ms ease-out;
+  -webkit-app-region: no-drag;
+}
+@starting-style { .attachment-viewer { opacity: 0; } }
+.attachment-viewer[data-scope='window'] { position: fixed; z-index: 1000; }
+/* The bar takes the pane header's place, so it drags the window the way the header does. */
+.attachment-viewer__bar { display: flex; flex: none; align-items: center; gap: 12px; min-height: 44px; padding: 4px calc(8px + var(--threads-pane-inset, 0px)) 4px 18px; border-bottom: 1px solid var(--tt-hairline); -webkit-app-region: drag; }
+.attachment-viewer__bar .rich-diagram-viewer__controls { -webkit-app-region: no-drag; }
+.attachment-viewer__title { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 600; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-viewer__details { margin-left: 10px; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.rich-code__copy.attachment-viewer__copy { display: inline-flex; gap: 6px; width: auto; padding: 0 10px; font: inherit; font-size: 13px; }
+.attachment-viewer__missing { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 24px; color: var(--tt-text-muted); font-size: 14px; text-align: center; }
+.attachment-viewer__strip { display: flex; flex: none; justify-content: safe center; gap: 8px; padding: 10px 16px; overflow-x: auto; border-top: 1px solid var(--tt-hairline); }
+.attachment-viewer__thumb { flex: none; width: 64px; height: 44px; padding: 0; overflow: hidden; border: 2px solid transparent; border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); opacity: .6; cursor: pointer; transition: opacity 120ms ease, border-color 120ms ease; }
+.attachment-viewer__thumb:hover { opacity: .85; }
+.attachment-viewer__thumb[aria-current='true'] { border-color: var(--tt-accent); opacity: 1; }
+.attachment-viewer__thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* A narrow pane keeps the image's name readable: Copy image keeps its name for assistive technology but shows its icon alone. */
+@container thread-pane (max-width: 640px) {
+  .attachment-viewer__copy > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .rich-code__copy.attachment-viewer__copy { width: 36px; padding: 0; justify-content: center; }
+  .attachment-viewer__details { display: none; }
+}

@@ -259,10 +259,11 @@ function compareSottoVersions(hostVersion: string | undefined, clientVersion: st
  * so nothing on it is lost. The last sentence is the way out, and it depends on which side is behind:
  * Connect starts whatever is in the host installation folder, so an older host needs this computer's
  * version put there before it is stopped, and a newer one needs this computer updated instead.
- * `owned` says whether Sotto started the host, and so whether Stop host is there to press.
+ * `owned` says whether Sotto started the host, and so whether Stop host is there to press. `newer` is whether the host
+ * is ahead, by release number unless the caller orders Owl builds too.
  */
-export function hostVersionMismatch(clientVersion: string, hostVersion: string | undefined, owned: boolean): string {
-  if (hostIsNewer(hostVersion, clientVersion)) return 'This host is running a newer version of Sotto than this computer. Nothing on the host was lost. Update Sotto on this computer, then connect again.'
+export function hostVersionMismatch(clientVersion: string, hostVersion: string | undefined, owned: boolean, newer = hostIsNewer(hostVersion, clientVersion)): string {
+  if (newer) return 'This host is running a newer version of Sotto than this computer. Nothing on the host was lost. Update Sotto on this computer, then connect again.'
   const stop = owned ? 'press Stop host' : 'stop the host on that machine'
   // A host that said which older Sotto it runs is offered an update on the Threads page (ADR-0040).
   const update = hostIsOlder(hostVersion, clientVersion) ? 'Update it from the Threads page, or put' : 'Put'
