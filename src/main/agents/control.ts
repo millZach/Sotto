@@ -2654,7 +2654,7 @@ export class AgentControl {
         if (first.status === 'uncertain' || finished || holding) {
           this.pumping.add(threadId)
           let revived = false
-          void this.followupStore.reviveWakeUp(first.id, thread.lastTurn?.id ?? 'unknown').then(() => { revived = true })
+          void this.followupStore.reviveWakeUp(first.id, thread.lastTurn?.id ?? UNKNOWN_TURN).then(() => { revived = true })
             .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
             .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (revived) this.pumpFollowups() })
           continue
