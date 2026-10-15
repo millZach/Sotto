@@ -4,8 +4,8 @@ import { resolve } from 'node:path'
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { evidenceDirectory } from '../fixtures/evidence'
 
-// Real Windows Electron renders of the per-message copy control (#128), variant C: a floating mark
-// on each finished message's top-right corner. Same fixture as thread-activity.spec.ts; copies are
+// Real Windows Electron renders of the per-message copy control (#128): a floating mark on each
+// finished message's bottom-left corner. Same fixture as thread-activity.spec.ts; copies are
 // recorded in main at globalThis.activityFixture.copied.
 const shots = evidenceDirectory('artifacts/copy-message')
 
