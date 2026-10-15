@@ -358,7 +358,6 @@ describe('naming a thread from its first message while the first turn runs', () 
     // The provider still holds the exchange when Sotto starts again; the fake forgets its sessions, so it is told.
     const reopened = await coordinator({ root: before.root, firstMessageTitles: DEFAULT_SETTINGS, writeThreadTitle: async () => null,
       beforeConnect: adapters => reply(adapters.codex) })
-    reply(reopened.adapters.codex)
     await reopened.control.command({ type: 'refresh' })
     // A name offered for the thread lands before the check, so a wrong one cannot arrive just after it.
     await reopened.control.closed()
