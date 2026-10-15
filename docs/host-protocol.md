@@ -289,6 +289,8 @@ Every result that starts or finds a host, a launch's and an update's restart's, 
 
 Protocol remains v1. Optional watcher-standing-watch is desktop-only and requires the same SSH-recorded authenticated origin as watcher-control and watcher-reads. watcher-read accepts optional standingWatches: an array of durable `{id,target,createdAt,generation,lastUserMessageId?,pausedByUserMessageId?}` assignments for that master. Empty removes that master's watches. The owning host persists its own origin attribution, withdrawn-ID fences, latest master creation frontier (including empty synchronization) and human-turn generations; it publishes optional standingWatches in watcher-state projections. Master replacement preserves assignments but retired creation identities cannot send. Older hosts receive no assignment and refuse standing automation. No control token or prompt travels with synchronization.
 
+October 14, 2026: optional watcher-work-settled is desktop-only, offered under the same SSH-recorded origin as watcher-reads, and adds no request, field or push. It says the host's threads report their background work, monitoring and sub-agent counts, which the desktop's Watcher reads to send work-settled news when a finished turn's work ends ([ADR-0073](adr/0073-watcher-coordinates-threads-with-its-providers-own-tools.md)). A host that does not list it reads as unknown, not as none running: its finished turns carry no work count and its threads get no work-settled news.
+
 Optional watcher-phone-manage is offered only on the Owl desktop's phone listener alongside watcher-phone. hello.accepts must contain both. It admits:
 
 | Operation | Payload | Result |

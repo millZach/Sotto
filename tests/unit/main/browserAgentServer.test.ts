@@ -48,4 +48,11 @@ describe('Sotto browser tool admission', () => {
     expect(result).toContain('could not be completed')
     expect(result).not.toContain('private page content')
   })
+  it('tells a tool how long its client waits only when the client says so, and never more than an hour', async () => {
+    const { server, call } = setup(); const endpoint = await server.mcpServer('thread')
+    await post(endpoint, invoke, { 'Sotto-Tool-Wait': '300' })
+    await post(endpoint, invoke)
+    for (const forged of ['0', '-5', '30.5', '3601', 'soon']) await post(endpoint, invoke, { 'Sotto-Tool-Wait': forged })
+    expect(call.mock.calls.map(args => (args as unknown[])[3])).toEqual([{ waitMs: 300_000 }, {}, {}, {}, {}, {}, {}])
+  })
 })

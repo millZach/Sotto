@@ -26,6 +26,7 @@ export const WIDGET_DRAG = 'sotto:widget:drag' as const
 
 
 export const OUTPUT_DELIVER = 'sotto:output:deliver' as const
+export const OUTPUT_COPY_IMAGE = 'sotto:output:copy-image' as const
 
 export const TRANSCRIPT_POLISH = 'sotto:transcript:polish' as const
 

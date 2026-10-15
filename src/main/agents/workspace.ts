@@ -15,7 +15,7 @@ import { cloneActivitySnapshot, immutableActivities, immutableModels, isImmutabl
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, providerTakesSottoTools, PROVIDER_LABELS, isVisualMessage, parsePublicProviderEntityId, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, parsePublicProviderEntityId, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink, type UsageRecordedUserMessage } from './usageHistory/sink'
@@ -208,8 +208,8 @@ function expandProviderModes(models: AgentModel[]): void {
 }
 
 function organizationOnly(thread: AgentThread, keepActivities = false): AgentThread {
-  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, ...rest } = thread
-  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen
+  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, sottoToolsWithheld, ...rest } = thread
+  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen; void sottoToolsWithheld
   return { ...rest, messages: [], ...(keepActivities && activities ? { activities: retainedActivities(activities) } : {}) }
 }
 
@@ -1274,16 +1274,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Whether a thread may draw a visual: one this host holds, on a provider that can receive Sotto's tool servers. */
   admitsVisuals(threadId: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    return thread !== undefined && this.visible(thread) && providerTakesSottoTools(thread.providerId)
+    return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread)
   }
   /**
    * Whether an agent in this thread is offered Sotto's pull request tools (ADR-0061 decision 2): a thread this host holds,
-   * on Claude Code, Codex or Grok Build. Devin's client takes no server of Sotto's, so its threads are babysat only from
-   * the Pull request surface (decision 11).
+   * on Claude Code, Codex, Grok Build or Muse (ADR-0079). Devin's client takes no server of Sotto's, so its threads are
+   * babysat only from the Pull request surface (decision 11).
    */
   admitsBabysitting(threadId: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    return thread !== undefined && this.visible(thread) && (thread.providerId === 'claude' || thread.providerId === 'codex' || thread.providerId === 'grok')
+    return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread)
   }
   /** The thread's branch's own pull request as the host last read it, and its linked ones, by URL (ADR-0061 decision 5). */
   threadPullRequests(threadId: string): { branch: string | undefined; linked: string[] } {

@@ -447,6 +447,7 @@ it('keeps Claude callback approvals one-time even when its native request sugges
   await expect(f.host.execute({ ...answer, permissionChoice: 'always' })).rejects.toThrow('not offered')
   expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests).toHaveLength(1)
   expect((await f.host.execute({ ...answer, commandId: randomUUID(), permissionChoice: 'allow' })).accepted).toBe(true)
+  await expect.poll(async () => (await f.driver.requests()).some(record => record.method === 'control_response')).toBe(true)
   const callback = (await f.driver.requests()).findLast(record => record.method === 'control_response')!
   expect((callback.params!.frame as { response: { response: unknown } }).response.response).toEqual({ behavior: 'allow', updatedInput: { command: 'npm run build', description: 'Synthetic write' } })
 })

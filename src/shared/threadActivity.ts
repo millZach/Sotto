@@ -25,3 +25,8 @@ export function isThreadArchived(thread: Pick<AgentThread, 'archivedAt'>): boole
 export function isThreadClosed(thread: ThreadLifecycle): boolean {
   return hasTimestamp(thread.archivedAt) || isThreadSettled(thread)
 }
+
+/** A turn under way. Native idle can come before the turn's completion, so a last turn still reported running counts. */
+export function isThreadTurnRunning(thread: Pick<AgentThread, 'status' | 'lastTurn'>): boolean {
+  return thread.status === 'running' || thread.lastTurn?.status === 'running'
+}
