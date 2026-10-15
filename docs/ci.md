@@ -356,6 +356,11 @@ tick. When the two started in step, every sweep found a history read under way, 
 an idle session was never stopped and `untilStopped` ran out after 12 s. With a fast sweep and no interval of
 its own, the fixture now polls at five sweeps' length, which leaves most sweeps between reads.
 
+Nor was a thread-title failure. "Leaves an older thread alone" reopened over a fake provider that forgets its
+sessions, so the thread looked empty and Sotto correctly gave it a first-message title; the assertion passed
+only when it ran before that title landed. The reopened provider now holds the exchange, as a real one does,
+and the test waits for offered names to land before it checks.
+
 The same rule applies to the fake-provider fixtures' acknowledgement deadline (`requestTimeoutMs` in
 `tests/fixtures/claudeFixture.ts`, `codexFixture.ts` and `fakeGrokThreadFixture.ts`). That one deadline
 covers every native round trip, including the first one after the fake CLI is spawned, so it also has
