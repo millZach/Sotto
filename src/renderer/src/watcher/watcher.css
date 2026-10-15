@@ -20,12 +20,54 @@
 .watched-badge { display: inline-grid; flex: none; place-items: center; color: var(--tt-text-muted); }
 /* In a pane header the logo and the owl sit as one pair, closer than the title's own gap. */
 .thread-workspace__title > .watched-badge { margin-left: -4px; }
-/* Under a watched thread's composer, before anything is sent; and under Watcher's first composer. */
+/* Under a watched thread's composer, before anything is sent, with Stop watching; and under Watcher's first composer. */
 .watched-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 6px 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
 .watched-note > .watcher-owl { flex: none; }
 .watched-note > span { min-width: 0; }
+.watched-note__stop { flex: none; margin-left: 2px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-text-2); font: inherit;
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; cursor: pointer; }
+.watched-note__stop:hover { color: var(--tt-text); text-decoration-color: currentColor; }
 
-/* Watcher's asking mode, said where a thread's permissions choice would be. It is a fact, not a control. */
+/* ---------- Watching a thread ---------- */
+/* Watch in a thread's pane header: a pill, lit in the accent while Watcher watches the thread. Narrow panes keep the owl.
+   The lit fill is the accent mixed into the surface under it, so it is solid and its text is measured against what shows. */
+.watch-toggle { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px;
+  background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.watch-toggle:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.watch-toggle[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-canvas)); color: var(--tt-text); }
+.watch-toggle[aria-pressed='true'] > .watcher-owl { color: var(--tt-accent-text); }
+@container thread-pane (width < 520px) { .watch-toggle { padding: 0 7px; } .watch-toggle__text { display: none; } }
+/* The owl among a sidebar row's actions, in the accent while pressed. */
+.thread-nav__action.watch-row-toggle[aria-pressed='true'] { color: var(--tt-accent-text); }
+/* The owl at the end of a row in All threads: a ring when not watched, lit when watched. It spans the row's first two lines. */
+.watcher-row:has(> .watcher-row__watch) { grid-template-columns: 10px minmax(0, 1fr) auto 30px; }
+.watcher-row:has(> .watcher-row__watch) > :is(.watcher-row__meta, .watcher-row__asks) { grid-column: 2 / 4; }
+.watcher-row__watch { position: relative; z-index: 1; grid-column: 4; grid-row: 1 / span 2; display: grid; place-items: center; width: 30px; height: 30px; padding: 0;
+  border: 1px solid var(--tt-field-border); border-radius: 50%; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.watcher-row__watch:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.watcher-row__watch[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-surface-elevated)); color: var(--tt-accent-text); }
+
+/* What a Watch or Stop watching press did, with Undo; it never takes focus and goes by itself. The anchor is the top
+   of the focused pane's composer area, so the toast sits centred just above the composer and never covers it. */
+.watch-toast-anchor { position: relative; flex: none; height: 0; }
+.watch-toast { position: absolute; bottom: 8px; left: 50%; z-index: 25; display: flex; align-items: center; gap: 10px; width: max-content; max-width: min(560px, calc(100% - 16px));
+  padding: 6px 6px 6px 12px; border: 1px solid var(--tt-border-faint); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay);
+  color: var(--tt-text-2); font-size: 13px; line-height: 1.4; transform: translateX(-50%); }
+.watch-toast > .watcher-owl { color: var(--tt-accent-text); }
+.watch-toast > span { min-width: 0; }
+.watch-toast strong { color: var(--tt-text); font-weight: 600; }
+.watch-toast[data-tone='refused'] { border-color: var(--tt-warning); }
+.watch-toast[data-tone='refused'] > .watcher-owl { color: var(--tt-warning-text); }
+.watch-toast__undo { flex: none; height: 26px; padding: 0 11px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; cursor: pointer; }
+.watch-toast__undo:hover { background: var(--tt-hover); }
+.watch-toast__dismiss { display: grid; flex: none; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.watch-toast__dismiss:hover { background: var(--tt-hover); color: var(--tt-text); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .watch-toast { animation: watch-toast-rise 160ms cubic-bezier(.2, .8, .2, 1); }
+}
+@keyframes watch-toast-rise { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translateX(-50%); } }
+
+/* Watcher's asking mode, said as a fact where its bridge cannot change it. */
 .thread-options__pinned { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 28px; padding: 0 9px; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
 .thread-options__pinned > svg { flex: none; }
 
@@ -75,13 +117,18 @@
 .watcher-head__list:is(:hover, [aria-expanded='true']) .watcher-head__count { color: var(--tt-text-2); }
 @container thread-pane (width < 470px) { .watcher-head__list-text { display: none; } }
 
-/* "3 of 4 watched": one cell per thread Watcher may work with. */
-.watcher-meter { display: inline-flex; flex: none; align-items: center; gap: 8px; margin-right: 6px; color: var(--tt-text-2); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.watcher-meter__cells { display: inline-flex; gap: 3px; }
-.watcher-meter__cells > i { width: 6px; height: 14px; border: 1px solid var(--tt-border); border-radius: 2px; }
-.watcher-meter__cells > i[data-on] { border-color: transparent; background: var(--tt-accent); }
-@container thread-pane (width < 640px) { .watcher-meter__more { display: none; } }
-@container thread-pane (width < 470px) { .watcher-meter__cells { display: none; } }
+/* Conversation and Watched, beside All threads: two segments in a hairline track, the one shown raised. */
+.watcher-tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; padding: 2px; border: 1px solid var(--tt-hairline); border-radius: 9px; }
+.watcher-tabs__tab { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.watcher-tabs__tab:hover { color: var(--tt-text); }
+.watcher-tabs__tab[aria-selected='true'] { background: var(--tt-surface-elevated); box-shadow: 0 1px 2px var(--tt-shadow-color); color: var(--tt-text); }
+.watcher-tabs__count { color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
+@container thread-pane (width < 470px) { .watcher-tabs { margin-left: 0; } .watcher-tabs__tab { padding: 0 7px; } }
+/* Beside a thread at the smallest window the tabs need the name's room: the tile still says whose room it is, and the
+   heading stays for assistive technology. */
+@container thread-pane (width < 450px) {
+  .watcher-head h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 
 .watcher-actions { position: relative; display: flex; }
 .watcher-actions__panel { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; width: min(300px, calc(100vw - 24px)); padding: 14px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); color: var(--tt-text); }
@@ -190,3 +237,60 @@
   .watcher-first__intro h2 { margin: 6px 0 6px; }
   .watcher-first__intro p { font-size: 13.5px; line-height: 1.5; }
 }
+
+/* ---------- Watched ---------- */
+/* The threads Watcher watches, in its conversation's place: a lead line with Watch a thread, then a card for each,
+   grouped as the Overview groups them. A card's title button covers it, as a row's does in All threads. */
+.watcher-watched { display: flex; flex-direction: column; }
+.watcher-watched__lead { display: flex; align-items: center; gap: 8px 18px; margin: 0 0 8px; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.watcher-watched__lead > p { flex: 1 1 auto; min-width: 0; margin: 0; }
+.watcher-watched__add { display: inline-flex; flex: none; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; cursor: pointer; }
+.watcher-watched__add:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); }
+.watcher-watched__label { display: flex; align-items: center; gap: 8px; margin: 12px 0 7px; color: var(--tt-text-2); font-size: 13px; font-weight: 600; }
+.watcher-watched__label > .watcher-group__count { margin-left: 0; }
+.watcher-watched__group[data-tone='needs'] .watcher-watched__label { color: var(--watcher-needs-ink); }
+.watcher-watched__cards { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.watched-card { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 4px; padding: 11px 12px 11px 14px;
+  border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-lg); background: var(--tt-surface); }
+.watched-card[data-tone='needs'] { border-left: 2px solid var(--tt-attention); padding-left: 13px; }
+.watched-card:hover { border-color: var(--tt-border); }
+.watched-card__title { grid-column: 2; min-width: 0; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.watched-card__open { display: flex; padding: 0; border: 0; background: transparent; font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer; }
+.watched-card__open > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.watched-card__open::after { position: absolute; inset: 0; border-radius: var(--tt-radius-lg); content: ''; }
+.watched-card__open:focus-visible { outline: 0; box-shadow: none; }
+.watched-card__open:focus-visible::after { outline: 3px solid var(--tt-focus-ring); outline-offset: -1px; }
+.watched-card__actions { position: relative; z-index: 1; grid-column: 3; grid-row: 1 / span 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.watched-card__stop { display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.watched-card__stop:hover { border-color: var(--tt-border); background: var(--tt-hover); }
+.watched-card__meta { grid-column: 2; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.watched-card__meta .watcher-row__marks .thread-nav__mark { width: 13px; height: 13px; }
+.watched-card__provider, .watched-card__where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watched-card__meta > .watcher-row__status { max-width: none; margin-left: 0; }
+/* The meta's parts read as one line, a dot between each, as the mock-up writes them. */
+.watched-card__meta > :not(:first-child)::before { margin-right: 8px; color: var(--tt-text-muted); content: '·'; }
+.watched-card__doing { grid-column: 2 / -1; margin: 2px 0 0; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.45; }
+.watched-card[data-unlisted] .watched-card__title { color: var(--tt-text-2); }
+@container thread-pane (width < 560px) {
+  .watcher-watched__lead { flex-wrap: wrap; }
+  .watched-card { grid-template-columns: 10px minmax(0, 1fr); }
+  .watched-card__actions { grid-column: 2; grid-row: auto; justify-content: flex-start; }
+}
+
+/* ---------- Watcher's own changes ---------- */
+/* One quiet line under a reply in which Watcher changed files itself: the count, its reason or that it gave none, and
+   the files on request. The icon and "It gave no reason" take the needs-you ink, since Watcher is meant to hand changes on. */
+.watcher-own { margin-top: 12px; }
+.watcher-own__line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.watcher-own__icon { flex: none; align-self: center; color: var(--watcher-needs-ink); }
+.watcher-own__words { min-width: 0; }
+.watcher-own__words > strong { color: var(--tt-text); font-weight: 600; }
+.watcher-own__said { color: var(--tt-text-muted); }
+.watcher-own__none { color: var(--watcher-needs-ink); }
+.watcher-own__toggle { display: inline-flex; flex: none; align-items: center; gap: 3px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-accent-text); font: inherit; font-size: 13px; cursor: pointer; }
+.watcher-own__toggle:hover { text-decoration: underline; text-underline-offset: 3px; }
+.watcher-own__files { display: grid; gap: 4px; margin: 8px 0 0 6px; padding: 2px 0 2px 14px; border-left: 1px solid var(--tt-hairline); list-style: none; color: var(--tt-text-muted); font-size: 12.5px; }
+.watcher-own__files > li { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.watcher-own__files > li > svg { flex: none; }
+.watcher-own__files code { min-width: 0; overflow: hidden; padding: 1px 6px; border: 1px solid var(--tt-code-border); border-radius: 5px; background: var(--tt-code-bg); color: var(--tt-code-text);
+  font-family: var(--tt-font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

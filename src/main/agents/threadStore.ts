@@ -9,6 +9,7 @@ import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '.
 import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { isImmutableActivities } from './activitySnapshots'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
+import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
 
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
 export const FIRST_WINDOW_TURNS = 10
@@ -20,7 +21,7 @@ export interface RecordedUserMessageIdentity { readonly threadId: string; readon
  * The projection's shape. A change here means the `messages` table is rebuilt from `events` on the next
  * open, so nothing about a thread's history depends on a projection written by an older run.
  */
-const PROJECTION_VERSION = 1
+const PROJECTION_VERSION = 2
 
 const migrations = [{
   version: 1,
@@ -97,6 +98,11 @@ const migrations = [{
       PRIMARY KEY (thread_id, message_id)
     );
   `,
+}, {
+  // A Watcher reply keeps its observed file changes after the bounded activity window has moved on.
+  version: 6,
+  sql: `ALTER TABLE messages ADD COLUMN watcher_own_change TEXT;
+    ALTER TABLE messages ADD COLUMN watcher_observed_changes TEXT;`,
 }]
 
 /** One visual as the store keeps it: the visual, when it arrived, and where in the thread it was drawn. */
@@ -152,11 +158,17 @@ const EMPTY_WINDOW: ThreadMessageWindow = { messages: [], earlierAvailable: fals
 
 function messageOf(row: Record<string, SQLOutputValue>): AgentMessage {
   const attachments = row.attachments === null || row.attachments === undefined ? undefined : JSON.parse(String(row.attachments)) as AgentMessage['attachments']
+  const ownChange = row.watcher_own_change === null || row.watcher_own_change === undefined ? undefined
+    : watcherOwnChangeSchema.safeParse(JSON.parse(String(row.watcher_own_change)))
+  const observedChanges = row.watcher_observed_changes === null || row.watcher_observed_changes === undefined ? undefined
+    : watcherObservedChangesSchema.safeParse(JSON.parse(String(row.watcher_observed_changes)))
   return {
     id: String(row.message_id), role: String(row.role) as AgentMessage['role'],
     text: String(row.text), createdAt: String(row.created_at),
     ...(row.command_id === null || row.command_id === undefined ? {} : { commandId: String(row.command_id) }),
     ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
+    ...(ownChange?.success ? { watcherOwnChange: ownChange.data } : {}),
+    ...(observedChanges?.success ? { watcherObservedChanges: observedChanges.data } : {}),
   }
 }
 
@@ -840,9 +852,11 @@ function applyEvent(db: DatabaseSync, threadId: string, event: ThreadEvent,
       const row = prepare('SELECT MAX(position) AS last FROM messages WHERE thread_id = ?').get(threadId)
       const position = row?.last === null || row?.last === undefined ? 0 : Number(row.last) + 1
       const { message } = event
-      prepare('INSERT INTO messages (thread_id, position, message_id, role, text, created_at, command_id, attachments) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      prepare('INSERT INTO messages (thread_id, position, message_id, role, text, created_at, command_id, attachments, watcher_own_change, watcher_observed_changes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(threadId, position, message.id, message.role, message.text, message.createdAt,
-          message.commandId ?? null, message.attachments === undefined ? null : JSON.stringify(message.attachments))
+          message.commandId ?? null, message.attachments === undefined ? null : JSON.stringify(message.attachments),
+          message.watcherOwnChange === undefined ? null : JSON.stringify(message.watcherOwnChange),
+          message.watcherObservedChanges === undefined ? null : JSON.stringify(message.watcherObservedChanges))
       return
     }
     case 'message-text-appended':
@@ -851,9 +865,12 @@ function applyEvent(db: DatabaseSync, threadId: string, event: ThreadEvent,
       return
     case 'message-replaced': {
       const { message } = event
-      prepare('UPDATE messages SET role = ?, text = ?, created_at = ?, command_id = ?, attachments = ? WHERE thread_id = ? AND message_id = ?')
+      // Native history has no Sotto mark. An omitted field must not erase history-owned observation.
+      prepare('UPDATE messages SET role = ?, text = ?, created_at = ?, command_id = ?, attachments = ?, watcher_own_change = COALESCE(?, watcher_own_change), watcher_observed_changes = COALESCE(?, watcher_observed_changes) WHERE thread_id = ? AND message_id = ?')
         .run(message.role, message.text, message.createdAt, message.commandId ?? null,
-          message.attachments === undefined ? null : JSON.stringify(message.attachments), threadId, message.id)
+          message.attachments === undefined ? null : JSON.stringify(message.attachments),
+          message.watcherOwnChange === undefined ? null : JSON.stringify(message.watcherOwnChange),
+          message.watcherObservedChanges === undefined ? null : JSON.stringify(message.watcherObservedChanges), threadId, message.id)
       return
     }
     case 'message-aliased': {

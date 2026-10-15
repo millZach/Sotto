@@ -2,6 +2,27 @@ import XCTest
 @testable import SottoCore
 
 final class WatcherTests: XCTestCase {
+    func testManagementFieldsAndOperationsStayOptionalForOlderHosts() throws {
+        let old = try decode(WatcherPhoneState.self, state)
+        XCTAssertNil(old.runtimeMode)
+        XCTAssertNil(old.standingWatches)
+        XCTAssertNil(old.ownChanges)
+        let extra = #", "runtimeMode":"full-access", "standingWatches":[{"id":"watch","target":{"hostId":"host","threadId":"worker"},"createdAt":"now","generation":2,"pausedByUserMessageId":"human"}], "ownChanges":[{"replyMessageId":"reply","turnId":"turn","files":["src/main.ts"],"fileCount":1,"reason":null,"source":"provider-file-change"}]"#
+        let expanded = String(state.dropLast()) + extra + "}"
+        let page = try decode(WatcherPhoneState.self, expanded)
+        XCTAssertEqual(page.runtimeMode, "full-access")
+        XCTAssertEqual(page.standingWatches?.first?.pausedByUserMessageId, "human")
+        XCTAssertEqual(page.ownChanges?.first?.files, ["src/main.ts"])
+        XCTAssertNil(page.ownChanges?.first?.reason)
+        XCTAssertEqual(try WatcherWire.setPermission(runtimeMode: "auto")["op"], .string("watcher-phone-set-permission"))
+        XCTAssertThrowsError(try WatcherWire.setPermission(runtimeMode: "always"))
+        let target = WatcherTarget(hostId: "remote", threadId: "worker")
+        XCTAssertEqual(JSONValue.object(WatcherWire.watch(target: target))["request"]["target"]["hostId"], .string("remote"))
+        XCTAssertEqual(WatcherWire.unwatch(target: target)["op"], .string("watcher-phone-unwatch"))
+        guard case .array(let accepts)? = WatcherWire.managementHello["accepts"] else { return XCTFail("Missing accepts") }
+        XCTAssertTrue(accepts.contains(.string(WatcherWire.manageFeature)))
+        guard case .ok? = try decode(Receipt.self, #"{"status":"completed","watcherManage":{"status":"ok"}}"#).watcherManage else { return XCTFail("Missing management outcome") }
+    }
     private let host = "00000000-0000-4000-8000-000000000001"
     private let state = #"{"hostId":"00000000-0000-4000-8000-000000000001","current":{"target":{"hostId":"00000000-0000-4000-8000-000000000001","threadId":"watcher"},"provider":"codex","modelId":"model","reasoningEffort":null,"status":"running","connected":true},"conversation":{"messages":[{"id":"reply","role":"assistant","text":"Started a worker.","createdAt":"2026-10-11T10:00:00Z"}],"revision":4,"earlierAvailable":false},"receiptGroups":[{"requestId":"request","replyMessageId":"reply","rows":[{"operationId":"operation","target":{"hostId":"00000000-0000-4000-8000-000000000002","threadId":"worker"},"title":"Worker","provider":"claude","action":"start","deliveryState":"accepted","createdAt":"2026-10-11T10:00:00Z","updatedAt":"2026-10-11T10:00:01Z"}]}],"watchedThreads":[{"target":{"hostId":"00000000-0000-4000-8000-000000000002","threadId":"worker"},"title":"Worker","provider":"claude","status":"idle","connected":true,"watched":true,"takenOver":false,"backgroundWorkCount":0}],"needsYou":[{"target":{"hostId":"00000000-0000-4000-8000-000000000002","threadId":"worker"},"title":"Worker","provider":"claude","request":{"id":"permission","kind":"permission","text":"Run tests?","options":[],"permissionChoices":[{"id":"once","label":"Allow once","kind":"allow-once"}]},"connected":true,"mayAnswer":false}],"inFlight":1,"inFlightLimit":4,"working":true,"recoveryNotice":null,"observedAt":"2026-10-11T10:00:00Z","draftDeliveries":[{"draftId":"draft","status":"accepted"}],"futureDisplayField":true}"#
     private func decode<T: Decodable>(_ type: T.Type, _ text: String) throws -> T { try JSONDecoder().decode(type, from: Data(text.utf8)) }

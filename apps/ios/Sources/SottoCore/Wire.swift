@@ -122,6 +122,7 @@ public struct WireFailure: Decodable, Sendable { public let code: String; public
 public struct Receipt: Decodable, Sendable {
     public let status: String; public let error: WireFailure?; public let answerDelivered: Bool?
     public let watcherStop: WatcherStopReceipt?
+    public let watcherManage: WatcherManageReceipt?
     /// Older hosts record transport completion only; it cannot confirm the phone's answer.
     public var confirmsAnswer: Bool { status == "completed" && error == nil && answerDelivered == true }
     /// The computer has the command and is still carrying it out: a slow provider, not a lost command.

@@ -16,7 +16,8 @@ import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 import { followupsFor, ThreadFollowups } from './ThreadFollowups'
-import { ThreadOptions, WatcherPermission } from './ThreadOptions'
+import { ThreadOptions, watcherPermissionFixedReason } from './ThreadOptions'
+import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
 import { sessionSeenOpen, startOnTyping } from './earlyStart'
@@ -130,7 +131,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly onExplainedError?: ((error: string | null) => void) | undefined
   /** Review comments written in Changes that go with this thread's next prompt; the window's own unless a test passes one. */
   readonly reviewComments?: ReviewCommentStore
-  /** Watcher's own composer: its asking mode is pinned, and it offers no skills or branch toolbar (ADR-0073). */
+  /** Watcher's own composer: its permissions are Watcher's own choice, and it offers no skills or branch toolbar (ADR-0073). */
   readonly watcher?: boolean
 }): ReactNode {
   const threadId = row.thread.id
@@ -269,7 +270,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
             ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher}
               {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? 'Answer this question' : 'Manual prompt'}</small></span>
-              {watcher ? <WatcherPermission /> : null}</>}
+              {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
+                disabled={watcherPermissionFixedReason(state, row.thread) !== undefined} fixedReason={watcherPermissionFixedReason(state, row.thread)} /> : null}</>}
           {status}
         </div>
         <div className="thread-prompt__actions">
