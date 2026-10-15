@@ -22,7 +22,7 @@ const question: AgentRequest = {
   }],
 }
 
-const command = (page: Page, input: AgentCommand): Promise<AgentState> => page.evaluate(async input => window.sotto!.agents!.command(input) as Promise<AgentState>, input)
+const command = (page: Page, input: AgentCommand): Promise<AgentState> => page.evaluate(async input => window.sotto!.agents!.command(input) as unknown as Promise<AgentState>, input)
 
 async function resize(app: ElectronApplication, page: Page, width: number, height: number): Promise<void> {
   await app.evaluate(({ BrowserWindow }, [width, height]) => {
@@ -120,7 +120,7 @@ test('a prototype named by its path in the thread’s folder opens from the ques
   // A file moved after the question was asked: the row says so, and nothing else changes.
   await rm(file)
   await row.click()
-  await expect(card.getByText('That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed.')).toBeVisible()
+  await expect(card.getByText('That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed. Ask the agent where the page is now.')).toBeVisible()
   expect(await opened(app)).toHaveLength(2)
   await page.screenshot({ path: join(evidence, 'question-pages-1280x800-dark-gone.png'), animations: 'disabled', caret: 'hide' })
   expect(errors).toEqual([])

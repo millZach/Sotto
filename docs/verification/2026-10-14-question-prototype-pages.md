@@ -12,7 +12,7 @@ Zach still had no way to open a prototype an agent asked him about, after #954. 
 - At 1600x1000, 1280x800 and 820x560, in light and dark, the row fits inside the card and the card does not scroll sideways. Its two lines meet 4.5:1 on the card.
 - From the collapse toggle, Tab goes to the row and then to the first choice. Enter on the row opened the file through main, at its full path, and picked no choice.
 - With the provider disconnected the choices are disabled, and the row still opens the file.
-- With the file deleted, a press opens nothing, and the card says "That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed."
+- With the file deleted, a press opens nothing, and the card says "That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed. Ask the agent where the page is now."
 - In #954's spec, the agent's `http://localhost:8075/` review page is now a page row, "Open the prototype, localhost:8075", ahead of the GitHub link's row. Enter on it opened `http://localhost:8075/` through main. Its other checks, at every size and in both themes, still pass.
 
 ## What the tests prove

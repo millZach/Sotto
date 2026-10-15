@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Duplex } from 'node:stream'
 import { request as httpRequest, type Server } from 'node:http'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -411,8 +411,10 @@ it('serves a question’s page by its token alone, whatever origin asks, and not
   const pairing = new PairedClients(directory); await pairing.load()
   await writeFile(join(directory, 'greeting.html'), '<h1>Greeting</h1>')
   const token = 'p'.repeat(32)
+  // The host keeps a page's folder as it is after links are followed.
+  const root = await realpath(directory)
   const service = { shell: () => ({ hostId: 'host' }), subscribe: () => () => {},
-    questionPage: (asked: string) => asked === token ? { kind: 'file', root: directory!, file: join(directory!, 'greeting.html') } : undefined } as unknown as HostService
+    questionPage: (asked: string) => asked === token ? { kind: 'file', root, file: join(root, 'greeting.html') } : undefined } as unknown as HostService
   listener = await startSocketServer({ service, pairing })
   const base = `http://127.0.0.1:${listener.descriptor.port}`
   const origin = { Origin: 'https://laptop.example.ts.net:8443' }

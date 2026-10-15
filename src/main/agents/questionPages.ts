@@ -47,7 +47,8 @@ export function pageMentions(texts: readonly string[]): PageMention[] {
   }
   for (const text of texts) {
     const here: { at: number; mention: PageMention }[] = []
-    for (const match of text.matchAll(/https?:\/\/[^\s<>"'`()[\]]+/giu)) {
+    // An IPv6 address keeps its brackets; a bracket anywhere else ends the address, as Markdown's do.
+    for (const match of text.matchAll(/https?:\/\/(?:\[[0-9a-f:.]+\])?[^\s<>"'`()[\]]*/giu)) {
       let url: URL
       try { url = new URL(trailing(match[0])) } catch { continue }
       if (url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname) && !url.username && !url.password) here.push({ at: match.index, mention: { kind: 'server', url } })
@@ -73,7 +74,8 @@ export function pageMentions(texts: readonly string[]): PageMention[] {
   return found
 }
 
-const inside = (root: string, target: string): boolean => {
+/** Whether `target` is `root` or inside it, by their paths alone. */
+export const inside = (root: string, target: string): boolean => {
   const relative = path.relative(root, target)
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
@@ -122,7 +124,8 @@ export async function foundPages(mentions: readonly PageMention[], folder: strin
     if (pages.length >= QUESTION_PAGES_MAX) break
     if (mention.kind === 'server') {
       const origin = mention.url.origin
-      const start = `${mention.url.pathname.replace(/^\/+/u, '')}${mention.url.search}`
+      // The fragment stays: a prototype that tells its variants apart by one opens at the variant named.
+      const start = `${mention.url.pathname.replace(/^\/+/u, '')}${mention.url.search}${mention.url.hash}`
       const key = `${origin}/${start}`
       if (origins.has(key)) continue
       origins.add(key)
@@ -131,10 +134,11 @@ export async function foundPages(mentions: readonly PageMention[], folder: strin
     }
     if (!root) continue
     const written = mention.path.replace(/^~(?=[\\/])/u, '')
-    let candidate: string | undefined = path.isAbsolute(written) ? written : path.resolve(root, written)
-    if (!await stat(candidate).then(info => info.isFile(), () => false)) {
-      candidate = await findByName(root, path.basename(written.replaceAll('\\', '/')), written.replaceAll('\\', '/').replace(/^\.?\/+/u, ''))
-    }
+    const named = path.isAbsolute(written) ? written : path.resolve(root, written)
+    // Nothing outside the folder is looked at, so a network path in what the agent wrote never reaches the network; a
+    // path elsewhere is looked for by its name inside the folder instead, as one that is not there is.
+    let candidate: string | undefined = inside(root, named) && await stat(named).then(info => info.isFile(), () => false) ? named : undefined
+    candidate ??= await findByName(root, path.basename(written.replaceAll('\\', '/')), written.replaceAll('\\', '/').replace(/^\.?\/+/u, ''))
     if (!candidate) continue
     const file = await realpath(candidate).catch(() => undefined)
     if (!file || !HTML.test(file) || !inside(root, file) || files.has(file)) continue

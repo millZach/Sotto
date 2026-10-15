@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
 import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
 import path from 'node:path'
-import type { QuestionPageTarget } from '../main/agents/questionPages'
+import { inside, type QuestionPageTarget } from '../main/agents/questionPages'
 
 /** A page route's path: the token and whatever follows it. */
 export const QUESTION_PAGE_PATH = /^\/page\/([A-Za-z0-9_-]{32})(\/[^?#]*)?$/u
@@ -56,10 +56,9 @@ const finished = (response: ServerResponse): Promise<void> => new Promise(resolv
   response.once('close', resolve)
 })
 
-const inside = (root: string, target: string): boolean => {
-  const relative = path.relative(root, target)
-  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative)
-}
+/** A web file in the folder, as it is after links are followed: no hidden part on the way to it, and a kind a page is made of. */
+const servable = (root: string, file: string): boolean => file !== root && inside(root, file)
+  && !path.relative(root, file).split(path.sep).some(part => part.startsWith('.')) && CONTENT_TYPES[path.extname(file).toLowerCase()] !== undefined
 
 /**
  * Answers one request on a question page's route (ADR-0084): `/page/<token>/<path>`. A file page serves its folder
@@ -92,23 +91,31 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, tar
   if (rest === '') { response.writeHead(307, { ...PAGE_HEADERS, Location: base + encodeURIComponent(path.basename(target.file)) }); response.end(); return }
   let parts: string[]
   try { parts = rest.split('/').map(part => decodeURIComponent(part)) } catch { parts = [] }
-  const refused = parts.length === 0 || parts.some(part => part === '' || part.startsWith('.') || /[\0\\:]/u.test(part))
+  // Each part is checked after it is decoded, so an escaped slash or dot cannot name a hidden file or step out of the folder.
+  const refused = parts.length === 0 || parts.some(part => part === '' || part.startsWith('.') || /[\0/\\:]/u.test(part))
   const extension = path.extname(parts.at(-1) ?? '').toLowerCase()
   const type = CONTENT_TYPES[extension]
   if (refused || !type) {
     explain(response, 403, 'Sotto does not serve this file', ['A question’s page opens the files a web page is made of, such as pages, styles, scripts, images and fonts, from the page’s own folder, and nothing else.'])
     return
   }
-  const root = await realpath(target.root).catch(() => undefined)
+  // The folder is the one found when the question was asked, after links were followed. If it has since become a link to
+  // somewhere else, it is not that folder any more, and nothing in it is served.
+  const root = await realpath(target.root).catch(() => undefined) === target.root ? target.root : undefined
   const file = root ? await realpath(path.join(root, ...parts)).catch(() => undefined) : undefined
-  const info = file && root && inside(root, file) ? await stat(file).catch(() => undefined) : undefined
+  // A link in the folder is followed before it is judged, so `look.css` that leads to `.env` is refused as `.env` would be.
+  if (file && root && !servable(root, file)) {
+    explain(response, 403, 'Sotto does not serve this file', ['A question’s page opens the files a web page is made of, such as pages, styles, scripts, images and fonts, from the page’s own folder, and nothing else.'])
+    return
+  }
+  const info = file && root ? await stat(file).catch(() => undefined) : undefined
   if (!info?.isFile()) {
     const missingPage = path.join(target.root, ...parts) === target.file
     explain(response, 404, missingPage ? 'The prototype file was moved or deleted' : 'This file is not in the page’s folder',
       missingPage ? ['Nothing else changed. Ask the agent where the page is now.'] : ['The page asked for a file that is not there. The rest of the page may still work.'])
     return
   }
-  response.writeHead(200, { ...PAGE_HEADERS, 'Content-Type': type, 'Content-Length': info.size })
+  response.writeHead(200, { ...PAGE_HEADERS, 'Content-Type': CONTENT_TYPES[path.extname(file!).toLowerCase()] ?? type, 'Content-Length': info.size })
   if (request.method === 'HEAD') { response.end(); return }
   const stream = createReadStream(file!)
   stream.on('error', () => response.destroy())

@@ -891,7 +891,7 @@ extension AppModel {
         switch place {
         case .thread(let ref): return canAnswer(request, in: ref)
         case .watcher(let hostID, let target):
-            guard let card = watcherPage(hostID)?.card(target, requestID: request.id), card.request == request else { return false }
+            guard let card = watcherPage(hostID)?.card(target, requestID: request.id), card.request.asksTheSame(as: request) else { return false }
             return canAnswerWatcherCard(card, on: hostID)
         }
     }
@@ -899,7 +899,7 @@ extension AppModel {
         switch place {
         case .thread(let ref): await answer(request, in: ref, choice: choice, text: text, answers: answers)
         case .watcher(let hostID, let target):
-            guard let card = watcherPage(hostID)?.card(target, requestID: request.id), card.request == request else { return }
+            guard let card = watcherPage(hostID)?.card(target, requestID: request.id), card.request.asksTheSame(as: request) else { return }
             await answerWatcherCard(card, on: hostID, choice: choice, text: text, answers: answers)
         }
     }

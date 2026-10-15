@@ -25,6 +25,8 @@ describe('pageMentions', () => {
     expect(mentioned('Review page: http://localhost:8075/ (it’s open in your browser)')).toEqual(['server http://localhost:8075/'])
     expect(mentioned('Open **http://localhost:8072/** to compare.')).toEqual(['server http://localhost:8072/'])
     expect(mentioned('See http://127.0.0.1:8077/terminal.prototype.html?variant=A.')).toEqual(['server http://127.0.0.1:8077/terminal.prototype.html?variant=A'])
+    expect(mentioned('On IPv6 at http://[::1]:8075/ too')).toEqual(['server http://[::1]:8075/'])
+    expect(mentioned('[the page](http://localhost:8075/)')).toEqual(['server http://localhost:8075/'])
     expect(mentioned('The page is at docs/prototypes/greeting-prototype.html.')).toEqual(['file docs/prototypes/greeting-prototype.html'])
     expect(mentioned('I wrote `D:\\Talk to Text Application\\docs\\x.html` for you')).toEqual(['file D:\\Talk to Text Application\\docs\\x.html'])
     expect(mentioned('[the mock](docs/prototypes/greeting-prototype.html)')).toEqual(['file docs/prototypes/greeting-prototype.html'])
@@ -57,6 +59,11 @@ describe('foundPages', () => {
     }
   })
 
+  it('looks a path outside the folder up by its name inside it, so a network share in the text is never opened', async () => {
+    const pages = await foundPages(pageMentions(['\\\\fileserver.invalid\\share\\greeting-prototype.html', '//fileserver.invalid/share/greeting-prototype.html']), folder)
+    expect(pages.map(item => item.target.kind === 'file' && item.target.file)).toEqual([expect.stringMatching(/prototypes[\\/]greeting-prototype\.html$/u)])
+  })
+
   it('offers nothing outside the thread’s folder, inside .git, or that is not there', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'sotto-question-pages-outside-'))
     try {
@@ -67,6 +74,11 @@ describe('foundPages', () => {
       const texts = [join(outside, 'secret.html'), '../secret.html', '.git/hook.html', 'missing.html', ...(linked ? ['linked.html'] : [])]
       expect(await foundPages(pageMentions(texts), folder)).toEqual([])
     } finally { await rm(outside, { recursive: true, force: true }) }
+  })
+
+  it('keeps a loopback page’s fragment, so each variant named by one opens at itself', async () => {
+    const pages = await foundPages(pageMentions(['http://localhost:8075/#/a and http://localhost:8075/#/b']), undefined)
+    expect(pages.map(item => item.page.start)).toEqual(['#/a', '#/b'])
   })
 
   it('takes a loopback page as its address and start, and needs no folder for it', async () => {

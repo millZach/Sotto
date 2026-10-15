@@ -629,7 +629,7 @@ describe('a question’s pages', () => {
       render(<AgentRequestCard ownerId="thread-a" ownerTitle="Workshop" request={withPages({ id: 'req-plain', kind: 'question', text: 'Which greeting?', options: [] })} blocked={null}
         onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} />)
       fireEvent.click(screen.getByRole('link', { name: 'Open the prototype, greeting-prototype.html' }))
-      expect(await screen.findByText(/That page is no longer there\. The file was moved or deleted, or the question was answered\. Nothing else changed\./u)).toBeVisible()
+      expect(await screen.findByText(/That page is no longer there\. The file was moved or deleted, or the question was answered\. Nothing else changed\. Ask the agent where the page is now\./u)).toBeVisible()
       fireEvent.click(screen.getByRole('link', { name: 'Open the prototype, greeting-prototype.html' }))
       expect(await screen.findByText('Sotto could not open that page. Nothing else changed. Try again.')).toBeVisible()
     } finally { delete window.sotto }

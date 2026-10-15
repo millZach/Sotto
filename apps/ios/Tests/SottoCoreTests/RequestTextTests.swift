@@ -123,7 +123,10 @@ final class RequestTextTests: XCTestCase {
     func testPagesArrivingLaterLeaveTheRequestTheSameToAnswer() throws {
         let before = try request(#"{"id":"r","kind":"question","text":"Which greeting?","options":[]}"#)
         let after = try request(#"{"id":"r","kind":"question","text":"Which greeting?","options":[],"pages":[\#(file)]}"#)
-        XCTAssertEqual(before, after)
-        XCTAssertNotEqual(before, try request(#"{"id":"r","kind":"question","text":"Which other greeting?","options":[]}"#))
+        // The pages arriving is a change the sheet shows, and the question is still the same one to answer.
+        XCTAssertNotEqual(before, after)
+        XCTAssertTrue(before.asksTheSame(as: after))
+        XCTAssertFalse(before.asksTheSame(as: try request(#"{"id":"r","kind":"question","text":"Which other greeting?","options":[]}"#)))
+        XCTAssertNoThrow(try Commands.answer(threadID: "t", request: before, currentRequests: [after], text: "A"))
     }
 }

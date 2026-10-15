@@ -212,7 +212,7 @@ interface PageOwner { readonly threadId: string; readonly requestId: string }
 
 /** What a row says when its page could not be opened. */
 const PAGE_OPEN_FAILURES = {
-  gone: 'That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed.',
+  gone: 'That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed. Ask the agent where the page is now.',
   unavailable: 'Sotto could not open that page. Nothing else changed. Try again.',
 } as const
 

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -19,11 +19,14 @@ const listen = (server: Server): Promise<number> => new Promise(resolve => serve
 const closed = (server: Server): Promise<void> => new Promise(resolve => { server.closeAllConnections(); server.close(() => resolve()) })
 
 beforeEach(async () => {
-  folder = await mkdtemp(join(tmpdir(), 'sotto-page-route-'))
+  // The host keeps a page's folder as it is after links are followed, so the test does too.
+  folder = await realpath(await mkdtemp(join(tmpdir(), 'sotto-page-route-')))
   await mkdir(join(folder, 'page', 'assets'), { recursive: true })
   await writeFile(join(folder, 'page', 'greeting.html'), '<link rel="stylesheet" href="assets/look.css"><h1>Greeting</h1>')
   await writeFile(join(folder, 'page', 'assets', 'look.css'), 'h1{color:teal}')
   await writeFile(join(folder, 'page', '.env'), 'SECRET=1')
+  await mkdir(join(folder, 'page', '.private'), { recursive: true })
+  await writeFile(join(folder, 'page', '.private', 'secret.json'), '{"SECRET":2}')
   await writeFile(join(folder, 'page', 'notes.ts'), 'export {}')
   await writeFile(join(folder, 'secret.html'), 'outside')
   upstream = createServer((request, response) => {
@@ -69,7 +72,7 @@ it('sends the token alone to the page, and the bare token to its folder', async 
 })
 
 it('refuses hidden files, files a page is not made of, and anything outside the folder', async () => {
-  for (const path of ['.env', 'notes.ts', '..%2Fsecret.html', 'assets/..%5C..%5Csecret.html']) {
+  for (const path of ['.env', 'notes.ts', '..%2Fsecret.html', 'assets/..%5C..%5Csecret.html', 'assets%2f..%2f.private%2fsecret.json', 'assets%2F..%2F..%2Fsecret.html']) {
     const response = await get(`/page/${FILE}/${path}`)
     expect(response.status, path).toBe(403)
     expect(await response.text()).not.toContain('SECRET')
@@ -106,4 +109,23 @@ it('says the page’s server has stopped, and never passes a page on to the list
     expect(response.status, token).toBe(502)
     expect(await response.text()).toContain('The page’s server has stopped')
   }
+})
+
+it('serves nothing once the page’s folder has become a link to somewhere else', async () => {
+  const outside = await realpath(await mkdtemp(join(tmpdir(), 'sotto-page-route-outside-')))
+  try {
+    await writeFile(join(outside, 'greeting.html'), 'outside')
+    await rename(join(folder, 'page'), join(folder, 'moved'))
+    if (!await symlink(outside, join(folder, 'page'), 'junction').then(() => true, () => false)) return
+    const response = await get(`/page/${FILE}/greeting.html`)
+    expect(response.status).toBe(404)
+    expect(await response.text()).not.toContain('outside')
+  } finally { await rm(outside, { recursive: true, force: true }) }
+})
+
+it('judges a linked file by what it leads to, so a page’s style that leads to .env is refused', async () => {
+  if (!await symlink(join(folder, 'page', '.env'), join(folder, 'page', 'assets', 'linked.css')).then(() => true, () => false)) return
+  const response = await get(`/page/${FILE}/assets/linked.css`)
+  expect(response.status).toBe(403)
+  expect(await response.text()).not.toContain('SECRET')
 })

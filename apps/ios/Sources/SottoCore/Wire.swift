@@ -363,12 +363,12 @@ public struct AgentRequest: Decodable, Equatable, Identifiable, Sendable {
     /// The pages the computer found for a question (ADR-0084), each one the sheet offers to open. An older computer sends
     /// none, and a page this build cannot read is left out rather than losing the request.
     public var pages: [RequestPage] = []
-    /// What is asked, without the pages: the computer adds those beside the provider's request a moment after it arrives,
-    /// so a request read before they came is still the same request to answer.
-    public static func == (left: AgentRequest, right: AgentRequest) -> Bool {
-        left.id == right.id && left.kind == right.kind && left.text == right.text && left.options == right.options
-            && left.questions == right.questions && left.permissionChoices == right.permissionChoices
-            && left.context == right.context && left.delivery == right.delivery
+    /// Whether this asks what `other` asks, leaving the pages out: the computer adds those beside the provider's request a
+    /// moment after it arrives, so a request read before they came is still the same request to answer. Equality keeps
+    /// them, so the pages arriving is a change the sheet shows.
+    public func asksTheSame(as other: AgentRequest) -> Bool {
+        id == other.id && kind == other.kind && text == other.text && options == other.options && questions == other.questions
+            && permissionChoices == other.permissionChoices && context == other.context && delivery == other.delivery
     }
     public var supported: Bool {
         guard delivery != "uncertain" else { return false }
