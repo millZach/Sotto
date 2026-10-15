@@ -11,8 +11,8 @@ import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
  * The T3-style themes journey on the real Windows Electron app: colour scheme
- * controls, independent light and dark halves, system changes, contrast and
- * glass, the editor (cancel, save, inspector, resize), import errors, the
+ * controls, independent light and dark halves, system changes, contrast,
+ * the editor (cancel, save, inspector, resize), import errors, the
  * Open VSX fixture, duplicate and remove, keyboard, reduced motion, and a
  * restart. Run after `npm run build` with SOTTO_THEMES_E2E=1; images use disposable run evidence by default; publication uses
  * artifacts/phase-three-themes.
@@ -96,7 +96,7 @@ test('themes: imports JSON with comments and trailing commas by paste and file',
   }
 })
 
-test('themes: halves, system, contrast, glass, editor, inspector, import, Open VSX, removal and restart', async () => {
+test('themes: halves, system, contrast, editor, inspector, import, Open VSX, removal and restart', async () => {
   test.setTimeout(300_000)
   const profile = await createProfile()
   let launched: LaunchedSotto | undefined
@@ -173,7 +173,7 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
     await expect(html(page)).toHaveAttribute('data-theme', 'dark')
     await expect(html(page)).toHaveAttribute('data-theme-id', 'citrine')
 
-    // Contrast moves ink, never the room; glass reaches floating surfaces.
+    // Contrast moves ink, never the room.
     const ink = (): Promise<string> => page.evaluate(() => getComputedStyle(document.querySelector('#settings-appearance h2')!).color)
     const inkBefore = await ink()
     const roomBefore = await canvas(page)
@@ -184,16 +184,9 @@ test('themes: halves, system, contrast, glass, editor, inspector, import, Open V
     await expect.poll(ink).not.toBe(inkBefore)
     expect(await canvas(page)).toBe(roomBefore)
     await expect.poll(async () => (await savedSettings(page)).appearanceContrast).toBe(200)
-    const glass = section.getByLabel('Glass opacity', { exact: true })
-    await glass.focus()
-    await page.keyboard.press('Home')
-    await expect(section.locator('output').nth(1)).toHaveText('40%')
-    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--theme-glass-opacity').trim())).toBe('40%')
-    await expect.poll(async () => (await savedSettings(page)).glassOpacity).toBe(40)
     await shot(page, 'sliders-1600-dark', section.locator('.theme-slider').first().locator('xpath=..'))
     await section.getByRole('button', { name: 'Reset contrast to 100%' }).click()
-    await section.getByRole('button', { name: 'Reset glass opacity to 80%' }).click()
-    await expect.poll(async () => { const saved = await savedSettings(page); return [saved.appearanceContrast, saved.glassOpacity] }).toEqual([100, 80])
+    await expect.poll(async () => (await savedSettings(page)).appearanceContrast).toBe(100)
 
     // Editor: Cancel discards the painted draft; Save keeps it.
     await section.getByRole('button', { name: 'Create theme' }).click()

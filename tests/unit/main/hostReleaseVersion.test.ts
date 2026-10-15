@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { hostReleaseVersion } from '../../../src/main/hosts/hostReleaseVersion'
+import { hostReleaseVersion, updateHostReleaseVersion } from '../../../src/main/hosts/hostReleaseVersion'
 
 describe('host release version', () => {
   it('uses the packaged stable version instead of the source manifest for hosts and peers', () => {
@@ -22,4 +22,14 @@ describe('host release version', () => {
       const owl = '0.1.38-owl.20261012.10'
       expect(hostReleaseVersion(owl, '0.1.37', muse || usage)).toBe(owl)
     })
+  it('maps an update to its own host release, never to this computer’s (Sotto Bug Bot, review)', () => {
+    // Owl with Muse and Usage held: the stable release the waiting build is built on, not the running source version.
+    expect(updateHostReleaseVersion('0.1.25-owl.20261015.1')).toBe('0.1.25')
+    expect(updateHostReleaseVersion('0.1.25-owl.20261015.1', false)).toBe('0.1.25')
+    // With either on: the waiting Owl build itself.
+    expect(updateHostReleaseVersion('0.1.25-owl.20261015.1', true)).toBe('0.1.25-owl.20261015.1')
+    // Stable: the version itself.
+    expect(updateHostReleaseVersion('0.1.25')).toBe('0.1.25')
+    expect(updateHostReleaseVersion('0.1.25', true)).toBe('0.1.25')
+  })
 })

@@ -126,14 +126,13 @@ describe('the pane terminal drawer', () => {
     expect(screen.queryByText('feature/drawer')).toBeNull()
   })
 
-  it('gives a drawer’s terminal the chord to pass to the page, and makes it follow the frosted room', async () => {
+  it('gives a drawer’s terminal the chord to pass to the page', async () => {
     const terminal = fakeTerminal([session(ID_1)])
     const { views } = setup(terminal)
     await userEvent.click(screen.getByRole('button', { name: 'Terminal drawer' }))
     await screen.findByRole('tab', { name: 'PowerShell', selected: true })
     await waitFor(() => expect(views).toHaveLength(1))
     const handlers = views[0]!.handlers
-    expect(handlers.followsFrost).toBe(true)
     const key = (patch: Partial<KeyboardEvent>) => ({ key: 'j', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, ...patch }) as KeyboardEvent
     expect(handlers.isPageShortcut?.(key({}))).toBe(true)
     expect(handlers.isPageShortcut?.(key({ key: 'k' }))).toBe(false)

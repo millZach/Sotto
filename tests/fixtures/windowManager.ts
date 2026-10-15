@@ -35,9 +35,6 @@ export class FakeWindow implements BrowserWindowLike {
   readonly showInactive = vi.fn()
   readonly setAlwaysOnTop = vi.fn()
   readonly setVisibleOnAllWorkspaces = vi.fn()
-  readonly setBackgroundColor = vi.fn()
-  readonly setBackgroundMaterial = vi.fn()
-  readonly setVibrancy = vi.fn()
   bounds: Rectangle = { x: 0, y: 0, width: 124, height: 54 }
   readonly setBoundsCalls: Rectangle[] = []
   readonly setPositionCalls: Array<readonly [number, number]> = []

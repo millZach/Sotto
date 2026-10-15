@@ -75,10 +75,8 @@ function withAlpha(hex: string, alpha: number): string {
 /**
  * The terminal's colours from the theme's terminal roles, or the Crossing tokens where there are none. A theme's
  * selection is opaque, which xterm supports by drawing selected text above it; the accent fallback is a wash.
- * See-through, the background keeps its colour at zero alpha, so the drawer behind it shows and xterm still
- * measures text contrast against the theme's own terminal background.
  */
-export function terminalTheme(root: HTMLElement = document.documentElement, resolve: ColorResolver = defaultResolver(), seeThrough = false): ITheme {
+export function terminalTheme(root: HTMLElement = document.documentElement, resolve: ColorResolver = defaultResolver()): ITheme {
   const style = getComputedStyle(root)
   const color = (fallback: string, ...names: string[]): { readonly css: string; readonly hex: string } => {
     for (const name of names) {
@@ -97,7 +95,7 @@ export function terminalTheme(root: HTMLElement = document.documentElement, reso
   const scrollbarHover = color(scrollbar.hex, '--tt-terminal-scrollbar-hover')
   return {
     ...(light ? ANSI_LIGHT : ANSI_DARK),
-    background: seeThrough ? withAlpha(background.hex, 0) : background.hex,
+    background: background.hex,
     foreground: foreground.hex,
     cursor: cursor.hex,
     cursorAccent: background.hex,
@@ -126,9 +124,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   const platform = window.sotto?.platform ?? 'win32'
   const systemMotion = matchMedia('(prefers-reduced-motion: reduce)')
   const blinks = (): boolean => document.documentElement.dataset.reducedMotion !== 'on' && !systemMotion.matches
-  // A drawer's terminal is see-through while the room is frosted; its drawer paints the frosted colour behind it.
-  const seeThrough = (): boolean => handlers.followsFrost === true && document.documentElement.dataset.frost !== undefined
-  let theme = terminalTheme(document.documentElement, resolveColor, seeThrough())
+  let theme = terminalTheme(document.documentElement, resolveColor)
   let painted = JSON.stringify(theme)
   const openLink = (uri: string): void => {
     if (!isTerminalLink(uri)) return
@@ -147,7 +143,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     // Search decorations and the Unicode provider are xterm's proposed APIs, supplied by its pinned addons.
     fontFamily: monoFont(), fontSize: terminalFontSize(), lineHeight: 1.25, scrollback: 5_000, cursorBlink: blinks(), allowProposedApi: true,
     linkHandler: { activate: clickLink, allowNonHttpProtocols: false },
-    theme, minimumContrastRatio: 4.5, disableStdin: true, convertEol: false, screenReaderMode: false, allowTransparency: handlers.followsFrost === true,
+    theme, minimumContrastRatio: 4.5, disableStdin: true, convertEol: false, screenReaderMode: false,
     ...(platform === 'win32' ? { windowsPty: { backend: 'conpty' as const } } : {}),
   })
   const fit = new FitAddon()
@@ -303,7 +299,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
   // mode, contrast or editor change repaints this same terminal. A root change that leaves its colours alone does not.
   const retheme = new MutationObserver(() => {
     followMotion()
-    const next = terminalTheme(document.documentElement, resolveColor, seeThrough())
+    const next = terminalTheme(document.documentElement, resolveColor)
     const key = JSON.stringify(next)
     if (key === painted) { search.refreshTheme(); return }
     theme = next
@@ -311,7 +307,7 @@ export const createXtermView = (handlers: TerminalViewHandlers, { resolveColor =
     terminal.options.theme = theme
     search.refresh()
   })
-  retheme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-theme-id', 'data-accent', 'data-reduced-motion', 'data-frost', 'style', 'class'] })
+  retheme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-theme-id', 'data-accent', 'data-reduced-motion', 'style', 'class'] })
 
   const view: TerminalViewLike = {
     mount(container) {

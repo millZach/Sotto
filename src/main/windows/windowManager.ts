@@ -6,12 +6,11 @@ import type {
   WidgetPresentationPayload,
   WidgetVisibilityPayload,
 } from '../../shared/contracts'
-import { PLATFORM_ARGUMENT_PREFIX, WINDOW_FROST_ARGUMENT, type SottoPlatform } from '../../shared/platform'
+import { PLATFORM_ARGUMENT_PREFIX, type SottoPlatform } from '../../shared/platform'
 import type {
   MainWindowChrome,
   TrafficLightPosition,
   WidgetAlwaysOnTopLevel,
-  WindowFrost,
 } from '../platformProfile'
 import { selectRendererSource, type RendererRole } from '../security'
 import {
@@ -67,9 +66,6 @@ export interface WindowConstructorOptions {
   readonly show: false
   readonly title?: string
   readonly backgroundColor?: string
-  readonly backgroundMaterial?: 'acrylic'
-  readonly vibrancy?: 'under-window'
-  readonly visualEffectState?: 'followWindow'
   readonly autoHideMenuBar: true
   readonly resizable?: false
   readonly maximizable?: false
@@ -112,18 +108,8 @@ function mainWindowChromeOptions(
   }
 }
 
+/** The main window is always solid: black behind the room, with no system material (ADR-0009, ADR-0084). */
 const SOLID_BACKGROUND = '#000000'
-const CLEAR_BACKGROUND = '#00000000'
-
-/**
- * A frosted main window starts clear over the system's material, so the room's own translucent colours sit on the
- * blurred desktop. A solid one keeps the black it always had (ADR-0009).
- */
-function mainWindowFrostOptions(frost: WindowFrost | null, frosted: boolean): Pick<WindowConstructorOptions, 'backgroundColor' | 'backgroundMaterial' | 'vibrancy' | 'visualEffectState'> {
-  if (frost === null || !frosted) return { backgroundColor: SOLID_BACKGROUND }
-  if (frost === 'acrylic') return { backgroundColor: CLEAR_BACKGROUND, backgroundMaterial: 'acrylic' }
-  return { backgroundColor: CLEAR_BACKGROUND, vibrancy: 'under-window', visualEffectState: 'followWindow' }
-}
 
 /** The window icon is absent wherever the platform or the build supplies it. */
 interface WindowIconOptions {
@@ -213,10 +199,6 @@ export interface BrowserWindowLike {
   getPosition(): readonly [number, number]
   setSize(width: number, height: number, animate?: boolean): void
   setIgnoreMouseEvents(ignore: boolean, options?: { readonly forward: boolean }): void
-  /** Absent on window backends that cannot change their native background after creation. */
-  setBackgroundColor?(color: string): void
-  setBackgroundMaterial?(material: 'acrylic' | 'none'): void
-  setVibrancy?(type: 'under-window' | null): void
   destroy(): void
   isDestroyed(): boolean
   loadURL(url: string): Promise<void>
@@ -264,10 +246,6 @@ export interface WindowManagerDependencies {
   readonly onRendererProcessGone?: (kind: RendererRole) => void
   readonly getWidgetPlacement: () => StoredWidgetPlacement | null
   readonly onWidgetMoved: (placement: WidgetPlacement) => void
-  /** The material the system can draw behind a frosted main window; null or absent where it has none (ADR-0048). */
-  readonly windowFrost?: WindowFrost | null
-  /** Whether the user asked for a frosted main window, read when the window is made. */
-  readonly frostedWindow?: () => boolean
   /** The main window's title: the running build's name ("Sotto Owl" on that track). Defaults to Sotto. */
   readonly title?: string
 }
@@ -332,14 +310,12 @@ function securePreferences(
   preloadPath: string,
   role: RendererRole,
   platform: SottoPlatform,
-  frost = false,
 ): WindowWebPreferences {
   return {
     preload: preloadPath,
     additionalArguments: [
       `--sotto-renderer-role=${role}`,
       `${PLATFORM_ARGUMENT_PREFIX}${platform}`,
-      ...(frost ? [WINDOW_FROST_ARGUMENT] : []),
     ],
     contextIsolation: true,
     nodeIntegration: false,
@@ -418,22 +394,6 @@ export class WindowManager {
 
   constructor(private readonly dependencies: WindowManagerDependencies) {}
 
-  private frost(): WindowFrost | null {
-    return this.dependencies.windowFrost ?? null
-  }
-
-  /** Turns the main window's frost on or off in place; the renderer's room follows from the same setting. */
-  setMainWindowFrosted(frosted: boolean): void {
-    const window = this.mainWindow
-    const frost = this.frost()
-    if (window === null || window.isDestroyed() || frost === null) return
-    // The same options a new window would be made with, so the material is chosen in one place.
-    const options = mainWindowFrostOptions(frost, frosted)
-    if (frost === 'acrylic') window.setBackgroundMaterial?.(options.backgroundMaterial ?? 'none')
-    else window.setVibrancy?.(options.vibrancy ?? null)
-    window.setBackgroundColor?.(options.backgroundColor ?? SOLID_BACKGROUND)
-  }
-
   createMainWindow(): Promise<BrowserWindowLike> {
     if (this.isStopped()) {
       return Promise.reject(new WindowManagerStoppedError())
@@ -456,7 +416,7 @@ export class WindowManager {
       ...(this.dependencies.platform === 'linux' ? { transparent: true as const } : {}),
       show: false,
       title: this.dependencies.title ?? APP_NAME,
-      ...mainWindowFrostOptions(this.frost(), this.dependencies.frostedWindow?.() ?? false),
+      backgroundColor: SOLID_BACKGROUND,
       autoHideMenuBar: true,
       ...windowIconOptions(this.dependencies),
       ...mainWindowChromeOptions(this.dependencies.chrome),
@@ -464,7 +424,6 @@ export class WindowManager {
         this.dependencies.preloadPath,
         'main',
         this.dependencies.platform,
-        this.frost() !== null,
       ),
     })
     this.mainWindow = window

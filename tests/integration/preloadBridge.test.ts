@@ -16,6 +16,7 @@ import {
   DICTATION_COMMAND,
   DICTATION_REQUEST,
   EXTERNAL_LINK_OPEN,
+  OUTPUT_COPY_IMAGE,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
@@ -135,6 +136,7 @@ describe('typed preload bridge', () => {
         'ensureMicrophoneAccess',
         'clearHistory',
         'cloudIphone',
+        'copyImage',
         'downloadUpdate',
         'deleteHistory',
         'deliverOutput',
@@ -184,7 +186,6 @@ describe('typed preload bridge', () => {
         'transcribe',
         'updateSettings',
         'visuals',
-        'canFrostWindow',
       ].sort(),
     )
     expect(bridge).not.toHaveProperty('send')
@@ -221,6 +222,7 @@ describe('typed preload bridge', () => {
     expect(bridge).not.toHaveProperty('listHistory')
     expect(bridge).not.toHaveProperty('requestDictation')
     expect(bridge).not.toHaveProperty('deliverOutput')
+    expect(bridge).not.toHaveProperty('copyImage')
     expect(Object.isFrozen(bridge)).toBe(true)
     expect(bridge).not.toHaveProperty('agents')
     expect(electronMock.ipcRenderer.on.mock.calls.map(([channel]) => channel)).not.toContain('sotto:agents:state')
@@ -628,6 +630,14 @@ describe('typed preload bridge', () => {
       WIDGET_PUBLISH,
       idleWidgetSnapshot,
     )
+  })
+
+  it('forwards a PNG to copy on its own fixed channel', async () => {
+    const bridge = createSottoBridge(electronMock.ipcRenderer, 'win32')
+    const request = { dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }
+    electronMock.ipcRenderer.invoke.mockResolvedValueOnce({ ok: true })
+    await expect(bridge.copyImage!(request)).resolves.toEqual({ ok: true })
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenLastCalledWith(OUTPUT_COPY_IMAGE, request)
   })
 
 })

@@ -35,20 +35,22 @@
 .update-all__head span { color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
 .update-all__head .tt-button { flex: none; width: 28px; min-height: 28px; padding: 0; }
 
+/* The list is the press's steps, in order (ADR-0077, layout C "Steps"): a mark for each, joined by a thin rail that
+   turns green once the step above it is done. The rail is the step's own ::before, so nothing reads it out. */
 .update-all__list { min-height: 0; overflow: auto; }
-.update-all__machine { display: grid; gap: 8px; padding: 10px 14px 12px; }
-.update-all__machine + .update-all__machine { border-top: 1px solid var(--tt-hairline); }
-.update-all__machine h3 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  color: var(--tt-text-muted);
-  font-size: 11.5px;
-  font-weight: 600;
+.update-all__steps { display: grid; margin: 0; padding: 12px 14px; list-style: none; }
+.update-all__step { position: relative; display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; padding-bottom: 12px; }
+.update-all__step:last-child { padding-bottom: 0; }
+.update-all__step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 22px;
+  bottom: 2px;
+  left: 9.5px;
+  width: 1px;
+  background: var(--tt-hairline);
 }
-
-.update-all__item { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.update-all__step[data-state='done']:not(:last-child)::before { background: var(--tt-success); }
 .update-all__mark {
   display: grid;
   place-items: center;
@@ -59,15 +61,16 @@
   color: var(--tt-text-muted);
 }
 .update-all__sotto { width: 12px; height: 12px; }
-.update-all__item[data-state='done'] .update-all__mark { border-color: var(--tt-success); color: var(--tt-success); }
-.update-all__item[data-state='running'] .update-all__mark { border-color: var(--tt-accent); color: var(--tt-accent-text); }
-.update-all__item[data-state='failed'] .update-all__mark { border-color: var(--tt-error); color: var(--tt-error-text); }
+.update-all__step[data-state='done'] .update-all__mark { border-color: var(--tt-success); color: var(--tt-success); }
+.update-all__step[data-state='running'] .update-all__mark { border-color: var(--tt-accent); color: var(--tt-accent-text); }
+.update-all__step[data-state='failed'] .update-all__mark { border-color: var(--tt-error); color: var(--tt-error-text); }
+.update-all__step:is([data-state='waiting'], [data-state='last']) .update-all__mark { border-style: dashed; }
 .update-all__body { display: grid; gap: 2px; min-width: 0; }
 .update-all__name { font-weight: 600; }
-.update-all__item[data-state='by-hand'] .update-all__name { font-weight: 500; color: var(--tt-text-muted); }
+.update-all__step[data-state='by-hand'] .update-all__name { font-weight: 500; color: var(--tt-text-muted); }
 .update-all__body small { color: var(--tt-text-muted); font-size: 11.5px; line-height: 1.45; overflow-wrap: anywhere; }
-.update-all__item[data-state='failed'] small { color: var(--tt-error-text); }
-.update-all__versions { padding-top: 2px; color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.update-all__step[data-state='failed'] small { color: var(--tt-error-text); }
+.update-all__versions { color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .update-all__bar { display: block; height: 3px; margin-top: 5px; overflow: hidden; border-radius: 3px; background: var(--tt-hairline); }
 .update-all__bar i { display: block; height: 100%; background: var(--tt-accent); transition: width 400ms ease; }
 .update-all__item-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

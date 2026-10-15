@@ -2,6 +2,8 @@
 
 ## Status
 
+Superseded October 14, 2026 by [ADR-0084](0084-the-window-and-its-surfaces-are-always-solid.md): the Frosted window switch and See-through slider are removed, and the window is always solid. What follows records the decision as it was.
+
 Accepted October 3, 2026. The owner asked for a "somewhat transparent" look where the desktop background bleeds through. They chose a frosted window over a mica tint or a clear window, a switch that works with any theme over a new built-in theme, and frosting the whole room over the sidebar alone, in `docs/prototypes/frosted-terminal-prototype.html`. Amends [ADR-0009](0009-main-window-appearance-apart-from-widget-theme.md) and [ADR-0011](0011-main-window-themes-replace-the-accent.md), which both say the native window background stays black.
 
 ## Context

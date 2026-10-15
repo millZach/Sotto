@@ -151,10 +151,10 @@ regenerated baselines.
 ## Opt-in appearance and theme captures
 
 `npm run test:e2e` builds and runs the ordinary Electron suite with one worker.
-Six specs save appearance, theme or terminal drawer captures only when their
+Five specs save appearance, theme or terminal drawer captures only when their
 evidence variable is set. The four theme specs skip entirely without it; the
-frosted window and terminal drawer specs still run their checks in the ordinary
-suite and only skip the captures. These captures are developer evidence, not part of the ordinary suite or CI.
+terminal drawer spec still runs its checks in the ordinary suite and only skips
+the captures. These captures are developer evidence, not part of the ordinary suite or CI.
 Build first with `npm run build`, then enable the spec you want to capture:
 
 ```sh
@@ -162,7 +162,6 @@ SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/theme-library-evidence.spec.ts
 SOTTO_APPEARANCE_EVIDENCE=1 npx playwright test tests/e2e/appearance-evidence.spec.ts
 SOTTO_THEME_EVIDENCE=1 npx playwright test tests/e2e/theme-palettes-evidence.spec.ts
 SOTTO_THEME_BRANDING_EVIDENCE=1 npx playwright test tests/e2e/theme-branding-evidence.spec.ts
-SOTTO_FROST_EVIDENCE=1 npx playwright test tests/e2e/frosted-window.spec.ts
 SOTTO_PANE_TERMINAL_EVIDENCE=1 npx playwright test tests/e2e/pane-terminal.spec.ts
 ```
 
@@ -180,7 +179,6 @@ finally { Remove-Item Env:SOTTO_THEMES_E2E }
 | `appearance-evidence.spec.ts` | `artifacts/verification/phase-1-appearance/` |
 | `theme-palettes-evidence.spec.ts` | `artifacts/verification/sotto-palettes/` |
 | `theme-branding-evidence.spec.ts` | `artifacts/phase-three-theme-branding/` |
-| `frosted-window.spec.ts` | `artifacts/frosted-window/` (git-ignored: screen captures show the desktop behind the window) |
 | `pane-terminal.spec.ts` | `artifacts/pane-terminal/` |
 
 The appearance spec's optional whole-screen capture additionally needs
@@ -342,10 +340,24 @@ facts; no command arguments or output are logged. The exact-string assertion and
 global deadline are unchanged. See [the shell fixture evidence](verification/terminal-clipboard-shell-budget.md).
 
 `vitest.config.ts` gives a test 15 s and an `expect.poll` 5 s, rather than vitest's 5 s and 1 s, and
-`tests/setup.ts` gives Testing Library's `findBy` and `waitFor` the same 5 s rather than their 1 s. Waiting
-is not the assertion: a runner takes several times longer over a provider round trip or a child process
-start than a developer machine, and a deadline that expires there describes the machine. Something that
-is genuinely wrong still fails, a few seconds later.
+`tests/setup.ts` gives Testing Library's `findBy` and `waitFor`, and vitest's own `vi.waitFor` and
+`vi.waitUntil`, the same 5 s rather than their 1 s. No vitest setting raises `vi.waitFor` or `vi.waitUntil`,
+so the setup file wraps them: a call that names no timeout gets 5 s, and a call that passes its own timeout
+or interval keeps it. `tests/unit/fixtures/suiteWaitDeadline.test.ts` and its `.node` twin check that the
+wrapper holds in jsdom and node files. Waiting is not the assertion: a runner takes several times longer
+over a provider round trip or a child process start than a developer machine, and a deadline that expires
+there describes the machine. Something that is genuinely wrong still fails, a few seconds later.
+
+A Grok contract failure that looked like a deadline was not one. The Grok fixture polled history every 20 ms,
+the same period as the lazy-session contract's reaper sweep, and Windows runs both on the same 15.6 ms timer
+tick. When the two started in step, every sweep found a history read under way, which defers a stop (#440), so
+an idle session was never stopped and `untilStopped` ran out after 12 s. With a fast sweep and no interval of
+its own, the fixture now polls at five sweeps' length, which leaves most sweeps between reads.
+
+Nor was a thread-title failure. "Leaves an older thread alone" reopened over a fake provider that forgets its
+sessions, so the thread looked empty and Sotto correctly gave it a first-message title; the assertion passed
+only when it ran before that title landed. The reopened provider now holds the exchange, as a real one does,
+and the test waits for offered names to land before it checks.
 
 The same rule applies to the fake-provider fixtures' acknowledgement deadline (`requestTimeoutMs` in
 `tests/fixtures/claudeFixture.ts`, `codexFixture.ts` and `fakeGrokThreadFixture.ts`). That one deadline

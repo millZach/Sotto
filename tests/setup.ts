@@ -2,7 +2,7 @@ import { accessSync, constants, mkdirSync, promises as fsPromises, readlinkSync,
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
-import { afterEach } from 'vitest'
+import { afterEach, vi } from 'vitest'
 
 // macOS: /var/folders is a symlink to /private/var/folders. Git, fs.realpath and PATH
 // lookups return the physical path, so a test that builds expected paths from os.tmpdir()
@@ -56,6 +56,20 @@ if (typeof Range !== 'undefined') {
   Range.prototype.getClientRects ??= () => Object.assign([], { item: () => null })
   document.elementFromPoint ??= () => null
 }
+
+// vitest's own `vi.waitFor` and `vi.waitUntil` give up after one second as well, and no setting raises them, so a
+// call that names no deadline gets the same five seconds here. A call that passes its own timeout keeps it, and one that
+// passes only an interval keeps that interval. Under fake timers a wait advances the fake clock while it waits, so
+// there the wait keeps vitest's one second rather than moving fake time five. The five seconds sit well inside the
+// suite's 15 s test deadline; a test that sets its own deadline of five seconds or less passes its waits a shorter one,
+// or it reports "Test timed out" instead of the wait's own failure.
+const SUITE_WAIT_MS = 5_000
+type WaitOptions = number | { timeout?: number; interval?: number } | undefined
+const withSuiteDeadline = (options: WaitOptions) => typeof options === 'number' || options?.timeout !== undefined || vi.isFakeTimers()
+  ? options : { ...options, timeout: SUITE_WAIT_MS }
+const vitestWaitFor = vi.waitFor, vitestWaitUntil = vi.waitUntil
+vi.waitFor = ((callback, options) => vitestWaitFor(callback, withSuiteDeadline(options))) as typeof vi.waitFor
+vi.waitUntil = ((callback, options) => vitestWaitUntil(callback, withSuiteDeadline(options))) as typeof vi.waitUntil
 
 afterEach(() => {
   if (typeof localStorage !== 'undefined') localStorage.clear()

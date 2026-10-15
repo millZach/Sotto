@@ -25,7 +25,12 @@ async function sideCalls(root: string): Promise<{ cwd: string; model: string | u
   material: ((frames.filter(frame => frame.method === 'session/prompt')[index]?.params?.prompt as { text: string }[] | undefined) ?? []).map(part => part.text).join('') }))
 }
 // The deadline also covers the fake agent's process start; see the note on claudeFixture.
-export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIntervalMs = 20, session: AdapterSessionOptions = {}, options: GrokAcpOptions = {}) {
+// A sweep leaves a session open while its history is being read (#440), and only a later sweep stops it. A poll on the
+// sweep's own period fires on the same timer tick (Windows rounds a 20 ms timer to two 15.6 ms ticks), so when the two
+// start in step every sweep finds a read under way and an idle session is never stopped. A poll several sweeps long
+// leaves most sweeps between reads. A caller that names its own interval keeps it.
+export async function grokFixture(root?: string, requestTimeoutMs = 2000, pollIntervalMs?: number, session: AdapterSessionOptions = {}, options: GrokAcpOptions = {}) {
+ pollIntervalMs ??= session.reaperSweepMs === undefined ? 20 : session.reaperSweepMs * 5
  root ??= await mkdtemp(join(tmpdir(),'sotto-grok-thread-'))
  const adapter = new GrokAcpHost(root,{executable:process.execPath,args:[resolve('tests/fixtures/fakeGrokThreadAgent.mjs'),root],requestTimeoutMs,pollIntervalMs,...session,...options})
  const checkViolations = async () => { const text = await readLog(join(root,'violations.jsonl')); if (text) throw new Error(`Invalid Grok reply: ${text}`) }

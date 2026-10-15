@@ -394,11 +394,17 @@ describe('appearance settings', () => {
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
     expect(save.mock.calls[0]![0]).toEqual({ appearanceContrast: 150 })
 
-    const glass = screen.getByRole('slider', { name: 'Glass opacity' })
-    fireEvent.change(glass, { target: { value: '20' } })
-    fireEvent.pointerUp(glass)
+    fireEvent.change(contrast, { target: { value: '20' } })
+    fireEvent.pointerUp(contrast)
     await waitFor(() => expect(save).toHaveBeenCalledTimes(2))
-    expect(save.mock.calls[1]![0]).toEqual({ glassOpacity: 40 })
+    expect(save.mock.calls[1]![0]).toEqual({ appearanceContrast: 50 })
+  })
+
+  it('offers no glass or window transparency controls: every surface is solid (ADR-0084)', () => {
+    renderSettings({})
+    expect(screen.getAllByRole('slider')).toEqual([screen.getByRole('slider', { name: 'Contrast' })])
+    expect(screen.queryByRole('switch', { name: /frost/iu })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /frost/iu })).not.toBeInTheDocument()
   })
 
   it('offers the six effort colourways as swatches, previews the pick at once and saves it, and the sample plays the arrival', async () => {

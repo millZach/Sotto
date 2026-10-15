@@ -49,7 +49,8 @@ async function startedByHand(configuration: Configuration): Promise<ChildProcess
 it('starts an owned host, issues a code and a revocation, and exits after each result with the host still running', async () => {
   const configuration = await fixture()
   const ready = await launch(configuration)
-  expect(ready).toMatchObject({ type: 'ready', owned: true, hostId: HOST_ID })
+  // It names its own system, as the archive an update downloads does.
+  expect(ready).toMatchObject({ type: 'ready', owned: true, hostId: HOST_ID, system: `${process.platform}-${process.arch}` })
   // Only a launch hands back the administrative token, for the desktop's phone routes (ADR-0050); no other result does.
   expect(ready).toMatchObject({ adminToken: 'remote-only-secret' })
   const pairing = await run(configuration, { op: 'pairing-code', hostId: HOST_ID })
