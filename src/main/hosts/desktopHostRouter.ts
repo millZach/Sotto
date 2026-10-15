@@ -6,6 +6,7 @@ import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
 import { agentCommandSchema, defaultNewThreadModelId, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
+import type { QuestionPageTarget } from '../agents/questionPages'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
 import { requestDraftProvider, requestDraftQuestions, type RequestDraftOwner, type RequestDraftTarget } from '../../shared/requestDrafts'
 import { requestQuestionsDigest, type BindRequestDraftDecision, type RequestDraftOwnerState, type RequestDraftService } from '../agents/requestDrafts'
@@ -46,7 +47,14 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   observe?(threadIds: string[]): Promise<unknown>
   subscribeDetail?(listener: (detail: AgentThreadDetailUpdate) => void): () => void
   available?: () => boolean
+  /** What a question page's token opens on this computer's own host (ADR-0084). */
+  questionPage?(token: string): QuestionPageTarget | undefined
+  /** Where a remote host serves a question page, as this computer's browser reaches it (ADR-0084). */
+  pageAddress?(token: string): string | undefined
 }
+
+/** How this computer opens one of a question's pages: a file of its own, or an address in the browser (ADR-0084). */
+export type QuestionPageOpening = { readonly kind: 'file'; readonly file: string } | { readonly kind: 'url'; readonly url: string }
 
 /** Creation opens its result unless the window selected something else while it ran. */
 const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['create-thread', 'create-project'])
@@ -232,6 +240,27 @@ export class DesktopHostRouter {
     if (this.options.watcherEnabled === true) return true
     const kind = connection.service.threadKind ? connection.service.threadKind(id) : connection.service.shell().host.threads.find(thread => thread.id === id)?.kind
     return kind !== 'watcher' && kind !== 'watcher-history'
+  }
+  /**
+   * How this computer opens a page of a question the window shows (ADR-0084). The page must be one the host put on that
+   * request: a file or loopback page on this computer opens as itself, and a remote host's opens at the address it is
+   * served on. Null when the question or page is gone or the host offers no way to reach it.
+   */
+  questionPageOpening(input: { threadId: string; requestId: string; token: string }): QuestionPageOpening | null {
+    const key = parseHostEntityKey(input.threadId)
+    const connection = this.hosts.get(key?.hostId ?? this.selectedHostId ?? '')?.connection
+    if (!connection) return null
+    const threadId = key?.id ?? input.threadId
+    const page = connection.service.shell().host.threads.find(thread => thread.id === threadId)
+      ?.requests.find(request => request.id === input.requestId)?.pages?.find(item => item.token === input.token)
+    if (!page) return null
+    if (connection.kind === 'local') {
+      const target = connection.questionPage?.(page.token)
+      if (!target) return null
+      return target.kind === 'file' ? { kind: 'file', file: target.file } : { kind: 'url', url: `${target.origin}/${page.start}` }
+    }
+    const base = connection.pageAddress?.(page.token)
+    return base ? { kind: 'url', url: base + page.start } : null
   }
   /** Saved owner classification stays available even when the public shell omits Watcher. */
   preservesWatcherThread(threadId: string): boolean | undefined {

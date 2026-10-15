@@ -21,6 +21,7 @@ import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { SocketFrames } from './socketFrames'
 import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
 import { CommandReceipts, type CommandReceipt } from './commandReceipts'
+import { QUESTION_PAGE_PATH, serveQuestionPage } from './questionPageRoute'
 import type { PhoneTerminals } from '../shared/phoneTerminals'
 import type { WatcherHostRead } from '../shared/watcherHost'
 import type { WatcherThreadTarget } from '../shared/watcher'
@@ -176,9 +177,10 @@ const EVENT_PAGES_PER_SECOND = 100
  * HTTP requests a minute, per endpoint class, so no caller can spend another's budget. Health is not
  * counted: refusing it costs as much as answering it, and the launch script polls it while a host starts.
  * Failed pairing redemptions have a small bucket per caller, checked before redemption. The administrative path, and sessions and revocations per paired
- * client, are counted only after their token is checked, so a loop on a bad token spends nobody's budget.
+ * client, are counted only after their token is checked, so a loop on a bad token spends nobody's budget. A question's
+ * pages share one bucket: a page loads many files, and a token nobody holds opens nothing.
  */
-const HTTP_BUDGETS = { pair: 10, admin: 120, client: 120 } as const
+const HTTP_BUDGETS = { pair: 10, admin: 120, client: 120, page: 1200 } as const
 const HTTP_WINDOW_MS = 60_000
 /** Selecting and observing only move this client's own view; repeating one is harmless, so they keep no receipt. */
 const UNRECEIPTED = new Set<string>(['select-thread', 'select-project', 'observe-threads'])
@@ -940,6 +942,13 @@ export async function startSocketServer(options: SocketServerOptions) {
     track((async () => {
       try {
         if (closing) throw new Refusal('unavailable')
+        // A question's page (ADR-0084) is opened by its token alone, in a browser that holds no session, and its own
+        // requests carry the page's origin; the token is the only thing that admits them, and only to that page.
+        if (QUESTION_PAGE_PATH.test((request.url ?? '').split('?')[0]!)) {
+          spend('page', HTTP_BUDGETS.page)
+          await serveQuestionPage(request, response, { target: token => service.questionPage?.(token), ownPort: () => { const own = server.address(); return own && typeof own !== 'string' ? own.port : undefined } })
+          return
+        }
         if (request.headers.origin && !originAllowed(request.headers.origin, options.origins)) throw new Refusal('unauthenticated')
         if (request.method === 'GET' && request.url === '/v1/health') { const name = options.name?.()?.trim(); respond(response, 200, { ...descriptor, ...about(), status: 'ready', ...(name ? { name } : {}) }); return }
         if (request.method !== 'POST') throw new Refusal('invalid_request')

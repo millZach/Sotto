@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import SafariServices
 import SottoCore
 
 /// One thread, as thread page B draws it (ADR-0051): only a slim bar stays pinned (back, the thread's state, and its
@@ -1773,6 +1774,8 @@ struct RequestSheet: View {
     @State private var text = ""
     /// Questions whose own-answer box is open.
     @State private var writing: Set<String> = []
+    /// The question's page open in the in-app browser over the sheet (ADR-0084).
+    @State private var opening: PageRow?
     @FocusState private var focus: String?
     init(place: RequestPlace, request: AgentRequest) { self.place = place; self.request = request }
     init(ref: ThreadRef, request: AgentRequest) { self.init(place: .thread(ref), request: request) }
@@ -1802,6 +1805,7 @@ struct RequestSheet: View {
         .presentationBackground { SheetBackdrop(wash: true) }
         .presentationCornerRadius(Radius.xl)
         .onChange(of: current == nil && !model.hasPending(at: place)) { _, gone in if gone { dismiss() } }
+        .sheet(item: $opening) { row in SafariPage(url: row.url).ignoresSafeArea() }
     }
 
     @ViewBuilder private func content(_ current: AgentRequest, threadTitle: String, providerID: String?) -> some View {
@@ -1830,11 +1834,17 @@ struct RequestSheet: View {
             Text(explanation).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s3)
         }
-        // Every link in a question, and in the agent's message the sheet covers, together above its choices. Opening one
-        // answers nothing, so it shows on an iPhone that can't answer too.
+        // The question's pages, then every link in it and in the agent's message the sheet covers, together above its
+        // choices. Opening one answers nothing, so they show on an iPhone that can't answer too. A page is served by the
+        // computer that runs the asking thread and opens in the browser over the sheet (ADR-0084); a loopback address it
+        // already opens has no row of its own.
         if !permission {
-            let links = WebLinks.find(in: current, after: model.shown(for: place.asker)?.messages ?? [])
-            if !links.isEmpty { LinkRows(links: links).padding(.top, Space.s4) }
+            let endpoint = model.pageEndpoint(place.asker.hostID)
+            let pages = current.pages.compactMap { page in endpoint.flatMap(page.url(on:)).map { PageRow(page: page, url: $0) } }
+            let links = WebLinks.withoutPages(WebLinks.find(in: current, after: model.shown(for: place.asker)?.messages ?? []), current.pages)
+            if !pages.isEmpty || !links.isEmpty {
+                LinkRows(pages: pages, links: links) { opening = $0 }.padding(.top, Space.s4)
+            }
         }
         if let context = current.context {
             if let command = context.command { PermissionCommand(command: command).padding(.top, Space.s5) }
@@ -2132,43 +2142,73 @@ struct RequestSheet: View {
 
 /// The web links in a question, each a row of its own above the choices: a tap opens the page in Safari and never picks
 /// a choice. The question's own words stay as the agent wrote them.
+/// One of a question's pages and where it opens on the computer that runs the thread (ADR-0084).
+private struct PageRow: Identifiable {
+    let page: RequestPage
+    let url: URL
+    var id: String { page.token }
+}
+
+/// The question's pages and links, a row each. A page opens in the browser over the sheet; a link opens in Safari.
 private struct LinkRows: View {
+    let pages: [PageRow]
     let links: [URL]
+    let openPage: (PageRow) -> Void
     @Environment(\.openURL) private var openURL
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         VStack(spacing: Space.s2) {
+            ForEach(pages) { row in
+                Button { openPage(row) } label: { label(icon: "macwindow", title: "Open the prototype", place: row.page.name) }
+                    .buttonStyle(PressStyle())
+                    .accessibilityLabel("Open the prototype, \(row.page.name)")
+            }
             ForEach(links, id: \.absoluteString) { url in
-                Button { openURL(url) } label: {
-                    HStack(spacing: Space.s3) {
-                        Image(systemName: "link")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Palette.accentText)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Open the link").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-                            Text(WebLinks.place(url))
-                                .font(.sotto(.small))
-                                .foregroundStyle(Palette.muted)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: "arrow.up.right.square")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Palette.muted)
-                    }
-                    .padding(.horizontal, Space.s4)
-                    .padding(.vertical, Space.s3)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .background(Palette.fillSofter, in: shape)
-                    .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
-                    .contentShape(shape)
-                }
-                .buttonStyle(PressStyle())
-                .accessibilityLabel("Open the link, \(url.host ?? WebLinks.place(url))")
+                Button { openURL(url) } label: { label(icon: "link", title: "Open the link", place: WebLinks.place(url)) }
+                    .buttonStyle(PressStyle())
+                    .accessibilityLabel("Open the link, \(url.host ?? WebLinks.place(url))")
             }
         }
     }
+    private func label(icon: String, title: String, place: String) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        return HStack(spacing: Space.s3) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Palette.accentText)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+                Text(place)
+                    .font(.sotto(.small))
+                    .foregroundStyle(Palette.muted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "arrow.up.right.square")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Palette.muted)
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s3)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background(Palette.fillSofter, in: shape)
+        .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
+        .contentShape(shape)
+    }
+}
+
+/// Safari's own in-app browser, for a question's page (ADR-0084). It shares nothing with Sotto's connection: the page's
+/// token is all it needs, over the tailnet the phone is already on. Done closes it and leaves the question as it was.
+private struct SafariPage: UIViewControllerRepresentable {
+    let url: URL
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let configuration = SFSafariViewController.Configuration()
+        configuration.entersReaderIfAvailable = false
+        let controller = SFSafariViewController(url: url, configuration: configuration)
+        controller.dismissButtonStyle = .done
+        return controller
+    }
+    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
 }
 
 /// A choice's mark, its words and what it means. The button's style draws the row around it.

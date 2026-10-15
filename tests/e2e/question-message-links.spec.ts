@@ -7,7 +7,8 @@ import { textContrast } from './support/textContrast'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // The question card docks over the end of the agent's message, so the links in that message come with it as rows. The
-// app is real end to end; only the provider's effects come from the E2E host, and only the OS browser is recorded.
+// loopback review page is one of the question's pages (ADR-0084), so its row opens the page through main rather than as a
+// link. The app is real end to end; only the provider's effects come from the E2E host, and only the OS browser is recorded.
 const evidence = evidenceDirectory('artifacts/question-message-links')
 const review = 'http://localhost:8075/'
 const tag = 'https://github.com/millZach/Sotto/tree/prototype/cloud-iphone-settings-layout'
@@ -69,9 +70,9 @@ test('a question brings the links from the agent’s message before it, as rows 
   await page.evaluate(async request => window.sottoE2E!.agentEvent!({ type: 'question', threadId: 'workshop', text: request.text, request, status: 'running' }), question)
 
   const card = page.locator('.thread-questions .agent-request')
-  const links = card.getByRole('group', { name: 'Links from the message above' })
+  const links = card.getByRole('group', { name: 'Pages and links for this question' })
   await expect(links.getByRole('link')).toHaveCount(2)
-  await expect(links.getByRole('link', { name: 'Open the link, localhost:8075', exact: true })).toBeVisible()
+  await expect(links.getByRole('link', { name: 'Open the prototype, localhost:8075', exact: true })).toBeVisible()
   await expect(links.getByRole('link', { name: 'Open the link, github.com/millZach/Sotto/tree/prototype/cloud-iphone-settings-layout', exact: true })).toBeVisible()
 
   for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {

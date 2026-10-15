@@ -90,4 +90,40 @@ final class RequestTextTests: XCTestCase {
         XCTAssertEqual(WebLinks.place(try XCTUnwrap(URL(string: "https://example.com"))), "example.com")
         XCTAssertEqual(WebLinks.place(try XCTUnwrap(URL(string: "https://example.com/a/b?c=d"))), "example.com/a/b")
     }
+
+    // MARK: Pages (ADR-0084)
+
+    private let file = #"{"token":"ffffffffffffffffffffffffffffffff","kind":"file","name":"greeting-prototype.html","start":"greeting-prototype.html"}"#
+    private let served = #"{"token":"ssssssssssssssssssssssssssssssss","kind":"server","name":"localhost:8075","start":"variants/a.html?variant=A"}"#
+
+    func testAQuestionReadsItsPagesAndLeavesOutOneItCannotRead() throws {
+        let asked = try request(#"{"id":"r","kind":"question","text":"Which greeting?","options":[],"pages":[\#(file),{"token":7},\#(served)]}"#)
+        XCTAssertEqual(asked.pages.map(\.name), ["greeting-prototype.html", "localhost:8075"])
+        XCTAssertEqual(try request(#"{"id":"r","kind":"question","text":"Which greeting?","options":[]}"#).pages, [])
+        XCTAssertEqual(try request(#"{"id":"r","kind":"question","text":"Which greeting?","options":[],"pages":"nonsense"}"#).pages, [])
+    }
+
+    func testAPageOpensUnderItsTokenOnTheComputersOwnAddress() throws {
+        let asked = try request(#"{"id":"r","kind":"question","text":"Which greeting?","options":[],"pages":[\#(file),\#(served)]}"#)
+        let endpoint = try HostEndpoint("https://laptop.tail5728ca.ts.net:8443")
+        XCTAssertEqual(asked.pages.map { $0.url(on: endpoint)?.absoluteString }, [
+            "https://laptop.tail5728ca.ts.net:8443/page/ffffffffffffffffffffffffffffffff/greeting-prototype.html",
+            "https://laptop.tail5728ca.ts.net:8443/page/ssssssssssssssssssssssssssssssss/variants/a.html?variant=A",
+        ])
+        let odd = try request(#"{"id":"r","kind":"question","text":"?","options":[],"pages":[{"token":"../../v1/session/aaaaaaaaaaaaaaaaaaa","kind":"file","name":"x","start":""}]}"#)
+        XCTAssertNil(odd.pages.first?.url(on: endpoint))
+    }
+
+    func testALoopbackLinkAPageAlreadyOpensHasNoRowOfItsOwn() throws {
+        let asked = try request(#"{"id":"r","kind":"question","text":"Which greeting?","options":[],"pages":[\#(served)]}"#)
+        let links = [try XCTUnwrap(URL(string: "http://localhost:8075/")), try XCTUnwrap(URL(string: "https://github.com/o/r/pull/1"))]
+        XCTAssertEqual(WebLinks.withoutPages(links, asked.pages).map(\.absoluteString), ["https://github.com/o/r/pull/1"])
+    }
+
+    func testPagesArrivingLaterLeaveTheRequestTheSameToAnswer() throws {
+        let before = try request(#"{"id":"r","kind":"question","text":"Which greeting?","options":[]}"#)
+        let after = try request(#"{"id":"r","kind":"question","text":"Which greeting?","options":[],"pages":[\#(file)]}"#)
+        XCTAssertEqual(before, after)
+        XCTAssertNotEqual(before, try request(#"{"id":"r","kind":"question","text":"Which other greeting?","options":[]}"#))
+    }
 }

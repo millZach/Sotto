@@ -1741,6 +1741,9 @@ struct HeldDetail {
     // MARK: Reading
 
     func computer(_ hostID: String) -> SavedComputer? { computers.first { $0.hostID == hostID } }
+    /// Where a computer's question pages open (ADR-0084): the address its connection reached, which can be phone access's
+    /// other port, else the one it was saved with.
+    func pageEndpoint(_ hostID: String) -> HostEndpoint? { connections[hostID]?.reached ?? computer(hostID)?.endpoint }
     func name(_ hostID: String) -> String { computer(hostID)?.name ?? "the computer" }
     func status(_ hostID: String) -> ComputerStatus { live[hostID]?.status ?? .connecting }
     func online(_ hostID: String) -> Bool { status(hostID) == .online }

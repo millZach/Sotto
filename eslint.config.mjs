@@ -109,6 +109,7 @@ export default tseslint.config(
       'artifacts/tools-rail-run/**',
       'artifacts/git-settings/**',
       'artifacts/question-message-links/**',
+      'artifacts/question-prototype-pages/**',
       'artifacts/review-comments-run/**',
       'artifacts/git-interface-run/**',
       'artifacts/worktree-origin-fallback-run/**',

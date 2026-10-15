@@ -906,3 +906,36 @@ describe('settings on several computers (ADR-0074)', () => {
     router.dispose()
   })
 })
+
+describe('a question’s pages (ADR-0084)', () => {
+  const token = 't'.repeat(32), other = 'o'.repeat(32)
+  function withPage(f: ReturnType<typeof fixture>, kind: 'file' | 'server', start: string): void {
+    f.state.host.threads[0]!.requests = [{ id: 'question', kind: 'question', text: 'Which greeting?', options: [], pages: [{ token, kind, name: 'greeting.html', start }] }]
+  }
+
+  it('opens this computer’s page as itself and a remote host’s at the address the host serves it on', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    withPage(local, 'file', 'greeting.html'); withPage(remote, 'file', 'greeting.html')
+    router.add({ ...local.connection, questionPage: asked => asked === token ? { kind: 'file', root: '/repo/docs', file: '/repo/docs/greeting.html' } : undefined })
+    router.add({ ...remote.connection, pageAddress: asked => `https://forge.example.ts.net:8443/page/${asked}/` })
+    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'question', token })).toEqual({ kind: 'file', file: '/repo/docs/greeting.html' })
+    expect(router.questionPageOpening({ threadId: hostEntityKey(REMOTE, 'thread'), requestId: 'question', token }))
+      .toEqual({ kind: 'url', url: `https://forge.example.ts.net:8443/page/${token}/greeting.html` })
+  })
+
+  it('opens a loopback page on this computer at its own address', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local')
+    withPage(local, 'server', 'variants/a.html?variant=A')
+    router.add({ ...local.connection, questionPage: () => ({ kind: 'server', origin: 'http://localhost:8075' }) })
+    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'question', token })).toEqual({ kind: 'url', url: 'http://localhost:8075/variants/a.html?variant=A' })
+  })
+
+  it('opens nothing for a token the host did not put on that question', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local')
+    withPage(local, 'file', 'greeting.html')
+    router.add({ ...local.connection, questionPage: () => ({ kind: 'file', root: '/repo', file: '/repo/greeting.html' }) })
+    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'question', token: other })).toBeNull()
+    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'another', token })).toBeNull()
+    expect(router.questionPageOpening({ threadId: hostEntityKey(REMOTE, 'thread'), requestId: 'question', token })).toBeNull()
+  })
+})

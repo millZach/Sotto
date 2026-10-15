@@ -787,6 +787,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     offersBabysitting: () => hostService.supportsBabysitting === true,
     hostFolders: request => hostService.hostFolders(request),
     subscribeDetail: listener => agentControl.subscribeThreadDetail(listener),
+    questionPage: token => agentControl.questionPage(token),
   })
   // A Playwright journey adds hosts through a scripted ssh; development only, like the gh stand-in.
   const sshStandInScript = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_SSH_SCRIPT'] : undefined
@@ -1492,6 +1493,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         },
         trustedSenders: () => windows.getTrustedRenderers(),
         openExternalLink: url => shell.openExternal(url),
+        openQuestionPage: async input => {
+          // A file opens in this computer's own browser as a file; a loopback page and a remote host's page open at their address.
+          const opening = hostRouter.questionPageOpening(input)
+          if (!opening) return { ok: false, reason: 'gone' }
+          if (opening.kind === 'url') { await shell.openExternal(opening.url); return { ok: true } }
+          if (!await stat(opening.file).then(info => info.isFile(), () => false)) return { ok: false, reason: 'gone' }
+          return await shell.openPath(opening.file) === '' ? { ok: true } : { ok: false, reason: 'unavailable' }
+        },
         ...(systemSettingsOpener === null ? {} : { openSystemSettings: systemSettingsOpener }),
         dictation: {
           request(command): void {
