@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { agentRequestSchema } from '../../../src/shared/agents'
 import { museItemActivity } from '../../../src/main/agents/museActivity'
-import { museApprovalChoice, museApprovalPending, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, type MuseApproval, type MuseUserInput } from '../../../src/main/agents/museRequests'
+import { museApprovalChoice, museApprovalPending, museServerSuffix, museSessionServerName, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, type MuseApproval, type MuseUserInput } from '../../../src/main/agents/museRequests'
 
 const approval: MuseApproval = {
   approvalId: 'a1', sessionId: 's1', turnId: 't1', toolName: 'bash', toolCallId: 'c1', itemId: 'i1',
@@ -222,6 +222,26 @@ describe('Muse prompts for Sotto’s own tools', () => {
     expect(museToolAdmission({ ...approval, toolName: 'mcp__sotto_browser__browser_open', subject: { kind: 'shell', command: 'mcp__sotto_browser__browser_open' } }, own)).toBeUndefined()
     expect(museToolAdmission({ ...tool('mcp__sotto_browser__browser_open'), subject: { kind: 'tool' } }, own)).toBeUndefined()
     expect(museToolAdmission(tool('mcp__sotto_browser__browser_open'), new Set())).toBeUndefined()
+  })
+  it('names each of Sotto’s servers so that Muse shows it unchanged, with a suffix no other server knows', () => {
+    const suffix = museServerSuffix()
+    expect(suffix).toMatch(/^[0-9a-f]{10}$/u)
+    expect(museServerSuffix()).not.toBe(suffix)
+    const name = museSessionServerName('sotto_browser', suffix)
+    expect(name).toBe(`sotto_browser_${suffix}`)
+    expect(museToolName(name, 'browser_open')).toBe(`mcp__${name}__browser_open`)
+    for (const server of ['sotto-browser', 'sotto__browser', '_sotto', 'sotto browser']) expect(() => museSessionServerName(server, suffix)).toThrow()
+  })
+  it('shows a user server named sotto-browser and admits only the server Sotto supplied', () => {
+    // Muse folds `-` to `_`, so a user's own `sotto-browser` lists `mcp__sotto_browser__…`. Sotto's server carries the
+    // session's suffix instead, so that name is never one of this session's own.
+    const supplied = museSessionServerName('sotto_browser', museServerSuffix())
+    const given = new Set([museToolName(supplied, 'browser_open')])
+    const users = museToolName('sotto-browser', 'browser_open')
+    expect(users).toBe('mcp__sotto_browser__browser_open')
+    expect(museToolAdmission(tool(users), given)).toBeUndefined()
+    expect(museToolAdmission(tool(museToolName(`${supplied}-x`, 'browser_open')), given)).toBeUndefined()
+    expect(museToolAdmission(tool(museToolName(supplied, 'browser_open')), given)).toBe('once')
   })
   it('leaves a call with no one-time allow for the user', () => {
     const wider = tool('mcp__sotto_browser__browser_open', { availableChoices: approval.availableChoices.filter(choice => choice.scope !== 'once' || choice.decision !== 'approved') })

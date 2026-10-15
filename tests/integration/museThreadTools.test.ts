@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { BrowserAgentServer, type BrowserAgentTools } from '../../src/main/agents/browserAgentServer'
+import { museToolName } from '../../src/main/agents/museRequests'
 import { MuseRejected, MuseRpc } from '../../src/main/agents/museRpc'
 import { ThreadToolServer, type ScopedThreadTools } from '../../src/main/agents/threadToolServer'
 import { VISUAL_MCP_SERVER, visualizeDefinition } from '../../src/main/agents/visualTools'
@@ -45,12 +46,22 @@ const thread = async (f: Fixture, id: string) => (await f.host.snapshot()).threa
 const records = async (f: Fixture, method: string) => (await f.driver.requests()).filter(record => record.method === method)
 const servers = (record: RecordedRpc | undefined) => (record?.params?.config as { mcpServers?: Record<string, Record<string, unknown>> } | undefined)?.mcpServers
 const browserTools = browserToolDefinitions.map(tool => tool.name)
+/** A server of Sotto's as a Muse session names it: its own name and the thread's suffix (ADR-0079). */
+const SUFFIX = /_[0-9a-f]{10}$/u
+const keyOf = (given: Record<string, unknown> | undefined, server: string): string => {
+  const key = Object.keys(given ?? {}).find(name => SUFFIX.test(name) && name.replace(SUFFIX, '') === server)
+  if (!key) throw new Error(`No ${server} server was given.`)
+  return key
+}
+/** The name Muse shows for one of Sotto's tools in the thread its first start gave servers to. */
+const ownTool = async (f: Fixture, server: string, tool: string): Promise<string> => museToolName(keyOf(servers((await records(f, 'session/start'))[0]), server), tool)
 
 it('asks for session tool servers and gives a new Muse session Sotto’s tools, which Muse lists before any turn', async () => {
   const { f, id } = await open()
   expect((await records(f, 'initialize'))[0]?.params?.capabilities).toEqual({ requestedCapabilities: ['sessionMcp'] })
   const given = servers((await records(f, 'session/start'))[0])
-  expect(Object.keys(given ?? {})).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
+  expect(Object.keys(given ?? {}).every(name => SUFFIX.test(name))).toBe(true)
+  expect(Object.keys(given!).map(name => name.replace(SUFFIX, ''))).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
   for (const server of Object.values(given!)) {
     expect(server).toMatchObject({ transport: 'streamableHttp', mode: 'required', headers: { 'Sotto-Tool-Wait': '300' } })
     expect(String(server.url)).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/u)
@@ -59,9 +70,9 @@ it('asks for session tool servers and gives a new Muse session Sotto’s tools, 
   await expect.poll(async () => (await records(f, 'fixture/mcp-tools')).length).toBe(2)
   const listed: Record<string, { name: string; readOnly: boolean }[]> = Object.fromEntries((await records(f, 'fixture/mcp-tools'))
     .map(record => [String(record.params!.server), record.params!.tools as { name: string; readOnly: boolean }[]]))
-  expect(listed.sotto_browser!.map(tool => tool.name)).toEqual(browserTools)
-  expect(listed.sotto_browser!.filter(tool => tool.readOnly).map(tool => tool.name)).toEqual(['browser_pages', 'browser_status', 'iphone_cloud_status'])
-  expect(listed[VISUAL_MCP_SERVER]!.map(tool => tool.name)).toEqual(['visualize'])
+  expect(listed[keyOf(given, 'sotto_browser')]!.map(tool => tool.name)).toEqual(browserTools)
+  expect(listed[keyOf(given, 'sotto_browser')]!.filter(tool => tool.readOnly).map(tool => tool.name)).toEqual(['browser_pages', 'browser_status', 'iphone_cloud_status'])
+  expect(listed[keyOf(given, VISUAL_MCP_SERVER)]!.map(tool => tool.name)).toEqual(['visualize'])
   // A later resume on the same host leaves the servers out, and Muse keeps the ones the session was built with.
   await f.action(id, { type: 'gap' })
   await expect.poll(async () => (await records(f, 'session/resume')).length).toBe(1)
@@ -98,9 +109,12 @@ it('gives a session its servers again on a new host, with that run’s address a
   g.host.observeThreads?.([id])
   await expect.poll(async () => (await records(g, 'session/resume')).length).toBe(1)
   const again = servers((await records(g, 'session/resume'))[0])!
-  expect(Object.keys(again)).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
-  expect(again.sotto_browser!.url).not.toBe(first.sotto_browser!.url)
-  expect((again.sotto_browser!.headers as Record<string, string>).Authorization).not.toBe((first.sotto_browser!.headers as Record<string, string>).Authorization)
+  expect(Object.keys(again).map(name => name.replace(SUFFIX, ''))).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
+  // A new run names the servers afresh, as well as giving them a new address and token.
+  expect(keyOf(again, 'sotto_browser')).not.toBe(keyOf(first, 'sotto_browser'))
+  const browserNow = again[keyOf(again, 'sotto_browser')]!, browserThen = first[keyOf(first, 'sotto_browser')]!
+  expect(browserNow.url).not.toBe(browserThen.url)
+  expect((browserNow.headers as Record<string, string>).Authorization).not.toBe((browserThen.headers as Record<string, string>).Authorization)
   await expect.poll(async () => (await records(g, 'fixture/mcp-tools')).length).toBe(4)
   expect((await thread(g, id)).status).toBe('idle')
 })
@@ -129,23 +143,26 @@ it('starts afresh when a lost start cannot be replayed because a restart moved i
 
 it('admits a call to the thread’s own Sotto tool once, and leaves every other prompt to the user', async () => {
   const { f, id } = await open()
-  await f.action(id, { type: 'tool-permission', toolName: 'mcp__sotto_browser__browser_open' })
+  await f.action(id, { type: 'tool-permission', toolName: await ownTool(f, 'sotto_browser', 'browser_open') })
   await expect.poll(async () => (await records(f, 'approval/decide')).length).toBe(1)
   expect((await records(f, 'approval/decide'))[0]?.params).toMatchObject({ choiceId: 'yes' })
   await expect.poll(async () => (await thread(f, id)).requests).toEqual([])
-  for (const toolName of ['mcp__someone_else__browser_open', 'mcp__sotto_browser__run_anything']) {
+  // A user's own server named `sotto-browser` lists `mcp__sotto_browser__browser_open`, because Muse folds `-` to `_`.
+  // It is shown, never admitted, as is a tool Sotto's own server was not given.
+  const others = ['mcp__someone_else__browser_open', museToolName('sotto-browser', 'browser_open'), await ownTool(f, 'sotto_browser', 'run_anything')]
+  for (const toolName of others) {
     await f.action(id, { type: 'tool-permission', toolName })
     await expect.poll(async () => (await thread(f, id)).requests.map(request => request.context?.toolName)).toContain(toolName)
   }
   await f.driver.raisePermission(id, 'rm -rf build')
-  await expect.poll(async () => (await thread(f, id)).requests.length).toBe(3)
+  await expect.poll(async () => (await thread(f, id)).requests.length).toBe(4)
   expect(await records(f, 'approval/decide')).toHaveLength(1)
 })
 
 it('admits a Sotto tool prompt the stream missed when the thread reads Muse again', async () => {
   const { f, id } = await open()
   await f.script({ suppressApproval: true })
-  await f.action(id, { type: 'tool-permission', toolName: `mcp__${VISUAL_MCP_SERVER}__visualize` })
+  await f.action(id, { type: 'tool-permission', toolName: await ownTool(f, VISUAL_MCP_SERVER, 'visualize') })
   await expect.poll(async () => {
     const saved = JSON.parse(await readFile(join(f.root, 'native-sessions.json'), 'utf8')) as { sessions: Record<string, { pendingApprovals?: unknown[] }> }
     return saved.sessions[await f.realId(id)]?.pendingApprovals?.length
@@ -159,7 +176,7 @@ it('admits a Sotto tool prompt the stream missed when the thread reads Muse agai
 it('shows nothing for an admitted prompt Muse resolved before its unreadable acknowledgement', async () => {
   const { f, id } = await open()
   await f.script({ unreadableApprovalAck: true })
-  await f.action(id, { type: 'tool-permission', toolName: 'mcp__sotto_browser__browser_open' })
+  await f.action(id, { type: 'tool-permission', toolName: await ownTool(f, 'sotto_browser', 'browser_open') })
   await expect.poll(async () => (await records(f, 'approval/decide')).length).toBe(1)
   // A later prompt the user must answer proves the acknowledgement before it was read.
   await f.driver.raisePermission(id, 'rm -rf build')
@@ -169,7 +186,7 @@ it('shows nothing for an admitted prompt Muse resolved before its unreadable ack
 it('reads Muse again when an admitted stage went stale, and admits the stage it holds now', async () => {
   const { f, id } = await open()
   await f.script({ suppressApproval: true })
-  await f.action(id, { type: 'tool-permission', toolName: 'mcp__sotto_browser__browser_open' })
+  await f.action(id, { type: 'tool-permission', toolName: await ownTool(f, 'sotto_browser', 'browser_open') })
   await expect.poll(async () => {
     const saved = JSON.parse(await readFile(join(f.root, 'native-sessions.json'), 'utf8')) as { sessions: Record<string, { pendingApprovals?: unknown[] }> }
     return saved.sessions[await f.realId(id)]?.pendingApprovals?.length

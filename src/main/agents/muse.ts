@@ -14,7 +14,7 @@ import { museVersionForExecutable } from './museClientInstall'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
 import { preserveLegacyAliases } from './legacyAliases'
 import { museItemActivity, museItemDeltaSchema, museItemEventSchema, museItemSchema, musePlanActivity, museTerminal, museTurnCompletedSchema, museTurnEventSchema, type MuseItem } from './museActivity'
-import { museApprovalChoice, museApprovalDecidedSchema, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MuseApproval, type MusePending } from './museRequests'
+import { museApprovalChoice, museApprovalDecidedSchema, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museServerSuffix, museSessionServerName, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MuseApproval, type MusePending } from './museRequests'
 import { MUSE_CLI_VERSION, MUSE_MSP_VERSION, MuseRejected, MuseRpc, MuseTooOld, MuseUncertain, MuseUnreadable, MuseUnsupported, findMuseExecutable, museCommandId, museEnvironment, type MuseFrame } from './museRpc'
 import { needsPerson, unreadableRequest } from './nativeRequests'
 import { OpenSessions } from './openSessions'
@@ -247,11 +247,20 @@ export class MuseMspHost implements AgentHost {
     for (const { server, tools } of await scopedThreadServers(this.threadTools, id)) servers.push({ server, names: tools.definitions.map(tool => tool.name) })
     this.assertGeneration(generation)
     if (!servers.length) return { params: {}, tools: new Set() }
+    // Each server goes by a name only this run's thread knows, so a user's own server cannot show its tool names (ADR-0079).
+    let suffix = this.serverSuffixes.get(id)
+    if (!suffix) { suffix = museServerSuffix(); this.serverSuffixes.set(id, suffix) }
+    const named = servers.map(({ server, names }) => ({ server, names, name: museSessionServerName(server.name, suffix) }))
     return {
-      params: { config: { mcpServers: Object.fromEntries(servers.map(({ server }) => [server.name, museToolServer(server)])) } },
-      tools: new Set(servers.flatMap(({ server, names }) => names.map(name => museToolName(server.name, name)))),
+      params: { config: { mcpServers: Object.fromEntries(named.map(({ server, name }) => [name, museToolServer(server)])) } },
+      tools: new Set(named.flatMap(({ name, names }) => names.map(tool => museToolName(name, tool)))),
     }
   }
+  /**
+   * The suffix each thread's Sotto tool servers carry on Muse, for this run. It stays the same for the run, so a start
+   * replayed after a lost acknowledgement matches the first, and is never saved: a new run names them afresh.
+   */
+  private readonly serverSuffixes = new Map<string, string>()
   /** An approval as it reaches the thread: one for this session's own Sotto tools is answered here, every other is shown. */
   private present(pending: MusePending, entry: ThreadProcess): void {
     if (pending.kind === 'approval' && this.admitOwnTool(pending, entry)) return
