@@ -1,4 +1,4 @@
-import React, { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Element, ElementContent, Root } from 'hast'
 import { Check, Copy, FileText, Image as ImageIcon } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
@@ -329,12 +329,16 @@ const attachmentDetails = (attachment: MessageAttachment): string =>
  * One attachment. An image that can be shown is a button: a press opens it large, and right-click, Shift+F10 or the
  * ContextMenu key offers Open image and Copy image.
  */
-function AttachmentTile({ attachment, origin, onOpen }: {
+function AttachmentTile({ attachment, origin, onOpen, onShown }: {
   attachment: MessageAttachment; origin?: AttachmentOrigin | undefined; onOpen: (from: HTMLElement) => void
+  /** Whether the tile is showing its image, which is what puts it in the viewer. */
+  onShown: (id: string, shown: boolean) => void
 }): ReactNode {
   const { source, awaiting } = useAttachmentSource(attachment, origin)
   const [failed, setFailed] = useState(false)
   useEffect(() => setFailed(false), [source])
+  const showing = Boolean(source) && !failed
+  useEffect(() => onShown(attachment.id, showing), [onShown, attachment.id, showing])
   const [menuAt, setMenuAt] = useState<{ readonly x: number; readonly y: number } | null>(null)
   const [feedback, copyImage] = useCopyImage()
   const frame = useRef<HTMLButtonElement>(null)
@@ -384,13 +388,20 @@ function AttachmentTile({ attachment, origin, onOpen }: {
 /** Submitted images with their name, type and size; metadata alone when no trusted preview exists. */
 export function AttachmentPreviews({ attachments, notice, origin }: AttachmentPreviewsProps): ReactNode {
   const [open, setOpen] = useState<{ readonly id: string; readonly from: HTMLElement } | null>(null)
+  const [shown, setShown] = useState<ReadonlySet<string>>(() => new Set())
+  const onShown = useCallback((id: string, showing: boolean) => setShown(current => {
+    if (current.has(id) === showing) return current
+    const next = new Set(current)
+    if (showing) next.add(id); else next.delete(id)
+    return next
+  }), [])
   if (!attachments.length && !notice) return null
-  // The viewer steps through the message's images, the ones that carry a preview.
-  const images = attachments.filter(attachment => attachment.preview !== undefined)
+  // The viewer steps through the message's images that its tiles are showing; one whose bytes are gone stays out.
+  const images = attachments.filter(attachment => shown.has(attachment.id))
     .map(attachment => ({ id: attachment.id, preview: attachment.preview, name: attachmentName(attachment), details: attachmentDetails(attachment) }))
   return <div className="rich-attachments">
     {!!attachments.length && <div className="rich-attachments__list" role="list" aria-label={attachments.length === 1 ? 'Attachment' : `${attachments.length} attachments`}>
-      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} onOpen={from => setOpen({ id: attachment.id, from })} />)}
+      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} onShown={onShown} onOpen={from => setOpen({ id: attachment.id, from })} />)}
     </div>}
     {notice && <p className="rich-attachments__notice" role="note">{notice}</p>}
     {open && images.some(image => image.id === open.id)

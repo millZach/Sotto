@@ -513,6 +513,39 @@ describe('image viewer', () => {
     expect(screen.getByRole('dialog', { name: /first\.png/u })).toBeInTheDocument()
   })
 
+  it('shows the result of the latest copy, not an older one that fails later', async () => {
+    const user = userEvent.setup()
+    let failFirst: (() => void) | undefined
+    const copyImage = vi.fn()
+      .mockImplementationOnce(() => new Promise(resolve => { failFirst = () => resolve({ ok: false, reason: 'unavailable' }) }))
+      .mockResolvedValue({ ok: true })
+    ;(window as { sotto?: unknown }).sotto = { copyImage }
+    inPane()
+    await user.click(screen.getByRole('button', { name: 'Open first.png' }))
+    const viewer = screen.getByRole('dialog')
+    const copy = within(viewer).getByRole('button', { name: 'Copy image' })
+    await user.click(copy)
+    await user.click(copy)
+    const status = viewer.querySelector('.rich-code__status')!
+    await waitFor(() => expect(status).toHaveTextContent('Copied image'))
+    await act(async () => { failFirst!() })
+    expect(status).toHaveTextContent('Copied image')
+  })
+
+  it('leaves an image it cannot show out of the viewer and its strip', async () => {
+    const user = userEvent.setup()
+    render(<section className="thread-pane"><AttachmentPreviews attachments={[
+      images[0]!,
+      { id: 'gone', name: 'gone.png', mimeType: 'image/png', sizeBytes: 2048, preview: { dataUrl: 'data:image/png;base64,bm90IGFuIGltYWdl' } },
+    ]} /></section>)
+    await user.click(screen.getByRole('button', { name: 'Open first.png' }))
+    const viewer = screen.getByRole('dialog')
+    expect(viewer).not.toHaveTextContent('1 of 2')
+    expect(within(viewer).queryByRole('group', { name: 'Images in this message' })).toBeNull()
+    await user.keyboard('{ArrowRight}')
+    expect(within(viewer).getByRole('img', { name: 'first.png' })).toBeInTheDocument()
+  })
+
   it('opens over the window when the message is not in a pane, and shows one image without a strip', async () => {
     const user = userEvent.setup()
     render(<AttachmentPreviews attachments={[images[0]!]} />)

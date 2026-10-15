@@ -51,7 +51,7 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
   const size = measured?.id === image.id ? measured : null
   // A screenshot is shown no larger than it is when it fits; zooming in is still possible.
   const zoom = usePanZoom(size?.width ?? 0, size?.height ?? 0, 1)
-  const [feedback, copyImage] = useCopyImage()
+  const [feedback, copyImage, say] = useCopyImage()
   const root = useRef<HTMLDivElement>(null)
   const strip = useRef<HTMLDivElement>(null)
   const titleId = useId()
@@ -64,19 +64,33 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
   const platform: SottoPlatform = app?.platform ?? ((window.sotto as { platform?: SottoPlatform } | undefined)?.platform ?? 'win32')
   const copyChord = chordClaimed('mod+c', app?.settings?.hotkey, platform) ? 'mod+c' : null
 
-  // Everything else in the pane is out of reach while the viewer covers it, so Tab stays inside.
+  // Everything else in the pane is out of reach while the viewer covers it, so Tab stays inside, including what
+  // the pane adds while it is open.
   useLayoutEffect(() => {
     const host = root.current
     if (!host) return
-    const quieted = [...container.children].filter((element): element is HTMLElement => element instanceof HTMLElement && element !== host && !element.inert)
-    for (const element of quieted) element.inert = true
+    // The pane never scrolls on purpose; a stray offset would leave the viewer above the part in view.
+    if (inPane) { container.scrollTop = 0; container.scrollLeft = 0 }
+    const quieted = new Set<HTMLElement>()
+    const quiet = (element: Element): void => {
+      if (!(element instanceof HTMLElement) || element === host || element.inert) return
+      element.inert = true
+      quieted.add(element)
+    }
+    for (const element of container.children) quiet(element)
+    const observer = typeof MutationObserver === 'undefined' ? null
+      : new MutationObserver(records => { for (const record of records) for (const node of record.addedNodes) if (node instanceof Element) quiet(node) })
+    observer?.observe(container, { childList: true })
     zoom.viewport.current?.focus({ preventScroll: true })
     return () => {
+      observer?.disconnect()
       for (const element of quieted) element.inert = false
-      // Only once the pane is reachable again can the image that opened the viewer take focus back.
-      anchor.focus({ preventScroll: true })
+      // Only once the pane is reachable again can the image that opened the viewer take focus back, and only when
+      // the focus was still the viewer's: a viewer that goes with its pane leaves focus where it is.
+      const focused = document.activeElement
+      if (anchor.isConnected && (focused === null || focused === document.body || host.contains(focused))) anchor.focus({ preventScroll: true })
     }
-  }, [container, anchor, zoom.viewport])
+  }, [container, inPane, anchor, zoom.viewport])
 
   // Another image opens fitted, whatever the last one was zoomed to.
   const reset = useRef(zoom.reset)
@@ -88,11 +102,16 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
     setIndex(wrapped)
     if (focusStrip) strip.current?.querySelector<HTMLElement>(`[data-index="${wrapped}"]`)?.focus()
   }
-  const copy = (): void => { if (source) copyImage(source) }
+  const copy = (): void => {
+    if (source) copyImage(source)
+    else say(awaiting ? 'The image is still loading. Try again in a moment.' : 'This image is no longer available to copy.')
+  }
 
   const onKeyDown = (event: React.KeyboardEvent): void => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return }
     if (copyChord && chordMatches(event, copyChord, platform) && !window.getSelection()?.toString()) {
+      // A held chord copies once.
+      if (event.repeat) { event.preventDefault(); return }
       event.preventDefault(); copy(); return
     }
     const inStrip = strip.current?.contains(event.target as Node) === true

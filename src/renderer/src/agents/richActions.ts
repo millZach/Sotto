@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { MAX_OUTPUT_IMAGE_DATA_URL } from '../../../shared/contracts'
 
 const FEEDBACK_MS = 1_600
 
@@ -69,19 +70,35 @@ export async function writeClipboard(text: string): Promise<void> {
 export async function writeClipboardImage(source: string): Promise<void> {
   const copy = window.sotto?.copyImage
   if (!copy) throw new Error('Clipboard unavailable')
-  const result = await copy({ dataUrl: await pngDataUrl(source) })
+  const dataUrl = await pngDataUrl(source)
+  if (dataUrl.length > MAX_OUTPUT_IMAGE_DATA_URL) throw new ImageTooLargeError()
+  const result = await copy({ dataUrl })
   if (!result.ok) throw new Error('Clipboard unavailable')
 }
 
-/** Copy image with its feedback: "Copied image", or what went wrong and what to do. */
-export function useCopyImage(): [string | null, (source: string) => void] {
-  const [feedback, showFeedback] = useTransientFlag()
-  const copy = useCallback((source: string): void => {
-    void writeClipboardImage(source).then(() => showFeedback(COPIED_IMAGE), () => showFeedback('Could not copy the image. Try again.'))
-  }, [showFeedback])
-  return [feedback, copy]
+/** The image is too large, redrawn as a PNG, to hand to the clipboard. */
+export class ImageTooLargeError extends Error {
+  constructor() { super('Image too large to copy') }
 }
+
 export const COPIED_IMAGE = 'Copied image'
+
+/**
+ * Copy image with its feedback: "Copied image", or what went wrong and what to do. Only the latest copy's result is
+ * shown, so an older copy that fails late cannot cover a newer one that worked. `say` shows any other status there.
+ */
+export function useCopyImage(): [string | null, (source: string) => void, (message: string) => void] {
+  const [feedback, showFeedback] = useTransientFlag()
+  const latest = useRef(0)
+  const copy = useCallback((source: string): void => {
+    const request = ++latest.current
+    const settle = (message: string): void => { if (request === latest.current) showFeedback(message) }
+    void writeClipboardImage(source).then(() => settle(COPIED_IMAGE), error => settle(error instanceof ImageTooLargeError
+      ? 'This image is too large to copy. Nothing was put on the clipboard.'
+      : 'Could not copy the image. Try again.'))
+  }, [showFeedback])
+  return [feedback, copy, showFeedback]
+}
 
 async function pngDataUrl(source: string): Promise<string> {
   if (source.startsWith('data:image/png;base64,')) return source
@@ -94,5 +111,9 @@ async function pngDataUrl(source: string): Promise<string> {
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Image could not be drawn')
   context.drawImage(image, 0, 0)
-  return canvas.toDataURL('image/png')
+  const png = canvas.toDataURL('image/png')
+  // Let go of the full-size bitmap now rather than whenever the canvas is collected.
+  canvas.width = 0
+  canvas.height = 0
+  return png
 }

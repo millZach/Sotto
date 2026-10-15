@@ -163,10 +163,12 @@ export const outputDeliveryRequestSchema = z
   })
   .strict()
 
+/** The longest PNG data URL Copy image sends to main. */
+export const MAX_OUTPUT_IMAGE_DATA_URL = 64_000_000
 /** A PNG the window drew, for the clipboard. The window converts every image to PNG first, so main reads one format. */
 export const outputImageRequestSchema = z
   .object({
-    dataUrl: z.string().startsWith('data:image/png;base64,').max(64_000_000),
+    dataUrl: z.string().startsWith('data:image/png;base64,').max(MAX_OUTPUT_IMAGE_DATA_URL),
   })
   .strict()
 

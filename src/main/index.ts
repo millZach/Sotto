@@ -1081,13 +1081,21 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(platform === 'linux' ? { preparePasteText: sanitizeLinuxPasteText } : {}),
   })
   // Copy image waits for any dictation still being pasted, and only an image Electron can read reaches the clipboard.
-  // A test run never touches the real clipboard; Wayland goes through wl-copy like text does.
+  // A test run never touches the real clipboard. Linux goes through wl-copy like text does. Under Wayland a wl-copy
+  // that fails is reported, because Electron's own write may not reach other apps there and would claim a copy that
+  // never happened; without Wayland, Electron's write is the clipboard.
   const imageClipboard = {
     writePng: (png: Buffer): Promise<void> => output.afterDeliveries(async () => {
       const image = nativeImage.createFromBuffer(png)
       if (image.isEmpty()) throw new Error('Unreadable image')
       if (e2eState !== null) return
-      if (linuxClipboard !== null && await linuxClipboard.writePng(png).then(() => true, () => false)) return
+      if (linuxClipboard !== null) {
+        const written = await linuxClipboard.writePng(png).then(() => true, (error: unknown) => {
+          if (process.env.WAYLAND_DISPLAY) throw error
+          return false
+        })
+        if (written) return
+      }
       clipboard.writeImage(image)
     }),
   }
