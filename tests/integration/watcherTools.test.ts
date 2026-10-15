@@ -6,8 +6,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { watcherMessageRequests, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
 import { watcherDisplayPrompt } from '../../src/main/agents/watcherMessageDisplay'
-import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
-import { watcherWakeUpNote } from '../../src/main/agents/wakeUp'
+import { WATCHER_WAKE_UP_PROMPT, watcherNewsText } from '../../src/main/agents/watcherNews'
+import { isBabysitNews, isWatcherNews, wakeUpText, watcherWakeUpNote } from '../../src/main/agents/wakeUp'
+import type { BabysitNews } from '../../src/main/agents/babysitNews'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { ProviderId } from '../../src/shared/agents'
@@ -18,7 +19,7 @@ import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { deferred } from '../fixtures/deferred'
 import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { initializeGitRepository } from '../fixtures/gitRepository'
-import { storedFollowups } from '../fixtures/followupQueue'
+import { followupStoreOf, storedFollowups } from '../fixtures/followupQueue'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -762,6 +763,37 @@ it('withdraws answered worker news while retaining the user queue before a busy 
   native.requests = []; f.workspace.adapters.codex.emit()
   await vi.waitFor(() => expect(waitingNews(f) ?? '').not.toContain('Open this thread to answer'))
   expect(f.control.shell().followups!.some(item => item.text === 'User continuation first')).toBe(true)
+})
+
+it('words a wake-up an earlier build saved with Watcher’s news in it again, and shows and sends it without that news', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  // Watcher is on the user's request when the worker asks a question, so the news waits.
+  f.native(started.target.threadId).requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
+  f.workspace.adapters.codex.emit()
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
+  // Pull request news folds in, worded as an earlier build worded a mixed wake-up: Watcher's news after it, in the text.
+  const pullRequest: BabysitNews = { pullRequest: { number: 5, title: 'Synthetic pull request', url: 'https://github.com/synthetic/project/pull/5' },
+    startedBy: 'user', head: null, ended: null, changes: [{ kind: 'checks-failed', checks: [{ name: 'Synthetic check', status: 'failure', url: 'https://github.com/synthetic/project/actions/1' }] }] }
+  await followupStoreOf(f.control).queueWakeUp(f.id, pullRequest, items => [wakeUpText(items.filter(isBabysitNews), { tool: false }),
+    ...items.filter(isWatcherNews).map(watcherNewsText)].join('\n\n'))
+  expect(queued(f).find(item => item.threadId === f.id && item.wakeUp)!.text).toContain('Sotto saw changes in watched threads')
+  // The window and the phone are sent the pull request's words alone.
+  await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'Synthetic user follow-up' })
+  const shown = f.control.shell().followups!.filter(item => item.threadId === f.id && item.wakeUp)
+  expect(shown).toHaveLength(1)
+  expect(shown[0]!.text).toContain('Pull request #5')
+  expect(shown[0]!.text).not.toContain('Sotto saw changes')
+  // And so is the provider, with Watcher's news beside them.
+  await f.control.commandShell({ type: 'remove-followup', threadId: f.id, itemId: queued(f).find(item => item.text === 'Synthetic user follow-up')!.id })
+  await f.finish(f.id)
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master && command.watcherNews !== undefined)).toBe(true), { timeout: 15_000 })
+  const sent = f.workspace.adapters.codex.commands.find(command => command.type === 'send' && command.threadId === master && command.watcherNews !== undefined)!
+  if (sent.type !== 'send') throw new Error('Expected a send')
+  expect(sent.text).toContain('Pull request #5')
+  expect(sent.text).not.toContain('Sotto saw changes')
+  expect(sent.watcherNews).toContain('Open this thread to answer')
 })
 
 it('rechecks answered news after checkpoint preparation and before the provider writer', async () => {

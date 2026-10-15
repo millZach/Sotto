@@ -286,6 +286,21 @@ export class FollowupStore {
       state.items = [...state.items.filter(candidate => candidate !== item), item]
     })
   }
+  /**
+   * Words each waiting wake-up again from the news it keeps, with `word`, and saves those whose words changed: an
+   * earlier build saved Watcher's news in a wake-up's text, which this build sends beside it instead (ADR-0073).
+   */
+  rewordWakeUps(word: (item: QueuedFollowup) => string): Promise<void> {
+    return this.change(state => {
+      let changed = false
+      for (const item of state.items) {
+        if (!isWaitingWakeUp(item) || !this.active(item.threadId) || this.dormant.has(item.id)) continue
+        const text = word(item)
+        if (text !== item.text) { item.text = text; changed = true }
+      }
+      if (!changed) return false
+    })
+  }
   pause(threadId: string, error: string): Promise<void> {
     return this.change(state => {
       for (const item of state.items) if (item.threadId === threadId && item.status === 'queued') Object.assign(item, { status: 'paused', error })

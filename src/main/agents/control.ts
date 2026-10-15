@@ -577,6 +577,7 @@ export class AgentControl {
     // Upgrade the native singleton in place, never from the currently selected thread.
     this.syncLegacyDraft()
     await this.followupStore.load(this.stageInline, handle => this.attachments.has(handle.digest), id => this.threadAvailable(id))
+    await this.followupStore.rewordWakeUps(item => this.queuedWords(item))
     this.syncFollowups()
     await this.dependencies.host.initialize?.()
     if (this.dependencies.host.workspaceSnapshot) this.state.host = this.shownSnapshot(this.dependencies.host.workspaceSnapshot())
@@ -2056,6 +2057,14 @@ export class AgentControl {
       : isRestartNews(news) ? this.restartHooks?.due() !== true
         : guard !== undefined && (!guard.due(threadId, news) || (guard.current !== undefined && JSON.stringify(guard.current(threadId, news)) !== JSON.stringify(news))))
   }
+  /**
+   * A queued item's words as this build words them. A wake-up holding Watcher's news is worded again from the news it
+   * keeps, so one an earlier build saved with that news in its text shows and sends without it (ADR-0073); the news goes
+   * beside it in the send's note. Every other item keeps its own text.
+   */
+  private queuedWords(item: Pick<QueuedFollowup, 'threadId' | 'text' | 'wakeUp' | 'news'>): string {
+    return item.wakeUp && item.news?.some(isWatcherNews) ? queuedWakeUpText(item.news, { tool: this.wakeUpGuard?.tool(item.threadId) ?? false }) : item.text
+  }
   private pruneWakeUp(threadId: string, id: string): Promise<void> {
     const guard = this.wakeUpGuard
     return this.followupStore.pruneWakeUp(id, news => isWatcherNews(news) ? news.events.length > 0 : isRestartNews(news) ? this.restartHooks?.due() === true : !guard || guard.due(threadId, news),
@@ -2550,7 +2559,7 @@ export class AgentControl {
   private syncFollowups(): void {
     const { items, receipts } = this.followupStore.get()
     // A wake-up holding only Watcher's news is Sotto's background action: no queue, transcript or phone shows it.
-    this.state.followups = items.filter(item => !isWatcherOnlyWakeUp(item)).map(withoutNews); this.state.followupReceipts = receipts.map(({ threadId, draftId }) => ({ threadId, draftId }))
+    this.state.followups = items.filter(item => !isWatcherOnlyWakeUp(item)).map(item => withoutNews({ ...item, text: this.queuedWords(item) })); this.state.followupReceipts = receipts.map(({ threadId, draftId }) => ({ threadId, draftId }))
     // A crash between the two stores leaves both copies. Durable queue ownership wins
     // only for the submitted revision; newer draft revisions are never touched.
     const owned = [...receipts, ...items]
@@ -2722,7 +2731,7 @@ export class AgentControl {
           if (item.news?.some(isRestartNews)) this.restartHooks?.sending(threadId)
           // Watcher's news goes beside the message, as its request note does, never in it (ADR-0073).
           const watcherNews = item.wakeUp && item.news ? watcherWakeUpNote(item.news) : undefined
-          await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
+          await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: this.queuedWords(item).trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
             expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}), ...(watcherNews ? { watcherNews } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
             this.localClient, undefined, undefined, writeGuard)
           await this.followupStore.settle(item.id, 'accepted')
@@ -2797,7 +2806,7 @@ export class AgentControl {
       validatePrompt()
       if (turn) { turn.threadId = command.threadId; turn.projectId = this.thread(command.threadId).projectId }
       await this.dispatch({ type: 'steer', threadId: item.threadId, commandId: item.commandId!, messageId: item.messageId!,
-        text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
+        text: this.queuedWords(item).trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
         expectedLastUserMessageId: lastUserMessageIdOf(this.thread(item.threadId)) }, turn, validatePrompt, item.draftId)
       await this.followupStore.settle(item.id, 'accepted')
     } catch (error) {

@@ -110,3 +110,22 @@ it('sets a stopped wake-up for Watcher alone going again behind the user’s fol
     expect(store.peek().items[0]).toMatchObject({ status: 'paused' })
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+it('words a restored wake-up again from its news and saves it, leaving the user’s follow-ups as they are', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
+  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
+  try {
+    const hostId = randomUUID()
+    const news: WakeUpNews = { source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
+      events: [{ id: 'event', requestId: randomUUID(), target: { hostId, threadId: 'worker' }, generation: 0, kind: 'turn-finished', turnId: 'turn', observedAt: new Date().toISOString() }] }
+    // An earlier build put Watcher's news in the wake-up's words.
+    const earlier = new FollowupStore(directory); await earlier.load()
+    await earlier.enqueue({ threadId: 'thread', draftId: randomUUID(), text: 'Sotto saw changes, the user typed', attachments: [] })
+    await earlier.queueWakeUp('thread', news, () => 'Sotto saw changes in watched threads. Synthetic earlier words')
+    const store = new FollowupStore(directory); await store.load()
+    await store.rewordWakeUps(item => item.wakeUp ? queuedWakeUpText(item.news ?? [], { tool: false }) : item.text)
+    expect(store.peek().items.map(item => item.text)).toEqual(['Sotto saw changes, the user typed', WATCHER_WAKE_UP_PROMPT])
+    const reloaded = new FollowupStore(directory); await reloaded.load()
+    expect(reloaded.peek().items.map(item => item.text)).toEqual(['Sotto saw changes, the user typed', WATCHER_WAKE_UP_PROMPT])
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
