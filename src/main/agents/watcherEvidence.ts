@@ -56,6 +56,16 @@ export class WatcherEvidenceStore {
   identities(target: WatcherThreadTarget): ReadonlySet<string> {
     return new Set([...this.entries.get(targetKey(target))?.values() ?? []].map(item => item.id))
   }
+  /**
+   * A digest of one side of a thread's facts: its pull requests' (link, state, checks, review, auto-merge), which wake
+   * Watcher when they change, or its own (working copy, Git, checkpoints), which only ride with a turn's end. The
+   * turn's own end is in neither: its news is the turn event.
+   */
+  digest(target: WatcherThreadTarget, side: 'pull-request' | 'local'): string {
+    return observationDigest([...this.entries.get(targetKey(target))?.values() ?? []]
+      .filter(item => side === 'pull-request' ? item.source === 'github' : item.source !== 'github' && item.source !== 'native-turn')
+      .map(item => item.id).sort())
+  }
   removeMissing(targets: ReadonlySet<string>): void { for (const key of this.entries.keys()) if (!targets.has(key)) this.entries.delete(key) }
   observeThread(thread: AgentThread, target: WatcherThreadTarget, observedAt: string): boolean {
     let changed = false

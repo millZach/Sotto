@@ -75,7 +75,7 @@ export class WatcherService implements WatcherControlHooks {
     limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; revoke?: (id: string) => void }) {
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), record: () => this.record(),
       progress: target => this.remoteProgress.get(key(target))?.fingerprint,
-      restoredEvents: () => options.control.restoredWatcherEvents(),
+      waitingEvents: () => options.control.waitingWatcherEvents(),
       canDeliver: target => options.control.canDeliverWatcherNews(target),
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
       prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),

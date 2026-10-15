@@ -1049,7 +1049,18 @@ it('keeps news and checkpoint evidence from restarting a worker stopped by Watch
   expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'answer')).toHaveLength(0)
 })
 
-it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as const)('holds checkpoint news for a %s master and queues it after recovery', async unavailable => {
+/** A worker's linked pull request and GitHub's read of its checks: news that wakes Watcher on its own. */
+function pullRequestNews(f: Awaited<ReturnType<typeof fixture>>, threadId: string) {
+  const url = 'https://github.com/synthetic/project/pull/5'
+  const links = [{ url, number: 5, title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }]
+  // The workspace's record holds a thread's links, so a later snapshot keeps them; the coordinator's copy shows them now.
+  const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } } }).state.snapshot
+  record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+  f.control.watcherSnapshot().threads.find(thread => thread.id === threadId)!.pullRequests = links
+  return { url, read: { url, head: 'synthetic-head', observedAt: new Date().toISOString(), availability: 'available' as const, checks: 'failed' as const, checkCount: 1 } }
+}
+
+it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as const)('holds pull request news for a %s master and queues it after recovery', async unavailable => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const target = f.service.state().current!.target
@@ -1062,7 +1073,7 @@ it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as co
   if (unavailable === 'disconnected') f.control.watcherSnapshot().connected = false
   expect(f.control.canDeliverWatcherNews(target)).toBe(false)
   const deliver = vi.spyOn(f.control, 'deliverWakeUp')
-  f.service.checkpointObserved({ threadId: started.target.threadId, checkpointId: 'held-capture', observedAt: new Date().toISOString(), availability: 'available' })
+  f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
   await f.service.wakes.drained()
   expect(deliver).not.toHaveBeenCalled()
   delete master.workspaceSettledAt; delete master.archivedAt
@@ -1079,12 +1090,11 @@ it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as co
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
 })
 
-it('keeps durably waiting checkpoint news through Watcher recovery and same-fact replay', async () => {
+it('keeps durably waiting pull request news through Watcher recovery and same-fact replay', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
-  const read = { threadId: started.target.threadId, checkpointId: randomUUID(), observedAt: new Date().toISOString(),
-    availability: 'available' as const, changedFiles: 1 }
-  f.service.checkpointObserved(read)
+  const { read } = pullRequestNews(f, started.target.threadId)
+  f.service.pullRequestObserved(read)
   await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.text.includes('Sotto observed changed evidence'))).toBe(true), { timeout: 15_000 })
   await f.service.wakes.drained()
   const waiting = f.control.shell().followups!.find(item => item.threadId === f.id && item.wakeUp)!
@@ -1095,7 +1105,7 @@ it('keeps durably waiting checkpoint news through Watcher recovery and same-fact
   cleanups.push(async () => restarted.close())
   await restarted.recover(); await restarted.wakes.drained()
   expect(f.control.shell().followups!.find(item => item.id === waiting.id)?.text).toBe(waiting.text)
-  restarted.checkpointObserved({ ...read, observedAt: new Date().toISOString() }); await restarted.wakes.drained()
+  restarted.pullRequestObserved({ ...read, observedAt: new Date().toISOString() }); await restarted.wakes.drained()
   expect(f.control.shell().followups!.find(item => item.id === waiting.id)?.text).toBe(waiting.text)
   expect(f.control.watcherRecord().wakeEventIds).toEqual(ids)
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)

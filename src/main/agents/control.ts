@@ -1622,7 +1622,7 @@ export class AgentControl {
     if (this.watcherObservedIds === ids) return
     this.watcherObservedIds = ids; this.observe()
   }
-  restoredWatcherEvents(): WatcherEvent[] {
+  waitingWatcherEvents(): WatcherEvent[] {
     if (this.dependencies.watcherEnabled !== true || !this.watcherHooks || !this.watcher.current) return []
     const target = this.watcher.current.target
     return this.followupStore.peek().items.filter(item => isWaitingWakeUp(item) && item.threadId === target.threadId)
