@@ -8,7 +8,6 @@ import { watcherMessageRequests, watcherRequestLine, watcherRequestNote, watcher
 import { watcherDisplayPrompt } from '../../src/main/agents/watcherMessageDisplay'
 import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
 import { watcherWakeUpNote } from '../../src/main/agents/wakeUp'
-import type { QueuedFollowup } from '../../src/main/agents/followups'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { ProviderId } from '../../src/shared/agents'
@@ -19,6 +18,7 @@ import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { deferred } from '../fixtures/deferred'
 import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { initializeGitRepository } from '../fixtures/gitRepository'
+import { storedFollowups } from '../fixtures/followupQueue'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -653,8 +653,7 @@ it('keeps an unacknowledged native Stop uncertain in its original receipt', asyn
 })
 
 /** Sotto's wake-ups for Watcher are shown nowhere, so these read the coordinator's own queue and the news its send carries. */
-const queued = (f: Awaited<ReturnType<typeof fixture>>): readonly QueuedFollowup[] =>
-  (f.control as unknown as { followupStore: { peek(): { items: readonly QueuedFollowup[] } } }).followupStore.peek().items
+const queued = (f: Awaited<ReturnType<typeof fixture>>) => storedFollowups(f.control)
 const waitingNews = (f: Awaited<ReturnType<typeof fixture>>): string | undefined => {
   const item = queued(f).find(candidate => candidate.threadId === f.id && candidate.wakeUp)
   return item && (watcherWakeUpNote(item.news ?? []) ?? '')
