@@ -71,6 +71,7 @@ struct HostRefusal: Error, LocalizedError {
     /// Every Watcher operation this connection carried, with its request ID.
     var watcherCalls: [(operation: [String: JSONValue], id: String)] = []
     var hostID = ""
+    var reached: HostEndpoint?
     var disconnects = 0
     var detailStarted: (() -> Void)?
     var heldDetail: CheckedContinuation<JSONValue, Error>?
@@ -81,6 +82,7 @@ struct HostRefusal: Error, LocalizedError {
         Self.connectAttempts += 1
         if Self.failConnect { throw URLError(.networkConnectionLost) }
         hostID = pairing.hostId
+        reached = endpoint
         let hello = try JSONValue.object(["hostId": .string(pairing.hostId), "clientId": .string(pairing.clientId),
             "shell": Self.shells[hostID] ?? Self.shell, "features": .array(Self.features.map(JSONValue.string)),
             "capabilities": .object(["mayAnswer": .bool(Self.mayAnswer)])]).decode(Hello.self)

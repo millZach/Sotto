@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Duplex } from 'node:stream'
 import { request as httpRequest, type Server } from 'node:http'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -404,4 +404,23 @@ it.each(['saved-plain', 'saved-question', 'active-plain', 'active-question'] as 
   // The real coordinator checks targeted saves at execution; legacy Compose and Send keep their native-question gate.
   expect(await desktop.call('legacy', { op: 'command', command: { type: 'compose', text: 'Legacy edit' } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
   expect(await desktop.call('send', { op: 'command', command: { type: 'send', draft: { threadId: 'thread', text: 'Prompt' } } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+})
+
+it('serves a question’s page by its token alone, whatever origin asks, and nothing else without a session (ADR-0085)', async () => {
+  directory = await mkdtemp(join(tmpdir(), 'sotto-listener-'))
+  const pairing = new PairedClients(directory); await pairing.load()
+  await writeFile(join(directory, 'greeting.html'), '<h1>Greeting</h1>')
+  const token = 'p'.repeat(32)
+  // The host keeps a page's folder as it is after links are followed.
+  const root = await realpath(directory)
+  const service = { shell: () => ({ hostId: 'host' }), subscribe: () => () => {},
+    questionPage: (asked: string) => asked === token ? { kind: 'file', root, file: join(root, 'greeting.html') } : undefined } as unknown as HostService
+  listener = await startSocketServer({ service, pairing })
+  const base = `http://127.0.0.1:${listener.descriptor.port}`
+  const origin = { Origin: 'https://laptop.example.ts.net:8443' }
+  const page = await fetch(`${base}/page/${token}/greeting.html`, { headers: origin })
+  expect([page.status, await page.text()]).toEqual([200, '<h1>Greeting</h1>'])
+  expect((await fetch(`${base}/page/${'q'.repeat(32)}/greeting.html`)).status).toBe(404)
+  // The token opens its page and nothing of the listener's own.
+  expect((await fetch(`${base}/v1/session`, { method: 'POST', headers: origin })).status).toBe(401)
 })
