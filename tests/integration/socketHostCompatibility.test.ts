@@ -57,6 +57,20 @@ describe('SocketHostService version check', () => {
     expect(client.hostIsNewer()).toBe(true)
   })
 
+  it('tells a host already on the version this computer is downloading to wait for Sotto’s restart, not to update this computer (ADR-0077)', async () => {
+    const url = await hostAnswering({ ...frozen, v: 2, sottoVersion: '99.0.0' })
+    let waiting: string | undefined = '99.0.0'
+    const client = new SocketHostService({ url, token: 'paired-token', owned: true, waitingVersion: () => waiting })
+    const refused = client.connect()
+    await expect(refused).rejects.toMatchObject({ code: 'version_mismatch', message: 'This host already runs Sotto 99.0.0, which this computer installs when Sotto restarts. Nothing on the host was lost. Restart Sotto to finish its update, then try again.' })
+    await expect(refused).rejects.not.toMatchObject({ message: expect.stringContaining('Update Sotto on this computer') })
+    expect(client.aheadForRestart()).toBe(true)
+    // Once the update is gone, a newer host is a newer host again.
+    waiting = undefined
+    expect(client.aheadForRestart()).toBe(false)
+    await expect(client.connect()).rejects.toMatchObject({ message: expect.stringContaining('Update Sotto on this computer, then connect again.') })
+  })
+
   it('goes on to open a session with a host that speaks v1, whatever its Sotto version, and ignores features it does not know', async () => {
     const url = await hostAnswering({ ...frozen, sottoVersion: '9.9.9', features: ['detail-delta', 'a-later-feature'] })
     const client = new SocketHostService({ url, token: 'paired-token' })

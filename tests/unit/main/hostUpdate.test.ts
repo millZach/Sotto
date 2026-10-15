@@ -342,3 +342,144 @@ describe('Not now', () => {
     await expect(updates.command(ID, 'not-now')).rejects.toThrow('The update of forge is under way and cannot be hidden. Nothing was changed.')
   })
 })
+
+describe('the version this computer is downloading (ADR-0077 decision 6)', () => {
+  const RUNNING = '0.1.38-owl.20261014.1', WAITING = '0.1.38-owl.20261014.2'
+  const RELEASES = 'https://releases.example/download'
+  const archive = (version: string, system = 'linux-x64') => `${RELEASES}/v${version}/Sotto-host-${version}-${system}.tar.gz`
+  /** A releases page that publishes the files named, answers 404 for the rest, and records every request. */
+  function page(published: string[]) {
+    const asked: string[] = []
+    const probe = vi.fn(async (url: string) => { asked.push(url); return published.includes(url) })
+    return { asked, probe }
+  }
+  function aimed(published: string[], patch: Partial<HostUpdateCandidate> = { version: RUNNING }) {
+    const hosts = new Hosts(), threads = new Threads(), releases = page(published)
+    hosts.list = [forge(patch)]
+    hosts.steps['update-fetch'] = async (operation, options) => { options.onStep?.('check'); return { type: 'update-fetched', file: `Sotto-host-${(operation as { version: string }).version}-linux-x64.tar.gz`, sha256: SUM } }
+    const updates = new HostUpdates({ hosts, threads, version: RUNNING, releasesUrl: RELEASES, probe: releases.probe })
+    return { hosts, threads, updates, releases, one: () => updates.state()[0] }
+  }
+
+  it('offers a host on this computer’s own version the version it is downloading, once the releases page has its host', async () => {
+    const { updates, releases, one } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`])
+    expect(updates.state()).toEqual([])
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(one()).toMatchObject({ from: RUNNING, to: WAITING, phase: 'needs' }))
+    expect(releases.asked).toEqual([archive(WAITING), `${archive(WAITING)}.sha256`])
+    // The next phase of the same download asks nothing new.
+    updates.pending(WAITING); updates.pending(WAITING)
+    expect(releases.asked).toHaveLength(2)
+    updates.dispose()
+  })
+
+  it('installs the waiting version, restarts the host into it, and leaves it alone once it runs it', async () => {
+    const { hosts, updates } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`])
+    hosts.after = WAITING
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(updates.state()).toHaveLength(1))
+    await updates.command(ID, 'update')
+    await vi.waitFor(() => expect(updates.state()[0]).toMatchObject({ phase: 'done', from: WAITING, to: WAITING }))
+    expect(hosts.operations).toEqual([
+      { op: 'update-fetch', version: WAITING, releasesUrl: RELEASES },
+      { op: 'update-install', version: WAITING, file: `Sotto-host-${WAITING}-linux-x64.tar.gz`, sha256: SUM },
+      { op: 'update-restart', version: WAITING },
+    ])
+    await updates.command(ID, 'dismiss')
+    expect(updates.state()).toEqual([])
+    // The update going away, as after Sotto restarts or a check finds nothing newer, never takes the host back down.
+    updates.pending(undefined)
+    expect(updates.state()).toEqual([])
+    updates.dispose()
+  })
+
+  it('leaves a host off the card until after the restart when the release has no host archive', async () => {
+    const { updates, releases } = aimed([])
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(releases.asked).toHaveLength(6))
+    // Every system a host archive is published for was asked about, the archive alone, and none was there.
+    expect(releases.asked.every(url => url.endsWith('.tar.gz'))).toBe(true)
+    expect(updates.state()).toEqual([])
+    updates.dispose()
+  })
+
+  it('does not offer it while an archive has no checksum beside it', async () => {
+    const { updates, releases } = aimed([archive(WAITING)])
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(releases.asked).toHaveLength(7))
+    expect(releases.asked.slice(0, 3)).toEqual([archive(WAITING), `${archive(WAITING)}.sha256`, archive(WAITING, 'linux-arm64')])
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(updates.state()).toEqual([])
+    updates.dispose()
+  })
+
+  it('asks again on the next phase change when the releases page did not answer', async () => {
+    const { updates, releases, one } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`])
+    releases.probe.mockImplementationOnce(async (url: string) => { releases.asked.push(url); return undefined as unknown as boolean })
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(releases.asked).toHaveLength(1))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(updates.state()).toEqual([])
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(one()).toMatchObject({ to: WAITING }))
+    updates.dispose()
+  })
+
+  it('aims an older host at the waiting version too, and keeps a started update on the version it began with', async () => {
+    const { hosts, updates, releases, one } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`], { version: '0.1.37' })
+    expect(one()).toMatchObject({ from: '0.1.37', to: RUNNING })
+    const fetching = deferred<SshHostUpdateResult>()
+    hosts.steps['update-fetch'] = () => fetching.promise
+    await updates.command(ID, 'update')
+    expect(one()).toMatchObject({ phase: 'updating', to: RUNNING })
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(releases.asked).toHaveLength(2))
+    expect(one()).toMatchObject({ phase: 'updating', to: RUNNING })
+    expect(hosts.operations[0]).toMatchObject({ version: RUNNING })
+    updates.dispose()
+  })
+
+  it('asks for the host’s own system once its download has named it', async () => {
+    const { hosts, updates, releases } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`], { version: '0.1.37' })
+    hosts.steps['update-fetch'] = async () => ({ type: 'error', reason: 'archive-unavailable', file: `Sotto-host-${RUNNING}-darwin-arm64.tar.gz` })
+    await updates.command(ID, 'update')
+    await vi.waitFor(() => expect(updates.state()[0]).toMatchObject({ phase: 'failed' }))
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(releases.asked).toEqual([archive(WAITING, 'darwin-arm64')]))
+    expect(updates.state()[0]).toMatchObject({ to: RUNNING })
+    updates.dispose()
+  })
+
+  it('offers the waiting version to a host whose earlier update this session is done', async () => {
+    const { hosts, updates, one } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`], { version: '0.1.37' })
+    hosts.after = RUNNING
+    await updates.command(ID, 'update')
+    await vi.waitFor(() => expect(one()).toMatchObject({ phase: 'done', to: RUNNING }))
+    // Later in the session Sotto finds a newer version of itself: the finished update makes way for the next.
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(one()).toMatchObject({ phase: 'needs', from: RUNNING, to: WAITING }))
+    updates.dispose()
+  })
+
+  it('asks again on the next phase change when the release had no host archive yet', async () => {
+    const published: string[] = []
+    const { updates, releases, one } = aimed(published)
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(releases.asked).toHaveLength(6))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(updates.state()).toEqual([])
+    // The host archive is uploaded after the installer, as the release procedure allows.
+    published.push(archive(WAITING), `${archive(WAITING)}.sha256`)
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(one()).toMatchObject({ to: WAITING }))
+    updates.dispose()
+  })
+
+  it('ignores a waiting version that is not later than this computer’s own, and asks nothing', () => {
+    const { updates, releases } = aimed([], { version: '0.1.37' })
+    for (const version of [RUNNING, '0.1.38-owl.20261013.9', 'not-a-version']) updates.pending(version)
+    expect(releases.asked).toEqual([])
+    expect(updates.state()[0]).toMatchObject({ to: RUNNING })
+    updates.dispose()
+  })
+})

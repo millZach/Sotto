@@ -50,6 +50,11 @@ export interface SocketHostServiceOptions {
   museEnabled?: boolean
   /** The running packaged version, which may override the source manifest during stable packaging. */
   clientVersion?: string
+  /**
+   * The host version the update this computer is downloading brings (ADR-0077 decision 6). A host that already runs it
+   * was updated ahead of this computer's restart, so the version sentence says to restart Sotto rather than to update it.
+   */
+  waitingVersion?: () => string | undefined
   retainedDrafts?: RetainedDraftStore
   retainedRegistrationId?: string
   /**
@@ -325,8 +330,16 @@ export class SocketHostService implements HostService {
   }
   /** Whether the host runs another Sotto version than this client, by what it advertised. */
   private skewed(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion }
-  /** The version sentence for this host, which says which side to bring up to date. */
-  private mismatch(): string { return hostVersionMismatch(this.clientVersion, this.hostVersion, this.options.owned ?? false) }
+  /**
+   * The version sentence for this host, which says which side to bring up to date. A host already on the version this
+   * computer is downloading needs nothing: this computer's restart brings the two together.
+   */
+  private mismatch(): string {
+    if (this.aheadForRestart()) return `This host already runs Sotto ${this.hostVersion}, which this computer installs when Sotto restarts. Nothing on the host was lost. Restart Sotto to finish its update, then try again.`
+    return hostVersionMismatch(this.clientVersion, this.hostVersion, this.options.owned ?? false)
+  }
+  /** Whether the host runs the version this computer's waiting update brings, ahead of this computer (ADR-0077). */
+  aheadForRestart(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion && this.hostVersion === this.options.waitingVersion?.() }
   /** Whether the host last advertised a later Sotto than this client: stopping it would not help. */
   hostIsNewer(): boolean { return hostIsNewer(this.hostVersion, this.clientVersion) }
   /** The Sotto version the host last advertised on this connection, if it said one. */

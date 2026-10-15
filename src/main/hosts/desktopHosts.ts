@@ -225,6 +225,11 @@ export class DesktopHosts {
   constructor(private readonly options: {
     directory: string; credentials: AgentCredentials; router: DesktopHostRouter;
     watcherEnabled?: boolean; museEnabled?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
+    /**
+     * The host version the update this computer is downloading brings, with Update all on (ADR-0077 decision 6). A host
+     * updated to it before Sotto restarts runs ahead of this computer until then, and is told apart from a newer host.
+     */
+    waitingClientVersion?: () => string | undefined;
     localHostRunning: boolean; localHostEnabled: () => boolean; restart: () => void;
     launcher?: () => SshHostLauncher;
     retryDelayMs?: (attempt: number) => number;
@@ -974,7 +979,9 @@ export class DesktopHosts {
       // A host that answers with another version is the right host, so Add host keeps it (see add()).
       if (otherVersion && this.isAttempt(host)) await this.commitAdd(host)
       if (otherVersion && active.ssh) {
-        const newer = active.socket?.hostIsNewer() ?? false
+        // A host already on the version this computer is downloading counts as newer: Sotto's restart is the way out.
+        // `hostIsNewer` compares release numbers alone, so a later Owl build of the same release is not newer by it.
+        const newer = (active.socket?.hostIsNewer() || active.socket?.aheadForRestart()) ?? false
         const version = active.socket?.sottoVersion()
         await active.socket?.close().catch(() => undefined)
         delete active.socket
@@ -1171,7 +1178,8 @@ export class DesktopHosts {
     let connected = false, pushError: string | undefined
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
-    const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, museEnabled: this.options.museEnabled === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
+    const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}),
+      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, museEnabled: this.options.museEnabled === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null

@@ -6,6 +6,7 @@ import {
   UPDATE_STARTUP_DELAY_MS,
   UpdateService,
   describeProblem,
+  waitingVersion,
   type UpdaterAdapter,
   type UpdaterEvent,
   type UpdateServiceDependencies,
@@ -13,6 +14,7 @@ import {
 import type { UpdateStatus } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 import { deferred } from '../../fixtures/deferred'
+import { e2eUpdater } from '../../../src/main/updates/e2eUpdater'
 
 /** Stable answers every Owl feature off. */
 const STABLE_FEATURES = { watcher: false, muse: false, usage: false, 'resume-after-restart': false, 'update-all': false, 'streaming-publish-cost': false }
@@ -607,5 +609,27 @@ describe('describeProblem', () => {
     expect(describeProblem(42)).toBeNull()
     expect(describeProblem(new Error('   '))).toBeNull()
     expect(describeProblem({})).toBeNull()
+  })
+})
+
+describe('the version a host may run before Sotto restarts (ADR-0077 decision 6)', () => {
+  it('follows an offer, its download and the downloaded update, and keeps it through the next check', () => {
+    expect(waitingVersion({ phase: 'available', version: '0.1.38', problem: null }, undefined)).toBe('0.1.38')
+    expect(waitingVersion({ phase: 'downloading', version: '0.1.38', percent: 40 }, undefined)).toBe('0.1.38')
+    expect(waitingVersion({ phase: 'downloaded', version: '0.1.38', problem: null }, undefined)).toBe('0.1.38')
+    expect(waitingVersion({ phase: 'checking' }, '0.1.38')).toBe('0.1.38')
+    for (const phase of [{ phase: 'up-to-date' }, { phase: 'idle' }, { phase: 'unsupported' }, { phase: 'failed', problem: 'offline' }] as const) {
+      expect(waitingVersion(phase, '0.1.38'), phase.phase).toBeUndefined()
+    }
+  })
+
+  it('is offered by a development end-to-end run that never installs', async () => {
+    const events: UpdaterEvent[] = []
+    const updater = e2eUpdater('0.1.38-owl.20261014.2', 0)
+    updater.subscribe(event => events.push(event))
+    await updater.check()
+    await updater.download()
+    expect(events.map(event => event.type)).toEqual(['checking', 'available', 'progress', 'progress', 'progress', 'downloaded'])
+    expect(() => updater.quitAndInstall()).toThrow('A test run does not install updates.')
   })
 })

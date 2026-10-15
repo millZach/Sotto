@@ -31,7 +31,10 @@ export interface HostUpdateState {
   /** The saved host's ID, which every action names. */
   readonly id: string
   readonly name: string
-  /** The Sotto version the host runs, and this computer's, which an update installs. */
+  /**
+   * The Sotto version the host runs, and the one an update installs: this computer's, or with Update all on the one this
+   * computer is downloading, once its host archive is published (ADR-0077 decision 6).
+   */
   readonly from: string
   readonly to: string
   readonly phase: HostUpdatePhase

@@ -183,8 +183,9 @@ export function useDesktopHostFixture() {
     await manager.start()
   })
 
-  function newManager(retainedDrafts?: RetainedDraftStore): DesktopHosts {
-    return new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, ...(retainedDrafts ? { retainedDrafts } : {}), localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => { scheduled.push(attempt); return retryDelay(attempt) }, launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher },
+  /** `versions` stands in for the running Sotto's host version and the one its waiting update brings (ADR-0077). */
+  function newManager(retainedDrafts?: RetainedDraftStore, versions: { clientVersion?: string; waitingClientVersion?: () => string | undefined } = {}): DesktopHosts {
+    return new DesktopHosts({ directory: join(root, 'desktop'), credentials, router, ...(retainedDrafts ? { retainedDrafts } : {}), ...versions, localHostRunning: false, localHostEnabled: () => false, restart: () => undefined, retryDelayMs: attempt => { scheduled.push(attempt); return retryDelay(attempt) }, launcher: () => { const launcher = new FixtureSsh(); launchers.push(launcher); return launcher },
       openExternal: async url => { opened.push(url) }, resolveTailnet: address => tailnetAt(address) })
   }
 

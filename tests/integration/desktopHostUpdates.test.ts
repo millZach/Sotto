@@ -95,6 +95,51 @@ describe('updating a host from the Threads page (ADR-0040)', () => {
     await vi.waitFor(() => expect(fixture.manager.get().hosts[0]!.phase).toBe('connected'))
     expect(launchers).toHaveLength(2)
   })
+  it('updates a host to the version this computer is downloading, and keeps its threads usable while it runs ahead (ADR-0077)', async () => {
+    const RUNNING = '0.1.38-owl.20261014.1', WAITING = '0.1.38-owl.20261014.2'
+    const waiting: { version?: string } = {}
+    await fixture.manager.close(); await fixture.host.close()
+    fixture.host = await startHeadlessHost({ dataDirectory: join(fixture.root, 'remote'), port: 0, providers: providers(), reasoner: e2eAgentReasoner, sottoVersion: RUNNING })
+    fixture.manager = newManager(undefined, { clientVersion: RUNNING, waitingClientVersion: () => waiting.version }); await fixture.manager.start()
+    const remote = await add()
+    const thread = await remoteThread()
+    const file = `Sotto-host-${WAITING}-linux-x64.tar.gz`
+    fixture.updateHost = async operation => {
+      if (operation.op === 'update-fetch') return { type: 'update-fetched', file, sha256: 'a'.repeat(64) }
+      if (operation.op === 'update-install') return { type: 'update-installed', version: WAITING }
+      expect(operation).toEqual({ op: 'update-restart', version: WAITING })
+      await fixture.host.close()
+      fixture.host = await startHeadlessHost({ dataDirectory: join(fixture.root, 'remote'), port: 0, providers: providers(), reasoner: e2eAgentReasoner, sottoVersion: WAITING })
+      return { type: 'ready', v: 1, status: 'ready', hostId: fixture.reportedHostId, pid: process.pid, port: fixture.host.descriptor!.port, owned: true }
+    }
+    const asked: string[] = []
+    const updates = new HostUpdates({ version: RUNNING, releasesUrl: 'https://releases.example/download',
+      probe: async url => { asked.push(url); return url.includes(`/v${WAITING}/Sotto-host-${WAITING}-linux-x64.tar.gz`) },
+      threads: { working: () => [], interrupt: async () => undefined, subscribe: () => () => undefined },
+      hosts: { candidates: () => fixture.manager.updateCandidates(), run: (id, operation, options) => fixture.manager.runUpdate(id, operation, options),
+        restart: (id, version, options) => fixture.manager.restartForUpdate(id, version, options), subscribe: listener => fixture.manager.subscribe(() => listener()) } })
+    // Nothing is behind this computer's own version; the update it is downloading brings the host's next one.
+    expect(updates.state()).toEqual([])
+    waiting.version = WAITING
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(updates.state()).toMatchObject([{ id: remote.id, from: RUNNING, to: WAITING, phase: 'needs' }]))
+    await updates.command(remote.id, 'update')
+    await vi.waitFor(() => expect(updates.state()).toMatchObject([{ phase: 'done', to: WAITING }]), { timeout: 30_000 })
+    expect(asked).toEqual([`https://releases.example/download/v${WAITING}/${file}`, `https://releases.example/download/v${WAITING}/${file}.sha256`])
+    // The host reconnected on the version it was updated to, ahead of this computer, and its thread works on it.
+    expect(fixture.manager.get().hosts[0]).toMatchObject({ phase: 'connected', version: WAITING })
+    expect(fixture.manager.get().hosts[0]!.error).toBeUndefined()
+    expect(row(thread)).toMatchObject({ id: thread, clientConnected: true })
+    const composed = await fixture.router.command({ type: 'compose', text: 'Draft while the host runs ahead' }, desktopWindowClient('desktop-test'))
+    expect(composed.error).toBeNull()
+    expect(composed.threadDrafts).toContainEqual(expect.objectContaining({ threadId: thread, text: 'Draft while the host runs ahead' }))
+    // A drop while it runs ahead, as Later leaves it until Sotto restarts, reconnects as any drop does.
+    launchers.at(-1)!.callbacks!.onDisconnected!('dropped')
+    await vi.waitFor(() => expect(fixture.manager.get().hosts[0]).toMatchObject({ phase: 'connected', version: WAITING }))
+    await updates.command(remote.id, 'dismiss')
+    expect(updates.state()).toEqual([])
+    updates.dispose()
+  })
   it('refuses a restart for a host Sotto did not start', async () => {
     fixture.owned = false
     const remote = await add()

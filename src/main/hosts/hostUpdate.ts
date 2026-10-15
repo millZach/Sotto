@@ -40,15 +40,27 @@ export interface HostUpdatesOptions {
   readonly requiresManagementUpdate?: (hostId: string) => boolean
   readonly hosts: HostUpdateHosts
   readonly threads: HostUpdateThreads
-  /** This computer's Sotto version: what every update installs. */
+  /** This computer's Sotto version: what an update installs, unless Update all has a later one waiting (`pending`). */
   readonly version: string
   /** Where releases are published; tests serve their own. */
   readonly releasesUrl?: string
   /** This computer's own download, for a host that cannot reach the releases page. */
   readonly download?: (url: string, limit: number, signal: AbortSignal) => Promise<Uint8Array>
+  /**
+   * Whether a release file is published: true, false for a 404, or undefined when the releases page did not say. A HEAD
+   * request from this computer unless a test says.
+   */
+  readonly probe?: (url: string, signal: AbortSignal) => Promise<boolean | undefined>
 }
+/**
+ * The systems a host archive is published for, as the launch script names its own (`process.platform-process.arch`).
+ * Before Sotto has heard which one a host runs, any of them published for a version says the release has host archives.
+ */
+const HOST_SYSTEMS = ['linux-x64', 'linux-arm64', 'darwin-arm64', 'darwin-x64', 'win32-x64', 'win32-arm64'] as const
 interface Entry {
   id: string; name: string; hostId: string; from: string; owned: boolean; installPath: string; dataDirectory: string; boot?: boolean | undefined
+  /** The version this update installs: set while it is offered, and kept from the moment it starts. */
+  to: string
   phase: HostUpdatePhase; step?: HostUpdateStep | undefined; route?: HostUpdateRoute | undefined
   failure?: HostUpdateFailure | undefined; error?: string | undefined
   /** The launch script's code, or this computer's, for the failure shown. */
@@ -100,11 +112,27 @@ async function downloadHere(url: string, limit: number, signal: AbortSignal): Pr
   }
   return Buffer.concat(chunks)
 }
+/** A HEAD request. A redirect to where GitHub keeps the file counts as published, and is not followed. */
+async function probeHere(url: string, signal: AbortSignal): Promise<boolean | undefined> {
+  try {
+    const response = await fetch(url, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]) })
+    if (response.status === 404) return false
+    return response.ok || response.status >= 300 && response.status < 400 ? true : undefined
+  } catch { return undefined }
+}
+/** Whether `target` is later than `version`: by the Owl build order for an Owl target, and by release number otherwise. */
+function laterThan(target: string, version: string): boolean {
+  return getReleaseTrack(target) === 'owl' ? compareOwlHostTarget(version, target) === -1 : hostIsOlder(version, target)
+}
 
 /**
  * Host updates (ADR-0040): every saved host that runs an older Sotto than this computer, and each one's update. Nothing
  * starts until the user presses Update, and each host is updated on its own. It lives in memory: Not now lasts until
  * Sotto next starts, and so does a failure's note.
+ *
+ * With Update all on (ADR-0077), a host is aimed at the version this computer is downloading, or has downloaded, once
+ * the releases page has its host archive, so it is updated before Sotto restarts. Until then, and for a host whose
+ * archive is not published, it is aimed at this computer's own version, as before.
  */
 export class HostUpdates {
   private readonly entries = new Map<string, Entry>()
@@ -114,9 +142,26 @@ export class HostUpdates {
   private published = '[]'
   private readonly off: (() => void)[]
   private readonly releasesUrl: string
+  /** The host version this computer's waiting update brings (ADR-0077), while it is later than this computer's own. */
+  private waiting: string | undefined
+  /** What the releases page said of a version's host archive, by `<version> <system>`, with `*` for a system not yet known. */
+  private readonly archives = new Map<string, 'checking' | 'published' | 'missing' | 'unknown'>()
+  /** Each saved host's system, as the archive name it asked for says: `linux-x64`. */
+  private readonly systems = new Map<string, string>()
+  private readonly probing = new AbortController()
   constructor(private readonly options: HostUpdatesOptions) {
     this.releasesUrl = options.releasesUrl ?? HOST_RELEASES_URL
     this.off = [options.hosts.subscribe(() => this.sync()), options.threads.subscribe(() => this.sync())]
+    this.sync()
+  }
+  /**
+   * The host version that the update this computer is downloading, or has downloaded, brings; undefined when there is
+   * none (ADR-0077). Main calls it when the update moves to another phase, never for a download's progress, so a releases
+   * page that did not answer, or had no host archive yet, is asked again at most that often.
+   */
+  pending(version: string | undefined): void {
+    for (const [key, answer] of this.archives) if (answer === 'unknown' || answer === 'missing') this.archives.delete(key)
+    this.waiting = version !== undefined && HOST_VERSION_PATTERN.test(version) && laterThan(version, this.options.version) ? version : undefined
     this.sync()
   }
   /** Every host update to show, in the order the hosts were saved. A host the user said Not now to is left out. */
@@ -132,6 +177,7 @@ export class HostUpdates {
   dispose(): void {
     for (const off of this.off) off()
     for (const entry of this.entries.values()) entry.run?.abort()
+    this.probing.abort()
     this.listeners.clear()
   }
 
@@ -171,7 +217,7 @@ export class HostUpdates {
   private cancel(entry: Entry): void {
     if (entry.phase === 'confirm' || entry.phase === 'waiting') { entry.phase = 'needs'; return }
     if (entry.phase !== 'updating') return
-    if ((entry.step !== 'download' && entry.step !== 'check') || entry.installing) throw new Error(`${entry.name} is already installing ${this.options.version}, which cannot be stopped partway. Nothing was changed.`)
+    if ((entry.step !== 'download' && entry.step !== 'check') || entry.installing) throw new Error(`${entry.name} is already installing ${entry.to}, which cannot be stopped partway. Nothing was changed.`)
     const run = entry.run
     delete entry.run
     Object.assign(entry, { phase: 'needs', step: undefined, route: undefined })
@@ -180,13 +226,18 @@ export class HostUpdates {
   private begin(entry: Entry): void {
     const run = new AbortController()
     entry.run?.abort()
-    Object.assign(entry, { phase: 'updating', step: 'download', route: 'host', failure: undefined, reason: undefined, error: undefined, installing: false, run })
+    // The version is fixed here: a target that moves later is for the next update. One that has moved back while the
+    // host waited for its threads may no longer be later than what the host runs, and nothing is installed then.
+    const candidate = this.options.hosts.candidates().find(item => item.id === entry.id)
+    if (candidate && !this.needsUpdate(candidate)) { this.entries.delete(entry.id); this.sync(true); return }
+    Object.assign(entry, { phase: 'updating', step: 'download', route: 'host', failure: undefined, reason: undefined, error: undefined, installing: false, run,
+      to: candidate ? this.target(candidate) : entry.to })
     this.sync(true)
     void this.carryOut(entry, run)
   }
   /** The four steps. A failure at any of them leaves the old version running, or starts it again, and says so. */
   private async carryOut(entry: Entry, run: AbortController): Promise<void> {
-    const to = this.options.version, signal = run.signal
+    const to = entry.to, signal = run.signal
     const current = (): boolean => entry.run === run && this.entries.get(entry.id) === entry
     const step = (next: HostUpdateStep): void => { if (current() && entry.step !== next) { entry.step = next; this.sync(true) } }
     const onStep = (next: HostUpdateStep): void => step(next)
@@ -226,11 +277,11 @@ export class HostUpdates {
   /** Download and check: on the host, or on this computer and copied over SSH when the host cannot reach the releases page. */
   private async fetch(entry: Entry, signal: AbortSignal, onStep: (step: HostUpdateStep) => void): Promise<{ file: string; sha256: string }> {
     // `check` arrives from the host once its download is in: the checksum is next.
-    const to = this.options.version
+    const to = entry.to
     const fetched = await this.options.hosts.run(entry.id, { op: 'update-fetch', version: to, releasesUrl: this.releasesUrl }, { signal, onStep })
-    if (fetched.type === 'update-fetched') { entry.file = fetched.file; return { file: fetched.file, sha256: fetched.sha256 } }
+    if (fetched.type === 'update-fetched') { this.learn(entry, fetched.file); return { file: fetched.file, sha256: fetched.sha256 } }
     if (fetched.type !== 'error') throw new UpdateStopped('update-failed', 'download')
-    if (fetched.file) entry.file = fetched.file
+    if (fetched.file) this.learn(entry, fetched.file)
     if ((fetched.reason !== 'download-unreachable' && fetched.reason !== 'download-failed') || !fetched.file) {
       throw new UpdateStopped(fetched.reason, fetched.reason === 'checksum-mismatch' ? 'check' : 'download', fetched)
     }
@@ -262,7 +313,7 @@ export class HostUpdates {
   }
   /** What happened, what runs now, and what to do: the three sentences a failure shows. */
   private describe(entry: Entry, stopped: UpdateStopped): HostUpdateFailure {
-    const { name, from } = entry, to = this.options.version
+    const { name, from, to } = entry
     const kept = `${name} still runs ${from}. Nothing was lost.`
     const byHand = `Try again, or update it by hand on ${name} with the commands below.`
     const say = (message: string, next = byHand, keptNow = kept): HostUpdateFailure => ({ step: stopped.step, message, kept: keptNow, next })
@@ -296,7 +347,7 @@ export class HostUpdates {
   }
   /** The commands that update the host by hand, which the panel offers to copy. Sotto never runs them. */
   private commands(entry: Entry): string {
-    const to = this.options.version, install = shellPath(entry.installPath), data = shellPath(entry.dataDirectory)
+    const to = entry.to, install = shellPath(entry.installPath), data = shellPath(entry.dataDirectory)
     if (entry.reason === 'update-start-failed') {
       return [`# On ${entry.name}, with its host stopped, to see what ${to} says:`, `cd ${install}/versions/${to}`, `node host/index.js --data ${data}`].join('\n')
     }
@@ -315,7 +366,7 @@ export class HostUpdates {
   }
   private view(entry: Entry): HostUpdateState {
     const error = entry.error ?? (this.options.requiresManagementUpdate?.(entry.hostId) ? LEGACY_MANAGEMENT_UPDATE : undefined)
-    return { id: entry.id, name: entry.name, from: entry.from, to: this.options.version, phase: entry.phase, owned: entry.owned,
+    return { id: entry.id, name: entry.name, from: entry.from, to: entry.to, phase: entry.phase, owned: entry.owned,
       working: this.working(entry).length, commands: this.commands(entry), ...(entry.boot ? { boot: true } : {}),
       ...(entry.step ? { step: entry.step } : {}), ...(entry.route ? { route: entry.route } : {}),
       ...(entry.failure ? { failure: entry.failure } : {}), ...(error ? { error } : {}) }
@@ -324,14 +375,64 @@ export class HostUpdates {
   private refresh(entry: Entry, candidate: HostUpdateCandidate): void {
     Object.assign(entry, { name: candidate.name, hostId: candidate.hostId, owned: candidate.owned, installPath: candidate.installPath, dataDirectory: candidate.dataDirectory, boot: candidate.boot === true })
     if (entry.phase !== 'done') entry.from = candidate.version
+    // An offer follows the target; an update that has started, finished or failed keeps the version it was for.
+    if (entry.phase === 'needs' || entry.phase === 'confirm' || entry.phase === 'waiting') entry.to = this.target(candidate)
+  }
+  /**
+   * The version an update of this host installs: the one this computer's waiting update brings, once its host archive is
+   * published for the host's system, and this computer's own otherwise (ADR-0077 decision 6).
+   */
+  private target(candidate: HostUpdateCandidate): string {
+    const waiting = this.waiting
+    return waiting && this.archives.get(this.archiveKey(waiting, candidate.id)) === 'published' ? waiting : this.options.version
+  }
+  private archiveKey(version: string, id: string): string { return `${version} ${this.systems.get(id) ?? '*'}` }
+  /** Keeps the archive a host asked for, whose name says its system, so a later check asks for that system's alone. */
+  private learn(entry: Entry, file: string): void {
+    entry.file = file
+    const system = /-([a-z0-9]+-[a-z0-9]+)\.tar\.gz$/u.exec(file)?.[1]
+    if (system) this.systems.set(entry.id, system)
+  }
+  /**
+   * Asks the releases page, once for each version and system, whether a host archive and its checksum are published,
+   * before a host is offered that version. For a host whose system is not known yet, any system's archive answers; one
+   * whose own is missing is told so by its download, as before. Nothing is offered while the page does not answer.
+   */
+  private checkArchive(version: string, id: string): void {
+    const key = this.archiveKey(version, id)
+    if (this.archives.has(key)) return
+    this.archives.set(key, 'checking')
+    const system = this.systems.get(id)
+    void this.archivePublished(version, system ? [system] : HOST_SYSTEMS).then(found => {
+      if (this.probing.signal.aborted || this.archives.get(key) !== 'checking') return
+      this.archives.set(key, found === undefined ? 'unknown' : found ? 'published' : 'missing')
+      this.sync()
+    })
+  }
+  private async archivePublished(version: string, systems: readonly string[]): Promise<boolean | undefined> {
+    const probe = this.options.probe ?? probeHere, signal = this.probing.signal
+    // Asking for a host whose system is not known yet, each system's answer is kept too, so learning it asks nothing again.
+    const answer = (system: string, published: boolean): void => { if (systems.length > 1 && !signal.aborted) this.archives.set(`${version} ${system}`, published ? 'published' : 'missing') }
+    for (const system of systems) {
+      const [platform, arch] = system.split('-') as [string, string]
+      const url = `${this.releasesUrl.replace(/\/+$/u, '')}/v${version}/${hostArchiveName(version, platform, arch)}`
+      const archive = await probe(url, signal).catch(() => undefined)
+      if (archive === undefined) return undefined
+      const published = archive && await probe(`${url}.sha256`, signal).catch(() => undefined)
+      if (published === undefined) return undefined
+      answer(system, published)
+      if (published) return true
+    }
+    return false
   }
   private needsUpdate(candidate: HostUpdateCandidate): boolean {
-    if (getReleaseTrack(this.options.version) === 'owl') {
-      const comparison = compareOwlHostTarget(candidate.version, this.options.version)
+    const target = this.target(candidate)
+    if (getReleaseTrack(target) === 'owl') {
+      const comparison = compareOwlHostTarget(candidate.version, target)
       return comparison !== undefined && (comparison < 0 || comparison === 0 && this.options.requiresManagementUpdate?.(candidate.hostId) === true)
     }
-    return hostIsOlder(candidate.version, this.options.version)
-      || !hostIsNewer(candidate.version, this.options.version) && this.options.requiresManagementUpdate?.(candidate.hostId) === true
+    return hostIsOlder(candidate.version, target)
+      || !hostIsNewer(candidate.version, target) && this.options.requiresManagementUpdate?.(candidate.hostId) === true
   }
   /**
    * Follows the saved hosts and their threads: a host that answers with an older Sotto needs an update, one that no
@@ -343,13 +444,20 @@ export class HostUpdates {
     const seen = new Set<string>()
     for (const candidate of candidates) {
       seen.add(candidate.id)
+      // A host behind the waiting update is offered it once the releases page has its archive.
+      if (this.waiting && laterThan(this.waiting, candidate.version)) this.checkArchive(this.waiting, candidate.id)
       const older = this.needsUpdate(candidate)
       const entry = this.entries.get(candidate.id)
       if (!entry) {
-        if (older) this.entries.set(candidate.id, { ...candidate, from: candidate.version, phase: 'needs' })
+        if (older) this.entries.set(candidate.id, { ...candidate, from: candidate.version, to: this.target(candidate), phase: 'needs' })
         continue
       }
-      if (entry.phase === 'updating' || entry.phase === 'done') continue
+      if (entry.phase === 'updating') continue
+      // A finished update makes way for the next one, as when Sotto finds a newer version of itself later in the session.
+      if (entry.phase === 'done') {
+        if (older && entry.to !== this.target(candidate)) this.entries.set(candidate.id, { ...candidate, from: candidate.version, to: this.target(candidate), phase: 'needs' })
+        continue
+      }
       if (!older) { this.entries.delete(candidate.id); this.notNow.delete(candidate.id); continue }
       this.refresh(entry, candidate)
       // Waiting, or asking, for threads that have all finished: the user has already pressed Update.

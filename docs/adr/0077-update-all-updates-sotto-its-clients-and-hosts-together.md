@@ -64,6 +64,31 @@ never sends on, as `configure` does (ADR-0074), so the press reaches this comput
 client says what happened and points to Settings → Providers or Settings → Hosts for what the installer printed. A host updates to the version this running Sotto asks for; when a restart brings a newer one, the card
 offers it after the restart.
 
+October 14, 2026 amendment: a host updates to the version this computer is downloading, before Sotto restarts. When
+Sotto finds a new version of itself (offered, downloading or downloaded), each connected host Sotto can update is
+listed at once, aimed at the host version that new Sotto asks for (`hostReleaseVersion`: an Owl build with Usage or
+Muse on asks for its full Owl version; with both off it asks for its source version, the one it already runs, so no
+host is updated ahead). A host whose earlier update this session is done is offered the new version too. One press runs, in order: Sotto's download alongside everything; this
+computer's clients; each host's clients and then that host's own update to the pending version; last, Restart now.
+Before a host is offered the pending version, main asks the releases page with a HEAD request whether
+`Sotto-host-<version>-<platform>-<arch>.tar.gz` and its `.sha256` are published (github.com, already contacted for
+updates; a redirect counts as published and is not followed). Until Sotto has heard a host's system from its own
+download, any system's archive answers; a host whose own is missing is told so by its download, as before, and is
+then asked about its own system. When nothing is published, or the page does not answer, the host stays aimed at the
+running version and is offered the new one after the restart, as before. The page is asked again when the update
+moves to another phase (never for a download's progress), so a host archive uploaded after the installer is found at
+the next check. An update already under way keeps the version it started with, and a host newer than
+the target is never taken down. This follows the `update-all` switch, read once at start: stable aims hosts at the
+running version alone. Only packaged Windows updates itself, so macOS and Linux have no pending version and nothing
+changes there.
+
+Between that host update and Sotto's restart, the host runs ahead of this computer. Protocol version 1 is the same on
+both sides, so the host reconnects, its threads work, and the update's check that it came back on the version it was
+given passes. A refusal that would name version skew says "This host already runs Sotto X, which this computer
+installs when Sotto restarts. Nothing on the host was lost. Restart Sotto to finish its update, then try again." in
+place of asking for Sotto on this computer to be updated, and a connect that fails that way does not keep the host's
+SSH session for Stop host. Later leaves the host ahead until Sotto next restarts, which stays usable the same way.
+
 **7. Settings follows.** On Owl, Settings → Application → Updates offers Update all where it offered Download, and it
 runs the same press.
 
