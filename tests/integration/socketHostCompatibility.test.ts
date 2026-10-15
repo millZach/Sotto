@@ -71,6 +71,19 @@ describe('SocketHostService version check', () => {
     await expect(client.connect()).rejects.toMatchObject({ message: expect.stringContaining('Update Sotto on this computer, then connect again.') })
   })
 
+  it('counts a later Owl build of the same release as newer once the update is gone, so it never says to downgrade (Sotto Bug Bot, review)', async () => {
+    const url = await hostAnswering({ ...frozen, v: 2, sottoVersion: '0.1.24-owl.20261015.1' })
+    const client = new SocketHostService({ url, token: 'paired-token', owned: true, clientVersion: '0.1.24-owl.20261014.1', waitingVersion: () => undefined })
+    const refused = client.connect()
+    await expect(refused).rejects.toMatchObject({ code: 'version_mismatch', message: expect.stringContaining('Update Sotto on this computer, then connect again.') })
+    await expect(refused).rejects.not.toMatchObject({ message: expect.stringContaining('installation folder') })
+    expect(client.hostIsNewer()).toBe(true)
+    // An earlier Owl build of the same release is older, and is offered this computer's version.
+    const older = new SocketHostService({ url, token: 'paired-token', owned: true, clientVersion: '0.1.24-owl.20261016.1' })
+    await expect(older.connect()).rejects.toMatchObject({ message: expect.stringContaining('installation folder') })
+    expect(older.hostIsNewer()).toBe(false)
+  })
+
   it('goes on to open a session with a host that speaks v1, whatever its Sotto version, and ignores features it does not know', async () => {
     const url = await hostAnswering({ ...frozen, sottoVersion: '9.9.9', features: ['detail-delta', 'a-later-feature'] })
     const client = new SocketHostService({ url, token: 'paired-token' })

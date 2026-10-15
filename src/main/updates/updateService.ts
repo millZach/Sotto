@@ -58,6 +58,11 @@ export interface UpdateServiceDependencies {
    */
   readonly createUpdater?: () => UpdaterAdapter | null
   readonly onStatusChanged?: (status: UpdateStatus) => void
+  /**
+   * Why the restart into a downloaded update must wait, such as a host update under way that the restart would cut off
+   * (ADR-0077); undefined when nothing holds it. The sentence becomes the download's problem, and nothing quits.
+   */
+  readonly restartHold?: () => string | undefined
   readonly now?: () => number
   readonly startupDelayMs?: number
   readonly intervalMs?: number
@@ -269,6 +274,8 @@ export class UpdateService {
     if (this.disposed) return UNAVAILABLE
     const adapter = this.ensureAdapter()
     if (adapter === null || this.phase.phase !== 'downloaded') return UNAVAILABLE
+    const held = this.dependencies.restartHold?.()
+    if (held !== undefined) { this.setPhase({ phase: 'downloaded', version: this.phase.version, problem: held }); return UNAVAILABLE }
     this.installing = true
     this.installRefusal = null
     let thrown: string | null = null

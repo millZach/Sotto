@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { compareOwlHostTarget, HostUpdates, type HostUpdateCandidate, type HostUpdateHosts, type HostUpdateThreads } from '../../../src/main/hosts/hostUpdate'
+import { compareOwlHostTarget, HostUpdates, publishedAnswer, type HostUpdateCandidate, type HostUpdateHosts, type HostUpdateThreads } from '../../../src/main/hosts/hostUpdate'
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from '../../../src/main/hosts/sshLauncher'
 import { SshFailure } from '../../../src/main/hosts/sshFailure'
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
@@ -518,5 +518,116 @@ describe('the version this computer is downloading (ADR-0077 decision 6)', () =>
     expect(releases.asked).toEqual([])
     expect(updates.state()[0]).toMatchObject({ to: RUNNING })
     updates.dispose()
+  })
+
+  it('stops an update still downloading a waiting version that goes away, and offers this computer’s again (Sotto Bug Bot, review)', async () => {
+    const { hosts, updates, one } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`], { version: '0.1.37' })
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(one()).toMatchObject({ to: WAITING, phase: 'needs' }))
+    let signal: AbortSignal | undefined
+    hosts.steps['update-fetch'] = (_operation, options) => { signal = options.signal; return new Promise(() => undefined) }
+    await updates.command(ID, 'update')
+    expect(one()).toMatchObject({ phase: 'updating', to: WAITING })
+    updates.pending(undefined)
+    expect(signal?.aborted).toBe(true)
+    expect(one()).toMatchObject({ phase: 'needs', to: RUNNING })
+    expect(hosts.operations.map(operation => operation.op)).toEqual(['update-fetch'])
+    updates.dispose()
+  })
+
+  it('lets an update the host is already unpacking finish, and says plainly what happened', async () => {
+    const { hosts, updates, one } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`])
+    hosts.after = WAITING
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(one()).toMatchObject({ to: WAITING }))
+    const installing = deferred<SshHostUpdateResult>()
+    hosts.steps['update-install'] = () => installing.promise
+    await updates.command(ID, 'update')
+    await vi.waitFor(() => expect(one()).toMatchObject({ step: 'install' }))
+    updates.pending(undefined)
+    expect(one()).toMatchObject({ phase: 'updating', to: WAITING })
+    installing.resolve({ type: 'update-installed', version: WAITING })
+    await vi.waitFor(() => expect(one()).toMatchObject({ phase: 'done', to: WAITING }))
+    expect(one()?.error).toBe(`forge was already installing ${WAITING} when this computer stopped updating to it, so it finished. Nothing was lost. forge runs a newer Sotto than this computer until this computer updates too.`)
+    expect(hosts.operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install', 'update-restart'])
+    updates.dispose()
+  })
+
+  it('waits for the archive check before fixing the version, so one press downloads once (Sotto Bug Bot, review)', async () => {
+    const { hosts, updates, releases, one } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`], { version: '0.1.37' })
+    hosts.after = WAITING
+    const answer = deferred<boolean>()
+    releases.probe.mockImplementationOnce(async (url: string) => { releases.asked.push(url); return answer.promise })
+    updates.pending(WAITING)
+    expect(updates.checking()).toEqual([ID])
+    await updates.command(ID, 'update')
+    // Shown as started, but nothing is fetched until the releases page answers.
+    expect(one()).toMatchObject({ phase: 'updating', step: 'download' })
+    expect(hosts.operations).toEqual([])
+    expect(updates.restartHold()).toContain('the host on forge')
+    answer.resolve(true)
+    await vi.waitFor(() => expect(one()).toMatchObject({ phase: 'done', to: WAITING }))
+    expect(hosts.operations.map(operation => [operation.op, (operation as { version?: string }).version])).toEqual([
+      ['update-fetch', WAITING], ['update-install', WAITING], ['update-restart', WAITING],
+    ])
+    updates.dispose()
+  })
+
+  it('lets Cancel update stop a press still waiting for the archive check', async () => {
+    const { hosts, updates, releases, one } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`], { version: '0.1.37' })
+    const answer = deferred<boolean>()
+    releases.probe.mockImplementationOnce(async (url: string) => { releases.asked.push(url); return answer.promise })
+    updates.pending(WAITING)
+    await updates.command(ID, 'update')
+    await updates.command(ID, 'cancel')
+    expect(one()).toMatchObject({ phase: 'needs' })
+    answer.resolve(true)
+    await vi.waitFor(() => expect(one()).toMatchObject({ phase: 'needs', to: WAITING }))
+    expect(hosts.operations).toEqual([])
+    updates.dispose()
+  })
+})
+
+describe('Sotto quitting or restarting during a host update (Sotto Bug Bot, review)', () => {
+  it('names the hosts being updated, so the restart into Sotto’s update waits for them', async () => {
+    const { hosts, updates } = setup()
+    expect(updates.restartHold()).toBeUndefined()
+    hosts.steps['update-fetch'] = () => new Promise(() => undefined)
+    await updates.command(ID, 'update')
+    expect(updates.restartHold()).toBe('Sotto did not restart while it was updating the host on forge. Nothing was lost. Restart again once that update has finished.')
+    updates.dispose()
+  })
+
+  it('stops a download on quit, and leaves an update the host is unpacking to finish', async () => {
+    const downloading = setup()
+    let signal: AbortSignal | undefined
+    downloading.hosts.steps['update-fetch'] = (_operation, options) => { signal = options.signal; return new Promise(() => undefined) }
+    await downloading.updates.command(ID, 'update')
+    downloading.updates.dispose()
+    expect(signal?.aborted).toBe(true)
+
+    const { hosts, updates, one } = setup()
+    const installing = deferred<SshHostUpdateResult>()
+    hosts.steps['update-install'] = () => installing.promise
+    await updates.command(ID, 'update')
+    await vi.waitFor(() => expect(one()).toMatchObject({ step: 'install' }))
+    updates.dispose()
+    installing.resolve({ type: 'update-installed', version: DESKTOP })
+    // Nothing was aborted: the restart is still asked for, as the launch script would finish it on the host anyway.
+    await vi.waitFor(() => expect(hosts.operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install', 'update-restart']))
+  })
+})
+
+describe('whether the releases page has a file (Sotto Bug Bot, review)', () => {
+  it('counts a redirect only when it points at GitHub’s release asset host', () => {
+    expect(publishedAnswer(200, null)).toBe(true)
+    expect(publishedAnswer(404, null)).toBe(false)
+    expect(publishedAnswer(302, 'https://release-assets.githubusercontent.com/github-production-release-asset/1/2?sp=r')).toBe(true)
+    expect(publishedAnswer(302, 'https://github.com/login')).toBeUndefined()
+    expect(publishedAnswer(302, 'http://release-assets.githubusercontent.com/file')).toBeUndefined()
+    expect(publishedAnswer(302, 'https://release-assets.githubusercontent.com.example/file')).toBeUndefined()
+    expect(publishedAnswer(302, '/errors/404')).toBeUndefined()
+    expect(publishedAnswer(302, null)).toBeUndefined()
+    expect(publishedAnswer(500, null)).toBeUndefined()
   })
 })

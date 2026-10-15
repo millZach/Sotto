@@ -623,6 +623,21 @@ describe('the version a host may run before Sotto restarts (ADR-0077 decision 6)
     }
   })
 
+  it('does not restart while a host update holds it, and says why (Sotto Bug Bot, review)', async () => {
+    const updater = createFakeUpdater({ check: offersUpdate })
+    let hold: string | undefined = 'Sotto did not restart while it was updating the host on forge. Nothing was lost. Restart again once that update has finished.'
+    const { service } = createService({ createUpdater: () => updater.adapter, restartHold: () => hold })
+    await service.check('manual')
+    await service.download()
+    expect(service.install()).toEqual({ ok: false, reason: 'unavailable' })
+    expect(updater.calls.install).toBe(0)
+    // The download stays, and its problem says what happened and what to do.
+    expect(service.status().phase).toEqual({ phase: 'downloaded', version: '3.5.0', problem: hold })
+    hold = undefined
+    expect(service.install()).toEqual({ ok: true })
+    expect(updater.calls.install).toBe(1)
+  })
+
   it('is offered by a development end-to-end run that never installs', async () => {
     const events: UpdaterEvent[] = []
     const updater = e2eUpdater('0.1.38-owl.20261014.2', 0)

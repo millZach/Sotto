@@ -208,6 +208,12 @@ describe('the steps (ADR-0077, layout C)', () => {
     expect(updateAllWords(view)).toMatchObject({ sub: '0.1.38-owl.20261014.1 → 0.1.38-owl.20261014.2', notes: [] })
   })
 
+  it('says so when a host finished a version this computer stopped updating to (Sotto Bug Bot, review)', () => {
+    const note = 'forge was already installing 0.1.38-owl.20261014.2 when this computer stopped updating to it, so it finished. Nothing was lost. forge runs a newer Sotto than this computer until this computer updates too.'
+    const view = updateAllView(sources({ app: owl({ phase: 'up-to-date' }), hostUpdates: [{ ...forgeHost, phase: 'done', error: note }] }), pass([hostKey(FORGE)]))
+    expect(updateAllSteps(view, { working: 0, resumes: true }).map(step => [step.title, step.state, step.detail])).toEqual([['Update forge’s host', 'done', note]])
+  })
+
   it('keeps a client step the press finished once the host’s restart forgets it, and its place before the host', () => {
     const key = clientKey(FORGE, 'claude')
     const finished = updateAllView(sources({ clientHosts: [forgeClients([client({ installed: '2.4.1', published: '2.4.1', behind: false, state: 'updated', ranAt: 'now' })])],
@@ -275,10 +281,11 @@ describe('a host still being checked (ADR-0077, Sol, review)', () => {
     const waitingHost = updateAllView(sources({ app: downloaded, hostUpdates: [hostUpdate({ phase: 'waiting', working: 1 })], hostChecks: [FORGE] }), null)
     expect(waitingHost.items[1]).toMatchObject({ state: 'waiting' })
     expect(waitingHost.phase).toBe('offer')
-    // A host Sotto did not start keeps its commands, and the press does not name it.
+    // A host Sotto did not start keeps its commands, and the press does not name it. Its check shows no step, so it
+    // holds nothing back: the restart is offered at once (Sotto Bug Bot, review).
     const notOurs = updateAllView(sources({ app: downloaded, hosts: [{ ...forgeOnOwl, owned: false } as HostStatus], hostChecks: [FORGE] }), null)
     expect(notOurs.items.map(item => item.state)).toEqual(['done'])
-    expect(notOurs.phase).toBe('offer')
+    expect(notOurs.phase).toBe('restart')
     expect(updateAllWords(notOurs).summary).not.toContain('forge')
   })
 

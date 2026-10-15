@@ -178,7 +178,8 @@ function hostItem(update: HostUpdateState, pass: UpdateAllPass | null): UpdateAl
   // A host's own note before any press, such as one still running thread management, explains rather than fails.
   const refused = pass?.refused.get(key) ?? (touched || update.phase === 'failed' ? update.error : undefined)
   const threads = plural(working, 'thread')
-  if (update.phase === 'done') return touched ? { ...base, versions: { from: update.to }, state: 'done', detail: `${name} runs Sotto host ${update.to}.` } : undefined
+  // A finished update's note, such as one that finished a version this computer stopped updating to, says what happened.
+  if (update.phase === 'done') return touched ? { ...base, versions: { from: update.to }, state: 'done', detail: update.error ?? `${name} runs Sotto host ${update.to}.` } : undefined
   if (update.phase === 'updating') {
     const step = update.step ?? 'download'
     return { ...base, state: 'running', detail: `Step ${HOST_UPDATE_STEPS.indexOf(step) + 1} of 4 · ${stepTitle(update, step)}`, cancellable: step === 'download' || step === 'check' }
@@ -268,7 +269,9 @@ export function updateAllView(sources: UpdateAllSources, pass: UpdateAllPass | n
   // What is still offered, or still being checked, comes before the restart, so Sotto downloaded from the update control
   // leaves the rest a press, and a host the releases page has not answered for is never left behind by it: whatever its
   // step, the restart waits for every answer. A press of Update all covers a host's check, so the press runs until it ends.
-  const unanswered = items.some(item => item.state === 'checking') || (sources.hostChecks?.length ?? 0) > 0
+  // Only a host whose own step is shown holds it: one Sotto did not start has none until its commands are offered.
+  const unanswered = items.some(item => item.state === 'checking')
+    || (sources.hostChecks ?? []).some(id => items.some(item => item.kind === 'host' && item.machine.kind === 'host' && item.machine.id === id))
   const phase: UpdateAllPhase = items.some(item => item.state === 'running') || (pass?.after.size ?? 0) > 0 || unanswered && pass?.joining !== undefined ? 'running'
     : items.some(item => item.state === 'offered') || unanswered ? 'offer'
       : ready ? 'restart'

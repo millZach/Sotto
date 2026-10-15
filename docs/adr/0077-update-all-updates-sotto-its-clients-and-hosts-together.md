@@ -86,12 +86,13 @@ offers it after the restart.
 October 14, 2026 amendment: a host updates to the version this computer is downloading, before Sotto restarts. When
 Sotto finds a new version of itself (offered, downloading or downloaded), each connected host Sotto can update is
 listed at once, aimed at the host version that new Sotto asks for (`hostReleaseVersion`: an Owl build with Usage or
-Muse on asks for its full Owl version; with both off it asks for its source version, the one it already runs, so no
-host is updated ahead). A host whose earlier update this session is done is offered the new version too. One press runs, in order: Sotto's download alongside everything; this
+Muse on asks for its full Owl version; with both off it asks for the stable release that build is built on, never the
+version this computer runs, so a host moves only when the release number does). A host whose earlier update this session is done is offered the new version too. One press runs, in order: Sotto's download alongside everything; this
 computer's clients; each host's clients and then that host's own update to the pending version; last, Restart now.
 Before a host is offered the pending version, main asks the releases page with a HEAD request whether
 `Sotto-host-<version>-<platform>-<arch>.tar.gz` and its `.sha256` are published (github.com, already contacted for
-updates; a redirect counts as published and is not followed). It asks for the host's own system only. The launch
+updates; a redirect counts as published only when it points at `release-assets.githubusercontent.com`, where GitHub
+serves release files, and is not followed). It asks for the host's own system only. The launch
 script reports it with every launch over SSH (`linux-x64`, the pair the archive's name carries), and the tailnet store
 keeps it for a host reached over its tailnet, where no launch runs. A host whose system Sotto has not heard, because it
 has never launched or reached it over SSH, is asked nothing: another system's archive says nothing about its own, so
@@ -102,11 +103,19 @@ While the page has not answered, the card lists a host Sotto started as a step, 
 update…", and Update all covers it; a host Sotto did not start keeps its commands. A press made then starts everything else and records the host, which joins the press once the
 answer comes, aimed at whatever it found: the new version, this computer's own, or nothing, when it leaves the press.
 It still waits for the clients the press asked of it. A check that begins while a press runs, as when the page is asked
-again because Sotto's download moved on, joins the same way. The card never offers the restart while a host's check is
-pending or its update is running. The page is asked again when the update
+again because Sotto's download moved on, joins the same way. The card never offers the restart while the check of a host whose step it shows is
+pending, or a host's update is running; a host with no step, such as one Sotto did not start, holds nothing back. Main
+holds the restart too: while a host update runs, Restart now (from the card or the update control) restarts nothing
+and says "Sotto did not restart while it was updating the host on forge. Nothing was lost. Restart again once that
+update has finished." A quit stops a host download, as Cancel update would, and leaves an update the host has begun to
+unpack to its launch script, which finishes the install and restart on the host after the connection closes. The page is asked again when the update
 moves to another phase (never for a download's progress), so a host archive uploaded after the installer is found at
 the next check. An update already under way keeps the version it started with, and a host newer than
-the target is never taken down. This follows the `update-all` switch, read once at start: stable aims hosts at the
+the target is never taken down, with one exception: when the pending version goes away or changes, a host update still
+downloading it stops, as Cancel update would, and the host is offered its new target. One the host has begun to unpack
+finishes, and its step says "forge was already installing X when this computer stopped updating to it, so it finished.
+Nothing was lost." An Update pressed while the page is still being asked shows as started and fixes its version from
+the answer, so one press downloads and restarts the host once. This follows the `update-all` switch, read once at start: stable aims hosts at the
 running version alone. Only packaged Windows updates itself, so macOS and Linux have no pending version and nothing
 changes there.
 
@@ -116,6 +125,8 @@ given passes. A refusal that would name version skew says "This host already run
 installs when Sotto restarts. Nothing on the host was lost. Restart Sotto to finish its update, then try again." in
 place of asking for Sotto on this computer to be updated, and a connect that fails that way does not keep the host's
 SSH session for Stop host. Later leaves the host ahead until Sotto next restarts, which stays usable the same way.
+When both sides run Owl, a host on a later Owl build of the same release counts as newer even once the pending version
+has gone: it is never offered a downgrade, and a refusal asks for Sotto on this computer to be updated.
 
 **7. Settings follows.** On Owl, Settings → Application → Updates offers Update all where it offered Download, and it
 runs the same press.

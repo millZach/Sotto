@@ -84,11 +84,34 @@ motion on, so the spinner and progress bar are still.
   step's name with its state, a host being checked covered by one press and joining once its check ends, and the
   restart held back until then.
 
+## After Sotto Bug Bot's review
+
+October 15, 2026. The fixes for the seven findings are proved by unit and integration tests; the two journeys above and
+`tests/e2e/host-update.spec.ts` ran again on them in the built app and passed, with no change to the card's captures.
+
+- `tests/unit/main/hostUpdate.test.ts`: when the waiting version goes away, a host update still downloading it stops
+  (its download is aborted, nothing more runs) and the host is offered this computer's version again; one already
+  unpacking finishes and its step says "forge was already installing X when this computer stopped updating to it, so it
+  finished. Nothing was lost."; Update pressed while the releases page is still being asked fetches nothing until the
+  page answers, then downloads, installs and restarts once, on the waiting version, and Cancel update stops it while it
+  waits; `restartHold` names the hosts being updated; a quit aborts a download but not an update the host is unpacking;
+  a redirect counts as published only when its `Location` is `https://release-assets.githubusercontent.com/...`.
+- `tests/unit/main/updateService.test.ts`: Restart now restarts nothing while a host update holds it, keeps the
+  download and carries the hold's sentence as its problem, and restarts once the hold is gone.
+- `tests/unit/main/hostReleaseVersion.test.ts`: a waiting Owl build maps to the stable release it is built on when
+  Usage and Muse are off (`0.1.25-owl.20261015.1` to `0.1.25`), not to the version this computer runs.
+- `tests/integration/socketHostCompatibility.test.ts`: with both sides on Owl and nothing waiting, a host on
+  `0.1.24-owl.20261015.1` is newer than this computer on `0.1.24-owl.20261014.1`, and its refusal asks for Sotto on this
+  computer to be updated rather than for the host to be put back; an earlier Owl build is still older.
+- `tests/unit/renderer/updateAll.test.ts`: a host Sotto did not start, still being checked, has no step and no longer
+  holds the restart back; a finished host step shows its note.
+
 ## Not checked here
 
 - A real GitHub release: the HEAD request against `github.com` and its redirect were exercised only through the
-  stand-in page, which answers 200 rather than 302.
-- Restart now itself: the stand-in updater refuses to install, so the restart into the new version is not run.
+  stand-in page, which answers 200 rather than 302. Which redirects count is a unit test (`publishedAnswer`).
+- Restart now itself: the stand-in updater refuses to install, so the restart into the new version is not run. Main's
+  hold on it during a host update, and a quit during one, are unit tests only.
 - macOS and Linux have no pending version and no change; they were not run.
 - A host reached only over its tailnet before this build: the integration test covers the system kept with the
   tailnet entry, but not a real host on forge's tailnet.

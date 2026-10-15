@@ -989,8 +989,8 @@ export class DesktopHosts {
       // A host that answers with another version is the right host, so Add host keeps it (see add()).
       if (otherVersion && this.isAttempt(host)) await this.commitAdd(host)
       if (otherVersion && active.ssh) {
-        // A host already on the version this computer is downloading counts as newer: Sotto's restart is the way out.
-        // `hostIsNewer` compares release numbers alone, so a later Owl build of the same release is not newer by it.
+        // A host already on the version this computer is downloading counts as newer: Sotto's restart is the way out. So
+        // does one on a later Owl build of the same release when both sides run Owl (`hostIsNewer` orders those).
         const newer = (active.socket?.hostIsNewer() || active.socket?.aheadForRestart()) ?? false
         const version = active.socket?.sottoVersion()
         await active.socket?.close().catch(() => undefined)

@@ -159,7 +159,7 @@ import {
 } from '../shared/channels'
 import { APP_ID, APP_NAME } from '../shared/constants'
 import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
-import { hostReleaseVersion } from './hosts/hostReleaseVersion'
+import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleaseVersion'
 import { WATCHER_CHANGED, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
 import type { DictationCommand } from '../shared/contracts'
@@ -1150,6 +1150,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const updates = new UpdateService({
     currentVersion: appRunningVersion, owlFeatures, watcherEnabled,
     getSettings: () => settings.get(),
+    // With Update all on, the restart waits for a host update under way, which it would otherwise cut off (ADR-0077).
+    ...(owlFeatures['update-all'] ? { restartHold: () => hostUpdates.restartHold() } : {}),
     ...(updatesSupported ? { createUpdater: createElectronUpdaterAdapter } : updateStandIn ? { createUpdater: () => e2eUpdater(updateStandIn) } : {}),
     onStatusChanged: (status) => {
       windows.sendToMain(UPDATE_STATUS, status)
@@ -1159,7 +1161,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       if (owlFeatures['update-all'] && status.phase.phase !== waitingPhase) {
         waitingPhase = status.phase.phase
         waitingAppVersion = waitingVersion(status.phase, waitingAppVersion)
-        waitingHostVersion = waitingAppVersion === undefined ? undefined : hostReleaseVersion(waitingAppVersion, appVersion, usageEnabled || museEnabled)
+        waitingHostVersion = waitingAppVersion === undefined ? undefined : updateHostReleaseVersion(waitingAppVersion, usageEnabled || museEnabled)
         hostUpdates.pending(waitingHostVersion)
       }
     },
