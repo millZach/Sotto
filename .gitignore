@@ -586,3 +586,5 @@ artifacts/stable-from-main/*
 !artifacts/stable-from-main/release-check.json
 !artifacts/stable-from-main/linux-verification.json
 !artifacts/stable-from-main/SHA256SUMS.txt
+
+artifacts/watcher-room-state/*

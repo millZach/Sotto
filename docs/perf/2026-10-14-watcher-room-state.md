@@ -1,58 +1,56 @@
-# Watcher room publication — October 14, 2026
+# Watcher room publication and owned remote inputs
 
-Issue #991, step 5. **After measurements pending.** The pre-implementation baseline below is complete; it establishes no performance improvement or completed implementation.
+Issue #991, step 5. Remote cached reads and the complete local matrix are measured below. The built Windows app passed its Watcher journeys; final gate results are recorded in the verification note.
 
-## Starting point
+Step 5 keeps the existing Watcher and streaming-publish-cost startup gates. It captures complete owned desktop room notifications inside a separate 50 ms desktop room window using the existing leading/trailing rules. Direct command answers flush pending notifications on success or failure and retain their own results. Local state projection already avoided a whole local shell clone before this work; no new credit is taken for that property.
 
-The pre-Step-5 source is `ec06e9d6fe5bede6e03346303e262f6fee5fa2c1`, after steps 1–4. `WatcherService.state()` already projects from `AgentControl.watcherSnapshot()` without cloning the whole local shell. `watcherRecord()` still copies the bounded Watcher record, and room projection still allocates its own objects. The remaining desktop notification subscription in `main/index.ts` sends each projected room immediately.
+The new room-only remote input reads requested thread facts from the actual cached host state. It returns owned primitive rows and owned request ID/kind arrays, reusing connectivity and settlement for each target. Public shell reads, socket ingestion/merge, observer/tool/Stop all snapshot semantics and phone events retain their existing contracts. Whole Watcher publication can still perform observation clones; zero room-triggered clones is not zero total Watcher clones.
 
-Remote participants have a separate existing path: `owningSnapshot()` asks the desktop host router for the owning host, whose socket service clones its cached remote state. This work preserves that path. The local-only benchmark below does not measure remote clone cost and cannot establish a remote saving. Distinct Watcher reconciliation and tool reads also remain outside the room projection change.
+## Remote baseline
 
-## Comparison
+Native Windows real paired socket cache, generated 204 threads, 43 projects and 875 models. Cache estimate 1,094,109 bytes using node:v8 serialization, not network bytes. Three rounds of ten synchronous state or Get reads isolate room reads from asynchronous ingestion and observers. Startup Watcher and existing streaming answers are true; future reader answers were explicitly inert in the baseline owners. Fixture SHA 83349983D2A14FFAB190F471DBE99583FEC86E510E4CA1321490B0C67BA67E81, source 7a1df9c6. Native0/18.74s. Byte accounting runs after aggregate CPU endpoints; counters add instrumentation overhead and Windows CPU resolution limits apply.
 
-Run on a quiet native Windows laptop, with no other full suite or Electron journey:
-
-```powershell
-$env:SOTTO_PERF_BENCH = '1'
-npx vitest run tests/perf/watcherRoomPipeline.perf.test.ts --maxWorkers=1 --disable-console-intercept
-```
-
-Both sides enable Watcher and the existing `streaming-publish-cost` answer throughout the workspace, coordinator and desktop shell encoding. Muse is off; only the generated Claude and Codex providers connect. The comparison varies only the desktop room publication seam. A stable/disabled-gate correctness control is not the CPU baseline.
-
-The generated fixture uses the existing adapter message logs, certified activity publication, provider switch, workspace, coordinator, local host service and desktop host router. It materializes 204 threads, 43 projects and 875 models from the step-4 fixture and enabled provider catalogs. Real Watcher hooks observe one, three or six local participants. An unavailable retained master prevents any model turn. Its request includes display proofs, a follow-up and receipt records; checkpoint observations supply evidence. No user profile is opened.
-
-Each case has three rounds of 180 chunks per streaming thread, with a two-millisecond gap and one generated command record every 25 chunks. It includes the final idle publication and a 150-millisecond quiet tail. The CPU-per-chunk denominator is `180 × streaming threads`, not the number of IPC sends. Modes alternate off/on/on/off for each stream count. The before-source run intentionally uses the legacy room sender for both labels; only the after-source run can exercise the new room publisher.
-
-The native Electron main process sends room, shell and detail payloads through real IPC. The preload forwards every payload across contextBridge. The synthetic page applies Sotto's real shell reconstruction, detail deltas and state sharing; each case resets its caches. It receives the complete room in a page callback. This measures transport and page assembly, not React painting or a person's interaction with the built app.
-
-## Measurements to retain
-
-Record the exact source, command, native exit, machine/resource state and raw round output for every run. Report main-thread CPU separately from main-process CPU. The total CPU column adds measured main-process and renderer CPU; it is the generated chain, not the whole running Sotto UI or system CPU. Preserve round variation rather than declaring a universal win from one median.
-
-Count room projections and local shell reads during those projections separately from all bounded Watcher-record copies. The local projection shell-read count is expected to be zero before the change; that is an already shipped property. Projection counts need not fall when only delivery is coalesced. Added room-capture copies and their CPU must be included in the after result. The fixture has no remote participants; no remote-copy measurement is inferred from that absence.
-
-Attempted and successful sends describe calls/enqueues on the live fixture window, not acknowledgements of every rendered state. `wireBytes` is the sum of `node:v8.serialize()` payload lengths, a size estimate rather than measured Chromium wire traffic. Byte serialization and JSON equality run after the CPU interval, so fewer sends cannot create an artificial stringify/serialization CPU win. Timed counters, bounded-record instrumentation and retained sent-payload references still add overhead; disclose it with the results.
-
-The final page room must equal the independently retained latest projected room from before the publisher, including its `observedAt`. Comparing only with the last payload sent would miss a dropped trailing event. This equality is separate from the gate, nested capture ownership, direct-reply ordering, absent-window recovery and paired Stop-all correctness tests.
-
-## Results
-
-The baseline ran on the Windows development laptop from 18:50:59.501 to 18:55:32.324 UTC, native exit 0, one perf test in 272.46 seconds. Production was unchanged from `ec06e9d6`; only the prepared fixture/tests and draft documentation were present. Both labels used the prior immediate **room publisher**, with steps 1–4 enabled. They are not stable-versus-Owl comparisons. The fixture source's SHA-256 was `508064e6edddb38d0dcaf6c8d9ae4de4c3227f1bbf91921b632a20e0ad626f2c`; the perf entry's was `1778c094783331304e6f492e6e96b9103614d21c02e4c1e53cd7561fa75177c6`. Exact copies and raw start/log/exit records are retained in the durable run folder.
-
-Pooled medians of twelve baseline rounds per stream count (all four labels execute the same prior room path):
-
-| Streaming threads | Main-thread CPU/chunk | Main-process + renderer CPU/chunk | Room sends/round | Estimated room bytes/round |
+| Targets | Full-shell clones/read | Estimated copied bytes/read | state CPU/read | Get CPU/read |
 | --- | ---: | ---: | ---: | ---: |
-| 1 | 12.328 ms | 14.633 ms | 87 | 351,215 |
-| 3 | 6.569 ms | 7.394 ms | 98 | 991,649 |
-| 6 | 5.028 ms | 5.882 ms | 93.5 | 1,799,109 |
+| 1 | 4 | 4,376,436 | 23.4 ms | 23.5 ms |
+| 3 | 12 | 13,129,308 | 75.0 ms | 73.4 ms |
+| 6 | 24 | 26,258,616 | 154.6 ms | 170.2 ms |
 
-All 36 rounds passed exact latest-projection/page-room equality after the final idle publication and quiet tail. Room projections equalled room sends on this prior path. Every round recorded zero local shell reads **during room projection**; that was already true before this change. Bounded record copies and existing non-projection Watcher reconciliation/tool shell reads remain. This Watcher-enabled chain therefore measures substantially more work than the earlier Watcher-disabled step-4 fixture.
+Remote AFTER on `1681abdb50a75056bdf724addae5c6549c488044` completed native exit 0 in 3.31 seconds, all eighteen rows retained, with the exact same benchmark fixture. All scoped full-shell calls/clones and their estimated copied bytes were zero. These are counts of whole cached-shell copies, not counts of all bounded record/input copies or whole Watcher publication work.
 
-The initial quiet-slot check had about 12.3 GiB available and no full-suite/build/Playwright job. Mid-run checks at 18:52:52 and 18:54:30 UTC found no such competitor. A subsequent unrelated full suite started at 18:57:23, after the baseline ended. Per-copy Windows CPU deltas were quantized, including zero readings and roughly 15–16-millisecond ticks; those sums are not precise clone-cost measurements, and zero does not mean copying is free. Use aggregate pipeline CPU and actual copy counts as the primary evidence.
+| Targets | Method | BEFORE wall/10 reads | AFTER wall/10 reads | BEFORE process CPU/10 reads | AFTER process CPU/10 reads |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1 | state | 238.309 ms | 0.358 ms | 234 ms | below resolution |
+| 1 | Get | 228.936 ms | 0.366 ms | 235 ms | below resolution |
+| 3 | state | 755.823 ms | 0.549 ms | 750 ms | below resolution |
+| 3 | Get | 700.927 ms | 0.540 ms | 734 ms | below resolution |
+| 6 | state | 1,509.398 ms | 1.033 ms | 1,546 ms | 15 ms |
+| 6 | Get | 1,631.301 ms | 1.187 ms | 1,702 ms | below resolution |
 
-After measurements and paired prior/optimized room comparisons remain pending. No CPU saving, send reduction or scaling improvement is established by the baseline labels.
+Entries are medians of three ten-read rounds. Zero process-CPU deltas do not mean free work; the six-target state samples include 15/16/0 ms Windows ticks. Wall time and actual clone counts remain useful below that CPU resolution. Both runs acquired an expanded quiet guard; the short AFTER had no mid-run resource sample, so no system-isolation claim is made. This benchmark proves scoped cached reads, not remote command delivery, paint or live providers. Full room value/ownership equality has separate durable tests.
 
-## Limits
+## Local comparison and adverse result
 
-Generated local data and synthetic providers; native Windows Electron IPC/contextBridge and page assembly. No installed release, paid/live provider, remote host, phone, macOS, Linux desktop or React painting result is claimed. Running-app journeys and independently inspected captures belong in the separate verification note.
+AFTER04 was interrupted by the app restart after ten cases and thirty strict rows; it has no native exit marker and is not an accepted full matrix. Its complete log, thirty rows and observed external Playwright overlap remain retained. AFTER05 is one authorized full replacement on unchanged clean 1681abdb, with the same fixture, workload, CPU endpoints, oracle and deadlines; no missing cases are spliced into AFTER04. Its external wrapper records case-output receipt times, which do not establish per-round start times.
+
+Use AFTER05's own counterbalanced immediate/coalesced/coalesced/immediate arms, six samples per arm at each of one, three and six streams. Upstream steps and WatcherService/router cost answers stay enabled equally; only the desktop room publisher varies. The real remote API is attached, with zero remote participants. Retain all 36 rows, positional variation, source projections, captures, main-thread and main-process plus renderer CPU, wall time, send count, estimated payload bytes and strict final-state receipt/equality. Main CPU is process.threadCpuUsage; chain CPU is process.cpuUsage plus renderer CPU. The corrected fixture prevents causal CPU comparison with historical AFTER03.
+
+AFTER05 completed native exit 0, twelve cases and all thirty-six strict rows in 372.74 seconds, from 23:53:48.971 UTC to 00:00:02.465 UTC. No rows were pruned. Pooled medians of six rounds per arm:
+
+| Streams | Main-thread CPU/chunk immediate → coalesced | Chain CPU/chunk immediate → coalesced | Sends/round immediate → coalesced | Wall/round immediate → coalesced |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 23.481 → 22.142 ms | 29.511 → 26.561 ms | 96.5 → 73.5 | 5,603.434 → 5,506.632 ms |
+| 3 | 11.473 → 11.472 ms | 13.584 → 13.612 ms | 99 → 94.5 | 7,987.862 → 7,951.575 ms |
+| 6 | 7.986 → 7.241 ms | 9.325 → 8.594 ms | 100.5 → 93 | 10,435.426 → 9,120.569 ms |
+
+These are observed within-run values, not a general local CPU gain or evidence of a local runtime fix. At three streams main-thread CPU is effectively unchanged and chain CPU is slightly higher. The quiet start had 9,372,544 KiB free. Resource samples01–03 saw only the owned fixture under the expanded guard; sample04 at16:57:10 found external Usage Playwright, and samples05–06 found a later external Usage full suite. All cases and positions remain in the raw log and summary. The earliest recorded external launcher65628 started at16:56:57.496-07:00. All one-stream cases had emitted by16:55:24.110, and the first three three-stream cases by16:56:54.513; that early three-stream comparison is already mixed. External receipt timestamps bound completed cases, not exact per-round starts or causal load. Keeper and fixture cleanup plus clean1681 were verified after completion.
+
+Historical AFTER03 on ca5d816 completed all 36 rows but raised a material concern. Immediate to coalesced main CPU/chunk was 12.369→14.803,6.915→7.262,8.058→8.572ms; chain CPU 14.186→18.272,7.914→8.651,9.274→9.960ms. Sends fell 88→57.5,93.5→68,98.5→95. The early one-stream increase precedes the late external suite, so overlap does not explain it. Capture wall and projection counts do not provide an additive explanation. Do not call this a CPU win or discard slow rows.
+
+Six bounded strict profile rounds on 7a1df9c6 passed. Their timings reversed the ordering and are diagnostic only. Sampled main-thread profile work is dominated by shared observer/control clones, activity copies and provider-ID parsing; this is not an additive explanation of timed CPU. No confirmed optimized-only mechanism accounts for the earlier increase. Traces include profiler overhead and post-CPU validation, and main-thread profiles cannot account for renderer or worker CPU. No speculative local coalescer fix follows. The completed fresh unprofiled matrix has mixed results; it does not establish a general CPU gain.
+
+Historical preimplementation baseline01, failed AFTER01, completion-boundary diagnostic, corrected baseline02 timeout, stage probe, clone-interceptor ABBA, integrated BEFORE03 and AFTER03 remain separately documented. The completion handshake owns an independent pre-publisher source candidate and waits for its natural renderer callback under one ten-second deadline; it never gets/flushes manually. The outer matrix deadline is 900 seconds to allow all cases, not a CPU assertion. No changed-boundary baseline is silently substituted for an earlier one.
+
+## Proof limits
+
+Local matrix: real Windows Electron IPC/contextBridge and selected shell/detail assembly in a synthetic page, not React paint or whole-app CPU. Remote benchmark: real cache ingestion followed by scoped synchronous reads. The built Windows app passed seventeen Watcher and gate journeys; inspected captures and final exact gates are recorded in the verification note. No installed release, live provider, Mac/Linux desktop or native-phone result is claimed. Both matrices start only after the expanded quiet guard; disclose every observed mid-run competitor and sampling limits.
