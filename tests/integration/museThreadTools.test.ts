@@ -156,6 +156,31 @@ it('admits a Sotto tool prompt the stream missed when the thread reads Muse agai
   expect((await thread(f, id)).requests).toEqual([])
 })
 
+it('shows nothing for an admitted prompt Muse resolved before its unreadable acknowledgement', async () => {
+  const { f, id } = await open()
+  await f.script({ unreadableApprovalAck: true })
+  await f.action(id, { type: 'tool-permission', toolName: 'mcp__sotto_browser__browser_open' })
+  await expect.poll(async () => (await records(f, 'approval/decide')).length).toBe(1)
+  // A later prompt the user must answer proves the acknowledgement before it was read.
+  await f.driver.raisePermission(id, 'rm -rf build')
+  await expect.poll(async () => (await thread(f, id)).requests.map(request => request.text)).toEqual(['Run a command: rm -rf build'])
+})
+
+it('reads Muse again when an admitted stage went stale, and admits the stage it holds now', async () => {
+  const { f, id } = await open()
+  await f.script({ suppressApproval: true })
+  await f.action(id, { type: 'tool-permission', toolName: 'mcp__sotto_browser__browser_open' })
+  await expect.poll(async () => {
+    const saved = JSON.parse(await readFile(join(f.root, 'native-sessions.json'), 'utf8')) as { sessions: Record<string, { pendingApprovals?: unknown[] }> }
+    return saved.sessions[await f.realId(id)]?.pendingApprovals?.length
+  }).toBe(1)
+  // The read Sotto makes moves the approval to its next stage before answering with the stage it had.
+  await f.script({ pendingListRace: 'stage' })
+  await f.action(id, { type: 'gap' })
+  await expect.poll(async () => (await records(f, 'approval/decide')).map(record => (record.params!.requirementId as { sourceIndex: number }).sourceIndex)).toEqual([0, 1])
+  expect((await thread(f, id)).requests).toEqual([])
+})
+
 it('answers capabilityRequired when a client sends servers it never asked to attach', async () => {
   const f = await museFixture()
   closing.push(() => f.cleanup())

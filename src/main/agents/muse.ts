@@ -136,6 +136,15 @@ function museToolServer(server: ThreadMcpServer): Record<string, unknown> {
     headers: { ...Object.fromEntries(server.headers.map(header => [header.name, header.value])), [TOOL_WAIT_HEADER]: String(MUSE_TOOL_WAIT_SECONDS) } }
 }
 
+/**
+ * The one `session/start` a thread makes, the same on every try: its replay after a lost acknowledgement must match the
+ * first byte for byte, or Muse refuses it (`command_id_conflict`).
+ */
+function startParams(alias: Alias, tools: { config?: unknown }): Record<string, unknown> {
+  return { commandId: alias.startCommandId, workspaceRoot: alias.cwd, modelId: alias.modelId,
+    ...(alias.runtimeMode ? { approvalMode: MSP_MODE[alias.runtimeMode] } : {}), ...tools }
+}
+
 interface ThreadProcess {
   rpc: MuseRpc; ready: Promise<ThreadProcess>; clientRevision: number; turnRevision: number; closing: boolean; lost: boolean; sessionId?: string; resync?: Promise<void>
   /** Whether this host granted `sessionMcp`, so its sessions may be given Sotto's tool servers. */
@@ -260,17 +269,22 @@ export class MuseMspHost implements AgentHost {
     const choiceId = museToolAdmission(pending.approval, entry.tools)
     if (!choiceId) return false
     const admitting = entry.admitting ??= new Set(), admitted = entry.admitted ??= new Map()
-    admitted.set(pending.approval.approvalId, pending.approval)
     if (admitting.has(pending.request.id)) return true
     admitting.add(pending.request.id)
-    const generation = this.generation
+    admitted.set(pending.approval.approvalId, pending.approval)
+    const generation = this.generation, threadId = pending.threadId, approvalId = pending.approval.approvalId
     void entry.rpc.request('approval/decide', {
-      commandId: museCommandId(), sessionId: alias.museSessionId, approvalId: pending.approval.approvalId,
+      commandId: museCommandId(), sessionId: alias.museSessionId, approvalId,
       choiceId, requirementId: pending.approval.currentRequirementId,
     }).then(ack => { museApprovalDecidedSchema.parse(ack) }).catch(error => {
-      // Settled already, or moved to a stage Muse announces with `approval/updated`, which comes back here.
-      if (error instanceof MuseRejected && (error.kind === 'approvalAlreadyResolved' || error.kind === 'approvalRequirementStale')) return
-      if (generation === this.generation && this.processes.get(pending.threadId) === entry) { admitted.delete(pending.approval.approvalId); this.showRequest(pending, entry) }
+      if (generation !== this.generation || this.processes.get(threadId) !== entry) return
+      if (error instanceof MuseRejected && error.kind === 'approvalAlreadyResolved') return
+      // The approval moved on before this answer reached it, perhaps by an update Sotto had no stage for yet: read
+      // what Muse holds now, which admits the current stage or shows it.
+      if (error instanceof MuseRejected && error.kind === 'approvalRequirementStale') { void this.resync(threadId, entry).catch(() => undefined); return }
+      // Resolved meanwhile, or a later stage took over this approval: there is nothing left to show.
+      if (admitted.get(approvalId) !== pending.approval) return
+      admitted.delete(approvalId); this.showRequest(pending, entry)
     }).finally(() => { admitting.delete(pending.request.id) })
     return true
   }
@@ -684,10 +698,7 @@ export class MuseMspHost implements AgentHost {
       if (!alias.museSessionId && alias.startCommandId) {
         const tools = await this.sessionTools(id, entry)
         this.assertGeneration(generation)
-        const start = () => entry.rpc.request('session/start', {
-          commandId: alias.startCommandId, workspaceRoot: alias.cwd, modelId: alias.modelId,
-          ...(alias.runtimeMode ? { approvalMode: MSP_MODE[alias.runtimeMode] } : {}), ...tools.params,
-        })
+        const start = () => entry.rpc.request('session/start', startParams(alias, tools.params))
         let reply: unknown
         try { reply = await start() } catch (error) {
           if (!(error instanceof MuseRejected && error.reason === 'command_id_conflict')) throw error
@@ -1181,10 +1192,7 @@ export class MuseMspHost implements AgentHost {
           const tools = await this.sessionTools(command.threadId, entry)
           this.assertGeneration(generation)
           watcherGuard?.()
-          const started = sessionStartSchema.parse(await entry.rpc.request('session/start', {
-            commandId: alias.startCommandId, workspaceRoot: alias.cwd, modelId: alias.modelId,
-            ...(alias.runtimeMode ? { approvalMode: MSP_MODE[alias.runtimeMode] } : {}), ...tools.params,
-          }))
+          const started = sessionStartSchema.parse(await entry.rpc.request('session/start', startParams(alias, tools.params)))
           entry.tools = tools.tools
           alias.museSessionId = started.session.sessionId
           entry.sessionId = alias.museSessionId
