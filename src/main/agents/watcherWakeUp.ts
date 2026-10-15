@@ -169,6 +169,22 @@ export class WatcherWakeUp {
   }
   news(): WatcherEvent[] { return this.recent.filter(event => this.due(event)) }
   /**
+   * Forgets that these events were told: their wake-up was let go with its send unknown, and is never sent twice. What
+   * is still true is observed afresh and told in a new wake-up; what is no longer true stays untold.
+   */
+  forget(events: readonly WatcherEvent[]): void {
+    for (const event of events) {
+      this.seen.delete(event.id); this.rememberPending.delete(event.id)
+      if (event.kind === 'evidence-changed') {
+        const scope = observationDigest(['evidence-changed', event.requestId, event.target, event.generation])
+        if (this.latestEvidence.get(scope)?.id === event.id) this.latestEvidence.delete(scope)
+        this.toldLocal.delete(targetKey(event.target))
+      }
+      if (event.kind === 'work-settled') this.oweWorkSettled(workSettledScope(event.requestId, event.target, event.generation, event.turnId))
+    }
+    this.recent = this.recent.filter(event => !events.some(item => item.id === event.id))
+  }
+  /**
    * The events still due. Work-settled news whose work started again before delivery is not sent; its turn is owed it
    * again, so it comes once the work truly reaches zero.
    */

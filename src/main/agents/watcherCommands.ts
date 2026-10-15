@@ -24,6 +24,8 @@ export interface WatcherControlHooks {
   watchedThreadIds?(): string[]
   wakeDue?(event: WatcherEvent): boolean
   wakeReady?(): boolean
+  /** News whose wake-up was let go with its send unknown: forget it was told, so what is still true is told afresh. */
+  forgetWakeEvents?(events: readonly WatcherEvent[]): void
   pullRequestObserved?(read: PullRequestObservation): void
   restoreCheckpoint?(read: CheckpointObservation): void
   checkpointObserved?(read: CheckpointObservation): void

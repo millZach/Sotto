@@ -176,6 +176,14 @@ export class WatcherService implements WatcherControlHooks {
   }
   wakeDue(event: WatcherEvent): boolean { return this.wakes.due(event) }
   wakeReady(): boolean { return this.wakes.ready() }
+  forgetWakeEvents(events: readonly WatcherEvent[]): void {
+    if (this.closed || !events.length) return
+    const ids = new Set(events.map(event => event.id))
+    this.wakes.forget(events)
+    void this.options.control.updateWatcher(record => { record.wakeEventIds = (record.wakeEventIds ?? []).filter(id => !ids.has(id)) })
+      .catch(() => { this.recoveryNotice = 'Watcher news could not be saved. Reconnect or refresh its threads to retry. Nothing was approved.' })
+      .finally(() => { if (!this.closed) this.wakes.observe() })
+  }
   pullRequestObserved(read: PullRequestObservation): void { this.wakes.pullRequest(read) }
   restoreCheckpoint(read: CheckpointObservation): void { this.wakes.restoreCheckpoint(read) }
   checkpointObserved(read: CheckpointObservation): void { this.wakes.checkpoint(read) }

@@ -2648,7 +2648,7 @@ export class AgentControl {
       // A wake-up holding only Watcher's news is shown nowhere, so no one can resume or remove it. It goes again by itself
       // once Watcher finishes a turn after it stopped, or at once when it is holding the thread's other items up; one that
       // failed to send is tried again while Watcher rests, a few times; one whose send is unknown, and no longer being
-      // reconciled, is let go.
+      // reconciled, is let go, and its news is observed afresh rather than sent twice.
       if (isWatcherOnlyWakeUp(first) && thread && ['paused', 'failed', 'uncertain'].includes(first.status)
         && !this.outbox.some(item => item.id === first.commandId)
         && !thread.messages.some(message => message.role === 'user' && message.id === first.messageId)) {
@@ -2661,9 +2661,10 @@ export class AgentControl {
             this.wakeRetries.set(first.id, (this.wakeRetries.get(first.id) ?? 0) + 1)
             while (this.wakeRetries.size > 1_000) this.wakeRetries.delete(this.wakeRetries.keys().next().value!)
           }
+          const letGo = first.status === 'uncertain' ? (first.news ?? []).flatMap(news => isWatcherNews(news) ? news.events : []) : []
           this.pumping.add(threadId)
           let revived = false
-          void this.followupStore.reviveWakeUp(first.id, thread.lastTurn?.id ?? UNKNOWN_TURN).then(() => { revived = true })
+          void this.followupStore.reviveWakeUp(first.id, thread.lastTurn?.id ?? UNKNOWN_TURN).then(() => { revived = true; if (letGo.length) this.watcherHooks?.forgetWakeEvents?.(letGo) })
             .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
             .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (revived) this.pumpFollowups() })
           continue

@@ -776,6 +776,23 @@ it('starts a stopped wake-up no one is shown again on news that needs Watcher, a
   expect(refused).toBeGreaterThanOrEqual(2)
 }, 30_000)
 
+it('lets a hidden wake-up whose send is unknown go, and tells its news afresh rather than losing it', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  f.native(started.target.threadId).requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
+  f.workspace.adapters.codex.emit()
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
+  // Its send began and Sotto cannot say whether it landed: no outbox entry and no echo are left to reconcile it.
+  const store = followupStoreOf(f.control), unknown = queued(f).find(item => item.threadId === f.id && item.wakeUp)!
+  await store.claim(unknown.id); await store.settle(unknown.id, 'uncertain', 'Synthetic unknown send')
+  await f.finish(f.id)
+  // It is never sent twice; the question it named, still open, is told in a wake-up of its own.
+  await vi.waitFor(() => expect(queued(f).some(item => item.id === unknown.id)).toBe(false), { timeout: 15_000 })
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master
+    && command.watcherNews?.includes('Open this thread to answer'))).toBe(true), { timeout: 15_000 })
+}, 40_000)
+
 it('withdraws answered worker news while retaining the user queue before a busy master wake-up', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')

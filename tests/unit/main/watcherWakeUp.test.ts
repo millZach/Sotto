@@ -1084,3 +1084,20 @@ it('names no operation for a turn no brief of Watcher\'s began', async () => {
   expect(finished.operationId).toBeUndefined()
   expect(watcherNewsText(f.delivered[0]!)).not.toContain('answers operation')
 })
+
+it('tells news afresh once its wake-up is let go with its send unknown, and only what is still true', async () => {
+  const f = fixture()
+  finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  expect(turnKinds(f.delivered)).toEqual(['turn-finished'])
+  f.wakes.observe(); await f.advance(10_000)
+  expect(f.delivered).toHaveLength(1)
+  // The queue let that wake-up go without knowing whether it was sent; it is never sent twice, so its news is told anew.
+  f.wakes.forget(f.delivered[0]!.events)
+  f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(2)
+  expect(f.delivered[1]!.events.map(event => [event.kind, event.turnId])).toEqual([['turn-finished', 'turn-1']])
+  // News that is no longer true stays untold: the thread has started its next turn.
+  f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }
+  f.wakes.forget(f.delivered[1]!.events); f.wakes.observe(); await f.advance(10_000)
+  expect(f.delivered).toHaveLength(2)
+})
