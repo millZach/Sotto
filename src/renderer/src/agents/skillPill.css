@@ -10,8 +10,7 @@
 .ProseMirror-selectednode .composer-skill { background: color-mix(in srgb, var(--tt-accent) 24%, transparent); box-shadow: 0 0 0 1.5px var(--tt-focus-ring); }
 .ProseMirror-selectednode:has(.composer-skill) { outline: 0; }
 
-/* What the skill does, above the pill it belongs to. Solid overlay rather than glass: it is read, not looked
-   through, and its quiet line keeps 4.5:1 even over the queued message editor's backdrop at the lowest glass. */
+/* What the skill does, above the pill it belongs to, on the solid overlay so its quiet line keeps 4.5:1. */
 .skill-card { position: fixed; inset: auto; top: 0; left: 0; z-index: 60; box-sizing: border-box; width: max-content; max-width: min(320px, calc(100vw - 16px)); margin: 0; padding: 9px 12px 10px; overflow: hidden; border: 1px solid var(--tt-panel-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: 0 14px 36px -12px var(--tt-shadow-color); color: var(--tt-text-2); font-family: var(--tt-font-ui); font-size: 13px; font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; pointer-events: none; user-select: none; }
 .skill-card p { margin: 0; }
 .skill-card__name { color: var(--tt-text); font-weight: 500; }

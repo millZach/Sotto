@@ -252,6 +252,21 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ webLinkDestination: 'embedded' })
     })
 
+  it('accepts and ignores the retired glass and frost settings in a patch (ADR-0084)', async () => {
+      const { ipc, settings } = createIpcHarness()
+      const updated = await ipc.invoke(SETTINGS_UPDATE, {
+        autoPaste: false,
+        glassOpacity: 80,
+        frostedWindow: true,
+        frostSeeThrough: 40,
+      })
+      expect(updated).toMatchObject({ autoPaste: false })
+      expect(updated).not.toHaveProperty('glassOpacity')
+      expect(updated).not.toHaveProperty('frostedWindow')
+      expect(updated).not.toHaveProperty('frostSeeThrough')
+      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ autoPaste: false })
+    })
+
   it('persists turning browser previews off through settings IPC', async () => {
       const { ipc, settings } = createIpcHarness()
       await expect(ipc.invoke(SETTINGS_UPDATE, { showBrowserPreviews: false })).resolves.toMatchObject({ showBrowserPreviews: false })

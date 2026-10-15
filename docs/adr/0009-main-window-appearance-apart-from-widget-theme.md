@@ -11,4 +11,4 @@ New installs and every settings file written before these fields existed get Dar
 
 ## Consequences
 
-Main-window stylesheets must use `--tt-*` tokens and never branch on the theme themselves. The owned stylesheets are enforced by `tests/unit/renderer/themeTokens.test.ts`. The window's native `backgroundColor` is still black, so an enlarged light window can show a dark edge until Chromium repaints. (Amended October 3, 2026 by ADR-0048: with the Frosted window setting on, the window starts clear over the system's material instead.)
+Main-window stylesheets must use `--tt-*` tokens and never branch on the theme themselves. The owned stylesheets are enforced by `tests/unit/renderer/themeTokens.test.ts`. The window's native `backgroundColor` is still black, so an enlarged light window can show a dark edge until Chromium repaints. (Amended October 3, 2026 by ADR-0048: with the Frosted window setting on, the window started clear over the system's material instead. That setting was removed October 14, 2026 by ADR-0084, and the background is black again on every platform.)
