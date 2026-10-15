@@ -261,6 +261,17 @@ export class MuseMspHost implements AgentHost {
    * replayed after a lost acknowledgement matches the first, and is never saved: a new run names them afresh.
    */
   private readonly serverSuffixes = new Map<string, string>()
+  /**
+   * What a host built a thread's session runtime with. A thread on a host that did not grant session tool servers says
+   * so, and Sotto offers no control that would need its tools; a personal chat never takes them and says nothing.
+   */
+  private builtWith(id: string, entry: ThreadProcess, tools: ReadonlySet<string>): void {
+    entry.tools = tools
+    if (!this.aliases[id]) return
+    const thread = this.thread(id)
+    if (!entry.sessionMcp && this.aliases[id]?.kind !== 'personal') thread.sottoToolsWithheld = true
+    else delete thread.sottoToolsWithheld
+  }
   /** An approval as it reaches the thread: one for this session's own Sotto tools is answered here, every other is shown. */
   private present(pending: MusePending, entry: ThreadProcess): void {
     if (pending.kind === 'approval' && this.admitOwnTool(pending, entry)) return
@@ -718,7 +729,7 @@ export class MuseMspHost implements AgentHost {
           reply = await start()
         }
         const started = sessionStartSchema.parse(reply)
-        entry.tools = tools.tools
+        this.builtWith(id, entry, tools.tools)
         alias.museSessionId = started.session.sessionId
         entry.sessionId = alias.museSessionId
         this.confirmSession(id, alias, started.session)
@@ -732,7 +743,7 @@ export class MuseMspHost implements AgentHost {
       const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', {
         commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false, ...tools.params,
       }))
-      entry.tools = tools.tools
+      this.builtWith(id, entry, tools.tools)
       if (this.processes.get(id) !== entry) return
       this.assertGeneration(generation)
       const items = resumed.history.items ?? resumed.history.snapshot?.state.items
@@ -1202,7 +1213,7 @@ export class MuseMspHost implements AgentHost {
           this.assertGeneration(generation)
           watcherGuard?.()
           const started = sessionStartSchema.parse(await entry.rpc.request('session/start', startParams(alias, tools.params)))
-          entry.tools = tools.tools
+          this.builtWith(command.threadId, entry, tools.tools)
           alias.museSessionId = started.session.sessionId
           entry.sessionId = alias.museSessionId
           this.confirmSession(command.threadId, alias, started.session)

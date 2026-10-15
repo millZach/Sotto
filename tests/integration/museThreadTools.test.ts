@@ -78,12 +78,15 @@ it('asks for session tool servers and gives a new Muse session Sotto’s tools, 
   await expect.poll(async () => (await records(f, 'session/resume')).length).toBe(1)
   expect(servers((await records(f, 'session/resume'))[0])).toBeUndefined()
   expect((await thread(f, id)).status).toBe('idle')
+  expect((await thread(f, id)).sottoToolsWithheld).toBeUndefined()
 })
 
 it('attaches nothing, and starts the session as before, when the client does not grant session tool servers', async () => {
   const { f, id } = await open({ sessionMcp: false })
   expect((await records(f, 'session/start')).map(record => servers(record))).toEqual([undefined])
   expect((await thread(f, id)).status).toBe('idle')
+  // The thread says so, and Sotto offers it no visual, babysitting or browser sharing that would need the tools.
+  expect((await thread(f, id)).sottoToolsWithheld).toBe(true)
   // Without tools there is nothing of Sotto's to admit: a prompt naming one is the user's.
   await f.action(id, { type: 'tool-permission', toolName: 'mcp__sotto_browser__browser_open' })
   await expect.poll(async () => (await thread(f, id)).requests.length).toBe(1)

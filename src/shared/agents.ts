@@ -350,6 +350,9 @@ export const agentThreadSchema = z.object({
   /** The thread's provider session is open on its host now: its client is running and holds the session, so the next
    * send does not start it. Absent while it is stopped or not started yet, and from hosts that predate it. Never saved. */
   providerSessionOpen: z.literal(true).optional(),
+  /** The thread's provider client builds its session without Sotto's tool servers: a Muse client that did not grant
+   * session tool servers (ADR-0079). Absent otherwise, and from hosts that predate it. Never saved. */
+  sottoToolsWithheld: z.literal(true).optional(),
   /** Provider activity time; omitted when unknown, never the time Sotto observed the thread. */
   updatedAt: z.string().optional(),
   /** Explicit lifecycle metadata. Null clears a prior value; omission means unknown. */
@@ -863,6 +866,10 @@ export function providerWritesShortText(providerId: ProviderId | undefined): boo
  */
 export function providerTakesSottoTools(providerId: ProviderId | undefined): boolean {
   return providerId !== 'devin'
+}
+/** Whether this thread's agent gets Sotto's tool servers: its provider takes them and its client did not withhold them. */
+export function threadTakesSottoTools(thread: Pick<AgentThread, 'providerId' | 'sottoToolsWithheld'> | undefined): boolean {
+  return providerTakesSottoTools(thread?.providerId) && thread?.sottoToolsWithheld !== true
 }
 /** The same facts, from the summary the shell carries or from the history a full state holds. */
 export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>): AgentThreadSummary {

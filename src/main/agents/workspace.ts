@@ -15,7 +15,7 @@ import { cloneActivitySnapshot, immutableActivities, immutableModels, isImmutabl
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, providerTakesSottoTools, PROVIDER_LABELS, isVisualMessage, parsePublicProviderEntityId, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, parsePublicProviderEntityId, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
@@ -206,8 +206,8 @@ function expandProviderModes(models: AgentModel[]): void {
 }
 
 function organizationOnly(thread: AgentThread, keepActivities = false): AgentThread {
-  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, ...rest } = thread
-  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen
+  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, sottoToolsWithheld, ...rest } = thread
+  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen; void sottoToolsWithheld
   return { ...rest, messages: [], ...(keepActivities && activities ? { activities: retainedActivities(activities) } : {}) }
 }
 
@@ -1271,7 +1271,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Whether a thread may draw a visual: one this host holds, on a provider that can receive Sotto's tool servers. */
   admitsVisuals(threadId: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    return thread !== undefined && this.visible(thread) && providerTakesSottoTools(thread.providerId)
+    return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread)
   }
   /**
    * Whether an agent in this thread is offered Sotto's pull request tools (ADR-0061 decision 2): a thread this host holds,
@@ -1280,7 +1280,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   admitsBabysitting(threadId: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    return thread !== undefined && this.visible(thread) && providerTakesSottoTools(thread.providerId)
+    return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread)
   }
   /** The thread's branch's own pull request as the host last read it, and its linked ones, by URL (ADR-0061 decision 5). */
   threadPullRequests(threadId: string): { branch: string | undefined; linked: string[] } {
