@@ -7,6 +7,7 @@ import { agentAttachmentHandleSchema, agentAttachmentSchema, agentFollowupSchema
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { StageInline } from './attachmentStore'
 import { pullRequestKey } from '../../shared/gitPullRequests'
+import { isResumeNoteText } from '../../shared/restartResume'
 import { wakeUpNewsSchema, foldWakeUpNews, isBabysitNews, isRestartNews, WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */
@@ -280,11 +281,14 @@ export class FollowupStore {
       }
     })
   }
-  /** Binds a wake-up that was queued against no turn to the turn the thread turned out to rest on. */
-  followTurn(id: string, turnId: string): Promise<void> {
+  /**
+   * Binds the resume note (ADR-0076), queued against no turn, to the turn the thread turned out to rest on: the note is
+   * that turn's review. Any other wake-up or prompt queued against no turn keeps waiting for the user's.
+   */
+  bindResumeNote(id: string, turnId: string): Promise<void> {
     return this.change(state => {
       const item = state.items.find(candidate => candidate.id === id)
-      if (!item?.wakeUp || item.resumeAfterTurnId !== UNKNOWN_TURN) return false
+      if (!item?.wakeUp || item.resumeAfterTurnId !== UNKNOWN_TURN || !(item.news ?? []).some(isRestartNews) || !isResumeNoteText(item.text)) return false
       Object.assign(item, { resumeAfterTurnId: turnId, updatedAt: new Date().toISOString() })
     })
   }

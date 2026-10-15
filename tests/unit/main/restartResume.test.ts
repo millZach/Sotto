@@ -264,6 +264,36 @@ describe('a thread whose history is read only after Sotto restarts', () => {
     expect(sends(host)[0]).toMatchObject({ threadId: 'workshop', text: 'Then add the tests.' })
     expect(sends(host)[0]?.wakeUp).toBeUndefined()
   })
+
+  const babysitNews: BabysitNews = { pullRequest: { url: 'https://github.com/o/r/pull/7', number: 7, title: 'Seven' }, startedBy: 'agent', head: 'h', changes: [], ended: 'merged' }
+  it.each([
+    ['a babysitting wake-up', (store: FollowupStore) => store.queueWakeUp('workshop', babysitNews, items => queuedWakeUpText(items, { tool: false }), 'unknown')],
+    ['a wake-up whose text is not the resume note', (store: FollowupStore) => store.queueWakeUp('workshop', { source: 'restart', since: new Date().toISOString(), resumes: 1 } satisfies RestartNews,
+      () => 'TAMPERED', 'unknown')],
+  ])('holds %s queued against no turn for review when the queue’s read finds an unfinished turn (Sotto Bug Bot)', async (_name, seed) => {
+    const host = new UnreadHost({ id: 't1', status: 'interrupted' })
+    const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
+    const store = new FollowupStore(root); await store.load(); await seed(store)
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner }); controls.push(control)
+    control.useRestartResume({ due: () => true, sending: () => undefined, unsent: () => undefined })
+    await control.start(); await control.command({ type: 'connect' })
+    await expect.poll(() => host.reads).toBeGreaterThan(0)
+    await expect.poll(() => control.get().followups?.[0]?.status).toBe('failed')
+    expect(sends(host)).toEqual([])
+  })
+
+  it('does not take a turn the read finds still running for the user’s review when they resume the queue (Sotto Bug Bot)', async () => {
+    const host = new UnreadHost({ id: 't1', status: 'running' }, 'running')
+    const control = await startWithFailed(host, store => store.enqueue({ threadId: 'workshop', draftId: randomUUID(), text: 'Then add the tests.', attachments: [], resumeAfterTurnId: 'unknown' }))
+    await control.command({ type: 'resume-followups', threadId: 'workshop' })
+    expect(host.reads).toBe(1)
+    expect(control.get().followups?.[0]?.status).toBe('queued')
+    // The running turn ends without completing: the user has not reviewed it, so the prompt waits.
+    host.update('workshop', { status: 'idle', lastTurn: { id: 't1', status: 'interrupted' } })
+    await expect.poll(() => control.get().followups?.[0]?.status).toBe('paused')
+    expect(sends(host)).toEqual([])
+  })
 })
 
 /** A coordinator the test drives by hand: its threads, its queue, and when a note goes. */

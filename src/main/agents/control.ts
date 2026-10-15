@@ -1615,14 +1615,14 @@ export class AgentControl {
    * A provider can report a thread idle before its turns are read: Codex does for a thread nobody has opened since Sotto
    * started. A review, the resume note (ADR-0076) or Resume queue, follows the turn the thread rests on, so that turn is
    * read first, as the queue reads before it sends. A read that fails leaves what is known: the review then follows no
-   * turn, and the queue binds a wake-up to the turn its own read finds.
+   * turn, and the queue binds the resume note to the turn its own read finds.
    */
   private async readTurnFirst(threadId: string): Promise<void> {
     if (!this.dependencies.host.refreshThread) return
-    let read: AgentHostSnapshot
-    try { read = await this.readThread(threadId) } catch { return }
+    let read: AgentHostSnapshot | undefined
+    try { read = await this.readThread(threadId) } catch { /* What is known stands. */ }
     if (this.disposed) throw new Error('Sotto is closing.')
-    this.acceptSnapshot(read)
+    if (read) this.acceptSnapshot(read)
   }
   /**
    * Takes back a waiting wake-up's news of a pull request whose babysitting ended quietly, or all of it: a stop, a
@@ -2561,11 +2561,17 @@ export class AgentControl {
       } else if (command.type === 'remove-followup') await this.followupStore.edit(thread.id, command.itemId)
       else if (command.type === 'reorder-followups') await this.followupStore.reorder(thread.id, command.itemIds)
       else {
-        this.canAct(thread.id)
-        if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))) throw new Error('Restore this thread and project before resuming queued follow-ups.')
-        // Resume queue is the user's review of the turn the thread rests on, so a thread whose turns are unread is read.
-        if (!thread.lastTurn) await this.readTurnFirst(thread.id)
-        await this.followupStore.resume(thread.id, this.thread(thread.id).lastTurn?.id ?? UNKNOWN_TURN)
+        const resumable = (): AgentThread => {
+          const current = this.state.host.threads.find(t => t.id === thread.id)
+          if (!current || isThreadClosed(current) || isWorkspaceThreadSettled(current, this.state.host.projects.find(p => p.id === current.projectId))) throw new Error('Restore this thread and project before resuming queued follow-ups.')
+          this.canAct(current.id)
+          return current
+        }
+        let current = resumable()
+        // Resume queue is the user's review of the turn the thread rests on, so a thread whose turns are unread is read,
+        // and asked again after the read. A turn still running is no turn to review yet: the queue then follows none.
+        if (!current.lastTurn) { await this.readTurnFirst(thread.id); current = resumable() }
+        await this.followupStore.resume(thread.id, current.lastTurn && !isThreadTurnRunning(current) ? current.lastTurn.id : UNKNOWN_TURN)
       }
       this.syncFollowups(); this.observe(); await this.persist()
     } catch (error) {
@@ -2648,10 +2654,10 @@ export class AgentControl {
           const read = await this.readThread(threadId, undefined, readBeforeSend(item.messageId))
           const readMs = performance.now() - readStartedAt
           this.acceptSnapshot(read)
-          // A wake-up queued while the thread rested on no turn Sotto had read was told against whatever turn it rests on,
-          // as news is when the turn is known. A user's prompt queued the same way still waits for review.
+          // A resume note queued while the thread rested on no turn Sotto had read reviews the turn this read finds
+          // (ADR-0076). Any other wake-up, and a user's prompt, queued the same way still waits for review.
           const rested = this.thread(threadId)
-          if (unread && item.wakeUp && item.resumeAfterTurnId === UNKNOWN_TURN && rested.lastTurn && !isThreadTurnRunning(rested)) await this.followupStore.followTurn(item.id, rested.lastTurn.id)
+          if (unread && rested.lastTurn && !isThreadTurnRunning(rested)) await this.followupStore.bindResumeNote(item.id, rested.lastTurn.id)
           const validate = (): void => {
             if (item.watcherOperationId) { if (!this.watcherHooks) throw new Error('Watcher is unavailable.'); this.watcherHooks.guardOperation(item.watcherOperationId) }
             if (this.disposed || !this.followupReady(threadId, item.commandId)) throw new Error('The thread is no longer ready. Review it and resume its queue when ready.')

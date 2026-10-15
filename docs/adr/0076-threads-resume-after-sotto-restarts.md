@@ -53,10 +53,12 @@ it sends. Codex reports a thread nobody has opened since the restart connected a
 the note was queued against no turn; the queue's read then found the interrupted turn, took it for a turn nobody had
 reviewed, and left the note "Not sent". Read first, the note follows the turn the restart cut off and is its review,
 as above. A thread that read finds still working is left to carry on, and its record keeps its count. A read that
-fails queues the note against no turn. A wake-up queued against no turn was told against whatever turn the thread
-rests on, so when the queue's own read finds that turn, finished but not completed, the note follows it and goes. A
-prompt of the user's queued the same way still waits for review. Resume queue reads a thread whose turns are unread
-before it records the user's review, so a note or prompt resumed there follows the turn the thread rests on too.
+fails queues the note against no turn; when the queue's own read finds the turn, finished but not completed, the note
+follows it and goes, since it is that turn's review. Only the resume note is bound that way. Any other wake-up, and a
+prompt of the user's, queued against no turn still waits for review. If the queue's read fails too, the note is left
+"Not sent" for Resume queue. Resume queue reads a thread whose turns are unread before it records the user's review,
+so a note or prompt resumed there follows the turn the thread rests on too; a turn that read finds still running is
+not reviewed, and the queue waits on no turn.
 
 **5. The note.** Every provider receives the same words:
 
