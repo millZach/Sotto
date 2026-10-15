@@ -14,6 +14,11 @@ import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 export const DEVIN_CLI_VERSION = '3000.10.31'
 export const DEVIN_ACP_VERSION = 1
 export class DevinUncertain extends Error {}
+/**
+ * A check of Devin's own answer refused it, such as the profile readback. It is a verdict whose message the user reads,
+ * not a garbled reply, so it reaches the caller as it is instead of as an uncertain response.
+ */
+export class DevinRefusal extends Error {}
 /** Numeric codes and our own method name are diagnostic; native error text/data are never published. */
 export class DevinRejected extends Error {
   readonly code: number | undefined
@@ -87,7 +92,7 @@ export class DevinRpc {
               if (frame.error) waiter.reject(new DevinRejected(frame.error.code, waiter.operation))
               else {
                 try { await waiter.apply(frame.result); waiter.resolve() }
-                catch { waiter.reject(new DevinUncertain('Devin sent an invalid response.')); this.fail() }
+                catch (error) { waiter.reject(error instanceof DevinRefusal ? error : new DevinUncertain('Devin sent an invalid response.')); this.fail() }
               }
             } else await this.receive(frame)
           } finally { queued -= size }

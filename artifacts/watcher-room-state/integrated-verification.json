@@ -1,0 +1,337 @@
+{
+    "gates":  [
+                  {
+                      "exit":  {
+                                   "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                   "command":  "npm run typecheck",
+                                   "started":  "2026-10-15T06:57:18.087Z",
+                                   "finished":  "2026-10-15T06:58:13.080Z",
+                                   "nativeExitCode":  0,
+                                   "signal":  null
+                               },
+                      "start":  {
+                                    "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                    "started":  "2026-10-15T06:57:18.087Z",
+                                    "command":  "npm run typecheck",
+                                    "childPid":  55660
+                                },
+                      "post-cleanup":  {
+                                           "remainingOwnedProcesses":  {
+
+                                                                       },
+                                           "clean":  true,
+                                           "ownedChildAndKeeperAbsent":  true,
+                                           "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                           "at":  "2026-10-14T23:58:24.7447314-07:00"
+                                       },
+                      "keeper":  {
+                                     "commandLine":  "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"D:/Talk to Text Application/.zstack/perf-991-remaining/step5-room-keep-awake.ps1\" ",
+                                     "pid":  57560,
+                                     "creation":  "2026-10-14T23:57:17.5226460-07:00",
+                                     "started":  "2026-10-14T23:57:17.9052963-07:00"
+                                 },
+                      "name":  "typecheck",
+                      "cleanup":  {
+                                      "at":  "2026-10-14T23:58:13.8328142-07:00",
+                                      "keeperIdentity":  {
+                                                             "commandLine":  "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"D:/Talk to Text Application/.zstack/perf-991-remaining/step5-room-keep-awake.ps1\" ",
+                                                             "pid":  57560,
+                                                             "creation":  "2026-10-14T23:57:17.5226460-07:00",
+                                                             "started":  "2026-10-14T23:57:17.9052963-07:00"
+                                                         },
+                                      "keeperAbsent":  true,
+                                      "clean":  true,
+                                      "terminateReturn":  0,
+                                      "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c"
+                                  },
+                      "slot":  {
+                                   "freeKiB":  12260368,
+                                   "minimumFreeKiB":  6291456,
+                                   "competingJobs":  0,
+                                   "acquired":  "2026-10-14T23:57:17.4146953-07:00"
+                               }
+                  },
+                  {
+                      "exit":  {
+                                   "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                   "command":  "npm run lint",
+                                   "started":  "2026-10-15T06:58:26.248Z",
+                                   "finished":  "2026-10-15T06:58:50.071Z",
+                                   "nativeExitCode":  0,
+                                   "signal":  null
+                               },
+                      "start":  {
+                                    "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                    "started":  "2026-10-15T06:58:26.248Z",
+                                    "command":  "npm run lint",
+                                    "childPid":  3656
+                                },
+                      "post-cleanup":  {
+                                           "remainingOwnedProcesses":  {
+
+                                                                       },
+                                           "clean":  true,
+                                           "ownedChildAndKeeperAbsent":  true,
+                                           "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                           "at":  "2026-10-14T23:59:01.8563557-07:00"
+                                       },
+                      "keeper":  {
+                                     "commandLine":  "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"D:/Talk to Text Application/.zstack/perf-991-remaining/step5-room-keep-awake.ps1\" ",
+                                     "pid":  51424,
+                                     "creation":  "2026-10-14T23:58:25.7736070-07:00",
+                                     "started":  "2026-10-14T23:58:26.1040147-07:00"
+                                 },
+                      "name":  "lint",
+                      "cleanup":  {
+                                      "at":  "2026-10-14T23:58:50.8982378-07:00",
+                                      "keeperIdentity":  {
+                                                             "commandLine":  "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"D:/Talk to Text Application/.zstack/perf-991-remaining/step5-room-keep-awake.ps1\" ",
+                                                             "pid":  51424,
+                                                             "creation":  "2026-10-14T23:58:25.7736070-07:00",
+                                                             "started":  "2026-10-14T23:58:26.1040147-07:00"
+                                                         },
+                                      "keeperAbsent":  true,
+                                      "clean":  true,
+                                      "terminateReturn":  0,
+                                      "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c"
+                                  },
+                      "slot":  {
+                                   "freeKiB":  12267924,
+                                   "minimumFreeKiB":  6291456,
+                                   "competingJobs":  0,
+                                   "acquired":  "2026-10-14T23:58:25.7159598-07:00"
+                               }
+                  },
+                  {
+                      "exit":  {
+                                   "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                   "command":  "npm test -- --maxWorkers=2",
+                                   "started":  "2026-10-15T06:59:03.448Z",
+                                   "finished":  "2026-10-15T07:23:52.135Z",
+                                   "nativeExitCode":  0,
+                                   "signal":  null
+                               },
+                      "start":  {
+                                    "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                    "started":  "2026-10-15T06:59:03.448Z",
+                                    "command":  "npm test -- --maxWorkers=2",
+                                    "childPid":  66000
+                                },
+                      "post-cleanup":  {
+                                           "at":  "2026-10-15T00:24:08.7889052-07:00",
+                                           "ownedVitestAndFixtureAbsent":  true,
+                                           "clean":  true,
+                                           "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                           "remainingOwned":  {
+
+                                                              },
+                                           "ownedProcessPresence":  [
+                                                                        {
+                                                                            "expectedCreation":  "2026-10-14T23:59:00.8883880-07:00",
+                                                                            "pid":  36824,
+                                                                            "sameIdentityPresent":  false,
+                                                                            "pidAbsent":  true
+                                                                        },
+                                                                        {
+                                                                            "expectedCreation":  "2026-10-14T23:59:02.9141450-07:00",
+                                                                            "pid":  33616,
+                                                                            "sameIdentityPresent":  false,
+                                                                            "pidAbsent":  true
+                                                                        },
+                                                                        {
+                                                                            "expectedCreation":  "2026-10-14T23:59:03.3068230-07:00",
+                                                                            "pid":  61616,
+                                                                            "sameIdentityPresent":  false,
+                                                                            "pidAbsent":  true
+                                                                        },
+                                                                        {
+                                                                            "expectedCreation":  "2026-10-14T23:59:03.4514600-07:00",
+                                                                            "pid":  66000,
+                                                                            "sameIdentityPresent":  false,
+                                                                            "pidAbsent":  true
+                                                                        },
+                                                                        {
+                                                                            "expectedCreation":  "2026-10-14T23:59:03.8951900-07:00",
+                                                                            "pid":  50460,
+                                                                            "sameIdentityPresent":  false,
+                                                                            "pidAbsent":  true
+                                                                        },
+                                                                        {
+                                                                            "expectedCreation":  "2026-10-14T23:59:04.5432370-07:00",
+                                                                            "pid":  65732,
+                                                                            "sameIdentityPresent":  false,
+                                                                            "pidAbsent":  true
+                                                                        }
+                                                                    ]
+                                       },
+                      "keeper":  {
+                                     "commandLine":  "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"D:/Talk to Text Application/.zstack/perf-991-remaining/step5-room-keep-awake.ps1\" ",
+                                     "pid":  33616,
+                                     "creation":  "2026-10-14T23:59:02.9141450-07:00",
+                                     "started":  "2026-10-14T23:59:03.2939574-07:00"
+                                 },
+                      "name":  "tests",
+                      "cleanup":  {
+                                      "at":  "2026-10-15T00:23:52.9235783-07:00",
+                                      "keeperIdentity":  {
+                                                             "commandLine":  "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"D:/Talk to Text Application/.zstack/perf-991-remaining/step5-room-keep-awake.ps1\" ",
+                                                             "pid":  33616,
+                                                             "creation":  "2026-10-14T23:59:02.9141450-07:00",
+                                                             "started":  "2026-10-14T23:59:03.2939574-07:00"
+                                                         },
+                                      "keeperAbsent":  true,
+                                      "clean":  true,
+                                      "terminateReturn":  0,
+                                      "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c"
+                                  },
+                      "slot":  {
+                                   "freeKiB":  12319884,
+                                   "minimumFreeKiB":  6291456,
+                                   "competingJobs":  0,
+                                   "acquired":  "2026-10-14T23:59:02.8586348-07:00"
+                               }
+                  },
+                  {
+                      "exit":  {
+                                   "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                   "command":  "npm run notices:verify",
+                                   "started":  "2026-10-15T07:24:10.247Z",
+                                   "finished":  "2026-10-15T07:24:10.850Z",
+                                   "nativeExitCode":  0,
+                                   "signal":  null
+                               },
+                      "start":  {
+                                    "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                    "started":  "2026-10-15T07:24:10.247Z",
+                                    "command":  "npm run notices:verify",
+                                    "childPid":  60256
+                                },
+                      "post-cleanup":  {
+                                           "remainingOwnedProcesses":  {
+
+                                                                       },
+                                           "clean":  true,
+                                           "ownedChildAndKeeperAbsent":  true,
+                                           "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                           "at":  "2026-10-15T00:24:31.5331171-07:00"
+                                       },
+                      "keeper":  {
+                                     "commandLine":  "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"D:/Talk to Text Application/.zstack/perf-991-remaining/step5-room-keep-awake.ps1\" ",
+                                     "pid":  62668,
+                                     "creation":  "2026-10-15T00:24:09.7272590-07:00",
+                                     "started":  "2026-10-15T00:24:10.0591401-07:00"
+                                 },
+                      "name":  "notices",
+                      "cleanup":  {
+                                      "at":  "2026-10-15T00:24:11.6818957-07:00",
+                                      "keeperIdentity":  {
+                                                             "commandLine":  "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"D:/Talk to Text Application/.zstack/perf-991-remaining/step5-room-keep-awake.ps1\" ",
+                                                             "pid":  62668,
+                                                             "creation":  "2026-10-15T00:24:09.7272590-07:00",
+                                                             "started":  "2026-10-15T00:24:10.0591401-07:00"
+                                                         },
+                                      "keeperAbsent":  true,
+                                      "clean":  true,
+                                      "terminateReturn":  0,
+                                      "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c"
+                                  },
+                      "slot":  {
+                                   "freeKiB":  12279668,
+                                   "minimumFreeKiB":  6291456,
+                                   "competingJobs":  0,
+                                   "acquired":  "2026-10-15T00:24:09.6681568-07:00"
+                               }
+                  }
+              ],
+    "appTests":  22,
+    "sourceAndTestsUnchangedAfterValidation":  true,
+    "sourceHead":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+    "app":  {
+                "exit":  {
+                             "started":  "2026-10-15T07:24:33.098Z",
+                             "finished":  "2026-10-15T07:26:37.619Z",
+                             "nativeExitCode":  0,
+                             "signal":  null
+                         },
+                "start":  {
+                              "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                              "started":  "2026-10-15T07:24:33.098Z",
+                              "command":  "npm run build \u0026\u0026 npx playwright test tests/e2e/watcher.spec.ts tests/e2e/watcher-gate.spec.ts",
+                              "childPid":  56792,
+                              "evidenceRoot":  "D:/Talk to Text Application/.zstack/perf-991-remaining/step5-app-04-captures"
+                          },
+                "post-cleanup":  {
+                                     "clean":  true,
+                                     "ownedAppProcessesAbsent":  true,
+                                     "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c",
+                                     "remainingOwned":  {
+
+                                                        },
+                                     "at":  "2026-10-15T00:27:06.1271459-07:00"
+                                 },
+                "keeper":  {
+                               "commandLine":  "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"D:/Talk to Text Application/.zstack/perf-991-remaining/step5-room-keep-awake.ps1\" ",
+                               "pid":  33436,
+                               "creation":  "2026-10-15T00:24:32.6038620-07:00",
+                               "started":  "2026-10-15T00:24:32.9267332-07:00"
+                           },
+                "resource-01":  {
+                                    "processes":  [
+                                                      {
+                                                          "parent":  56792,
+                                                          "pid":  10676,
+                                                          "creation":  "2026-10-15T00:24:59.3022510-07:00",
+                                                          "command":  "\"C:\\Program Files\\nodejs\\\\node.exe\"  \"C:\\Program Files\\nodejs\\\\node_modules\\npm\\bin\\npx-cli.js\" playwright test tests/e2e/watcher.spec.ts tests/e2e/watcher-gate.spec.ts"
+                                                      },
+                                                      {
+                                                          "parent":  46892,
+                                                          "pid":  24272,
+                                                          "creation":  "2026-10-15T00:25:00.1788930-07:00",
+                                                          "command":  "\"node\"   \"D:\\Talk to Text Application\\.worktrees\\perf-watcher-room-state\\node_modules\\.bin\\\\..\\@playwright\\test\\cli.js\" test tests/e2e/watcher.spec.ts tests/e2e/watcher-gate.spec.ts"
+                                                      },
+                                                      {
+                                                          "parent":  24272,
+                                                          "pid":  39780,
+                                                          "creation":  "2026-10-15T00:25:02.3654680-07:00",
+                                                          "command":  "\"C:\\Program Files\\nodejs\\node.exe\" \"D:\\Talk to Text Application\\.worktrees\\perf-watcher-room-state\\node_modules\\playwright\\lib\\worker\\workerProcessEntry.js\""
+                                                      },
+                                                      {
+                                                          "parent":  24904,
+                                                          "pid":  62324,
+                                                          "creation":  "2026-10-15T00:26:07.0392750-07:00",
+                                                          "command":  "\"D:\\Talk to Text Application\\.worktrees\\perf-watcher-room-state\\node_modules\\electron\\dist\\electron.exe\"  \"-r\" \"D:\\Talk to Text Application\\.worktrees\\perf-watcher-room-state\\node_modules\\playwright-core\\lib\\server\\electron\\loader.js\" \"--inspect=0\" \"--remote-debugging-port=0\" \"--disable-gpu\" \"--force-device-scale-factor=1\" \"C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-owl-entry-K2feA7\""
+                                                      }
+                                                  ],
+                                    "freeKiB":  11386448,
+                                    "at":  "2026-10-15T00:26:07.4424925-07:00"
+                                },
+                "cleanup":  {
+                                "at":  "2026-10-15T00:26:38.6017946-07:00",
+                                "keeperIdentity":  {
+                                                       "commandLine":  "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"D:/Talk to Text Application/.zstack/perf-991-remaining/step5-room-keep-awake.ps1\" ",
+                                                       "pid":  33436,
+                                                       "creation":  "2026-10-15T00:24:32.6038620-07:00",
+                                                       "started":  "2026-10-15T00:24:32.9267332-07:00"
+                                                   },
+                                "keeperAbsent":  true,
+                                "clean":  true,
+                                "terminateReturn":  0,
+                                "head":  "a9033b152d582f1af5db61cde6754c6eaa4e5f0c"
+                            },
+                "slot":  {
+                             "freeKiB":  12277544,
+                             "minimumFreeKiB":  6291456,
+                             "competingJobs":  0,
+                             "acquired":  "2026-10-15T00:24:32.5058160-07:00"
+                         }
+            },
+    "quietGuardLimit":  "Each fresh guard passed; resource samples are bounded observations, not continuous isolation.",
+    "appPlaywrightDuration":  "1.6m",
+    "fullCounts":  {
+                       "passedFiles":  864,
+                       "vitestSeconds":  1486.9,
+                       "skippedTests":  350,
+                       "passedTests":  11222,
+                       "skippedFiles":  78
+                   }
+}

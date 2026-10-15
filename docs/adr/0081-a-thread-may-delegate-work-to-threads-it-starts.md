@@ -1,0 +1,49 @@
+# A thread may delegate work to threads it starts
+
+## Status
+
+Accepted by Zach on October 14, 2026. It is built with #1029 (ticket E6). Zach settled the shape on October 14 in the Watcher engine ticket map (#1023): ordinary threads can start threads, sharing Watcher's starts limit, with the user's typing pausing it (decision 2), and later that day that delegation goes two levels deep (decision 11), and the word is **delegation**, with its **outcome** (decision 3). This record settles the rest. It amends [ADR-0073](0073-watcher-coordinates-threads-with-its-providers-own-tools.md)'s start authority and keeps [ADR-0004](0004-authority-in-policy-records.md) whole. It is an Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)).
+
+## Context
+
+Zach already hands work from one agent to another by hand. The `code-review` skill runs `codex exec -s read-only`; `crew` runs `claude -p --resume` and `grok -p`. Sotto sees none of it. There is no thread to open, no request card when the second agent asks something, nothing stops when the first thread stops, and the results land in temporary files that only the first agent reads.
+
+Watcher already starts and briefs threads under rules main enforces (ADR-0073): a Watcher request rooted in a user's message, a permission ceiling at the user's new-thread default, a computer-wide limit on new starts and four prompts per target per request. E2 gives each brief an outcome Watcher can read. This record lets an ordinary thread do a narrower version of the same thing, through the same machinery, instead of through a shell.
+
+## Decision
+
+**1. A scoped server, `sotto_delegate`, on ordinary Claude Code, Codex and Grok Build threads.** It joins the scoped thread tool servers ([ADR-0056](0056-an-agent-can-draw-a-visual-in-its-thread.md), [ADR-0061](0061-a-thread-can-babysit-its-pull-request.md)) on the same loopback transport, and offers three tools: `delegate`, `read_delegation` and `cancel_delegation`. Devin and Muse cannot attach Sotto's servers today, so their threads cannot delegate until [#1040](https://github.com/millZach/Sotto/issues/1040) and [#1039](https://github.com/millZach/Sotto/issues/1039) find a way; a request to do so is refused in plain words, as the browser and Watcher already are. The server is not offered to Watcher, which has its own tools, nor to a host setup thread or a provider job's thread, which have only their own job's tools.
+
+**2. A delegated thread is an ordinary Sotto thread linked to the thread that started it.** It has its own Sotto thread ID (ADR-0002), its own pane, its own request cards and its own history. The link names the delegating thread by its Sotto thread ID and nothing else. It goes two levels deep. A delegated thread is offered `sotto_delegate` too, so it can hand work to a thread on any provider, such as a builder asking for a review on another provider. The threads it starts are not offered it, so they cannot start threads of their own.
+
+**3. Authority stays in policy records.** The model passes no authority, and nothing a delegating thread sends approves anything (ADR-0004). Main attributes each call to the calling thread through the thread's tool token, which says which thread is calling and nothing more (`threadToolServer.ts`), and to the user's latest message to that thread, which plays the part a Watcher request's root message plays in ADR-0073. A wake-up turn keeps that message as its root and renews no budget (decision 5). A delegated thread's question or permission request reaches the user on its own card, answered only by the user; the delegating thread is told that the delegated thread is waiting and nothing more.
+
+**4. The permission ceiling.** A delegated thread starts no wider than the narrower of the delegating thread's own permissions and the user's new-thread default, compared the way Watcher compares (`watcher.ts`, the permission check). Where the two cannot be compared, as with a provider profile that allows more than nothing, the start is refused in plain words and nothing is started. An explicit narrower choice is allowed when it can be compared. Sotto never widens a delegated thread's permissions afterwards; the user can, in the thread's own options, as on any thread.
+
+**5. Limits.** A start takes a slot from the same starts-only limit Watcher's new starts take (ADR-0073's in-flight limit, per machine once E9 lands), so delegation adds no second budget. There are four prompts per delegated thread per turn of the delegating thread, counting the brief that started it; the turn is the one the user's message started, and the wake-up turns that follow it share its budget. Retries, reads, wake-ups and restarts renew neither budget. A full limit refuses with how many are in flight and starts nothing.
+
+**6. Stopping and pausing.** Stop on a delegating thread stops every delegated thread below it that is still working, at both levels, in the same press; Stop on a second-level thread stops only that thread. When the user types or sends in a delegated thread, delegated sends to it pause until the user's turn there ends, the way a standing watch pauses Watcher's sends. The user's draft, queue and turn are kept, and the pause shows as the delegation's outcome. Every delegated send carries the identity of the delegated thread's last user message that the delegating thread saw when it asked, as Watcher's `expectedLastUserMessageId` does; when the user has sent since, the send is refused as the target having changed (`TARGET_CHANGED`) and delivers nothing, so a send queued before the user's turn never lands on top of a newer instruction.
+
+**7. Outcomes and results.** Each delegation has an outcome, as E2 defines it for Watcher's briefs: `working`, `background`, `answered`, `failed`, `stopped`, `paused` or `unknown`. `read_delegation` returns the outcome and, once answered, the delegated thread's reply to that brief, labelled as that thread's words. When an outcome changes while the delegating thread is not waiting on it, the news reaches it as a wake-up through ADR-0061's follow-up queue, as a new news source carrying only identities: the delegation, the delegated thread, the turn and the outcome. The delegated thread's words travel only when the delegating thread asks for them with `read_delegation`. A restart leaves an unconfirmed outcome `unknown` and resends nothing (ADR-0058's outbox rules).
+
+**8. Waiting.** `delegate` may wait for the outcome up to a set time, so a short review can return in the same tool call. Codex's per-server `tool_timeout_sec`, which Sotto already sets for its scoped servers (`codex.ts`), bounds that wait on Codex; Claude Code and Grok Build get the same bound from Sotto's side. When the wait ends first, the call returns `working` with the delegation's identity, the delegated thread keeps working, and the result arrives later as a wake-up.
+
+**9. Which model.** `delegate` names the kind of work (building, UI, code review, research, computer use). Once [#1041](https://github.com/millZach/Sotto/issues/1041) lands, Sotto fills in the provider, model, effort and permission from the worker roles in Settings, within the ceiling of decision 4; until then the call names them itself.
+
+**10. Where it runs.** A delegated thread starts on the delegating thread's own host by default. Once [#1032](https://github.com/millZach/Sotto/issues/1032) (E9) lands, `delegate` also takes a machine, defaulting to the setting E9 adds. Paired hosts take part only through an optional host-v1 feature, as Watcher's paths do; a host without it refuses before anything crosses the wire.
+
+## Amends ADR-0073
+
+ADR-0073 gives start and send authority to Watcher alone, rooted in a Watcher request. This record extends that authority, within the same limits, to an ordinary thread rooted in the user's latest message to it, with the narrower ceiling of decision 4 and the two-level rule of decision 2. ADR-0073's own text is amended when this lands with E6's code, not before.
+
+## Consequences
+
+- Zach's own `code-review` and `crew` skills can delegate inside Sotto rather than through shells, and their second agents become threads he can open, answer and stop.
+- Nothing here answers a question or permission, changes a policy record or widens a thread's permissions. The standing exceptions stay ADR-0029's browser alone.
+- The delegated thread is a full thread, so it costs what a thread costs: a provider session, a pane's worth of history and a slot in the starts limit.
+- A delegating thread may ask for work the user did not mean. Main can enforce identity, ceilings and budgets; it cannot prove a brief faithfully reflects what the user asked. The user's own message, the delegated thread and its outcome remain visible.
+- Needs a prototype before it is built: delegated threads under the thread that started them, and the room's limit counting them.
+
+## Proof, when built
+
+Integration over fake providers: a Claude Code thread delegates to a Codex thread and the wait returns the answer; a wait that ends first becomes a wake-up; Stop cascades; the ceiling refuses a wider start; a delegated send queued before the user's newer message is refused, not delivered; a second-level thread is offered no `sotto_delegate`; Stop on the top thread stops both levels; typing in a delegated thread pauses delegated sends; a restart leaves `unknown` and resends nothing.

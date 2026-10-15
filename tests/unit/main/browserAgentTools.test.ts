@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBrowserAgentServer, browserToolDefinitions } from '../../../src/main/tools/browserAgentTools'
 import type { BrowserService } from '../../../src/main/tools/browser'
+import type { CloudIphoneService } from '../../../src/main/tools/cloudIphone/service'
 import type { BrowserTask } from '../../../src/shared/browser'
 import type { BrowserToolResult } from '../../../src/main/agents/browserAgentServer'
 import { deferred } from '../../fixtures/deferred'
@@ -89,5 +90,42 @@ describe('thread browser tool dispatcher', () => {
     const result = await ready.call('owner', 'browser_pages', {})
     expect(result.isError).toBe(true)
     expect(JSON.stringify(result)).not.toContain('secret-token')
+  })
+  it('returns before a client that said how long it waits gives up, and leaves the request open for the user', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const { server, service } = setup(true)
+      const actionId = '17a91424-938d-4214-b025-af7d254e1db2'
+      const pending = { ...task, pendingAction: { id: actionId, action: { type: 'click' as const, x: 20, y: 30 }, description: 'Click save', expiresAt: Date.now() + 300_000 } }
+      service.action.mockResolvedValueOnce({ ok: true, value: { task: pending, approvalRequired: true, output: '', image: '' } })
+      service.waitForAction.mockImplementationOnce(() => new Promise(() => undefined))
+      let finished = false
+      const calling = server.call('owner', 'browser_action', { pageId, taskId, action: { type: 'click', x: 20, y: 30 } }, { waitMs: 300_000 }).then(result => { finished = true; return result })
+      await vi.advanceTimersByTimeAsync(239_000)
+      expect(finished).toBe(false)
+      await vi.advanceTimersByTimeAsync(1_000)
+      const result = await calling
+      expect(result.isError).not.toBe(true)
+      expect(decode(result)).toMatchObject({ approvalRequired: true, task: { pendingAction: { id: actionId } } })
+      expect(String(decode(result).message)).toContain('Read browser_status before asking again.')
+    } finally { vi.useRealTimers() }
+  })
+  it('waits for the cloud iPhone answer only as long as the client said it waits', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const { service } = setup(true)
+      const asking = { id: 'cloud-session', threadId: 'owner', status: 'asking' }
+      const cloud = { agentOpen: vi.fn(async () => ({ ok: true, value: asking })), waitForAnswer: vi.fn(() => new Promise(() => undefined)) }
+      const server = createBrowserAgentServer(() => service as unknown as BrowserService, () => cloud as unknown as CloudIphoneService); servers.push(server)
+      const calling = server.call('owner', 'iphone_cloud_open', { description: 'Check the native build', buildPath: 'build/App.zip' }, { waitMs: 300_000 })
+      await vi.advanceTimersByTimeAsync(240_000)
+      const result = await calling
+      expect(result.isError).not.toBe(true)
+      expect(decode(result)).toMatchObject({ session: { status: 'asking' } })
+      expect(String(decode(result).message)).toContain('Read iphone_cloud_status before asking again.')
+    } finally { vi.useRealTimers() }
+  })
+  it('marks only the tools that read as read-only', () => {
+    expect(browserToolDefinitions.filter(tool => tool.annotations?.readOnlyHint).map(tool => tool.name)).toEqual(['browser_pages', 'browser_status', 'iphone_cloud_status'])
   })
 })
