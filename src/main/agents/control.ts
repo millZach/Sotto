@@ -1668,10 +1668,15 @@ export class AgentControl {
     if (this.watcherObservedIds === ids) return
     this.watcherObservedIds = ids; this.observe()
   }
+  /**
+   * Watcher's news in its queue that has not been sent: waiting, or claimed and on its way to the writer. A claimed
+   * wake-up still counts, since the writer withdraws any of its news whose facts moved on, and that news must be told
+   * again as it stands now.
+   */
   waitingWatcherEvents(): WatcherEvent[] {
     if (this.dependencies.watcherEnabled !== true || !this.watcherHooks || !this.watcher.current) return []
     const target = this.watcher.current.target
-    return this.followupStore.peek().items.filter(item => isWaitingWakeUp(item) && item.threadId === target.threadId)
+    return this.followupStore.peek().items.filter(item => (isWaitingWakeUp(item) || item.wakeUp === true && item.status === 'dispatching') && item.threadId === target.threadId)
       .flatMap(item => item.news?.flatMap(news => isWatcherNews(news) && news.watcher.hostId === target.hostId
         && news.watcher.threadId === target.threadId ? news.events : []) ?? []).slice(-400)
   }

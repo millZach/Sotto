@@ -1222,6 +1222,31 @@ it.each(['workspace-settled', 'archived', 'missing-hooks', 'disconnected'] as co
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
 })
 
+it('tells pull request news again when the thread’s own facts change while its wake-up is being sent', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  await f.service.wakes.drained()
+  const entered = deferred<void>(), release = deferred<void>()
+  f.workspace.host.setCheckpointHooks({ isBlocked: async () => false, beforeTurn: async id => { if (id === f.id) { entered.resolve(); await release.promise } } })
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const told = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master
+    && command.watcherNews?.includes('Sotto observed changed evidence'))
+  try {
+    const finishing = f.finish(f.id)
+    await entered.promise
+    // The wake-up is claimed when the worker's working copy moves: the news it carries names evidence that is no longer current.
+    expect(queued(f).find(item => item.threadId === f.id && item.wakeUp)).toMatchObject({ status: 'dispatching' })
+    f.service.checkpointObserved({ threadId: started.target.threadId, checkpointId: randomUUID(), observedAt: new Date().toISOString(), availability: 'available', changedFiles: 3 })
+    await f.service.wakes.drained()
+    release.resolve()
+    await finishing
+    // The stale copy is withdrawn at the writer, and the pull request's news still reaches Watcher, as it stands now.
+    await vi.waitFor(() => expect(told()).not.toHaveLength(0), { timeout: 10_000 })
+  } finally { release.resolve() }
+}, 30_000)
+
 it('keeps durably waiting pull request news through Watcher recovery and same-fact replay', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
