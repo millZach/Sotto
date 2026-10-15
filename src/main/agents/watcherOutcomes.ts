@@ -52,7 +52,7 @@ function turnsOf(thread: AgentThread, messages: readonly AgentMessage[]): Turn[]
  * user's own message is paused. Undefined when the thread does not yet show the brief, so nothing is concluded.
  * `watcherMessage` says whether a user message is one Watcher sent, rather than the user's own.
  */
-export function watcherTurnOutcome(operation: Pick<WatcherOperation, 'messageId' | 'delivery'>, thread: AgentThread,
+export function watcherTurnOutcome(operation: Pick<WatcherOperation, 'messageId' | 'delivery' | 'outcome'>, thread: AgentThread,
   watcherMessage: (messageId: string) => boolean): WatcherTurnOutcome | undefined {
   if (!operation.messageId) return undefined
   const messages = thread.messages.filter(message => !isVisualMessage(message))
@@ -69,12 +69,17 @@ export function watcherTurnOutcome(operation: Pick<WatcherOperation, 'messageId'
   if (turn.status === 'running') return { outcome: 'working', ...reference }
   if (turn.status === 'failed') return { outcome: 'failed', ...reference }
   if (turn.status === 'unknown') return { outcome: 'unknown', ...reference }
+  // A turn cut for a steer goes on in the turn the steer runs as, which may not be shown yet.
+  if (turn.status === 'interrupted' && turn.steered && !next) return { outcome: 'working', ...reference }
   if (turn.status === 'interrupted') {
     // A turn cut before it answered: the user's own next message holds the thread, or it was stopped.
     return { outcome: next && !watcherMessage(messages[next.anchor]!.id) ? 'paused' : 'stopped', ...reference }
   }
-  // Finished. The newest turn is not done while the work it left running goes on, or while that work is unknown.
-  if (!next && (thread.status === 'running' || watcherBackgroundWorkCount(thread) > 0 || (thread.subagentSummary?.unknown ?? 0) > 0)) {
+  // Finished. The newest turn is not done while the work it left running goes on, or while that work is unknown. A turn
+  // already seen in background stays there while any work remains, even once another turn has begun: the thread's
+  // count cannot say whose work it is, so it is not taken as ended until it reaches zero.
+  const working = watcherBackgroundWorkCount(thread) > 0 || (thread.subagentSummary?.unknown ?? 0) > 0
+  if (!next && (thread.status === 'running' || working) || next && operation.outcome === 'background' && working) {
     return { outcome: 'background', ...reference }
   }
   const reply = messages.findLast((message, position) => message.role === 'assistant' && turnOfReply(turns, position, message) === turn)

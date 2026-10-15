@@ -61,3 +61,18 @@ it('keeps a finished newest turn in background while work or unknown sub-agents 
     .toMatchObject({ outcome: 'background' })
   expect(watcherTurnOutcome(brief, thread({ activities }), watcher)).toMatchObject({ outcome: 'answered', replyMessageId: 'reply' })
 })
+
+it('keeps a turn cut for a steer working until the turn the steer runs as is shown', () => {
+  const activities = markTurnActivity([], { provider: 'claude', turnId: 'brief', status: 'interrupted', steered: true, at: Date.parse(at(1)) })
+  expect(watcherTurnOutcome(brief, thread({ status: 'running', activities }), watcher)).toEqual({ outcome: 'working', turnMessageId: 'brief' })
+})
+
+it('keeps a brief seen in background there while work remains, even after another turn begins', () => {
+  const messages: AgentThread['messages'] = [...thread().messages, { id: 'later', role: 'user', text: 'Synthetic later message', createdAt: at(3) }]
+  let activities = markTurnActivity([], { provider: 'grok', turnId: 'brief', status: 'completed', at: Date.parse(at(0)) })
+  activities = markTurnActivity(activities, { provider: 'grok', turnId: 'later', status: 'running', at: Date.parse(at(3)) })
+  const backgroundWork = [{ id: '00000000-0000-4000-8000-000000000008', label: 'Synthetic agent', type: 'subagent' as const }]
+  const seen = { ...brief, outcome: 'background' as const }
+  expect(watcherTurnOutcome(seen, thread({ messages, activities, status: 'running', backgroundWork }), watcher)).toMatchObject({ outcome: 'background' })
+  expect(watcherTurnOutcome(seen, thread({ messages, activities, status: 'running' }), watcher)).toMatchObject({ outcome: 'answered', replyMessageId: 'reply' })
+})

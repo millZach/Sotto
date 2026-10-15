@@ -48,7 +48,8 @@ function standingScope(record: WatcherRecord, watcher: WatcherThreadTarget, watc
     state: 'active', createdAt: now(), closedAt: null, participants: [] }, created: true }
 }
 /** The fields an owning host keeps of an operation's outcome. Each host observes its own threads, so none crosses to another. */
-const OUTCOME_FIELDS = ['outcome', 'outcomeAt', 'turnMessageId', 'nativeTurnId', 'replyMessageId'] as const
+const REFERENCE_FIELDS = ['turnMessageId', 'nativeTurnId', 'replyMessageId'] as const
+const OUTCOME_FIELDS = ['outcome', 'outcomeAt', ...REFERENCE_FIELDS] as const
 function withoutOutcome(operation: WatcherOperation): WatcherOperation {
   const copy = { ...operation }
   for (const field of OUTCOME_FIELDS) delete copy[field]
@@ -513,7 +514,7 @@ export class WatcherService implements WatcherControlHooks {
             && (['dispatching', 'uncertain'].includes(operation.deliveryState)
               || operation.deliveryState === 'accepted' && (!operation.outcome || !WATCHER_FINAL_OUTCOMES.has(operation.outcome)))) {
             operation.outcome = 'unknown'; operation.outcomeAt = now()
-            for (const field of ['turnMessageId', 'nativeTurnId', 'replyMessageId'] as const) delete operation[field]
+            for (const field of REFERENCE_FIELDS) delete operation[field]
           }
           if (operation.deliveryState === 'dispatching') operation.deliveryState = 'uncertain'
           if (!this.options.historyEnabled() && operation.deliveryState === 'queued') {
@@ -843,7 +844,7 @@ export class WatcherService implements WatcherControlHooks {
     if (!seen || seen.outcome === operation.outcome && seen.turnMessageId === operation.turnMessageId
       && seen.nativeTurnId === operation.nativeTurnId && seen.replyMessageId === operation.replyMessageId) return
     operation.outcome = seen.outcome; operation.outcomeAt = now()
-    for (const field of ['turnMessageId', 'nativeTurnId', 'replyMessageId'] as const) {
+    for (const field of REFERENCE_FIELDS) {
       const value = seen[field]
       if (value) operation[field] = value
       else delete operation[field]
@@ -893,12 +894,27 @@ export class WatcherService implements WatcherControlHooks {
     if (!this.options.historyEnabled() && !this.answeredThisRun.has(operation.id)) return { ...read, replyUnavailable: { reason: 'history-off',
       message: 'Keep local history is off, so Sotto did not keep this reply after it restarted. Read the thread for what the worker said.' } }
     const replyId = operation.replyMessageId
-    const message = thread?.messages.find(item => item.id === replyId && item.role === 'assistant')
-      ?? (await this.options.host.watcherRead(operation.target.threadId, undefined, 50).catch(() => undefined))?.messages
-        .find(item => item.message.id === replyId && item.message.role === 'assistant')?.message
+    const message = thread?.messages.find(item => item.id === replyId && item.role === 'assistant') ?? await this.storedReply(operation.target.threadId, replyId)
     if (!message) return { ...read, replyUnavailable: { reason: 'not-retained', message: 'Sotto no longer holds this reply. Read the thread for what the worker said.' } }
     const text = cutUtf8(message.text, WATCHER_REPLY_BYTES_MAX)
     return { ...read, reply: { from: 'worker', messageId: message.id, text, createdAt: message.createdAt, truncated: text !== message.text } }
+  }
+  /**
+   * A reply the thread's loaded window no longer holds, read from its history: the newest page first, where it usually
+   * is, then forward from the start until the history ends. Undefined only when the history does not hold it.
+   */
+  private async storedReply(threadId: string, replyId: string) {
+    const found = (read: Awaited<ReturnType<WorkspaceHost['watcherRead']>>) => read?.messages.find(item => item.message.id === replyId && item.message.role === 'assistant')?.message
+    const newest = await this.options.host.watcherRead(threadId, undefined, 50).catch(() => undefined)
+    if (!newest || found(newest) || !newest.earlierAvailable) return found(newest)
+    let after = -1
+    for (let page = 0; page < 1_000; page++) {
+      const read = await this.options.host.watcherRead(threadId, after, 50).catch(() => undefined)
+      const message = found(read)
+      if (message || !read?.hasMore || !read.messages.length) return message
+      after = read.messages.at(-1)!.position
+    }
+    return undefined
   }
   /** What a paired host's exact read said of an operation's outcome, kept as identities only. */
   private copyOutcome(own: WatcherOperation, result: OperationRead): void {
