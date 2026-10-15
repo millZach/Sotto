@@ -6,8 +6,8 @@ import { themeColorVariable } from '../../../src/renderer/src/state/appearance'
 
 /**
  * Resolves tokens.css the way the browser cascade does for the main window
- * root: the stylesheet's blocks for one mode, then the theme roles, contrast
- * and glass strengths applyAppearance writes inline. Colours are computed
+ * root: the stylesheet's blocks for one mode, then the theme roles and
+ * contrast strength applyAppearance writes inline. Colours are computed
  * through var(), oklch() (relative `oklch(from …)` too) and color-mix() in
  * srgb or oklab, so contrast is checked on the colours actually painted
  * rather than on raw declarations.
@@ -68,7 +68,6 @@ function selectorApplies(selector: string, mode: Mode, effortColor: string): num
 export interface PaintOptions {
   readonly colors?: ThemeColors
   readonly contrast?: number
-  readonly glass?: number
   /** The effort colourway on the root; Ember, the default, when unsaid. */
   readonly effortColor?: string
 }
@@ -90,7 +89,6 @@ export function rootDeclarations(mode: Mode, themeId: string = DEFAULT_THEME_ID,
   result.set('--theme-contrast-base', `${Math.min(contrast, 100)}%`)
   result.set('--theme-contrast-boost', `${Math.max(contrast - 100, 0)}%`)
   result.set('--theme-contrast-border-boost', `${Math.max(contrast - 100, 0) / 4}%`)
-  result.set('--theme-glass-opacity', `${options.glass ?? 80}%`)
   return result
 }
 

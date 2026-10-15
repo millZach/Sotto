@@ -12,7 +12,7 @@ import { LAUNCH_REASONS, SshFailure, classifySshExit, failureFix, type SshFailur
 import { tailscaleHold, type TailscaleHold } from './tailscaleApproval'
 import { isTailnetAddress } from '../../shared/hostConnection'
 import { TAILSCALE_APPROVAL_MS, type HostSetupStep } from '../../shared/hosts'
-import { HOST_ARCHIVE_PATTERN, type HostUpdateStep } from '../../shared/hostUpdates'
+import { HOST_ARCHIVE_PATTERN, HOST_SYSTEM_PATTERN, type HostUpdateStep } from '../../shared/hostUpdates'
 import { bootStatusSchema, type BootStatus } from '../../shared/bootStart'
 import { version as desktopVersion } from '../../../package.json'
 export { SshFailure, type SshFailureCode }
@@ -63,6 +63,11 @@ export interface SshHostConnection {
    * cannot (ADR-0053). A path, never a secret; kept in memory only. Absent from a host whose launch script did not say.
    */
   readonly node?: string
+  /**
+   * The host's system as its launch script names it, `linux-x64`, which names the host archive an update downloads
+   * (ADR-0077). Absent from a launch that did not say.
+   */
+  readonly system?: string
   /**
    * The host's tailnet address as its launch reported it, `https://<MagicDNS name>:<port>`, while Tailscale Serve carries
    * its tailnet listener (ADR-0053). Absent until Serve is up, which is often a few seconds after a start.
@@ -122,6 +127,8 @@ const readySchema = healthSchema.extend({ type: z.literal('ready'), owned: z.boo
   adminToken: z.string().regex(/^[A-Za-z0-9_-]{16,256}$/u).optional(),
   /** The launch's Node, from `process.execPath` on the host. Only a launch's result carries it; one Sotto cannot read is left out. */
   node: z.string().max(4096).regex(/^[^\p{Cc}]+$/u).optional().catch(undefined),
+  /** The launch's `process.platform-process.arch`, as the host archive's name carries it. One Sotto cannot read is left out. */
+  system: z.string().max(64).regex(HOST_SYSTEM_PATTERN).optional().catch(undefined),
   /** The host's tailnet address (ADR-0053). One this build cannot accept reads as absent. */
   tailnetAddress: z.string().max(300).refine(value => isTailnetAddress(value)).optional().catch(undefined),
   /** Start at boot on the host, which every launch reports (ADR-0054). One this build cannot read is left out. */
@@ -339,7 +346,8 @@ export class SshHostLauncher {
       this.signedIn(attempt, forward)
       attempt.connected = true
       this.status(attempt, 'ready')
-      return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned, route, ...(remote.node ? { node: remote.node } : {}), ...(remote.bootStart ? { bootStart: remote.bootStart } : {}),
+      return { url: `http://127.0.0.1:${localPort}`, hostId: remote.hostId, owned: remote.owned, route, ...(remote.node ? { node: remote.node } : {}), ...(remote.system ? { system: remote.system } : {}),
+        ...(remote.bootStart ? { bootStart: remote.bootStart } : {}),
         ...(remote.tailnetAddress ? { tailnetAddress: remote.tailnetAddress } : {}),
         close: () => this.closeAttempt(attempt), showHostPairingCode: () => this.pairingCode(attempt), ensureDesktopAnswers: clientId => this.ensureDesktopAnswers(attempt, clientId), revokeClient: clientId => this.revokeClient(attempt, clientId),
         hostAdminToken: () => this.adminToken(attempt),

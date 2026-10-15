@@ -27,9 +27,6 @@ const customSettings = {
   lightTheme: 'tropic',
   darkTheme: aurora.id,
   appearanceContrast: 135,
-  glassOpacity: 60,
-  frostedWindow: true,
-  frostSeeThrough: 55,
   effortColor: 'aurora',
   customThemes: [aurora],
   webLinkDestination: 'embedded',
@@ -216,32 +213,31 @@ describe('settings', () => {
     expect(parseSettings({ theme: 'ultraviolet' }).theme).toBe('system')
   })
 
-  it('opens a settings file written before the frosted window existed solid, and refuses a see-through it cannot draw', () => {
-    const legacy = { ...customSettings } as Record<string, unknown>
-    delete legacy.frostedWindow
-    delete legacy.frostSeeThrough
-    expect(parseSettings(legacy)).toMatchObject({ frostedWindow: false, frostSeeThrough: 40 })
-    expect(parseSettings({ ...customSettings, frostSeeThrough: 95 })).toMatchObject({ frostedWindow: true, frostSeeThrough: 40 })
-    expect(parseSettings({ ...customSettings, frostSeeThrough: 42 })).toMatchObject({ frostSeeThrough: 40 })
+  it('opens a settings file saved with the retired glass and window transparency choices and drops them (ADR-0084)', () => {
+    const older = { ...customSettings, glassOpacity: 60, frostedWindow: true, frostSeeThrough: 55 }
+    const parsed = parseSettings(older)
+    expect(parsed).toEqual(parseSettings(customSettings))
+    for (const key of ['glassOpacity', 'frostedWindow', 'frostSeeThrough']) expect(parsed).not.toHaveProperty(key)
+    expect(settingsSchema.parse({ ...parsed, glassOpacity: 60, frostedWindow: true, frostSeeThrough: 55 })).toEqual(parsed)
   })
 
   it('opens a settings file written before appearance existed in dark Sotto, whatever its widget theme', () => {
     for (const theme of ['system', 'light', 'dark'] as const) {
       const legacy = { ...customSettings, theme } as Record<string, unknown>
-      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'glassOpacity', 'effortColor', 'customThemes']) delete legacy[key]
+      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'customThemes']) delete legacy[key]
       const parsed = parseSettings(legacy)
       // The widget keeps the scheme it already had; appearance never rewrites it.
-      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, glassOpacity: 80, effortColor: 'ember', customThemes: [] })
+      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', customThemes: [] })
     }
   })
 
   it('migrates a settings file from the accent era: the mode stays, the accent is dropped, both halves start on Sotto', () => {
     for (const accent of ['teal', 'blue', 'violet', 'rose', 'amber', 'green', 'chartreuse']) {
       const older = { ...customSettings, appearance: 'system', accent } as Record<string, unknown>
-      for (const key of ['lightTheme', 'darkTheme', 'appearanceContrast', 'glassOpacity', 'customThemes']) delete older[key]
+      for (const key of ['lightTheme', 'darkTheme', 'appearanceContrast', 'customThemes']) delete older[key]
       const parsed = parseSettings(older)
       expect(parsed).not.toHaveProperty('accent')
-      expect(parsed).toMatchObject({ appearance: 'system', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, glassOpacity: 80, customThemes: [] })
+      expect(parsed).toMatchObject({ appearance: 'system', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, customThemes: [] })
       expect(settingsSchema.parse({ ...parsed, accent })).toEqual(parsed)
     }
   })
@@ -257,13 +253,11 @@ describe('settings', () => {
 
   it('keeps every valid appearance and theme choice and recovers an unusable one field by field', () => {
     for (const appearance of APPEARANCES) expect(parseSettings({ appearance }).appearance).toBe(appearance)
-    const recovered = parseSettings({ appearance: 'black', lightTheme: 'Not An Id', darkTheme: 42, appearanceContrast: 133, glassOpacity: 20, autoPaste: false })
-    expect(recovered).toMatchObject({ appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, glassOpacity: 80, autoPaste: false })
+    const recovered = parseSettings({ appearance: 'black', lightTheme: 'Not An Id', darkTheme: 42, appearanceContrast: 133, autoPaste: false })
+    expect(recovered).toMatchObject({ appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, autoPaste: false })
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, appearance: 'sepia' }).success).toBe(false)
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, appearanceContrast: 201 }).success).toBe(false)
-    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, glassOpacity: 82 }).success).toBe(false)
     for (const contrast of [50, 100, 200]) expect(parseSettings({ appearanceContrast: contrast }).appearanceContrast).toBe(contrast)
-    for (const glass of [40, 80, 100]) expect(parseSettings({ glassOpacity: glass }).glassOpacity).toBe(glass)
   })
 
   it('keeps every effort colourway and recovers an unknown one as Ember', () => {
@@ -312,9 +306,6 @@ describe('settings', () => {
       lightTheme: 't3-code',
       darkTheme: 't3-code',
       appearanceContrast: 100,
-      glassOpacity: 80,
-      frostedWindow: false,
-      frostSeeThrough: 40,
       effortColor: 'ember',
       customThemes: [],
       reducedMotion: 'system',

@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createPasteCommands } from '../../../src/main/output/pasteCommand'
-import { platformProfile, windowFrostFor } from '../../../src/main/platformProfile'
+import { platformProfile } from '../../../src/main/platformProfile'
 import { defaultHotkey } from '../../../src/shared/platform'
 
 describe('platformProfile', () => {
@@ -117,22 +117,4 @@ describe('platformProfile', () => {
       expect(platformProfile(platform)).toBe(profile)
     },
   )
-})
-
-describe('windowFrostFor', () => {
-  it('offers acrylic from Windows 11 22H2 and nothing before it', () => {
-    expect(windowFrostFor('win32', '10.0.26200')).toBe('acrylic')
-    expect(windowFrostFor('win32', '10.0.22621')).toBe('acrylic')
-    expect(windowFrostFor('win32', '10.0.22000')).toBeNull()
-    expect(windowFrostFor('win32', '10.0.19045')).toBeNull()
-    expect(windowFrostFor('win32', 'unknown')).toBeNull()
-  })
-
-  it('offers vibrancy on every macOS', () => {
-    expect(windowFrostFor('darwin', '24.1.0')).toBe('vibrancy')
-  })
-
-  it.each(['6.19.9', '10.0.26200', 'unknown'])('never offers frost on Linux for %s', release => {
-    expect(windowFrostFor('linux', release)).toBeNull()
-  })
 })

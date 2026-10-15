@@ -2748,6 +2748,11 @@ export class AgentControl {
             const item = this.followupStore.get().items.find(i => i.id === first.id)
             const accepted = item?.messageId && this.thread(threadId).messages.some(m => m.role === 'user' && m.id === item.messageId)
             await this.followupStore.settle(first.id, accepted ? 'accepted' : this.outbox.some(o => o.id === item?.commandId) ? 'uncertain' : 'failed', failure)
+            // A Watcher send's outcome is read from its queue item, and a takeover's queue cancel removes a failed item.
+            // The native input that refused this send also takes the thread over, so Watcher records the outcome now,
+            // before that cancel can run; read later, the operation would stay dispatching with nothing left to settle it.
+            // The store makes its changes one after another, so a cancel asked meanwhile has not started yet.
+            if (first.watcherOperationId) { this.syncFollowups(); this.observeWatcher(this.state.host) }
           }
         } finally { await this.finishTurn(turn, failure) }
       })().catch(() => { this.state.error = 'Could not save follow-up delivery state. Refresh before making changes.' })
@@ -3806,6 +3811,12 @@ export class AgentControl {
     this.state.draft = ''; this.state.draftThreadId = null; this.state.draftRequestId = null; this.state.composing = false
   }
   private hasDraft(): boolean { return Boolean(this.state.draft.trim() || this.state.draftAttachments?.length) }
+  /** Lets Watcher read the threads and the queue as they stand, with Sotto's own sends known as its own. */
+  private observeWatcher(snapshot: AgentHostSnapshot): void {
+    if (this.disposed) return
+    this.watcherHooks?.observe(snapshot, new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
+      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])]))
+  }
   private acceptSnapshot(incoming: AgentHostSnapshot): void {
     if (this.disposed) return
     this.firstOutputs.observe(incoming.threads)
@@ -3813,8 +3824,7 @@ export class AgentControl {
     // Sotto's own requests join the provider's before anything below reads the threads (ADR-0035).
     const snapshot = this.shownSnapshot(incoming)
     this.state.host = snapshot
-    this.watcherHooks?.observe(snapshot, new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
-      ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])]))
+    this.observeWatcher(snapshot)
     if (snapshot.connected && this.state.activeThreadId && this.threadAvailable(this.state.activeThreadId) && !snapshot.threads.some(thread => thread.id === this.state.activeThreadId)) {
       const selected = snapshot.threads.find(thread => thread.id === this.state.draftThreadId) ?? snapshot.threads.find(thread => !isThreadClosed(thread))
       this.state.activeThreadId = selected?.id ?? null
