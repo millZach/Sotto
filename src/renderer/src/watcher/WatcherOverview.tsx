@@ -6,11 +6,13 @@ import { ProviderMark } from '../agents/ProviderMark'
 import { RowTime } from '../agents/ThreadSidebar'
 import { rowStatus, type ThreadRow } from '../agents/threadFacts'
 import { WATCHED_BY_WATCHER, WatchedBadge } from './WatcherOwl'
+import { WatchListToggle } from './WatchControls'
+import { useWatchActions } from './watcherRoom'
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
 
 /** How each group reads: the ring and the status word's tone. Labels say what Sotto knows, not what an agent claims. */
-const TONES: Record<WatcherGroup, string> = {
+export const TONES: Record<WatcherGroup, string> = {
   'Needs you': 'needs', 'Ready for review': 'ready', Working: 'working', Landing: 'landing', Quiet: 'quiet', Idle: 'idle',
 }
 
@@ -68,7 +70,7 @@ export function useOverview(state: AgentState | null, facts: readonly ThreadRow[
 }
 
 /** The words beside a row's project: what the thread waits on, its pull request, or the sidebar's own status. */
-function statusWord({ overview, facts }: OverviewEntry): string {
+export function statusWord({ overview, facts }: OverviewEntry): string {
   const thread = overview.thread
   switch (overview.group) {
     case 'Needs you': return facts.state === 'needs' ? facts.stateLabel : 'Last turn failed'
@@ -91,7 +93,8 @@ export function openAtRequestLabel(title: string, kind: WaitKind): string {
 /**
  * One thread in the list: its ring, title and clock; its provider, Watcher's owl when it watches it, its project and
  * host, and where it stands; and, when it waits on the user, what it asks with Open to answer. A press on the row opens
- * the thread beside Watcher; with Shift, in the Threads room.
+ * the thread beside Watcher; with Shift, in the Threads room. The owl at its end watches it, or stops, and is the row's
+ * last stop (Zach's pick on October 13, 2026, watch B).
  */
 function OverviewRow({ entry, watched, current, liveClock, onOpen }: {
   readonly entry: OverviewEntry; readonly watched: boolean; readonly current: boolean; readonly liveClock: boolean; readonly onOpen: OpenThread
@@ -125,6 +128,7 @@ function OverviewRow({ entry, watched, current, liveClock, onOpen }: {
       <button type="button" className="watcher-answer tt-focusable" aria-label={openAtRequestLabel(thread.title, kind)} {...threadPress(onOpen, thread.id, true)}>
         {kind === 'failed' ? 'Open' : 'Open to answer'}</button>
     </div> : null}
+    <WatchListToggle threadId={thread.id} title={thread.title} />
   </li>
 }
 
@@ -186,6 +190,7 @@ export function WatcherOverviewList({ groups, watched, besideId, liveClock, anch
   readonly onClose: (refocus: boolean) => void
 }): ReactNode {
   const [query, setQuery] = useState('')
+  const watching = useWatchActions() !== null
   const panel = useRef<HTMLDivElement>(null)
   const filter = useRef<HTMLInputElement>(null)
   const [place, setPlace] = useState<{ readonly top: number; readonly left: number } | null>(null)
@@ -233,7 +238,7 @@ export function WatcherOverviewList({ groups, watched, besideId, liveClock, anch
         {groups.length === 0 ? <p className="watcher-list__none">No other threads yet. Threads you or Watcher start show here.</p>
           : shown.length === 0 ? <p className="watcher-list__none">No thread matches “{query.trim()}”.</p> : null}
       </div>
-      <p className="watcher-list__foot">Shift-click opens a thread in Threads. <kbd>Esc</kbd> closes.</p>
+      <p className="watcher-list__foot">{watching ? 'The owl watches a thread until you press it again. ' : null}Shift-click opens a thread in Threads. <kbd>Esc</kbd> closes.</p>
     </div>
   </>
 }

@@ -1,0 +1,141 @@
+{
+  "sourceCommit": "0b1ec2fbba3ead07568a2ae56342cc525c5bd6b4",
+  "verifiedAtUtc": "2026-10-14 09:57:42 UTC",
+  "surface": "Windows built development Electron, disposable synthetic profiles",
+  "appManifestVersion": "0.1.37",
+  "orderedGates": [
+    {
+      "command": "npm run typecheck",
+      "exitCode": 0
+    },
+    {
+      "command": "npm run lint",
+      "exitCode": 0
+    },
+    {
+      "command": "npm test -- --maxWorkers=2",
+      "exitCode": 0,
+      "filesPassed": 823,
+      "filesSkipped": 68,
+      "testsPassed": 10497,
+      "testsSkipped": 321,
+      "durationSeconds": 1443.45,
+      "freeGiBBefore": 9.05
+    },
+    {
+      "command": "npm run notices:verify",
+      "exitCode": 0,
+      "components": 189
+    },
+    {
+      "command": "npm run build",
+      "exitCode": 0
+    },
+    {
+      "command": "npm run test:socket",
+      "exitCode": 0,
+      "filesPassed": 23,
+      "testsPassed": 492,
+      "testsSkipped": 10,
+      "durationSeconds": 181.85
+    },
+    {
+      "command": "npm run build:host",
+      "exitCode": 0
+    },
+    {
+      "command": "npx playwright test tests/e2e/watcher-gate.spec.ts tests/e2e/watcher.spec.ts",
+      "exitCode": 0,
+      "testsPassed": 17,
+      "workers": 1,
+      "reportedDuration": "1.1m"
+    }
+  ],
+  "captures": [
+    {
+      "file": "room-main-sotto-dark-1280x800.png",
+      "viewportCssPixels": {
+        "width": 1280,
+        "height": 800
+      },
+      "imagePixels": {
+        "width": 1920,
+        "height": 1200
+      },
+      "track": "owl",
+      "theme": "sotto-dark",
+      "roomStandIn": false,
+      "provider": "real Codex adapter over fake app-server subprocess",
+      "inspected": true,
+      "sha256": "6ccbd80ae4148334e08a5c734c9e0eb5038ba59ba723ca67eb2cb5700e010ae6"
+    },
+    {
+      "file": "stable-dark-820x560.png",
+      "viewportCssPixels": {
+        "width": 820,
+        "height": 560
+      },
+      "imagePixels": {
+        "width": 1230,
+        "height": 840
+      },
+      "track": "stable",
+      "theme": "dark",
+      "reducedMotion": "on",
+      "provider": "existing ordinary-thread synthetic fixture",
+      "inspected": true,
+      "sha256": "e8e3aeec01de0c6067a807c5d523d4d8cc77709b425f50496b1b8ec06aee7c34"
+    },
+    {
+      "file": "owl-light-820x560.png",
+      "viewportCssPixels": {
+        "width": 820,
+        "height": 560
+      },
+      "imagePixels": {
+        "width": 1230,
+        "height": 840
+      },
+      "track": "owl",
+      "theme": "light",
+      "reducedMotion": "on",
+      "provider": "existing ordinary-thread synthetic fixture",
+      "inspected": true,
+      "sha256": "298652e68cffc8daca0caa85cde0c67fbe3145c63b07dbe3c1a8e47578e0cf04"
+    }
+  ],
+  "actualMainJourney": [
+    "UI first-send creates Watcher and receives native fixture reply",
+    "preload/main bridge widens permission then narrows it",
+    "fresh worker watched without a prompt or in-flight slot",
+    "unwatch removes the standing assignment",
+    "existing in-flight setting saves through main"
+  ],
+  "review": {
+    "model": "gpt-6.1-sol",
+    "reasoning": "max",
+    "readOnly": true,
+    "finalCorrectionDiff": "25a1d686d...0b1ec2fbb",
+    "standardsRemainingHardFindings": 0,
+    "specRemainingCorrectionFindings": 0,
+    "earlierOptionalRefactoringsDeferred": 4
+  },
+  "scope": {
+    "rendererChanged": false,
+    "swiftUIViewsChanged": false,
+    "routingTagChanged": false,
+    "pushed": false,
+    "published": false
+  },
+  "notVerified": [
+    "Separate new desktop controls and SwiftUI views",
+    "Swift compilation and XCTest on macOS",
+    "Physical iPhone, Android and Linux desktop journeys",
+    "Sotto paid-provider live suites and external paired hosts",
+    "Packaged or installed release"
+  ],
+  "visibleSeparateLaneWork": [
+    "Existing routing tag remains visible in the main conversation",
+    "Existing locked permission label and watched-count meter await the UI lane"
+  ]
+}

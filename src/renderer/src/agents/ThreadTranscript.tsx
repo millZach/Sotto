@@ -21,6 +21,7 @@ import { SottoMark } from '../components/SottoMark'
 import { isResumeNoteText } from '../../../shared/restartResume'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
+import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
 import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
@@ -151,7 +152,7 @@ const folded = (groups: readonly ActivityGroup[] | undefined): ActivityGroup[] =
 const drawn = (message: AgentMessage): boolean => message.role === 'user' || message.text.length > 0 || Boolean(message.attachments?.length)
 
 /**
- * The per-message copy control (#128): one quiet mark pinned to the message's top-right corner,
+ * The per-message copy control (#128): one quiet mark pinned to the message's bottom-left corner,
  * revealed while the message is hovered or holds focus. A press copies the message's source
  * Markdown; right-click, Shift+F10 or the ContextMenu key offers plain text instead.
  */
@@ -227,12 +228,13 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   return <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : undefined} data-message-id={message.id} ref={article}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
       : <span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : 'System'}</span>}
-      <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time>
-      {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}</header>
+      <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
     {writing && !streamText
       ? <p className="thread-message__writing" role="status">Writing a reply…</p>
       : <MessageContent text={markdown} streaming={writing} />}
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
+    {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
+    {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}
   </article>
 })
 

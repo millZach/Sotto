@@ -5,8 +5,6 @@ import { DEFAULT_HOTKEY } from './constants'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
-  FROST_SEE_THROUGH,
-  GLASS_OPACITY,
   customThemesSchema,
   isThemeId,
   parseCustomThemes,
@@ -108,12 +106,6 @@ export interface AppSettings {
   darkTheme: string
   /** Foreground and border strength, 50-200 percent of the theme's own. */
   appearanceContrast: number
-  /** How solid dialogs, menus and floating panels are, 40-100 percent. */
-  glassOpacity: number
-  /** Let the desktop show through the main window, blurred, where the system can draw it (ADR-0048). */
-  frostedWindow: boolean
-  /** How much of the desktop shows through the frosted room, 10-80 percent. */
-  frostSeeThrough: number
   /** The colour the effort control turns at a model's highest level. */
   effortColor: EffortColor
   /** Themes the user created, duplicated or imported, already canonical. */
@@ -288,9 +280,6 @@ const fieldSchemas = {
   lightTheme: z.string().refine(value => isThemeId(value) || value === OMARCHY_THEME_ID),
   darkTheme: z.string().refine(value => isThemeId(value) || value === OMARCHY_THEME_ID),
   appearanceContrast: z.number().int().min(APPEARANCE_CONTRAST.min).max(APPEARANCE_CONTRAST.max).refine(value => value % APPEARANCE_CONTRAST.step === 0),
-  glassOpacity: z.number().int().min(GLASS_OPACITY.min).max(GLASS_OPACITY.max).refine(value => value % GLASS_OPACITY.step === 0),
-  frostedWindow: z.boolean(),
-  frostSeeThrough: z.number().int().min(FROST_SEE_THROUGH.min).max(FROST_SEE_THROUGH.max).refine(value => value % FROST_SEE_THROUGH.step === 0),
   effortColor: z.enum(EFFORT_COLORS),
   omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
@@ -371,10 +360,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lightTheme: DEFAULT_THEME_ID,
   darkTheme: DEFAULT_THEME_ID,
   appearanceContrast: APPEARANCE_CONTRAST.default,
-  glassOpacity: GLASS_OPACITY.default,
-  // Solid until asked: a see-through window is a look the user picks, never one an upgrade hands them.
-  frostedWindow: false,
-  frostSeeThrough: FROST_SEE_THROUGH.default,
   // Ember is the warning role's gold: the colour the effort control turned before it became a choice.
   effortColor: 'ember',
   customThemes: [],
@@ -498,9 +483,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     lightTheme: half('lightTheme'),
     darkTheme: half('darkTheme'),
     appearanceContrast: parseField(persisted, 'appearanceContrast', defaults),
-    glassOpacity: parseField(persisted, 'glassOpacity', defaults),
-    frostedWindow: parseField(persisted, 'frostedWindow', defaults),
-    frostSeeThrough: parseField(persisted, 'frostSeeThrough', defaults),
     effortColor: parseField(persisted, 'effortColor', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),

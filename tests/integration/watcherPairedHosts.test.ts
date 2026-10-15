@@ -5,10 +5,15 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { WatcherService } from '../../src/main/agents/watcher'
+import { createWatcherRoomDesktop } from '../../src/main/agents/watcherRoomDesktop'
+import { registerIpc } from '../../src/main/ipc/registerIpc'
+import { WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, type WatcherPrepareStopAllResult, type WatcherRoomState, type WatcherStopAllResult } from '../../src/shared/watcherRoom'
+import { createIpcHarness } from '../fixtures/ipcHarness'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { PairedClients } from '../../src/main/agents/pairing'
 import { startSocketServer } from '../../src/host/socketServer'
+import { canonicalModelId } from '../../src/shared/modelCatalog'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
@@ -25,6 +30,7 @@ import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 import { codexFixture } from '../fixtures/codexFixture'
 import { heldOperation } from '../fixtures/deferred'
 import type { CodexAppServerHost } from '../../src/main/agents/codex'
+import { markTurnActivity } from '../../src/main/agents/turnActivity'
 
 const remote = useSocketHostFixture()
 const cleanups: (() => Promise<void>)[] = []
@@ -84,15 +90,20 @@ it('negotiates host-v1 features only for recorded desktops and never for stable 
   expect(health.v).toBe(1); expect(health.features).toContain('watcher-control'); expect(health.features).toContain('watcher-reads')
   const general = await pairedDesktop(false)
   expect(general.hello.features).not.toContain('watcher-control')
+  expect(general.socket.supportsWatcherWorkSettled).toBe(false)
+  // A recorded desktop learns the host reports the work counts work-settled news needs.
+  const recorded = await pairedDesktop()
+  expect(recorded.hello.features).toContain('watcher-work-settled'); expect(recorded.socket.supportsWatcherWorkSettled).toBe(true)
   const raw = general.socket as unknown as { call(op: HostOperation): Promise<unknown> }
   await expect(raw.call({ op: 'watcher-read', request: { master: { target: { hostId: randomUUID(), threadId: 'forged' }, projectId: 'forged', provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() } } })).rejects.toMatchObject({ code: 'forbidden' })
   const stable = await pairedDesktop(true, false)
-  expect(stable.socket.supportsWatcherControl).toBe(false)
+  expect(stable.socket.supportsWatcherControl).toBe(false); expect(stable.socket.supportsWatcherWorkSettled).toBe(false)
   await expect(stable.socket.watcherRead({ master: { target: { hostId: randomUUID(), threadId: 'master' }, projectId: 'master', provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() } })).rejects.toMatchObject({ code: 'invalid_request' })
 })
 
 it('starts, reads positions, sends, stops and settles through the owning host without selecting it', async () => {
   const f = await master(), selected = f.router.shell().activeThreadId, input = f.start()
+  expect(f.router.watcherHosts().hosts()).toEqual([expect.objectContaining({ hostId: f.pairing.hostId, workSettled: true })])
   const first = await f.call('start_thread', input)
   expect(first).toMatchObject({ status: 'ok', limits: { inFlightLimit: 1, promptCount: 1 } })
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
@@ -117,11 +128,15 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   vi.spyOn(f.watcher as unknown as { scheduleRemote: () => void }, 'scheduleRemote').mockImplementation(() => undefined)
   const background = f.watcher as unknown as { remoteTimer?: unknown; remoteFlushing: boolean; reconciling?: Promise<void> }
   await expect.poll(() => !background.remoteTimer && !background.remoteFlushing && !background.reconciling).toBe(true)
+  // Standing sends now refresh owning fences at admission too. Hold that read so this still exercises the writer.
+  vi.spyOn(f.watcher as unknown as { reconcileRemote(): Promise<void> }, 'reconcileRemote').mockResolvedValue(undefined)
   await f.control.updateWatcher(record => {
     const request = record.requests.find(item => item.id === f.requestId)!
     request.state = 'active'; request.closedAt = null
     const participant = request.participants[0]!
     participant.state = 'participating'; delete participant.automationStopped
+    // Revive the stale assignment generation as well, so the master's new guard cannot hide the owner's refusal.
+    participant.generation = record.watches!.find(watch => watch.target.threadId === first.target.threadId)!.generation
   })
   const writes = vi.spyOn(f.socket, 'watcherControl')
   expect(await f.call('send_to_thread', afterSettlement)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
@@ -186,7 +201,7 @@ it('counts paired Watcher writes once in the owning Owl archive and keeps user s
   await expect.poll(async () => (await activity()).totals.prompts).toEqual({ user: 0, watcher: 2, wakeUp: 0, total: 2, steered: 1 })
   const queue = { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic counted queue' }
   const queued = await f.call('send_to_thread', queue)
-  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  expect(queued, JSON.stringify(queued)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   expect(await f.call('send_to_thread', queue)).toMatchObject({ receipt: queued.receipt })
   expect((await activity()).totals.prompts.total).toBe(2)
   await native.driver.completeTurn(nativeId, 'Synthetic first completion')
@@ -211,8 +226,9 @@ it('counts paired Watcher writes once in the owning Owl archive and keeps user s
   const final = await activity()
   expect(final.totals.prompts).toEqual({ user: 1, watcher: 4, wakeUp: 0, total: 5, steered: 1 })
   expect(final.models).toEqual(expect.arrayContaining([
-    expect.objectContaining({ modelId: f.model.id, prompts: { user: 0, watcher: 4, wakeUp: 0, total: 4, steered: 1 } }),
-    expect.objectContaining({ modelId: laterModel.id, prompts: { user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 } }),
+    // No token report names a served model here, so each prompt counts under the model it was sent on (ADR-0083).
+    expect.objectContaining({ modelId: canonicalModelId('codex', f.model.id), prompts: { user: 0, watcher: 4, wakeUp: 0, total: 4, steered: 1 } }),
+    expect.objectContaining({ modelId: canonicalModelId('codex', laterModel.id), prompts: { user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 } }),
   ]))
   const beforeRestart = await native.driver.requests()
   expect(beforeRestart.filter(item => item.method === 'turn/start')).toHaveLength(4)
@@ -264,10 +280,13 @@ it('rechecks a late native question at the owning Codex writer, without answerin
   await expect.poll(() => !background.remoteTimer && !background.remoteFlushing && !background.reconciling).toBe(true)
   const gate = heldOperation(), olderProjection = heldOperation()
   const read = f.socket.watcherRead.bind(f.socket)
-  let held = false
+  // A send to a watched thread first refreshes the owning host's fences; only the read started once the writer holds is
+  // the older one this test keeps back.
+  let held = false, armed = false
+  void gate.entered.then(() => { armed = true })
   vi.spyOn(f.socket, 'watcherRead').mockImplementation(async packet => {
     const projection = await read(packet)
-    if (!packet.call && !held) { held = true; await olderProjection.wait() }
+    if (!packet.call && !held && armed) { held = true; await olderProjection.wait() }
     return projection
   })
   const prepare = native.adapter.prepareSkillInput.bind(native.adapter)
@@ -335,13 +354,103 @@ it('routes steer and queue by turn identity and fences a native takeover before 
   const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic fenced queue' })
   expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   await native.driver.typeInProvider(nativeId, 'Synthetic native instruction')
-  await native.driver.completeTurn(nativeId, 'Synthetic completion')
+  // The background poll can finish before it discovers this rollout. Establish takeover before releasing the queue.
+  await native.adapter.refreshThread(nativeId)
   await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+  await native.driver.completeTurn(nativeId, 'Synthetic completion')
   await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === (queued.status === 'ok' ? queued.receipt.operationId : ''))?.deliveryState).toBe('failed'))
   const written = await native.driver.requests()
   expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
   expect(written.filter(item => item.method === 'turn/steer')).toHaveLength(1)
   expect(written.filter(item => item.method === 'request/answer')).toHaveLength(0)
+}, 60_000)
+
+it('fences native input arriving at a prepared paired queue writer before another turn starts', async () => {
+  // Only the writer's targeted read can ingest the native input added while preparation is held.
+  const native = await codexFixture(undefined, false, 10_000, { pollIntervalMs: 600_000 }); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const target = first.target
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === target.threadId)?.lastTurn?.status).toBe('running'))
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  const gate = heldOperation(), prepare = native.adapter.prepareSkillInput.bind(native.adapter)
+  vi.spyOn(native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => {
+    const result = await prepare(...args)
+    if (args[1] === 'Synthetic held native queue') await gate.wait()
+    return result
+  })
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic held native queue' })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  if (queued.status !== 'ok') throw new Error('queue-refused')
+  try {
+    await native.driver.completeTurn(nativeId, 'Synthetic completion before late input')
+    await gate.entered
+    await native.typeUnseen(nativeId, 'Synthetic native input after preparation')
+    gate.release()
+    const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+    await vi.waitFor(() => expect(owner.state().watchedThreads.find(item => item.target.threadId === target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+    await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
+    const written = await native.driver.requests()
+    expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
+    expect(written.filter(item => item.method === 'turn/steer')).toHaveLength(0)
+    expect(written.filter(item => item.method === 'request/answer')).toHaveLength(0)
+  } finally { gate.release() }
+}, 60_000)
+
+it('settles a refused paired queue send even when the takeover clears the queue before the send finishes', async () => {
+  const native = await codexFixture(undefined, false, 10_000, { pollIntervalMs: 600_000 }); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const target = first.target
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === target.threadId)?.lastTurn?.status).toBe('running'))
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  const text = 'Synthetic refused native queue'
+  const owning = remote.host.service as unknown as { options: { watcher: WatcherService; control: {
+    finishTurn(turn: unknown, error?: string): Promise<void>; cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void>
+    followupStore: { peek(): { items: readonly { text: string; status: string }[] } } } } }
+  const owner = owning.options.watcher, control = owning.options.control
+  const gate = heldOperation(), prepare = native.adapter.prepareSkillInput.bind(native.adapter)
+  vi.spyOn(native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => {
+    const result = await prepare(...args)
+    if (args[1] === text) await gate.wait()
+    return result
+  })
+  // The owning queue has saved the refused send as failed but has not finished its turn. The takeover that the
+  // native input causes lands in this gap and removes the queue item: the item's failure must already be recorded.
+  // A cancel that came while the item was still dispatching would keep it, so the takeover's cancel waits for the failure.
+  const queueItem = () => control.followupStore.peek().items.find(item => item.text === text)
+  const finishing = heldOperation(), finish = control.finishTurn.bind(control), cancel = control.cancelWatcherQueue.bind(control)
+  let held = false
+  vi.spyOn(control, 'finishTurn').mockImplementation(async (turn, error) => {
+    if (error !== undefined && !held && queueItem()?.status === 'failed') { held = true; await finishing.wait() }
+    return finish(turn, error)
+  })
+  vi.spyOn(control, 'cancelWatcherQueue').mockImplementation(async operationIds => {
+    if (queueItem()?.status === 'dispatching') await vi.waitFor(() => expect(queueItem()?.status).toBe('failed'))
+    return cancel(operationIds)
+  })
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  if (queued.status !== 'ok') throw new Error('queue-refused')
+  try {
+    await native.driver.completeTurn(nativeId, 'Synthetic completion before refused input')
+    await gate.entered
+    await native.typeUnseen(nativeId, 'Synthetic native input before the refused send')
+    gate.release()
+    await finishing.entered
+    await vi.waitFor(() => expect(owner.state().watchedThreads.find(item => item.target.threadId === target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+    await vi.waitFor(() => expect(queueItem()).toBeUndefined())
+    finishing.release()
+    await vi.waitFor(() => expect(owner.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
+    await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
+    expect(f.watcher.state().inFlight).toBe(0)
+    const written = await native.driver.requests()
+    expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
+  } finally { gate.release(); finishing.release() }
 }, 60_000)
 
 it('refuses changed operation identities and master ceilings on the owning host', async () => {
@@ -383,13 +492,65 @@ it('enforces the narrower owning-host default and keeps a confirmed remote Stop 
   const progress = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic follow-up during confirmation' })
   expect(progress.status, progress.status === 'refused' ? progress.code : undefined).toBe('ok')
   expect(progress).toMatchObject({ limits: { promptCount: 2 } })
-  expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ status: 'ok', results: [{ target: first.target, status: expect.stringMatching(/stopped|requested/u) }] })
+  const stopped = await f.watcher.stopAll(confirmation.confirmationId)
+  // Should the stop come back unconfirmed, say which refusal each operation on the thread recorded, here and on the owning host.
+  const outcomes = (receipts: { action: string; deliveryState: string; refusalCode?: string | undefined; target: { threadId: string } }[]) =>
+    receipts.filter(item => item.target.threadId === first.target.threadId).map(item => `${item.action}:${item.deliveryState}:${item.refusalCode ?? '-'}`)
+  const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+  expect(stopped, JSON.stringify({ master: outcomes(f.watcher.state().receipts), owner: outcomes(owner.state().receipts) }))
+    .toMatchObject({ status: 'ok', results: [{ target: first.target, status: expect.stringMatching(/stopped|requested/u) }] })
   expect(f.watcher.state().requests.find(item => item.id === f.requestId)?.state).toBe('stopped')
   expect(f.watcher.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)?.participation[0]?.automationStopped).toBe(true)
   const writes = vi.spyOn(f.socket, 'watcherControl')
   expect(await f.call('start_thread', acceptedInput)).toMatchObject({ status: 'ok', receipt: { operationId: first.receipt.operationId } })
   expect(writes).not.toHaveBeenCalled()
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic stopped request refusal' })).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
+})
+
+it('keeps remote Stop all ownership while desktop room IPC is held and flushes before its own answer', async () => {
+  const f = await master(), sent = vi.fn<(state: WatcherRoomState) => boolean>(() => true)
+  const timers: (() => void)[] = []
+  const desktop = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: true, watcher: f.watcher,
+    send: sent, setLimit: async () => undefined, schedule: run => { timers.push(run); return () => undefined } })!
+  const ipc = createIpcHarness(); ipc.cleanup()
+  const cleanup = registerIpc(ipc.ipc, { settings: ipc.settings, history: ipc.history, startup: ipc.startup, hotkeys: ipc.hotkeys,
+    app: ipc.app, trustedSenders: () => [{ role: 'main', webContents: ipc.trustedContents, url: ipc.trustedUrl }], watcher: desktop.bridge })
+  cleanups.push(async () => { cleanup(); desktop.dispose() })
+  const observed = vi.fn(), off = f.watcher.subscribe(observed); cleanups.push(async () => off())
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok') throw new Error('start-refused')
+  expect(timers.length).toBeGreaterThan(0)
+  expect(observed.mock.calls.length).toBeGreaterThan(sent.mock.calls.length)
+  const preview = await ipc.ipc.invoke(WATCHER_PREPARE_STOP_ALL) as WatcherPrepareStopAllResult
+  if (preview.status !== 'ok') throw new Error('stop-preview-refused')
+  const original = f.socket.watcherControl.bind(f.socket)
+  let stopId: string | undefined
+  const writes = vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => {
+    if (packet.call.name === 'stop_thread') {
+      stopId = packet.operation.id
+      const before = sent.mock.calls.length
+      await (f.watcher as unknown as { reconcileRemote(hostId: string): Promise<void> }).reconcileRemote(packet.operation.target.hostId)
+      expect(sent).toHaveBeenCalledTimes(before)
+    }
+    return original(packet)
+  })
+  const stop = f.watcher.stopAll.bind(f.watcher)
+  let ownResult: WatcherStopAllResult | undefined
+  vi.spyOn(f.watcher, 'stopAll').mockImplementation(async id => { ownResult = await stop(id); return ownResult })
+  const answer = await ipc.ipc.invoke(WATCHER_STOP_ALL, { confirmationId: preview.confirmationId })
+  expect(answer).toMatchObject({ status: 'ok', results: [{ target: started.target, status: expect.stringMatching(/stopped|requested/u) }] })
+  expect(answer).toBe(ownResult)
+  if (ownResult?.status !== 'ok') throw new Error('stop-refused')
+  const last = sent.mock.calls.at(-1)![0]
+  expect(last).toMatchObject({ requests: ownResult.state.requests, receipts: ownResult.state.receipts,
+    currentOptions: ownResult.state.currentOptions, inFlight: ownResult.state.inFlight, inFlightLimit: ownResult.state.inFlightLimit })
+  // publish() and the operation's own state() are distinct captures; keep both original timestamps.
+  expect(Date.parse(last.observedAt)).toBeLessThanOrEqual(Date.parse(ownResult.state.observedAt))
+  const count = sent.mock.calls.length
+  for (const run of timers.splice(0)) run()
+  expect(sent).toHaveBeenCalledTimes(count)
+  expect(writes.mock.calls.filter(([packet]) => packet.call.name === 'stop_thread')).toHaveLength(1)
+  expect(await f.socket.watcherRead({ master: f.control.watcherRecord().current!, call: { name: 'read_operation', input: { operationId: stopId! } } })).toMatchObject({ status: 'ok', receipt: { operationId: stopId, deliveryState: 'accepted' } })
 })
 
 it('keeps a remote Stop all in flight while reconciliation reads the owning host', async () => {
@@ -552,7 +713,7 @@ it('attributes returning paired evidence to its host, queues news after user wor
       const fact = facts.find(item => item.source === 'github' && item.checksState === state)!
       expect(fact).toBeDefined()
       const event = f.watcher.state().news?.find(item => item.kind === 'evidence-changed' && item.evidenceIds?.includes(fact.id))
-      expect(event).toMatchObject({ target: first.target, requestId: f.requestId })
+      expect(event).toMatchObject({ target: first.target, requestId: f.watcher.state().standingWatches!.find(watch => watch.target.threadId === first.target.threadId)!.id })
       expect(occurrences).not.toContain(event!.id)
     }, { timeout: 15_000 })
     const event = f.watcher.state().news!.find(item => item.kind === 'evidence-changed' && item.target.threadId === first.target.threadId)!
@@ -562,6 +723,7 @@ it('attributes returning paired evidence to its host, queues news after user wor
   }
   expect(new Set(occurrences).size).toBe(3)
   expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })).toMatchObject({ status: 'ok' })
+  expect(await f.watcher.unwatchThread({ target: first.target })).toMatchObject({ status: 'ok' })
   checks = 'passed'; f.router.replace(f.connection)
   await vi.waitFor(() => expect(f.watcher.state().news?.some(item => item.target.threadId === first.target.threadId)).toBe(false))
   await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.wakeUp)).toBe(false))
@@ -764,7 +926,7 @@ it.each([
   await vi.waitFor(() => expect(f.socket.shell().configuration.newThreadReasoningEffort).toBe('low'))
   const wire = vi.spyOn(f.socket, 'watcherControl'), input = f.start()
   const first = await f.call('start_thread', input)
-  expect(first).toMatchObject({ status: 'ok', effectiveChoices: { reasoningEffort: expected, permission: { kind: 'runtime', mode: 'approval-required' } } })
+  expect(first, JSON.stringify(first)).toMatchObject({ status: 'ok', effectiveChoices: { reasoningEffort: expected, permission: { kind: 'runtime', mode: 'approval-required' } } })
   if (first.status !== 'ok') throw new Error('start-refused')
   const packet = wire.mock.calls[0]![0]
   expect(packet.call.input).toMatchObject({ reasoningEffort: expected, permission: { kind: 'runtime', mode: 'approval-required' } })
@@ -785,7 +947,7 @@ it('uses a fresh scoped connection for an admitted queue without renewing a rest
   if (first.status !== 'ok') throw new Error('start-refused')
   await vi.waitFor(() => expect(f.socket.shell().host.threads.some(thread => thread.id === first.target.threadId)).toBe(true))
   const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic reconnect queue', delivery: 'queue' })
-  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  expect(queued, JSON.stringify(queued)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
   const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
   const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
@@ -882,4 +1044,44 @@ it('rechecks the owning stopped request just before a prepared paired provider w
     expect(await send).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
     expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(1)
   } finally { gate.release(); await send }
+})
+
+it('reads a paired worker\'s outcome and reply through exact host reads, and an older host\'s as unknown', async () => {
+  const f = await master()
+  expect(f.router.watcherHosts().hosts()).toEqual([expect.objectContaining({ hostId: f.pairing.hostId, outcomes: true })])
+  const input = f.start(), first = await f.call('start_thread', input)
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
+  const reads = vi.spyOn(f.socket, 'watcherRead')
+  const operationId = first.receipt.operationId
+  const read = async (id = operationId) => {
+    const result = await f.call('read_operation', { operationId: id })
+    if (result.status !== 'ok') throw new Error(`read-refused: ${result.code}`)
+    return result
+  }
+  expect(await read()).toMatchObject({ outcome: 'working', reference: { target: first.target } })
+  expect(reads.mock.calls.some(([request]) => request.call?.name === 'read_operation' && request.outcomes === true)).toBe(true)
+  // The owning host's provider ends the turn its brief began, naming it by that brief's message.
+  const native = (await remote.native.snapshot()).threads.find(item => item.title === input.title)!
+  const brief = native.messages.find(message => message.role === 'user')!
+  remote.native.event({ type: 'ready', threadId: native.id, text: 'Synthetic remote reply',
+    activities: markTurnActivity([], { provider: 'codex', turnId: brief.id, status: 'completed' }) })
+  await f.socket.command({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(async () => expect(await read()).toMatchObject({ outcome: 'answered', reference: { target: first.target, turnMessageId: brief.id },
+    reply: { from: 'worker', text: 'Synthetic remote reply' } }))
+  // The desktop keeps the host's outcome as identities only.
+  expect(f.control.watcherRecord().operations.find(item => item.id === operationId)).toMatchObject({ outcome: 'answered', turnMessageId: brief.id })
+  expect(JSON.stringify(f.control.watcherRecord())).not.toContain('Synthetic remote reply')
+  // A host that does not list watcher-outcomes is not asked for them, and its accepted brief reads as unknown.
+  vi.spyOn(f.socket, 'supportsWatcherOutcomes', 'get').mockReturnValue(false)
+  const second = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic second brief', delivery: 'now' })
+  if (second.status !== 'ok') throw new Error(`send-refused: ${second.code}`)
+  await vi.waitFor(async () => expect((await read(second.receipt.operationId)).receipt.deliveryState).toBe('accepted'))
+  reads.mockClear()
+  const older = await read(second.receipt.operationId)
+  expect(older).toMatchObject({ outcome: 'unknown', outcomeNote: expect.stringMatching(/does not report outcomes/u) })
+  expect(older.reply).toBeUndefined()
+  expect(reads.mock.calls.filter(([request]) => request.call?.name === 'read_operation').every(([request]) => request.outcomes === undefined)).toBe(true)
+  // Projections never carry outcomes, so a desktop from before them still reads the host.
+  const projection = await f.socket.watcherRead({ master: f.watcher.state().current! }) as WatcherHostProjection
+  expect(projection.operations.every(item => item.outcome === undefined && item.replyMessageId === undefined)).toBe(true)
 })

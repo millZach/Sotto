@@ -30,6 +30,7 @@ export function foldWatcherNews(earlier: WatcherNews | undefined, later: Watcher
 export const requestRevision = (request: unknown): string => observationDigest(request)
 const words: Record<WatcherEvent['kind'], string> = {
   'turn-finished': 'The foreground turn finished. This is not review or merge approval.',
+  'work-settled': 'The background work and monitoring this turn left running have ended, so the turn is done. This is not review or merge approval.',
   'turn-failed': 'The provider confirmed that this turn failed. Read the thread for its error.',
   'needs-user': 'Open this thread to answer its request. Only the user can answer.',
   quiet: 'No progress was observed for twenty minutes of connected work.',
@@ -39,12 +40,14 @@ const words: Record<WatcherEvent['kind'], string> = {
 }
 export function watcherNewsText(news: WatcherNews): string {
   const opening = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.'
-  const lines = news.events.map(event => `${JSON.stringify(event.target)}: ${words[event.kind]} [${event.id}]`)
+  const lines = news.events.map(event => `${JSON.stringify(event.target)}: ${words[event.kind]}${(event.kind === 'turn-finished' || event.kind === 'turn-failed') && event.backgroundWorkCount
+    ? ` Background work or monitoring is still running (${event.backgroundWorkCount}), so the turn is not done until Sotto sends work-settled news for it.` : ''}${event.operationId && event.kind !== 'delivery-changed'
+    ? ` This turn answers operation ${event.operationId}; read_operation gives its outcome and reply.` : ''} Use requestId ${event.requestId} for this thread. [${event.id}]`)
   let count = lines.length
   while (count >= 0) {
     const omitted = news.omitted + lines.length - count
     const text = [opening, ...lines.slice(0, count), ...(omitted ? [`${omitted} more events omitted. Read list_threads for the current roster.`] : []),
-      'Use read_thread for evidence and worker messages separately. Use read_operation for delivery receipts. Keep the original Watcher request and its budgets.'].join('\n')
+      'Use read_operation for a brief’s receipt, outcome and, once answered, its reply. Use read_thread for evidence and other worker messages. A standing watch requestId authorizes a bounded continuation for that watched thread. Share four prompts per target within this Watcher turn across request and standing-watch IDs.'].join('\n')
     if (Buffer.byteLength(text) <= WATCHER_NEWS_BYTES_MAX) return text
     count--
   }

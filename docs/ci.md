@@ -1,6 +1,6 @@
 # Continuous integration
 
-`.github/workflows/ci.yml` runs the same gates a developer runs by hand, on a `windows-latest` runner, for every push to `main` and every pull request against `main`. Linux also runs the typecheck and the unit and integration suite on `ubuntu-latest`. It never builds desktop installers, never publishes, and uses no secrets. A second Windows job builds and verifies the unpacked Windows app, a trial Windows job drives the built desktop app, a separate Linux job builds and verifies the plain Node host archive, and a macOS job tests and compiles the native iOS client.
+`.github/workflows/ci.yml` runs the same gates a developer runs by hand, on a `windows-latest` runner, for every push to `main`, every pull request against `main` and once a week on `main`. Linux also runs the typecheck and the unit and integration suite on `ubuntu-latest`. It never builds desktop installers, never publishes, and uses no secrets. A second Windows job builds and verifies the unpacked Windows app, a trial Windows job drives the built desktop app, a separate Linux job builds and verifies the plain Node host archive, and a macOS job tests and compiles the native iOS client.
 
 ## Terminal interaction verification
 
@@ -20,7 +20,7 @@ Gates (Windows) runs for every push to `main` and every pull request. Main's rul
 
 **Linux result** always runs after Changed areas and the Linux shards. It fails unless Changed areas succeeded and all Linux shards passed, including the typecheck, or Changed areas chose documents only and the shards were skipped. A failed, cancelled or unexpectedly skipped matrix fails the summary. This check is informational; adding it to the ruleset is the owner's decision.
 
-Gates (Windows) fails unless Changed areas finished, the checks passed and every shard passed, or the shards were skipped for a documents-only change. The ruleset requires this job by name; a skipped job would count as passing, which is why it always runs. A shard cancelled at its limit is rerun, never bypassed. A push to `main` also runs the other four slower jobs every time. On a pull request, a short Linux job, Changed areas, reads the files the pull request changes and decides whether those jobs are needed:
+Gates (Windows) fails unless Changed areas finished, the checks passed and every shard passed, or the shards were skipped for a documents-only change. The ruleset requires this job by name; a skipped job would count as passing, which is why it always runs. A shard cancelled at its limit is rerun, never bypassed. A push to `main` also runs the other slower jobs every time, except Native iOS client (macOS), which runs only when the push changed what it reads (below). On a pull request, a short Linux job, Changed areas, reads the files the pull request changes and decides whether those jobs are needed:
 
 - **Host archive and socket contract (Linux)** runs unless every changed file is in the renderer (`src/renderer/`, `src/preload/`), the iOS client, `docs/`, `artifacts/`, `design/`, `handoff/`, the e2e, renderer-unit or perf tests, or a Markdown file at the root other than `THIRD_PARTY_NOTICES.md`. A path that list does not name runs the job, so a new area is covered until someone decides otherwise.
 - **Package (Windows)** runs unless every changed file is a document (`docs/`, `artifacts/`, `design/`, `handoff/`, a Markdown file at the root), a test under `tests/`, or the native iPhone or Android client. It runs `npm ci`, `npm run assets:verify` and `npm run package:dir`: the build, the build provenance, `electron-builder --dir --win --x64` and `scripts/verify-packaged-resources.mjs` on `release/win-unpacked`. That is the release's packaging step without the installer. It exists so a change to `electron-builder.yml`, the packaging scripts, the packaged resources or anything the build bundles fails on the pull request rather than on the Windows PC at release time. Linux work on the desktop app (#833) made it necessary (#844).
@@ -33,9 +33,11 @@ Gates (Windows) fails unless Changed areas finished, the checks passed and every
 - **Desktop check (Windows)** runs when Package (Windows) is needed, or when `tests/e2e/` or `tests/fixtures/` changes, and on every push to `main`. On `windows-latest` with Node 24 it runs `npm ci`, `npm run assets:verify` and `npm run test:desktop-smoke`. It uses the same long temporary path as the other Windows jobs. The 30-minute timeout leaves room for a cold install, build and serial Electron journeys. It retains screenshots and proof files on both success and failure from `artifacts/review-393/desktop-run/` and Playwright diagnostics from `test-results/` as `windows-desktop-journeys-<attempt>` for 14 days. It also runs `tests/e2e/terminal-search-links-zoom.spec.ts` for terminal search, safe links and zoom. It uses no secrets and publishes nothing. Package result continues to check packaging alone.
 
   **Desktop result** is a short Linux job that always runs after Changed areas and Desktop check (Windows). It fails if Changed areas did not finish successfully, or if Desktop check (Windows) was needed and did not pass, including a skipped or cancelled desktop run. A successful Changed areas decision that the desktop check is not needed lets it pass. Main's ruleset requires **Desktop result**, because a skipped Desktop check (Windows) counts as passing on its own.
-- **Native iOS client (macOS)** runs only when `apps/ios/`, `src/shared/hostProtocol.ts` (which the client's wire types mirror) or this workflow changed. Its Swift tests and simulator build read nothing outside `apps/ios/`.
+- **Native iOS client (macOS)** runs only when `apps/ios/`, `src/shared/hostProtocol.ts` (which the client's wire types mirror) or this workflow changed. Its Swift tests and simulator build read nothing outside `apps/ios/`. A push to `main` uses the same three paths, read from the commit of the last push run on `main` that finished green to the commit pushed: two pull requests that change none of them cannot break the iOS client together, so the push does not spend over an hour of a macOS runner (the job's limit is 110 minutes) rebuilding what did not change. A run the next merge cancelled, or one that failed, proved nothing, so its commits stay in the range until a run passes; a burst of merges therefore still runs the iOS job once one of them changed the client. Changed areas finds that run through the Actions API, which is why it alone reads `actions`, and fetches its commit without file contents, since only the changed names are read. When the run or its commit cannot be found, the job runs.
 
-A job that is not needed reports as skipped, not failed. A change that should have run a skipped job still gets it on the push to `main` after merging.
+A job that is not needed reports as skipped, not failed. A change that should have run a skipped job still gets it on the push to `main` after merging, and the iOS job gets it in the weekly run at the latest.
+
+**The weekly run** starts every Monday at 10:00 UTC on `main` and runs every job, whatever changed. It finds a runner image, Xcode or toolchain update that breaks a job no change touched, and it runs the iOS job that pushes now skip. It has a concurrency group of its own, so it neither cancels a push's run on `main` nor is cancelled by one. Its checks land on the commit `main` points to, and `release:check` reads the newest result of Gates (Windows) and Package result on that commit, so a weekly run that fails either holds a stable release from that commit until it is fixed. A weekly failure of the iOS job alone does not: that job is not a required check.
 
 ## What the job runs
 
@@ -149,10 +151,10 @@ regenerated baselines.
 ## Opt-in appearance and theme captures
 
 `npm run test:e2e` builds and runs the ordinary Electron suite with one worker.
-Six specs save appearance, theme or terminal drawer captures only when their
+Five specs save appearance, theme or terminal drawer captures only when their
 evidence variable is set. The four theme specs skip entirely without it; the
-frosted window and terminal drawer specs still run their checks in the ordinary
-suite and only skip the captures. These captures are developer evidence, not part of the ordinary suite or CI.
+terminal drawer spec still runs its checks in the ordinary suite and only skips
+the captures. These captures are developer evidence, not part of the ordinary suite or CI.
 Build first with `npm run build`, then enable the spec you want to capture:
 
 ```sh
@@ -160,7 +162,6 @@ SOTTO_THEMES_E2E=1 npx playwright test tests/e2e/theme-library-evidence.spec.ts
 SOTTO_APPEARANCE_EVIDENCE=1 npx playwright test tests/e2e/appearance-evidence.spec.ts
 SOTTO_THEME_EVIDENCE=1 npx playwright test tests/e2e/theme-palettes-evidence.spec.ts
 SOTTO_THEME_BRANDING_EVIDENCE=1 npx playwright test tests/e2e/theme-branding-evidence.spec.ts
-SOTTO_FROST_EVIDENCE=1 npx playwright test tests/e2e/frosted-window.spec.ts
 SOTTO_PANE_TERMINAL_EVIDENCE=1 npx playwright test tests/e2e/pane-terminal.spec.ts
 ```
 
@@ -178,7 +179,6 @@ finally { Remove-Item Env:SOTTO_THEMES_E2E }
 | `appearance-evidence.spec.ts` | `artifacts/verification/phase-1-appearance/` |
 | `theme-palettes-evidence.spec.ts` | `artifacts/verification/sotto-palettes/` |
 | `theme-branding-evidence.spec.ts` | `artifacts/phase-three-theme-branding/` |
-| `frosted-window.spec.ts` | `artifacts/frosted-window/` (git-ignored: screen captures show the desktop behind the window) |
 | `pane-terminal.spec.ts` | `artifacts/pane-terminal/` |
 
 The appearance spec's optional whole-screen capture additionally needs
@@ -293,6 +293,7 @@ renderer tests for memoization and identical final markup run in CI.
 | Less than half of structuredClone | `tests/unit/main/cloneHostSnapshot.test.ts` | Median internal snapshot copy with 24 MiB of retained output; container isolation and the incremental-storage work bound are always checked. |
 | Less than whole-message rendering | `tests/perf/markdownRender.perf.test.tsx` | Total elapsed time for rendering a reply in 40 incremental chunks against re-parsing each whole prefix. |
 | Half the answer's 250 ms acknowledgement | `tests/perf/threadCommandLanes.perf.test.tsx` | Median time for one thread's settings change to reach main while another thread's answer waits on its provider. It is a timing benchmark, so it also needs `SOTTO_PERF_BENCH=1`. |
+| 400 ms All time, 150 ms for 30 days, 100 ms for a 5-hour window | `tests/perf/usageStoreQuery.perf.test.ts` | Median Usage store query over 400,000 bursty token rows and 6,000 prompts, each read after a write so none comes from the query cache. Its seed takes about 30 seconds, so it skips unless `SOTTO_PERF_ASSERT=1` or `SOTTO_PERF_BENCH=1` is set; with `SOTTO_PERF_BENCH=1` it also reports, without a budget, the worst case of one row per 15-minute bucket. |
 
 Run them by hand on an idle machine:
 
@@ -300,6 +301,7 @@ Run them by hand on an idle machine:
 $env:SOTTO_PERF_ASSERT = '1'
 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
 npx vitest run tests/perf/markdownRender.perf.test.tsx --maxWorkers=1
+npx vitest run tests/perf/usageStoreQuery.perf.test.ts --maxWorkers=1
 $env:SOTTO_PERF_BENCH = '1'
 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1
 ```
@@ -308,6 +310,7 @@ npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1
 SOTTO_PERF_ASSERT=1 npx vitest run tests/unit/renderer/threadQueueSkills.test.tsx tests/unit/main/threadDrafts.test.ts tests/integration/codexStreamingResponsiveness.test.ts tests/integration/nativeStreamingResponsiveness.test.ts --maxWorkers=2
 SOTTO_PERF_ASSERT=1 npx vitest run tests/perf/markdownRender.perf.test.tsx --maxWorkers=1
 SOTTO_PERF_ASSERT=1 SOTTO_PERF_BENCH=1 npx vitest run tests/perf/threadCommandLanes.perf.test.tsx --maxWorkers=1
+SOTTO_PERF_ASSERT=1 npx vitest run tests/perf/usageStoreQuery.perf.test.ts --maxWorkers=1
 ```
 
 One test is skipped by platform rather than gated: *preserves an occupied broken-symlink backup
@@ -322,11 +325,39 @@ nothing: the 2 MB rollout read in `tests/unit/main/codexTargetLog.test.ts` and t
 comparison in `tests/unit/renderer/streamingMarkdown.test.tsx`, and the 1005-file directory enumeration
 in `tests/unit/main/files.test.ts` each allow 60 s.
 
+The SSH readiness, password and host-update journeys use a 150 s test deadline.
+Their real child processes retain their own operation budgets; in particular, an update
+starts a host, fetches and unpacks its archive, then stops and starts it again. The default
+15 s test deadline must not end that journey during a valid 30 s host start. This is a
+failure bound, not a latency assertion; production timeouts and the global test deadline
+are unchanged. See [the SSH test evidence](verification/ssh-readiness-test-budget.md).
+
+The terminal clipboard's two pure quoting cases stay in unit tests. Its real Windows
+PowerShell or POSIX shell round trip lives in integration tests, with a 60 s child-process
+deadline and a 75 s enclosing deadline. It closes unused stdin, connects cancellation to
+the child and drains that owned child on completion. A failure reports only fixed phase
+facts; no command arguments or output are logged. The exact-string assertion and the
+global deadline are unchanged. See [the shell fixture evidence](verification/terminal-clipboard-shell-budget.md).
+
 `vitest.config.ts` gives a test 15 s and an `expect.poll` 5 s, rather than vitest's 5 s and 1 s, and
-`tests/setup.ts` gives Testing Library's `findBy` and `waitFor` the same 5 s rather than their 1 s. Waiting
-is not the assertion: a runner takes several times longer over a provider round trip or a child process
-start than a developer machine, and a deadline that expires there describes the machine. Something that
-is genuinely wrong still fails, a few seconds later.
+`tests/setup.ts` gives Testing Library's `findBy` and `waitFor`, and vitest's own `vi.waitFor` and
+`vi.waitUntil`, the same 5 s rather than their 1 s. No vitest setting raises `vi.waitFor` or `vi.waitUntil`,
+so the setup file wraps them: a call that names no timeout gets 5 s, and a call that passes its own timeout
+or interval keeps it. `tests/unit/fixtures/suiteWaitDeadline.test.ts` and its `.node` twin check that the
+wrapper holds in jsdom and node files. Waiting is not the assertion: a runner takes several times longer
+over a provider round trip or a child process start than a developer machine, and a deadline that expires
+there describes the machine. Something that is genuinely wrong still fails, a few seconds later.
+
+A Grok contract failure that looked like a deadline was not one. The Grok fixture polled history every 20 ms,
+the same period as the lazy-session contract's reaper sweep, and Windows runs both on the same 15.6 ms timer
+tick. When the two started in step, every sweep found a history read under way, which defers a stop (#440), so
+an idle session was never stopped and `untilStopped` ran out after 12 s. With a fast sweep and no interval of
+its own, the fixture now polls at five sweeps' length, which leaves most sweeps between reads.
+
+Nor was a thread-title failure. "Leaves an older thread alone" reopened over a fake provider that forgets its
+sessions, so the thread looked empty and Sotto correctly gave it a first-message title; the assertion passed
+only when it ran before that title landed. The reopened provider now holds the exchange, as a real one does,
+and the test waits for offered names to land before it checks.
 
 The same rule applies to the fake-provider fixtures' acknowledgement deadline (`requestTimeoutMs` in
 `tests/fixtures/claudeFixture.ts`, `codexFixture.ts` and `fakeGrokThreadFixture.ts`). That one deadline
@@ -507,7 +538,7 @@ The workflow journey in `tests/unit/renderer/subagents.test.tsx` holds the first
 
 **Native iOS client (macOS)** runs `sh apps/ios/Scripts/verify.sh` on `macos-26`, selecting `/Applications/Xcode_26.6.app/Contents/Developer` explicitly: the same Xcode as the TestFlight workflow, because App Store Connect refuses a build made with an SDK older than iOS 26, and a gate on an older Xcode would pass code the upload cannot build. [The runner inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md) lists that toolchain and its iOS 26 SDKs, which satisfy the package's Swift 5.9 tools and app's iOS 17 minimum. The job prints its actual Xcode/Swift versions, runs the native SottoCore and app-model package tests, builds the unsigned iOS simulator app, and runs `sh apps/ios/Scripts/verify-ui.sh` with the shared Xcode scheme. It needs no signing secrets, never uploads to TestFlight, and does not run npm or Electron.
 
-The workflow has no path filters, so changes under `apps/ios` and the host protocol both run this gate. On macOS the package also compiles the actual `AppModel.swift` against scripted storage and transport: failed thread reads preserve the computer connection, and observation does not download a conversation twice. A separate package target compiles the actual `HostConnection.swift` against scripted HTTP responses, covering ready health validation and connection error messages. Core tests cover incremental updates and settlement. `SOTTO_PERF_ASSERT=1 swift test --package-path apps/ios --filter ThreadPerformanceTests` enables the optional list responsiveness budget; ordinary CI does not assert elapsed time. The package tests and build establish native behavior under scripted transport and compilation. The Focus journeys below separately exercise simulator interaction; neither establishes hands-on VoiceOver, real-device networking, signing or Forge availability. Design inspection requires reading the retained screenshots. On a Windows-only development machine this job's result remains unverified until GitHub actually runs it; adding the job is not a green CI result. It is not a required check until it has been green once.
+Changed areas decides when it runs: changes under `apps/ios`, to the host protocol or to this workflow, on a pull request or a push to `main`, and every weekly run. On macOS the package also compiles the actual `AppModel.swift` against scripted storage and transport: failed thread reads preserve the computer connection, and observation does not download a conversation twice. A separate package target compiles the actual `HostConnection.swift` against scripted HTTP responses, covering ready health validation and connection error messages. Core tests cover incremental updates and settlement. `SOTTO_PERF_ASSERT=1 swift test --package-path apps/ios --filter ThreadPerformanceTests` enables the optional list responsiveness budget; ordinary CI does not assert elapsed time. The package tests and build establish native behavior under scripted transport and compilation. The Focus journeys below separately exercise simulator interaction; neither establishes hands-on VoiceOver, real-device networking, signing or Forge availability. Design inspection requires reading the retained screenshots. On a Windows-only development machine this job's result remains unverified until GitHub actually runs it; adding the job is not a green CI result. It is not a required check until it has been green once.
 
 ## Current-session reaper observations
 
@@ -522,9 +553,9 @@ The adapter and HostService contracts receive static skip reasons from each fixt
 
 ### Focus simulator journeys
 
-`apps/ios/Tests/SottoUITests/FocusJourneyTests.swift` launches the real SwiftUI app with a Debug-only in-memory host fixture. It checks the default Threads tab, foreground and background work, a recent thread marked as finished and not opened, search including settled threads, search's keyboard closing on a tap outside it and on scrolling, collapsed/expanded Settled, conversation and question navigation, and persisted appearance and text size. For the Glow look (ADR-0051) it also checks that the thread page opens at the end of the conversation and stays there while the reply keyboard opens and after a question is answered, never jumping to the top when the keyboard closes; that a review reply reads as Markdown blocks with no asterisks or table pipes left over, a narrow table as a grid and a wide one as a card per row; the branch, changes and pull request chips; that New thread's fields open from the edge of their box and New worktree can be chosen; and the theme, light, density and text size settings, with every alert off until turned on. Each run of the agent's steps folds into one line that opens in place and folds again, and with `--ui-long-thread` and `--ui-slow-detail` a long thread whose messages arrive a moment after it opens shows its end with no scroll. With `--ui-reconnecting` the laptop loses its connection a moment after a thread opens, and the thread stays on screen under Reconnecting to Laptop rather than going back to Reading this thread. With `--ui-watcher` the laptop runs Watcher (ADR-0073, amended October 11, 2026): the journeys check that the Watcher tab sits between Threads and Computers and that VoiceOver reads its working dot and its badge, open it, send Watcher a message and see its answer arrive, open a thread from a row of what Watcher did and find the provider's logo, the owl and the takeover line there, answer a worker's own card inside Watcher's page (`--ui-watcher-can-answer`), read that page on a phone without Can answer with Watcher's own request waiting (`--ui-watcher-asks`), and see Stop all ask first, stop nothing when cancelled and stop only the threads Watcher started when confirmed. Without `--ui-watcher` there is no Watcher tab. Each of those journeys keeps a `watcher-*` screenshot in dark and in light. The fixture returns before Keychain reads or any connection and refuses pairing, rename, removal, and transport actions; with `--ui-question-while-reading` the laptop lets the phone answer, and an answer only takes its request out of the in-memory thread. Release builds contain no fixture entry point.
+`apps/ios/Tests/SottoUITests/FocusJourneyTests.swift` launches the real SwiftUI app with a Debug-only in-memory host fixture. It checks the default Threads tab, foreground and background work, a recent thread marked as finished and not opened, search including settled threads, search's keyboard closing on a tap outside it and on scrolling, collapsed/expanded Settled, conversation and question navigation, and persisted appearance and text size. For the Glow look (ADR-0051) it also checks that the thread page opens at the end of the conversation and stays there while the reply keyboard opens and after a question is answered, never jumping to the top when the keyboard closes; that a review reply reads as Markdown blocks with no asterisks or table pipes left over, a narrow table as a grid and a wide one as a card per row; the branch, changes and pull request chips; that New thread's fields open from the edge of their box and New worktree can be chosen; and the theme, light, density and text size settings, with every alert off until turned on. Each run of the agent's steps folds into one line that opens in place and folds again, and with `--ui-long-thread` and `--ui-slow-detail` a long thread whose messages arrive a moment after it opens shows its end with no scroll. With `--ui-reconnecting` the laptop loses its connection a moment after a thread opens, and the thread stays on screen under Reconnecting to Laptop rather than going back to Reading this thread. With `--ui-watcher` the laptop runs Watcher (ADR-0073, amended October 11, 2026): the journeys check that the Watcher tab sits between Threads and Computers and that VoiceOver reads its working dot and its badge, open it, send Watcher a message and see its answer arrive, open a thread from a row of what Watcher did and find the provider's logo, the owl and the takeover line there, answer a worker's own card inside Watcher's page (`--ui-watcher-can-answer`), read that page on a phone without Can answer with Watcher's own request waiting (`--ui-watcher-asks`), and see Stop all ask first, stop nothing when cancelled and stop only the threads Watcher started when confirmed. They also change Watcher's permissions from the chip over its box, with Can answer and without it, open the files of a reply in which Watcher changed files itself, with its reason and without one (`--ui-watcher-no-reason`), and watch a thread from its page, take it back with Undo, stop watching it on Watched and watch it again from Watch a thread. Without `--ui-watcher` there is no Watcher tab. Each of those journeys keeps a `watcher-*` screenshot in dark and in light. The fixture returns before Keychain reads or any connection and refuses pairing, rename, removal, and transport actions; with `--ui-question-while-reading` the laptop lets the phone answer, and an answer only takes its request out of the in-memory thread. Release builds contain no fixture entry point.
 
-Run `sh apps/ios/Scripts/verify-ui.sh` on a Mac with Xcode selected. The script creates disposable iPhone SE (3rd generation) and iPhone 16 Pro Max simulators using the latest installed iOS runtime, then deletes only those simulators. Before the journeys on each phone it installs the app `verify.sh` built and launches it once with the fixture, because a freshly booted simulator's first launch twice outlasted XCTest's launch deadline and failed whichever journey ran first; it says so if that warm-up fails. The large phone also has the simulator's Reduce Motion preference enabled and accessibility-large text. Kept XCTest screenshot attachments cover dark, light, another theme, larger text, compact density, the keyboard, a request, the thread page at its end, at its top and with the reply keyboard open, the question sheet and the page after an answer, New thread's menus, Settings, Computers, and recovery feedback; the Glow journeys' images are named `threads-glow-*`, `thread-glow-*`, `question-glow-*`, `settings-glow-*`, `new-thread-glow-*` and `computers-glow*`, and the Watcher journeys' `watcher-*`. CI retains both result bundles and exported attachments as `ios-focus-journeys` for 14 days, including failures. The job has a 110-minute safety timeout. It was raised from 45 to 75 when the Glow look took the journeys from seven to twelve, and to 110 when they took 67 minutes on a push to `main` and [run 38318858359](https://github.com/millZach/Sotto/actions/runs/38318858359) reached 75 while still passing them; the Watcher tab then took them from nineteen to twenty-five. Eleven CPU journeys skip unless asked for. [Run 36782409656](https://github.com/millZach/Sotto/actions/runs/36782409656) passed the native package tests and all four journeys on each phone, then exceeded the former 35-minute limit while completing the job. The larger window covers simulator startup, real interaction and evidence retention; test assertions and their deadlines are unchanged. These checks exercise native layout and navigation against fixture data; they do not establish live-host or physical-device compatibility. Inspect the exported images before calling the design verified.
+Run `sh apps/ios/Scripts/verify-ui.sh` on a Mac with Xcode selected. The script creates disposable iPhone SE (3rd generation) and iPhone 16 Pro Max simulators using the latest installed iOS runtime, then deletes only those simulators. Before the journeys on each phone it installs the app `verify.sh` built and launches it once with the fixture, because a freshly booted simulator's first launch twice outlasted XCTest's launch deadline and failed whichever journey ran first; it says so if that warm-up fails. The large phone also has the simulator's Reduce Motion preference enabled and accessibility-large text. Kept XCTest screenshot attachments cover dark, light, another theme, larger text, compact density, the keyboard, a request, the thread page at its end, at its top and with the reply keyboard open, the question sheet and the page after an answer, New thread's menus, Settings, Computers, and recovery feedback; the Glow journeys' images are named `threads-glow-*`, `thread-glow-*`, `question-glow-*`, `settings-glow-*`, `new-thread-glow-*` and `computers-glow*`, and the Watcher journeys' `watcher-*`. CI retains both result bundles and exported attachments as `ios-focus-journeys` for 14 days, including failures. The job has a 140-minute safety timeout. It was raised from 45 to 75 when the Glow look took the journeys from seven to twelve, to 110 when they took 67 minutes on a push to `main` and [run 38318858359](https://github.com/millZach/Sotto/actions/runs/38318858359) reached 75 while still passing them, and to 140 when twenty-five journeys took 106 minutes on a push to `main` ([run 38512275242](https://github.com/millZach/Sotto/actions/runs/38512275242)) and Watcher's permissions, own changes and watching took them to twenty-eight. Eleven CPU journeys skip unless asked for. [Run 36782409656](https://github.com/millZach/Sotto/actions/runs/36782409656) passed the native package tests and all four journeys on each phone, then exceeded the former 35-minute limit while completing the job. The larger window covers simulator startup, real interaction and evidence retention; test assertions and their deadlines are unchanged. These checks exercise native layout and navigation against fixture data; they do not establish live-host or physical-device compatibility. Inspect the exported images before calling the design verified.
 
 
 ## Native test launch

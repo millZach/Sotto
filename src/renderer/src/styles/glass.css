@@ -1,6 +1,8 @@
-/* Glass (ADR-0011): the surfaces that float over the room take the theme's
-   overlay colour at the Glass opacity setting and blur what lies beneath, as
-   T3 Code's menus, dialogs and composer do. At 100 they are solid.
+/* Glass (ADR-0011, ADR-0084): the surfaces that float over the room, as T3
+   Code's menus, dialogs and composer do. They are solid: --tt-glass is the
+   theme's overlay colour and --tt-glass-field its field colour. The backdrop
+   filter stays, because it makes each surface the containing block for its
+   fixed-position descendants.
 
    The selectors name other features' floating surfaces without editing their
    stylesheets. The :root prefix outranks each surface's own background, which

@@ -166,11 +166,11 @@ describe('Omarchy M3 and readability check', () => {
     expect(BUILT_IN_THEMES).toHaveLength(6)
     // Pin all twelve shipped halves and their token projection; the Linux repair
     // must never change Windows/macOS palettes. They last changed on purpose for
-    // #936, which needed new design baselines on Windows. The token file last changed for Watcher's room
-    // (--tt-owl-room-night, read only by the Owl-gated watcher.css), which adds a token and changes no palette.
+    // #936, which needed new design baselines on Windows. The token file last changed when glass turned solid and
+    // the frost tokens went (ADR-0084), which changes no palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('18defa9e80c06093d4ffb6fbc1f5f3984bc3bd437e06b9aa9d5028548c5c4e08')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
-    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('b0dbf106ed6f78f2b6bf4bba707aa3e91c225e8d155d10ee155b1e5ca930ce44')
+    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('705e3d86c44a938b41a860a63b81225ba520694d682b7fc30dd722fdab1cf60c')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

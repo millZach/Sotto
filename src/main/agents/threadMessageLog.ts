@@ -3,6 +3,7 @@ import type { AgentActivity } from '../../shared/agentActivity'
 import { sameMessageContent, type ThreadEvent } from '../../shared/threadEvents'
 import type { StoredMessageIdentity, ThreadHostEvent } from './host'
 import { isImmutableActivities } from './activitySnapshots'
+import { withKeptWatcherChanges } from './watcherOwnChanges'
 
 /** Activity facts are independent of message text. Only certified immutable inputs may be reused. */
 const activitySummaries = new WeakMap<readonly AgentActivity[], AgentThreadSummary>()
@@ -82,6 +83,8 @@ function said(text: string): boolean { return text.trim().length > 0 }
 function metadataChanged(previous: AgentMessage, next: AgentMessage): boolean {
   return previous.createdAt !== next.createdAt || previous.commandId !== next.commandId
     || JSON.stringify(previous.attachments ?? []) !== JSON.stringify(next.attachments ?? [])
+    || JSON.stringify(previous.watcherOwnChange) !== JSON.stringify(next.watcherOwnChange)
+    || JSON.stringify(previous.watcherObservedChanges) !== JSON.stringify(next.watcherObservedChanges)
 }
 
 export class ThreadMessageLog {
@@ -254,6 +257,8 @@ export class ThreadMessageLog {
   private record(threadId: string, message: AgentMessage, held?: Map<string, AgentMessage>): void {
     const track = this.track(threadId)
     const existing = held ? held.get(message.id) : heldMessage(track, message.id)
+    const retained = existing ?? (track.lastAssistant?.id === message.id ? track.lastAssistant : track.lastUser?.id === message.id ? track.lastUser : undefined)
+    message = withKeptWatcherChanges(message, retained)
     if (!track.ids.has(message.id)) {
       if (track.empty.has(message.id)) {
         if (!said(message.text)) { track.empty.set(message.id, message.text); if (existing) Object.assign(existing, message); return }
@@ -333,7 +338,7 @@ export class ThreadMessageLog {
     // Only a list that covers everything the log knows is also what the window should hold.
     const current = this.track(threadId)
     if (!this.wanted(threadId)) { current.messages = undefined; return }
-    if (messages.length >= current.order.length) current.messages = messages.map(message => ({ ...message }))
+    if (messages.length >= current.order.length) current.messages = messages.map(message => ({ ...withKeptWatcherChanges(message, held.get(message.id)) }))
   }
 
   /**

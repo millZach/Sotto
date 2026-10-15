@@ -70,8 +70,8 @@ test('Index settings: focused categories, real saves, failure feedback, themes a
           expect(bounds, `${name} ${width} ${mode}`).toEqual({ pageOverflow: false, formOverflow: false, clippedControls: [] })
           await shot(page, `${name.toLowerCase()}-${width}-${mode}`)
           if (width === 820 && name === 'Appearance') {
-            await page.getByLabel('Glass opacity', { exact: true }).scrollIntoViewIfNeeded()
-            await expect(page.getByLabel('Glass opacity', { exact: true })).toBeInViewport()
+            await page.getByLabel('Contrast', { exact: true }).scrollIntoViewIfNeeded()
+            await expect(page.getByLabel('Contrast', { exact: true })).toBeInViewport()
             await shot(page, `appearance-${width}-${mode}-sliders`)
           }
           if (width === 820 && ['Appearance', 'Application', 'Agents', 'Providers'].includes(name)) {

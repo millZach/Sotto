@@ -5,6 +5,8 @@ import { watcherRefusal, type WatcherService } from './watcher'
 import type { WatcherProfileTools } from './host'
 
 const descriptions: Record<WatcherToolName, string> = {
+  watch_thread: 'Keep watching and managing a thread until the user stops watching. This does not send a prompt or answer a card.',
+  unwatch_thread: 'Stop watching a thread and fence automatic messages for its standing watch. Does not interrupt the user\'s turn.',
   list_threads: 'List worker threads and their state using Sotto identities. Does not mark anything read by the user.',
   read_thread: 'Read a bounded window of a worker thread. Questions and permissions must be answered by the user on that thread.',
   start_thread: 'Start one worker in a known project and send its first prompt under an active user Watcher request. Retry with the same key to read the original receipt.',
@@ -13,7 +15,7 @@ const descriptions: Record<WatcherToolName, string> = {
   settle_thread: 'Move an idle worker to Settled, preserving the thread and working copy. Does not stop background work.',
   list_projects: 'List known worker projects and available models and comparable default permissions. Project roots are display information.',
   list_working_copies: 'Read host-issued working-copy and base-ref choices for a known project. No arbitrary paths or remote fetch.',
-  read_operation: 'Read an admitted operation receipt. Accepted means delivered, not that the work succeeded. Uncertain means reconcile, never resend.',
+  read_operation: 'Read an admitted operation’s receipt and, for a start or send, its outcome: working, background, answered, failed, stopped, paused or unknown. Accepted means delivered; the outcome says how its turn ended. Once answered it carries that turn’s reply, the worker’s own words. Uncertain or unknown means reconcile, never resend.',
 }
 export const WATCHER_TOOL_DEFINITIONS: readonly ThreadToolDefinition[] = Object.freeze(
   (Object.keys(watcherToolSchemas) as WatcherToolName[]).map(name => Object.freeze({ name, description: descriptions[name],

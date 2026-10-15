@@ -3,6 +3,7 @@ import { browserAgentOpenSchema, browserStartTaskSchema, browserAgentActionSchem
 import { cloudAgentOpenSchema, cloudAgentActionSchema, cloudAgentFinishSchema } from '../../shared/cloudIphone'
 import type { ToolsResult } from '../../shared/tools'
 import { BrowserAgentServer, type BrowserToolDefinition, type BrowserToolResult } from '../agents/browserAgentServer'
+import type { ThreadToolCallContext } from '../agents/threadToolServer'
 import type { BrowserService } from './browser'
 import type { CloudIphoneService } from './cloudIphone/service'
 
@@ -33,11 +34,29 @@ const descriptions: Record<keyof typeof inputs, string> = {
   iphone_cloud_status: 'Read this thread\'s cloud iPhone sessions: the current one\'s status, device, minutes and recent steps.',
   iphone_cloud_finish: 'Finish this thread\'s cloud iPhone session with an honest summary and explicit unchecked cases, releasing the simulator and its uploaded build. Completed means the stated checks ended, not that everything passed; use failed when a required check failed.',
 }
+/** The tools that only read, marked so for clients that decide from a tool's own hints (Muse's Automatic, ADR-0079). */
+const readOnly = new Set<string>(['browser_pages', 'browser_status', 'iphone_cloud_status'])
 export const browserToolDefinitions: readonly BrowserToolDefinition[] = Object.entries(inputs).map(([name, schema]) => ({
   name, description: descriptions[name as keyof typeof inputs], inputSchema: z.toJSONSchema(schema, { io: 'input' }),
+  ...(readOnly.has(name) ? { annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } } : {}),
 }))
 const text = (value: unknown, isError = false): BrowserToolResult => ({ content: [{ type: 'text', text: JSON.stringify(value) }], ...(isError ? { isError: true } : {}) })
 const unavailable = (): BrowserToolResult => text({ message: 'Browser tools are not ready. Open Sotto and retry.' }, true)
+/** What a held call has left after the user answers: the action still runs inside the client's own wait. */
+const ACTION_MARGIN_MS = 60_000
+const STILL_WAITING = Symbol('still waiting')
+/**
+ * A wait for the user, cut short when the client said how long it will wait (`Sotto-Tool-Wait`, ADR-0079): the call
+ * returns before the client gives up on it, and the request stays open in Sotto for the user to answer.
+ */
+async function waitWithin<T>(waiting: Promise<T>, context: ThreadToolCallContext | undefined): Promise<T | typeof STILL_WAITING> {
+  if (context?.waitMs === undefined) return waiting
+  const budget = Math.max(context.waitMs - ACTION_MARGIN_MS, context.waitMs / 2)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try { return await Promise.race([waiting, new Promise<typeof STILL_WAITING>(resolve => { timer = setTimeout(() => resolve(STILL_WAITING), budget) })]) }
+  finally { clearTimeout(timer) }
+}
+const NOT_ANSWERED_YET = 'The user has not answered yet. The request stays open in Sotto, and it runs once if they allow it.'
 function taskSummary(task: BrowserTask, observable: boolean): unknown {
   if (!observable) return { id: task.id, pageId: task.pageId, status: task.status, pendingAction: task.pendingAction, observationShared: false }
   return { ...task, thumbnail: undefined, evidence: task.evidence?.map(entry => ({ ...entry, image: undefined })) }
@@ -51,14 +70,16 @@ function operationResult(result: ToolsResult<BrowserAgentResult>, observable = t
   return reply
 }
 
-async function dispatchCloud(cloud: CloudIphoneService, name: string, data: unknown, target: { threadId: string; workspaceId: string }): Promise<BrowserToolResult> {
+async function dispatchCloud(cloud: CloudIphoneService, name: string, data: unknown, target: { threadId: string; workspaceId: string }, context?: ThreadToolCallContext): Promise<BrowserToolResult> {
   const payload = { ...(data as object), ...target }
   if (name === 'iphone_cloud_open') {
     const opened = await cloud.agentOpen(payload)
     if (!opened.ok) return text(opened.error, true)
     // The agent gave no sessionId; the thread's own live or active session (ADR-0047) is the only one addressed.
-    const session = opened.value.status === 'asking' ? await cloud.waitForAnswer(opened.value.id) ?? opened.value : opened.value
-    return text({ session })
+    if (opened.value.status !== 'asking') return text({ session: opened.value })
+    const answered = await waitWithin(cloud.waitForAnswer(opened.value.id), context)
+    if (answered === STILL_WAITING) return text({ session: opened.value, message: `${NOT_ANSWERED_YET} Read iphone_cloud_status before asking again.` })
+    return text({ session: answered ?? opened.value })
   }
   if (name === 'iphone_cloud_action') {
     const result = await cloud.agentAction(payload)
@@ -83,7 +104,7 @@ async function dispatchCloud(cloud: CloudIphoneService, name: string, data: unkn
 
 /** The transport supplies the Sotto thread identity; agents cannot supply or replace it. */
 export function createBrowserAgentServer(service: () => BrowserService | undefined, cloudService?: () => CloudIphoneService | undefined): BrowserAgentServer {
-  return new BrowserAgentServer(browserToolDefinitions, async (threadId, name, args) => {
+  return new BrowserAgentServer(browserToolDefinitions, async (threadId, name, args, context) => {
     const browser = service()
     if (!browser) return unavailable()
     const schema = inputs[name as keyof typeof inputs]
@@ -96,7 +117,7 @@ export function createBrowserAgentServer(service: () => BrowserService | undefin
     if (name.startsWith('iphone_cloud_')) {
       const cloud = cloudService?.()
       if (!cloud) return text({ message: 'The cloud iPhone is not ready. Open Sotto and retry.' }, true)
-      return dispatchCloud(cloud, name, input.data, target)
+      return dispatchCloud(cloud, name, input.data, target, context)
     }
     const pages = listing.value.pages
     const observable = (pageId: string, currentPages = pages): boolean => {
@@ -120,7 +141,13 @@ export function createBrowserAgentServer(service: () => BrowserService | undefin
       if (!result.ok) return operationResult(result)
       let value = result.value
       if (value.approvalRequired && value.task.pendingAction) {
-        const task = await browser.waitForAction(value.task.id, value.task.pendingAction.id)
+        const task = await waitWithin(browser.waitForAction(value.task.id, value.task.pendingAction.id), context)
+        if (task === STILL_WAITING) {
+          const current = await browser.list({ threadId })
+          if (!current.ok) return text(current.error, true)
+          return text({ task: taskSummary({ ...value.task, output: null }, observable(value.task.pageId, current.value.pages)), approvalRequired: true,
+            message: `${NOT_ANSWERED_YET} Read browser_status before asking again.` })
+        }
         if (!task) return text({ message: 'This browser task closed while waiting for your answer.' }, true)
         value = { task, ...(task.output ? { output: task.output } : {}), approvalRequired: task.pendingAction !== null }
       }

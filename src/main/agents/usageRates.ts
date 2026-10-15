@@ -1,3 +1,4 @@
+import { canonicalModelId } from '../../shared/modelCatalog'
 import type { UsageTokens } from '../../shared/threadUsage'
 
 /** Immutable standard text-token price inputs, USD/million. New pricing needs a new version. */
@@ -40,9 +41,9 @@ const rates: Record<string, Rate> = {
   'claude:claude-haiku-4-5': { input: 1, cached: 0.1, output: 5, write5m: 1.25, write1h: 2 },
 }
 
-/** Native clients report dated or context-suffixed IDs for the same priced model. */
+/** Native clients report dated, context-suffixed or cloud spellings of the same priced model; one canonical ID prices them all. */
 function rateFor(provider: string, model: string): Rate | undefined {
-  return rates[`${provider}:${model}`] ?? rates[`${provider}:${model.replace(/\[1m\]$/u, '').replace(/-\d{8}$/u, '')}`]
+  return rates[`${provider}:${model}`] ?? rates[`${provider}:${canonicalModelId(provider, model)}`]
 }
 
 export interface UsageEstimate {

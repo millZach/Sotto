@@ -135,7 +135,7 @@ describe('Linux Omarchy theme reader', () => {
     await repository.update({ lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID, appearance: 'system' })
     expect((await repository.get()).omarchyTheme?.sourceName).toBe('Tokyo Night')
     expect(JSON.parse(readFileSync(path, 'utf8'))).not.toHaveProperty('omarchyTheme')
-    expect((await repository.update({ glassOpacity: 85 })).darkTheme).toBe(OMARCHY_THEME_ID)
+    expect((await repository.update({ appearanceContrast: 85 })).darkTheme).toBe(OMARCHY_THEME_ID)
     const reopened = new SettingsRepository(path, { omarchyTheme: () => null })
     expect(await reopened.get()).toMatchObject({ lightTheme:OMARCHY_THEME_ID, darkTheme:OMARCHY_THEME_ID, omarchyTheme:null })
     const nonLinux = new SettingsRepository(path)

@@ -52,6 +52,8 @@ export interface HostPhonesSource {
 /** What the Threads page's host update panel asks of the host updates (ADR-0040), which follow the saved hosts. */
 export interface HostUpdateSource {
   state(): HostUpdateState[]
+  /** Saved hosts whose host archive for the version Sotto is downloading is still being asked about (ADR-0077). */
+  checking?(): string[]
   command(id: string, action: HostUpdateAction): Promise<void>
   /** Why another command on this saved host must wait for its update, or nothing when none is under way. */
   busy(id: string): string | undefined
@@ -204,6 +206,11 @@ export class DesktopHosts {
   private readonly admins: AdminConnections
   /** The Node each host's launch script last ran under, for the command that revokes this computer there by hand. Memory only. */
   private readonly nodePaths = new Map<string, string>()
+  /**
+   * Each saved host's system as its launch script last named it, `linux-x64`, which names the archive a host update
+   * downloads (ADR-0077). Memory, and the tailnet store for a host reached over its tailnet, where no launch runs.
+   */
+  private readonly systems = new Map<string, string>()
   /** Each Forget notice Forget left, oldest first, until dismissed. */
   private forgotten: HostForgotten[] = []
   /** How this computer reaches each saved host over its tailnet (ADR-0053). */
@@ -224,7 +231,12 @@ export class DesktopHosts {
   private writing: Promise<void> = Promise.resolve()
   constructor(private readonly options: {
     directory: string; credentials: AgentCredentials; router: DesktopHostRouter;
-    watcherEnabled?: boolean; museEnabled?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
+    watcherEnabled?: boolean; museEnabled?: boolean; streamingPublishCost?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
+    /**
+     * The host version the update this computer is downloading brings, with Update all on (ADR-0077 decision 6). A host
+     * updated to it before Sotto restarts runs ahead of this computer until then, and is told apart from a newer host.
+     */
+    waitingClientVersion?: () => string | undefined;
     localHostRunning: boolean; localHostEnabled: () => boolean; restart: () => void;
     launcher?: () => SshHostLauncher;
     retryDelayMs?: (attempt: number) => number;
@@ -244,7 +256,7 @@ export class DesktopHosts {
     this.store = new AtomicJsonStore(join(options.directory, 'remote-hosts.json'), z.array(savedHostSchema).max(20).parse, () => [])
     this.tailnet = new TailnetStore(options.directory)
     this.admins = new AdminConnections({ ...(options.launcher ? { launcher: options.launcher } : {}), report: (id, report) => this.adminSignIn(id, report),
-      node: (id, node) => this.nodePaths.set(id, node), identityChanged: () => new FinalHostError('The host identity changed. Check its data folder before connecting again.') })
+      node: (id, node) => this.nodePaths.set(id, node), system: (id, system) => void this.rememberSystem(id, system), identityChanged: () => new FinalHostError('The host identity changed. Check its data folder before connecting again.') })
   }
   /**
    * Reads the saved hosts and starts connecting every host that is switched on, in the background, the way a
@@ -262,12 +274,13 @@ export class DesktopHosts {
   get(): HostsState {
     const state = this.options.router.shell(); const local = state.connections?.find(item => item.kind === 'local')
     const adding = this.adding ? this.status.get(this.adding.id) : undefined
-    const setup = this.setup?.state(), setupChoice = this.setup?.choice(), providerJob = this.providerJob?.state()
+    const setup = this.setup?.state(), setupChoice = this.setup?.choice(), providerJob = this.providerJob?.state(), checks = this.updates?.checking?.() ?? []
     return { ...(state.hostId ? { activeHostId: state.hostId } : {}), ...(local ? { localHostId: local.hostId } : {}),
       hosts: this.saved.map(host => ({ ...this.status.get(host.id)!, ...this.fields(host), ...this.tailnetFields(host) })),
       ...(adding ? { adding: { ...adding, ...this.fields(this.adding!) } } : {}),
       ...(setup ? { setup } : {}), ...(setupChoice ? { setupChoice } : {}), ...(providerJob ? { providerJob } : {}),
       ...(this.updates ? { updates: this.updates.state() } : {}),
+      ...(checks.length ? { updateChecks: checks } : {}),
       // A forgotten host's last answer is left out with its row.
       ...(this.phones ? { phones: this.phones.state().filter(view => this.saved.some(host => host.id === view.id)) } : {}),
       ...(this.forgotten.length ? { forgotten: [...this.forgotten] } : {}),
@@ -326,8 +339,9 @@ export class DesktopHosts {
     return this.saved.flatMap(host => {
       const status = this.status.get(host.id)
       if (!status?.version || !status.hostId || !this.live.has(host.id) || !this.reachable(host.id)) return []
+      const system = this.systems.get(host.id) ?? this.tailnet.get(host.id).system
       return [{ id: host.id, name: host.name, hostId: status.hostId, version: status.version, owned: status.owned === true, installPath: host.installPath, dataDirectory: host.dataDirectory,
-        ...(status.bootStart?.enabled ? { boot: true } : {}) }]
+        ...(status.bootStart?.enabled ? { boot: true } : {}), ...(system ? { system } : {}) }]
     })
   }
   /** One operation of a host update, over the SSH connection the host is on or an admin connection. */
@@ -678,7 +692,7 @@ export class DesktopHosts {
     if (revoke || unitLeft) {
       this.forgotten = [...this.forgotten.filter(item => item.id !== host.id), { id: host.id, name: host.name, ...(revoke ? { revoke } : {}), ...(unitLeft ? { bootCommand: bootRemovalCommand(host.installPath) } : {}) }]
     }
-    this.nodePaths.delete(host.id)
+    this.nodePaths.delete(host.id); this.systems.delete(host.id)
     this.emit()
     return this.get()
   }
@@ -736,7 +750,7 @@ export class DesktopHosts {
     if (host.clientId && active && this.onSsh(id)) { active.closing = true; await this.press(host, connection => connection.revokeClient(host.clientId!)).catch(() => false) }
     await this.disconnect(id)
     this.status.delete(id)
-    this.nodePaths.delete(id)
+    this.nodePaths.delete(id); this.systems.delete(id)
     await this.forgetCredential(id)
     await this.forgetTailnet(id)
     this.emit()
@@ -843,8 +857,8 @@ export class DesktopHosts {
     // route the owner just corrected, on the SSH connection that connect opens, and choosing SSH only signs in once. The
     // choice is written before that connect, so the connect follows it rather than the choice it replaces.
     const before = this.tailnet.get(existing.id).prefer
-    const putBack = async (): Promise<void> => { await this.tailnet.set(existing.id, { prefer: before }).catch(() => undefined); this.emit() }
-    await this.tailnet.set(existing.id, { prefer })
+    const putBack = async (): Promise<void> => { await this.setTailnet(existing.id, { prefer: before }).catch(() => undefined); this.emit() }
+    await this.setTailnet(existing.id, { prefer })
     try { await this.saveConnection(existing, input, true) }
     catch (error) { await putBack(); throw error }
     const saved = this.saved.find(item => item.id === existing.id)
@@ -950,6 +964,7 @@ export class DesktopHosts {
       })
       if (this.live.get(host.id) !== active) { await ssh.close(); return }
       if (ssh.node) this.nodePaths.set(host.id, ssh.node)
+      if (ssh.system) void this.rememberSystem(host.id, ssh.system)
       this.update(host.id, { step: 'pair' })
       if (host.hostId && host.hostId !== ssh.hostId) throw new FinalHostError('The host identity changed. Check its data folder before connecting again.')
       const same = adding ? this.saved.find(item => item.hostId === ssh.hostId) : undefined
@@ -974,7 +989,9 @@ export class DesktopHosts {
       // A host that answers with another version is the right host, so Add host keeps it (see add()).
       if (otherVersion && this.isAttempt(host)) await this.commitAdd(host)
       if (otherVersion && active.ssh) {
-        const newer = active.socket?.hostIsNewer() ?? false
+        // A host already on the version this computer is downloading counts as newer: Sotto's restart is the way out. So
+        // does one on a later Owl build of the same release when both sides run Owl (`hostIsNewer` orders those).
+        const newer = (active.socket?.hostIsNewer() || active.socket?.aheadForRestart()) ?? false
         const version = active.socket?.sottoVersion()
         await active.socket?.close().catch(() => undefined)
         delete active.socket
@@ -1019,7 +1036,7 @@ export class DesktopHosts {
       if (current) this.live.delete(host.id)
       if (unsaved) {
         delete host.hostId; delete host.clientId
-        this.nodePaths.delete(host.id)
+        this.nodePaths.delete(host.id); this.systems.delete(host.id)
         await this.forgetCredential(host.id)
         // A cancelled add has no dialog left to tell.
         if (this.isAttempt(host)) this.update(host.id, { phase: 'error', reconnecting: false, error: unsavedMessage(failure.message), step, fix, reason, tailscale: waited })
@@ -1171,7 +1188,8 @@ export class DesktopHosts {
     let connected = false, pushError: string | undefined
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
-    const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, museEnabled: this.options.museEnabled === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
+    const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}),
+      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, museEnabled: this.options.museEnabled === true, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null
@@ -1236,7 +1254,7 @@ export class DesktopHosts {
   /** Keeps the tailnet address a saved host reported in its hello, which follows Serve as it comes and goes. */
   private async learnAddress(host: SavedHost, about: Pick<HostHello, 'tailnetAddress'>): Promise<void> {
     if (!this.saved.includes(host) || !isTailnetAddress(about.tailnetAddress) || this.tailnet.get(host.id).address === about.tailnetAddress) return
-    await this.tailnet.set(host.id, { address: about.tailnetAddress }).catch(() => undefined)
+    await this.setTailnet(host.id, { address: about.tailnetAddress }).catch(() => undefined)
   }
   /** Whether this computer holds the host's pairing and knows its ID: a tailnet connection never pairs (ADR-0053). */
   private paired(host: SavedHost): boolean { return host.hostId !== undefined && this.options.credentials.has(`remote-host:${host.id}`) }
@@ -1247,14 +1265,31 @@ export class DesktopHosts {
     this.lastVia.set(host.id, 'tailnet')
     this.clearReturn(host.id)
     this.update(host.id, { via: 'tailnet', tailnetNote: undefined })
-    await this.tailnet.set(host.id, { addressSeen: this.now(), address }).catch(() => undefined)
+    await this.setTailnet(host.id, { addressSeen: this.now(), address }).catch(() => undefined)
     // Edit connection says when the host was last reached there.
     this.emit()
+  }
+  /**
+   * Keeps the system a launch reported, which a host update asks the releases page about before it offers the version
+   * Sotto is downloading (ADR-0077). A host with a tailnet entry keeps it there too, since a tailnet connection has no launch.
+   */
+  private async rememberSystem(id: string, system: string): Promise<void> {
+    this.systems.set(id, system)
+    if (!this.saved.some(host => host.id === id) || !this.tailnet.has(id) || this.tailnet.get(id).system === system) return
+    await this.tailnet.set(id, { system }).catch(() => undefined)
+  }
+  /**
+   * Writes a host's tailnet entry, with the system a launch reported this session when the entry does not say it yet, so
+   * an entry made after the launch, as Add host's tailnet step makes one, still has it for the next tailnet connection.
+   */
+  private setTailnet(id: string, patch: Parameters<TailnetStore['set']>[1]): Promise<void> {
+    const system = this.systems.get(id)
+    return this.tailnet.set(id, system && this.tailnet.get(id).system !== system ? { ...patch, system } : patch)
   }
   /** Keeps the start at boot state a launch or a boot change reported, for a tailnet connection to show (ADR-0053). */
   private async rememberBootStart(host: SavedHost, bootStart: BootStatus): Promise<void> {
     if (!this.saved.includes(host) || JSON.stringify(this.tailnet.get(host.id).bootStart) === JSON.stringify(bootStart)) return
-    await this.tailnet.set(host.id, { bootStart }).catch(() => undefined)
+    await this.setTailnet(host.id, { bootStart }).catch(() => undefined)
   }
   /**
    * The socket is on the SSH connection. When the owner prefers the tailnet, the desktop tries it now and moves across when
@@ -1309,7 +1344,7 @@ export class DesktopHosts {
       if (!before.enabled) await this.press(host, connection => hostTailnetSetting(connection, hostId, false)).catch(() => undefined)
       return { why: 'no-tailscale' }
     }
-    await this.tailnet.set(host.id, { prefer: 'tailnet' })
+    await this.setTailnet(host.id, { prefer: 'tailnet' })
     this.emit()
     return { setting }
   }
@@ -1325,7 +1360,7 @@ export class DesktopHosts {
     // An update runs several presses over this SSH connection, and a move would close it between them: the move waits.
     if (this.updates?.busy(host.id)) { this.scheduleReturn(host); return }
     const learned = (found.setting ? settingAddress(found.setting) : undefined) ?? found.learned ?? active.ssh?.tailnetAddress
-    if (learned && learned !== this.tailnet.get(host.id).address) await this.tailnet.set(host.id, { address: learned }).catch(() => undefined)
+    if (learned && learned !== this.tailnet.get(host.id).address) await this.setTailnet(host.id, { address: learned }).catch(() => undefined)
     const address = this.tailnet.get(host.id).address
     if (!current()) return
     if (tryTailnetAfterSsh({ prefer: 'tailnet', address, paired: this.paired(host), failed: found.failed }) && await this.moveToTailnet(host, active, address!)) return
@@ -1429,10 +1464,10 @@ export class DesktopHosts {
   private async setConnection(host: SavedHost, prefer: HostConnectionPreference): Promise<void> {
     if (!host.hostId) throw new Error(`Connect to ${host.name} over SSH once before choosing how Sotto connects. Nothing was changed.`)
     const before = this.tailnet.get(host.id).prefer
-    const putBack = async (): Promise<void> => { await this.tailnet.set(host.id, { prefer: before }).catch(() => undefined); this.emit() }
+    const putBack = async (): Promise<void> => { await this.setTailnet(host.id, { prefer: before }).catch(() => undefined); this.emit() }
     let setting: HostTailnetSetting
     try {
-      await this.tailnet.set(host.id, { prefer })
+      await this.setTailnet(host.id, { prefer })
       this.emit()
       setting = await this.press(host, async connection => {
         const answer = await hostTailnetSetting(connection, host.hostId!, prefer === 'tailnet')
@@ -1461,7 +1496,7 @@ export class DesktopHosts {
       return
     }
     const address = settingAddress(setting)
-    if (address) await this.tailnet.set(host.id, { address }).catch(() => undefined)
+    if (address) await this.setTailnet(host.id, { address }).catch(() => undefined)
     this.emit()
     if (connected && active.via === 'ssh') await this.followTailnet(host, active, { setting })
   }

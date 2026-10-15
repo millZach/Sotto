@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT,
-  watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetLimitRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
+import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
+  watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetLimitRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
 import { externalLinkSchema } from '../../shared/externalLinks'
 import { systemSettingsPaneSchema, type SystemSettingsPane } from '../../shared/systemSettings'
 
@@ -22,6 +22,7 @@ import {
   HISTORY_SEARCH,
   HOTKEY_GET,
   HOTKEY_REPLACE,
+  OUTPUT_COPY_IMAGE,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE_LIST,
   TRANSCRIPTION_CANCEL,
@@ -47,6 +48,7 @@ import {
 import {
   dictationCommandSchema,
   outputDeliveryRequestSchema,
+  outputImageRequestSchema,
   transcriptionRequestSchema,
   transcriptPolishRequestSchema,
   widgetDragSchema,
@@ -88,9 +90,6 @@ const settingKeys = [
   'lightTheme',
   'darkTheme',
   'appearanceContrast',
-  'glassOpacity',
-  'frostedWindow',
-  'frostSeeThrough',
   'effortColor',
   'customThemes',
   'reducedMotion',
@@ -155,8 +154,15 @@ const looseSettingsPatchSchema = settingsSchema
   .omit({ hotkey: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true, shellPillInUse: true })
   .partial()
   // The retired accent is still accepted from older callers and never copied
-  // into the patch below (ADR-0011).
-  .extend({ accent: z.string().max(32).optional(), worktreeCleanup: worktreeCleanupRulesSchema.partial().optional() })
+  // into the patch below (ADR-0011). The retired glass and frost settings are
+  // accepted and ignored the same way, since the window is always solid (ADR-0084).
+  .extend({
+    accent: z.string().max(32).optional(),
+    glassOpacity: z.number().optional(),
+    frostedWindow: z.boolean().optional(),
+    frostSeeThrough: z.number().optional(),
+    worktreeCleanup: worktreeCleanupRulesSchema.partial().optional(),
+  })
   .strict()
   .superRefine((patch, context) => {
     if (Object.values(patch).some((value) => value === undefined)) {
@@ -199,6 +205,7 @@ const hotkeySchema = z
   .refine((accelerator) => accelerator.toLowerCase() !== 'escape')
 const UNAVAILABLE = Object.freeze({ ok: false as const, reason: 'unavailable' as const })
 const OK = Object.freeze({ ok: true as const })
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
 export interface IpcWebContentsLike {
   readonly mainFrame: IpcFrameLike
@@ -316,7 +323,7 @@ export interface RecoveryNoticeIpcService {
 
 export interface RegisterIpcDependencies {
   /** Supplied only when the immutable Watcher release gate is on. Never served over socket IPC. */
-  readonly watcher?: Omit<WatcherBridge, 'onChanged'>
+  readonly watcher?: Required<Omit<WatcherBridge, 'onChanged'>>
   readonly settings: SettingsIpcService
   readonly history: HistoryIpcService
   readonly startup: StartupIpcService
@@ -328,6 +335,8 @@ export interface RegisterIpcDependencies {
   readonly openSystemSettings?: (pane: SystemSettingsPane) => Promise<void>
   readonly dictation?: DictationIpcService
   readonly output?: OutputIpcService
+  /** Writes a PNG to the clipboard; throws when the clipboard refuses it. */
+  readonly imageClipboard?: { writePng(png: Buffer): void | Promise<void> }
   readonly transcriptPolish?: TranscriptPolishIpcService
   readonly transcription?: TranscriptionIpcService
   readonly speechModel?: SpeechModelIpcService
@@ -496,6 +505,9 @@ export function registerIpc(
       register(WATCHER_PREPARE_STOP_ALL, noPayloadSchema, 0, () => watcher.prepareStopAll())
       register(WATCHER_STOP_ALL, watcherStopAllRequestSchema, 1, request => watcher.stopAll(request))
       register(WATCHER_SET_LIMIT, watcherSetLimitRequestSchema, 1, request => watcher.setLimit(request))
+      register(WATCHER_SET_PERMISSION, watcherSetPermissionRequestSchema, 1, request => watcher.setPermission(request))
+      register(WATCHER_WATCH_THREAD, watcherWatchThreadRequestSchema, 1, request => watcher.watchThread(request))
+      register(WATCHER_UNWATCH_THREAD, watcherWatchThreadRequestSchema, 1, request => watcher.unwatchThread(request))
     }
     register(RECOVERY_NOTICE_LIST, noPayloadSchema, 0, () =>
       dependencies.recoveryNotices?.list() ?? [],
@@ -686,6 +698,17 @@ export function registerIpc(
         ),
         restoreWidget: settings.showWidgetWhenIdle,
       })
+    })
+    register(OUTPUT_COPY_IMAGE, outputImageRequestSchema, 1, async (request): Promise<CommandResult> => {
+      if (dependencies.imageClipboard === undefined) return UNAVAILABLE
+      const png = Buffer.from(request.dataUrl.slice(request.dataUrl.indexOf(',') + 1), 'base64')
+      if (!png.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) return UNAVAILABLE
+      try {
+        await dependencies.imageClipboard.writePng(png)
+        return OK
+      } catch {
+        return UNAVAILABLE
+      }
     })
   } catch (registrationError) {
     try {

@@ -187,7 +187,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   })
   let watcherTools: WatcherToolServer | undefined
   const watcher = options.watcherEnabled === true
-    ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
+    ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       limit: () => options.settings().watcherInFlightLimit, workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id) }) : undefined
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))

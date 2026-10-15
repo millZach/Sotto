@@ -8,6 +8,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles } from './host'
 import { subscribeActivitySnapshots } from './activitySnapshots'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
+import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink } from './usageHistory/sink'
 
 const bindingSchema = z.object({
   threadId: z.string().min(1), provider: z.string().min(1), sessionId: z.string().min(1),
@@ -131,6 +132,7 @@ export class SottoThreadHost implements AgentHost {
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
   readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
 
   constructor(private readonly provider: string, private readonly inner: AgentHost,
     private readonly registry: ThreadRegistry) {
@@ -159,6 +161,17 @@ export class SottoThreadHost implements AgentHost {
       if (binding?.provider === this.provider) inner.visitUsage!(binding.sessionId, record => visitor({ ...record, threadId }))
     }
     if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh) => inner.readProviderQuota!(providerId, refresh)
+    if (inner.scanUsageHistory) this.scanUsageHistory = async (sink, signal) => {
+      await this.registry.load()
+      // Owned sessions come up under their Sotto thread; one with no binding has no thread to count under.
+      // A session Sotto does not own already carries its namespaced identity and passes through.
+      const translate = <T extends { threadId: string }>(record: T): T | undefined => {
+        if (isUsageHistoryThreadId(record.threadId)) return record
+        const binding = this.registry.bySession(this.provider, record.threadId)
+        return binding ? { ...record, threadId: binding.threadId } : undefined
+      }
+      await inner.scanUsageHistory!(mappedSink(sink, { token: translate, prompt: translate }), signal)
+    }
   }
 
   useBrowserTools(tools: BrowserAgentTools): void {
