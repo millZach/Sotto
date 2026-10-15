@@ -16,6 +16,16 @@ export function watcherProgressFingerprint(thread: AgentThread): string {
   return observationDigest([thread.status, thread.lastTurn, thread.messages.map(message => [message.id, message.text.length]),
     thread.activities?.map(activity => [activity.id, activity.status, activity.startedAt, activity.completedAt, activity.text?.length, activity.output?.length, activity.steps?.map(step => [step.status, step.text.length]), activity.agents?.map(agent => [agent.id, agent.status, agent.progress, agent.message?.length]) ]), thread.backgroundWork?.map(work => [work.id, work.type]), thread.monitoring?.map(work => work.id), thread.requests.map(card => [card.id, card.kind])])
 }
+/**
+ * Work a thread's provider confirms is still running outside its foreground turn: background work (Claude's background
+ * tasks), the roster's working sub-agents (Codex's `subAgentActivity`) and monitoring. Claude's background sub-agents sit
+ * in both of the first two, so the larger of those counts, never their sum.
+ */
+export function watcherBackgroundWorkCount(thread: AgentThread): number {
+  return Math.max(thread.backgroundWork?.length ?? 0, thread.subagentSummary?.working ?? 0) + (thread.monitoring?.length ?? 0)
+}
+const finishedTurn = (thread: AgentThread) => thread.status !== 'running' && thread.lastTurn && ['completed', 'failed'].includes(thread.lastTurn.status) ? thread.lastTurn : undefined
+const BUSY_TURN_ID = /^[a-f0-9]{64}\.([a-f0-9]{64})$/u
 export interface WatcherWakeOptions {
   snapshot: () => AgentHostSnapshot; record: () => WatcherRecord
   progress?: (target: WatcherThreadTarget) => string | undefined
@@ -33,6 +43,8 @@ export class WatcherWakeUp {
   private readonly seen = new Set<string>()
   private readonly latestEvidence = new Map<string, { fingerprint: string; id: string; legacyId?: string; restoredRefs?: Set<string> }>()
   private readonly rememberPending = new Set<string>()
+  /** Finished turns, per request and generation, that left background work running: each is owed one work-settled event. */
+  private readonly settling = new Set<string>()
   private pending: WatcherEvent[] = []
   private recent: WatcherEvent[] = []
   private cancelBatch: (() => void) | undefined
@@ -52,12 +64,18 @@ export class WatcherWakeUp {
   start(): void {
     if (this.closed || this.started) return
     this.started = true
+    const restored = this.options.restoredEvents?.() ?? []
+    // A saved or queued finish that left background work running names the work-settled event it is owed, so a restart keeps it.
+    for (const id of [...this.options.record().wakeEventIds ?? [], ...restored.map(event => event.id)]) {
+      const busy = BUSY_TURN_ID.exec(id)?.[1]
+      if (busy) this.settle(busy)
+    }
     for (const id of this.options.record().wakeEventIds ?? []) {
       this.seen.add(id)
       const match = /^([a-f0-9]{64})\.([a-f0-9]{64})\.([a-f0-9]{64})$/u.exec(id)
       if (match) this.latestEvidence.set(match[1]!, { fingerprint: match[2]!, id })
     }
-    for (const event of this.options.restoredEvents?.() ?? []) {
+    for (const event of restored) {
       this.seen.add(event.id)
       if (event.kind !== 'evidence-changed' || !event.evidenceIds?.length) continue
       const fingerprint = observationDigest([...event.evidenceIds].sort())
@@ -77,7 +95,11 @@ export class WatcherWakeUp {
   private connected(snapshot: AgentHostSnapshot, thread: AgentThread): boolean {
     return snapshot.connected && thread.clientConnected !== false && isThreadProviderConnected(snapshot, thread)
   }
-  private active(thread: AgentThread): boolean { return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.backgroundWork?.length || thread.monitoring?.length) }
+  private active(thread: AgentThread): boolean { return thread.status === 'running' || thread.lastTurn?.status === 'running' || watcherBackgroundWorkCount(thread) > 0 }
+  private settle(scope: string): void {
+    this.settling.delete(scope); this.settling.add(scope)
+    while (this.settling.size > 2_000) this.settling.delete(this.settling.values().next().value!)
+  }
   private workers(includeClosed = false) {
     const record = this.options.record()
     const watches = record.current ? (record.watches ?? []).filter(watch => !watch.remoteOrigin) : []
@@ -110,6 +132,13 @@ export class WatcherWakeUp {
       if (kind === 'taken-over' && participant.state !== 'taken-over') continue
       const stableId = observationDigest([kind, request.id, target, participant.generation, identity])
       let id = stableId
+      // One work-settled event per turn that finished with background work running. A finish observed busy carries its
+      // scope in its ID, so the saved ID alone tells a restart which turn still owes one.
+      const settleScope = kind === 'turn-finished' || kind === 'turn-failed' || kind === 'work-settled'
+        ? observationDigest(['work-settled', request.id, target, participant.generation, extra.turnId ?? null]) : undefined
+      if (kind === 'work-settled' && !this.settling.has(settleScope!)) continue
+      const busyId = settleScope && kind !== 'work-settled' ? `${stableId}.${settleScope}` : undefined
+      if (busyId && extra.backgroundWorkCount) this.settle(settleScope!)
       if (kind === 'evidence-changed') {
         const scope = observationDigest([kind, request.id, target, participant.generation]), fingerprint = observationDigest(identity)
         const previous = this.latestEvidence.get(scope)
@@ -124,7 +153,9 @@ export class WatcherWakeUp {
         while (this.latestEvidence.size > 2_000) this.latestEvidence.delete(this.latestEvidence.keys().next().value!)
         // Older saved IDs remain readable and deduplicate only the first reconciled observation.
         if (legacyId) continue
-      } else if (this.seen.has(id)) continue
+      } else if (this.seen.has(id) || busyId && this.seen.has(busyId)) continue
+      else if (busyId && extra.backgroundWorkCount) id = busyId
+      if (kind === 'work-settled') this.settling.delete(settleScope!)
       const event: WatcherEvent = { ...extra, kind, target, requestId: request.id, generation: participant.generation,
         observedAt: new Date(this.now()).toISOString(), id }
       this.seen.add(event.id)
@@ -229,9 +260,12 @@ export class WatcherWakeUp {
         before.push(...facts.filter(item => item.source === 'github' && item.url && !links.has(pullRequestKey(item.url) ?? '')).map(item => item.id))
         const changedEvidence = this.evidence.observeThread(thread, target, stamp)
         if (changedEvidence) this.evidenceChanged(target, before, added)
-        const turn = thread.lastTurn
-        if (thread.status !== 'running' && turn && ['completed', 'failed'].includes(turn.status)) this.event(turn.status === 'failed' ? 'turn-failed' : 'turn-finished', target,
-          [turn.id, turn.status], { turnId: turn.id, backgroundWorkCount: (thread.backgroundWork?.length ?? 0) + (thread.monitoring?.length ?? 0), evidenceIds: this.evidence.read(target).filter(item => item.turnId === turn.id).map(item => item.id) })
+        const turn = thread.lastTurn, finished = finishedTurn(thread), backgroundWorkCount = watcherBackgroundWorkCount(thread)
+        if (finished) {
+          this.event(finished.status === 'failed' ? 'turn-failed' : 'turn-finished', target, [finished.id, finished.status],
+            { turnId: finished.id, backgroundWorkCount, evidenceIds: this.evidence.read(target).filter(item => item.turnId === finished.id).map(item => item.id) })
+          if (!backgroundWorkCount) this.event('work-settled', target, [finished.id], { turnId: finished.id, backgroundWorkCount })
+        }
         for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
           { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })
       }
@@ -349,6 +383,8 @@ export class WatcherWakeUp {
     if (!this.connected(snapshot, thread)) return false
     if (event.kind === 'needs-user') return thread.requests.some(card => card.id === event.requestCardId && requestRevision(card) === event.revision)
     if (event.kind === 'quiet') return !!this.progress.get(targetKey(event.target))?.quiet && this.active(thread) && !thread.requests.length
+    // Observed once per turn, so work that starts again before delivery does not withdraw it: it could never be sent again.
+    if (event.kind === 'work-settled') return finishedTurn(thread)?.id === event.turnId
     return !!thread.lastTurn && thread.lastTurn.id === event.turnId && thread.status !== 'running' && thread.lastTurn.status === (event.kind === 'turn-failed' ? 'failed' : 'completed')
   }
   close(): void { this.closed = true; this.cancelBatch?.(); for (const progress of this.progress.values()) progress.cancel?.(); this.pending = []; this.rememberPending.clear() }
