@@ -152,8 +152,15 @@ const looseSettingsPatchSchema = settingsSchema
   .omit({ hotkey: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true, shellPillInUse: true })
   .partial()
   // The retired accent is still accepted from older callers and never copied
-  // into the patch below (ADR-0011).
-  .extend({ accent: z.string().max(32).optional(), worktreeCleanup: worktreeCleanupRulesSchema.partial().optional() })
+  // into the patch below (ADR-0011). The retired glass and frost settings are
+  // accepted and ignored the same way, since the window is always solid (ADR-0084).
+  .extend({
+    accent: z.string().max(32).optional(),
+    glassOpacity: z.number().optional(),
+    frostedWindow: z.boolean().optional(),
+    frostSeeThrough: z.number().optional(),
+    worktreeCleanup: worktreeCleanupRulesSchema.partial().optional(),
+  })
   .strict()
   .superRefine((patch, context) => {
     if (Object.values(patch).some((value) => value === undefined)) {
