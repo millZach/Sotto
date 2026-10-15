@@ -18,7 +18,7 @@ export interface WatcherTurnOutcome {
 }
 
 interface Turn { readonly anchor: number; readonly turnId: string; status: AgentActivity['status']; readonly steered: boolean
-  readonly startedAt?: string | undefined; nativeTurnId?: string }
+  readonly startedAt?: string | undefined; readonly completedAt?: string | undefined; readonly observed: boolean; nativeTurnId?: string }
 
 /**
  * The thread's turns, each at the user message it began with, oldest first. Claude Code and Grok Build name a turn by
@@ -31,7 +31,8 @@ function turnsOf(thread: AgentThread, messages: readonly AgentMessage[]): Turn[]
   const turns = new Map<number, Turn>()
   for (const activity of thread.activities ?? []) if (activity.kind === 'turn') {
     const anchor = user(activity.turnId) ?? user(activity.afterMessageId)
-    if (anchor !== undefined) turns.set(anchor, { anchor, turnId: activity.turnId, status: activity.status, steered: activity.steered === true, startedAt: activity.startedAt })
+    if (anchor !== undefined) turns.set(anchor, { anchor, turnId: activity.turnId, status: activity.status, steered: activity.steered === true, startedAt: activity.startedAt,
+      completedAt: activity.completedAt, observed: activity.timingSource === 'observed' })
   }
   // The thread's newest turn as its provider reports it, which can be ahead of the activity record. Only an exact match
   // of identities ties the two: the Sotto anchor an adapter reports, or the same ID.
@@ -40,7 +41,7 @@ function turnsOf(thread: AgentThread, messages: readonly AgentMessage[]): Turn[]
     const anchor = user(last.messageId) ?? user(last.id)
     const known = [...turns.values()].find(turn => turn.turnId === last.id || anchor !== undefined && turn.anchor === anchor)
     if (known && known.anchor === Math.max(...turns.keys())) { known.status = last.status; known.nativeTurnId = last.id }
-    else if (!known && anchor !== undefined && anchor > Math.max(-1, ...turns.keys())) turns.set(anchor, { anchor, turnId: last.id, status: last.status, steered: false, nativeTurnId: last.id })
+    else if (!known && anchor !== undefined && anchor > Math.max(-1, ...turns.keys())) turns.set(anchor, { anchor, turnId: last.id, status: last.status, steered: false, observed: false, nativeTurnId: last.id })
   }
   return [...turns.values()].sort((a, b) => a.anchor - b.anchor)
 }
@@ -91,11 +92,20 @@ export function watcherTurnOutcome(operation: Pick<WatcherOperation, 'messageId'
  * The turn a worker's message belongs to: the newest turn begun above it that had started when it was written. A steer
  * Claude Code held past a turn's end is shown where it was sent, above the reply that turn still gave, but its own turn
  * starts after that reply, so position alone would give the reply to the steer. Without a start time, position decides.
+ * The turn before often ends, and the steer's turn begins, in the very millisecond that reply was written. A reply written
+ * in the millisecond a turn Sotto timed itself began, when the turn before had not ended any earlier, is the earlier
+ * turn's: a turn's reply comes before its end, and the next turn's reply waits on a model step. A provider's own times are
+ * whole seconds (Codex), where a shared second says nothing about order, so there the newer turn keeps it.
  */
 function turnOfReply(turns: readonly Turn[], position: number, message: AgentMessage): Turn | undefined {
   const above = turns.filter(turn => turn.anchor < position)
   const written = Date.parse(message.createdAt)
-  return above.findLast(turn => turn.startedAt === undefined || Number.isNaN(written) || Date.parse(turn.startedAt) <= written) ?? above.at(-1)
+  const at = above.findLastIndex(turn => turn.startedAt === undefined || Number.isNaN(written) || Date.parse(turn.startedAt) <= written)
+  if (at < 0) return above.at(-1)
+  const turn = above[at]!, before = above[at - 1]
+  if (turn.observed && turn.startedAt !== undefined && Date.parse(turn.startedAt) === written && before?.completedAt !== undefined
+    && Date.parse(before.completedAt) >= written) return before
+  return turn
 }
 
 /** The newest turn's Sotto anchor, for naming the delegation a turn's news answers. */

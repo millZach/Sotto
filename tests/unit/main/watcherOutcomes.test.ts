@@ -53,6 +53,46 @@ it('gives a held steer\'s turn only the replies written after it started', () =>
     .toMatchObject({ outcome: 'answered', turnMessageId: 'steer', replyMessageId: 'second-reply' })
 })
 
+it('gives a reply written in the millisecond its turn ended and a held steer\'s turn began to the turn that ended', () => {
+  const messages: AgentThread['messages'] = [
+    { id: 'brief', role: 'user', text: 'Synthetic brief', createdAt: at(0) },
+    { id: 'steer', role: 'user', text: 'Synthetic held steer', createdAt: at(1) },
+    { id: 'first-reply', role: 'assistant', text: 'Synthetic first reply', createdAt: at(2) },
+    { id: 'second-reply', role: 'assistant', text: 'Synthetic second reply', createdAt: at(3) },
+  ]
+  let activities = markTurnActivity([], { provider: 'claude', turnId: 'brief', status: 'running', at: Date.parse(at(0)) })
+  activities = markTurnActivity(activities, { provider: 'claude', turnId: 'brief', status: 'completed', at: Date.parse(at(2)) })
+  activities = markTurnActivity(activities, { provider: 'claude', turnId: 'steer', status: 'running', at: Date.parse(at(2)) })
+  activities = markTurnActivity(activities, { provider: 'claude', turnId: 'steer', status: 'completed', at: Date.parse(at(4)) })
+  const ours = (id: string) => id === 'brief' || id === 'steer'
+  expect(watcherTurnOutcome(brief, thread({ messages, activities }), ours)).toMatchObject({ outcome: 'answered', replyMessageId: 'first-reply' })
+  expect(watcherTurnOutcome({ messageId: 'steer', delivery: 'steer' }, thread({ messages, activities }), ours))
+    .toMatchObject({ outcome: 'answered', turnMessageId: 'steer', replyMessageId: 'second-reply' })
+  // A reply in the millisecond its own turn began, after the turn before had ended, is still that turn's.
+  const later = messages.map(message => message.id === 'first-reply' ? { ...message, createdAt: at(3) } : message.id === 'second-reply' ? { ...message, createdAt: at(4) } : message)
+  let gap = markTurnActivity([], { provider: 'claude', turnId: 'brief', status: 'running', at: Date.parse(at(0)) })
+  gap = markTurnActivity(gap, { provider: 'claude', turnId: 'brief', status: 'completed', at: Date.parse(at(3)) })
+  gap = markTurnActivity(gap, { provider: 'claude', turnId: 'steer', status: 'running', at: Date.parse(at(4)) })
+  gap = markTurnActivity(gap, { provider: 'claude', turnId: 'steer', status: 'completed', at: Date.parse(at(5)) })
+  expect(watcherTurnOutcome({ messageId: 'steer', delivery: 'steer' }, thread({ messages: later, activities: gap }), ours))
+    .toMatchObject({ outcome: 'answered', turnMessageId: 'steer', replyMessageId: 'second-reply' })
+})
+
+it('leaves a reply sharing a whole second with the provider\'s own turn start to the newer turn', () => {
+  // Codex reports turn starts and items in whole seconds, so a tie there says nothing about which came first.
+  const messages: AgentThread['messages'] = [
+    { id: 'brief', role: 'user', text: 'Synthetic brief', createdAt: at(0) },
+    { id: 'first-reply', role: 'assistant', text: 'Synthetic first reply', createdAt: at(2) },
+    { id: 'queued', role: 'user', text: 'Synthetic queued brief', createdAt: at(2) },
+    { id: 'second-reply', role: 'assistant', text: 'Synthetic second reply', createdAt: at(2) },
+  ]
+  const turn = (turnId: string, afterMessageId: string, startedAt: string, completedAt: string) => ({ id: `codex-${turnId}`, turnId, afterMessageId, sequence: 0,
+    kind: 'turn' as const, status: 'completed' as const, title: 'Turn completed', startedAt, completedAt, timingSource: 'provider' as const })
+  const activities = [turn('native-1', 'brief', at(0), at(3)), turn('native-2', 'queued', at(2), at(4))]
+  expect(watcherTurnOutcome({ messageId: 'queued', delivery: 'queue' }, thread({ messages, activities }), id => id === 'brief' || id === 'queued'))
+    .toMatchObject({ outcome: 'answered', turnMessageId: 'queued', replyMessageId: 'second-reply' })
+})
+
 it('keeps a finished newest turn in background while work or unknown sub-agents remain', () => {
   const activities = markTurnActivity([], { provider: 'grok', turnId: 'brief', status: 'completed', at: Date.parse(at(1)) })
   expect(watcherTurnOutcome(brief, thread({ activities, subagentSummary: { ...EMPTY_SUBAGENT_SUMMARY, unknown: 1, total: 1 } }), watcher))
