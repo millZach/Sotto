@@ -763,23 +763,11 @@ export class WatcherService implements WatcherControlHooks {
           operation.deliveryState = 'failed'; operation.refusalCode = 'PROVIDER_UNAVAILABLE'; delete operation.creationUncertain
           this.refundPrompt(next, operation, 'PROVIDER_UNAVAILABLE')
         }
-        if (delivery?.status === 'accepted' || operation.messageId && thread?.messages.some(item => item.role === 'user' && item.id === operation.messageId)) operation.deliveryState = 'accepted'
+        if (delivery?.status === 'accepted' || operation.messageId && thread?.messages.some(item => item.role === 'user' && item.id === operation.messageId)) this.recordAccepted(next, operation)
         else if (delivery?.status === 'uncertain' && !this.active.has(operation.id)) operation.deliveryState = 'uncertain'
         else if (this.options.control.shell().followups?.some(item => item.draftId === operation.draftId && item.status === 'failed')) this.recordQueueFailure(next, operation)
       }
-      next.reservations = next.reservations.filter(reservation => {
-        if (reservation.target.hostId !== this.hostId()) return true
-        const request = next.requests.find(item => item.id === reservation.requestId)
-        const participant = request?.participants.find(item => key(item.target) === key(reservation.target))
-        const thread = snapshot.threads.find(item => item.id === reservation.target.threadId)
-        const operations = next.operations.filter(item => key(item.target) === key(reservation.target))
-        if (operations.some(item => ['dispatching', 'uncertain'].includes(item.deliveryState))) return true
-        if (participant?.state !== 'participating') return false
-        if (operations.some(item => item.deliveryState === 'queued')) return true
-        if (!thread && operations.every(item => item.deliveryState === 'failed')) return false
-        if (!thread || !isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) return true
-        return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
-      })
+      this.pruneReservations(next, snapshot)
       for (const request of next.requests) if (request.state === 'active' && !request.participants.length && !next.operations.some(item => item.requestId === request.id)) {
         const master = request.watcher.hostId === this.hostId() ? snapshot.threads.find(item => item.id === request.watcher.threadId) : undefined
         const head = master && nativeHead(master)
@@ -1132,11 +1120,41 @@ export class WatcherService implements WatcherControlHooks {
   }
   queueFailed(operationIds: ReadonlySet<string>): void {
     // Never throws: the queue has already removed or failed the items, and its caller still has to save and publish that.
-    const hostId = this.options.control.hostId()
-    this.options.control.mutateWatcher(record => {
-      for (const operation of record.operations) if (operationIds.has(operation.id) && operation.target.hostId === hostId
-        && operation.deliveryState !== 'accepted' && operation.deliveryState !== 'failed') this.recordQueueFailure(record, operation)
+    // A record that cannot take the failure is left as it was, and the next snapshot reconciles it.
+    try {
+      const hostId = this.options.control.hostId(), snapshot = this.options.control.watcherSnapshot()
+      this.options.control.mutateWatcher(record => {
+        for (const operation of record.operations) if (operationIds.has(operation.id) && operation.target.hostId === hostId
+          && operation.deliveryState !== 'accepted' && operation.deliveryState !== 'failed') this.recordQueueFailure(record, operation)
+        // A failed send no longer holds its thread's place, here as after a snapshot.
+        if (hostId) this.pruneReservations(record, snapshot)
+      })
+    } catch { /* The next snapshot records it. */ }
+  }
+  /** Keeps a reservation only while its thread's delivery is unresolved, queued or still working for a participating request. */
+  private pruneReservations(record: WatcherRecord, snapshot: AgentHostSnapshot): void {
+    record.reservations = record.reservations.filter(reservation => {
+      if (reservation.target.hostId !== this.hostId()) return true
+      const request = record.requests.find(item => item.id === reservation.requestId)
+      const participant = request?.participants.find(item => key(item.target) === key(reservation.target))
+      const thread = snapshot.threads.find(item => item.id === reservation.target.threadId)
+      const operations = record.operations.filter(item => key(item.target) === key(reservation.target))
+      if (operations.some(item => ['dispatching', 'uncertain'].includes(item.deliveryState))) return true
+      if (participant?.state !== 'participating') return false
+      if (operations.some(item => item.deliveryState === 'queued')) return true
+      if (!thread && operations.every(item => item.deliveryState === 'failed')) return false
+      if (!thread || !isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) return true
+      return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
     })
+  }
+  /** A send seen delivered after its failure was refunded takes its prompt back, so the count matches what was sent. */
+  private recordAccepted(record: WatcherRecord, operation: WatcherOperation): void {
+    if (operation.deliveryState !== 'accepted' && operation.promptRefunded) {
+      const participant = record.requests.find(item => item.id === operation.requestId)?.participants.find(item => key(item.target) === key(operation.target))
+      if (participant) participant.promptCount++
+      delete operation.promptRefunded
+    }
+    operation.deliveryState = 'accepted'
   }
   private recordQueueFailure(record: WatcherRecord, operation: WatcherOperation): void {
     const refusal = this.dispatchRefusals.get(operation.id)?.result.code

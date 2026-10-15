@@ -193,14 +193,22 @@ it.each(['while it is dispatching', 'just after its failure is saved'])('fails a
     await gate.entered
     expect(f.service.state().receipts.find(item => item.id === operationId)?.deliveryState).toBe('dispatching')
     // No snapshot reaches Watcher from here, as when the thread is idle and nothing polls it.
-    vi.spyOn(f.service, 'observe').mockImplementation(() => undefined)
+    const silenced = vi.spyOn(f.service, 'observe').mockImplementation(() => undefined)
     if (when === 'while it is dispatching') takeover()
     gate.release()
     await vi.waitFor(() => expect(f.service.state().receipts.find(item => item.id === operationId)?.deliveryState).toBe('failed'))
     expect(f.service.state().watchedThreads.find(item => item.target.threadId === f.target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send')
-    // The first prompt stays counted; the failed queued one is refunded once.
+    // The first prompt stays counted; the failed queued one is refunded once. The taken-over thread holds no place.
     expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
+    expect(f.control.watcherRecord().reservations).toEqual([]); expect(f.service.state().inFlight).toBe(0)
     const messageId = f.service.state().receipts.find(item => item.id === operationId)!.messageId; expect(messageId).toBeTruthy()
     expect((await f.native.driver.requests()).some(item => item.method === 'turn/start' && item.params?.clientUserMessageId === messageId)).toBe(false)
+    // Were the same message to show up in the thread after all, the send was delivered and takes its refunded prompt back.
+    silenced.mockRestore()
+    const snapshot = structuredClone(f.control.watcherSnapshot()), thread = snapshot.threads.find(item => item.id === f.target.threadId)!
+    thread.messages.push({ ...thread.messages.findLast(item => item.role === 'user')!, id: messageId! })
+    f.service.observe(snapshot, new Set())
+    expect(f.service.state().receipts.find(item => item.id === operationId)?.deliveryState).toBe('accepted')
+    expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(2)
   } finally { gate.release() }
 }, 60_000)
