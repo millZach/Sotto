@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState, type FormEvent, type R
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, MessageSquarePlus, PictureInPicture2, Plus, RotateCw, Share2, X } from 'lucide-react'
 import { BROWSER_WAITING_TO_OPEN, type BrowserBounds, type BrowserBridge, type BrowserPage, type BrowserCapture } from '../../../shared/browser'
 import type { ToolsError } from '../../../shared/tools'
+import { providerTakesSottoTools } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { BrowserTaskDetails } from './BrowserTaskDetails'
@@ -42,7 +43,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
   const agents = useOptionalAgents()
   const owningThread = agents?.state?.host.threads.find(item => item.id === threadId)
   const owningModel = resolveModel(agents?.state?.host.models ?? [], owningThread?.modelId)
-  const agentToolsUnavailable = owningThread?.providerId === 'devin' || owningModel?.providerId === 'devin' || owningThread?.providerId === 'muse' || owningModel?.providerId === 'muse'
+  const agentToolsUnavailable = !providerTakesSottoTools(owningThread?.providerId) || !providerTakesSottoTools(owningModel?.providerId)
   const [feedback, setFeedback] = useState<BrowserCapture | null>(null)
   const [reviewBusy, setReviewBusy] = useState(false)
   const [stoppingGrant, setStoppingGrant] = useState(false)

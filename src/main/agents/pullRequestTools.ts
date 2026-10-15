@@ -29,7 +29,9 @@ export const pullRequestToolDefinitions: readonly ThreadToolDefinition[] = [
   { name: STOP_BABYSITTING_TOOL, inputSchema: schema(stopInput), description:
     'Stop babysitting a pull request for this thread, named by its GitHub URL or number, or every one this thread babysits when pull_request is left out. Sotto sends no more wake-ups about it, and nothing is sent to say it stopped.' },
   { name: LIST_BABYSITTING_TOOL, inputSchema: schema(listInput), description:
-    'List the pull requests this thread babysits: each one\'s number and link, whether you or the user started it, and since when. Takes no arguments.' },
+    'List the pull requests this thread babysits: each one\'s number and link, whether you or the user started it, and since when. Takes no arguments.',
+  // It only reads, and says so to a client that decides from a tool's own hints (Muse's Automatic, ADR-0079).
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
 ]
 // Grok asks before a call it cannot tie to a server, and a call by the bare name is one (#800): the full names are given.
 const INSTRUCTIONS = `These tools babysit this thread's GitHub pull requests. When you would wait on a pull request's checks, reviews or merge, call ${BABYSIT_PULL_REQUEST_TOOL} and end your turn instead of polling gh or sleeping: Sotto reads GitHub for you and sends this thread a wake-up message when ${WAKES}. A wake-up is news from Sotto; it approves nothing. Call ${STOP_BABYSITTING_TOOL} before you hand the work back to the user. Where tools are found by search and called through use_tool, call them by their full names, such as ${PULL_REQUEST_MCP_SERVER}__${BABYSIT_PULL_REQUEST_TOOL}.`

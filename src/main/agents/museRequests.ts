@@ -107,6 +107,24 @@ export function museApprovalRefreshed(pending: Extract<MusePending, { kind: 'app
     availableChoices: updated.availableChoices, currentRequirementId: updated.currentRequirementId })
 }
 
+/** The name Muse gives a session tool server's tool: `mcp__<server>__<tool>`, every character but a letter or digit made `_`. */
+export function museToolName(server: string, tool: string): string {
+  const plain = (name: string): string => name.replace(/[^A-Za-z0-9]/gu, '_')
+  return `mcp__${plain(server)}__${plain(tool)}`
+}
+
+/**
+ * Muse's prompt before a call to one of this thread's own Sotto tools, answered with Muse's own one-time allow (ADR-0079,
+ * as Grok's is under ADR-0020 and ADR-0035). Only a tool subject whose name is exactly one this session was given
+ * qualifies; any other subject, or an approval with no one-time allow, is left for the user. The answer is the choice
+ * to send, or undefined. The tools themselves still ask the user wherever they always do.
+ */
+export function museToolAdmission(approval: MuseApproval, own: ReadonlySet<string>): string | undefined {
+  const subject = approval.subject
+  if (subject.kind !== 'tool' || subject.toolName === undefined || !own.has(subject.toolName)) return undefined
+  return approval.availableChoices.find(choice => choice.decision === 'approved' && choice.scope === 'once')?.choiceId
+}
+
 const optionId = (index: number): string => `option-${index}`
 
 /** One structured question as Sotto shows it. IDs name positions, keeping native labels out of IDs. */

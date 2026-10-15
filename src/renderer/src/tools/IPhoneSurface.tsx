@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, type FormEvent, type ReactNode } fr
 import { RotateCw, Settings as SettingsIcon, Share2, Smartphone, Square, X } from 'lucide-react'
 import { TEST_IPHONE, type BrowserBridge } from '../../../shared/browser'
 import { CLOUD_IPHONE_PRICE_PER_MINUTE_USD } from '../../../shared/cloudIphone'
+import { providerTakesSottoTools } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { useOptionalApp } from '../state/AppContext'
@@ -73,7 +74,7 @@ export function IPhoneSurface({ threadId, store, bridge, phoneStore = phonePlaye
   const agents = useOptionalAgents()
   const owningThread = agents?.state?.host.threads.find(item => item.id === threadId)
   const owningModel = resolveModel(agents?.state?.host.models ?? [], owningThread?.modelId)
-  const agentToolsUnavailable = owningThread?.providerId === 'devin' || owningModel?.providerId === 'devin' || owningThread?.providerId === 'muse' || owningModel?.providerId === 'muse'
+  const agentToolsUnavailable = !providerTakesSottoTools(owningThread?.providerId) || !providerTakesSottoTools(owningModel?.providerId)
   const showing = usePhonePlayerOpen(phoneStore, threadId)
   const page = phonePage(browser)
   const pageId = page?.id ?? null

@@ -1274,12 +1274,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /**
    * Whether an agent in this thread is offered Sotto's pull request tools (ADR-0061 decision 2): a thread this host holds,
-   * on Claude Code, Codex or Grok Build. Devin's client takes no server of Sotto's, so its threads are babysat only from
-   * the Pull request surface (decision 11).
+   * on Claude Code, Codex, Grok Build or Muse (ADR-0079). Devin's client takes no server of Sotto's, so its threads are
+   * babysat only from the Pull request surface (decision 11).
    */
   admitsBabysitting(threadId: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
-    return thread !== undefined && this.visible(thread) && (thread.providerId === 'claude' || thread.providerId === 'codex' || thread.providerId === 'grok')
+    return thread !== undefined && this.visible(thread) && providerTakesSottoTools(thread.providerId)
   }
   /** The thread's branch's own pull request as the host last read it, and its linked ones, by URL (ADR-0061 decision 5). */
   threadPullRequests(threadId: string): { branch: string | undefined; linked: string[] } {

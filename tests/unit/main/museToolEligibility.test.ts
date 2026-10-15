@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
-import { providerWritesShortText } from '../../../src/shared/agents'
+import { providerTakesSottoTools, providerWritesShortText } from '../../../src/shared/agents'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { coordinatorSetupThreads } from '../../../src/main/hosts/hostSetupThreads'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
@@ -27,7 +27,7 @@ it('offers only tool-capable models for host setup and refuses a stale Muse sele
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
-it('does not admit Muse visual tools in Owl or offer a side-draft action that cannot run', async () => {
+it('admits Muse threads to visuals and babysitting in Owl, but offers no side-draft action that cannot run', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-muse-tools-'))
   const inner = new FakeProviderHost()
   inner.state.threads[0]!.providerId = 'muse'
@@ -35,8 +35,11 @@ it('does not admit Muse visual tools in Owl or offer a side-draft action that ca
   const workspace = new WorkspaceHost(inner, root, () => true, undefined, true, true)
   try {
     await workspace.initialize(); await workspace.connect()
-    expect(workspace.admitsVisuals('session-workshop')).toBe(false)
+    expect(workspace.admitsVisuals('session-workshop')).toBe(true)
     expect(workspace.admitsVisuals('session-docs')).toBe(true)
+    expect(workspace.admitsBabysitting('session-workshop')).toBe(true)
+    expect(providerTakesSottoTools('muse')).toBe(true)
+    expect(providerTakesSottoTools('devin')).toBe(false)
     expect(providerWritesShortText('muse')).toBe(false)
     expect(providerWritesShortText('codex')).toBe(true)
   } finally { await workspace.close(); await rm(root, { recursive: true, force: true }) }

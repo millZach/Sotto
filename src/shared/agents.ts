@@ -852,9 +852,12 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
   return providerId !== 'devin' && providerId !== 'muse'
 }
-/** Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. */
+/**
+ * Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. Muse takes them
+ * when its client grants session tool servers (ADR-0079); Devin's client ignores them.
+ */
 export function providerTakesSottoTools(providerId: ProviderId | undefined): boolean {
-  return providerId !== 'devin' && providerId !== 'muse'
+  return providerId !== 'devin'
 }
 /** The same facts, from the summary the shell carries or from the history a full state holds. */
 export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>): AgentThreadSummary {
