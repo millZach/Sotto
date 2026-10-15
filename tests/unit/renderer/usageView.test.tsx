@@ -419,6 +419,14 @@ describe('Usage page', () => {
     expect(screen.queryByText(/forge is offline/u)).not.toBeInTheDocument()
   })
 
+  it('shows the failure rather than empty figures when the first read for new filters fails', async () => {
+    const { bridge, user } = await open()
+    bridge.read = vi.fn(() => Promise.reject(new Error('lost')))
+    await user.click(screen.getByRole('button', { name: 'Where: Everywhere' }))
+    await user.click(screen.getByRole('option', { name: 'Outside Sotto' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not be read from this computer. Your saved figures were not changed./u)
+    expect(screen.queryByRole('tablist', { name: 'Usage measures' })).not.toBeInTheDocument()
+  })
   it('names the computer that failed to answer and offers to try again', async () => {
     const bridge = fixtureBridge(dashboard(localHost(), forgeHost()))
     const answer = bridge.read

@@ -5,7 +5,7 @@ import type { UsageBridge, UsageDashboardRead, UsageHostRead, UsageProviderId, U
 export const EVERY_HOST = '*'
 
 export interface UsageReadState {
-  /** Null until the first computer answers. */
+  /** Null until a computer answers for the current filters. */
   readonly read: UsageDashboardRead | null
   /** Computers still reading for the current filters. */
   readonly pending: readonly string[]
@@ -62,7 +62,8 @@ export function useUsageRead(bridge: UsageBridge | undefined, targets: readonly 
       setAnswered(true); settle()
     }, () => {
       if (!fresh()) return
-      if (restart()) setEntries(new Map())
+      // New filters whose first answer is a failure show the failure, not empty figures, until a computer answers.
+      if (restart()) { setEntries(new Map()); setAnswered(false) }
       setFailed(value => new Set(value).add(target)); settle()
     })
   }, [])
