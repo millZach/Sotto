@@ -13,7 +13,7 @@ import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/w
 
 const cleanups: (() => void)[] = []
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()) })
-function fixture(start = true, progress?: WatcherWakeOptions['progress']) {
+function fixture(start = true, progress?: WatcherWakeOptions['progress'], options: Partial<WatcherWakeOptions> = {}) {
   let clock = Date.parse('2026-10-11T10:00:00Z')
   const timers = new Set<{ at: number; callback: () => void }>()
   const record = watcherRecordFixture()
@@ -27,7 +27,7 @@ function fixture(start = true, progress?: WatcherWakeOptions['progress']) {
   const remember = vi.fn(async (ids: string[]) => { record.wakeEventIds = [...record.wakeEventIds ?? [], ...ids] })
   const wakes = new WatcherWakeUp({ now: () => clock, snapshot: () => snapshot, record: () => record, prune,
     schedule: (callback, delay) => { const timer = { at: clock + delay, callback }; timers.add(timer); return () => { timers.delete(timer) } },
-    deliver, remember, failed, canDeliver, ...progress ? { progress } : {} })
+    deliver, remember, failed, canDeliver, ...progress ? { progress } : {}, ...options })
   cleanups.push(() => wakes.close())
   if (start) wakes.start()
   const advance = async (ms: number) => {
@@ -716,4 +716,189 @@ it('removes paired PR facts and Landing only after the connected owning roster e
   expect(f.wakes.evidence.read(centerTarget, true, f.now()).some(fact => fact.githubAutoMergeEnabled)).toBe(true)
   await f.advance(2_000)
   expect(f.delivered.at(-1)!.events).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'evidence-changed', target })]))
+})
+
+const backgroundTask = (n: number) => ({ id: randomUUID(), label: `Background task ${n}`, type: 'subagent' as const })
+const monitor = (n: number) => ({ id: randomUUID(), label: `Watch ${n}` })
+/** The projection a Codex `subAgentActivity` roster gives the thread: its running agents and the roster's working count. */
+function codexSubAgents(thread: AgentThread, working: number): void {
+  thread.subagentSummary = { total: 2, working, completed: 2 - working, failed: 0, interrupted: 0, unknown: 0 }
+  thread.activities = [{ id: 'assignment', turnId: 'turn-1', sequence: 0, kind: 'subagent', title: 'explorer', status: working ? 'running' : 'completed',
+    agents: Array.from({ length: 2 }, (_, n) => ({ id: `agent-${n}`, title: `agent-${n}`, status: n < working ? 'running' : 'completed' })) }]
+}
+// Turn evidence rides beside these and is not what they prove.
+const kinds = (delivered: readonly WatcherNews[]) => delivered.flatMap(news => news.events).map(event => event.kind).filter(kind => kind !== 'evidence-changed')
+const finish = (thread: AgentThread) => { thread.status = 'idle'; thread.lastTurn = { id: 'turn-1', status: 'completed' } }
+
+it.each([
+  ['Claude background tasks', (thread: AgentThread, count: number) => { thread.providerId = 'claude'; thread.backgroundWork = Array.from({ length: count }, (_, n) => backgroundTask(n)) }],
+  ['Codex subAgentActivity', (thread: AgentThread, count: number) => codexSubAgents(thread, count)],
+  ['monitoring', (thread: AgentThread, count: number) => { thread.monitoring = Array.from({ length: count }, (_, n) => monitor(n)) }],
+] as const)('says once when a finished turn\'s %s reach zero', async (_, work) => {
+  const f = fixture()
+  work(f.thread, 2); finish(f.thread); f.wakes.observe()
+  await f.advance(2_000)
+  const finished = f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!
+  expect(finished.backgroundWorkCount).toBe(2)
+  expect(watcherNewsText(f.delivered[0]!)).toContain('the turn is not done until Sotto sends work-settled news for it')
+  work(f.thread, 1); f.wakes.observe(); await f.advance(2_000)
+  expect(kinds(f.delivered)).not.toContain('work-settled')
+  work(f.thread, 0); f.wakes.observe(); await f.advance(2_000)
+  const settled = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'work-settled')
+  expect(settled).toEqual([expect.objectContaining({ target: centerTarget, turnId: 'turn-1', backgroundWorkCount: 0, requestId: finished.requestId })])
+  expect(watcherNewsText(f.delivered.at(-1)!)).toContain('so the turn is done')
+  // Once per turn: work that starts and ends again in the same finished turn says nothing more.
+  work(f.thread, 2); f.wakes.observe(); work(f.thread, 0); f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered).filter(kind => kind === 'work-settled')).toHaveLength(1)
+  expect(JSON.stringify(f.delivered)).not.toMatch(/Background task|Watch \d|explorer/u)
+})
+
+it('says nothing more for a finished turn that had no background work', async () => {
+  const f = fixture()
+  finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished'])
+  expect(f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!.backgroundWorkCount).toBe(0)
+  expect(watcherNewsText(f.delivered[0]!)).not.toContain('work-settled')
+})
+
+it('waits for the background work of a turn that failed too', async () => {
+  const f = fixture()
+  f.thread.backgroundWork = [backgroundTask(1)]; f.thread.status = 'error'; f.thread.lastTurn = { id: 'turn-1', status: 'failed' }; f.wakes.observe()
+  await f.advance(2_000)
+  f.thread.backgroundWork = []; f.wakes.observe(); await f.advance(2_000)
+  expect(kinds(f.delivered)).toEqual(['turn-failed', 'work-settled'])
+})
+
+it('counts background work and the roster\'s working sub-agents once where they overlap', async () => {
+  const f = fixture()
+  f.thread.backgroundWork = [backgroundTask(1), backgroundTask(2)]; codexSubAgents(f.thread, 2); f.thread.monitoring = [monitor(1)]
+  finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!.backgroundWorkCount).toBe(3)
+})
+
+it('owes nothing for a turn that a new turn replaced', async () => {
+  const f = fixture()
+  f.thread.backgroundWork = [backgroundTask(1)]; finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.thread.backgroundWork = []; f.wakes.observe()
+  await f.advance(2_000)
+  expect(kinds(f.delivered)).not.toContain('work-settled')
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-2', status: 'completed' }; f.wakes.observe(); await f.advance(2_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished', 'turn-finished'])
+})
+
+function restarted(f: ReturnType<typeof fixture>, restoredEvents?: WatcherWakeOptions['restoredEvents']) {
+  f.wakes.close()
+  const delivered: WatcherNews[] = []
+  const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
+    deliver: async news => { delivered.push(structuredClone(news)) }, prune: async () => undefined, ...restoredEvents ? { restoredEvents } : {},
+    remember: async ids => { f.record.wakeEventIds = [...f.record.wakeEventIds ?? [], ...ids] }, schedule: callback => { callback(); return () => undefined } })
+  cleanups.push(() => recovered.close())
+  return { recovered, delivered }
+}
+
+it('does not repeat work-settled news after a restart', async () => {
+  const f = fixture()
+  codexSubAgents(f.thread, 2); finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  codexSubAgents(f.thread, 0); f.wakes.observe(); await f.advance(2_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished', 'work-settled'])
+  const { recovered, delivered } = restarted(f)
+  recovered.start(); await recovered.drained()
+  codexSubAgents(f.thread, 2); recovered.observe(); codexSubAgents(f.thread, 0); recovered.observe(); await recovered.drained()
+  expect(delivered).toEqual([])
+})
+
+it('keeps a busy finish owed its work-settled news across a restart', async () => {
+  const f = fixture()
+  f.thread.providerId = 'claude'; f.thread.backgroundWork = [backgroundTask(1), backgroundTask(2)]; finish(f.thread); f.wakes.observe()
+  await f.advance(2_000)
+  const { recovered, delivered } = restarted(f)
+  f.thread.backgroundWork = []
+  recovered.start(); await recovered.drained()
+  expect(kinds(delivered)).toEqual(['work-settled'])
+  recovered.observe(); await recovered.drained()
+  expect(kinds(delivered)).toEqual(['work-settled'])
+})
+
+it('gives no work-settled news after a restart for a turn that finished with none', async () => {
+  const f = fixture()
+  finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  const { recovered, delivered } = restarted(f)
+  recovered.start(); recovered.observe(); await recovered.drained()
+  expect(delivered).toEqual([])
+})
+
+it('reads a queued busy finish after a restart as owed its work-settled news', async () => {
+  const f = fixture()
+  f.thread.monitoring = [monitor(1)]; finish(f.thread); f.wakes.observe()
+  const queued = f.wakes.news()
+  expect(queued.map(event => event.kind)).toContain('turn-finished')
+  f.thread.monitoring = []
+  const { recovered, delivered } = restarted(f, () => queued)
+  recovered.start(); await recovered.drained()
+  expect(kinds(delivered)).toEqual(['work-settled'])
+})
+
+it('keeps a turn unsettled while a restart has left its sub-agents unknown', async () => {
+  const f = fixture()
+  codexSubAgents(f.thread, 2); finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  const { recovered, delivered } = restarted(f)
+  // A restart cannot see how running sub-agents ended, so the roster holds them as unknown, not finished.
+  f.thread.subagentSummary = { total: 2, working: 0, completed: 0, failed: 0, interrupted: 0, unknown: 2 }
+  recovered.start(); recovered.observe(); await recovered.drained()
+  expect(kinds(delivered)).toEqual([])
+  f.thread.subagentSummary = { total: 2, working: 0, completed: 2, failed: 0, interrupted: 0, unknown: 0 }
+  recovered.observe(); recovered.observe(); await recovered.drained()
+  expect(kinds(delivered)).toEqual(['work-settled'])
+})
+
+it('reads a turn that finishes while a restart has left sub-agents unknown as not done, and settles it once they end', async () => {
+  const f = fixture()
+  // A restart cannot see how running sub-agents ended; a turn finishing beside them is not done until they resolve.
+  f.thread.subagentSummary = { total: 2, working: 0, completed: 0, failed: 0, interrupted: 0, unknown: 2 }
+  finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  const finished = f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!
+  expect(finished.backgroundWorkCount).toBe(2)
+  expect(watcherNewsText(f.delivered[0]!)).toContain('the turn is not done until Sotto sends work-settled news for it')
+  f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished'])
+  f.thread.subagentSummary = { total: 2, working: 0, completed: 2, failed: 0, interrupted: 0, unknown: 0 }
+  f.wakes.observe(); f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished', 'work-settled'])
+})
+
+it('owes nothing for work that starts after a finish was delivered as done', async () => {
+  const f = fixture()
+  finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!.backgroundWorkCount).toBe(0)
+  // Work seen on the same finished turn after Watcher heard it was done does not reopen it.
+  f.thread.monitoring = [monitor(1)]; f.wakes.observe(); await f.advance(2_000)
+  f.thread.monitoring = []; f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished'])
+})
+
+it('holds work-settled news when work starts again before delivery and sends it once after the final zero', async () => {
+  const f = fixture()
+  f.thread.providerId = 'claude'; f.thread.backgroundWork = [backgroundTask(1), backgroundTask(2)]; finish(f.thread); f.wakes.observe()
+  await f.advance(2_000)
+  f.thread.backgroundWork = []; f.wakes.observe(); await f.advance(500)
+  // Inside the batch window the turn's work starts again, so "the turn is done" would be false.
+  f.thread.backgroundWork = [backgroundTask(3), backgroundTask(4)]; f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished'])
+  f.thread.backgroundWork = []; f.wakes.observe(); await f.advance(2_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished', 'work-settled'])
+  f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished', 'work-settled'])
+})
+
+it('gives no work-settled news for a paired host that does not report its work counts', async () => {
+  const f = fixture(true, undefined, { reportsWork: hostId => hostId !== centerTarget.hostId })
+  f.thread.providerId = 'claude'; f.thread.backgroundWork = [backgroundTask(1), backgroundTask(2)]; finish(f.thread); f.wakes.observe()
+  await f.advance(2_000)
+  // Missing counts are unknown, not none running: the finish carries no count and claims nothing about the work.
+  const finished = f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!
+  expect(finished).not.toHaveProperty('backgroundWorkCount')
+  delete f.thread.backgroundWork; f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished'])
+  expect(watcherNewsText(f.delivered[0]!)).not.toContain('work-settled')
 })
