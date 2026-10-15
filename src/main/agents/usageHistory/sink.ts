@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import type { UsageHistoryCursor, UsageHistoryPrompt, UsageProviderId, UsageTokenObservation } from '../../../shared/usageDashboard'
 
 /**
- * Where a history reader puts what it read from a provider's own local records (ADR-0080). Each batch holds at
+ * Where a history reader puts what it read from a provider's own local records (ADR-0083). Each batch holds at
  * most `USAGE_HISTORY_BATCH_MAX` entries. A reader saves a file's cursor only after that file's rows went in, so a
  * pass that stops anywhere resumes without losing a row; a row read twice is the same row and counts once.
  * Everything that crosses it is numbers, instants, model and client names and hashed identities.

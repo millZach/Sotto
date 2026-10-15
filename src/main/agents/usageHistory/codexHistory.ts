@@ -8,7 +8,7 @@ import { usageHistoryCursorKey, usageHistoryMessageId, usageHistoryRecordKey, us
 
 /**
  * Codex's own session rollouts on this computer: `<CODEX_HOME>/sessions/**\/rollout-*.jsonl` and
- * `archived_sessions` (ADR-0080). Each line is parsed, its numbers, instant, served model and client kept, and the
+ * `archived_sessions` (ADR-0083). Each line is parsed, its numbers, instant, served model and client kept, and the
  * line dropped.
  *
  * Forked and sub-agent rollouts begin with a copy of their parent's history, with or without the parent's own

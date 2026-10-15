@@ -117,7 +117,7 @@ Unresolved: Grok's omitted percentage semantics, older-client support, Codex acc
 
 ## October 14, 2026: local records, Claude's idle read and Grok's percentage
 
-Checked on the Windows laptop with Claude Code 2.1.299, `@anthropic-ai/claude-agent-sdk` 0.3.270, Codex's app-server and Grok Build's ACP agent. Only key names, counts, instants and model names were printed. [ADR-0080](../adr/0080-usage-counts-every-clients-work-on-each-computer.md) records the decision these findings support.
+Checked on the Windows laptop with Claude Code 2.1.299, `@anthropic-ai/claude-agent-sdk` 0.3.270, Codex's app-server and Grok Build's ACP agent. Only key names, counts, instants and model names were printed. [ADR-0083](../adr/0083-usage-counts-every-clients-work-on-each-computer.md) records the decision these findings support.
 
 **Claude idle refresh exists.** Claude Code answers a stream-json control request `{ subtype: 'get_usage', skip_behaviors: true }` on the same connection Sotto uses for `initialize` (`SDKControlGetUsageRequest`, `sdk.d.ts`; the SDK method is `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET`). It sends no prompt; the CLI serves a recent snapshot or asks its own provider with its own sign-in. A metadata-only probe answered in 1.4 seconds: `rate_limits.five_hour` and `seven_day` as 0-100 `utilization` with ISO `resets_at`, `seven_day_opus` and `seven_day_sonnet` (null today), `model_scoped[]` and `extra_usage.is_enabled`. The body also carries plan, session cost and codename keys, which a reader must not keep. The passive `rate_limit_event` carries `utilization` only past a warning threshold, which is why five-hour limits read "not reported" before; there is no `claude usage` subcommand.
 

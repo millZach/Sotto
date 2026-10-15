@@ -187,7 +187,7 @@ export interface AgentHost {
   visitUsage?(threadId: string, visitor: (record: UsageTokenObservation) => void): void
   readProviderQuota?(providerId: ProviderId, refresh: boolean): Promise<UsageQuotaRead>
   /**
-   * Owl-only (ADR-0080): read this computer's own provider records into Usage, numbers only. Each native adapter reads
+   * Owl-only (ADR-0083): read this computer's own provider records into Usage, numbers only. Each native adapter reads
    * its own provider's files, reports a session it owns under its own thread ID, and every other session under a
    * namespaced, non-reversible identity (`usageHistoryThreadId`). Wrappers translate owned rows the way they translate
    * every usage record and pass the rest through. Resumes from the sink's cursors; stops when `signal` aborts.

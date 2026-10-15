@@ -2091,7 +2091,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
 
   /**
-   * Sotto's own stored user messages created before `before`, for the Usage history import (ADR-0080): identities,
+   * Sotto's own stored user messages created before `before`, for the Usage history import (ADR-0083): identities,
    * instants, the thread's provider and model and whether babysitting sent each. The store query names no text column.
    * False until the thread store can be read.
    */

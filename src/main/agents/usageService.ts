@@ -87,7 +87,7 @@ export class UsageService implements UsagePromptRecorder {
     this.startHistory()
   }
 
-  /** The owning host's provider records and Sotto's own stored prompts, read in the background (ADR-0080). */
+  /** The owning host's provider records and Sotto's own stored prompts, read in the background (ADR-0083). */
   private startHistory(): void {
     const host = this.options.host
     if (!host.scanUsageHistory && !host.visitRecordedUserMessages) return

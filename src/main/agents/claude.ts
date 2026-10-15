@@ -223,7 +223,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   readonly visitUsage?: (id: string, visitor: (record: UsageTokenObservation) => void) => void
   readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
-  /** Claude's account limits: read on demand through get_usage, with Claude Code's passive events between reads (ADR-0080). */
+  /** Claude's account limits: read on demand through get_usage, with Claude Code's passive events between reads (ADR-0083). */
   private readonly limits = new ClaudeLimits()
   /** Runtimes whose CLI has answered initialize, so get_usage can go over a live thread's channel. */
   private readonly initializedRuntimes = new WeakSet<Runtime>()
@@ -2050,7 +2050,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * A store with no generation, from before there was one, folds every line once.
    */
   /**
-   * Claude Code's own transcripts on this computer, for Usage (ADR-0080). Every session this adapter ever ran for a
+   * Claude Code's own transcripts on this computer, for Usage (ADR-0083). Every session this adapter ever ran for a
    * thread, its rewound lineage included, reports under that thread; any other session under a hashed identity.
    * Reads the saved thread records without changing them, so it never waits on or starts a connection.
    */

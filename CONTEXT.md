@@ -247,7 +247,7 @@ Answering a question or permission request and creating a project are also part 
 
 ## History and the host
 
-**Usage.** The Owl page for subscription limits and all the work each connected computer's Claude Code and Codex clients did, in Sotto and outside it, with Overview, Subscriptions and Models. Its headline index opens one focused measure at a time (ADR-0080).
+**Usage.** The Owl page for subscription limits and all the work each connected computer's Claude Code and Codex clients did, in Sotto and outside it, with Overview, Subscriptions and Models. Its headline index opens one focused measure at a time (ADR-0083).
 
 **Usage history.** Counts, dates, model names and app names retained on the computer that ran the work, independently of transcript history: what Sotto observed, and what Usage read from the clients' own session records on that computer, keeping numbers only. Clear usage removes its figures separately; records from before a clear never return and new work counts afterward.
 

@@ -14,7 +14,7 @@ export interface UserMessageInstantSource {
 }
 
 /**
- * Reads the thread store's user messages created before `before` (ADR-0080). The query names only identity columns,
+ * Reads the thread store's user messages created before `before` (ADR-0083). The query names only identity columns,
  * the instant and the wake-up mark, so no message text is read out of the database.
  */
 export function visitUserMessageInstants(db: DatabaseSync, visitor: (message: StoredUserMessageInstant) => void, before?: string): void {

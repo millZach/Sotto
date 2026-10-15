@@ -301,7 +301,7 @@ lines.on('line', async line => {
       output(error ? { type: 'result', subtype: 'error_during_execution', session_id: session, is_error: true, result: '' } : { type: 'result', subtype: 'success', session_id: session, is_error: false, result: '' })
       turnEnded()
     } else if (frame.request.subtype === 'get_usage') {
-      // Claude Code's own limits read (ADR-0080). usage-script.json holds the `rate_limits` it answers with, in
+      // Claude Code's own limits read (ADR-0083). usage-script.json holds the `rate_limits` it answers with, in
       // get_usage's 0-100 percentages; without one it answers as an account with no limits to report. Plan, cost and
       // codename keys ride along, as the real answer's do, so Sotto must drop them.
       if (frame.request.skip_behaviors !== true) violation('get_usage must skip the local transcript scan')

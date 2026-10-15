@@ -375,7 +375,7 @@ export class ThreadStore {
     writeMeta(this.requireOpen(), 'subagentWordsMoved', '1')
   }
 
-  /** Usage's history import (ADR-0080): each user message's identity, instant and wake-up mark. Reads no text. */
+  /** Usage's history import (ADR-0083): each user message's identity, instant and wake-up mark. Reads no text. */
   visitUserMessageInstants(visitor: (message: StoredUserMessageInstant) => void, before?: string): void {
     visitUserMessageInstants(this.requireOpen(), visitor, before)
   }

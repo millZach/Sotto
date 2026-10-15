@@ -378,7 +378,7 @@ export class CodexAppServerHost implements AgentHost {
     if (runtime) { this.runtimes.delete(id); this.endServer(runtime.server, 'gently') }
   }
   /**
-   * Codex's own rollouts on this computer, for Usage (ADR-0080). A thread this adapter owns reports under its own ID,
+   * Codex's own rollouts on this computer, for Usage (ADR-0083). A thread this adapter owns reports under its own ID,
    * and the sub-agents it started under the same thread; any other session under a hashed identity. Reads the saved
    * thread records without changing them, so it never waits on or starts a connection.
    */

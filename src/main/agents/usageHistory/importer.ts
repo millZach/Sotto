@@ -4,7 +4,7 @@ import {
 } from '../../../shared/usageDashboard'
 import { yieldToEventLoop, type UsageHistoryScan, type UsageHistorySink, type UsageRecordedUserMessage } from './sink'
 
-/** The store calls the importer makes (ADR-0080). Batches are written in one transaction each. */
+/** The store calls the importer makes (ADR-0083). Batches are written in one transaction each. */
 export interface UsageHistoryStore {
   metadata(): UsageMetadata
   observeTokenBatch(observations: UsageTokenObservation[]): UsageWriteResult

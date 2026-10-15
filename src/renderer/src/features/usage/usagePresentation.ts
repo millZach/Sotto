@@ -16,7 +16,7 @@ export const PROVIDER_ORDER = Object.keys(PROVIDER_NAMES) as UsageProviderId[]
 export const PROVIDER_ACCOUNTS: Record<UsageProviderId, string> = { codex: 'ChatGPT through Codex', claude: 'Claude Code subscription', grok: 'Grok subscription', devin: 'Devin account' }
 /** The short name a sentence about the provider's own report uses. */
 const PROVIDER_SHORT: Record<UsageProviderId, string> = { codex: 'Codex', claude: 'Claude', grok: 'Grok', devin: 'Devin' }
-/** Providers whose own records Usage reads outside Sotto (ADR-0080). The others are counted in Sotto only. */
+/** Providers whose own records Usage reads outside Sotto (ADR-0083). The others are counted in Sotto only. */
 export const READ_OUTSIDE_SOTTO: ReadonlySet<UsageProviderId> = new Set(['codex', 'claude'])
 /** Devin reports no token counts at all; its prompts still count. */
 export const NO_TOKENS: ReadonlySet<UsageProviderId> = new Set(['devin'])
@@ -177,7 +177,7 @@ export function presentUsage(read: UsageDashboardRead): UsageSummary {
   const providers: UsageProviderAggregate[] = grouped(activity.flatMap(row => row.providers), row => row.providerId)
     .map(rows => ({ ...sumActivity(rows), providerId: rows[0]!.providerId }))
     .sort((a, b) => USAGE_PROVIDERS.indexOf(a.providerId) - USAGE_PROVIDERS.indexOf(b.providerId))
-  // A host from before ADR-0080 names models by their public ID; the canonical spelling joins its rows to an updated host's.
+  // A host from before ADR-0083 names models by their public ID; the canonical spelling joins its rows to an updated host's.
   const served = (row: UsageModelAggregate): string => canonicalModelId(row.providerId, row.modelId)
   const modelIds = new Map<string, string[]>()
   const models: UsageModelAggregate[] = grouped(activity.flatMap(row => row.models), row => JSON.stringify([row.providerId, served(row)]))

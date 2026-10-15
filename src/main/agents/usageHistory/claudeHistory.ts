@@ -7,7 +7,7 @@ import { usageHistoryMessageId, usageHistoryRecordKey, usageHistoryThreadId, typ
 
 /**
  * Claude Code's own session transcripts on this computer: `<home>/projects/<project>/<session>.jsonl` and each
- * session's `subagents/*.jsonl` (ADR-0080). A line is parsed, its numbers, instant and served model kept, and the
+ * session's `subagents/*.jsonl` (ADR-0083). A line is parsed, its numbers, instant and served model kept, and the
  * line dropped. Prompts are counted only for sessions Sotto does not own; Sotto's own prompts come from its store.
  */
 export interface ClaudeHistoryOptions {

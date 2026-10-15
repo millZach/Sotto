@@ -52,7 +52,7 @@ function claudeModelUsage(modelUsage: unknown, model: string): unknown {
 
 /**
  * The identity of one usage row as the store holds it. History read from a provider's own records reuses it, so a row
- * the ledger already counted learns its date instead of being counted again (ADR-0080).
+ * the ledger already counted learns its date instead of being counted again (ADR-0083).
  */
 export function nativeUsageKey(provider: 'codex' | 'claude' | 'grok', kind: 'row' | 'group', id: string, identity: string): string {
   return createHash('sha256').update(JSON.stringify(['sotto-usage', provider, kind, id, identity])).digest('hex')

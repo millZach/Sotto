@@ -706,7 +706,7 @@ export class UsageStore {
     }
     db.exec(`
       CREATE INDEX IF NOT EXISTS token_rows_date ON token_rows(day);
-      -- Every client's history makes hundreds of thousands of rows (ADR-0080), so each index covers only the rows its
+      -- Every client's history makes hundreds of thousands of rows (ADR-0083), so each index covers only the rows its
       -- lookups reach: grouped rows for group checks, dated main-chain rows for the served-model join. Queries read
       -- token_buckets, so no index by model is kept. An older build that reopens the store recreates its own.
       DROP INDEX IF EXISTS token_rows_model;

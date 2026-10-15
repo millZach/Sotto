@@ -212,7 +212,7 @@ it('counts paired Watcher writes once in the owning Owl archive and keeps user s
   const final = await activity()
   expect(final.totals.prompts).toEqual({ user: 1, watcher: 4, wakeUp: 0, total: 5, steered: 1 })
   expect(final.models).toEqual(expect.arrayContaining([
-    // No token report names a served model here, so each prompt counts under the model it was sent on (ADR-0080).
+    // No token report names a served model here, so each prompt counts under the model it was sent on (ADR-0083).
     expect.objectContaining({ modelId: canonicalModelId('codex', f.model.id), prompts: { user: 0, watcher: 4, wakeUp: 0, total: 4, steered: 1 } }),
     expect.objectContaining({ modelId: canonicalModelId('codex', laterModel.id), prompts: { user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 } }),
   ]))
