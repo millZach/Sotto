@@ -1,5 +1,6 @@
 {
   "tab-order": [
+    "Conversation",
     "More Watcher actions",
     "Open Visual gate flake to answer its permission",
     "Open Streaming WAV stall at its failed turn",
@@ -8,6 +9,7 @@
     "Copy reply as Markdown",
     "Watcher message",
     "Thread model",
+    "Watcher’s permissions",
     "History",
     "Usage",
     "Settings",
@@ -45,8 +47,28 @@
         "ratio": 9.13
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 17.84
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 18.81
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 13.59
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 13.08
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 13.59
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 13.08
       },
       {
         "name": ".watcher-glance__lead 0",
@@ -77,7 +99,19 @@
         "ratio": 9.48
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 13.19
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 9.2
       },
       {
@@ -119,8 +153,28 @@
         "ratio": 9.13
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 17.84
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 18.81
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 13.59
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 13.08
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 13.59
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 13.08
       },
       {
         "name": ".watcher-glance__lead 0",
@@ -155,7 +209,19 @@
         "ratio": 9.48
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 13.19
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 9.2
       },
       {
@@ -197,11 +263,27 @@
         "ratio": 9.13
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 17.84
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 18.81
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 13.59
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 13.08
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 13.59
+      },
+      {
+        "name": ".watcher-tabs__count 0",
         "ratio": 13.08
       },
       {
@@ -229,7 +311,19 @@
         "ratio": 18.81
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 13.19
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 9.2
       },
       {
@@ -271,8 +365,28 @@
         "ratio": 13.08
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 17.84
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 18.81
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 13.59
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 13.08
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 13.59
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 13.08
       },
       {
         "name": ".watcher-glance__lead 0",
@@ -307,7 +421,19 @@
         "ratio": 9.48
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 13.19
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 9.2
       },
       {
@@ -477,11 +603,27 @@
         "ratio": 9.13
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 17.84
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 18.81
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 13.59
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 13.08
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 13.59
+      },
+      {
+        "name": ".watcher-tabs__count 0",
         "ratio": 13.08
       },
       {
@@ -525,12 +667,36 @@
         "ratio": 9.13
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 13.19
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 1",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 2",
         "ratio": 9.2
       },
       {
         "name": ".watched-note 0",
         "ratio": 9.48
+      },
+      {
+        "name": ".watched-note__stop 0",
+        "ratio": 13.59
+      },
+      {
+        "name": ".watch-toggle 0",
+        "ratio": 16.48
       },
       {
         "name": ".watcher-dock__switch button 0",
@@ -575,11 +741,27 @@
         "ratio": 9.13
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 17.84
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 18.81
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 13.59
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 13.08
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 13.59
+      },
+      {
+        "name": ".watcher-tabs__count 0",
         "ratio": 13.08
       },
       {
@@ -607,12 +789,36 @@
         "ratio": 18.81
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 13.19
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 1",
+        "ratio": 9.2
+      },
+      {
+        "name": ".thread-options__caption 2",
         "ratio": 9.2
       },
       {
         "name": ".watched-note 0",
         "ratio": 9.48
+      },
+      {
+        "name": ".watched-note__stop 0",
+        "ratio": 13.59
+      },
+      {
+        "name": ".watch-toggle 0",
+        "ratio": 16.48
       },
       {
         "name": ".watcher-dock__switch button 0",
@@ -659,8 +865,28 @@
         "ratio": 6.78
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.69
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 15.88
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.44
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 10.54
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.44
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.54
       },
       {
         "name": ".watcher-glance__lead 0",
@@ -691,7 +917,19 @@
         "ratio": 6.72
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.81
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 6.95
       },
       {
@@ -733,8 +971,28 @@
         "ratio": 6.78
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.69
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 15.88
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.44
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 10.54
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.44
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.54
       },
       {
         "name": ".watcher-glance__lead 0",
@@ -769,7 +1027,19 @@
         "ratio": 6.72
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.81
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 6.95
       },
       {
@@ -811,11 +1081,27 @@
         "ratio": 6.78
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.69
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 15.88
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.44
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 10.54
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.44
+      },
+      {
+        "name": ".watcher-tabs__count 0",
         "ratio": 10.54
       },
       {
@@ -843,7 +1129,19 @@
         "ratio": 15.88
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.81
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 6.95
       },
       {
@@ -885,8 +1183,28 @@
         "ratio": 10.54
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.69
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 15.88
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.44
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 10.54
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.44
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.54
       },
       {
         "name": ".watcher-glance__lead 0",
@@ -921,7 +1239,19 @@
         "ratio": 6.72
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.81
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 6.95
       },
       {
@@ -1091,11 +1421,27 @@
         "ratio": 6.78
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.69
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 15.88
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.44
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 10.54
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.44
+      },
+      {
+        "name": ".watcher-tabs__count 0",
         "ratio": 10.54
       },
       {
@@ -1139,12 +1485,36 @@
         "ratio": 6.78
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.81
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 1",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 2",
         "ratio": 6.95
       },
       {
         "name": ".watched-note 0",
         "ratio": 6.72
+      },
+      {
+        "name": ".watched-note__stop 0",
+        "ratio": 10.44
+      },
+      {
+        "name": ".watch-toggle 0",
+        "ratio": 12.94
       },
       {
         "name": ".watcher-dock__switch button 0",
@@ -1189,11 +1559,27 @@
         "ratio": 6.78
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.69
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 15.88
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.44
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 10.54
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.44
+      },
+      {
+        "name": ".watcher-tabs__count 0",
         "ratio": 10.54
       },
       {
@@ -1221,12 +1607,36 @@
         "ratio": 15.88
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.81
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 1",
+        "ratio": 6.95
+      },
+      {
+        "name": ".thread-options__caption 2",
         "ratio": 6.95
       },
       {
         "name": ".watched-note 0",
         "ratio": 6.72
+      },
+      {
+        "name": ".watched-note__stop 0",
+        "ratio": 10.44
+      },
+      {
+        "name": ".watch-toggle 0",
+        "ratio": 12.94
       },
       {
         "name": ".watcher-dock__switch button 0",
@@ -1273,8 +1683,28 @@
         "ratio": 6.46
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 13.75
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.12
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.48
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 9.5
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.48
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 9.5
       },
       {
         "name": ".watcher-glance__lead 0",
@@ -1305,7 +1735,19 @@
         "ratio": 7.13
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.09
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 6.87
       },
       {
@@ -1347,8 +1789,28 @@
         "ratio": 6.46
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 13.75
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.12
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.48
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 9.5
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.48
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 9.5
       },
       {
         "name": ".watcher-glance__lead 0",
@@ -1383,7 +1845,19 @@
         "ratio": 7.13
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.09
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 6.87
       },
       {
@@ -1425,11 +1899,27 @@
         "ratio": 6.46
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 13.75
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.12
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.48
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 9.5
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.48
+      },
+      {
+        "name": ".watcher-tabs__count 0",
         "ratio": 9.5
       },
       {
@@ -1457,7 +1947,19 @@
         "ratio": 14.12
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.09
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 6.87
       },
       {
@@ -1499,8 +2001,28 @@
         "ratio": 9.5
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 13.75
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.12
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.48
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 9.5
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.48
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 9.5
       },
       {
         "name": ".watcher-glance__lead 0",
@@ -1535,7 +2057,19 @@
         "ratio": 7.13
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.09
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 6.87
       },
       {
@@ -1705,11 +2239,27 @@
         "ratio": 6.46
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 13.75
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.12
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.48
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 9.5
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.48
+      },
+      {
+        "name": ".watcher-tabs__count 0",
         "ratio": 9.5
       },
       {
@@ -1753,12 +2303,36 @@
         "ratio": 6.46
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.09
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 1",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 2",
         "ratio": 6.87
       },
       {
         "name": ".watched-note 0",
         "ratio": 7.13
+      },
+      {
+        "name": ".watched-note__stop 0",
+        "ratio": 10.48
+      },
+      {
+        "name": ".watch-toggle 0",
+        "ratio": 12.95
       },
       {
         "name": ".watcher-dock__switch button 0",
@@ -1803,11 +2377,27 @@
         "ratio": 6.46
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 13.75
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.12
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.48
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 9.5
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.48
+      },
+      {
+        "name": ".watcher-tabs__count 0",
         "ratio": 9.5
       },
       {
@@ -1835,12 +2425,36 @@
         "ratio": 14.12
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.09
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 1",
+        "ratio": 6.87
+      },
+      {
+        "name": ".thread-options__caption 2",
         "ratio": 6.87
       },
       {
         "name": ".watched-note 0",
         "ratio": 7.13
+      },
+      {
+        "name": ".watched-note__stop 0",
+        "ratio": 10.48
+      },
+      {
+        "name": ".watch-toggle 0",
+        "ratio": 12.95
       },
       {
         "name": ".watcher-dock__switch button 0",
@@ -1887,8 +2501,28 @@
         "ratio": 6.48
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.19
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 16.48
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.85
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 10.88
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.85
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.88
       },
       {
         "name": ".watcher-glance__lead 0",
@@ -1919,7 +2553,19 @@
         "ratio": 6.46
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.43
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 6.21
       },
       {
@@ -1961,8 +2607,28 @@
         "ratio": 6.48
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.19
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 16.48
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.85
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 10.88
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.85
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.88
       },
       {
         "name": ".watcher-glance__lead 0",
@@ -1997,7 +2663,19 @@
         "ratio": 6.46
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.43
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 6.21
       },
       {
@@ -2039,11 +2717,27 @@
         "ratio": 6.48
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.19
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 16.48
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.85
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 10.88
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.85
+      },
+      {
+        "name": ".watcher-tabs__count 0",
         "ratio": 10.88
       },
       {
@@ -2071,7 +2765,19 @@
         "ratio": 16.48
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.43
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 6.21
       },
       {
@@ -2113,8 +2819,28 @@
         "ratio": 10.88
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.19
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 16.48
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.85
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 10.88
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.85
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.88
       },
       {
         "name": ".watcher-glance__lead 0",
@@ -2149,7 +2875,19 @@
         "ratio": 6.46
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.43
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 1",
         "ratio": 6.21
       },
       {
@@ -2319,11 +3057,27 @@
         "ratio": 6.48
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.19
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 16.48
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.85
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 10.88
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.85
+      },
+      {
+        "name": ".watcher-tabs__count 0",
         "ratio": 10.88
       },
       {
@@ -2367,12 +3121,36 @@
         "ratio": 6.48
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.43
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 1",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 2",
         "ratio": 6.21
       },
       {
         "name": ".watched-note 0",
         "ratio": 6.46
+      },
+      {
+        "name": ".watched-note__stop 0",
+        "ratio": 10.85
+      },
+      {
+        "name": ".watch-toggle 0",
+        "ratio": 13.06
       },
       {
         "name": ".watcher-dock__switch button 0",
@@ -2417,11 +3195,27 @@
         "ratio": 6.48
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 14.19
+      },
+      {
+        "name": ".watcher-tabs__tab 0",
+        "ratio": 16.48
+      },
+      {
+        "name": ".watcher-tabs__tab 1",
         "ratio": 10.85
       },
       {
-        "name": ".watcher-meter 0",
+        "name": ".watcher-tabs__tab 1",
+        "ratio": 10.88
+      },
+      {
+        "name": ".watcher-tabs__count 0",
+        "ratio": 10.85
+      },
+      {
+        "name": ".watcher-tabs__count 0",
         "ratio": 10.88
       },
       {
@@ -2449,12 +3243,36 @@
         "ratio": 16.48
       },
       {
-        "name": ".thread-options__pinned 0",
+        "name": ".watcher-pane .thread-chip 0",
+        "ratio": 10.43
+      },
+      {
+        "name": ".watcher-pane .thread-chip 1",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 0",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 1",
+        "ratio": 6.21
+      },
+      {
+        "name": ".thread-options__caption 2",
         "ratio": 6.21
       },
       {
         "name": ".watched-note 0",
         "ratio": 6.46
+      },
+      {
+        "name": ".watched-note__stop 0",
+        "ratio": 10.85
+      },
+      {
+        "name": ".watch-toggle 0",
+        "ratio": 13.06
       },
       {
         "name": ".watcher-dock__switch button 0",

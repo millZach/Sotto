@@ -1,0 +1,11 @@
+{
+    "changedPaths":  [
+                         "tests/integration/watcherPairedHosts.test.ts"
+                     ],
+    "instrumentedSourceSha256":  "E828FCA9EA7621AA8D9A6ED9A29D0687F5B35334B695C56DD6C487C4F36E3CCA",
+    "notCleanBce":  true,
+    "head":  "bce6cb015bbaef4a8b59797a3f3d544e21fa1d54",
+    "baselineSourceSha256":  "77FA71FC71A5EC45698FBF9E6D80863A6001BB35FA5EAEFFDFA62BD80BBF1529",
+    "overlaySha256":  "01775D22E1FA93EF515D32624B2D0820F7298A654B9B33C834138A522C759ECE",
+    "notAFinalGate":  true
+}

@@ -1,10 +1,10 @@
 # Watcher room publication and owned remote inputs
 
-Issue #991, step 5. Remote cached reads and the complete local matrix are measured below. The built Windows app passed its Watcher journeys; final gate status is recorded in the verification note.
+Issue #991, step 5. Remote cached reads and the complete local matrix are measured below. Historical App01 at 1681 passed its Watcher journeys; current App04 at a9033b152 passed 22, and final gate status is recorded in the verification note.
 
 Step 5 keeps the existing Watcher and streaming-publish-cost startup gates. It captures complete owned desktop room notifications inside a separate 50 ms desktop room window using the existing leading/trailing rules. Direct command answers flush pending notifications on success or failure and retain their own results. Local state projection already avoided a whole local shell clone before this work; no new credit is taken for that property.
 
-The new room-only remote input reads requested thread facts from the actual cached host state. It returns owned primitive rows and owned request ID/kind arrays, reusing connectivity and settlement for each target. Public shell reads, socket ingestion/merge, observer/tool/Stop all snapshot semantics and phone events retain their existing contracts. Whole Watcher publication can still perform observation clones; zero room-triggered clones is not zero total Watcher clones.
+The new room-only remote input reads requested thread facts from the actual cached host state. It returns owned primitive rows and owned request ID/kind arrays, reusing connectivity and settlement for each target. Public shell reads, socket ingestion/merge, observer/tool/Stop all snapshot semantics and phone events retain their existing contracts. Whole Watcher publication can still perform observation clones. The measured zero is whole cached-shell clones triggered by these room reads; bounded Watcher-record, capture and input copies remain.
 
 ## Remote baseline
 
@@ -53,4 +53,8 @@ Historical preimplementation baseline01, failed AFTER01, completion-boundary dia
 
 ## Proof limits
 
-Local matrix: real Windows Electron IPC/contextBridge and selected shell/detail assembly in a synthetic page, not React paint or whole-app CPU. Remote benchmark: real cache ingestion followed by scoped synchronous reads. The built Windows app passed seventeen Watcher and gate journeys; inspected captures and final verification status are recorded in the verification note. No installed release, live provider, Mac/Linux desktop or native-phone result is claimed. Both matrices start only after the expanded quiet guard; disclose every observed mid-run competitor and sampling limits.
+Local matrix: real Windows Electron IPC/contextBridge and selected shell/detail assembly in a synthetic page, not React paint or whole-app CPU. Remote benchmark: real cache ingestion followed by scoped synchronous reads. Historical App01 at 1681 passed seventeen Watcher and gate journeys; its inspected captures retain that provenance. Current App04 at a9033b152 passed 22; final verification status is recorded in the verification note. No installed release, live provider, Mac/Linux desktop or native-phone result is claimed. Both matrices start only after the expanded quiet guard; disclose every observed mid-run competitor and sampling limits.
+
+## Later integration provenance
+
+The accepted measurements above retain their original source pins. Later integrations preserve main's permission/watch operations, standing-watch-only targets, nested room metadata and Usage-history compatibility. Clean a9033b152 adds only a paired-test ingestion acknowledgment and an adversarial queued-writer test. Independent reviews found no timing-path change warranting a new matrix; no current-head performance claim follows. All four current repository gates and the build/22 App04 journeys passed on clean a9033b152; the verification note records the evidence and limits.

@@ -1,39 +1,52 @@
-# Watcher room state — October 14, 2026
+# Watcher room state — October 14–15, 2026
 
-The historical built Windows app at 1681abdb is VERIFIED for the seventeen Watcher and release-track journeys below. The later integration of main e3e7e2c3 needs fresh repository gates and built-app proof. This is not an installed-release, live-provider, Mac/Linux desktop or native-phone result.
+The built Windows app is VERIFIED on clean source `a9033b152d582f1af5db61cde6754c6eaa4e5f0c`: all four repository gates passed, then the build and all 22 Watcher/release-track journeys passed. This is local built-app proof with fake providers, not an installed release, live-provider, Mac/Linux desktop or native-phone result.
 
-## Built app
+## Gates and built app
 
-Clean source `1681abdb50a75056bdf724addae5c6549c488044` ran `npm run build && npx playwright test tests/e2e/watcher.spec.ts tests/e2e/watcher-gate.spec.ts`. Native exit 0; seventeen passed in 1.4 minutes after the build. The full command started at 2026-10-15T01:10:09.780Z and finished at 01:12:07.255Z. Start/exit and cleanup records are in [the evidence folder](../../artifacts/watcher-room-state).
+| Command | Result on a9033b152 |
+| --- | --- |
+| `npm run typecheck` | Native 0, 54.993 seconds |
+| `npm run lint` | Native 0, 23.823 seconds |
+| `npm test -- --maxWorkers=2` | Native 0; 864 files passed / 78 skipped; 11,222 tests passed / 350 skipped; 1,486.90 seconds |
+| `npm run notices:verify` | Native 0; 189 components verified |
+| `npm run build && npx playwright test tests/e2e/watcher.spec.ts tests/e2e/watcher-gate.spec.ts` | Native 0; 22 passed in 1.6 minutes after the build |
 
-The real main/preload/React journey uses Sotto's fake Codex app server. It starts Watcher from its composer, receives the reply, changes the in-flight limit through ordinary Settings updates from one to two, and sees the final `0 of 2 watched` without a room command reply. The E2E test reasserts the retained user prompt after reload; the after-reload capture shows both the user prompt and assistant reply. Sequential Settings saves do not prove same-window coalescing; reload does not isolate Get from notifications. Deterministic publisher tests separately establish ownership, timer behavior and direct-result/error ordering.
+The full suite ran from 2026-10-15T06:59:03.448Z to 07:23:52.135Z. Its reporter emitted aggregate success, not a separate paired-host result. Focused paired-host and session-log controls also passed all 55 tests. The build/app command ran from 07:24:33.098Z to 07:26:37.619Z. Exact start, exit, guard, keeper and cleanup records are retained in [integrated-verification.json](../../artifacts/watcher-room-state/integrated-verification.json).
 
-The other journeys cover first entry/model choice, Overview focus trapping and Escape, beside-pane request navigation/draft retention, keyboard order, limit controls, long titles, disconnection, empty state, dark/light at 1600×1000, 1280×800 and 820×560, reduced motion from both the system and Sotto's setting, and stable/Owl saved-record gating. Most layout journeys use a fixed room projection; they establish renderer compatibility rather than actual main delivery.
+Every command acquired its own expanded quiet guard with at least 6 GiB free. The full-suite guard recorded 12,319,884 KiB free; six later samples detected only the owned suite/workers at those observations. The app guard recorded 12,277,544 KiB free; its later sample detected only the owned Playwright/Electron chain. These are bounded observations, not continuous isolation. Each system-only keeper left the display request unchanged and was stopped only after PID, creation time and command matched. Owned command/test/app processes were absent afterward, and clean a903 remained unchanged.
 
-I opened and inspected all six retained Sotto dark/light room sizes, the reduced-motion setting capture, the minimum beside pane and Overview, and the real-main capture. Text and controls fit, the floating switch stays clear of the composer, the minimum request card remains usable, and no visible clipping or overlap appeared. Automated bounds/contrast checks and keyboard assertions passed. Independent Standards inspection of fifteen fresh captures found no visible defects. Sizes here describe CSS content sizes; Windows scaling can make the saved PNG larger.
+## User journeys and captures
 
-Retained captures:
+The real main/preload/React journey uses the fake Codex app server. It starts Watcher from its composer and receives its reply. Ordinary Settings updates change Threads in flight from one to two; the test observes the existing select's populated room value, which takes priority over the Settings fallback, before reload and without forcing roomGet. That assertion proves the subscription update. The after-reload image shows the retained user prompt and assistant reply; its closed menu does not show the limit. The separate layout reading `limit.saved = 3` belongs to the mocked limit-control journey, not this main assertion.
 
-- `room-sotto-{dark,light}-{1600x1000,1280x800,820x560}.png`: the six room layouts.
-- `room-sotto-dark-1280x800-reduced-motion-setting.png`: reduced motion with Overview open.
-- `beside-sotto-dark-820x560.png` and `list-sotto-dark-820x560.png`: minimum request pane and Overview.
-- `room-main-sotto-dark-1280x800.png`: actual main bridge, final limit and retained exchange. This filename describes content size; the image includes the Windows scale factor.
-- `readings.json`: contrast, keyboard order and saved-limit readings. Bounds and overlap assertions passed in E2E; this file does not contain their coordinates.
+A second real-main journey exercises permissions, Watch, Stop watching and own-change reporting. Other journeys cover first entry/model choice, Overview focus trapping and Escape, beside-pane request navigation/draft retention, keyboard order, long titles, disconnection, empty state, dark/light sizes, reduced motion from both the system and Sotto's setting, and stable/Owl saved-record gating. Most layout journeys use a fixed room projection; they establish renderer compatibility rather than actual main delivery. Deterministic publisher tests separately establish complete ownership, timing and direct-result/error ordering.
 
-The expanded quiet guard cleared at 18:10:09.1128539-07:00 with 11,028,216 KiB free. A later gate preflight found an external Usage full suite whose process began at18:10:11, just after that guard; the app proof therefore had external overlap. It is compatibility proof, not an isolated performance measurement. The owned keeper was stopped only after its PID, creation time and command matched; its absence, the command child's exit and absence of owned Playwright Electron processes were verified. Clean1681 remained unchanged. A wall-clock jump from roughly17:04 to18:09 was observed while queued; its cause was not established. The pre-app main check occurred between the recorded17:03:31 guard refusal and17:04:40 wait result; an earlier rounded17:05 note was inaccurate. At that check main was `f59f09343c28228e3b0446c2663ed6bd41fce98d`, with no overlapping changes and a successful merge-tree. Required Windows/Desktop/Package and Linux results were green; iOS was ongoing. This was a phase check, not delivery-time freshness.
+I opened sixteen current views: the six Sotto room sizes, reduced-motion Overview, minimum beside pane and Overview, all three real-main views, minimum dark/light permissions, and minimum stable/Owl views. Text and controls fit, the floating switch clears the composer, and no visible clipping or overlap appeared. Automated bounds, keyboard and motion assertions passed. The recorded room readings contain 804 contrast ratios, minimum 5.58; permission/watch readings contain 837, minimum 5.71. Image inspection alone does not establish motion. Sizes below are CSS content sizes; Windows scaling makes some saved PNGs larger.
 
-## Measurements and neighboring contracts
+Twelve inspected images are retained in [the evidence folder](../../artifacts/watcher-room-state), each from App04:
 
-The [performance note](../perf/2026-10-14-watcher-room-state.md) records the exact remote before/after and complete local AFTER05, every retained row, mixed CPU, historical adverse AFTER03 and interrupted AFTER04. The independent Spec review accepted bounded continuation; it did not claim a general CPU improvement or identify a local runtime defect. No further matrix was run to seek favorable numbers.
+- `integrated-room-sotto-{dark,light}-{1600x1000,1280x800,820x560}.png`: six room layouts with main's Conversation/Watched tabs.
+- `integrated-room-sotto-dark-1280x800-reduced-motion-setting.png`: Overview open under Sotto's reduced-motion setting.
+- `integrated-beside-sotto-dark-820x560.png` and `integrated-list-sotto-dark-820x560.png`: minimum request pane and Overview.
+- `integrated-room-main-sotto-dark-1280x800.png`: retained real-main exchange after reload; limit two is asserted separately in the test.
+- `integrated-room-main-watched-dark-1280x800.png`: real-main standing watch and Stop watching action.
+- `integrated-room-main-own-change-dark-1280x800.png`: real-main own-change line after stopping the watch.
 
-Nine remote-focused tests plus exact-content node-tests typecheck and focused lint passed before measurement; independent source reviews cleared integrated1681. They cover both startup gates, bounded ownership, missing/unknown/disconnected caches, old optional-service capability fallback and equality with existing room facts. Existing paired service/registered IPC Stop all tests cover that operation; there is no renderer Stop all button. Final full-suite results will supersede historical focused provenance.
+`integrated-readings.json` and `integrated-permission-readings.json` retain the actual readings. [Capture provenance](../../artifacts/watcher-room-state/integrated-capture-provenance.json) maps every retained file to its original App04 path and SHA-256. No design baseline was regenerated; README/guide actions remain unchanged.
 
-No design baseline was regenerated. README and guide still describe the same user actions and authority boundary; the change affects publication and cached reads rather than a new control or flow. ADR0073 and CONTEXT record the internal publication rule.
+## Earlier failed gate and ordering evidence
 
-## Final gates
+The earlier bce6cb full suite exited 1 with one failure at `watcherPairedHosts.test.ts:352`: expected takeover reason `native-user-send`, received `undefined`. Later queued-receipt/native-write assertions were not reached. [The failure excerpt](../../artifacts/watcher-room-state/step5-integrated-tests-03-failure.txt) is retained. One unchanged isolated case passed; that did not explain the failure.
 
-`npm run typecheck` passed with native exit 0 on clean de3c2634853e8364336dc4d850f8e835fc131a0d, from 2026-10-15T03:02:25.900Z to 03:03:47.894Z. Its expanded quiet guard cleared with 9,819,216 KiB free; an external typecheck was observed later. The exact keeper and command child were absent after cleanup. This pass predates the required main integration and is historical evidence.
+A separately labeled temporary passive probe also passed. Its [15 untruncated samples](../../artifacts/watcher-room-state/step5-paired-boundary-01-observations.json) showed the helper returning before the native ID entered the adapter's message log, then owner fencing and remote propagation. The [exact overlay](../../artifacts/watcher-room-state/step5-paired-boundary-01-overlay.diff) and [hashes](../../artifacts/watcher-room-state/step5-paired-boundary-01-manifest.json) preserve its scope. The subscription adds clone/scheduling overhead; later request/rollout reads are non-atomic. This proves that helper return is not ingestion/fence acknowledgment in that successful trace. It does not prove the exact full03 trigger or a flake.
 
-The bounded main check at 20:04 PDT found e3e7e2c34f60d96b876f2de8de8140687585615c with successful Windows, Desktop, Package and Linux results, but overlapping runtime changes and merge conflicts required integration. Main's permission-mode, Watch and Stop watching operations retain complete desktop bridges and settlement flushing; optimized remote rows retain standing-watch-only targets and watched/paused flags. Complete owned captures also retain runtime mode, standing watches and own-change metadata. Main's current room uses Conversation/Watched tabs; the subscription/reload journey now checks the existing Threads in flight select, whose populated room value overrides the Settings fallback.
+The test now refreshes the target and observes takeover before completing the turn, retaining its deadlines and all queue/native-write assertions. A separate held-provider-preparation case scripts unseen native input at the paired queued writer and checks the failed queue/no second turn. No production authority, transport or deadline behavior changed. Fresh full04 aggregate success is the current full-suite result.
 
-All four exact commands remain pending on the resolved integration: `npm run typecheck`, `npm run lint`, `npm test -- --maxWorkers=2`, and `npm run notices:verify`, followed by fresh built-app Watcher/gate proof. Prior Standards and Spec are clear at de3c263; the integration delta and final PR body need their own reviews. Measurements and captures above keep their original source provenance. No PR has been published.
+## Measurement and integration provenance
+
+The [performance note](../perf/2026-10-14-watcher-room-state.md) retains the exact remote before/after and complete local AFTER05, every row, mixed CPU, adverse AFTER03 and interrupted AFTER04. These historical measurements keep their original source pins; no current-head performance claim or new timing matrix follows from later integration/test-only changes.
+
+Main's permission, standing-watch, own-change and Usage-history contracts are preserved. Independent Standards and Spec reviews cleared the integrated runtime and a903 test-only follow-up, with all 67 manifest hashes verified. The post-diagnosis phase check at 2026-10-14T23:57:04.6133118-07:00 found unchanged main34d688, no incoming overlap/conflict and successful Windows/Desktop/Package/Linux results. This is phase freshness, not delivery-time freshness.
+
+Historical App01 passed 17 journeys on source `1681abdb50a75056bdf724addae5c6549c488044`. Its images retain that provenance in [storage commit de3c263](https://github.com/millZach/Sotto/tree/de3c2634853e8364336dc4d850f8e835fc131a0d/artifacts/watcher-room-state); they are not relabeled as App04 proof. Existing App01 start/exit/cleanup records remain historical. ADR0073 and CONTEXT record the publication rule. No installed release or live-provider proof is claimed.
