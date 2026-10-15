@@ -165,9 +165,10 @@ it('fences a wake-up at the native writer when Watcher stops its worker during p
   } finally { gate.release() }
 }, 60_000)
 
-// A takeover keeps a dispatching item and removes a failed one, and Watcher read the failure from that item at the next
-// snapshot. An idle thread may send none, and a failed item the takeover removed left its send dispatching for good.
-it.each(['while it is dispatching', 'just after its failure is saved'])('fails a queued send whose dispatch fails when the user takes over %s, without another snapshot', async when => {
+// A takeover keeps a dispatching item and removes a failed one, and Watcher reads a queued send's failure from its item.
+// The pump lets Watcher read it as soon as the failure is saved; a cancel that removes the item first reports it instead.
+// Either way the send is failed and refunded once, and the taken-over thread holds no reservation.
+it.each(['while it is dispatching', 'just after its failure is saved'])('fails a queued send whose dispatch fails when the user takes over %s', async when => {
   const f = await fixture(), gate = heldOperation()
   const queued = (await f.tools.call(f.id, 'send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: f.target, delivery: 'queue', text: 'Synthetic failing queue' })).structuredContent!
   expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
@@ -192,8 +193,8 @@ it.each(['while it is dispatching', 'just after its failure is saved'])('fails a
     await f.native.driver.completeTurn(f.binding.sessionId, 'Synthetic completion before the queue')
     await gate.entered
     expect(f.service.state().receipts.find(item => item.id === operationId)?.deliveryState).toBe('dispatching')
-    // No snapshot reaches Watcher from here, as when the thread is idle and nothing polls it.
-    const silenced = vi.spyOn(f.service, 'observe').mockImplementation(() => undefined)
+    // From here Watcher observes nothing, not even the pump's read after the failure, so only the cancel's report can record it.
+    const silenced = when === 'while it is dispatching' ? undefined : vi.spyOn(f.service, 'observe').mockImplementation(() => undefined)
     if (when === 'while it is dispatching') takeover()
     gate.release()
     await vi.waitFor(() => expect(f.service.state().receipts.find(item => item.id === operationId)?.deliveryState).toBe('failed'))
@@ -204,7 +205,7 @@ it.each(['while it is dispatching', 'just after its failure is saved'])('fails a
     const messageId = f.service.state().receipts.find(item => item.id === operationId)!.messageId; expect(messageId).toBeTruthy()
     expect((await f.native.driver.requests()).some(item => item.method === 'turn/start' && item.params?.clientUserMessageId === messageId)).toBe(false)
     // Were the same message to show up in the thread after all, the send was delivered and takes its refunded prompt back.
-    silenced.mockRestore()
+    silenced?.mockRestore()
     const snapshot = structuredClone(f.control.watcherSnapshot()), thread = snapshot.threads.find(item => item.id === f.target.threadId)!
     thread.messages.push({ ...thread.messages.findLast(item => item.role === 'user')!, id: messageId! })
     f.service.observe(snapshot, new Set())
