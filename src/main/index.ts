@@ -1079,6 +1079,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     keepWidgetVisibleDuringPaste: platform === 'linux',
     ...(platform === 'linux' ? { preparePasteText: sanitizeLinuxPasteText } : {}),
   })
+  // Copy image waits for any dictation still being pasted, and only an image Electron can read reaches the clipboard.
+  // A test run never touches the real clipboard; Wayland goes through wl-copy like text does.
+  const imageClipboard = {
+    writePng: (png: Buffer): Promise<void> => output.afterDeliveries(async () => {
+      const image = nativeImage.createFromBuffer(png)
+      if (image.isEmpty()) throw new Error('Unreadable image')
+      if (e2eState !== null) return
+      if (linuxClipboard !== null && await linuxClipboard.writePng(png).then(() => true, () => false)) return
+      clipboard.writeImage(image)
+    }),
+  }
 
   const copyOutput = async (text: string): Promise<void> => {
     await output.deliver(text, { autoPaste: false, pasteDelayMs: 0 })
@@ -1503,6 +1514,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           publishWidgetState,
         },
         output,
+        imageClipboard,
         transcriptPolish: {
           polish: (text, asr) => transcriptPolish.polish(text, asr),
         },

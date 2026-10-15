@@ -138,6 +138,8 @@ A screenshot longer than 2576 pixels on either side is scaled down to that as it
 
 A screenshot is kept once, as a file on the computer that runs the thread (the host, for a thread on a remote host), from the moment you attach it until nothing needs it: not an unsent draft, not a queued message, and not a sent message's preview, which lasts seven days. An hour after that it is removed. With **Keep local history** off, a newly attached screenshot stays in memory instead, so an unsent draft or queued message comes back from a restart without it; a queued message that lost one waits, paused, and says so.
 
+A screenshot in a sent message opens large when you press it. It fills the thread's pane, with the sidebar and other panes still in view, and fits the pane without being enlarged. Zoom with the scroll wheel, the + and − keys or the buttons above it, drag a zoomed image or use the arrow keys to move it, and press 0 to fit it again. When the message holds more than one screenshot, a strip under the image shows them all: press one, or use the Left and Right arrow keys, to move between them; the Up and Down keys and dragging still move a zoomed image. **Copy image** (or Ctrl+C, Command+C on a Mac) puts the image on the clipboard, ready to paste into another app. Escape or **Close image** closes it. Right-click a screenshot in the transcript, or press Shift+F10 with it focused, for **Open image** and **Copy image** without opening it.
+
 If a kept screenshot disappears or is damaged, sending stops and asks you to remove it and attach it again. Attaching the same image restores its copy before you send.
 
 You can create a thread from the Threads page while another thread has a saved draft. The draft stays with its original thread.

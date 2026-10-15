@@ -61,3 +61,38 @@ export async function writeClipboard(text: string): Promise<void> {
   if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable')
   await navigator.clipboard.writeText(text)
 }
+
+/**
+ * Puts an image on the clipboard through main, which owns it. The window redraws the image as a PNG first, so any
+ * format it can show (PNG, JPEG, WebP, GIF) arrives in the one format every app pastes.
+ */
+export async function writeClipboardImage(source: string): Promise<void> {
+  const copy = window.sotto?.copyImage
+  if (!copy) throw new Error('Clipboard unavailable')
+  const result = await copy({ dataUrl: await pngDataUrl(source) })
+  if (!result.ok) throw new Error('Clipboard unavailable')
+}
+
+/** Copy image with its feedback: "Copied image", or what went wrong and what to do. */
+export function useCopyImage(): [string | null, (source: string) => void] {
+  const [feedback, showFeedback] = useTransientFlag()
+  const copy = useCallback((source: string): void => {
+    void writeClipboardImage(source).then(() => showFeedback(COPIED_IMAGE), () => showFeedback('Could not copy the image. Try again.'))
+  }, [showFeedback])
+  return [feedback, copy]
+}
+export const COPIED_IMAGE = 'Copied image'
+
+async function pngDataUrl(source: string): Promise<string> {
+  if (source.startsWith('data:image/png;base64,')) return source
+  const image = new Image()
+  image.src = source
+  await image.decode()
+  const canvas = document.createElement('canvas')
+  canvas.width = image.naturalWidth
+  canvas.height = image.naturalHeight
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Image could not be drawn')
+  context.drawImage(image, 0, 0)
+  return canvas.toDataURL('image/png')
+}
