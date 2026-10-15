@@ -20,7 +20,9 @@ import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type Laun
  *
  * The other two stand an update in for Sotto's own (SOTTO_E2E_APP_UPDATE), which downloads nothing and never installs, and
  * a releases page that publishes the host it brings. forge's host is listed at once, aimed at that version, and one
- * press updates forge's clients, then forge's host to it, before the card asks to restart (ADR-0077 decision 6).
+ * press updates forge's clients, then forge's host to it, before the card asks to restart (ADR-0077 decision 6). The
+ * last presses Update all while the releases page has not answered for forge yet: forge joins the press once it does,
+ * and the card never asks to restart before forge's update is done.
  *
  *   npm run build && npx playwright test tests/e2e/update-all.spec.ts
  */
@@ -153,12 +155,14 @@ test('Update all lists what is behind on every machine and updates it with one p
 const PENDING = '0.1.37-owl.20261012.2'
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 interface AheadRun { readonly launched: LaunchedSotto; readonly page: Page; readonly steering: string; readonly requests: readonly string[]; readonly forgeId: string }
+/** Keeps the releases page's answers to Sotto's HEAD requests, which ask whether a host is published, while it is set. */
+interface HeadHold { held?: Promise<void> | undefined }
 
 /**
  * forge added over the scripted ssh, its host on this run's Owl version, and a releases page that publishes the host
  * Sotto's waiting update brings, for this machine, built from the same host as forge runs and saying it is PENDING.
  */
-async function withForgeBehindTheUpdate(prefix: string, run: (forge: AheadRun) => Promise<void>): Promise<void> {
+async function withForgeBehindTheUpdate(prefix: string, run: (forge: AheadRun) => Promise<void>, heads: HeadHold = {}): Promise<void> {
   const profile = (await ownedE2EProfile({ prefix })).directory
   const root = join(profile, 'ssh-root')
   await mkdir(join(root, '~', 'code'), { recursive: true })
@@ -168,7 +172,8 @@ async function withForgeBehindTheUpdate(prefix: string, run: (forge: AheadRun) =
   const file = localArchiveName(PENDING)
   const archive = tarGz(hostRelease(PENDING, await readFile(join(install, 'host', 'index.js'), 'utf8'), { commonjs: true }))
   // Each answer is held back a little, so the host's download can be seen under way.
-  const releases = await releasesPage(new Map<string, Uint8Array | string>([[`/v${PENDING}/${file}`, archive], [`/v${PENDING}/${file}.sha256`, sidecar(archive, file)]]), 1500)
+  const releases = await releasesPage(new Map<string, Uint8Array | string>([[`/v${PENDING}/${file}`, archive], [`/v${PENDING}/${file}.sha256`, sidecar(archive, file)]]), 1500,
+    ({ method }) => method === 'HEAD' ? heads.held : undefined)
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: false, reducedMotion: 'on' }))
   const modeFile = join(root, 'mode')
   const steering = join(root, 'client-updates')
@@ -280,21 +285,36 @@ test('Update all updates forge’s clients, then forge’s host to the version S
   })
 })
 
-test('With every client current, Update all is Sotto’s download, forge’s host and the restart', async () => {
+test('With every client current, one press made before forge’s check ends covers Sotto’s download, forge’s host and the restart', async () => {
   test.setTimeout(300_000)
   await mkdir(hostsEvidence, { recursive: true })
-  await withForgeBehindTheUpdate('sotto-e2e-update-all-host-', async ({ launched, page, forgeId }) => {
+  const heads: HeadHold = {}
+  await withForgeBehindTheUpdate('sotto-e2e-update-all-host-', async ({ launched, page, forgeId, requests }) => {
     // forge's clients are brought up to date first, from its own update line, so only Sotto and forge's host are behind.
     await page.evaluate(id => window.sotto!.hosts!.updateClients({ id, action: 'update', providers: ['claude', 'codex', 'grok'] }), forgeId)
     await expect.poll(() => updates(page), { timeout: 60_000 }).toEqual({ claude: 'updated 2.1.284', codex: 'updated 0.158.0', grok: 'updated 1.0.43' })
+    // The releases page keeps its answer about forge's host while the card is looked at and pressed. Sotto gives a HEAD
+    // request 15 seconds, so everything until the answer is let go stays well inside that.
+    let answer = (): void => undefined
+    heads.held = new Promise<void>(resolve => { answer = resolve })
     await page.evaluate(() => window.sotto!.checkForUpdates())
     const card = page.getByRole('region', { name: 'Updates' })
-    await expect.poll(() => stepNames(page), { timeout: 30_000 }).toEqual(['Download Sotto Owl, to do', 'Update forge’s host, to do', 'Restart Sotto, comes last'])
+    await expect.poll(() => stepNames(page), { timeout: 30_000 }).toEqual(['Download Sotto Owl, to do', 'Update forge’s host, checking for its update', 'Restart Sotto, comes last'])
+    // Only forge's own system's archive is asked about.
+    await expect.poll(() => requests.filter(path => path.startsWith(`/v${PENDING}/`))).toEqual([`/v${PENDING}/${localArchiveName(PENDING)}`])
     await expect(card.locator('.update-all__notes')).toHaveCount(0)
-    await captureCard(launched, 'offer-host')
+    await captureCard(launched, 'offer-host-checking', [[1280, 800], [820, 560]])
 
+    // Pressed before the answer: Sotto's download runs and finishes, forge waits for its answer, and nothing offers the restart.
     await card.getByRole('button', { name: 'Update all: Sotto and forge' }).click()
-    // The releases page holds each answer back, so the host's download is seen under way.
+    await expect(card.getByRole('listitem', { name: 'Download Sotto Owl, done' })).toBeVisible({ timeout: 30_000 })
+    await expect(card.getByRole('listitem', { name: 'Update forge’s host, checking for its update' })).toBeVisible()
+    await expect(card).toContainText('1 of 3 done')
+    await expect(card.getByRole('button', { name: /^Restart Sotto now/u })).toHaveCount(0)
+    await captureCard(launched, 'running-host-checking', [[1280, 800]])
+    answer(); heads.held = undefined
+
+    // forge joins the press. The releases page holds each answer back, so the host's download is seen under way.
     await expect(card.getByRole('listitem', { name: 'Update forge’s host, in progress' })).toContainText(/Step [12] of 4/u, { timeout: 30_000 })
     await captureCard(launched, 'running-host', [[1280, 800], [820, 560]])
 
@@ -304,5 +324,5 @@ test('With every client current, Update all is Sotto’s download, forge’s hos
     // Later folds the card and keeps the download; forge keeps running ahead until Sotto restarts.
     await card.getByRole('button', { name: /^Later/u }).click()
     await expect(page.getByRole('button', { name: 'Restart to finish. Show updates' })).toBeFocused()
-  })
+  }, heads)
 })

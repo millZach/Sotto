@@ -3,7 +3,7 @@ import type { AgentClientHost, ProviderClientUpdate } from '../../../src/shared/
 import type { UpdateStatus } from '../../../src/shared/contracts'
 import type { HostStatus } from '../../../src/shared/hosts'
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
-import { clientKey, hostKey, updateAllSteps, updateAllView, updateAllWords, type UpdateAllPass, type UpdateAllSources } from '../../../src/renderer/src/features/updates/updateAll'
+import { clientKey, hostKey, updateAllSteps, updateAllView, updateAllWords, versionsText, type UpdateAllPass, type UpdateAllSources } from '../../../src/renderer/src/features/updates/updateAll'
 
 const FORGE = '6f0d1c5e-8c5b-4f8e-9a51-1f6f3f8d2a10'
 const FORGE_HOST = '2a6c8e41-3b8f-4d4e-8a3f-7d1c2b9e5f60'
@@ -221,8 +221,78 @@ describe('the steps (ADR-0077, layout C)', () => {
     expect(restarted).toMatchObject({ phase: 'done', finished: 2, total: 2 })
   })
 
+  it('counts every step shown, a download finished before the press among them (Sol, review)', () => {
+    // Sotto was downloaded first, from the update control; then a press updates forge's host.
+    const view = updateAllView(sources({ app: owl({ phase: 'downloaded', version: waiting.version, problem: null }), hostUpdates: [{ ...forgeHost, phase: 'updating', step: 'download' }] }),
+      pass([hostKey(FORGE)]))
+    const steps = updateAllSteps(view, { working: 0, resumes: true })
+    expect(steps.map(step => step.state)).toEqual(['done', 'running', 'last'])
+    expect(view).toMatchObject({ phase: 'running', total: steps.length, finished: 1 })
+    expect(updateAllWords(view)).toMatchObject({ sub: '1 of 3 done', pill: 'Updating · 1 of 3' })
+  })
+
+  it('carries versions as a pair and words them only for the card (Sol, review)', () => {
+    const view = updateAllView(both(), null)
+    expect(view.sotto).toEqual({ from: '0.1.38-owl.20261014.1', to: '0.1.38-owl.20261014.2' })
+    expect(view.items.find(item => item.kind === 'host')!.versions).toEqual({ from: '0.1.38-owl.20261014.1', to: '0.1.38-owl.20261014.2' })
+    expect(view.fingerprint).toContain(`${hostKey(FORGE)}@0.1.38-owl.20261014.1 → 0.1.38-owl.20261014.2`)
+    expect(versionsText({ from: '2.4.1' })).toBe('2.4.1')
+  })
+
   it('has no restart step where Sotto cannot update itself', () => {
     const view = updateAllView(sources({ app: owl({ phase: 'unsupported' }), local: [client()] }), null)
     expect(updateAllSteps(view, { working: 0, resumes: true }).map(step => step.title)).toEqual(['Update Claude Code'])
+  })
+})
+
+describe('a host still being checked (ADR-0077, Sol, review)', () => {
+  const owl = (phase: UpdateStatus['phase']): UpdateStatus => ({ currentVersion: '0.1.38-owl.20261014.1', releaseTrack: 'owl', phase, checkedAt: 1 })
+  const downloaded = owl({ phase: 'downloaded', version: '0.1.38-owl.20261014.2', problem: null })
+  const forgeOnOwl = { ...forge, version: '0.1.38-owl.20261014.1', owned: true } as HostStatus
+
+  it('is a step one press covers, and keeps the restart back while the releases page is asked', () => {
+    const view = updateAllView(sources({ app: downloaded, hosts: [forgeOnOwl], hostChecks: [FORGE] }), null)
+    // Not the restart: the host may be offered the new version in a moment.
+    expect(view.phase).toBe('offer')
+    expect(updateAllSteps(view, { working: 0, resumes: true }).map(step => [step.title, step.state, step.versions, step.detail])).toEqual([
+      ['Download Sotto Owl', 'done', undefined, 'This computer · Downloaded. It installs when Sotto restarts.'],
+      ['Update forge’s host', 'checking', undefined, 'Checking the releases page for its update…'],
+      ['Restart Sotto', 'last', undefined, 'Last. Sotto asks before it restarts.'],
+    ])
+    expect(updateAllWords(view)).toMatchObject({ summary: 'forge', pill: 'Update all' })
+  })
+
+  it('takes the place of an offer the check may change, and of nothing at all', () => {
+    const offered = updateAllView(sources({ app: downloaded, hostUpdates: [hostUpdate({ to: '0.1.38-owl.20261014.1' })], hostChecks: [FORGE] }), null)
+    expect(offered.items.map(item => [item.key, item.state])).toEqual([['sotto', 'done'], [hostKey(FORGE), 'checking']])
+    // A host already updating keeps its own step.
+    const updating = updateAllView(sources({ app: downloaded, hostUpdates: [hostUpdate({ phase: 'updating', step: 'install' })], hostChecks: [FORGE] }), pass([hostKey(FORGE)]))
+    expect(updating.items[1]).toMatchObject({ state: 'running' })
+  })
+
+  it('holds the restart back for a host whose step is not its check, and gives a host Sotto did not start no check step', () => {
+    // forge waits for its threads; the releases page is still asked about the version it is to get.
+    const waitingHost = updateAllView(sources({ app: downloaded, hostUpdates: [hostUpdate({ phase: 'waiting', working: 1 })], hostChecks: [FORGE] }), null)
+    expect(waitingHost.items[1]).toMatchObject({ state: 'waiting' })
+    expect(waitingHost.phase).toBe('offer')
+    // A host Sotto did not start keeps its commands, and the press does not name it.
+    const notOurs = updateAllView(sources({ app: downloaded, hosts: [{ ...forgeOnOwl, owned: false } as HostStatus], hostChecks: [FORGE] }), null)
+    expect(notOurs.items.map(item => item.state)).toEqual(['done'])
+    expect(notOurs.phase).toBe('offer')
+    expect(updateAllWords(notOurs).summary).not.toContain('forge')
+  })
+
+  it('runs while a press waits for the answer, and asks to restart once there is nothing more', () => {
+    const waitingForIt = updateAllView(sources({ app: downloaded, hosts: [forgeOnOwl], hostChecks: [FORGE] }), pass(['sotto', hostKey(FORGE)], { joining: new Set([FORGE]) }))
+    expect(waitingForIt.phase).toBe('running')
+    expect(updateAllWords(waitingForIt)).toMatchObject({ title: 'Updating', sub: '1 of 3 done' })
+    // The page had nothing for it: no step, and the restart is next.
+    const nothing = updateAllView(sources({ app: downloaded, hosts: [forgeOnOwl] }), pass(['sotto', hostKey(FORGE)], { joining: new Set([FORGE]) }))
+    expect(nothing.phase).toBe('restart')
+    // It had the new version: the host's update reads as starting until the card starts it.
+    const offered = updateAllView(sources({ app: downloaded, hosts: [forgeOnOwl], hostUpdates: [hostUpdate({ from: '0.1.38-owl.20261014.1', to: '0.1.38-owl.20261014.2' })] }),
+      pass(['sotto', hostKey(FORGE)], { joining: new Set([FORGE]) }))
+    expect(offered.phase).toBe('running')
+    expect(offered.items[1]).toMatchObject({ state: 'running', detail: 'Starting…', target: '0.1.38-owl.20261014.2' })
   })
 })

@@ -40,7 +40,8 @@ rail between the marks that turns green once a step is done. **Download Sotto Ow
 name before its detail), each host's own update (**Update forge's host**) after that host's clients, and last
 **Restart Sotto**, which reads "Last. Sotto asks before it restarts." until the restart is ready and then says what it
 installs and what happens to the threads on this computer that it stops. The head carries Sotto's own versions once
-("installed → published"), or how far a press has come ("1 of 5 done", the restart counted), while it runs. Each
+("installed → published"), or, while a press runs, how many of the steps shown are done ("1 of 5 done": every step
+in the list counts, the restart and a download finished before the press among them). Each
 sentence is said once: what a step says is not repeated below the list, and a note stays below only when no step says
 it ("Threads keep working while clients update.", or that a host still waiting for its threads is offered again if
 Sotto restarts first). Try again, Stop N threads and update, Cancel update and Copy commands stay inside their step. A
@@ -90,10 +91,19 @@ host is updated ahead). A host whose earlier update this session is done is offe
 computer's clients; each host's clients and then that host's own update to the pending version; last, Restart now.
 Before a host is offered the pending version, main asks the releases page with a HEAD request whether
 `Sotto-host-<version>-<platform>-<arch>.tar.gz` and its `.sha256` are published (github.com, already contacted for
-updates; a redirect counts as published and is not followed). Until Sotto has heard a host's system from its own
-download, any system's archive answers; a host whose own is missing is told so by its download, as before, and is
-then asked about its own system. When nothing is published, or the page does not answer, the host stays aimed at the
-running version and is offered the new one after the restart, as before. The page is asked again when the update
+updates; a redirect counts as published and is not followed). It asks for the host's own system only. The launch
+script reports it with every launch over SSH (`linux-x64`, the pair the archive's name carries), and the tailnet store
+keeps it for a host reached over its tailnet, where no launch runs. A host whose system Sotto has not heard, because it
+has never launched or reached it over SSH, is asked nothing: another system's archive says nothing about its own, so
+it is offered the new version after the restart, as before. When nothing is published, or the page does not answer,
+the host stays aimed at the running version and is offered the new one after the restart, as before.
+
+While the page has not answered, the card lists a host Sotto started as a step, "Checking the releases page for its
+update…", and Update all covers it; a host Sotto did not start keeps its commands. A press made then starts everything else and records the host, which joins the press once the
+answer comes, aimed at whatever it found: the new version, this computer's own, or nothing, when it leaves the press.
+It still waits for the clients the press asked of it. A check that begins while a press runs, as when the page is asked
+again because Sotto's download moved on, joins the same way. The card never offers the restart while a host's check is
+pending or its update is running. The page is asked again when the update
 moves to another phase (never for a download's progress), so a host archive uploaded after the installer is found at
 the next check. An update already under way keeps the version it started with, and a host newer than
 the target is never taken down. This follows the `update-all` switch, read once at start: stable aims hosts at the
@@ -117,3 +127,6 @@ runs the same press.
 - A window reloaded during a press loses only the press's own bookkeeping: what had started finishes in main, and a host
   still waiting for its clients is offered again.
 - The update control, Settings → Providers and Settings → Hosts keep their own presses on Owl.
+- Every launch over SSH, including an admin connection's, now tells this computer the host's system, and a host's
+  tailnet entry keeps it. A host this build has only reached over its tailnet has no system yet, so its first update
+  after this build still comes after Sotto restarts; that update's own SSH connection records the system for the next.

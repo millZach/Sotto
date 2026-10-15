@@ -47,7 +47,7 @@ function StepMark({ step }: { readonly step: UpdateAllStep }): ReactNode {
   const { item, state } = step
   if (state === 'done') return <Check size={12} aria-hidden="true" />
   if (state === 'failed') return <AlertTriangle size={12} aria-hidden="true" />
-  if (state === 'running') return <LoaderCircle size={12} aria-hidden="true" className="update-all__spin" />
+  if (state === 'running' || state === 'checking') return <LoaderCircle size={12} aria-hidden="true" className="update-all__spin" />
   if (state === 'waiting' || state === 'last') return <Clock size={12} aria-hidden="true" />
   if (item?.kind === 'client') return <ProviderMark provider={item.provider} name={item.name} size={12} />
   if (item?.kind === 'host') return <Server size={12} aria-hidden="true" />
@@ -57,7 +57,7 @@ function StepMark({ step }: { readonly step: UpdateAllStep }): ReactNode {
 /** What a screen reader hears after a step's title. */
 const STATE_WORDS: Record<UpdateAllStepState, string> = {
   offered: 'to do', running: 'in progress', waiting: 'waiting for its threads', done: 'done', failed: 'did not finish', 'by-hand': 'yours to do',
-  last: 'comes last', ready: 'ready',
+  checking: 'checking for its update', last: 'comes last', ready: 'ready',
 }
 
 function StepRow({ step, busy, onRetry, onStopThreads, onCancel }: {
@@ -74,7 +74,7 @@ function StepRow({ step, busy, onRetry, onStopThreads, onCancel }: {
   const actions = item ? [
     item.state === 'failed' ? <Button key="retry" variant="secondary" disabled={busy} aria-label={`Try again to update ${item.name}${where}`} onClick={() => onRetry(item)}>Try again</Button> : null,
     item.state === 'waiting' ? <Button key="stop" variant="secondary" disabled={busy} aria-label={`Stop ${threads}${where} and update its host now`} onClick={() => onStopThreads(item)}>Stop {threads} and update</Button> : null,
-    item.cancellable ? <Button key="cancel" variant="ghost" disabled={busy} aria-label={`Cancel update, and leave ${item.machine.kind === 'host' ? item.machine.name : item.name} on ${item.versions.split(' → ')[0]}`} onClick={() => onCancel(item)}>Cancel update</Button> : null,
+    item.cancellable ? <Button key="cancel" variant="ghost" disabled={busy} aria-label={`Cancel update, and leave ${item.machine.kind === 'host' ? item.machine.name : item.name} on ${item.versions.from}`} onClick={() => onCancel(item)}>Cancel update</Button> : null,
     item.commands ? <Button key="copy" variant="ghost" aria-label={`Copy the commands that update ${item.name}${where}`} onClick={copy}><Copy size={13} aria-hidden="true" />{copied ?? 'Copy commands'}</Button> : null,
   ].filter(Boolean) : []
   // The step's name is what it does and how it stands, and its versions and sentence describe it, so a reader that
@@ -94,6 +94,10 @@ function StepRow({ step, busy, onRetry, onStopThreads, onCancel }: {
 }
 
 const EMPTY_PASS: UpdateAllPass = { touched: new Set(), after: new Set(), refused: new Map(), ranBefore: new Map() }
+const hostOf = (item: UpdateAllItem): string | undefined => item.machine.kind === 'host' ? item.machine.id : undefined
+/** Whether a client the press asked for on this saved host is still going. */
+const clientsRunning = (pass: UpdateAllPass, items: readonly UpdateAllItem[], id: string): boolean =>
+  items.some(item => item.kind === 'client' && hostOf(item) === id && pass.touched.has(item.key) && item.state === 'running')
 /** The versions a press asks hosts to update to, by item, added to those it asked for before. */
 const targetsWith = (before: ReadonlyMap<string, string> | undefined, items: readonly UpdateAllItem[]): Map<string, string> =>
   new Map([...before ?? [], ...items.flatMap(item => item.target ? [[item.key, item.target] as const] : [])])
@@ -126,6 +130,7 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
   const localHostId = state?.connections?.find(connection => connection.kind === 'local')?.hostId
   const sources = {
     app: app?.update ?? null, hosts: hostsState?.hosts ?? [], localHostId, clientHosts: state?.host.clientHosts ?? [], hostUpdates: hostsState?.updates ?? [],
+    hostChecks: hostsState?.updateChecks ?? [],
     local: state?.host.clientHosts?.find(host => host.hostId === localHostId)?.clientUpdates ?? state?.clientUpdates ?? [],
   }
   const view = updateAllView(sources, pass)
@@ -180,12 +185,15 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
   const start = useCallback((): void => {
     // A Sotto download that failed goes again too, as Settings' Download did before Update all took its place.
     const offered = latest.current.view.items.filter(item => item.state === 'offered' || item.kind === 'app' && item.state === 'failed')
-    if (!offered.length) return
-    const hostOf = (item: UpdateAllItem): string | undefined => item.machine.kind === 'host' ? item.machine.id : undefined
+    // A host the releases page is still being asked about joins the press once the answer comes, not before, so it is
+    // aimed at what the answer says (ADR-0077).
+    const checking = latest.current.view.items.filter(item => item.state === 'checking')
+    if (!offered.length && !checking.length) return
     const clients = offered.filter(item => item.kind === 'client')
     const after = new Set(offered.filter(item => item.kind === 'host' && clients.some(client => hostOf(client) === hostOf(item))).flatMap(item => hostOf(item) ?? []))
-    setPass({ touched: new Set(offered.map(item => item.key)), after, refused: new Map(),
-      ranBefore: new Map(clients.map(item => [item.key, clientUpdate(item)?.ranAt] as const)), targets: targetsWith(undefined, offered) })
+    setPass({ touched: new Set([...offered, ...checking].map(item => item.key)), after, refused: new Map(),
+      ranBefore: new Map(clients.map(item => [item.key, clientUpdate(item)?.ranAt] as const)), targets: targetsWith(undefined, offered),
+      joining: new Set(checking.flatMap(item => hostOf(item) ?? [])) })
     setFolded(false); setFailure(null); setDismissed(null)
     if (offered.some(item => item.kind === 'app')) download()
     const byMachine = new Map<string, ProviderId[]>()
@@ -204,15 +212,35 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     if (!done.length) return
     setPass(current => current && { ...current, kept: new Map([...current.kept ?? [], ...done.map(item => [item.key, item] as const)]) })
   }, [pass, view])
-  // A host whose clients the press asked for updates once none of them is still going, so its restart cuts none off.
+  // A host whose clients the press asked for updates once none of them is still going, so its restart cuts none off, and
+  // once the releases page has answered for it, so it is aimed at what the answer says.
   useEffect(() => {
     if (!pass?.after.size) return
-    const due = [...pass.after].filter(id => !view.items.some(item => item.kind === 'client' && item.machine.kind === 'host' && item.machine.id === id
-      && pass.touched.has(item.key) && item.state === 'running'))
+    const due = [...pass.after].filter(id => !clientsRunning(pass, view.items, id) && !sources.hostChecks.includes(id))
     if (!due.length) return
     setPass(current => current && { ...current, after: new Set([...current.after].filter(id => !due.includes(id))) })
     for (const id of due) void updateHost(id)
-  }, [pass, view, updateHost])
+  }, [pass, view, sources.hostChecks, updateHost])
+  // A host the press covers while the releases page is asked about it joins once the answer comes: an update it is offered
+  // then runs after the clients the press asked of it, and a host with nothing to update leaves the press. One whose check
+  // begins while the press runs, as when Sotto's download moves on and the page is asked again, joins the same way.
+  useEffect(() => {
+    if (!pass?.joining) return
+    const joining = pass.joining, checks = sources.hostChecks
+    const begun = view.items.filter(item => item.state === 'checking').flatMap(item => hostOf(item) ?? []).filter(id => !joining.has(id))
+    const ended = [...joining].filter(id => !checks.includes(id))
+    if (!begun.length && !ended.length) return
+    // An ended host the press now offers an update reads as starting; one with nothing to update has no such step. A host
+    // already waiting for its clients is started by that wait, never twice.
+    const joins = view.items.filter(item => item.kind === 'host' && item.state === 'running' && ended.includes(hostOf(item) ?? '') && !pass.after.has(hostOf(item)!))
+    const waits = joins.flatMap(item => hostOf(item) ?? []).filter(id => clientsRunning(pass, view.items, id))
+    setPass(current => current && { ...current,
+      joining: new Set([...[...current.joining ?? []].filter(id => !ended.includes(id)), ...begun]),
+      touched: new Set([...current.touched, ...begun.map(hostKey)]),
+      after: new Set([...current.after, ...waits]),
+      targets: targetsWith(current.targets, joins) })
+    for (const item of joins) if (!waits.includes(hostOf(item)!)) void updateHost(hostOf(item)!)
+  }, [pass, view, sources.hostChecks, updateHost])
 
   /** A press whose button goes with it leaves focus on the card's own first control, never on the page behind. */
   const keepFocus = useCallback((): void => {
@@ -318,7 +346,8 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
       <PhaseGlyph phase={view.phase} failed={failed} /><span>{words.pill}</span>
     </button>
   }
-  const offered = view.items.filter(item => item.state === 'offered').length
+  // A host still being checked is covered by the press, so Update all stays offered for it.
+  const offered = view.items.filter(item => item.state === 'offered' || item.state === 'checking').length
   const actions = view.phase === 'offer'
     ? offered
       ? <><Button variant="primary" disabled={busy} aria-label={`Update all: ${words.summary}`} onClick={start}>Update all</Button>

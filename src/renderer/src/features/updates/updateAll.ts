@@ -15,16 +15,21 @@ export type UpdateAllMachine =
   | { readonly kind: 'host'; readonly id: string; readonly name: string }
 /**
  * `offered` until a press; `running` while it goes, and between the press and its updater taking it; `waiting` for a
- * host's working threads to finish; `by-hand` when Sotto cannot do it and shows how.
+ * host's working threads to finish; `by-hand` when Sotto cannot do it and shows how; `checking` while the releases page
+ * is asked whether a host's update to the version Sotto is downloading is published (ADR-0077).
  */
-export type UpdateAllItemState = 'offered' | 'running' | 'waiting' | 'done' | 'failed' | 'by-hand'
+export type UpdateAllItemState = 'offered' | 'running' | 'waiting' | 'done' | 'failed' | 'by-hand' | 'checking'
+/** What is installed, and what an update installs while there is one: `to` is absent once it is done. */
+export interface UpdateAllVersions { readonly from: string; readonly to?: string | undefined }
+/** "installed → published", or what is installed: the only place versions become words. */
+export const versionsText = (versions: UpdateAllVersions): string => versions.to === undefined ? versions.from : `${versions.from} → ${versions.to}`
+const sameVersions = (left: UpdateAllVersions, right: UpdateAllVersions | undefined): boolean => left.from === right?.from && left.to === right.to
 export interface UpdateAllItem {
   readonly key: string
   readonly machine: UpdateAllMachine
   readonly kind: 'app' | 'client' | 'host'
   readonly name: string
-  /** "installed → published", or what is installed once it is done. */
-  readonly versions: string
+  readonly versions: UpdateAllVersions
   readonly state: UpdateAllItemState
   readonly detail: string
   /** How far Sotto's download has come, while it downloads. */
@@ -47,6 +52,8 @@ export interface UpdateAllSources {
   readonly localHostId?: string | undefined
   readonly clientHosts: readonly AgentClientHost[]
   readonly hostUpdates: readonly HostUpdateState[]
+  /** Saved hosts whose update to the version Sotto is downloading is still being asked about (ADR-0077). */
+  readonly hostChecks?: readonly string[] | undefined
 }
 /** What one press of Update all set going, kept by the card until it is put away. */
 export interface UpdateAllPass {
@@ -62,18 +69,24 @@ export interface UpdateAllPass {
   readonly kept?: ReadonlyMap<string, UpdateAllItem> | undefined
   /** The version each host the press asked for was to get, so a newer one offered later is not read as the press's. */
   readonly targets?: ReadonlyMap<string, string> | undefined
+  /**
+   * Set by a press of Update all, not by a step's own Try again: the saved hosts it covers whose check of the releases
+   * page had not ended. Each joins the press once its check does, aimed at what the check found, and the restart waits
+   * for it (ADR-0077). A host whose check begins while the press is under way joins it the same way.
+   */
+  readonly joining?: ReadonlySet<string> | undefined
 }
 export type UpdateAllPhase = 'hidden' | 'offer' | 'running' | 'restart' | 'done'
 export interface UpdateAllView {
   readonly phase: UpdateAllPhase
   readonly items: readonly UpdateAllItem[]
-  /** What the press counts: the items it touched, and how many of those have finished. */
+  /** The steps the card shows, the restart counted, and how many of them are done. */
   readonly total: number
   readonly finished: number
   /** The version Sotto installs when it restarts. */
   readonly ready?: string | undefined
-  /** Sotto's own "installed → published", which the card's head carries once for every step. */
-  readonly sotto?: string | undefined
+  /** Sotto's own versions, which the card's head carries once for every step. */
+  readonly sotto?: UpdateAllVersions | undefined
   /** What a Not now puts away: everything offered as it is now. */
   readonly fingerprint: string
 }
@@ -95,7 +108,7 @@ function appItem(app: UpdateStatus | null, pass: UpdateAllPass | null): UpdateAl
   const refused = pass?.refused.get(APP_KEY)
   const { phase } = app
   if (phase.phase === 'available') {
-    const versions = `${app.currentVersion} → ${phase.version}`
+    const versions = { from: app.currentVersion, to: phase.version }
     if (refused || touched && phase.problem !== null && phase.failedStep === 'download') {
       return { ...base, versions, state: 'failed', detail: refused ?? phase.problem ?? 'The download did not finish. Nothing was installed.' }
     }
@@ -103,12 +116,12 @@ function appItem(app: UpdateStatus | null, pass: UpdateAllPass | null): UpdateAl
     return { ...base, versions, state: 'offered', detail: 'Downloads now, and installs when Sotto restarts.' }
   }
   if (phase.phase === 'downloading') {
-    return { ...base, versions: `${app.currentVersion} → ${phase.version}`, state: 'running', detail: `Downloading · ${phase.percent}%`, percent: phase.percent }
+    return { ...base, versions: { from: app.currentVersion, to: phase.version }, state: 'running', detail: `Downloading · ${phase.percent}%`, percent: phase.percent }
   }
   if (phase.phase === 'downloaded') {
-    return { ...base, versions: `${app.currentVersion} → ${phase.version}`, state: 'done', detail: 'Downloaded. It installs when Sotto restarts.' }
+    return { ...base, versions: { from: app.currentVersion, to: phase.version }, state: 'done', detail: 'Downloaded. It installs when Sotto restarts.' }
   }
-  if (phase.phase === 'failed' && touched) return { ...base, versions: app.currentVersion, state: 'failed', detail: refused ?? phase.problem ?? 'Sotto could not reach the update. Nothing was installed.' }
+  if (phase.phase === 'failed' && touched) return { ...base, versions: { from: app.currentVersion }, state: 'failed', detail: refused ?? phase.problem ?? 'Sotto could not reach the update. Nothing was installed.' }
   return undefined
 }
 
@@ -116,7 +129,7 @@ function clientItem(machine: UpdateAllMachine, update: ProviderClientUpdate, pas
   const key = clientKey(machine.kind === 'host' ? machine.id : 'local', update.id)
   const name = PROVIDER_LABELS[update.id]
   const touched = pass?.touched.has(key) === true
-  const behindVersions = update.published && update.published !== update.installed ? `${update.installed} → ${update.published}` : update.installed
+  const behindVersions = { from: update.installed, ...update.published && update.published !== update.installed ? { to: update.published } : {} }
   const base = { key, machine, kind: 'client' as const, name, provider: update.id, versions: behindVersions }
   const refused = pass?.refused.get(key)
   if (refused) return { ...base, state: 'failed', detail: refused }
@@ -127,7 +140,7 @@ function clientItem(machine: UpdateAllMachine, update: ProviderClientUpdate, pas
     const step = update.steps && update.steps > 1 ? `, step ${update.step ?? 1} of ${update.steps}` : ''
     return { ...base, state: 'running', detail: `Updating${step}…` }
   }
-  if (ranSincePress && update.state === 'updated') return { ...base, versions: update.installed, state: 'done', detail: `Now ${update.installed}.` }
+  if (ranSincePress && update.state === 'updated') return { ...base, versions: { from: update.installed }, state: 'done', detail: `Now ${update.installed}.` }
   if (ranSincePress && update.state === 'failed') {
     // What the installer printed stays where Sotto keeps it for each machine; the card says what happened and what next.
     const where = machine.kind === 'host' ? `Settings → Hosts shows what the installer said on ${machine.name}.` : 'Settings → Providers shows what the installer said.'
@@ -161,11 +174,11 @@ function hostItem(update: HostUpdateState, pass: UpdateAllPass | null): UpdateAl
   const { name, working } = update
   // A press touched this update only if it was for the version offered now: a newer one found later is a new offer.
   const touched = pass?.touched.has(key) === true && (pass.targets?.get(key) ?? update.to) === update.to
-  const base = { key, machine: { kind: 'host', id: update.id, name } as const, kind: 'host' as const, name: 'Sotto host', versions: `${update.from} → ${update.to}`, working, target: update.to }
+  const base = { key, machine: { kind: 'host', id: update.id, name } as const, kind: 'host' as const, name: 'Sotto host', versions: { from: update.from, to: update.to }, working, target: update.to }
   // A host's own note before any press, such as one still running thread management, explains rather than fails.
   const refused = pass?.refused.get(key) ?? (touched || update.phase === 'failed' ? update.error : undefined)
   const threads = plural(working, 'thread')
-  if (update.phase === 'done') return touched ? { ...base, versions: update.to, state: 'done', detail: `${name} runs Sotto host ${update.to}.` } : undefined
+  if (update.phase === 'done') return touched ? { ...base, versions: { from: update.to }, state: 'done', detail: `${name} runs Sotto host ${update.to}.` } : undefined
   if (update.phase === 'updating') {
     const step = update.step ?? 'download'
     return { ...base, state: 'running', detail: `Step ${HOST_UPDATE_STEPS.indexOf(step) + 1} of 4 · ${stepTitle(update, step)}`, cancellable: step === 'download' || step === 'check' }
@@ -188,6 +201,23 @@ function hostItem(update: HostUpdateState, pass: UpdateAllPass | null): UpdateAl
 }
 
 /**
+ * A host the releases page is still being asked about, for the version this computer is downloading (ADR-0077): in a
+ * moment it is offered that version, or its update to this computer's own, or nothing. Update all covers it either way.
+ */
+function checkingItem(host: HostStatus, update: HostUpdateState | undefined): UpdateAllItem {
+  return { key: hostKey(host.id), machine: { kind: 'host', id: host.id, name: host.name }, kind: 'host', name: 'Sotto host',
+    versions: { from: update?.from ?? host.version ?? '' }, state: 'checking', detail: 'Checking the releases page for its update…' }
+}
+/**
+ * Whether a host's step is its check: while it lasts, in place of an offer, or of nothing to show, for a host Sotto can
+ * update. A host Sotto did not start keeps its commands, which Update all never runs.
+ */
+function checksFirst(host: HostStatus, update: HostUpdateState | undefined, item: UpdateAllItem | undefined, sources: UpdateAllSources): boolean {
+  if (!sources.hostChecks?.includes(host.id)) return false
+  return update ? update.owned && (update.phase === 'needs' || update.phase === 'done' && !item) : host.owned === true
+}
+
+/**
  * Everything out of date, in the order one press runs it: Sotto's download, this computer's clients, then each host's
  * clients followed by the host's own update.
  */
@@ -204,7 +234,8 @@ export function updateAllItems(sources: UpdateAllSources, pass: UpdateAllPass | 
     if (host) items.push(...withKept(id, hostClients(host, sources, pass), pass))
     const update = sources.hostUpdates.find(item => item.id === id)
     const item = update && hostItem(update, pass)
-    if (item) items.push(item)
+    if (host && checksFirst(host, update, item, sources)) items.push(checkingItem(host, update))
+    else if (item) items.push(item)
   }
   return items
 }
@@ -227,28 +258,34 @@ function hostClients(host: HostStatus, sources: UpdateAllSources, pass: UpdateAl
   return (client.clientUpdates ?? []).flatMap(update => clientItem(machine, update, pass) ?? [])
 }
 
+/** Whether the list ends with the restart: whenever Sotto has a download, offered, under way or ready. */
+const restartsLast = (items: readonly UpdateAllItem[]): boolean => items.some(item => item.kind === 'app')
+
 export function updateAllView(sources: UpdateAllSources, pass: UpdateAllPass | null): UpdateAllView {
   const items = updateAllItems(sources, pass)
-  const touched = pass ? items.filter(item => pass.touched.has(item.key)) : []
-  const finished = touched.filter(item => item.state === 'done' || item.state === 'failed' || item.state === 'waiting').length
   const app = items.find(item => item.kind === 'app')
   const ready = app?.state === 'done' && sources.app?.phase.phase === 'downloaded' ? sources.app.phase.version : undefined
-  // What is still offered comes before the restart, so Sotto downloaded from the update control leaves the rest a press.
-  const phase: UpdateAllPhase = items.some(item => item.state === 'running') || (pass?.after.size ?? 0) > 0 ? 'running'
-    : items.some(item => item.state === 'offered') ? 'offer'
+  // What is still offered, or still being checked, comes before the restart, so Sotto downloaded from the update control
+  // leaves the rest a press, and a host the releases page has not answered for is never left behind by it: whatever its
+  // step, the restart waits for every answer. A press of Update all covers a host's check, so the press runs until it ends.
+  const unanswered = items.some(item => item.state === 'checking') || (sources.hostChecks?.length ?? 0) > 0
+  const phase: UpdateAllPhase = items.some(item => item.state === 'running') || (pass?.after.size ?? 0) > 0 || unanswered && pass?.joining !== undefined ? 'running'
+    : items.some(item => item.state === 'offered') || unanswered ? 'offer'
       : ready ? 'restart'
-        : pass && touched.length ? 'done'
+        : pass && items.some(item => pass.touched.has(item.key)) ? 'done'
           : items.length ? 'offer' : 'hidden'
   const fingerprint = items.filter(item => item.state === 'offered' || item.state === 'by-hand' || item.state === 'failed')
-    .map(item => `${item.key}@${item.versions}`).sort().join('|')
-  const sotto = app?.versions.includes(' → ') ? app.versions : undefined
-  return { phase, items, total: touched.length, finished, ready, sotto, fingerprint }
+    .map(item => `${item.key}@${versionsText(item.versions)}`).sort().join('|')
+  const sotto = app?.versions.to === undefined ? undefined : app.versions
+  // The count is the list's: every step shown, the restart among them, and those of them that are done.
+  const total = items.length + (restartsLast(items) ? 1 : 0)
+  return { phase, items, total, finished: items.filter(item => item.state === 'done').length, ready, sotto, fingerprint }
 }
 
 /** What the card and its pill say about where things stand. */
 export interface UpdateAllWords {
   readonly title: string
-  /** Under the title: Sotto's own versions, or how far a press has come. */
+  /** Under the title: Sotto's own versions, or how many of the steps shown are done while a press runs. */
   readonly sub: string
   /** What one press of Update all updates, which its button's name says: "Sotto, 2 clients and forge". */
   readonly summary: string
@@ -267,13 +304,10 @@ export interface UpdateAllContext {
 function machineName(item: UpdateAllItem): string {
   return item.machine.kind === 'host' ? `${item.machine.name}’s ${item.name === 'Sotto host' ? 'host' : item.name}` : item.name
 }
-/** The steps a press counts: the items it touched, and the restart that ends it when Sotto has a download. */
-function stepCount(view: UpdateAllView): number {
-  return view.total + (view.items.some(item => item.kind === 'app') ? 1 : 0)
-}
-
 export function updateAllWords(view: UpdateAllView): UpdateAllWords {
   const offered = view.items.filter(item => item.state === 'offered')
+  // A host still being checked is part of what a press covers, and of what its button names.
+  const covered = view.items.filter(item => item.state === 'offered' || item.state === 'checking')
   const failed = view.items.filter(item => item.state === 'failed')
   const waiting = view.items.filter(item => item.state === 'waiting')
   const didNot = failed.length ? `${listed(failed.map(machineName))} did not update.` : ''
@@ -285,25 +319,22 @@ export function updateAllWords(view: UpdateAllView): UpdateAllWords {
     : `${waitingNames} ${one ? 'updates' : 'update'} once ${one ? 'its' : 'their'} threads finish.`
   const app = offered.some(item => item.kind === 'app')
   const clients = offered.filter(item => item.kind === 'client').length
-  const hosts = [...new Set(offered.filter(item => item.kind === 'host').map(item => item.machine.kind === 'host' ? item.machine.name : ''))]
+  const hosts = [...new Set(covered.filter(item => item.kind === 'host').map(item => item.machine.kind === 'host' ? item.machine.name : ''))]
   const parts = [...app ? ['Sotto'] : [], ...clients ? [plural(clients, 'client')] : [], ...hosts]
   const summary = parts.length ? listed(parts) : 'Sotto cannot install these itself.'
   switch (view.phase) {
-    case 'running': {
-      const steps = stepCount(view)
-      return { title: 'Updating', sub: `${view.finished} of ${steps} done`, summary, notes: [], pill: `Updating · ${view.finished} of ${steps}` }
-    }
+    case 'running': return { title: 'Updating', sub: `${view.finished} of ${view.total} done`, summary, notes: [], pill: `Updating · ${view.finished} of ${view.total}` }
     // Each step says how it ended, and the restart step what restarting does; only a wait that a restart cuts short is left.
-    case 'restart': return { title: 'Restart to finish', sub: view.sotto ?? `Sotto ${view.ready}`, summary, notes: waits ? [waits] : [], pill: 'Restart to finish' }
+    case 'restart': return { title: 'Restart to finish', sub: view.sotto ? versionsText(view.sotto) : `Sotto ${view.ready}`, summary, notes: waits ? [waits] : [], pill: 'Restart to finish' }
     case 'done': return { title: failed.length ? 'Not everything updated' : 'Updated', sub: [didNot, waits].filter(Boolean).join(' ') || 'Nothing needs a restart.', summary, notes: [],
       pill: failed.length ? `${plural(failed.length, 'update')} did not finish` : 'Updated' }
     default: return {
       title: 'Updates',
-      sub: view.sotto ?? summary,
+      sub: view.sotto ? versionsText(view.sotto) : summary,
       summary,
       // A host's restart, and Sotto's, are said by their own steps; that threads keep working through client updates is not.
       notes: clients ? ['Threads keep working while clients update.'] : [],
-      pill: offered.length ? 'Update all' : 'Updates',
+      pill: covered.length ? 'Update all' : 'Updates',
     }
   }
 }
@@ -329,9 +360,11 @@ function itemStep(item: UpdateAllItem, view: UpdateAllView): UpdateAllStep {
   const host = item.machine.kind === 'host' ? item.machine.name : ''
   const title = item.kind === 'app' ? `Download ${item.name}` : item.kind === 'client' ? `Update ${item.name}` : `Update ${host}’s host`
   // A host's own step names it, so it carries no place. A client's versions are its own, and a host's are shown only
-  // when they are not Sotto's pair in the head; once either is done, its sentence says the version it runs.
+  // when they are not Sotto's pair in the head; once either is done, its sentence says the version it runs, and while a
+  // host is checked, the version it is to get is what the check finds out.
   const where = item.kind === 'host' ? '' : host || 'This computer'
-  const versions = item.state === 'done' || item.kind === 'app' || item.kind === 'host' && item.versions === view.sotto ? undefined : item.versions
+  const hidden = item.state === 'done' || item.state === 'checking' || item.kind === 'app' || item.kind === 'host' && sameVersions(item.versions, view.sotto)
+  const versions = hidden ? undefined : versionsText(item.versions)
   return { key: item.key, item, title, versions, detail: [where, item.detail].filter(Boolean).join(' · '), state: item.state }
 }
 
@@ -351,6 +384,6 @@ function restartStep(view: UpdateAllView, context: UpdateAllContext): UpdateAllS
  */
 export function updateAllSteps(view: UpdateAllView, context: UpdateAllContext): UpdateAllStep[] {
   const steps = view.items.map(item => itemStep(item, view))
-  if (view.items.some(item => item.kind === 'app')) steps.push(restartStep(view, context))
+  if (restartsLast(view.items)) steps.push(restartStep(view, context))
   return steps
 }
