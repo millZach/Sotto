@@ -1,5 +1,4 @@
 import { createReadStream } from 'node:fs'
-import { pipeline } from 'node:stream/promises'
 import { realpath, stat } from 'node:fs/promises'
 import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
 import path from 'node:path'
@@ -124,8 +123,12 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, tar
   }
   response.writeHead(200, { ...PAGE_HEADERS, 'Content-Type': CONTENT_TYPES[path.extname(file!).toLowerCase()] ?? type, 'Content-Length': info.size })
   if (request.method === 'HEAD') { response.end(); return }
-  // A pipeline closes the file when the browser goes away part way, as a plain pipe would not.
-  await pipeline(createReadStream(file!), response).catch(() => response.destroy())
+  // The file is closed when the browser goes away part way, which a plain pipe would not do on its own.
+  const stream = createReadStream(file!)
+  response.once('close', () => stream.destroy())
+  stream.on('error', () => response.destroy())
+  stream.pipe(response)
+  await finished(response)
 }
 
 async function proxy(request: IncomingMessage, response: ServerResponse, origin: string, base: string, rest: string, ownPort: number | undefined): Promise<void> {
