@@ -34,10 +34,11 @@ export function pickGreeting(hour: number, random: () => number, avoid?: string)
 const chosen = new Map<string, string>()
 let lastChosen: string | undefined
 
-/** This thread's greeting. Two new threads in a row never open on the same line. */
+/** This thread's greeting. Two new threads in a row never open on the same line, and a timed line outlives its hour by
+ * no more than the next time the thread is drawn. */
 export function greetingFor(threadId: string, now: Date = new Date(), random: () => number = Math.random): string {
   const known = chosen.get(threadId)
-  if (known !== undefined) return known
+  if (known !== undefined && (GREETINGS.includes(known) || timedGreetings(now.getHours()).includes(known))) return known
   const line = pickGreeting(now.getHours(), random, lastChosen)
   chosen.set(threadId, line)
   lastChosen = line

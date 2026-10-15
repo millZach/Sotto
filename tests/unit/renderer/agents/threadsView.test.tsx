@@ -198,6 +198,25 @@ describe('ThreadsView workspace', () => {
     expect(screen.getByLabelText('Pending message')).toHaveTextContent('Start the work.')
   })
 
+  for (const reduced of [false, true]) it(`${reduced ? 'moves the composer at once under reduced motion' : 'slides the composer down from the greeting'} on the first send`, async () => {
+    const animate = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'animate', { value: animate, configurable: true, writable: true })
+    onTestFinished(() => { Reflect.deleteProperty(HTMLElement.prototype, 'animate'); delete document.documentElement.dataset.reducedMotion })
+    if (reduced) document.documentElement.dataset.reducedMotion = 'on'
+    const state = stateFixture()
+    const thread = state.host.threads.find(item => item.id === state.activeThreadId)!
+    Object.assign(thread, { messages: [], activities: [], requests: [], historyStatus: 'ready', status: 'idle', earlierAvailable: false, compaction: undefined })
+    renderThreads(state)
+    expect(document.querySelector('.thread-greeting')).not.toBeNull()
+    setPromptText(screen.getByRole('textbox', { name: 'Prompt' }), 'Start the work.')
+    fireEvent.click(screen.getByRole('button', { name: 'Send prompt' }))
+    expect(document.querySelector('.thread-greeting')).toBeNull()
+    // The slide starts when the greeting's slot empties, which the pane hears just after the redraw.
+    await act(async () => { await Promise.resolve() })
+    expect(animate).toHaveBeenCalledTimes(reduced ? 0 : 1)
+    if (!reduced) expect(animate.mock.contexts[0]).toHaveClass('thread-workspace__compose')
+  })
+
   it('keeps the working line in the transcript for a new thread that is already working', () => {
     const state = stateFixture()
     const thread = state.host.threads.find(item => item.id === state.activeThreadId)!

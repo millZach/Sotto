@@ -24,4 +24,13 @@ describe('a new thread’s greeting', () => {
     expect(greetingFor('greeting-first', noon, () => 0.5)).toBe(first)
     expect(greetingFor('greeting-second', noon, () => 0)).not.toBe(first)
   })
+
+  it('lets a timed line go once its hour has passed', () => {
+    const morning = new Date(2026, 9, 14, 8)
+    const evening = new Date(2026, 9, 14, 19)
+    // The morning line is the last in the pool at eight.
+    expect(greetingFor('greeting-timed', morning, () => 0.999999)).toBe('Morning. What’s first?')
+    expect(greetingFor('greeting-timed', morning, () => 0)).toBe('Morning. What’s first?')
+    expect(greetingFor('greeting-timed', evening, () => 0.999999)).toBe('Evening. What’s left?')
+  })
 })

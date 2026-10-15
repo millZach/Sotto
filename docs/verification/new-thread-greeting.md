@@ -5,7 +5,8 @@ like "what should we work on" in place of "What is next for this thread?", picke
 sit up where the eye is until the thread starts. He answered the questions first: a bit playful, a project line under
 the greeting, every pane centring its own new thread, the placeholder left as it is, straight to stable. From
 `docs/prototypes/new-thread-greeting-prototype.html` he picked variant a, centred rather than about 40% down, and a
-720px composer after saying the prototype's 900px one was too wide. The glossary term is **Greeting**.
+720px composer after saying the prototype's 900px one was too wide. The pick is recorded in
+`docs/plans/new-thread-greeting.md`; the glossary term is **Greeting**.
 
 ## What changed
 
@@ -39,6 +40,10 @@ and the composer is back at the bottom at its usual width. Captures from that ru
 - `greeting-820x560-model-picker.png`: the model picker at the minimum, opened below the chip.
 - `greeting-1280x800-light.png`: the light theme.
 - `greeting-1280x800-after-send.png`: the first message sent and the composer at the bottom.
+
+Reduced motion is checked in `tests/unit/renderer/agents/threadsView.test.tsx`: the first send starts one animation on the
+composer, and none when `data-reduced-motion` is on. A greeting kept past its hour gives up a timed line the next
+time the thread is drawn (`threadGreeting.test.ts`).
 
 `tests/e2e/effort-picker.spec.ts` clicked "What is next for this thread?" to close the effort card with a pointer
 outside it. The card now opens over the greeting, so the spec clicks the empty transcript above instead.
