@@ -129,3 +129,27 @@ it('words a restored wake-up again from its news and saves it, leaving the userâ
     expect(reloaded.peek().items.map(item => item.text)).toEqual(['Sotto saw changes, the user typed', WATCHER_WAKE_UP_PROMPT])
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+it('reorders the follow-ups the user sees around a wake-up no one is shown, and refuses an order a change overtook', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
+  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
+  try {
+    const hostId = randomUUID(), store = new FollowupStore(directory); await store.load()
+    const news: WakeUpNews = { source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
+      events: [{ id: 'event', requestId: randomUUID(), target: { hostId, threadId: 'worker' }, generation: 0, kind: 'turn-finished', turnId: 'turn', observedAt: new Date().toISOString() }] }
+    for (const text of ['First', 'Second']) await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text, attachments: [] })
+    await store.queueWakeUp('thread', news, items => queuedWakeUpText(items, { tool: false }))
+    const id = (text: string) => store.peek().items.find(item => item.text === text)!.id
+    // The window sends the order of what it shows: the user's two follow-ups.
+    await store.reorder('thread', [id('Second'), id('First')])
+    expect(store.peek().items.map(item => item.text)).toEqual(['Second', 'First', WATCHER_WAKE_UP_PROMPT])
+    // An order naming every item still works.
+    await store.reorder('thread', [id('First'), id(WATCHER_WAKE_UP_PROMPT), id('Second')])
+    expect(store.peek().items.map(item => item.text)).toEqual(['First', 'Second', WATCHER_WAKE_UP_PROMPT])
+    // A follow-up queued since the order was read is a real change.
+    const stale = [id('Second'), id('First')]
+    await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text: 'Third', attachments: [] })
+    await expect(store.reorder('thread', stale)).rejects.toThrow('The follow-up order changed')
+    expect(store.peek().items.map(item => item.text)).toEqual(['First', 'Second', 'Third', WATCHER_WAKE_UP_PROMPT])
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

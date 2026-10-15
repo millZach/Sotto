@@ -197,9 +197,13 @@ export class FollowupStore {
     return this.change(state => {
       const items = state.items.filter(item => item.threadId === threadId)
       if (items.some(item => item.status === 'dispatching' || item.status === 'uncertain')) throw new Error('Wait for this thread’s pending delivery before reordering follow-ups.')
-      if (ids.length !== items.length || new Set(ids).size !== ids.length || ids.some(id => !items.some(item => item.id === id))) throw new Error('The follow-up order changed. Refresh and try again.')
+      // A wake-up holding only Watcher's news is shown in no queue (ADR-0073), so an order may leave it out; anything
+      // else missing or added is a change made since the order was read.
+      const hidden = items.filter(item => isWatcherOnlyWakeUp(item) && !ids.includes(item.id))
+      const shown = items.filter(item => !hidden.includes(item))
+      if (ids.length !== shown.length || new Set(ids).size !== ids.length || ids.some(id => !shown.some(item => item.id === id))) throw new Error('The follow-up order changed. Refresh and try again.')
       // Sotto's wake-up keeps its place after the user's follow-ups, wherever the user moved theirs; a resume note, before.
-      const ordered = ids.map(id => items.find(item => item.id === id)!)
+      const ordered = [...ids.map(id => shown.find(item => item.id === id)!), ...hidden]
       const leading = ordered.filter(item => leadsQueue(item, threadId))
       state.items = [...state.items.filter(item => item.threadId !== threadId), ...leading, ...ordered.filter(item => !waitingWakeUp(item, threadId)),
         ...ordered.filter(item => waitingWakeUp(item, threadId) && !leading.includes(item))]
