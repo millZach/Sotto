@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
@@ -105,6 +105,43 @@ export function museApprovalPending(threadId: string, approval: MuseApproval): E
 export function museApprovalRefreshed(pending: Extract<MusePending, { kind: 'approval' }>, updated: z.infer<typeof museApprovalUpdatedSchema>): Extract<MusePending, { kind: 'approval' }> {
   return museApprovalPending(pending.threadId, { ...pending.approval, subject: updated.subject,
     availableChoices: updated.availableChoices, currentRequirementId: updated.currentRequirementId })
+}
+
+/** The name Muse gives a session tool server's tool: `mcp__<server>__<tool>`, every character but a letter or digit made `_`. */
+export function museToolName(server: string, tool: string): string {
+  const plain = (name: string): string => name.replace(/[^A-Za-z0-9]/gu, '_')
+  return `mcp__${plain(server)}__${plain(tool)}`
+}
+
+/** A fresh suffix for the names of one thread's Sotto tool servers on Muse: 40 random bits, as ten hex digits. */
+export function museServerSuffix(): string {
+  return randomBytes(5).toString('hex')
+}
+
+/**
+ * The name one of Sotto's tool servers goes by in a Muse session: its own name and the thread's suffix. Muse folds every
+ * character but a letter or digit to `_` in the tool names it shows, and refuses only a server whose name is exactly one
+ * the user configured, so a user's `sotto-browser` would show the same tool names as a plain `sotto_browser` (ADR-0079).
+ * No server configured beforehand can know the suffix. The name is refused unless Muse would show it unchanged, with no
+ * `__` inside it, so each of Sotto's tool names on Muse belongs to exactly one server Sotto supplied.
+ */
+export function museSessionServerName(server: string, suffix: string): string {
+  const name = `${server}_${suffix}`
+  if (!/^[A-Za-z0-9]+(?:_[A-Za-z0-9]+)*$/u.test(name)) throw new Error('A Sotto tool server name must be letters and digits joined by single underscores.')
+  return name
+}
+
+/**
+ * Muse's prompt before a call to one of this thread's own Sotto tools, answered with Muse's own one-time allow (ADR-0079,
+ * as Grok's is under ADR-0020 and ADR-0035). Only a tool subject whose name is exactly one this session was given
+ * qualifies; any other subject, or an approval with no one-time allow, is left for the user. The names given are those
+ * of servers named by `museSessionServerName`, so a server Sotto did not supply cannot produce one. The answer is the
+ * choice to send, or undefined. The tools themselves still ask the user wherever they always do.
+ */
+export function museToolAdmission(approval: MuseApproval, own: ReadonlySet<string>): string | undefined {
+  const subject = approval.subject
+  if (subject.kind !== 'tool' || subject.toolName === undefined || !own.has(subject.toolName)) return undefined
+  return approval.availableChoices.find(choice => choice.decision === 'approved' && choice.scope === 'once')?.choiceId
 }
 
 const optionId = (index: number): string => `option-${index}`

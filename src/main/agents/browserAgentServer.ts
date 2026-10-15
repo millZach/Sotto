@@ -1,4 +1,4 @@
-import { ThreadToolServer, type ThreadMcpServer, type ThreadToolDefinition, type ThreadToolResult } from './threadToolServer'
+import { ThreadToolServer, type ThreadMcpServer, type ThreadToolCallContext, type ThreadToolDefinition, type ThreadToolResult } from './threadToolServer'
 
 export type BrowserToolDefinition = ThreadToolDefinition
 export type BrowserToolResult = ThreadToolResult
@@ -7,7 +7,7 @@ export const BROWSER_MCP_SERVER = 'sotto_browser'
 export interface BrowserMcpServer extends ThreadMcpServer { name: typeof BROWSER_MCP_SERVER }
 export interface BrowserAgentTools {
   readonly definitions: readonly BrowserToolDefinition[]
-  call(threadId: string, name: string, args: unknown): Promise<BrowserToolResult>
+  call(threadId: string, name: string, args: unknown, context?: ThreadToolCallContext): Promise<BrowserToolResult>
   mcpServer(threadId: string): Promise<BrowserMcpServer>
 }
 const BROWSER_INSTRUCTIONS = 'Use these tools for the browser the user sees in Sotto. A pending action needs the user in Tools; never approve it yourself. Browser calls wait for that answer. If a call is interrupted or times out, read the task status before requesting the action again. To check a web or Expo-web build on a phone, use iphone_open: the test iPhone is a phone-sized page in this browser, not iOS.'
