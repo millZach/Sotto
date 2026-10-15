@@ -1,6 +1,6 @@
 # Watcher room publication and owned remote inputs
 
-Issue #991, step 5. Remote cached reads and the complete local matrix are measured below. The built Windows app passed its Watcher journeys; final gate results are recorded in the verification note.
+Issue #991, step 5. Remote cached reads and the complete local matrix are measured below. The built Windows app passed its Watcher journeys; final gate status is recorded in the verification note.
 
 Step 5 keeps the existing Watcher and streaming-publish-cost startup gates. It captures complete owned desktop room notifications inside a separate 50 ms desktop room window using the existing leading/trailing rules. Direct command answers flush pending notifications on success or failure and retain their own results. Local state projection already avoided a whole local shell clone before this work; no new credit is taken for that property.
 
@@ -53,4 +53,4 @@ Historical preimplementation baseline01, failed AFTER01, completion-boundary dia
 
 ## Proof limits
 
-Local matrix: real Windows Electron IPC/contextBridge and selected shell/detail assembly in a synthetic page, not React paint or whole-app CPU. Remote benchmark: real cache ingestion followed by scoped synchronous reads. The built Windows app passed seventeen Watcher and gate journeys; inspected captures and final exact gates are recorded in the verification note. No installed release, live provider, Mac/Linux desktop or native-phone result is claimed. Both matrices start only after the expanded quiet guard; disclose every observed mid-run competitor and sampling limits.
+Local matrix: real Windows Electron IPC/contextBridge and selected shell/detail assembly in a synthetic page, not React paint or whole-app CPU. Remote benchmark: real cache ingestion followed by scoped synchronous reads. The built Windows app passed seventeen Watcher and gate journeys; inspected captures and final verification status are recorded in the verification note. No installed release, live provider, Mac/Linux desktop or native-phone result is claimed. Both matrices start only after the expanded quiet guard; disclose every observed mid-run competitor and sampling limits.
