@@ -163,6 +163,15 @@ export const outputDeliveryRequestSchema = z
   })
   .strict()
 
+/** The longest PNG data URL Copy image sends to main. */
+export const MAX_OUTPUT_IMAGE_DATA_URL = 64_000_000
+/** A PNG the window drew, for the clipboard. The window converts every image to PNG first, so main reads one format. */
+export const outputImageRequestSchema = z
+  .object({
+    dataUrl: z.string().startsWith('data:image/png;base64,').max(MAX_OUTPUT_IMAGE_DATA_URL),
+  })
+  .strict()
+
 export const transcriptPolishAsrContextSchema = z
   .object({
     /** Word count of each streaming ASR segment, in emit order. */
@@ -318,6 +327,7 @@ export interface StartupState {
 export type OutputOutcome = 'pasted' | 'copied' | 'clipboard-unavailable' | 'empty'
 export type OutputResult = OutputOutcome | UnavailableResult
 export type OutputDeliveryRequest = z.infer<typeof outputDeliveryRequestSchema>
+export type OutputImageRequest = z.infer<typeof outputImageRequestSchema>
 
 export interface SottoBridge {
   readonly usage?: import('./usageDashboard').UsageBridge
@@ -365,6 +375,8 @@ export interface SottoBridge {
   publishWidgetState(state: WidgetSnapshot): Promise<CommandResult>
 
   deliverOutput(request: OutputDeliveryRequest): Promise<OutputResult>
+  /** Puts an image on the clipboard; `unavailable` when it could not be read or written. */
+  copyImage?(request: OutputImageRequest): Promise<CommandResult>
 
   polishTranscript(request: TranscriptPolishRequest): Promise<TranscriptPolishResult>
 

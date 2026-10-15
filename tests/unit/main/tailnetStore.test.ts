@@ -44,6 +44,21 @@ describe('TailnetStore (ADR-0053)', () => {
     await again.load()
     expect(again.get(ID)).toEqual({ id: ID, prefer: 'ssh', bootStart })
   })
+
+  it('keeps the system a launch reported, and reads one it cannot accept as none (ADR-0077)', async () => {
+    const store = new TailnetStore(root)
+    await store.load()
+    expect(store.has(ID)).toBe(false)
+    await store.set(ID, { prefer: 'tailnet', system: 'linux-x64' })
+    const again = new TailnetStore(root)
+    await again.load()
+    expect(again.has(ID)).toBe(true)
+    expect(again.get(ID)).toEqual({ id: ID, prefer: 'tailnet', system: 'linux-x64' })
+    await writeFile(join(root, TAILNET_STORE_FILE), JSON.stringify([{ id: ID, prefer: 'tailnet', system: '../linux x64' }]))
+    const odd = new TailnetStore(root)
+    await odd.load()
+    expect(odd.get(ID).system).toBeUndefined()
+  })
 })
 
 describe('e2eTailnetMap', () => {

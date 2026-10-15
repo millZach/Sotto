@@ -375,7 +375,8 @@ const launch = async () => {
   // A found host reports start at boot as a started one does, and counts as Sotto's when this installation's unit runs it.
   const ready = found ? { type: 'ready', ...found, owned: await sottoStarted(found), bootStart: await bootStatus(await unitProperties()) } : await start();
   const token = await adminToken(ready);
-  return finish({ ...ready, node: process.execPath, ...(token ? { adminToken: token } : {}) });
+  // The system names the host archive an update downloads, as archiveName does, so Sotto can ask for it before an update.
+  return finish({ ...ready, node: process.execPath, system: process.platform + '-' + process.arch, ...(token ? { adminToken: token } : {}) });
 };
 const admin = async () => {
   const current = await discover().catch(() => null);
