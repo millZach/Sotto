@@ -478,7 +478,7 @@ describe('native subscription metadata seam', () => {
     expect((await host.readProviderQuota!('codex', true)).windows).toHaveLength(1)
     expect(methods).toEqual(['account/rateLimits/read', 'account/rateLimits/read'])
   })
-  it('keeps Claude passive, merges windows and offers no inference refresh', async () => {
+  it('merges passive Claude windows and still offers an on-demand read', async () => {
     const { root } = await fixture('claude')
     const host = new ClaudeStreamJsonHost({ userDataPath: root, usageEnabled: true })
     const native = host as unknown as { state: AgentHostSnapshot; aliases: Record<string, unknown>; threads: Map<string, unknown>; runtimes: Map<string, unknown>; frameAfterProfileCheck(id: string, frame: ClaudeFrame): void }
@@ -488,7 +488,8 @@ describe('native subscription metadata seam', () => {
     const before = await host.readProviderQuota!('claude', false)
     native.frameAfterProfileCheck('thread', { type: 'rate_limit_event', rate_limit_info: { rateLimitType: 'five_hour', status: 'allowed_warning' } })
     const quota = await host.readProviderQuota!('claude', true)
-    expect(quota.refreshable).toBe(false); expect(quota.windows.map(window => window.usedPercent)).toEqual([40, 20])
+    // No executable is set, so get_usage cannot run: the passive windows stay as evidence and a read is still offered.
+    expect(quota.refreshable).toBe(true); expect(quota.windows.map(window => window.usedPercent)).toEqual([40, 20])
     expect(quota.windows[0]).toMatchObject({ status: 'warning', observedAt: before.windows[0]?.observedAt,
       resetsAt: '2030-03-17T17:46:40.000Z' })
     native.frameAfterProfileCheck('thread', { type: 'rate_limit_event', rate_limit_info: {

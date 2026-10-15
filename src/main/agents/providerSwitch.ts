@@ -12,6 +12,7 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { ProviderUnavailable, providerProblemOf } from './providerProblem'
 import { sameSnapshot } from './sameSnapshot'
 import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
+import { mappedSink, type UsageHistorySink } from './usageHistory/sink'
 import { unavailableProviderQuota } from './providerQuota'
 import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles } from './host'
 
@@ -70,6 +71,7 @@ export class ConfiguredProviderHost implements AgentHost {
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
   readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
   constructor(private readonly options: {
     hosts: Record<ProviderId, AgentHost>; provider: () => ProviderId
     directory?: string
@@ -93,6 +95,17 @@ export class ConfiguredProviderHost implements AgentHost {
     if (providerIdSchema.options.some(id => isUsageProviderId(id) && options.hosts[id].visitUsage)) this.visitUsage = (threadId, visitor) => {
       for (const id of providerIdSchema.options) if (isUsageProviderId(id)) options.hosts[id].visitUsage?.(threadId, record => visitor({ ...record, providerId: id,
         modelId: providerEntityId(id, 'model', record.modelId) }))
+    }
+    // Each provider reads its own local records in turn, connected or not: reading them starts no session.
+    if (providerIdSchema.options.some(id => isUsageProviderId(id) && options.hosts[id].scanUsageHistory)) this.scanUsageHistory = async (sink, signal) => {
+      for (const id of providerIdSchema.options) {
+        const host = options.hosts[id]
+        if (signal.aborted) return
+        if (!isUsageProviderId(id) || !host.scanUsageHistory) continue
+        const project = <T extends { providerId: string; modelId: string }>(record: T): T => ({ ...record, providerId: id, modelId: providerEntityId(id, 'model', record.modelId) })
+        try { await host.scanUsageHistory(mappedSink(sink, { token: project, prompt: project }), signal) }
+        catch { /* One provider's unreadable records leave the others' to read. */ }
+      }
     }
     if (providerIdSchema.options.some(id => options.hosts[id].readProviderQuota)) this.readProviderQuota = async (providerId, refresh) => {
       if (!isUsageProviderId(providerId)) throw new Error('Usage is not available for this provider.')
