@@ -165,7 +165,6 @@ export class WatcherWakeUp {
         ? workSettledScope(request.id, target, participant.generation, extra.turnId) : undefined
       if (kind === 'work-settled' && !this.owedWorkSettled.has(settleScope!)) continue
       const busyId = settleScope && kind !== 'work-settled' ? `${stableId}.${settleScope}` : undefined
-      if (busyId && extra.backgroundWorkCount) this.oweWorkSettled(settleScope!)
       if (kind === 'evidence-changed') {
         const scope = observationDigest([kind, request.id, target, participant.generation]), fingerprint = observationDigest(identity)
         const previous = this.latestEvidence.get(scope)
@@ -181,7 +180,8 @@ export class WatcherWakeUp {
         // Older saved IDs remain readable and deduplicate only the first reconciled observation.
         if (legacyId) continue
       } else if (this.seen.has(id) || busyId && this.seen.has(busyId)) continue
-      else if (busyId && extra.backgroundWorkCount) id = busyId
+      // Only a finish delivered as busy is owed: one already delivered as done stays done if work shows up later.
+      else if (busyId && extra.backgroundWorkCount) { id = busyId; this.oweWorkSettled(settleScope!) }
       if (kind === 'work-settled') this.owedWorkSettled.delete(settleScope!)
       const event: WatcherEvent = { ...extra, kind, target, requestId: request.id, generation: participant.generation,
         observedAt: new Date(this.now()).toISOString(), id }
