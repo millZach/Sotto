@@ -350,6 +350,12 @@ wrapper holds in jsdom and node files. Waiting is not the assertion: a runner ta
 over a provider round trip or a child process start than a developer machine, and a deadline that expires
 there describes the machine. Something that is genuinely wrong still fails, a few seconds later.
 
+A Grok contract failure that looked like a deadline was not one. The Grok fixture polled history every 20 ms,
+the same period as the lazy-session contract's reaper sweep, and Windows runs both on the same 15.6 ms timer
+tick. When the two started in step, every sweep found a history read under way, which defers a stop (#440), so
+an idle session was never stopped and `untilStopped` ran out after 12 s. With a fast sweep and no interval of
+its own, the fixture now polls at five sweeps' length, which leaves most sweeps between reads.
+
 The same rule applies to the fake-provider fixtures' acknowledgement deadline (`requestTimeoutMs` in
 `tests/fixtures/claudeFixture.ts`, `codexFixture.ts` and `fakeGrokThreadFixture.ts`). That one deadline
 covers every native round trip, including the first one after the fake CLI is spawned, so it also has
