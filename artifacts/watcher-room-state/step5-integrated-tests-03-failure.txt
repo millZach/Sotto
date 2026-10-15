@@ -1,0 +1,39 @@
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:59152) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:36528) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:31972) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:23800) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+(node:50660) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯ Failed Tests 1 âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯
+
+ FAIL  tests/integration/watcherPairedHosts.test.ts > routes steer and queue by turn identity and fences a native takeover before queued dispatch
+AssertionError: expected undefined to be 'native-user-send' // Object.is equality
+
+- Expected:
+"native-user-send"
+
++ Received:
+undefined
+
+ â¯ tests/integration/watcherPairedHosts.test.ts:352:106
+    350|   await native.driver.typeInProvider(nativeId, 'Synthetic native instrâ€¦
+    351|   await native.driver.completeTurn(nativeId, 'Synthetic completion')
+    352|   await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]?.pâ€¦
+       |                                                                                                          ^
+    353|   await vi.waitFor(() => expect(f.watcher.state().receipts.find(item =â€¦
+    354|   const written = await native.driver.requests()
+
+âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯âŽ¯[1/1]âŽ¯
+
+
+ Test Files  1 failed | 863 passed | 78 skipped (942)
+      Tests  1 failed | 11220 passed | 350 skipped (11571)
+   Start at  22:35:17
+   Duration  1787.45s (transform 30.35s, setup 43.22s, import 325.56s, tests 2824.19s, environment 182.60s)

@@ -2,7 +2,8 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { z } from 'zod'
-import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection } from '../../shared/watcherHost'
+import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRoomThreadInput } from '../../shared/watcherHost'
+import { watcherRoomInputs } from './watcherRoomInput'
 import { type WatcherIdentity, watcherToolSchemas } from '../../shared/watcher'
 import { SocketFrames } from '../../host/socketFrames'
 import { PROVIDER_CONNECTION_NOTICES, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
@@ -47,6 +48,7 @@ export class WrongHostError extends HostConnectionError {
 export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
   watcherEnabled?: boolean
+  streamingPublishCost?: boolean
   museEnabled?: boolean
   /** The running packaged version, which may override the source manifest during stable packaging. */
   clientVersion?: string
@@ -141,6 +143,10 @@ export class SocketHostService implements HostService {
   private retainedRefreshRequested = false
   private wireAdmission: Promise<void> | undefined
   constructor(private readonly options: SocketHostServiceOptions) {
+    if (options.watcherEnabled === true && options.streamingPublishCost === true) this.watcherRoomThreads = ids => {
+      if (!this.cached) throw new Error('Connect to the host before reading its state.')
+      return watcherRoomInputs(this.cached.host, ids, options.museEnabled === true, this.dormantMuseThreads)
+    }
     this.endpoint('/v1/health'); this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true, museEnabled: options.museEnabled === true })
     this.retainedRegistrationId = options.retainedRegistrationId
       ?? (options.expectedHostId ? this.retainedDrafts.registrationForHost(options.expectedHostId) : undefined)
@@ -247,7 +253,7 @@ export class SocketHostService implements HostService {
     })
     if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError('This host connection was closed.', 'disconnected') }
     try {
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
@@ -486,6 +492,8 @@ export class SocketHostService implements HostService {
     const shell = this.shell()
     return { ...shell, host: { ...shell.host, threads: shell.host.threads.map(thread => { const detail = this.details.get(thread.id); return detail ? { ...thread, messages: detail.messages, activities: detail.activities } : thread }) } }
   }
+  /** Allocated only when both startup gates allow the owned room read. */
+  readonly watcherRoomThreads?: (threadIds: readonly string[]) => WatcherRoomThreadInput[]
   /** A thread's kind from the cached shell, without copying it; before a shell arrives it refuses as `shell()` does (#917). */
   threadKind(threadId: string): AgentThread['kind'] {
     if (!this.cached) throw new Error('Connect to the host before reading its state.')
@@ -1027,7 +1035,10 @@ export class SocketHostService implements HostService {
   get supportsUsage(): boolean { return this.features.includes('usage-dashboard') }
   async usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')
-    return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-read', query: usageLocalQuerySchema.parse(query) }, undefined, undefined, 15000))
+    // A host from before history import refuses the place and window filters its strict query does not know (ADR-0083).
+    const { sources, since, ...older } = usageLocalQuerySchema.parse(query)
+    const sent = this.features.includes('usage-history') ? { ...older, ...(sources ? { sources } : {}), ...(since ? { since } : {}) } : older
+    return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-read', query: sent }, undefined, undefined, 15000))
   }
   async usageRefresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')

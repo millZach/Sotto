@@ -130,6 +130,8 @@ The optional `usage-dashboard` feature is advertised only when the owning host's
 
 Queries contain no desktop host ID; the paired connection owns that scope, and the desktop annotates each answer with its host ID. Numeric Usage payloads contain no prompt or reply text, native session IDs, titles, folders, account addresses, keys or protocol bodies. Read and refresh grant nothing. Clear affects the host's numeric history only and never answers a provider permission.
 
+Optional `usage-history` (ADR-0083) is advertised beside `usage-dashboard` by a host that reads its own computer's Claude Code and Codex records into Usage. A desktop that lists it in `hello.accepts` may send `query.sources` (`sotto`, `outside`) and `query.since` (an instant, for the activity since a limit window began), and is sent the read's additions: `activity.clients`, one row per place, app and subagent flag with optional `providerIds`; `activity.metadata.history`, `{ status, earliestAt?, scannedAt? }`; and an optional `lastDay` on every aggregate. A desktop that did not accept it is sent the read without those additions, which its strict schemas know. A host that does not advertise it is sent neither filter, and its figures read as Sotto's own work.
+
 Each request is `{ v: 1, id, session, op, ... }`: `id` is the client's own (at most 512 characters) and comes back on the response, and `session` is the one the socket opened with. Requests are strict: a field the host does not know makes the request unreadable.
 
 | `op` | Fields | Result |

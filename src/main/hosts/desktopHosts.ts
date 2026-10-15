@@ -231,7 +231,7 @@ export class DesktopHosts {
   private writing: Promise<void> = Promise.resolve()
   constructor(private readonly options: {
     directory: string; credentials: AgentCredentials; router: DesktopHostRouter;
-    watcherEnabled?: boolean; museEnabled?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
+    watcherEnabled?: boolean; museEnabled?: boolean; streamingPublishCost?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
     /**
      * The host version the update this computer is downloading brings, with Update all on (ADR-0077 decision 6). A host
      * updated to it before Sotto restarts runs ahead of this computer until then, and is told apart from a newer host.
@@ -1189,7 +1189,7 @@ export class DesktopHosts {
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
     const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}),
-      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, museEnabled: this.options.museEnabled === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
+      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, museEnabled: this.options.museEnabled === true, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null
