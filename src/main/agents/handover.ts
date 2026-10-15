@@ -290,7 +290,7 @@ function frame(summary: HandoverSummary, options: HandoverOptions): string[] {
     summary.images > 0 ? count(summary.images, 'image') : '',
     summary.files > 0 ? count(summary.files, 'attached file') : '',
     summary.visuals > 0 ? count(summary.visuals, 'visual') : '',
-    summary.toolRecords > 0 ? `${count(summary.toolRecords, 'record')} of tool calls and their results` : '',
+    summary.toolRecords > 0 ? `${count(summary.toolRecords, 'record')} of its work, such as tool calls and their results` : '',
   ].filter(Boolean)
   if (left.length > 0) lines.push(`Left out: ${left.join('; ')}.`)
   if (!summary.answered) lines.push('The latest request has no answer yet.')

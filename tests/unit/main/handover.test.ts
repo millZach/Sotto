@@ -116,7 +116,7 @@ describe('handover', () => {
     const { text, summary } = buildHandover(messages, options({ toolRecords: 57 }))
     expect(text).not.toMatch(/screen\.png|notes\.pdf|data:image|QUJD|secret drawing|Flow of the login/)
     expect(text).toContain('(This message had 1 image and 1 file attached. They are not carried.)')
-    expect(text).toContain('Left out: 1 image; 1 attached file; 1 visual; 57 records of tool calls and their results.')
+    expect(text).toContain('Left out: 1 image; 1 attached file; 1 visual; 57 records of its work, such as tool calls and their results.')
     expect(text).toContain('Attachments, images, tool calls and their results are never carried.')
     expect(summary).toMatchObject({ images: 1, files: 1, visuals: 1, toolRecords: 57, carried: ['u0', 'a0'], notCarried: 0 })
   })
@@ -225,7 +225,7 @@ describe('reading a handover from the thread store', () => {
     threads.syncActivities('thread-1', [record])
     const { text, summary } = readHandover(threads, { source })
     expect(summary.toolRecords).toBe(1)
-    expect(text).toContain('1 record of tool calls and their results')
+    expect(text).toContain('1 record of its work, such as tool calls and their results')
     expect(text).not.toMatch(/npm test|All passed/)
   })
 

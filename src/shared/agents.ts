@@ -223,6 +223,18 @@ export const agentRequestSchema = z.object({
 })
 export const agentQuestionAnswersSchema = z.record(id, z.object({ optionIds: z.array(id).max(100), text: text.optional() }).strict())
 export type AgentQuestionAnswers = z.infer<typeof agentQuestionAnswersSchema>
+const handoverCount = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
+/**
+ * What a **handover** carried and left out, as counts only, never any of the words (CONTEXT.md): the messages it carried
+ * of the thread's total, those too long to carry, those that did not fit, the attachments, visuals and tool-call records it
+ * never carries, whether Keep local history was on, and whether the latest request had an answer.
+ */
+export const handoverCountsSchema = z.object({ total: handoverCount, carried: handoverCount, tooLong: handoverCount, notCarried: handoverCount,
+  images: handoverCount, files: handoverCount, visuals: handoverCount, toolRecords: handoverCount, historyKept: z.boolean(), answered: z.boolean() }).strict()
+export type HandoverCounts = z.infer<typeof handoverCountsSchema>
+/** The handover a user message carried ahead of the user's own words: its words as sent, and the provider of the thread it came from. */
+export const agentMessageHandoverSchema = z.object({ text: z.string(), provider: providerIdSchema, counts: handoverCountsSchema }).strict()
+export type AgentMessageHandover = z.infer<typeof agentMessageHandoverSchema>
 export const agentMessageSchema = z.object({
   // A projected message combines bounded events and can exceed any one event's limit.
   id, role: z.enum(['user', 'assistant']), text: z.string(), createdAt: z.string(),
@@ -242,6 +254,13 @@ export const agentMessageSchema = z.object({
    * shows the message as the user's.
    */
   wakeUp: z.literal(true).optional().catch(undefined),
+  /**
+   * Set on Watcher's first message after a provider change when the user chose to continue with a handover of the last
+   * Watcher (ADR-0073): the message's text is then the user's words, and this is the handover that went ahead of them in
+   * the same message, told apart by its recorded provenance rather than its words. An older reader drops the field and
+   * shows the user's words alone.
+   */
+  handover: agentMessageHandoverSchema.optional().catch(undefined),
 })
 /**
  * What the sidebar reads about a thread's history without holding that history. The shell stream

@@ -11,6 +11,8 @@ import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { providerKey } from './threadFacts'
 import { pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
+import { useWatcherRoom } from '../watcher/watcherRoom'
+import { watcherProviderOf, type WatcherProvider } from '../watcher/watcherProviders'
 import './threadChips.css'
 
 export const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
@@ -268,7 +270,24 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const refocus = useRef<HTMLButtonElement | null>(null)
   const captionId = useId()
   const unconfirmedId = useId()
-  const { models, locked } = threadModelChoices(state, thread, watcher)
+  const { models: own, locked } = threadModelChoices(state, thread, watcher)
+  // Watcher keeps its provider; another provider's model is a new Watcher, which main makes and which offers the last
+  // one's handover (ADR-0073). Only where the room can open one.
+  const room = useWatcherRoom()
+  const open = watcher ? room?.open ?? null : null
+  const settle = room?.settle
+  const others = open === null ? [] : state.host.models.filter(model => model.ready && canCreateWith(state, model)
+    && watcherProviderOf(model) !== null && watcherProviderOf(model) !== thread.providerId)
+  const models = others.length > 0 ? [...own, ...others] : own
+  const [replacing, setReplacing] = useState<{ readonly provider: WatcherProvider; readonly refusal: string | null } | null>(null)
+  const replace = async (provider: WatcherProvider, modelId: string): Promise<void> => {
+    if (open === null || settle === undefined) return
+    setReplacing({ provider, refusal: null })
+    try {
+      const refusal = settle(await open({ provider, modelId }))
+      setReplacing(refusal === null ? null : { provider, refusal })
+    } catch { setReplacing({ provider, refusal: 'Sotto could not start a new Watcher. Nothing was changed.' }) }
+  }
   /** What the window has drawn from main's published state: the confirmed values a press is measured against. */
   const drawn = settingValues(state, thread)
   const unconfirmed = unconfirmedKinds(state, thread.id)
@@ -327,7 +346,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     const draftText = getDraftText()
     if (!/\bultrathink\b/iu.test(draftText)) onDraftText(draftText ? `${draftText}${/\s$/u.test(draftText) ? '' : '\n\n'}ultrathink` : 'ultrathink')
   } : undefined
-  const note = locked ? (providerName ? `This thread stays with ${providerName}.` : undefined) : providers > 1 ? 'Any provider until your first message.' : undefined
+  const note = others.length > 0 ? 'Another provider’s model starts a new Watcher. This conversation stays in Watcher history, and you can send its handover with your first message.'
+    : locked ? (providerName ? `This thread stays with ${providerName}.` : undefined) : providers > 1 ? 'Any provider until your first message.' : undefined
   /** A setting's value in words: a model's name, an effort level, a permission mode in its own provider's terms. */
   const valueName = (kind: SettingKind, value: string, owner: AgentModel | undefined): string => kind === 'model' ? resolveModel(models, value)?.name ?? value
     : kind === 'effort' ? (value ? `${effortLabel(value)} effort` : "the model's default effort")
@@ -343,6 +363,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   }
   const kinds: readonly SettingKind[] = ['model', 'effort', 'permissions']
   const notices = <>
+    {replacing?.refusal ? <p className="thread-options__notice" role="alert"><span>{replacing.refusal}</span></p> : null}
     {kinds.map(kind => {
       const pending = settings.pending[kind]
       if (pending?.awaiting !== 'unconfirmed') return null
@@ -359,7 +380,12 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   </>
   return <div ref={bar} className="thread-options-bar" data-provider-locked={locked}>
     <div className="thread-options thread-options--chips">
-      <ModelPicker models={models} modelId={modelId} disabled={fixed || modelDisabled} onChange={pressed => { const id = chosenModelId(models, pressed, modelId, thread.modelId); press('model', id, { modelId: id }) }} note={note} />
+      <ModelPicker models={models} modelId={modelId} disabled={fixed || modelDisabled || replacing !== null && replacing.refusal === null} note={note} onChange={pressed => {
+        const picked = others.find(model => model.id === pressed)
+        const provider = picked === undefined ? null : watcherProviderOf(picked)
+        if (picked !== undefined && provider !== null) { void replace(provider, picked.id); return }
+        const id = chosenModelId(models, pressed, modelId, thread.modelId); press('model', id, { modelId: id })
+      }} />
       {efforts.length > 0 && <EffortPicker key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
         disabled={fixed || modelDisabled} onChange={reasoningEffort => press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name}
@@ -372,7 +398,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />}
     </div>
     {/* Always present, so assistive technology hears the caption when it arrives. */}
-    <span id={captionId} className="thread-options__caption" role="status">{caption}</span>
+    <span id={captionId} className="thread-options__caption" role="status">{replacing !== null && replacing.refusal === null ? `Starting a new Watcher on ${PROVIDER_LABELS[replacing.provider]}…` : caption}</span>
     {locked && thread.status === 'running' && turnNote ? <small>Available after this turn finishes.</small> : null}
     {noticeSlot ? createPortal(notices, noticeSlot) : notices}
   </div>

@@ -22,6 +22,7 @@ import { isResumeNoteText } from '../../../shared/restartResume'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
+import { HandoverMessage } from '../watcher/WatcherHandover'
 import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
@@ -225,7 +226,9 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   // provider received, as it received it (ADR-0061 decision 8).
   const wakeUp = isWakeUpMessage(message)
   const markdown = useMemo(() => wakeUp ? wakeUpMarkdown(message.text) : message.text, [wakeUp, message.text])
-  return <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : undefined} data-message-id={message.id} ref={article}>
+  // The handover Watcher's first message carried goes ahead of the user's words, as Sotto's (ADR-0073).
+  return <>{message.handover && message.role === 'user' ? <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
+  <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : undefined} data-message-id={message.id} ref={article}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
       : <span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : 'System'}</span>}
       <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
@@ -235,7 +238,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
     {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}
-  </article>
+  </article></>
 })
 
 /**
