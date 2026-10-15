@@ -918,7 +918,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
           if (!this.completedOrigins.has(origin.uuid)) { thread.status = 'running'; this.markTurn(id, 'running') }
           this.acknowledgements.get(origin.uuid)?.()
         })
-        thread.status = 'running'; thread.lastTurn = { id: origin.uuid, status: 'running', ...(runtime.watcher ? { messageId: origin.messageId } : {}) }
+        thread.status = 'running'; thread.lastTurn = { id: origin.uuid, status: 'running', messageId: origin.messageId }
         try {
           markSendStage(command.commandId, 'written')
           if (this.usageEnabled) this.usageGroups.set(id, { id: origin.uuid, startedAt: new Date().toISOString() })
@@ -1574,7 +1574,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const messageId = steer ? alias.origins.find(origin => origin.uuid === uuid)?.messageId : undefined
         if (steer && !steer.carried) this.foldedSteers.add(uuid)
         // Its turn is its own message's, though a later steer may already be shown.
-        else if (!this.completedOrigins.has(uuid)) { thread.status = 'running'; if (steer) thread.lastTurn = { id: uuid, status: 'running', ...(runtime.watcher ? { messageId } : {}) }; this.markTurn(id, 'running', messageId) }
+        else if (!this.completedOrigins.has(uuid)) { thread.status = 'running'; if (steer) thread.lastTurn = { id: uuid, status: 'running', ...(messageId ? { messageId } : {}) }; this.markTurn(id, 'running', messageId) }
         this.acknowledgements.get(uuid)?.()
       }
     }
@@ -1627,7 +1627,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (origin) {
         this.completedOrigins.add(origin)
         const messageId = !selfTurn ? alias.origins.find(value => value.uuid === origin)?.messageId : undefined
-        thread.lastTurn = { id: origin, status, ...(runtime.watcher && messageId ? { messageId } : {}) }
+        thread.lastTurn = { id: origin, status, ...(messageId ? { messageId } : {}) }
         // A turn Claude Code gave itself answers no message of Sotto's. The newest message may be a steer whose own
         // turn has not begun, so it has no record to settle here.
         if (!selfTurn) this.markTurn(id, status, messageId, failure ?? undefined, steered)

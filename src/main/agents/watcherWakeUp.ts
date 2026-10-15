@@ -52,6 +52,8 @@ export interface WatcherWakeOptions {
   progress?: (target: WatcherThreadTarget) => string | undefined
   /** Whether a host reports its threads' background work counts. Absent means every host does; one that does not reads as unknown. */
   reportsWork?: (hostId: string) => boolean
+  /** The Watcher start or send a thread's newest turn answers, so its news can name that operation. */
+  answers?: (target: WatcherThreadTarget, thread: AgentThread) => string | undefined
   /**
    * The news waiting in Watcher's queue, not yet sent. Read at start to restore it, and when a thread's own facts change,
    * so news still waiting is kept current without a wake-up of its own.
@@ -333,15 +335,18 @@ export class WatcherWakeUp {
         const endsBefore = new Set(ends())
         let settles = false
         if (finished) {
+          // The news names the delegation this turn answers, when there is one. The name is an identity, never words.
+          const operationId = this.options.answers?.(target, thread)
+          const answers = operationId ? { operationId } : {}
           // A host that does not report the counts sends no count: unknown, never none running. Unknown sub-agents count, so
           // a finish while they are unresolved says the turn is not done and is owed work-settled news.
           this.event(finished.status === 'failed' ? 'turn-failed' : 'turn-finished', target, [finished.id, finished.status],
-            { turnId: finished.id, ...this.reportsWork(target.hostId) ? { backgroundWorkCount: watcherBackgroundWorkCount(thread) } : {},
+            { turnId: finished.id, ...answers, ...this.reportsWork(target.hostId) ? { backgroundWorkCount: watcherBackgroundWorkCount(thread) } : {},
               evidenceIds: this.evidence.read(target).filter(item => item.turnId === finished.id).map(item => item.id) })
           if (this.workSettled(thread, target.hostId)) {
             const settling = () => this.pending.filter(event => event.kind === 'work-settled' && targetKey(event.target) === key).map(event => event.id)
             const waiting = new Set(settling())
-            this.event('work-settled', target, [finished.id], { turnId: finished.id, backgroundWorkCount: 0 })
+            this.event('work-settled', target, [finished.id], { turnId: finished.id, ...answers, backgroundWorkCount: 0 })
             settles = settling().some(id => !waiting.has(id))
           }
         }

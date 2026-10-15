@@ -75,6 +75,8 @@ export interface HostService {
   readonly supportsWatcherStandingWatch?: boolean
   /** The host's threads report the background work counts work-settled news needs; without it they are unknown. */
   readonly supportsWatcherWorkSettled?: boolean
+  /** The host's exact operation reads carry a delegation's outcome and reply; without it a desktop reads them as unknown. */
+  readonly supportsWatcherOutcomes?: boolean
   subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
   watcherRoomThreads?(threadIds: readonly string[]): WatcherRoomThreadInput[]
