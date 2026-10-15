@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { canonicalModelId } from '../../src/shared/modelCatalog'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -122,8 +123,8 @@ describe('coordinator numeric prompt acceptance', () => {
     try {
       const activity = store.query({})
       expect(activity.totals.prompts).toEqual({ user: 1, watcher: 0, wakeUp: 1, total: 2, steered: 0 })
-      expect(activity.models.find(model => model.modelId === thread.modelId)!.prompts).toEqual({ user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 })
-      expect(activity.models.find(model => model.modelId === resumedModelId)!.prompts).toEqual({ user: 0, watcher: 0, wakeUp: 1, total: 1, steered: 0 })
+      expect(activity.models.find(model => model.modelId === canonicalModelId('codex', thread.modelId))!.prompts).toEqual({ user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 })
+      expect(activity.models.find(model => model.modelId === canonicalModelId('codex', resumedModelId))!.prompts).toEqual({ user: 0, watcher: 0, wakeUp: 1, total: 1, steered: 0 })
     } finally { store.close() }
   })
 
@@ -134,7 +135,7 @@ describe('coordinator numeric prompt acceptance', () => {
     expect(f.adapters.codex.commands.filter(command => command.type === 'send')).toHaveLength(1)
     const first = (await f.usage.read()).activity!
     expect(first.totals.prompts.user).toBe(1)
-    expect(first.models.find(model => model.modelId === f.thread.modelId)!.prompts.user).toBe(1)
+    expect(first.models.find(model => model.modelId === canonicalModelId('codex', f.thread.modelId))!.prompts.user).toBe(1)
     await f.control.command({ type: 'refresh' })
     f.setHistory(false); await f.host.privacyChanged(); await f.control.privacyChanged()
     expect((await f.usage.read()).activity!.totals.prompts.user).toBe(1)

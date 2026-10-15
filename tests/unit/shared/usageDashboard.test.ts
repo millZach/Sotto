@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { providerIdSchema } from '../../../src/shared/agents'
 import {
-  USAGE_MODEL_ROWS_MAX, usageHostReadSchema, usageHourlyAggregateSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usagePromptSubmissionSchema,
+  USAGE_CLIENT_ROWS_MAX, USAGE_CLIENTS, USAGE_MODEL_ROWS_MAX, usageClientSchema, usageHistoryCursorSchema, usageHistoryPromptSchema, usageHistoryStatusSchema,
+  usageHostReadSchema, usageHourlyAggregateSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageLocalReadSchema, usagePromptSubmissionSchema,
   usageProviderIdSchema, usageQuerySchema, usageQuotaReadSchema, usageTimeZoneSchema, usageTokenObservationSchema,
 } from '../../../src/shared/usageDashboard'
 
@@ -70,6 +71,58 @@ describe('usage dashboard boundaries', () => {
     const prompt = { providerId: 'codex', threadId: 'thread-1', messageId: 'message-1', modelId: 'gpt-5', at: '2026-10-12T00:00:00.000Z', kind: 'user', inputKind: 'steer' }
     expect(usagePromptSubmissionSchema.safeParse(prompt).success).toBe(true)
     expect(usagePromptSubmissionSchema.safeParse({ ...prompt, promptDigest: 'a'.repeat(64) }).success).toBe(false)
+  })
+
+  it('keeps where work ran and the app that sent it consistent on every token observation', () => {
+    expect(usageTokenObservationSchema.safeParse(observation).success).toBe(true)
+    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'sotto', client: 'sotto', subAgent: true, origin: 'adapter' }).success).toBe(true)
+    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'outside', client: 'codex-exec' }).success).toBe(true)
+    // Sotto work is the Sotto client; work outside Sotto names its own client.
+    expect(usageTokenObservationSchema.safeParse({ ...observation, client: 'claude-code' }).success).toBe(false)
+    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'outside' }).success).toBe(false)
+    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'outside', client: 'sotto' }).success).toBe(false)
+    expect(usageTokenObservationSchema.safeParse({ ...observation, source: 'outside', client: 'codex-unknown' }).success).toBe(false)
+    // Imported history always carries the instant its provider recorded.
+    expect(usageTokenObservationSchema.safeParse({ ...observation, origin: 'history' }).success).toBe(false)
+    expect(usageTokenObservationSchema.safeParse({ ...observation, origin: 'history', at: '2026-10-12T00:00:00Z' }).success).toBe(true)
+    expect(usageClientSchema.options).toEqual(USAGE_CLIENTS)
+  })
+
+  it('accepts imported prompts, cursors and history status as numbers and identities alone', () => {
+    const prompt = { providerId: 'codex', threadId: 'session-hash', messageId: 'turn-1', modelId: 'gpt-6-astra', at: '2026-10-12T00:00:00.000Z',
+      kind: 'user', source: 'outside', client: 'codex-exec' }
+    expect(usageHistoryPromptSchema.safeParse(prompt).success).toBe(true)
+    expect(usageHistoryPromptSchema.safeParse({ ...prompt, client: 'sotto' }).success).toBe(false)
+    expect(usageHistoryPromptSchema.safeParse({ ...prompt, source: 'sotto' }).success).toBe(false)
+    expect(usageHistoryPromptSchema.safeParse({ ...prompt, source: 'sotto', client: 'sotto' }).success).toBe(true)
+    expect(usageHistoryPromptSchema.safeParse({ ...prompt, text: 'private prompt' }).success).toBe(false)
+    expect(usageHistoryPromptSchema.safeParse({ ...prompt, inputKind: 'steer' }).success).toBe(false)
+    expect(usageHistoryCursorSchema.safeParse({ size: 10, mtimeMs: 20, offset: 10 }).success).toBe(true)
+    expect(usageHistoryCursorSchema.safeParse({ size: 10, mtimeMs: 20, offset: -1 }).success).toBe(false)
+    expect(usageHistoryCursorSchema.safeParse({ size: 10, mtimeMs: 20, offset: 1, path: 'C:\\x' }).success).toBe(false)
+    expect(usageHistoryCursorSchema.safeParse({ size: 1, mtimeMs: 1, offset: 1, state: 'x'.repeat(65_537) }).success).toBe(false)
+    expect(usageHistoryStatusSchema.safeParse({ status: 'complete', earliestAt: '2026-04-21T00:00:00Z' }).success).toBe(true)
+    expect(usageHistoryStatusSchema.safeParse({ status: 'finished' }).success).toBe(false)
+  })
+
+  it('bounds the new query filters and keeps every new read field optional for older hosts', () => {
+    expect(usageLocalQuerySchema.safeParse({ sources: ['sotto', 'outside'], since: '2026-10-12T05:00:00-07:00' }).success).toBe(true)
+    expect(usageLocalQuerySchema.safeParse({ sources: ['sotto', 'outside', 'sotto'] }).success).toBe(false)
+    expect(usageLocalQuerySchema.safeParse({ sources: ['remote'] }).success).toBe(false)
+    expect(usageLocalQuerySchema.safeParse({ since: '2026-10-12' }).success).toBe(false)
+    expect(usageQuerySchema.safeParse({ hostIds: ['computer-1'], sources: ['outside'], since: '2026-10-12T00:00:00Z' }).success).toBe(true)
+    const prompts = { user: 0, watcher: 0, wakeUp: 0, total: 0, steered: 0 }
+    const field = { knownRows: 0, rows: 0, partial: false }
+    const empty = { tokens: Object.fromEntries(['input', 'output', 'cached', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h', 'total'].map(name => [name, field])),
+      prompts, tokenRecords: 0, partialTokenRecords: 0, undatedTokenRecords: 0, activeThreads: 0, activeDays: 0 }
+    const read = { metadata: { startedAt: '2026-10-12T00:00:00.000Z', revision: 0, generation: 0, legacySeedCompleted: false },
+      totals: empty, timeZone: 'UTC', providers: [], models: [], modelCount: 0, modelsTruncated: false, daily: [], dailyCoverage: 'complete', hourly: [] }
+    expect(usageLocalReadSchema.safeParse(read).success).toBe(true)
+    expect(usageLocalReadSchema.safeParse({ ...read, totals: { ...empty, lastDay: '2026-10-12' },
+      clients: [{ ...empty, source: 'outside', clientId: 'claude-code', subAgent: true }],
+      metadata: { ...read.metadata, history: { status: 'scanning' } } }).success).toBe(true)
+    expect(usageLocalReadSchema.safeParse({ ...read, clients: Array.from({ length: USAGE_CLIENT_ROWS_MAX + 1 }, () => ({ ...empty, source: 'sotto', clientId: 'sotto', subAgent: false })) }).success).toBe(false)
+    expect(usageLocalReadSchema.safeParse({ ...read, totals: { ...empty, lastDay: '2026-02-30' } }).success).toBe(false)
   })
 
   it('preserves native unknown percentage, known zero and over-limit allowance independently of tokens', () => {

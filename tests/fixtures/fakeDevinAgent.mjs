@@ -3,6 +3,7 @@ import { clearInterval } from 'node:timers'
 import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import { devinOtelDefaults as otelDefaults } from './devinOtel.mjs'
 
 // Synthetic ACP peer grounded in the native 3000.10.31 experiment. Only fixture data is recorded.
 const root = process.argv[2]
@@ -129,7 +130,12 @@ createInterface({ input: process.stdin }).on('line', line => {
   const configPath = process.argv[process.argv.indexOf('--config') + 1]
   let config = {}
   try { config = JSON.parse(readFileSync(configPath, 'utf8')) } catch { violate('Missing owned config') }
-  result(frame.id, { config, configPath })
+  // 3000.10.31 accepts the profile's `otel` block and leaves it out of the readback. A script can answer as 3000.11.3
+  // does instead: `otel: 'profile'` reads back the profile's block filled in with defaults, `otel: 'default'` the CLI's
+  // own default block whatever the profile says, and an object exactly that. `newBlock` adds a block Sotto never checked.
+  const { otel, ...older } = config
+  const readOtel = script.otel === 'profile' ? { enabled: true, ...otelDefaults, ...otel } : script.otel === 'default' ? { enabled: true, ...otelDefaults } : script.otel
+  result(frame.id, { config: { ...older, ...(readOtel ? { otel: readOtel } : {}), ...(script.newBlock ? { future_block: { enabled: true } } : {}) }, configPath })
  } else if (frame.method === 'session/new') {
   if (!p.cwd || !Array.isArray(p.mcpServers) || p.mcpServers.length) violate('Invalid session setup')
   const sessionId = randomUUID(); const session = { cwd: p.cwd, model: 'fixture-model', messages: [] }

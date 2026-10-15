@@ -4,6 +4,8 @@ import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { assertDevinWorkingDirectory, devinPolicyPath, prepareDevinPolicy, verifyDevinMcpList, verifyDevinPluginList, verifyDevinPolicy } from '../../../src/main/agents/devinPolicy'
+import { DEVIN_CLI_VERSION, DevinRefusal } from '../../../src/main/agents/devinRpc'
+import { devinOtelDefaults as otelDefaults } from '../../fixtures/devinOtel.mjs'
 import { setup } from '../../fixtures/devinPolicyFixture'
 
 it('writes only its owned profile and confirms the native normalized readback', async () => {
@@ -33,7 +35,7 @@ it('writes one profile per allowance and asks about everything the allowance doe
   expect(everything.permissions.allow).toEqual(expect.arrayContaining(['edit', 'exec', 'Fetch(*)']))
   // Each allowance gets a file of its own, and the asking one keeps the name a profile had before allowances.
   expect((await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)).path).toBe(devinPolicyPath(userData, 'nothing'))
-  expect(devinPolicyPath(userData, 'nothing')).toMatch(/approval-policy-v1\.json$/u)
+  expect(devinPolicyPath(userData, 'nothing')).toMatch(/approval-policy-v2\.json$/u)
   expect(new Set([devinPolicyPath(userData, 'nothing'), devinPolicyPath(userData, 'edits'), devinPolicyPath(userData, 'everything')]).size).toBe(3)
 })
 
@@ -150,9 +152,84 @@ it('refuses unknown normalized fields and native routing or execution overrides'
   const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
   const { path } = profile
   const config = JSON.parse(await readFile(path, 'utf8'))
-  for (const extra of [{ api_url: 'https://example.invalid' }, { proxy: { mode: 'manual', url: 'https://example.invalid', no_proxy: null } },
+  for (const extra of [{ proxy: { mode: 'manual', url: 'https://example.invalid', no_proxy: null } },
     { devin: { org_id: 'different-org' } }, { shell: { setup_complete: false, startup_messages_remaining: 10, exec_shell: 'other-shell' } },
     { disabled_tools: ['edit'] }, { agent: { endpoint: 'https://example.invalid' } }]) {
     expect(() => verifyDevinPolicy({ config: { ...config, ...extra }, configPath: path }, profile)).toThrow(/did not confirm/u)
   }
+  // A field Sotto has never seen is refused too, and says why.
+  expect(() => verifyDevinPolicy({ config: { ...config, api_url: 'https://example.invalid' }, configPath: path }, profile)).toThrow(/newer than the one Sotto checked/u)
+})
+
+it('pins telemetry export off in every owned profile', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  for (const allows of ['nothing', 'edits', 'everything'] as const) {
+    const config = JSON.parse(await readFile((await prepareDevinPolicy(userData, allows, cwd, nativeConfig)).path, 'utf8'))
+    expect(config.otel).toEqual({ enabled: false })
+  }
+})
+
+it('confirms a readback without otel, with it pinned off, or with the default block that has nowhere to send', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  const profile = await prepareDevinPolicy(userData, 'edits', cwd, nativeConfig)
+  const { otel: pinned, ...older } = JSON.parse(await readFile(profile.path, 'utf8'))
+  expect(pinned).toEqual({ enabled: false })
+  // 3000.10.31 drops the block it does not know; 3000.11.3 reads back the pinned value, or its own default.
+  for (const otel of [undefined, { enabled: false }, { enabled: false, ...otelDefaults }, { enabled: true, ...otelDefaults }]) {
+    expect(() => verifyDevinPolicy({ config: otel ? { ...older, otel } : older, configPath: profile.path }, profile)).not.toThrow()
+  }
+})
+
+it('refuses telemetry export that has a destination or settings of its own, in plain words and without its values', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
+  const config = JSON.parse(await readFile(profile.path, 'utf8'))
+  for (const otel of [{ enabled: true, ...otelDefaults, endpoint: 'https://private-value.invalid' },
+    { enabled: false, ...otelDefaults, endpoint: 'https://private-value.invalid' },
+    { enabled: true, ...otelDefaults, logs_endpoint: 'https://private-value.invalid/v1/logs' },
+    { enabled: true, ...otelDefaults, metrics_endpoint: 'https://private-value.invalid/v1/metrics' },
+    { enabled: true, ...otelDefaults, headers: { Authorization: 'private-value' } },
+    { enabled: true, ...otelDefaults, resource_attributes: { 'team.id': 'private-value' } },
+    { enabled: true, ...otelDefaults, disable_user_prompt_logging: true },
+    // A field Sotto has never seen does not excuse one it knows that could send.
+    { enabled: true, ...otelDefaults, endpoint: 'https://private-value.invalid', future_field: 'private-value' },
+    { enabled: false, headers: { Authorization: 'private-value' }, future_field: null },
+    { enabled: 'yes', future_field: null },
+    { enabled: true }, { endpoint: 'https://private-value.invalid' }, true, null]) {
+    let refusal: unknown
+    try { verifyDevinPolicy({ config: { ...config, otel }, configPath: profile.path }, profile) } catch (error) { refusal = error }
+    expect(refusal).toBeInstanceOf(DevinRefusal)
+    const message = (refusal as Error).message
+    expect(message).toMatch(/telemetry settings that Sotto’s profile does not set.*Nothing was sent, and your threads are kept\. Remove the otel settings/u)
+    expect(message).not.toContain('private-value')
+  }
+})
+
+it('says plainly that a Devin reporting a block Sotto has not checked is newer than the one it checked', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
+  const config = JSON.parse(await readFile(profile.path, 'utf8'))
+  const read = (): void => verifyDevinPolicy({ config: { ...config, future_block: { enabled: true, private: 'private-value' } }, configPath: profile.path }, profile)
+  expect(read).toThrow(DevinRefusal)
+  expect(read).toThrow(`This Devin version is newer than the one Sotto checked, and it has settings Sotto has not checked. Nothing was sent, and your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} until Sotto checks this version.`)
+  // A block Sotto knows that reads back wrong is still reported as that, not as a newer version.
+  expect(() => verifyDevinPolicy({ config: { ...config, future_block: {}, hooks: { SessionStart: ['private-value'] } }, configPath: profile.path }, profile)).toThrow(/did not confirm/u)
+})
+
+it('says a Devin is newer, not that it sends telemetry, when otel differs only by a field Sotto has never seen', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
+  const config = JSON.parse(await readFile(profile.path, 'utf8'))
+  for (const otel of [{ enabled: false, ...otelDefaults, future_field: 'private-value' },
+    { enabled: true, ...otelDefaults, future_field: { private: 'private-value' } },
+    { enabled: false, future_field: 'private-value' }]) {
+    let refusal: unknown
+    try { verifyDevinPolicy({ config: { ...config, otel }, configPath: profile.path }, profile) } catch (error) { refusal = error }
+    expect(refusal).toBeInstanceOf(DevinRefusal)
+    const message = (refusal as Error).message
+    expect(message).toMatch(/^This Devin version is newer than the one Sotto checked/u)
+    expect(message).not.toContain('private-value')
+  }
+  // Still judged after the blocks Sotto knows, so one that reads back wrong is reported as that.
+  expect(() => verifyDevinPolicy({ config: { ...config, otel: { enabled: false, future_field: null }, hooks: { SessionStart: ['private-value'] } }, configPath: profile.path }, profile)).toThrow(/did not confirm/u)
 })

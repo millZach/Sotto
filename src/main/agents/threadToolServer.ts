@@ -9,6 +9,14 @@ export interface ThreadToolResult {
   isError?: boolean
   structuredContent?: Record<string, unknown>
 }
+/**
+ * How long a client waits for one tool call, in seconds, when that is shorter than a tool would otherwise wait for the
+ * user. A client whose own limit cannot be raised sends it with every request (Muse, ADR-0079), and a tool that waits
+ * for an answer returns before it, saying the request is still open. It can only shorten a wait, never lengthen one.
+ */
+export const TOOL_WAIT_HEADER = 'Sotto-Tool-Wait'
+/** What one call knows about its caller beyond the thread: how long the client will wait for it, when it says. */
+export interface ThreadToolCallContext { readonly waitMs?: number }
 /** How a native client reaches one of Sotto's tool servers for one thread: loopback HTTP and a bearer token. */
 export interface ThreadMcpServer { name: string; type: 'http'; url: string; headers: { name: string; value: string }[] }
 /**
@@ -39,11 +47,11 @@ export class ThreadToolServer {
   private running = 0
   /** `listFor` narrows what one thread is shown, when threads get different tools from the same server; every tool otherwise. */
   constructor(protected readonly identity: ThreadToolServerIdentity, readonly definitions: readonly ThreadToolDefinition[],
-    private readonly invoke: (threadId: string, name: string, args: unknown) => Promise<ThreadToolResult>,
+    private readonly invoke: (threadId: string, name: string, args: unknown, context: ThreadToolCallContext) => Promise<ThreadToolResult>,
     private readonly listFor?: (threadId: string) => readonly ThreadToolDefinition[]) {}
-  async call(threadId: string, name: string, args: unknown): Promise<ThreadToolResult> {
+  async call(threadId: string, name: string, args: unknown, context: ThreadToolCallContext = {}): Promise<ThreadToolResult> {
     if (this.closed || !this.definitions.some(tool => tool.name === name)) return { isError: true, content: [{ type: 'text', text: this.identity.unavailable }] }
-    try { return await this.invoke(threadId, name, args) }
+    try { return await this.invoke(threadId, name, args, context) }
     catch { return { isError: true, content: [{ type: 'text', text: this.identity.failed }] } }
   }
   async mcpServer(threadId: string): Promise<ThreadMcpServer> {
@@ -115,11 +123,18 @@ export class ThreadToolServer {
         if (!call.success) { response.writeHead(400).end(); return }
         // Recheck admission after receiving the body; revoked clients cannot dispatch queued calls.
         if (this.tokens.get(authorization!.slice(7)) !== threadId) { response.writeHead(401).end(); return }
-        reply(await this.call(threadId, call.data.name, call.data.arguments ?? {})); return
+        reply(await this.call(threadId, call.data.name, call.data.arguments ?? {}, callContext(request))); return
       }
       response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32601, message: 'This method is unavailable.' } }))
     } finally { this.running-- }
   }
+}
+
+/** The wait a client declared on this request, read strictly: a whole number of seconds from 1 to an hour, else none. */
+function callContext(request: IncomingMessage): ThreadToolCallContext {
+  const declared = request.headers[TOOL_WAIT_HEADER.toLowerCase()]
+  if (typeof declared !== 'string' || !/^[1-9][0-9]{0,3}$/u.test(declared) || Number(declared) > 3600) return {}
+  return { waitMs: Number(declared) * 1000 }
 }
 
 /**

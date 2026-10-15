@@ -1,5 +1,7 @@
 # Usage keeps numeric history on its own host
 
+Superseded in part October 14, 2026 by [ADR-0083](0083-usage-counts-every-clients-work-on-each-computer.md): Usage now counts every client's work on each computer, read from the clients' own local records, including sub-agents and work outside Sotto; older Sotto prompts come from the thread store; prompts count under the model that served them; and Claude's limits are read on demand through Claude Code's `get_usage`. The scope, history, prompt, model and Claude-limit rules below are historical; the store, Clear, Owl gate and host rules stand.
+
 Accepted by Zach on October 12, 2026. Usage is an Owl feature (ADR-0072): stable opens no Usage store, starts no new collection or limit readings and preserves the dormant records. Existing thread usage accounting remains available as before.
 
 Zach chose both native account limits and activity Sotto has observed, covering every connected computer. They measure different things. Account limits can include other clients and side calls; they are displayed per provider and computer, never added together or inferred from token counts. Codex and Grok can read native account metadata without inference. Claude supplies passive native limit events; an idle refresh cannot manufacture an observation. Devin's unverified token and limit capabilities remain unavailable. No second key, private credential reader, paid refresh prompt or new network host is introduced. [The source study](../research/2026-10-12-provider-usage-dashboard.md) records verified wire capabilities.
