@@ -6,6 +6,8 @@ import { existingWorkingDirectory } from './threadWorktrees'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { randomUUID } from 'node:crypto'
 import { NativeUsage } from './nativeUsage'
+import { scanCodexHistory } from './usageHistory/codexHistory'
+import type { UsageHistorySink } from './usageHistory/sink'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { mergeCodexQuota, parseCodexQuota, unavailableProviderQuota } from './providerQuota'
 import { bracketCompaction } from './compactionActivity'
@@ -160,6 +162,7 @@ export class CodexAppServerHost implements AgentHost {
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (id: string, visitor: (record: UsageTokenObservation) => void) => void
   readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
   private quota: UsageQuotaRead | undefined
   private quotaReading: Promise<UsageQuotaRead> | undefined
   private readonly usageTurnStarts = new Map<string, string>()
@@ -308,6 +311,7 @@ export class CodexAppServerHost implements AgentHost {
     if (options.usageEnabled) {
       this.subscribeUsage = listener => this.usage.subscribeUsage(listener)
       this.visitUsage = (id, visitor) => this.usage.visitUsage(id, visitor)
+      this.scanUsageHistory = (sink, signal) => this.scanHistory(sink, signal)
       this.readProviderQuota = async (providerId, refresh) => {
         if (providerId !== 'codex') return unavailableProviderQuota(providerId, 'unsupported')
         if (!this.state.connected || !this.provider?.alive) return unavailableProviderQuota('codex', 'not-connected')
@@ -367,6 +371,21 @@ export class CodexAppServerHost implements AgentHost {
     // An idle app-server is let go gently: its input closes and it has the request deadline to finish writing.
     if (runtime) { this.runtimes.delete(id); this.endServer(runtime.server, 'gently') }
   }
+  /**
+   * Codex's own rollouts on this computer, for Usage (ADR-0083). A thread this adapter owns reports under its own ID,
+   * and the sub-agents it started under the same thread; any other session under a hashed identity. Reads the saved
+   * thread records without changing them, so it never waits on or starts a connection.
+   */
+  private async scanHistory(sink: UsageHistorySink, signal: AbortSignal): Promise<void> {
+    const owned = new Map<string, string>()
+    const own = (aliases: Record<string, Alias>): void => {
+      for (const [id, alias] of Object.entries(aliases)) if (alias.kind !== 'personal') owned.set(alias.codexThreadId, id)
+    }
+    try { own(await this.aliasStore.read()) } catch { /* What this process holds still counts. */ }
+    own(this.aliases)
+    await scanCodexHistory({ home: this.codexHome(), owned }, sink, signal)
+  }
+
   private codexHome(): string { return this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex') }
   /** Metadata only: config may contain credentials and is never read or logged here. */
   private async configStamp(): Promise<string | undefined> {

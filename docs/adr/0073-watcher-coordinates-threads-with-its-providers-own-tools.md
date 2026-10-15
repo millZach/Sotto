@@ -145,6 +145,21 @@ The bounded source cache retains up to three hundred facts per target, enough fo
 Recovery compares actual source changes against the bounded cache, so projection omissions are not removals. First materialization remains unknown until the saved occurrence is reconciled; explicit new/removed PR associations and changed already-observed facts still supersede it. Before the newest checkpoint is published, retained captures are offered to the private restorer; only a capture referenced by the waiting occurrence seeds its comparison. This lets a newer saved capture supersede older waiting news without replaying unrelated historical captures.
 
 Recovery and dispatch checks retain prompt charges from stopped/closed legacy scopes. Only an exact authored echo, accepted Send or possibly-written uncertainty opens another budget; saving a failed intent grants none. Owning-host withdrawal is checked inside admission and again at the writer. Own-change marks span same-turn steers under exact native/Sotto turn anchors, and transcript replay cannot move an already-observed file tool into a later steer.
+
+## October 14, 2026: owned desktop room publication (#991)
+
+This amendment defines the gated desktop room path. Measurement and verification are recorded in the Step 5 performance and verification notes.
+
+The desktop room uses the established 50 ms leading/trailing publish window only when the existing Watcher and streaming-publish-cost startup answers are both true. Both answers are checked before the new scheduler, capture or cached-input reader exists. Stable keeps prior behavior and saved records whole; no new switch is added.
+
+The first room is sent immediately. Each later event in that window captures an owned complete room and replaces the pending capture. The trailing deadline delivers the newest capture even after quiet; it does not read a newer source state or repeat a quiet room. Direct Get, Open, Stop all preview, Stop all, limit, permission-mode, Watch and Stop watching operations flush prior pending desktop room notifications when they settle, including rejection or a synchronous throw. Their own original result or error is retained. Schema and authority checks keep their existing boundaries.
+
+Room state reads requested remote thread facts through a main-only owned cached input: title, status, connectivity, workspace settlement, background count and request identities/kinds. Requested targets share one read per owning host. Connectivity is reused for evidence freshness. Unknown targets remain unavailable; retained disconnected cache keeps its cached status and facts with connected=false. An older local service without the optional reader uses one existing visible snapshot. No wire feature or authority is added. Public shell reads and operation/observer helpers keep their ownership contracts, and socket ingestion/merge is unchanged.
+
+Only desktop room notifications are coalesced. Observations, evidence, news, wakes, admission, permission answers, display presentation and phone/socket events retain their timing. Local room projection already avoided whole-shell cloning. Bounded Watcher-record copies, owned room captures and non-room remote snapshot clones remain separate costs.
+
+An absent or destroyed window has no retry loop; a fresh complete Get recovers state. Cleanup removes the subscription and cancels the pending deadline. Equal observation times retain existing arrival ordering. This changes neither event-news batching nor the quiet-episode rule.
+
 ## October 14, 2026: the request note
 
 On October 13, 2026 Zach saw his own message in Watcher's room end with a long line Sotto had added: `[Sotto Watcher request: …]`, with the request ID, the local host and every known project ID. He wants that routing to happen in the background and his bubble to show only what he typed. Listing every project also cost tokens on every message. This replaces that line; request identity, budgets, receipts, takeover and wake-ups are unchanged.
@@ -171,6 +186,18 @@ On October 14, 2026 Zach watched four threads and found Watcher woken by almost 
 
 What Watcher was last told of a thread's own facts is kept in memory. After a restart, the first turn end may tell them again, inside the wake-up that turn end causes anyway.
 
+## October 14, 2026: work settled
+
+Turn-finished news fires once per turn and carries a background work count, but its identity is the turn and its status, so when the work a finished turn left running ended, Watcher heard nothing (#1024). T3 keeps a task open while a child waits on its own children; Sotto now says when that wait is over.
+
+News gains one kind, **work-settled**: once per turn, when the work a finished or failed turn left running reaches zero. That work is the thread's provider-confirmed background work (Claude's background tasks), the working sub-agents in its roster (Codex's `subAgentActivity`) and its monitoring. Claude's background sub-agents appear in both of the first two, so the count takes the larger of those, plus monitoring; turn-finished and turn-failed news carry the same count, so a Codex turn whose sub-agents are still working no longer reads as done. A turn that finished with none gets no work-settled news. Like all Watcher news it carries identities and counts only, rides the same batch and wake-up path, and grants nothing. Quiet's rule is unchanged: it still reads background work and monitoring only.
+
+Unknown is not zero. A restart cannot see how sub-agents that were running ended, so the roster holds them as unknown; while any are unknown, the turn stays unsettled and its news waits until the provider says how they ended. They count with the working ones in a finish's work count, so a turn that finishes while they are unknown reads as not done and is owed work-settled news like any busy finish. The news is due only while its turn is the thread's newest finished turn and its work is still zero and known. Work that starts again before delivery withdraws it, and the turn is owed it again, so it comes once, after the work truly reaches zero. A new turn replaces it.
+
+It survives restart without repeating. A finish observed with work still running carries a second digest in its event ID, the work-settled scope (request, thread, generation and turn), so the saved or still-queued ID alone tells a restarted Watcher which turn is owed one; the work-settled ID itself is saved like any other and deduplicates the rest. Only a finish delivered as busy is owed one: a finish first observed with nothing running stays done, and work seen on that turn later brings no work-settled news. Paired hosts list an optional host-v1 feature, `watcher-work-settled`, offered under the same recorded desktop origin as `watcher-reads`: their thread projection carries background work, monitoring and the sub-agent summary. A host that does not list it reads as unknown, not as none running. Its finished turns carry no work count, and its threads get no work-settled news; Watcher learns a turn finished there and nothing about the work it left. No phone or host decoder reads news kinds.
+
+`watcherPrompt.ts` tells Watcher that a turn finished with background work or monitoring still running is not done, and that work-settled news says when it is.
+
 ## October 14, 2026: the wake-up is a background action
 
 The same day Zach saw each wake-up in Watcher's conversation, and in the queue above its composer, as a "Sotto · Wake-up" bubble of machine text: host and thread IDs as JSON, request IDs, evidence digests and instructions about tools and prompt budgets. "This is nonsense and can be a background action." Watcher's news now travels the way the request note does, and is shown nowhere.
@@ -180,3 +207,11 @@ The same day Zach saw each wake-up in Watcher's conversation, and in the queue a
 - **Recovery.** No one is shown such a wake-up, so no one can resume or remove it. One the queue paused, or that was not sent, goes again by itself after Watcher next finishes a turn, and at once, behind them, when it holds the user's own follow-ups up; new news tries one that was not sent again. One whose send is unknown, with nothing left reconciling it, is let go rather than sent twice; its news was already told.
 
 Watcher's system prompt says such news comes as a short message from Sotto with the news in its note, which the user does not see.
+
+## October 15, 2026: work settled under the wake rule
+
+Work-settled news (#1050) and the rule for what wakes Watcher were decided apart on October 14. Together:
+
+- **Work-settled news wakes Watcher.** It is part of a turn's end: for a turn that finished busy, the second half of it. It is never held.
+- **Held evidence rides with the turn's next untold end.** A thread's own facts that change while its turn runs fold into the turn-finished or turn-failed wake-up. Those that change after a busy finish was told, while the work it left runs, fold into that turn's work-settled wake-up, and only when they differ from what Watcher was told with the finish. They never wait past it. A turn that finished with nothing running gets no work-settled news, so what changes after it waits for the next turn's end, as before.
+- **Its words travel in the background.** The work-settled line and the busy finish's "not done until Sotto sends work-settled news" go in the wake-up's news, beside Sotto's short message through the request note's channel, like all Watcher news. Neither shows as a message.

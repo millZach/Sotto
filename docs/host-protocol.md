@@ -130,6 +130,8 @@ The optional `usage-dashboard` feature is advertised only when the owning host's
 
 Queries contain no desktop host ID; the paired connection owns that scope, and the desktop annotates each answer with its host ID. Numeric Usage payloads contain no prompt or reply text, native session IDs, titles, folders, account addresses, keys or protocol bodies. Read and refresh grant nothing. Clear affects the host's numeric history only and never answers a provider permission.
 
+Optional `usage-history` (ADR-0083) is advertised beside `usage-dashboard` by a host that reads its own computer's Claude Code and Codex records into Usage. A desktop that lists it in `hello.accepts` may send `query.sources` (`sotto`, `outside`) and `query.since` (an instant, for the activity since a limit window began), and is sent the read's additions: `activity.clients`, one row per place, app and subagent flag with optional `providerIds`; `activity.metadata.history`, `{ status, earliestAt?, scannedAt? }`; and an optional `lastDay` on every aggregate. A desktop that did not accept it is sent the read without those additions, which its strict schemas know. A host that does not advertise it is sent neither filter, and its figures read as Sotto's own work.
+
 Each request is `{ v: 1, id, session, op, ... }`: `id` is the client's own (at most 512 characters) and comes back on the response, and `session` is the one the socket opened with. Requests are strict: a field the host does not know makes the request unreadable.
 
 | `op` | Fields | Result |
@@ -283,6 +285,8 @@ Every result that starts or finds a host, a launch's and an update's restart's, 
 ## Watcher standing-watch and phone management additions (October 13, 2026)
 
 Protocol remains v1. Optional watcher-standing-watch is desktop-only and requires the same SSH-recorded authenticated origin as watcher-control and watcher-reads. watcher-read accepts optional standingWatches: an array of durable `{id,target,createdAt,generation,lastUserMessageId?,pausedByUserMessageId?}` assignments for that master. Empty removes that master's watches. The owning host persists its own origin attribution, withdrawn-ID fences, latest master creation frontier (including empty synchronization) and human-turn generations; it publishes optional standingWatches in watcher-state projections. Master replacement preserves assignments but retired creation identities cannot send. Older hosts receive no assignment and refuse standing automation. No control token or prompt travels with synchronization.
+
+October 14, 2026: optional watcher-work-settled is desktop-only, offered under the same SSH-recorded origin as watcher-reads, and adds no request, field or push. It says the host's threads report their background work, monitoring and sub-agent counts, which the desktop's Watcher reads to send work-settled news when a finished turn's work ends ([ADR-0073](adr/0073-watcher-coordinates-threads-with-its-providers-own-tools.md)). A host that does not list it reads as unknown, not as none running: its finished turns carry no work count and its threads get no work-settled news.
 
 Optional watcher-phone-manage is offered only on the Owl desktop's phone listener alongside watcher-phone. hello.accepts must contain both. It admits:
 

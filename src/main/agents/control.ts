@@ -3960,8 +3960,8 @@ export const AGENT_STATE_BROADCAST_INTERVAL_MS = 16
 export const AGENT_STATE_PUBLISH_INTERVAL_MS = 50
 /** Schedules a deferred run and returns its cancel; injectable so tests own the clock. */
 export type PublishScheduler = (run: () => void, ms: number) => () => void
-export interface CoalescedAgentStatePublisher {
-  publish(state: AgentState): void
+export interface CoalescedAgentStatePublisher<State extends object = AgentState> {
+  publish(state: State): void
   /** Deliver a held state now, for a caller that must not wait out the interval. */
   flush(): void
   dispose(): void
@@ -3975,14 +3975,14 @@ const realPublishScheduler: PublishScheduler = (run, ms) => {
  * in-process listeners (the checkpoint observer) still see every intermediate state and
  * command responses still carry the exact state their command produced.
  */
-export function coalesceAgentStatePublishes(send: (state: AgentState) => void,
-  options: { intervalMs?: number; schedule?: PublishScheduler } = {}): CoalescedAgentStatePublisher {
+export function coalesceAgentStatePublishes<State extends object = AgentState>(send: (state: State) => void,
+  options: { intervalMs?: number; schedule?: PublishScheduler } = {}): CoalescedAgentStatePublisher<State> {
   const intervalMs = options.intervalMs ?? AGENT_STATE_PUBLISH_INTERVAL_MS
   const schedule = options.schedule ?? realPublishScheduler
   let cancel: (() => void) | null = null
-  let pending: AgentState | null = null
+  let pending: State | null = null
   let disposed = false
-  const sendNow = (state: AgentState): void => {
+  const sendNow = (state: State): void => {
     cancel?.()
     pending = null
     send(state)

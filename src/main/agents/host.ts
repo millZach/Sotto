@@ -11,6 +11,7 @@ import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitCh
 import type { GitPullRequestAction, GitPullRequestLink, GitPullRequestRead, GitPullRequestMergeMethod, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { ThreadEvent } from '../../shared/threadEvents'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
+import type { UsageHistorySink, UsageRecordedUserMessage } from './usageHistory/sink'
 
 /**
  * A staged image as an adapter receives it (ADR-0031): its handle, and its bytes read from this host's attachment
@@ -191,6 +192,18 @@ export interface AgentHost {
   subscribeUsage?(listener: (record: UsageTokenObservation) => void): () => void
   visitUsage?(threadId: string, visitor: (record: UsageTokenObservation) => void): void
   readProviderQuota?(providerId: ProviderId, refresh: boolean): Promise<UsageQuotaRead>
+  /**
+   * Owl-only (ADR-0083): read this computer's own provider records into Usage, numbers only. Each native adapter reads
+   * its own provider's files, reports a session it owns under its own thread ID, and every other session under a
+   * namespaced, non-reversible identity (`usageHistoryThreadId`). Wrappers translate owned rows the way they translate
+   * every usage record and pass the rest through. Resumes from the sink's cursors; stops when `signal` aborts.
+   */
+  scanUsageHistory?(sink: UsageHistorySink, signal: AbortSignal): Promise<void>
+  /**
+   * Owl-only: Sotto's own stored user messages created before `before`, by identity and instant alone, with whether
+   * each was a wake-up. Answers false when the store could not be read yet. Never reads message text.
+   */
+  visitRecordedUserMessages?(visitor: (message: UsageRecordedUserMessage) => void, before?: string): boolean
   /** Private main capability; never a serialized AgentCommand field. */
   executeFromWatcher?(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult>
   /** Main-only launch capabilities. Wrappers translate identity before handing them to an adapter. */

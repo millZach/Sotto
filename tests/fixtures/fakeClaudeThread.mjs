@@ -300,6 +300,15 @@ lines.on('line', async line => {
       if (script.holdResult) await released(script.holdResult)
       output(error ? { type: 'result', subtype: 'error_during_execution', session_id: session, is_error: true, result: '' } : { type: 'result', subtype: 'success', session_id: session, is_error: false, result: '' })
       turnEnded()
+    } else if (frame.request.subtype === 'get_usage') {
+      // Claude Code's own limits read (ADR-0083). usage-script.json holds the `rate_limits` it answers with, in
+      // get_usage's 0-100 percentages; without one it answers as an account with no limits to report. Plan, cost and
+      // codename keys ride along, as the real answer's do, so Sotto must drop them.
+      if (frame.request.skip_behaviors !== true) violation('get_usage must skip the local transcript scan')
+      const script = existsSync(join(root, 'usage-script.json')) ? JSON.parse(readFileSync(join(root, 'usage-script.json'), 'utf8')) : undefined
+      output({ type: 'control_response', response: { subtype: 'success', request_id: frame.request_id, response: script
+        ? { rate_limits_available: true, rate_limits: script.rate_limits, extra_usage: { is_enabled: false }, subscription_type: 'synthetic', quiet_otter: { cost: 1 } }
+        : { rate_limits_available: false } } })
     } else violation('Unknown control request')
   } else if (frame.type === 'user') {
     const initScriptPath = join(root, 'initialize-script.json')
