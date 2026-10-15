@@ -30,7 +30,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -136,7 +136,7 @@ export class DesktopHostRouter {
       } } : {},
       hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => ({
         hostId: host.hostId, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
-        workSettled: host.service.supportsWatcherWorkSettled === true,
+        workSettled: host.service.supportsWatcherWorkSettled === true, outcomes: host.service.supportsWatcherOutcomes === true,
         connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
         permissionCeiling: host.service.shell().configuration.newThreadRuntimeMode ?? 'approval-required' })),
       snapshot: id => {
