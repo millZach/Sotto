@@ -12,7 +12,7 @@ import { watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../.
 import { questionInstructions } from '../../src/main/agents/questionInstructions'
 import type { AgentHost, WatcherProfileTools } from '../../src/main/agents/host'
 import type { ScopedThreadTools } from '../../src/main/agents/threadToolServer'
-import type { AgentThread } from '../../src/shared/agents'
+import type { AgentRuntimeMode, AgentThread } from '../../src/shared/agents'
 import { emptyWatcherRecord } from '../../src/shared/watcher'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { codexFixture } from '../fixtures/codexFixture'
@@ -57,12 +57,10 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
     const launches = records.filter(record => ['thread/start', 'thread/resume'].includes(record.method ?? ''))
     expect(launches.length).toBeGreaterThan(0)
     for (const { params } of launches) {
-      expect(params).toMatchObject({ approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'read-only',
-        developerInstructions: expect.stringContaining(WATCHER_SYSTEM_PROMPT) })
+      expect(params).toMatchObject({ developerInstructions: expect.stringContaining(WATCHER_SYSTEM_PROMPT) })
       expect(params!.developerInstructions).toContain('Synthetic project developer instructions')
       const config = params!.config as { mcp_servers: Record<string, unknown> }
-      if (process.platform === 'win32') expect(config).toHaveProperty('windows.sandbox', 'unelevated')
-      else expect(config).not.toHaveProperty('windows.sandbox')
+      expect(config).not.toHaveProperty('windows.sandbox')
       expect(Object.keys(config.mcp_servers).sort()).toEqual([...names].sort())
       expect(config.mcp_servers.sotto_threads).toMatchObject({ enabled_tools: ['list_threads'], default_tools_approval_mode: 'prompt',
         tools: { list_threads: { approval_mode: 'approve' } } })
@@ -75,7 +73,7 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
       const args = (record.params!.frame as { args: string[] }).args
       if (args.includes('--no-session-persistence')) continue
       expect(flag(args, '--append-system-prompt')).toBe(`${questionInstructions('AskUserQuestion', false)}\n\n${WATCHER_SYSTEM_PROMPT}`)
-      expect(flag(args, '--permission-mode')).toBe('manual')
+      expect(['default', 'acceptEdits', 'auto', 'bypassPermissions']).toContain(flag(args, '--permission-mode'))
       expect(flag(args, '--permission-prompts')).toBe('host')
       expect(args).toContain('mcp__sotto_threads__list_threads')
       expect(args).toContain('mcp__sotto_visual__fixture_tool')
@@ -89,7 +87,7 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
     const launches = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? ''))
     expect(launches.length).toBeGreaterThan(0)
     for (const { params } of launches) {
-      expect(params!._meta).toEqual({ yoloMode: false, autoMode: false, systemPromptOverride: WATCHER_SYSTEM_PROMPT })
+      expect(params!._meta).toMatchObject({ systemPromptOverride: WATCHER_SYSTEM_PROMPT })
       expect((params!.mcpServers as { name: string }[]).map(server => server.name).sort()).toEqual([...names].sort())
     }
     for (const record of records.filter(record => record.method === 'fixture/process')) {
@@ -97,6 +95,39 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
       expect(record.params!.environment).not.toHaveProperty('GROK_SUBAGENTS')
       expect(record.params!.environment).not.toHaveProperty('GROK_MEMORY')
     }
+  }
+}
+
+function assertRuntimeConfiguration(provider: keyof typeof factories, records: RecordedRpc[], mode: AgentRuntimeMode): void {
+  if (provider === 'codex') {
+    const approvalPolicy = mode === 'approval-required' ? 'untrusted' : mode === 'full-access' ? 'never' : 'on-request'
+    const approvalsReviewer = mode === 'auto' ? 'auto_review' : 'user'
+    const sandbox = mode === 'approval-required' ? 'read-only' : mode === 'full-access' ? 'danger-full-access' : 'workspace-write'
+    const settings = records.filter(record => ['thread/start', 'thread/resume', 'thread/settings/update'].includes(record.method ?? ''))
+    expect(settings.length).toBeGreaterThan(0)
+    for (const record of settings) {
+      expect(record.params).toMatchObject({ approvalPolicy, approvalsReviewer })
+      if (record.method === 'thread/settings/update') expect(record.params!.sandboxPolicy).toEqual({ type: sandbox === 'read-only' ? 'readOnly' : sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' })
+      else expect(record.params!.sandbox).toBe(sandbox)
+    }
+    for (const record of records.filter(record => record.method === 'turn/start')) expect(record.params).toMatchObject({ approvalPolicy, approvalsReviewer })
+  } else if (provider === 'claude') {
+    const native = { 'approval-required': 'default', 'auto-accept-edits': 'acceptEdits', auto: 'auto', 'full-access': 'bypassPermissions' }[mode]
+    const settings = records.filter(record => ['launch', 'resume', 'set_permission_mode'].includes(record.method ?? ''))
+    expect(settings.length).toBeGreaterThan(0)
+    for (const record of settings) {
+      const frame = record.params!.frame as { args: string[]; request?: { mode: string } }
+      if (record.method === 'set_permission_mode') expect(frame.request!.mode).toBe(native)
+      else {
+        if (frame.args.includes('--no-session-persistence')) continue
+        expect(flag(frame.args, '--permission-mode')).toBe(native)
+        expect(frame.args.includes('--allow-dangerously-skip-permissions')).toBe(mode === 'full-access')
+      }
+    }
+  } else {
+    const settings = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? ''))
+    expect(settings.length).toBeGreaterThan(0)
+    for (const record of settings) expect(record.params!._meta).toEqual({ yoloMode: mode === 'full-access', autoMode: mode === 'auto', systemPromptOverride: WATCHER_SYSTEM_PROMPT })
   }
 }
 
@@ -130,27 +161,41 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
     expect(tools.revoke).toHaveBeenCalledWith(id)
   })
 
-  it('keeps tools, asking mode and instructions through early start, send, settings, replacement and cold resume', async () => {
+  it('keeps ordinary permission mappings and scoped tools through widening, narrowing, early start, replacement and cold resume', async () => {
     const f = await factories[provider](); cleanups.push(f.cleanup)
     const id = randomUUID(), tools = await attach(f.host, f.root, id, f.projectId, provider)
     await seedModels(f.root, provider)
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
-    await f.host.startThreadSession!(id, { modelId: f.modelId, workingDirectory: f.root })
-    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId })
+    await f.host.startThreadSession!(id, { modelId: f.modelId, workingDirectory: f.root, runtimeMode: 'full-access' })
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId, runtimeMode: 'full-access' })
     await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic first turn' })
     await f.driver.completeTurn(id, 'Synthetic complete')
     await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
     assertConfiguration(provider, await f.driver.requests())
-    for (const runtimeMode of ['auto-accept-edits', 'auto', 'full-access'] as const) {
-      await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode })).rejects.toThrow('cannot be widened')
+    assertRuntimeConfiguration(provider, await f.driver.requests(), 'full-access')
+    const modes: AgentRuntimeMode[] = provider === 'grok' ? ['approval-required', 'auto', 'full-access'] : ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
+    for (const runtimeMode of modes) {
+      const before = (await f.driver.requests()).length
+      expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode })).accepted).toBe(true)
+      expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.runtimeMode).toBe(runtimeMode)
+      await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic mode turn' })
+      await f.driver.completeTurn(id, 'Synthetic complete')
+      await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
+      assertRuntimeConfiguration(provider, (await f.driver.requests()).slice(before), runtimeMode)
+      if ('liveSettings' in f && f.liveSettings) expect((await f.liveSettings.effective(id)).runtimeMode).toBe(runtimeMode)
     }
-    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, providerMode: 'anything' })).rejects.toThrow('cannot be widened')
+    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, providerMode: 'anything' })).rejects.toThrow('ordinary permission modes')
+    const beforeModelChange = (await f.driver.requests()).length
     expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high', modelId: 'fixture-second-model' })).accepted).toBe(true)
+    if ('liveSettings' in f && f.liveSettings) expect((await f.liveSettings.effective(id)).runtimeMode).toBe('full-access')
+    else assertRuntimeConfiguration(provider, (await f.driver.requests()).slice(beforeModelChange), 'full-access')
+    const beforeReplacement = (await f.driver.requests()).length
     await f.clientUpdate!.install()
     await seedModels(f.root, provider, true)
     await f.host.clientUpdated!(provider)
     await f.host.startThreadSession!(id)
+    assertRuntimeConfiguration(provider, (await f.driver.requests()).slice(beforeReplacement), 'full-access')
     await f.driver.raisePermission(id, 'Synthetic edit or writing command')
     await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests[0]?.kind).toBe('permission')
     expect(tools.revoke).not.toHaveBeenCalled()
@@ -166,18 +211,17 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
       if ('protocol' in f) return f.protocol.permissionDecision(record) !== undefined
       return false
     })).toBe(false)
+    const beforeResume = (await f.driver.requests()).length
     await f.host.connect(); await f.host.startThreadSession!(id)
     await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic resumed turn' })
     assertConfiguration(provider, await f.driver.requests())
+    assertRuntimeConfiguration(provider, (await f.driver.requests()).slice(beforeResume), 'full-access')
     expect(tools.revoke).not.toHaveBeenCalled()
     if (provider === 'codex') {
       const servers = (await readFile(join(f.root, 'servers.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line))
-      for (const server of servers.filter(server => server.method === 'initialize' && server.args.includes('sandbox_mode="read-only"'))) {
-        expect(server.args).toContain('approval_policy="on-request"')
-        if (process.platform === 'win32') {
-          expect(server.args).toContain('windows.sandbox="unelevated"')
-          expect(servers.filter(record => record.pid === server.pid && record.method === 'command/exec')).toHaveLength(2)
-        } else expect(server.args).not.toContain('windows.sandbox="unelevated"')
+      for (const server of servers.filter(server => server.method === 'initialize')) {
+        expect(server.args).not.toContain('windows.sandbox="unelevated"')
+        expect(servers.filter(record => record.pid === server.pid && record.method === 'command/exec')).toEqual([])
         expect(server.args.some((arg: string) => arg.includes('enabled=false') || arg.includes('shell_tool'))).toBe(false)
       }
     }
@@ -291,12 +335,14 @@ for (const provider of ['codex', 'grok'] as const) it(`${provider} refuses remem
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId })
-  await f.action(id, provider === 'codex' ? { type: 'permission', text: 'Synthetic write', params: { availableDecisions: ['accept', 'acceptForSession', 'decline'] } }
+  await f.action(id, provider === 'codex' ? { type: 'permission', text: 'Synthetic write', params: { availableDecisions: ['accept', 'acceptForSession', { applyNetworkPolicyAmendment: { network_policy_amendment: { action: 'allow', host: 'synthetic.invalid' } } }, 'decline'] } }
     : { type: 'permission', text: 'Synthetic write', options: [{ optionId: 'yes', name: 'Allow once', kind: 'allow_once' }, { optionId: 'always', name: 'Always', kind: 'allow_always' }, { optionId: 'no', name: 'Deny', kind: 'reject_once' }] })
   await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests[0]?.kind).toBe('permission')
   const request = (await f.host.snapshot()).threads.find(thread => thread.id === id)!.requests[0]!
   const answer = { type: 'answer' as const, commandId: randomUUID(), threadId: id, requestId: request.id, answer: '', approved: true }
-  await expect(f.host.execute({ ...answer, permissionChoice: provider === 'codex' ? 'acceptForSession' : 'always' })).rejects.toThrow('cannot be widened')
+  for (const permissionChoice of provider === 'codex' ? ['acceptForSession', 'native-decision:2'] : ['always']) {
+    await expect(f.host.execute({ ...answer, commandId: randomUUID(), permissionChoice })).rejects.toThrow('cannot remember')
+  }
   expect((await f.host.snapshot()).threads.find(thread => thread.id === id)!.requests).toHaveLength(1)
   expect((await f.host.execute({ ...answer, commandId: randomUUID(), permissionChoice: provider === 'codex' ? 'accept' : 'yes' })).accepted).toBe(true)
 })
@@ -322,7 +368,6 @@ for (const provider of ['codex', 'grok'] as const) it(`${provider} keeps the wor
     : { type: 'permission', text: 'Synthetic write', options: [{ optionId: 'yes', name: 'Allow once', kind: 'allow_once' }, { optionId: 'always', name: 'Always', kind: 'allow_always' }, { optionId: 'no', name: 'Deny', kind: 'reject_once' }] })
   await expect.poll(async () => (await workspace.snapshot()).threads.find(thread => thread.id === id)?.requests[0]?.kind).toBe('permission')
   const request = (await workspace.snapshot()).threads.find(thread => thread.id === id)!.requests[0]!
-  await expect(workspace.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'full-access' })).rejects.toThrow('cannot be widened')
   await expect(workspace.configureThreadWorkingCopy(id, { workingCopy: 'independent' })).rejects.toThrow('working folder cannot be changed')
   const answer = { type: 'answer' as const, commandId: randomUUID(), threadId: id, requestId: request.id, answer: '', approved: true }
   await expect(workspace.execute({ ...answer, permissionChoice: provider === 'codex' ? 'acceptForSession' : 'always' })).rejects.toThrow('Allow this request once')
@@ -337,37 +382,45 @@ for (const provider of ['codex', 'grok'] as const) it(`${provider} keeps the wor
   expect(tools.revoke).toHaveBeenCalledWith(id)
 })
 
-it('pins every Codex uncertain-settings resume, including a resident recovery read', async () => {
+it('keeps Codex tools and instructions without replaying uncertain permission settings on recovery reads', async () => {
   const f = await codexFixture(undefined, false, 10_000); cleanups.push(f.cleanup)
   const id = randomUUID()
   await attach(f.host, f.root, id, f.projectId, 'codex')
   await f.script({ developerInstructions: 'Synthetic project developer instructions' })
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
-  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId })
-  const native = f.adapter as unknown as { aliases: Record<string, { pendingSettings?: { modelId: string; reasoningEffort: string; runtimeMode: 'approval-required' } }> }
-  native.aliases[id]!.pendingSettings = { modelId: f.modelId, reasoningEffort: 'high', runtimeMode: 'approval-required' }
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId, runtimeMode: 'full-access' })
+  const native = f.adapter as unknown as { aliases: Record<string, { pendingSettings?: { modelId: string; reasoningEffort: string; runtimeMode: 'full-access' } }> }
+  native.aliases[id]!.pendingSettings = { modelId: f.modelId, reasoningEffort: 'high', runtimeMode: 'full-access' }
+  await f.script({ developerInstructions: 'Synthetic project developer instructions', threadResumeSettings: { reasoningEffort: 'high' } })
+  const before = (await f.driver.requests()).length
   await f.host.refreshThread!(id)
+  const recovery = (await f.driver.requests()).slice(before).filter(record => record.method === 'thread/resume')
+  expect(recovery.length).toBeGreaterThan(0)
+  for (const record of recovery) {
+    for (const setting of ['approvalPolicy', 'approvalsReviewer', 'sandbox', 'model']) expect(record.params).not.toHaveProperty(setting)
+    expect(record.params!.config).not.toHaveProperty('model_reasoning_effort')
+  }
   assertConfiguration('codex', await f.driver.requests())
   f.host.disconnect(); await f.adapter.closed()
   await f.host.connect(); await f.host.startThreadSession!(id)
   assertConfiguration('codex', await f.driver.requests())
 })
 
-for (const outcome of ['read-failed', 'write-allowed', 'setup-failed', 'unrelated-write-failure'] as const) it.skipIf(process.platform !== 'win32')(`stops a Windows center before sending when its sandbox probe returns ${outcome}`, async () => {
+it('starts Watcher with ordinary Codex policy without the obsolete Windows read-only launch probe', async () => {
   const f = await codexFixture(undefined, false, 10_000); cleanups.push(f.cleanup)
   const id = randomUUID()
   await attach(f.host, f.root, id, f.projectId, 'codex')
-  await f.script({ watcherSandbox: outcome })
+  await f.script({ watcherSandbox: 'write-allowed' })
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
-  await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId }))
-    .rejects.toThrow("Codex's read-only sandbox isn't working on this computer")
+  expect((await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId, runtimeMode: 'full-access' })).accepted).toBe(true)
+  await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic Watcher turn' })
   const records = await f.driver.requests()
-  expect(records.some(record => record.method === 'turn/start')).toBe(false)
-  expect(records.some(record => record.method === 'thread/start')).toBe(false)
+  assertRuntimeConfiguration('codex', records, 'full-access')
+  expect(records.some(record => record.method === 'command/exec')).toBe(false)
   expect((await f.host.snapshot()).connected).toBe(true)
-  // The failed Watcher launch cannot change an ordinary thread's sandbox or block it.
+  // Watcher's scoped tools do not change an ordinary thread's policy.
   f.host.useBrowserTools!({ call: async () => ({ content: [] }), definitions: [], mcpServer: async () => ({ name: 'sotto_browser', type: 'http', url: 'http://127.0.0.1:12345/mcp', headers: [] }) })
   const ordinary = randomUUID()
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: ordinary, projectId: f.projectId, title: 'Ordinary', modelId: f.modelId, runtimeMode: 'full-access' })
@@ -377,4 +430,47 @@ for (const outcome of ['read-failed', 'write-allowed', 'setup-failed', 'unrelate
   const ordinaryServer = servers.findLast(record => record.method === 'thread/start')!.pid
   expect(servers.find(record => record.method === 'initialize' && record.pid === ordinaryServer).args).not.toContain('windows.sandbox="unelevated"')
   expect(servers.filter(record => record.pid === ordinaryServer && record.method === 'command/exec')).toEqual([])
+})
+
+it('keeps Claude callback approvals one-time even when its native request suggests remembered rules', async () => {
+  const f = await claudeFixture(undefined, 10_000); cleanups.push(f.cleanup)
+  const id = randomUUID()
+  await attach(f.host, f.root, id, f.projectId, 'claude')
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Watcher', modelId: f.modelId, runtimeMode: 'full-access' })
+  await f.host.startThreadSession!(id)
+  const requestId = randomUUID()
+  await f.action(id, { type: 'permission', requestId, text: 'Synthetic write', permissionSuggestions: [{ type: 'addRules', rules: [{ toolName: 'Bash' }], behavior: 'allow', destination: 'session' }] })
+  await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests[0]?.kind).toBe('permission')
+  const answer = { type: 'answer' as const, commandId: randomUUID(), threadId: id, requestId, answer: '', approved: true }
+  await expect(f.host.execute({ ...answer, permissionChoice: 'always' })).rejects.toThrow('not offered')
+  expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests).toHaveLength(1)
+  expect((await f.host.execute({ ...answer, commandId: randomUUID(), permissionChoice: 'allow' })).accepted).toBe(true)
+  const callback = (await f.driver.requests()).findLast(record => record.method === 'control_response')!
+  expect((callback.params!.frame as { response: { response: unknown } }).response.response).toEqual({ behavior: 'allow', updatedInput: { command: 'npm run build', description: 'Synthetic write' } })
+})
+
+for (const provider of Object.keys(factories) as (keyof typeof factories)[]) it(`${provider} rechecks a phone connection before applying its permission mode`, async () => {
+  const f = await factories[provider](); cleanups.push(f.cleanup)
+  const id = randomUUID()
+  await attach(f.host, f.root, id, f.projectId, provider)
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Watcher', modelId: f.modelId, runtimeMode: 'approval-required' })
+  await f.host.startThreadSession!(id)
+  const before = (await f.driver.requests()).length
+  let checks = 0
+  // Claude's full-access change must restart its process; the guard runs again at that launch.
+  const checksBeforeDisconnect = provider === 'claude' ? 2 : 1
+  const guard = () => { if (++checks > checksBeforeDisconnect) throw new Error('Synthetic phone disconnected') }
+  await expect(f.host.executeFromWatcher!({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'full-access' }, guard)).rejects.toThrow('phone disconnected')
+  const traffic = (await f.driver.requests()).slice(before)
+  expect(traffic.some(record => ['thread/settings/update', 'set_permission_mode', 'session/load', '_x.ai/session/close'].includes(record.method ?? ''))).toBe(false)
+  expect(traffic.filter(record => ['launch', 'resume'].includes(record.method ?? '')).some(record => {
+    const args = (record.params!.frame as { args: string[] }).args
+    return flag(args, '--permission-mode') === 'bypassPermissions'
+  })).toBe(false)
+  expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.runtimeMode).toBe('approval-required')
+  if (provider === 'codex') expect((f.adapter as unknown as { aliases: Record<string, { pendingSettings?: unknown }> }).aliases[id]!.pendingSettings).toBeUndefined()
 })

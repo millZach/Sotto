@@ -2,22 +2,22 @@ import type { AgentHostCommand } from './host'
 import type { AgentRequest } from '../../shared/agents'
 import type { ScopedThreadTools } from './threadToolServer'
 
-/** The browser's standing grant and host setup are outside the center's asking policy. */
+/** The browser's standing grant and host setup remain outside Watcher's scoped tools. */
 export function watcherThreadTools(tools: readonly ScopedThreadTools[]): readonly ScopedThreadTools[] {
   return tools.filter(tool => tool.name === 'sotto_visual' || tool.name === 'sotto_pull_requests')
 }
 
-/** A one-time native approval leaves the pinned mode intact; remembered grants do not. */
+/** The user's runtime mode is separate from a native remembered permission grant. */
 export function assertWatcherPermissionChoice(request: AgentRequest, choice?: string): void {
   const selected = request.permissionChoices?.find(value => value.id === choice)
   if (selected?.kind === 'allow-session' || selected?.kind === 'allow-always') {
-    throw new Error('Watcher’s permission mode cannot be widened. Allow this request once, or deny it.')
+    throw new Error('Watcher cannot remember this permission grant. Allow this request once, or deny it.')
   }
 }
 
 export function assertWatcherPermission(command: AgentHostCommand): void {
   if ((command.type === 'configure-thread' || command.type === 'create-thread')
-    && (command.runtimeMode !== undefined && command.runtimeMode !== 'approval-required' || command.providerMode !== undefined)) {
-    throw new Error('Watcher always asks before edits, writing commands and network use. Its permission mode cannot be widened. Choose only its model and effort.')
+    && command.providerMode !== undefined) {
+    throw new Error('Choose one of Watcher’s ordinary permission modes.')
   }
 }

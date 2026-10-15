@@ -138,6 +138,15 @@ function say(thread, text) {
   notify('item/completed', { threadId: thread.id, turnId: turn.id, item })
   return turn
 }
+/** A completed edit of `paths` in the newest turn, as Codex reports a patch it applied itself (`script.fileChanges`). */
+function changeFiles(thread, paths) {
+  const turn = thread.turns.at(-1)
+  if (!turn) return
+  const item = { type: 'fileChange', id: randomUUID(), status: 'completed', changes: paths.map(path => ({ path, kind: { type: 'update' }, diff: '' })) }
+  turn.items.push(item)
+  notify('item/started', { threadId: thread.id, turnId: turn.id, item: { ...item, status: 'inProgress' } })
+  notify('item/completed', { threadId: thread.id, turnId: turn.id, item })
+}
 function complete(thread, text, status = 'completed') {
   const turn = say(thread, text)
   if (!turn) return
@@ -344,6 +353,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
       'item/tool/requestUserInput', { isBlocking: false, ...script.questionParams })
     if (script.question) raise(thread, 'question', script.question)
     if (script.permission) raise(thread, 'permission', script.permission)
+    if (script.fileChanges) changeFiles(thread, script.fileChanges)
     if (script.reply || script.fail) complete(thread, script.reply ?? 'Failed', script.fail ? 'failed' : 'completed')
   } else if (method === 'turn/steer') {
     if (script.requireFreshMcpConfig && mcpConfigStamp !== configStamp()) {

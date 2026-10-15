@@ -5,6 +5,8 @@ import { watcherRefusal, type WatcherService } from './watcher'
 import type { WatcherProfileTools } from './host'
 
 const descriptions: Record<WatcherToolName, string> = {
+  watch_thread: 'Keep watching and managing a thread until the user stops watching. This does not send a prompt or answer a card.',
+  unwatch_thread: 'Stop watching a thread and fence automatic messages for its standing watch. Does not interrupt the user\'s turn.',
   list_threads: 'List worker threads and their state using Sotto identities. Does not mark anything read by the user.',
   read_thread: 'Read a bounded window of a worker thread. Questions and permissions must be answered by the user on that thread.',
   start_thread: 'Start one worker in a known project and send its first prompt under an active user Watcher request. Retry with the same key to read the original receipt.',

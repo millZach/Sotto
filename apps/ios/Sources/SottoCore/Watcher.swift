@@ -20,11 +20,23 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
     public let recoveryNotice: String?
     public let observedAt: String
     public let draftDeliveries: [DraftDelivery]?
+    public let runtimeMode: String?
+    public let standingWatches: [StandingWatch]?
+    public let ownChanges: [OwnChange]?
     public struct DraftDelivery: Decodable, Equatable, Sendable { public let draftId: String; public let status: String }
+    public struct StandingWatch: Decodable, Equatable, Sendable {
+        public let id: String; public let target: WatcherTarget; public let createdAt: String; public let generation: Int
+        public let pausedByUserMessageId: String?; public let lastUserMessageId: String?
+    }
+    public struct OwnChange: Decodable, Equatable, Sendable {
+        public let replyMessageId: String; public let turnId: String; public let files: [String]; public let fileCount: Int
+        public let reason: String?; public let source: String
+    }
 
     public struct Current: Decodable, Equatable, Sendable {
         public let target: WatcherTarget; public let provider: String; public let modelId: String
         public let reasoningEffort: String?; public let status: String; public let connected: Bool
+        public let runtimeMode: String?
     }
     public struct Conversation: Decodable, Equatable, Sendable {
         public let messages: [Message]; public let earlierAvailable: Bool; public let revision: Int
@@ -42,6 +54,7 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
         public let target: WatcherTarget; public let title: String; public let provider: String?
         public let status: String; public let connected: Bool; public let watched: Bool; public let takenOver: Bool
         public let backgroundWorkCount: Int
+        public let paused: Bool?
     }
     public struct RequestCard: Decodable, Equatable, Sendable {
         public let target: WatcherTarget; public let title: String; public let provider: String?
@@ -134,9 +147,36 @@ public enum WatcherStopReceipt: Decodable, Sendable {
         }
     }
 }
+/// Management retries recover their mutation outcome and read fresh page state separately.
+public enum WatcherManageReceipt: Decodable, Sendable {
+    case ok
+    case refused(WatcherRefusal)
+    public init(from decoder: Decoder) throws {
+        switch try WatcherResultStatus.decode(from: decoder) {
+        case .ok: self = .ok
+        case .refused: self = .refused(try WatcherRefusal(from: decoder))
+        }
+    }
+}
 public enum WatcherWire {
     public static let feature = "watcher-phone"
     public static let stopFeature = "watcher-phone-stop-all"
+    public static let manageFeature = "watcher-phone-manage"
+    /// Views opt in to management only when they can present the controls and recover mutation receipts.
+    public static var managementHello: [String: JSONValue] {
+        var result = hello
+        if case .array(let accepts)? = result["accepts"] { result["accepts"] = .array(accepts + [.string(manageFeature)]) }
+        return result
+    }
+    public static func setPermission(runtimeMode: String) throws -> [String: JSONValue] {
+        guard ["approval-required", "auto-accept-edits", "auto", "full-access"].contains(runtimeMode) else { throw ClientError.invalidRequest }
+        return ["op": .string("watcher-phone-set-permission"), "request": .object(["runtimeMode": .string(runtimeMode)])]
+    }
+    public static func watch(target: WatcherTarget) -> [String: JSONValue] { watchOperation("watcher-phone-watch", target) }
+    public static func unwatch(target: WatcherTarget) -> [String: JSONValue] { watchOperation("watcher-phone-unwatch", target) }
+    private static func watchOperation(_ operation: String, _ target: WatcherTarget) -> [String: JSONValue] {
+        ["op": .string(operation), "request": .object(["target": .object(["hostId": .string(target.hostId), "threadId": .string(target.threadId)])])]
+    }
     /// Ticket 8b opts in when its UI can show the page; existing phones keep their unchanged hello.
     public static var hello: [String: JSONValue] {
         var result = Wire.snapshotHello

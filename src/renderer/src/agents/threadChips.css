@@ -36,15 +36,20 @@
 /* The effort and permission lists. */
 .thread-chip-menu { position: relative; min-width: 0; }
 .thread-chip-menu__list { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30; min-width: 180px; padding: 6px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
-.thread-chip-menu__list > button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
-.thread-chip-menu__list > button:hover:not(:disabled), .thread-chip-menu__list > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
-.thread-chip-menu__list > button[aria-selected='true'] { color: var(--tt-activity); }
-.thread-chip-menu__list > button:disabled { opacity: .45; cursor: default; }
+:is(.thread-chip-menu__list, .thread-chip-menu__options) > button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
+:is(.thread-chip-menu__list, .thread-chip-menu__options) > button:hover:not(:disabled), :is(.thread-chip-menu__list, .thread-chip-menu__options) > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+:is(.thread-chip-menu__list, .thread-chip-menu__options) > button[aria-selected='true'] { color: var(--tt-activity); }
+:is(.thread-chip-menu__list, .thread-chip-menu__options) > button:disabled { opacity: .45; cursor: default; }
 /* A permission mode named for what the provider stops asking says, underneath, what Sotto still asks. */
-.thread-chip-menu__list > button > span { display: grid; gap: 2px; min-width: 0; }
-.thread-chip-menu__list > button > span > small { max-width: 34ch; color: var(--tt-text-muted); font-size: 11.5px; line-height: 1.35; white-space: normal; }
+:is(.thread-chip-menu__list, .thread-chip-menu__options) > button > span { display: grid; gap: 2px; min-width: 0; }
+:is(.thread-chip-menu__list, .thread-chip-menu__options) > button > span > small { max-width: 34ch; color: var(--tt-text-muted); font-size: 11.5px; line-height: 1.35; white-space: normal; }
 .thread-chip-menu__list:has(small) { min-width: 240px; }
-.thread-chip-menu__list:has(small) > button { align-items: flex-start; }
+:is(.thread-chip-menu__list, .thread-chip-menu__options):has(small) > button { align-items: flex-start; }
+/* A list with a line under it that holds whatever is chosen (Watcher's permissions): the list and the line share one
+   panel, wide enough that each choice's one line of description reads without a ragged edge. */
+.thread-chip-menu__list--foot { width: min(318px, calc(100vw - 24px)); }
+.thread-chip-menu__list--foot .thread-chip-menu__options > button > span > small { max-width: none; }
+.thread-chip-menu__foot { margin: 6px 4px 0; padding: 8px 6px 2px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 11.5px; line-height: 1.4; white-space: normal; }
 
 /* One motion: a list rises 6px as it opens, on the easing the follow-up ledger uses. The model menu shares it. */
 @media (prefers-reduced-motion: no-preference) {

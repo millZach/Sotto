@@ -182,13 +182,17 @@ it('preflights unstarted master settings and refuses provider or working-copy ch
     record.current = { target: { hostId: thread.hostId!, threadId: id }, projectId: project.id, provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
     await writeFile(join(f.root, 'agents.json'), JSON.stringify({ watcher: record }))
     f = await workspaceFixture(f.root)
+    f.adapters.codex.state.models[0]!.runtimeModes = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
     const fixture = await setup(); f.host.useWatcherTools(fixture.tools)
     await f.host.connect('codex'); await f.host.connect('claude')
     let before = f.host.workspaceSnapshot().threads.find(thread => thread.id === id)!
     await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: other.id })).rejects.toThrow('new watcher conversation')
     expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })).accepted).toBe(true)
+    expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'full-access' })).accepted).toBe(true)
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === id)?.runtimeMode).toBe('full-access')
+    expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'approval-required' })).accepted).toBe(true)
     before = f.host.workspaceSnapshot().threads.find(thread => thread.id === id)!
-    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'full-access' })).rejects.toThrow('cannot be widened')
+    expect(before.runtimeMode).toBe('approval-required')
     await expect(f.host.configureThreadWorkingCopy(id, { workingCopy: 'independent' })).rejects.toThrow('working folder cannot be changed')
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === id)).toEqual(before)
   } finally { await f.stop(); await f.remove() }
