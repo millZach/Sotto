@@ -5,7 +5,6 @@ import {
   AppearancePreview,
   THEME_PREVIEW_ID,
   applyAppearance,
-  frostAvailable,
   readCachedAppearance,
   resolveAppearance,
   systemPrefersDark,
@@ -26,9 +25,6 @@ const base: AppearanceChoice = {
   lightTheme: 'nocturne',
   darkTheme: 'nocturne',
   appearanceContrast: 100,
-  glassOpacity: 80,
-  frostedWindow: false,
-  frostSeeThrough: 40,
   effortColor: 'ember',
   customThemes: [],
 }
@@ -76,40 +72,16 @@ describe('main-window appearance', () => {
     expect(root.dataset.brand).toBeUndefined()
   })
 
-  it('writes contrast and glass strengths, clamped to their steps', () => {
+  it('writes the contrast strength, clamped to its steps', () => {
     const root = document.createElement('html')
-    applyAppearance({ ...base, appearanceContrast: 150, glassOpacity: 45 }, root, true)
+    applyAppearance({ ...base, appearanceContrast: 150 }, root, true)
     expect(root.style.getPropertyValue('--theme-contrast-base')).toBe('100%')
     expect(root.style.getPropertyValue('--theme-contrast-boost')).toBe('50%')
     expect(root.style.getPropertyValue('--theme-contrast-border-boost')).toBe('12.5%')
-    expect(root.style.getPropertyValue('--theme-glass-opacity')).toBe('45%')
 
-    applyAppearance({ ...base, appearanceContrast: 51, glassOpacity: 7 }, root, true)
+    applyAppearance({ ...base, appearanceContrast: 51 }, root, true)
     expect(root.style.getPropertyValue('--theme-contrast-base')).toBe('50%')
     expect(root.style.getPropertyValue('--theme-contrast-boost')).toBe('0%')
-    expect(root.style.getPropertyValue('--theme-glass-opacity')).toBe('40%')
-  })
-
-  it('frosts the room only where main says the window can, and never against reduced transparency', () => {
-    const root = document.createElement('html')
-    const reduced = (matches: boolean) => (query: string) => ({ matches: matches && query.includes('reduced-transparency') }) as MediaQueryList
-    vi.stubGlobal('sotto', { canFrostWindow: true })
-    applyAppearance({ ...base, frostedWindow: true, frostSeeThrough: 55 }, root, true)
-    expect(root.dataset.frost).toBe('')
-    expect(root.style.getPropertyValue('--theme-frost-solid')).toBe('45%')
-
-    applyAppearance({ ...base, frostedWindow: false, frostSeeThrough: 99 }, root, true)
-    expect(root.dataset.frost).toBeUndefined()
-    expect(root.style.getPropertyValue('--theme-frost-solid')).toBe('20%')
-
-    expect(frostAvailable({ sotto: { canFrostWindow: true }, matchMedia: reduced(true) })).toBe(false)
-    expect(frostAvailable({ sotto: { canFrostWindow: true }, matchMedia: reduced(false) })).toBe(true)
-    expect(frostAvailable({ sotto: { canFrostWindow: false }, matchMedia: reduced(false) })).toBe(false)
-    expect(frostAvailable({ matchMedia: reduced(false) })).toBe(false)
-
-    vi.stubGlobal('sotto', undefined)
-    applyAppearance({ ...base, frostedWindow: true }, root, true)
-    expect(root.dataset.frost).toBeUndefined()
   })
 
   it('puts the effort colourway on the root as an attribute, and an unknown one falls back to Ember', () => {
@@ -172,9 +144,9 @@ describe('main-window appearance', () => {
     const root = document.createElement('html')
     const custom = aurora()
     const unused = parseThemeFile({ version: 1, name: 'Unused', appearance: 'light', colors: { canvas: '#ffffff' } })
-    applyAppearance({ ...base, appearance: 'system', darkTheme: custom.id, glassOpacity: 60, frostedWindow: true, frostSeeThrough: 25, customThemes: [custom, unused] }, root, true)
+    applyAppearance({ ...base, appearance: 'system', darkTheme: custom.id, appearanceContrast: 120, customThemes: [custom, unused] }, root, true)
     const cached = readCachedAppearance()
-    expect(cached).toMatchObject({ appearance: 'system', lightTheme: 'nocturne', darkTheme: custom.id, glassOpacity: 60, frostedWindow: true, frostSeeThrough: 25 })
+    expect(cached).toMatchObject({ appearance: 'system', lightTheme: 'nocturne', darkTheme: custom.id, appearanceContrast: 120 })
     expect(cached.customThemes.map(theme => theme.id)).toEqual([custom.id])
 
     // A cache that cannot be trusted comes back as the shipped defaults, not as the chosen halves.
@@ -183,6 +155,16 @@ describe('main-window appearance', () => {
     expect(readCachedAppearance()).toEqual({ ...restored, appearanceContrast: 200 })
     localStorage.setItem(APPEARANCE_CACHE_KEY, '{not json')
     expect(readCachedAppearance()).toEqual(restored)
+  })
+
+  it('reads a cache saved with the retired glass and window transparency choices without them (ADR-0084)', () => {
+    localStorage.setItem(APPEARANCE_CACHE_KEY, JSON.stringify({ ...base, glassOpacity: 45, frostedWindow: true, frostSeeThrough: 70 }))
+    const cached = readCachedAppearance()
+    expect(cached).toEqual(base)
+    const root = document.createElement('html')
+    applyAppearance(cached, root, true)
+    expect(root.getAttributeNames()).not.toContain('data-frost')
+    expect(root.getAttribute('style')).not.toMatch(/glass|frost/u)
   })
 
   it('keeps each field of the newest pending choice, settles only matching saves, and drops a saved choice once settings catch up', () => {
@@ -209,7 +191,7 @@ describe('main-window appearance', () => {
     const preview = new AppearancePreview()
     const listener = vi.fn()
     const unsubscribe = preview.subscribe(listener)
-    const sequence = preview.choose({ glassOpacity: 55 })
+    const sequence = preview.choose({ appearanceContrast: 155 })
     const draft = { appearance: 'dark' as const, colors: createVividThemeColors('dark', '#000000', '#ffffff') }
     preview.setDraft(draft)
     preview.setDraft(draft)
@@ -219,7 +201,7 @@ describe('main-window appearance', () => {
     expect(listener).toHaveBeenCalledTimes(3)
     preview.reset()
     expect(preview.draft).toBeNull()
-    expect(preview.effective(DEFAULT_SETTINGS).glassOpacity).toBe(80)
+    expect(preview.effective(DEFAULT_SETTINGS).appearanceContrast).toBe(100)
     unsubscribe()
     preview.setDraft(null)
     expect(listener).toHaveBeenCalledTimes(4)

@@ -144,11 +144,11 @@ describe('Sotto application onboarding integration', () => {
   })
 
   it('paints the next launch from the last applied look before settings answer', async () => {
-    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light' as const, lightTheme: 'linen', glassOpacity: 55 })) }))
+    renderApp(createBridge({ getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'light' as const, lightTheme: 'linen', appearanceContrast: 135 })) }))
     await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme-id', 'linen'))
-    expect(document.documentElement.style.getPropertyValue('--theme-glass-opacity')).toBe('55%')
+    expect(document.documentElement.style.getPropertyValue('--theme-contrast-boost')).toBe('35%')
     const { readCachedAppearance } = await import('../../../src/renderer/src/state/appearance')
-    expect(readCachedAppearance()).toMatchObject({ appearance: 'light', lightTheme: 'linen', darkTheme: 't3-code', glassOpacity: 55 })
+    expect(readCachedAppearance()).toMatchObject({ appearance: 'light', lightTheme: 'linen', darkTheme: 't3-code', appearanceContrast: 135 })
     localStorage.setItem('sotto.appearance', '{"appearance":"sepia","lightTheme":"linen","accent":"green"}')
     expect(readCachedAppearance()).toMatchObject({ appearance: 'dark', lightTheme: 'linen' })
     expect(readCachedAppearance()).not.toHaveProperty('accent')

@@ -10,7 +10,7 @@ it('offers the private Watcher bridge only behind the main renderer gate and val
   const ipc = preloadElectron().ipcRenderer
   expect(createSottoBridge(ipc, 'win32').watcher).toBeUndefined()
   expect('watcher' in createSottoWidgetBridge(ipc, 'win32')).toBe(false)
-  const bridge = createSottoBridge(ipc, 'win32', false, true).watcher!
+  const bridge = createSottoBridge(ipc, 'win32', true).watcher!
   const refused = { status: 'refused', code: 'THREAD_BUSY', message: 'Wait for Watcher.', retryable: true }
   ipc.invoke.mockResolvedValue(refused)
   await expect(bridge.open({ provider: 'codex', modelId: 'model', reasoningEffort: 'low' })).resolves.toEqual(refused)

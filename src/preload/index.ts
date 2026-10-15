@@ -99,7 +99,6 @@ import {
 import { historyEntrySchema } from '../shared/history'
 import {
   PLATFORM_ARGUMENT_PREFIX,
-  WINDOW_FROST_ARGUMENT,
   resolvePlatform,
   type SottoPlatform,
 } from '../shared/platform'
@@ -288,7 +287,6 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
 export function createSottoBridge(
   renderer: IpcRendererAdapter,
   platform: SottoPlatform,
-  canFrostWindow = false,
   watcherEnabled = false,
   usageEnabled = false,
 ): SottoBridge {
@@ -387,7 +385,6 @@ export function createSottoBridge(
       check: target => invokeParsed(renderer, REQUEST_DRAFT_CHECK, requestDraftCheckResultSchema, requestDraftTargetSchema.parse(target)),
     }),
     platform,
-    canFrostWindow,
 
     listRecoveryNotices: () =>
       invokeParsed(renderer, RECOVERY_NOTICE_LIST, recoveryNoticesSchema),
@@ -532,7 +529,7 @@ export function exposeRendererBridge(
   const rendererRole = parseRendererRoleArgument(arguments_)
   const platform = parsePlatformArgument(arguments_)
   if (rendererRole === 'main') {
-    context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WINDOW_FROST_ARGUMENT), arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT)))
+    context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

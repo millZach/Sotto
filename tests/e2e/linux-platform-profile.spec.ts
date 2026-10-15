@@ -72,7 +72,6 @@ test('Linux saves a key in Settings and explains Hyprland paste', async () => {
   try {
     await expect(page.getByRole('heading', { name: 'Talk to your computer and your coding agents' })).toBeVisible()
     expect(await page.evaluate(() => window.sotto!.platform)).toBe('linux')
-    expect(await page.evaluate(() => window.sotto!.canFrostWindow)).toBe(false)
     await expect(page.locator('.app-controls')).toHaveCount(0)
     await completeFirstRunSetup(page, { microphone: 'skip' })
     await expect(page.getByRole('complementary', { name: 'Thread sidebar', exact: true })).toBeVisible()

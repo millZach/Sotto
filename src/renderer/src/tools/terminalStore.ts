@@ -28,8 +28,6 @@ export interface TerminalViewHandlers {
   readonly onPasteImage?: ((dataUrl: string | Promise<string | null>) => void) | undefined
   /** A key the page acts on: the terminal leaves it to the page instead of sending it to the shell. */
   readonly isPageShortcut?: ((event: KeyboardEvent) => boolean) | undefined
-  /** Whether the terminal turns see-through while the room is frosted (ADR-0048), as a pane's drawer does. */
-  readonly followsFrost?: boolean | undefined
   /** Font zoom changes the cell grid as well as the renderer; main must resize the PTY. */
   readonly onResize?: ((size: { cols: number; rows: number }) => void) | undefined
   /** A drawer reserves enough height for search and at least one output row, restoring its saved height on close. */

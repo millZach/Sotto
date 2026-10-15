@@ -124,7 +124,6 @@ export default tseslint.config(
       'artifacts/terminal-search-links-zoom/**',
       'artifacts/terminal-search-repaint/**',
       'artifacts/thread-sidebar/**',
-      'artifacts/frosted-window/**',
       'artifacts/forge-hand-test/**',
       'artifacts/effort-furnace/**',
       'artifacts/effort-slider/**',

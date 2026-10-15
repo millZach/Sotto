@@ -183,9 +183,6 @@ artifacts/devin-local-provider/
 # Resizable thread sidebar verification
 artifacts/thread-sidebar/
 
-# Frosted window screen captures: they show the desktop behind the window
-artifacts/frosted-window/
-
 artifacts/terminal-loading/
 artifacts/terminal-agent-states/
 artifacts/phone-terminals/
