@@ -46,13 +46,24 @@ const policyFor = (allows: DevinAllowance): Record<string, unknown> => ({
 // as is the profile's own block exactly as written, because none of them can export: export needs an endpoint in this
 // block, Sotto passes Devin no OTEL_* variable (devinEnvironment), and Devin's documentation says a variable cannot
 // start export without one. Anything else, any endpoint, header or attribute included, is refused.
-const otelDefaults = {
+const otelDefaults: Record<string, unknown> = {
   endpoint: null, logs_endpoint: null, metrics_endpoint: null, headers: {}, logs_headers: {}, metrics_headers: {},
   resource_attributes: {}, timeout_ms: null, log_export_interval_ms: null, metric_export_interval_ms: null,
   disable_user_prompt_logging: false, disable_tool_logging: false,
 }
 const otelWithoutExport = [{ enabled: false }, { enabled: false, ...otelDefaults }, { enabled: true, ...otelDefaults }]
-const otelExportsNothing = (value: unknown): boolean => otelWithoutExport.some(shape => isDeepStrictEqual(value, shape))
+const otelKnownFields = new Set(['enabled', ...Object.keys(otelDefaults)])
+// An `otel` block is refused unless it is one of the shapes above. The refusal names telemetry when a field Sotto knows
+// is set away from its default, since that is what could send. When every field Sotto knows is at rest and the only
+// difference is a field it has never seen, the refusal names the newer version instead: the user set nothing to remove.
+function compareOtel(value: unknown): 'matches' | 'telemetry' | 'newer' {
+  if (otelWithoutExport.some(shape => isDeepStrictEqual(value, shape))) return 'matches'
+  const otel = object(value)
+  if (!otel || Object.keys(otel).every(key => otelKnownFields.has(key))) return 'telemetry'
+  const knownAtRest = Object.entries(otel).every(([key, field]) => !otelKnownFields.has(key)
+    || (key === 'enabled' ? typeof field === 'boolean' : isDeepStrictEqual(field, otelDefaults[key])))
+  return knownAtRest ? 'newer' : 'telemetry'
+}
 // Native config/read expands the user profile with defaults. Only these known
 // fields may accompany the exact owned settings; routing and execution defaults
 // must remain unchanged. On-disk profiles still accept no extra fields at all.
@@ -73,8 +84,9 @@ type Readback = 'matches' | 'differs' | 'telemetry' | 'newer'
 function compareNormalizedProfile(config: Record<string, unknown>, policy: Record<string, unknown>): Readback {
   if (!Object.entries(policy).every(([key, value]) => key === 'otel' || isDeepStrictEqual(config[key], value))) return 'differs'
   // A CLI older than the block drops it; a newer one must read it back as exporting nothing.
-  if (Object.hasOwn(config, 'otel') && !otelExportsNothing(config.otel)) return 'telemetry'
-  let unknown = false
+  const otel = Object.hasOwn(config, 'otel') ? compareOtel(config.otel) : 'matches'
+  if (otel === 'telemetry') return 'telemetry'
+  let unknown = otel === 'newer'
   for (const [key, value] of Object.entries(config)) {
     if (Object.hasOwn(policy, key)) continue
     if (Object.hasOwn(normalizedRoutes, key)) { if (!isDeepStrictEqual(value, normalizedRoutes[key])) return 'differs' }
@@ -139,9 +151,9 @@ export function devinPolicyPath(userDataDirectory: string, allows: DevinAllowanc
 
 /**
  * A versioned, Sotto-owned profile; existing native user/project files are never changed. What the
- * thread allows picks the file, and `nothing` keeps the original name so a profile written before
- * allowances existed is still the one an asking thread uses. The allowance has no default: a caller
- * that forgot it would otherwise check every profile as the asking one.
+ * thread allows picks the file: `nothing` gets the plain versioned name (`approval-policy-v2.json`) and
+ * the others add their allowance to it. The allowance has no default: a caller that forgot it would
+ * otherwise check every profile as the asking one.
  */
 export async function prepareDevinPolicy(userDataDirectory: string, allows: DevinAllowance, cwd?: string, configDirectory?: string): Promise<DevinProfile> {
   await assertDevinWorkingDirectory(cwd, configDirectory)

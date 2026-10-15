@@ -191,7 +191,10 @@ it('refuses telemetry export that has a destination or settings of its own, in p
     { enabled: true, ...otelDefaults, headers: { Authorization: 'private-value' } },
     { enabled: true, ...otelDefaults, resource_attributes: { 'team.id': 'private-value' } },
     { enabled: true, ...otelDefaults, disable_user_prompt_logging: true },
-    { enabled: false, ...otelDefaults, future_destination: 'private-value' },
+    // A field Sotto has never seen does not excuse one it knows that could send.
+    { enabled: true, ...otelDefaults, endpoint: 'https://private-value.invalid', future_field: 'private-value' },
+    { enabled: false, headers: { Authorization: 'private-value' }, future_field: null },
+    { enabled: 'yes', future_field: null },
     { enabled: true }, { endpoint: 'https://private-value.invalid' }, true, null]) {
     let refusal: unknown
     try { verifyDevinPolicy({ config: { ...config, otel }, configPath: profile.path }, profile) } catch (error) { refusal = error }
@@ -211,4 +214,22 @@ it('says plainly that a Devin reporting a block Sotto has not checked is newer t
   expect(read).toThrow(`This Devin version is newer than the one Sotto checked, and it has settings Sotto has not checked. Nothing was sent, and your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} until Sotto checks this version.`)
   // A block Sotto knows that reads back wrong is still reported as that, not as a newer version.
   expect(() => verifyDevinPolicy({ config: { ...config, future_block: {}, hooks: { SessionStart: ['private-value'] } }, configPath: profile.path }, profile)).toThrow(/did not confirm/u)
+})
+
+it('says a Devin is newer, not that it sends telemetry, when otel differs only by a field Sotto has never seen', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
+  const config = JSON.parse(await readFile(profile.path, 'utf8'))
+  for (const otel of [{ enabled: false, ...otelDefaults, future_field: 'private-value' },
+    { enabled: true, ...otelDefaults, future_field: { private: 'private-value' } },
+    { enabled: false, future_field: 'private-value' }]) {
+    let refusal: unknown
+    try { verifyDevinPolicy({ config: { ...config, otel }, configPath: profile.path }, profile) } catch (error) { refusal = error }
+    expect(refusal).toBeInstanceOf(DevinRefusal)
+    const message = (refusal as Error).message
+    expect(message).toMatch(/^This Devin version is newer than the one Sotto checked/u)
+    expect(message).not.toContain('private-value')
+  }
+  // Still judged after the blocks Sotto knows, so one that reads back wrong is reported as that.
+  expect(() => verifyDevinPolicy({ config: { ...config, otel: { enabled: false, future_field: null }, hooks: { SessionStart: ['private-value'] } }, configPath: profile.path }, profile)).toThrow(/did not confirm/u)
 })
