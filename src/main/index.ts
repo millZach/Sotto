@@ -68,7 +68,7 @@ import {
   type WebContentsWillRedirectEventParams,
 } from 'electron'
 import { spawn } from 'node:child_process'
-import { appendFile, rename, stat, writeFile } from 'node:fs/promises'
+import { appendFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 
@@ -1514,8 +1514,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           const opening = hostRouter.questionPageOpening(input)
           if (!opening) return { ok: false, reason: 'gone' }
           if (opening.kind === 'url') { await shell.openExternal(opening.url); return { ok: true } }
-          if (!await stat(opening.file).then(info => info.isFile(), () => false)) return { ok: false, reason: 'gone' }
-          return await shell.openPath(opening.file) === '' ? { ok: true } : { ok: false, reason: 'unavailable' }
+          // The file must still be the HTML file found when the question was asked, after links are followed: openPath runs
+          // whatever it is handed, so a page since replaced by a link to a program is not opened.
+          const real = await realpath(opening.file).catch(() => undefined)
+          if (real !== opening.file || !/\.html?$/iu.test(real) || !await stat(real).then(info => info.isFile(), () => false)) return { ok: false, reason: 'gone' }
+          return await shell.openPath(real) === '' ? { ok: true } : { ok: false, reason: 'unavailable' }
         },
         ...(systemSettingsOpener === null ? {} : { openSystemSettings: systemSettingsOpener }),
         dictation: {

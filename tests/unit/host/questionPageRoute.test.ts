@@ -28,9 +28,13 @@ beforeEach(async () => {
   await mkdir(join(folder, 'page', '.private'), { recursive: true })
   await writeFile(join(folder, 'page', '.private', 'secret.json'), '{"SECRET":2}')
   await writeFile(join(folder, 'page', 'notes.ts'), 'export {}')
+  await mkdir(join(folder, 'page', 'config'), { recursive: true })
+  await writeFile(join(folder, 'page', 'config', 'secrets.json'), '{"SECRET":3}')
+  await writeFile(join(folder, 'page', 'notes.txt'), 'SECRET notes')
   await writeFile(join(folder, 'secret.html'), 'outside')
   upstream = createServer((request, response) => {
     if (request.url === '/moved') { response.writeHead(302, { Location: '/variants/b.html', 'Set-Cookie': 'id=1' }); response.end(); return }
+    if (request.url === '/containers/json') { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end('[{"Id":"SECRET"}]'); return }
     response.writeHead(200, { 'Content-Type': 'text/html', 'Set-Cookie': 'id=1' })
     response.end(`served ${request.url} cookie=${request.headers.cookie ?? 'none'}`)
   })
@@ -72,7 +76,7 @@ it('sends the token alone to the page, and the bare token to its folder', async 
 })
 
 it('refuses hidden files, files a page is not made of, and anything outside the folder', async () => {
-  for (const path of ['.env', 'notes.ts', '..%2Fsecret.html', 'assets/..%5C..%5Csecret.html', 'assets%2f..%2f.private%2fsecret.json', 'assets%2F..%2F..%2Fsecret.html']) {
+  for (const path of ['.env', 'notes.ts', 'config/secrets.json', 'notes.txt', '..%2Fsecret.html', 'assets/..%5C..%5Csecret.html', 'assets%2f..%2f.private%2fsecret.json', 'assets%2F..%2F..%2Fsecret.html']) {
     const response = await get(`/page/${FILE}/${path}`)
     expect(response.status, path).toBe(403)
     expect(await response.text()).not.toContain('SECRET')
@@ -101,6 +105,12 @@ it('passes reads to the agent’s loopback page, keeps its redirects on the rout
   expect(page.headers.get('content-security-policy')).toMatch(/^sandbox/u)
   expect(await page.text()).toBe('served /variants/a.html?variant=A cookie=none')
   expect((await get(`/page/${SERVER}/moved`)).headers.get('location')).toBe(`/page/${SERVER}/variants/b.html`)
+})
+
+it('passes on only what a page is drawn from, so naming a service’s port does not put the service on the tailnet', async () => {
+  const api = await get(`/page/${SERVER}/containers/json`)
+  expect(api.status).toBe(403)
+  expect(await api.text()).not.toContain('SECRET')
 })
 
 it('says the page’s server has stopped, and never passes a page on to the listener itself', async () => {

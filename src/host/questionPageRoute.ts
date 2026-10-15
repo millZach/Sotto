@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs'
+import { pipeline } from 'node:stream/promises'
 import { realpath, stat } from 'node:fs/promises'
 import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
 import path from 'node:path'
@@ -8,13 +9,13 @@ import { inside, type QuestionPageTarget } from '../main/agents/questionPages'
 export const QUESTION_PAGE_PATH = /^\/page\/([A-Za-z0-9_-]{32})(\/[^?#]*)?$/u
 
 /**
- * What a page's folder may serve: the kinds of file a web page is made of. Source, keys and anything else in the folder
- * stay where they are even though the token opens the folder.
+ * What a page's folder may serve: the kinds of file a web page is drawn from. Data, notes, source maps, source, keys and
+ * anything else in the folder stay where they are even though the token opens the folder: configuration lives in JSON and
+ * text files, and a source map carries the source.
  */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
-  '.map': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png',
+  '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png',
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon',
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf', '.mp4': 'video/mp4', '.webm': 'video/webm',
   '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.wasm': 'application/wasm',
@@ -36,8 +37,14 @@ const lowerPageHeaders: Readonly<Record<string, true>> = Object.fromEntries(Obje
 const FORWARDED_HEADERS = ['accept', 'accept-language', 'range', 'if-none-match', 'if-modified-since', 'user-agent', 'cache-control']
 /** Headers of the page's server that do not pass: the connection's own, and cookies the phone would keep for the host. */
 const DROPPED_HEADERS = new Set(['connection', 'keep-alive', 'transfer-encoding', 'set-cookie', 'access-control-allow-origin', 'strict-transport-security', 'alt-svc'])
-/** How long the page's own server has to start answering. */
+/** How long the page's own server has to start answering; once it has, a slow answer is not cut. */
 const PROXY_TIMEOUT_MS = 15_000
+/**
+ * The kinds of answer a loopback page's server may pass on: what a page is drawn from, as a file page serves. A JSON API,
+ * a socket's handshake or anything else a loopback port answers with is refused, so naming a service's port does not put
+ * the service on the tailnet.
+ */
+const PAGE_MEDIA = /^(?:text\/(?:html|css|javascript)|application\/(?:javascript|x-javascript|ecmascript|wasm)|image\/|font\/|audio\/|video\/)/u
 
 const escape = (value: string): string => value.replace(/[&<>"']/gu, character => `&#${character.charCodeAt(0)};`)
 
@@ -117,10 +124,8 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, tar
   }
   response.writeHead(200, { ...PAGE_HEADERS, 'Content-Type': CONTENT_TYPES[path.extname(file!).toLowerCase()] ?? type, 'Content-Length': info.size })
   if (request.method === 'HEAD') { response.end(); return }
-  const stream = createReadStream(file!)
-  stream.on('error', () => response.destroy())
-  stream.pipe(response)
-  await finished(response)
+  // A pipeline closes the file when the browser goes away part way, as a plain pipe would not.
+  await pipeline(createReadStream(file!), response).catch(() => response.destroy())
 }
 
 async function proxy(request: IncomingMessage, response: ServerResponse, origin: string, base: string, rest: string, ownPort: number | undefined): Promise<void> {
@@ -135,6 +140,18 @@ async function proxy(request: IncomingMessage, response: ServerResponse, origin:
   for (const name of FORWARDED_HEADERS) { const value = request.headers[name]; if (typeof value === 'string') headers[name] = value }
   await new Promise<void>(resolve => {
     const outgoing = httpRequest({ host, port, path: rest, method: request.method, headers, timeout: PROXY_TIMEOUT_MS }, incoming => {
+      outgoing.setTimeout(0)
+      const media = (incoming.headers['content-type'] ?? '').toLowerCase()
+      // A redirect, a 204 and a 304 have no body to judge; anything else must be what a page is drawn from.
+      const status = incoming.statusCode ?? 0
+      const bodiless = (status >= 300 && status < 400) || status === 204
+      if (!bodiless && !PAGE_MEDIA.test(media)) {
+        incoming.resume()
+        explain(response, 403, 'Sotto does not pass this on', [`The address ${upstream.host} answered with something other than a web page, so Sotto did not pass it on. Nothing was sent anywhere.`,
+          'Ask the agent to serve the prototype as a page.'])
+        resolve()
+        return
+      }
       const passed: Record<string, string | string[]> = { ...PAGE_HEADERS }
       for (const [name, value] of Object.entries(incoming.headers)) {
         if (value === undefined || DROPPED_HEADERS.has(name) || name in lowerPageHeaders) continue

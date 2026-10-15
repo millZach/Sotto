@@ -59,9 +59,11 @@ describe('foundPages', () => {
     }
   })
 
-  it('looks a path outside the folder up by its name inside it, so a network share in the text is never opened', async () => {
-    const pages = await foundPages(pageMentions(['\\\\fileserver.invalid\\share\\greeting-prototype.html', '//fileserver.invalid/share/greeting-prototype.html']), folder)
-    expect(pages.map(item => item.target.kind === 'file' && item.target.file)).toEqual([expect.stringMatching(/prototypes[\\/]greeting-prototype\.html$/u)])
+  it('never opens a network share named in the text, and takes no file here for a path elsewhere that only shares its name', async () => {
+    const pages = await foundPages(pageMentions(['\\\\fileserver.invalid\\share\\greeting-prototype.html','//fileserver.invalid/share/greeting-prototype.html']), folder)
+    expect(pages).toEqual([])
+    await writeFile(join(folder, 'index.html'), 'x')
+    expect(await foundPages(pageMentions(['/elsewhere/checkout/index.html']), folder)).toEqual([])
   })
 
   it('offers nothing outside the thread’s folder, inside .git, or that is not there', async () => {
@@ -140,6 +142,29 @@ describe('QuestionPages', () => {
     expect(pages.decorate(snapshot([forged])).threads[0]!.requests[0]!.pages).toBeUndefined()
     await vi.waitFor(() => expect(changed).toHaveBeenCalled())
     expect(pages.decorate(snapshot([forged])).threads[0]!.requests[0]!.pages?.map(page => page.name)).toEqual(['greeting-prototype.html'])
+  })
+
+  it('looks again when the reply naming a page reaches the store after the question, and stops after three searches', async () => {
+    let now = 0, stored: AgentMessage[] = []
+    const changed = vi.fn()
+    const pages = new QuestionPages({ changed, now: () => now, messages: () => stored })
+    pages.decorate(snapshot([question('q', 'Which greeting?')]))
+    // The first search reads no reply, finds nothing and settles.
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(pages.decorate(snapshot([question('q', 'Which greeting?')])).threads[0]!.requests[0]!.pages).toBeUndefined()
+    stored = [reply('The page is at docs/prototypes/greeting-prototype.html')]
+    // Too soon: no second search yet.
+    now = 1_000
+    pages.decorate(snapshot([question('q', 'Which greeting?')]))
+    now = 2_000
+    pages.decorate(snapshot([question('q', 'Which greeting?')]))
+    await vi.waitFor(() => expect(changed).toHaveBeenCalled())
+    expect(pages.decorate(snapshot([question('q', 'Which greeting?')])).threads[0]!.requests[0]!.pages?.map(page => page.name)).toEqual(['greeting-prototype.html'])
+    // A question that never names one is searched three times in all.
+    const searches = vi.fn(() => [] as AgentMessage[])
+    const none = new QuestionPages({ changed: vi.fn(), now: () => now, messages: searches })
+    for (let step = 0; step < 6; step++) { none.decorate(snapshot([question('n', 'Nothing here')])); await new Promise(resolve => setTimeout(resolve, 20)); now += 2_000 }
+    expect(searches).toHaveBeenCalledTimes(3)
   })
 
   it('serves a page for an hour after its question leaves, and not after', async () => {

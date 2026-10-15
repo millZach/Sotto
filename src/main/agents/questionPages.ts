@@ -26,6 +26,10 @@ const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 const trailing = (value: string): string => value.replace(/[.,;:!?*_]+$/u, '')
 /** How long a page stays open after its question is answered or withdrawn, for a page still loading on a phone. */
 export const QUESTION_PAGE_LINGER_MS = 60 * 60_000
+/** How many times a question's pages are looked for, and how long apart, when a search finds none: the reply naming them
+ * may reach the thread's store a moment after the question does. */
+const QUESTION_PAGE_SEARCHES = 3
+const QUESTION_PAGE_SEARCH_GAP_MS = 2_000
 /** The most folders a search for a bare file name reads, so a large checkout cannot hold a question up. */
 const SEARCH_FOLDERS_MAX = 4_000
 const SEARCH_DEPTH_MAX = 8
@@ -97,8 +101,6 @@ async function findByName(root: string, name: string, suffix: string): Promise<s
     }
     queue = next
   }
-  if (matches.length === 1) return matches[0]
-  // Several of that name: the one that shares the most folders, from the end, with the path as written, if only one does.
   const written = suffix.toLowerCase().split('/').filter(Boolean).reverse()
   const shared = (match: string): number => {
     const parts = match.replaceAll('\\', '/').toLowerCase().split('/').reverse()
@@ -106,6 +108,10 @@ async function findByName(root: string, name: string, suffix: string): Promise<s
     while (count < written.length && parts[count] === written[count]) count++
     return count
   }
+  // A file name written alone is that file when it is the only one. A path is that file only when the match shares a
+  // folder with it, so `/elsewhere/index.html` is never taken for this folder's own `index.html`. Of several, the one
+  // that shares the most folders, from the end, if only one does.
+  if (written.length <= 1) return matches.length === 1 ? matches[0] : undefined
   const scores = matches.map(shared)
   const best = Math.max(0, ...scores)
   return best > 1 && scores.filter(score => score === best).length === 1 ? matches[scores.indexOf(best)] : undefined
@@ -162,7 +168,10 @@ export function newestReply(messages: readonly AgentMessage[] | undefined): stri
 
 interface Entry {
   readonly threadId: string
+  /** Undefined while a search runs; empty when the searches so far found none. */
   pages: QuestionPage[] | undefined
+  searches: number
+  searchedAt: number
   /** When the question left its thread; its pages close a while after. */
   goneAt?: number
 }
@@ -210,7 +219,11 @@ export class QuestionPages {
         const key = `${thread.id}\n${request.id}`
         if (asked) {
           present.add(key)
-          if (!this.entries.has(key)) this.start(key, thread, snapshot, request)
+          const entry = this.entries.get(key)
+          if (!entry) this.search(key, thread, snapshot, request)
+          else if (entry.pages?.length === 0 && entry.searches < QUESTION_PAGE_SEARCHES && this.now() - entry.searchedAt >= QUESTION_PAGE_SEARCH_GAP_MS) {
+            this.search(key, thread, snapshot, request, entry)
+          }
         }
         const pages = asked ? this.entries.get(key)?.pages : undefined
         const carried = request.pages
@@ -233,9 +246,21 @@ export class QuestionPages {
     return changed ? { ...snapshot, threads } : snapshot
   }
 
-  private start(key: string, thread: AgentThread, snapshot: AgentHostSnapshot, request: AgentRequest): void {
-    const entry: Entry = { threadId: thread.id, pages: undefined }
+  /**
+   * Looks for a question's pages. A search that finds none is tried again on a later snapshot, at most three times in
+   * all, two seconds apart; a timer brings that snapshot when no other does. Once found, a question's pages stay as they are.
+   */
+  private search(key: string, thread: AgentThread, snapshot: AgentHostSnapshot, request: AgentRequest, previous?: Entry): void {
+    const entry: Entry = previous ?? { threadId: thread.id, pages: undefined, searches: 0, searchedAt: 0 }
+    entry.pages = undefined
+    entry.searches++
+    entry.searchedAt = this.now()
     this.entries.set(key, entry)
+    const settle = (pages: QuestionPage[]): void => {
+      entry.pages = pages
+      if (pages.length) this.options.changed()
+      else if (entry.searches < QUESTION_PAGE_SEARCHES) setTimeout(() => { if (this.entries.get(key) === entry) this.options.changed() }, QUESTION_PAGE_SEARCH_GAP_MS).unref?.()
+    }
     let folder: string | undefined
     try { folder = resolveThreadWorkingDirectory(thread, snapshot.projects.find(project => project.id === thread.projectId)) } catch { folder = undefined }
     const summary = thread.summary?.lastAssistant?.text
@@ -244,15 +269,14 @@ export class QuestionPages {
       const reply = newestReply(thread.messages.length ? thread.messages : stored)
       const found = await foundPages(pageMentions([...requestWords(request), reply ?? '', summary ?? '']), folder)
       if (this.entries.get(key) !== entry) return
-      entry.pages = found.map(({ page, target }) => {
+      settle(found.map(({ page, target }) => {
         const token = this.token()
         this.targets.set(token, { target, key })
         return { ...page, token }
-      })
-      if (entry.pages.length) this.options.changed()
+      }))
     })().catch(() => {
-      // A page that cannot be read is a question without pages; the question itself is unaffected.
-      if (this.entries.get(key) === entry) entry.pages = []
+      // A page that cannot be read is a question without pages for now; the question itself is unaffected.
+      if (this.entries.get(key) === entry) settle([])
     })
   }
 

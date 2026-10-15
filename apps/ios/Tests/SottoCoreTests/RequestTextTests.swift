@@ -116,8 +116,10 @@ final class RequestTextTests: XCTestCase {
 
     func testALoopbackLinkAPageAlreadyOpensHasNoRowOfItsOwn() throws {
         let asked = try request(#"{"id":"r","kind":"question","text":"Which greeting?","options":[],"pages":[\#(served)]}"#)
-        let links = [try XCTUnwrap(URL(string: "http://localhost:8075/")), try XCTUnwrap(URL(string: "https://github.com/o/r/pull/1"))]
-        XCTAssertEqual(WebLinks.withoutPages(links, asked.pages).map(\.absoluteString), ["https://github.com/o/r/pull/1"])
+        let links = [try XCTUnwrap(URL(string: "http://localhost:8075/variants/a.html?variant=A")), try XCTUnwrap(URL(string: "http://localhost:8075/other")),
+                     try XCTUnwrap(URL(string: "https://github.com/o/r/pull/1"))]
+        // Only the page's own address gives way to its row; another path on the same port stays a link.
+        XCTAssertEqual(WebLinks.withoutPages(links, asked.pages).map(\.absoluteString), ["http://localhost:8075/other", "https://github.com/o/r/pull/1"])
     }
 
     func testPagesArrivingLaterLeaveTheRequestTheSameToAnswer() throws {

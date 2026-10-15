@@ -51,9 +51,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const mode = requestMode(request)
   const linked = linkedWords(request, mode)
   const pages = request.pages ?? []
-  // A loopback address that is one of the question's pages opens as that page, and has no row of its own.
-  const served = new Set(pages.filter(page => page.kind === 'server').map(page => page.name))
-  const rows = messageLinks.filter(url => !linked.has(url) && !served.has(new URL(url).host))
+  const rows = messageLinks.filter(url => !linked.has(url) && !servedAsPage(url, pages))
   const permission = mode === 'permission'
   const docked = placement === 'composer' && !permission
   const nativeUncertain = request.delivery === 'uncertain'
@@ -207,6 +205,13 @@ function linkedWords(request: AgentRequest, mode: ReturnType<typeof requestMode>
   return new Set(texts.flatMap(webLinks))
 }
 
+/** Whether a loopback link is the very address of one of the question's pages, which opens as that page instead of as a link. */
+function servedAsPage(url: string, pages: readonly QuestionPage[]): boolean {
+  const parsed = new URL(url)
+  const start = `${parsed.pathname.replace(/^\/+/u, '')}${parsed.search}${parsed.hash}`
+  return pages.some(page => page.kind === 'server' && page.name === parsed.host && page.start === start)
+}
+
 /** The request a row's page belongs to, which main opens it through. */
 interface PageOwner { readonly threadId: string; readonly requestId: string }
 
@@ -225,12 +230,16 @@ const PAGE_OPEN_FAILURES = {
  */
 function MessageLinks({ links, pages = [], owner }: { readonly links: readonly string[]; readonly pages?: readonly QuestionPage[]; readonly owner?: PageOwner | undefined }): ReactNode {
   const [failure, setFailure] = useState<keyof typeof PAGE_OPEN_FAILURES | null>(null)
+  // Only the latest press says how it went, so a slow earlier one cannot overwrite it.
+  const latest = useRef(0)
   if (links.length === 0 && pages.length === 0) return null
   const open = (page: QuestionPage): void => {
     if (!owner) return
+    const press = ++latest.current
     setFailure(null)
+    const settle = (reason: keyof typeof PAGE_OPEN_FAILURES | null): void => { if (press === latest.current) setFailure(reason) }
     void (window.sotto?.openQuestionPage?.({ ...owner, token: page.token }) ?? Promise.resolve({ ok: false as const, reason: 'unavailable' as const }))
-      .then(result => setFailure(result.ok ? null : result.reason), () => setFailure('unavailable'))
+      .then(result => settle(result.ok ? null : result.reason), () => settle('unavailable'))
   }
   return <div className="agent-request__link-rows" role="group" aria-label={pages.length ? 'Pages and links for this question' : 'Links from the message above'}>
     {/* A link rather than a button: the question's fieldset disables its buttons while the choices cannot be used. */}
