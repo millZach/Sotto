@@ -10,7 +10,7 @@ The real main/preload/React journey uses Sotto's fake Codex app server. It start
 
 The other journeys cover first entry/model choice, Overview focus trapping and Escape, beside-pane request navigation/draft retention, keyboard order, limit controls, long titles, disconnection, empty state, dark/light at 1600×1000, 1280×800 and 820×560, reduced motion from both the system and Sotto's setting, and stable/Owl saved-record gating. Most layout journeys use a fixed room projection; they establish renderer compatibility rather than actual main delivery.
 
-I opened and inspected all six retained Sotto dark/light room sizes, the reduced-motion setting capture, the minimum beside pane and Overview, and the real-main capture. Text and controls fit, the floating switch stays clear of the composer, the minimum request card remains usable, and no visible clipping or overlap appeared. Automated bounds/contrast checks and keyboard assertions passed. Independent Standards image review is pending.
+I opened and inspected all six retained Sotto dark/light room sizes, the reduced-motion setting capture, the minimum beside pane and Overview, and the real-main capture. Text and controls fit, the floating switch stays clear of the composer, the minimum request card remains usable, and no visible clipping or overlap appeared. Automated bounds/contrast checks and keyboard assertions passed. Independent Standards inspection of fifteen fresh captures found no visible defects. Sizes here describe CSS content sizes; Windows scaling can make the saved PNG larger.
 
 Retained captures:
 
@@ -18,9 +18,9 @@ Retained captures:
 - `room-sotto-dark-1280x800-reduced-motion-setting.png`: reduced motion with Overview open.
 - `beside-sotto-dark-820x560.png` and `list-sotto-dark-820x560.png`: minimum request pane and Overview.
 - `room-main-sotto-dark-1280x800.png`: actual main bridge, final limit and retained exchange. This filename describes content size; the image includes the Windows scale factor.
-- `readings.json`: captured bounds, contrast and keyboard evidence.
+- `readings.json`: contrast, keyboard order and saved-limit readings. Bounds and overlap assertions passed in E2E; this file does not contain their coordinates.
 
-The expanded quiet guard cleared at 18:10:09.1128539-07:00 with 11,028,216 KiB free. The owned keeper was stopped only after its PID, creation time and command matched; its absence, the command child's exit and absence of owned Playwright Electron processes were verified. Clean1681 remained unchanged. A wall-clock jump from roughly17:04 to18:09 was observed while queued; its cause was not established. The pre-app main check occurred between the recorded17:03:31 guard refusal and17:04:40 wait result; an earlier rounded17:05 note was inaccurate. At that check main was `f59f09343c28228e3b0446c2663ed6bd41fce98d`, with no overlapping changes and a successful merge-tree. Required Windows/Desktop/Package and Linux results were green; iOS was ongoing. This was a phase check, not delivery-time freshness.
+The expanded quiet guard cleared at 18:10:09.1128539-07:00 with 11,028,216 KiB free. A later gate preflight found an external Usage full suite whose process began at18:10:11, just after that guard; the app proof therefore had external overlap. It is compatibility proof, not an isolated performance measurement. The owned keeper was stopped only after its PID, creation time and command matched; its absence, the command child's exit and absence of owned Playwright Electron processes were verified. Clean1681 remained unchanged. A wall-clock jump from roughly17:04 to18:09 was observed while queued; its cause was not established. The pre-app main check occurred between the recorded17:03:31 guard refusal and17:04:40 wait result; an earlier rounded17:05 note was inaccurate. At that check main was `f59f09343c28228e3b0446c2663ed6bd41fce98d`, with no overlapping changes and a successful merge-tree. Required Windows/Desktop/Package and Linux results were green; iOS was ongoing. This was a phase check, not delivery-time freshness.
 
 ## Measurements and neighboring contracts
 
