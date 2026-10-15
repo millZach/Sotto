@@ -1,0 +1,299 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway. How a question shows the prototype pages Sotto found in it and in the agent's message before
+     it, on the desktop question card and the iPhone question sheet, three ways, with the failure states. Tap a page on
+     the phone to see the in-app browser sheet. Switch variants with the bar at the bottom or the arrow keys. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototype pages on a question</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --canvas: #0b0c0f; --surface: #121318; --raised: #181a20; --overlay: #1d1f26; --text: #f2f3f6; --muted: #a3a8b2;
+    --hairline: #2a2e37; --hover: rgba(255,255,255,.05); --selected: rgba(71,184,169,.14); --accent: #47b8a9; --accent-text: #6bc3b6;
+    --warn: #e8b46a; --radius: 8px;
+    --p-canvas: #040507; --p-raised: #111316; --p-overlay: #18191d; --p-border: #2a2f39;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 24px 96px; background: #07080a; color: var(--text); font: 14px/1.45 Figtree, system-ui, sans-serif; }
+  header.top { max-width: 1240px; margin: 0 auto 18px; }
+  header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+  header.top p { margin: 0; color: var(--muted); max-width: 900px; }
+  .states { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .states button { font: inherit; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--hairline); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+  .states button[aria-pressed="true"] { border-color: var(--accent); background: var(--selected); }
+  .stage { display: flex; flex-wrap: wrap; gap: 32px; justify-content: center; align-items: flex-start; max-width: 1240px; margin: 0 auto; }
+  .label { margin: 0 0 8px; color: var(--muted); font-size: 12.5px; text-transform: uppercase; letter-spacing: .06em; }
+  .note { max-width: 1240px; margin: 0 auto 18px; padding: 10px 14px; border: 1px solid var(--hairline); border-radius: var(--radius); background: var(--surface); }
+  .note b { color: var(--accent-text); }
+
+  /* Desktop: a slice of the thread pane with the question card docked over the end of the message. */
+  .desk { width: 720px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--canvas); overflow: hidden; }
+  .desk .strip { height: 30px; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; padding: 0 12px; color: var(--muted); font-size: 12px; }
+  .desk .msgs { padding: 16px 22px 8px; color: var(--muted); }
+  .desk .msgs p { margin: 0 0 10px; color: var(--text); opacity: .4; }
+  .card { margin: 0 14px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); padding: 14px 16px 12px; display: grid; gap: 12px; }
+  .card .head { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+  .tag { display: inline-block; padding: 1px 8px; border: 1px solid var(--hairline); border-radius: 999px; color: var(--muted); font-size: 12px; margin-right: 6px; }
+  .prompt { font-size: 15px; font-weight: 600; }
+  .rows { display: grid; gap: 6px; }
+  .row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 7px 12px; border: 1px solid var(--hairline); border-radius: var(--radius); color: var(--text); text-decoration: none; cursor: pointer; background: none; font: inherit; text-align: left; width: 100%; }
+  .row:hover { background: var(--hover); }
+  .row:focus-visible, .pagebtn:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row svg { flex: none; color: var(--muted); }
+  .row svg.lead { color: var(--accent-text); }
+  .row span { display: grid; flex: 1; min-width: 0; }
+  .row strong { font-size: 14px; font-weight: 600; }
+  .row small { overflow: hidden; color: var(--muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .row[data-gone] { cursor: default; border-style: dashed; }
+  .row[data-gone]:hover { background: none; }
+  .row[data-gone] svg.lead { color: var(--warn); }
+  .opts { display: grid; gap: 2px; }
+  .opt { display: grid; grid-template-columns: 18px 1fr; gap: 10px; padding: 7px 8px; margin: 0 -8px; border-radius: var(--radius); }
+  .opt.on { background: var(--selected); }
+  .opt i { width: 14px; height: 14px; margin-top: 3px; border: 1.5px solid var(--muted); border-radius: 50%; }
+  .opt.on i { border: 4px solid var(--accent); }
+  .opt small { display: block; color: var(--muted); font-size: 12.5px; }
+  .opt em { color: var(--accent-text); font-style: normal; font-size: 12.5px; }
+  .chip { margin-left: 8px; font: inherit; font-size: 12px; padding: 1px 8px; border: 1px solid var(--hairline); border-radius: 999px; color: var(--accent-text); background: none; cursor: pointer; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+  .btn { font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--raised); color: var(--text); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #06110f; }
+  .pagebtn { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--hairline)); border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  .pagebtn .thumb { flex: none; width: 64px; height: 44px; border-radius: 6px; border: 1px solid var(--hairline); background: linear-gradient(135deg, #1f2a2f, #14181d); display: grid; place-items: center; color: var(--accent-text); font-size: 11px; font-weight: 600; }
+  .pagebtn span { display: grid; flex: 1; min-width: 0; }
+  .pagebtn strong { font-size: 15px; }
+  .pagebtn small { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .more { color: var(--muted); font-size: 12.5px; }
+  .actions .left { margin-right: auto; display: flex; gap: 6px; }
+  .toast { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); padding: 8px 14px; border-radius: 8px; background: var(--overlay); border: 1px solid var(--hairline); opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  /* iPhone */
+  .phone { position: relative; width: 390px; height: 844px; overflow: hidden; border-radius: 44px; background: var(--p-canvas); box-shadow: 0 0 0 10px #000, 0 20px 50px rgba(0,0,0,.5); font-family: -apple-system, "SF Pro Text", Figtree, system-ui, sans-serif; font-size: 15px; }
+  .phone .thread { padding: 64px 18px 0; }
+  .phone .thread p { margin: 0 0 12px; opacity: .35; }
+  .sheet { position: absolute; inset: 110px 0 0; display: flex; flex-direction: column; border-radius: 22px 22px 0 0; background: var(--p-overlay); box-shadow: 0 -1px 0 var(--p-border); }
+  .grab { width: 38px; height: 5px; margin: 8px auto 4px; border-radius: 3px; background: #3a3d44; }
+  .sbody { flex: 1; overflow: auto; padding: 10px 18px 12px; }
+  .sheet h2 { margin: 8px 0 0; font-size: 20px; font-weight: 600; line-height: 1.25; }
+  .prows { display: grid; gap: 8px; margin-top: 16px; }
+  .prow { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 14px; border: 1px solid var(--p-border); border-radius: 12px; background: rgba(255,255,255,.04); color: var(--text); font: inherit; text-align: left; width: 100%; cursor: pointer; }
+  .prow span { flex: 1; min-width: 0; display: grid; }
+  .prow b { font-size: 15px; font-weight: 600; }
+  .prow small { overflow: hidden; color: var(--muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+  .prow svg { flex: none; }
+  .prow[data-gone] { border-style: dashed; cursor: default; }
+  .pbig { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 16px; padding: 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--p-border)); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  .pbig .thumb { flex: none; width: 44px; height: 56px; border-radius: 8px; border: 1px solid var(--p-border); background: linear-gradient(160deg, #1f2a2f, #14181d); display: grid; place-items: center; color: var(--accent-text); font-size: 11px; font-weight: 600; }
+  .pbig span { display: grid; flex: 1; min-width: 0; }
+  .pbig b, .pagebar b { font-size: 16px; white-space: nowrap; }
+  .pagebar b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; }
+  .pagebar .count { flex: none; }
+  .pbig small { color: var(--muted); font-size: 13px; }
+  .pchoices { display: grid; gap: 10px; margin-top: 20px; }
+  .pchoice { padding: 12px 14px; border: 1px solid var(--p-border); border-radius: 14px; background: var(--p-raised); }
+  .pchoice.on { border-color: var(--accent); }
+  .pchoice b { font-weight: 600; }
+  .pchoice em { color: var(--accent-text); font-style: normal; font-size: 13px; }
+  .pchoice small { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; }
+  .pfoot { padding: 12px 18px 30px; border-top: 1px solid var(--p-border); background: var(--p-overlay); display: grid; gap: 10px; }
+  .pfoot .pair { display: flex; gap: 10px; }
+  .pill { flex: 1; padding: 13px 0; border-radius: 999px; text-align: center; font-weight: 600; border: none; font: inherit; font-weight: 600; color: var(--text); }
+  .soft { background: #24262c; }
+  .pprimary { background: var(--accent); color: #07100e; }
+  .pagebar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid var(--p-border); color: var(--text); font: inherit; text-align: left; cursor: pointer; width: 100%; }
+  .pagebar span { flex: 1; min-width: 0; display: grid; }
+  .pagebar small { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pagebar .count { color: var(--muted); font-size: 12.5px; }
+
+  /* In-app browser sheet (SFSafariViewController stand-in). */
+  .safari { position: absolute; inset: 54px 0 0; border-radius: 14px 14px 0 0; background: #f4f4f6; color: #111; transform: translateY(105%); transition: transform .28s ease; display: flex; flex-direction: column; box-shadow: 0 -10px 30px rgba(0,0,0,.4); }
+  .safari.open { transform: none; }
+  .sbar { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #e9e9ee; border-radius: 14px 14px 0 0; font-size: 15px; }
+  .sbar button { font: inherit; color: #0a66d8; background: none; border: none; font-weight: 600; cursor: pointer; }
+  .sbar .addr { flex: 1; text-align: center; font-size: 13px; color: #444; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .spage { flex: 1; overflow: auto; }
+  .fakeproto { padding: 22px 18px; background: #0f1115; color: #eee; min-height: 100%; font-family: Figtree, sans-serif; }
+  .fakeproto h3 { margin: 0 0 12px; }
+  .fakeproto .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .fakeproto .tabs b { padding: 4px 10px; border-radius: 999px; background: #222832; font-size: 13px; }
+  .fakeproto .tabs b.on { background: var(--accent); color: #061; }
+  .fakeproto .box { height: 140px; border-radius: 12px; background: linear-gradient(135deg, #1b2a2c, #20242c); margin-bottom: 10px; }
+  .sotto-err { padding: 40px 24px; font-family: -apple-system, Figtree, sans-serif; color: #222; }
+  .sotto-err h3 { margin: 0 0 8px; font-size: 19px; }
+  .sotto-err p { margin: 0 0 10px; color: #555; }
+
+  /* Switcher: obviously not part of the design. */
+  .switcher { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 999px; background: #fff; color: #111; box-shadow: 0 6px 24px rgba(0,0,0,.5); font: 600 14px/1 system-ui, sans-serif; z-index: 9; }
+  .switcher button { width: 34px; height: 34px; border-radius: 50%; border: none; background: #eee; cursor: pointer; font-size: 16px; }
+  .switcher output { min-width: 300px; text-align: center; }
+  @media (max-width: 760px) {
+    body { padding: 12px 8px 96px; }
+    .desk { width: 100%; }
+    .phone { width: 100%; border-radius: 28px; box-shadow: 0 0 0 1px var(--p-border); }
+    .switcher output { min-width: 0; padding: 0 6px; font-size: 13px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .safari, .toast { transition: none; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Prototype pages on a question</h1>
+  <p>Sotto finds the prototype pages in a question and in the agent's message before it: an .html file in the thread's folder, a file:// link, or a localhost address. Each one opens in your browser on the computer, and on the iPhone through phone access. The agent doesn't have to do anything. Pick how the page should sit on the question. The state buttons show what happens when something is wrong.</p>
+  <div class="states" role="group" aria-label="State">
+    <button data-state="ok" aria-pressed="true">Pages open</button>
+    <button data-state="gone">File was moved or deleted</button>
+    <button data-state="stopped">Localhost server stopped</button>
+    <button data-state="nophone">Phone access is off</button>
+  </div>
+</header>
+<div class="note" id="vnote"></div>
+<div class="stage">
+  <div><p class="label">Desktop · question card</p><div class="desk" id="desk"></div></div>
+  <div><p class="label">iPhone · question sheet (tap a page)</p><div class="phone" id="phone"></div></div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<nav class="switcher" aria-label="Prototype variants">
+  <button id="prev" aria-label="Previous variant">←</button><output id="vlabel"></output><button id="next" aria-label="Next variant">→</button>
+</nav>
+
+<script>
+const ICON_PAGE = '<svg class="lead" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/></svg>'
+const ICON_LINK = '<svg class="lead" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>'
+const ICON_WARN = '<svg class="lead" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5M12 18h.01"/></svg>'
+const ICON_OUT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M7 17 17 7M9 7h8v8"/></svg>'
+
+const pages = [
+  { kind: 'file', name: 'new-thread-greeting-prototype.html', where: 'docs/prototypes', addr: 'laptop-russh2j5.tail5728ca.ts.net' },
+  { kind: 'server', name: 'localhost:8075', where: 'Served by the agent', addr: 'laptop-russh2j5.tail5728ca.ts.net' },
+]
+const link = { place: 'github.com/millZach/Sotto/pull/1020' }
+const choices = [
+  ['A · Quiet line', 'One sentence under the composer.', true],
+  ['B · Card with suggestions', 'Three starter prompts in a card.', false],
+  ['C · Nothing', 'Keep today’s empty thread.', false],
+]
+const variants = [
+  { key: 'A', name: 'Rows, like the links today', note: '<b>A.</b> Each page is an <b>Open the prototype</b> row in the same list the links from the message already use (#954), named by its file or address. A page comes before links. This is the smallest change and the same on both screens.' },
+  { key: 'B', name: 'One large page button first', note: '<b>B.</b> The first page is a large button above the question, so it is the first thing on the card. Other pages and links stay as rows below. This is louder and hard to miss.' },
+  { key: 'C', name: 'Page stays beside Send', note: '<b>C.</b> The page sits in the card’s action row on the desktop and pinned above Send answer on the iPhone, so it stays in reach while you scroll the choices. A second page adds a count you tap to choose between them.' },
+]
+let v = Math.max(0, variants.findIndex(x => x.key === new URLSearchParams(location.search).get('variant')))
+let state = 'ok'
+
+function pageSub(p, phone) {
+  if (state === 'gone' && p.kind === 'file') return 'The file was moved or deleted'
+  if (phone && state === 'nophone') return 'Opens on your computer only'
+  return p.kind === 'file' ? `${p.name}` : `${p.name} · ${p.where.toLowerCase()}`
+}
+const gone = p => state === 'gone' && p.kind === 'file'
+
+function deskRow(p) {
+  return `<button class="row" ${gone(p) ? 'data-gone aria-disabled="true"' : ''} data-open="${p.kind}" aria-label="Open the prototype, ${p.name}">${gone(p) ? ICON_WARN : ICON_PAGE}<span><strong>${gone(p) ? 'Prototype not found' : 'Open the prototype'}</strong><small>${pageSub(p, false)}</small></span>${gone(p) ? '' : ICON_OUT}</button>`
+}
+const deskLink = `<button class="row" data-open="link" aria-label="Open the link, ${link.place}">${ICON_LINK}<span><strong>Open the link</strong><small>${link.place}</small></span>${ICON_OUT}</button>`
+const deskOpts = choices.map(([t, d, on], i) => `<div class="opt ${on ? 'on' : ''}"><i></i><div>${t} ${i === 0 ? '<em>(recommended)</em>' : ''}<small>${d}</small></div></div>`).join('')
+
+function renderDesk() {
+  const msgs = `<div class="msgs"><p>I made three greetings for a new thread. The page is at docs/prototypes/new-thread-greeting-prototype.html and I started it on http://localhost:8075/ too.</p></div>`
+  const head = `<div class="head">Question · Claude</div><div><span class="tag">Greeting</span><span class="prompt">Which greeting should a new thread show?</span></div>`
+  let body
+  if (v === 0) body = `${head}<div class="rows" role="group" aria-label="Pages and links from the message above">${pages.map(deskRow).join('')}${deskLink}</div><div class="opts">${deskOpts}</div><div class="actions"><button class="btn">Not now</button><button class="btn primary">Send answer</button></div>`
+  if (v === 1) {
+    const p = pages[0]
+    const big = gone(p) ? deskRow(p) : `<button class="pagebtn" data-open="file" aria-label="Open the prototype, ${p.name}"><span class="thumb">HTML</span><span><strong>Open the prototype</strong><small>${pageSub(p, false)}</small></span>${ICON_OUT}</button>`
+    body = `<div class="head">Question · Claude</div>${big}<div><span class="tag">Greeting</span><span class="prompt">Which greeting should a new thread show?</span></div><div class="rows">${deskRow(pages[1])}${deskLink}</div><div class="opts">${deskOpts}</div><div class="actions"><button class="btn">Not now</button><button class="btn primary">Send answer</button></div>`
+  }
+  if (v === 2) {
+    const p = pages[0]
+    const chip = gone(p) ? `<span class="more">Prototype not found</span>` : `<button class="btn" data-open="file" aria-label="Open the prototype, ${p.name}">${ICON_PAGE.replace('class="lead"', 'style="vertical-align:-3px;margin-right:6px;color:var(--accent-text)"')}Open the prototype</button><button class="chip" data-open="list" aria-label="Choose from 2 pages">2 pages</button>`
+    body = `${head}<div class="rows">${deskLink}</div><div class="opts">${deskOpts}</div><div class="actions"><span class="left">${chip}</span><button class="btn">Not now</button><button class="btn primary">Send answer</button></div>`
+  }
+  document.getElementById('desk').innerHTML = `<div class="strip">Threads · new-thread greeting</div>${msgs}<div class="card">${body}</div>`
+}
+
+const P_PAGE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6bc3b6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>'
+const P_LINK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6bc3b6" stroke-width="2.4" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>'
+const P_WARN = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e8b46a" stroke-width="2.2" stroke-linecap="round"><path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5M12 18h.01"/></svg>'
+const P_OUT = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a0a5ae" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M10 14 17 7M11 7h6v6"/></svg>'
+
+function phoneRow(p) {
+  const off = gone(p) || state === 'nophone'
+  return `<button class="prow" ${off ? 'data-gone' : ''} data-popen="${p.kind}">${gone(p) ? P_WARN : P_PAGE}<span><b>${gone(p) ? 'Prototype not found' : 'Open the prototype'}</b><small>${pageSub(p, true)}</small></span>${off ? '' : P_OUT}</button>`
+}
+const phoneLink = `<button class="prow" data-popen="link">${P_LINK}<span><b>Open the link</b><small>${link.place}</small></span>${P_OUT}</button>`
+const phoneChoices = choices.map(([t, d, on], i) => `<div class="pchoice ${on ? 'on' : ''}"><b>${t}</b> ${i === 0 ? '<em>Recommended</em>' : ''}<small>${d}</small></div>`).join('')
+
+function renderPhone() {
+  const q = `<span class="tag">Greeting</span><h2>Which greeting should a new thread show?</h2>`
+  let body, foot = `<div class="pair"><button class="pill soft">Not now</button><button class="pill pprimary">Send answer</button></div>`
+  if (v === 0) body = `${q}<div class="prows">${pages.map(phoneRow).join('')}${phoneLink}</div><div class="pchoices">${phoneChoices}</div>`
+  if (v === 1) {
+    const p = pages[0], off = gone(p) || state === 'nophone'
+    const big = off ? `<div class="prows">${phoneRow(p)}</div>` : `<button class="pbig" data-popen="file"><span class="thumb">HTML</span><span><b>Open the prototype</b><small>${pageSub(p, true)}</small></span>${P_OUT}</button>`
+    body = `${big}<div style="margin-top:16px">${q}</div><div class="prows">${phoneRow(pages[1])}${phoneLink}</div><div class="pchoices">${phoneChoices}</div>`
+  }
+  if (v === 2) {
+    const p = pages[0], off = gone(p) || state === 'nophone'
+    body = `${q}<div class="prows">${phoneLink}</div><div class="pchoices">${phoneChoices}</div>`
+    foot = `<button class="pagebar" ${off ? 'disabled' : 'data-popen="file"'}>${gone(p) ? P_WARN : P_PAGE}<span><b>${gone(p) ? 'Prototype not found' : 'Open the prototype'}</b><small>${pageSub(p, true)}</small></span><span class="count">1 of 2</span>${off ? '' : P_OUT}</button>` + foot
+  }
+  document.getElementById('phone').innerHTML = `<div class="thread"><p>I made three greetings for a new thread. The page is at docs/prototypes/new-thread-greeting-prototype.html…</p></div>
+    <div class="sheet"><div class="grab"></div><div class="sbody">${body}</div><div class="pfoot">${foot}</div></div>
+    <div class="safari" id="safari" role="dialog" aria-label="Prototype page"><div class="sbar"><button id="sdone">Done</button><span class="addr" id="saddr"></span><span style="width:40px"></span></div><div class="spage" id="spage"></div></div>`
+}
+
+function openSafari(kind) {
+  const s = document.getElementById('safari')
+  const p = kind === 'server' ? pages[1] : pages[0]
+  document.getElementById('saddr').textContent = kind === 'link' ? link.place : `${p.addr}:8443`
+  let html = `<div class="fakeproto"><h3>New-thread greeting</h3><div class="tabs"><b class="on">A</b><b>B</b><b>C</b></div><div class="box"></div><div class="box" style="height:80px"></div><p style="color:#aaa">The agent’s prototype page, served from your computer.</p></div>`
+  if (kind === 'server' && state === 'stopped') html = `<div class="sotto-err"><h3>The page’s server has stopped</h3><p>The agent served this page from localhost:8075 on your computer, and nothing answers there now. Nothing was lost.</p><p>Ask the agent to start the page again, then open it from the question.</p></div>`
+  if (kind === 'link') html = `<div class="sotto-err"><h3>Pull request #1020</h3><p>(The link opens here too.)</p></div>`
+  document.getElementById('spage').innerHTML = html
+  s.classList.add('open')
+  document.getElementById('sdone').focus()
+}
+
+function toast(text) { const t = document.getElementById('toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 2200) }
+
+function render() {
+  const cur = variants[v]
+  document.getElementById('vlabel').textContent = `${cur.key} — ${cur.name}`
+  document.getElementById('vnote').innerHTML = cur.note
+  renderDesk(); renderPhone()
+  const u = new URL(location.href); u.searchParams.set('variant', cur.key); history.replaceState(null, '', u)
+}
+
+document.addEventListener('click', e => {
+  const d = e.target.closest('[data-open]')
+  if (d && !d.hasAttribute('data-gone')) {
+    const k = d.dataset.open
+    if (k === 'list') return toast('A small menu lists both pages: the file and localhost:8075.')
+    if (k === 'server' && state === 'stopped') return toast('Your browser opens localhost:8075, which no longer answers.')
+    return toast(k === 'link' ? 'Opens github.com in your browser.' : k === 'server' ? 'Opens localhost:8075 in your browser.' : 'Opens new-thread-greeting-prototype.html in your browser.')
+  }
+  const p = e.target.closest('[data-popen]')
+  if (p && !p.hasAttribute('data-gone')) openSafari(p.dataset.popen)
+  if (e.target.id === 'sdone') document.getElementById('safari').classList.remove('open')
+})
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('safari')?.classList.remove('open')
+  if (e.target.closest('input, textarea, [contenteditable]')) return
+  if (e.key === 'ArrowLeft') { v = (v + variants.length - 1) % variants.length; render() }
+  if (e.key === 'ArrowRight') { v = (v + 1) % variants.length; render() }
+})
+document.getElementById('prev').onclick = () => { v = (v + variants.length - 1) % variants.length; render() }
+document.getElementById('next').onclick = () => { v = (v + 1) % variants.length; render() }
+document.querySelectorAll('[data-state]').forEach(b => b.onclick = () => {
+  state = b.dataset.state
+  document.querySelectorAll('[data-state]').forEach(x => x.setAttribute('aria-pressed', String(x === b)))
+  render()
+})
+render()
+</script>
+</body>
+</html>
