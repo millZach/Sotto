@@ -212,10 +212,10 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
   recommended: z.boolean().optional(),
 })
 export const agentProjectSchema = z.object({ hostId: z.uuid().optional(), id: providerEntityId, providerId: providerIdSchema.optional(), title: id, path: z.string().max(4_096), workspaceSettledAt: z.string().datetime().nullable().optional() })
-/** How many pages one question carries at most (ADR-0084). */
+/** How many pages one question carries at most (ADR-0085). */
 export const QUESTION_PAGES_MAX = 8
 /**
- * A page Sotto found for a question in its words or the agent's message before it (ADR-0084): an HTML file in the thread's
+ * A page Sotto found for a question in its words or the agent's message before it (ADR-0085): an HTML file in the thread's
  * folder, or a page the agent serves on this machine's loopback. The host that runs the thread serves it under the token,
  * at `/page/<token>/<start>`; `name` is what its row shows, the file's name or the address's host and port.
  */
@@ -225,7 +225,7 @@ export const questionPageSchema = z.object({
 export type QuestionPage = z.infer<typeof questionPageSchema>
 export const agentRequestSchema = z.object({
   id, kind: z.enum(['question', 'permission']), text,
-  /** The pages Sotto found for a question, which every client offers to open (ADR-0084). The host adds them; no provider does. */
+  /** The pages Sotto found for a question, which every client offers to open (ADR-0085). The host adds them; no provider does. */
   pages: z.array(questionPageSchema).max(QUESTION_PAGES_MAX).optional(),
   options: z.array(z.object({ id, label: text })).default([]),
   questions: z.array(z.object({ id, question: text, header: text.optional(), options: z.array(z.object({ id, label: text, description: text.optional(), preview: text.optional() })), multiSelect: z.boolean(), allowFreeText: z.boolean(), required: z.boolean().optional(), unavailableReason: text.optional() })).max(100).optional(),

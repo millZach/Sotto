@@ -943,7 +943,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     track((async () => {
       try {
         if (closing) throw new Refusal('unavailable')
-        // A question's page (ADR-0084) is opened by its token alone, in a browser that holds no session, and its own
+        // A question's page (ADR-0085) is opened by its token alone, in a browser that holds no session, and its own
         // requests carry the page's origin; the token is the only thing that admits them, and only to that page.
         if (QUESTION_PAGE_PATH.test((request.url ?? '').split('?')[0]!)) {
           spend('page', HTTP_BUDGETS.page)

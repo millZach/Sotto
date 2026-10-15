@@ -16,7 +16,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     var onDisconnect: (() -> Void)?
     var onLiveness: (() -> Void)?
     /// The address the last connect reached, which can be phone access's other port rather than the saved one. A
-    /// question's pages open there (ADR-0084).
+    /// question's pages open there (ADR-0085).
     private(set) var reached: HostEndpoint?
     private var answeredPing: UUID?
     private var liveness = LivenessProgress()

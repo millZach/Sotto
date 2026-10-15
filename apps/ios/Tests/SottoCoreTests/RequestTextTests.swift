@@ -91,7 +91,7 @@ final class RequestTextTests: XCTestCase {
         XCTAssertEqual(WebLinks.place(try XCTUnwrap(URL(string: "https://example.com/a/b?c=d"))), "example.com/a/b")
     }
 
-    // MARK: Pages (ADR-0084)
+    // MARK: Pages (ADR-0085)
 
     private let file = #"{"token":"ffffffffffffffffffffffffffffffff","kind":"file","name":"greeting-prototype.html","start":"greeting-prototype.html"}"#
     private let served = #"{"token":"ssssssssssssssssssssssssssssssss","kind":"server","name":"localhost:8075","start":"variants/a.html?variant=A"}"#

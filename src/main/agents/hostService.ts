@@ -105,7 +105,7 @@ export interface HostService {
   /** A user's explicit native read of this exact answer, never a send or a background receipt read. */
   checkRequestAnswer?(target: HostAnswerTarget, client: ClientIdentity): Promise<void>
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
-  /** What a question page's token opens on this host, while its question waits and for an hour after (ADR-0084). */
+  /** What a question page's token opens on this host, while its question waits and for an hour after (ADR-0085). */
   questionPage?(token: string): QuestionPageTarget | undefined
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */

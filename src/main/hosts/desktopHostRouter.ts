@@ -48,13 +48,13 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   observe?(threadIds: string[]): Promise<unknown>
   subscribeDetail?(listener: (detail: AgentThreadDetailUpdate) => void): () => void
   available?: () => boolean
-  /** What a question page's token opens on this computer's own host (ADR-0084). */
+  /** What a question page's token opens on this computer's own host (ADR-0085). */
   questionPage?(token: string): QuestionPageTarget | undefined
-  /** Where a remote host serves a question page, as this computer's browser reaches it (ADR-0084). */
+  /** Where a remote host serves a question page, as this computer's browser reaches it (ADR-0085). */
   pageAddress?(token: string): string | undefined
 }
 
-/** How this computer opens one of a question's pages: a file of its own, or an address in the browser (ADR-0084). */
+/** How this computer opens one of a question's pages: a file of its own, or an address in the browser (ADR-0085). */
 export type QuestionPageOpening = { readonly kind: 'file'; readonly file: string } | { readonly kind: 'url'; readonly url: string }
 
 /** Creation opens its result unless the window selected something else while it ran. */
@@ -257,7 +257,7 @@ export class DesktopHostRouter {
     return kind !== 'watcher' && kind !== 'watcher-history'
   }
   /**
-   * How this computer opens a page of a question the window shows (ADR-0084). The page must be one the host put on that
+   * How this computer opens a page of a question the window shows (ADR-0085). The page must be one the host put on that
    * request: a file or loopback page on this computer opens as itself, and a remote host's opens at the address it is
    * served on. Null when the question or page is gone or the host offers no way to reach it.
    */

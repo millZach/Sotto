@@ -70,7 +70,7 @@ public enum WebLinks {
         [question.question, question.header ?? ""] + question.options.flatMap { [$0.label, $0.description ?? ""] }
     }
 
-    /// The links without the loopback addresses a question's pages already open (ADR-0084). Such a page opens through the
+    /// The links without the loopback addresses a question's pages already open (ADR-0085). Such a page opens through the
     /// computer that runs the thread; its own address names that computer's loopback, which a phone cannot reach.
     public static func withoutPages(_ links: [URL], _ pages: [RequestPage]) -> [URL] {
         let served = Set(pages.filter { $0.kind == "server" }.map { $0.name.lowercased() })

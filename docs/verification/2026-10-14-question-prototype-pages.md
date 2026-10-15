@@ -4,7 +4,7 @@ October 14, 2026, on Windows 11, from `tests/e2e/question-prototype-pages.spec.t
 
 ## Why
 
-Zach still had no way to open a prototype an agent asked him about, after #954. Reading his own threads from the two weeks before showed why. #954 lifted only `http` and `https` addresses, and of about seventy prototype hand-offs, 23 were a tailnet link that opened on the phone. 29 were a `localhost` address only, which the phone's row could not reach. 16 were a file path and 2 a `file://` link, which got no row anywhere. He chose for Sotto to find the pages itself for every provider, to pass `localhost` pages through phone access, to serve any HTML file in the thread's folder, and to open a page on the iPhone in Safari's in-app browser. He picked rows (variant A) from `prototype/question-prototype-pages` (ADR-0084).
+Zach still had no way to open a prototype an agent asked him about, after #954. Reading his own threads from the two weeks before showed why. #954 lifted only `http` and `https` addresses, and of about seventy prototype hand-offs, 23 were a tailnet link that opened on the phone. 29 were a `localhost` address only, which the phone's row could not reach. 16 were a file path and 2 a `file://` link, which got no row anywhere. He chose for Sotto to find the pages itself for every provider, to pass `localhost` pages through phone access, to serve any HTML file in the thread's folder, and to open a page on the iPhone in Safari's in-app browser. He picked rows (variant A) from `prototype/question-prototype-pages` (ADR-0085).
 
 ## What was shown in the app
 
@@ -45,4 +45,4 @@ In `artifacts/question-prototype-pages/`:
 - A page opened on a real iPhone through Tailscale Serve. The route is the same listener Serve already carries for phone access, at every path, and the integration test covers the listener. The iPhone side waits on the macOS job and a hand test.
 - A page on a remote host opened from this desktop. The router test covers the address it builds.
 - Android, whose question sheet shows no link rows yet.
-- A dev server that loads files from its own root or keeps a live-reload socket. Through the page route it may load only in part; ADR-0084 records that this was accepted.
+- A dev server that loads files from its own root or keeps a live-reload socket. Through the page route it may load only in part; ADR-0085 records that this was accepted.

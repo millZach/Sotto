@@ -406,7 +406,7 @@ it.each(['saved-plain', 'saved-question', 'active-plain', 'active-question'] as 
   expect(await desktop.call('send', { op: 'command', command: { type: 'send', draft: { threadId: 'thread', text: 'Prompt' } } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
 })
 
-it('serves a question’s page by its token alone, whatever origin asks, and nothing else without a session (ADR-0084)', async () => {
+it('serves a question’s page by its token alone, whatever origin asks, and nothing else without a session (ADR-0085)', async () => {
   directory = await mkdtemp(join(tmpdir(), 'sotto-listener-'))
   const pairing = new PairedClients(directory); await pairing.load()
   await writeFile(join(directory, 'greeting.html'), '<h1>Greeting</h1>')

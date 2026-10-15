@@ -333,7 +333,7 @@ export interface RegisterIpcDependencies {
   readonly app: AppIpcService
   readonly trustedSenders: () => readonly TrustedIpcSender[]
   readonly openExternalLink?: (url: string) => Promise<void>
-  /** Opens one of a question's pages on this computer (ADR-0084). */
+  /** Opens one of a question's pages on this computer (ADR-0085). */
   readonly openQuestionPage?: (input: QuestionPageOpen) => Promise<QuestionPageOpenResult>
   /** Present only on macOS, where a permission lives in a System Settings pane. */
   readonly openSystemSettings?: (pane: SystemSettingsPane) => Promise<void>

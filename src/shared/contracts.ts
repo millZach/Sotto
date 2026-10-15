@@ -402,7 +402,7 @@ export interface SottoBridge {
   showApp(): Promise<void>
   /** Opens a validated web/mail link after explicit activation in the main renderer. */
   openExternalLink?(url: string): Promise<CommandResult>
-  /** Opens one of a question's pages on this computer, named by its request and token (ADR-0084). */
+  /** Opens one of a question's pages on this computer, named by its request and token (ADR-0085). */
   openQuestionPage?(input: import('./questionPageOpen').QuestionPageOpen): Promise<import('./questionPageOpen').QuestionPageOpenResult>
   /** Opens a macOS Privacy & Security pane after explicit activation; refused as unavailable elsewhere. */
   openSystemSettings?(pane: import('./systemSettings').SystemSettingsPane): Promise<CommandResult>

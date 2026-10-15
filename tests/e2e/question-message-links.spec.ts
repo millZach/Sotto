@@ -7,7 +7,7 @@ import { textContrast } from './support/textContrast'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // The question card docks over the end of the agent's message, so the links in that message come with it as rows. The
-// loopback review page is one of the question's pages (ADR-0084), so its row opens the page through main rather than as a
+// loopback review page is one of the question's pages (ADR-0085), so its row opens the page through main rather than as a
 // link. The app is real end to end; only the provider's effects come from the E2E host, and only the OS browser is recorded.
 const evidence = evidenceDirectory('artifacts/question-message-links')
 const review = 'http://localhost:8075/'

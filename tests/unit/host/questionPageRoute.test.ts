@@ -8,7 +8,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest'
 import type { QuestionPageTarget } from '../../../src/main/agents/questionPages'
 import { serveQuestionPage } from '../../../src/host/questionPageRoute'
 
-// A question page's route (ADR-0084): its token opens one HTML file's folder read-only, or passes reads on to the
+// A question page's route (ADR-0085): its token opens one HTML file's folder read-only, or passes reads on to the
 // loopback page an agent serves, and says in plain words when the page is gone.
 
 const FILE = 'f'.repeat(32), SERVER = 's'.repeat(32), SELF = 'o'.repeat(32), STOPPED = 'x'.repeat(32)

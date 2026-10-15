@@ -7,7 +7,7 @@ import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirecto
 import { isSottoRequest } from './sottoRequests'
 
 /**
- * What a question page's token opens (ADR-0084): an HTML file and the folder it sits in, read-only, or the loopback
+ * What a question page's token opens (ADR-0085): an HTML file and the folder it sits in, read-only, or the loopback
  * address of a page the agent serves on this machine.
  */
 export type QuestionPageTarget =
@@ -177,7 +177,7 @@ export interface QuestionPagesOptions {
 }
 
 /**
- * The pages of every question the host holds (ADR-0084). The first snapshot a question appears in starts the search:
+ * The pages of every question the host holds (ADR-0085). The first snapshot a question appears in starts the search:
  * its words and the agent's newest reply in that thread at that moment, so a reply the agent writes after asking does not
  * move them. Each page found gets an unguessable token that the host's page route serves, while the question waits and
  * for an hour after. Every snapshot then carries the pages on its questions; a provider never supplies them.

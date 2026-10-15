@@ -217,7 +217,7 @@ const PAGE_OPEN_FAILURES = {
 } as const
 
 /**
- * The pages Sotto found for a question (ADR-0084), then the links from the agent's message before it, each a row of its
+ * The pages Sotto found for a question (ADR-0085), then the links from the agent's message before it, each a row of its
  * own between the question and its choices, as the iPhone's question sheet shows them. A row is a link, not a choice:
  * pressing it opens the page in this computer's browser, picks nothing, and works while the choices cannot be used. A
  * page opens through main, by the request it is on and its token: a file as itself, a loopback page and a remote
@@ -260,7 +260,7 @@ function QuestionField({ name, question, selection, disabled, onChange, links = 
   readonly disabled: boolean; readonly onChange: (selection: typeof EMPTY_SELECTION) => void
   /** The message's links, shown under this question's words: the first question's, when a form has several. */
   readonly links?: readonly string[]
-  /** The question's pages, shown with the links: the first question's, when a form has several (ADR-0084). */
+  /** The question's pages, shown with the links: the first question's, when a form has several (ADR-0085). */
   readonly pages?: readonly QuestionPage[]
   readonly owner?: PageOwner | undefined
 }): ReactNode {

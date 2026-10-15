@@ -907,7 +907,7 @@ describe('settings on several computers (ADR-0074)', () => {
   })
 })
 
-describe('a question’s pages (ADR-0084)', () => {
+describe('a question’s pages (ADR-0085)', () => {
   const token = 't'.repeat(32), other = 'o'.repeat(32)
   function withPage(f: ReturnType<typeof fixture>, kind: 'file' | 'server', start: string): void {
     f.state.host.threads[0]!.requests = [{ id: 'question', kind: 'question', text: 'Which greeting?', options: [], pages: [{ token, kind, name: 'greeting.html', start }] }]

@@ -1774,7 +1774,7 @@ struct RequestSheet: View {
     @State private var text = ""
     /// Questions whose own-answer box is open.
     @State private var writing: Set<String> = []
-    /// The question's page open in the in-app browser over the sheet (ADR-0084).
+    /// The question's page open in the in-app browser over the sheet (ADR-0085).
     @State private var opening: PageRow?
     @FocusState private var focus: String?
     init(place: RequestPlace, request: AgentRequest) { self.place = place; self.request = request }
@@ -1836,7 +1836,7 @@ struct RequestSheet: View {
         }
         // The question's pages, then every link in it and in the agent's message the sheet covers, together above its
         // choices. Opening one answers nothing, so they show on an iPhone that can't answer too. A page is served by the
-        // computer that runs the asking thread and opens in the browser over the sheet (ADR-0084); a loopback address it
+        // computer that runs the asking thread and opens in the browser over the sheet (ADR-0085); a loopback address it
         // already opens has no row of its own.
         if !permission {
             let endpoint = model.pageEndpoint(place.asker.hostID)
@@ -2142,7 +2142,7 @@ struct RequestSheet: View {
 
 /// The web links in a question, each a row of its own above the choices: a tap opens the page in Safari and never picks
 /// a choice. The question's own words stay as the agent wrote them.
-/// One of a question's pages and where it opens on the computer that runs the thread (ADR-0084).
+/// One of a question's pages and where it opens on the computer that runs the thread (ADR-0085).
 private struct PageRow: Identifiable {
     let page: RequestPage
     let url: URL
@@ -2197,7 +2197,7 @@ private struct LinkRows: View {
     }
 }
 
-/// Safari's own in-app browser, for a question's page (ADR-0084). It shares nothing with Sotto's connection: the page's
+/// Safari's own in-app browser, for a question's page (ADR-0085). It shares nothing with Sotto's connection: the page's
 /// token is all it needs, over the tailnet the phone is already on. Done closes it and leaves the question as it was.
 private struct SafariPage: UIViewControllerRepresentable {
     let url: URL

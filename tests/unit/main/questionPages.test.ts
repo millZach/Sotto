@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { foundPages, pageMentions, QUESTION_PAGE_LINGER_MS, QuestionPages } from '../../../src/main/agents/questionPages'
 import type { AgentHostSnapshot, AgentMessage, AgentRequest, AgentThread } from '../../../src/shared/agents'
 
-// A question's pages (ADR-0084): Sotto finds them in the question and the agent's message before it, whatever the
+// A question's pages (ADR-0085): Sotto finds them in the question and the agent's message before it, whatever the
 // provider wrote, so a prototype opens on the computer and the phone without the agent doing anything.
 
 let folder: string

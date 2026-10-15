@@ -390,7 +390,7 @@ export class AgentControl {
   private disposed = false
   /** Requests Sotto owns, merged into their threads (ADR-0035); absent until main gives the coordinator some. */
   private sottoRequests: SottoThreadRequests | undefined
-  /** The pages found for each question, which every client offers to open and the host's page route serves (ADR-0084). */
+  /** The pages found for each question, which every client offers to open and the host's page route serves (ADR-0085). */
   private readonly questionPages = new QuestionPages({
     messages: threadId => this.dependencies.host.threadMessages?.(threadId),
     // Found pages are taken like a new snapshot, so the question carries them at once.
@@ -660,7 +660,7 @@ export class AgentControl {
   /**
    * A host's snapshot as everything in Sotto shows it: Watcher's threads only where the gate allows them (ADR-0072), its
    * user messages as typed (ADR-0073), Sotto's own requests among the provider's (ADR-0035), and the pages found for
-   * each question on it (ADR-0084).
+   * each question on it (ADR-0085).
    */
   private shownSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
     if (this.dependencies.watcherEnabled !== true) {
@@ -680,7 +680,7 @@ export class AgentControl {
     if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
     return this.questionPages.decorate(snapshot)
   }
-  /** What a question page's token opens, for the host's page route and this computer's window (ADR-0084). */
+  /** What a question page's token opens, for the host's page route and this computer's window (ADR-0085). */
   questionPage(token: string): QuestionPageTarget | undefined { return this.questionPages.target(token) }
   /**
    * The threads some client shows now (ADR-0046). The host service says which: every client's observed threads, the

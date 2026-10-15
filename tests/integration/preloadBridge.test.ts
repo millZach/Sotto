@@ -76,7 +76,7 @@ describe('typed preload bridge', () => {
       expect(harness.openExternalLink).toHaveBeenCalledTimes(3)
       harness.openExternalLink.mockRejectedValueOnce(new Error('Private OS failure'))
       await expect(bridge.openExternalLink!('https://example.com')).resolves.toEqual({ ok: false, reason: 'unavailable' })
-      // A question's page is asked for by its request and token alone, never by a path or an address (ADR-0084).
+      // A question's page is asked for by its request and token alone, never by a path or an address (ADR-0085).
       for (const input of [{ threadId: 't', requestId: 'r', token: 'short' }, { threadId: 't', requestId: 'r', token: 'f'.repeat(32), path: 'C:/x.html' }]) {
         await expect(harness.ipc.invoke(QUESTION_PAGE_OPEN, input)).rejects.toThrow('Invalid IPC payload')
       }

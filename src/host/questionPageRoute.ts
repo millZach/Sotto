@@ -61,7 +61,7 @@ const servable = (root: string, file: string): boolean => file !== root && insid
   && !path.relative(root, file).split(path.sep).some(part => part.startsWith('.')) && CONTENT_TYPES[path.extname(file).toLowerCase()] !== undefined
 
 /**
- * Answers one request on a question page's route (ADR-0084): `/page/<token>/<path>`. A file page serves its folder
+ * Answers one request on a question page's route (ADR-0085): `/page/<token>/<path>`. A file page serves its folder
  * read-only, without hidden files and only the kinds of file a page is made of; a server page passes GET and HEAD on to
  * the loopback address the agent named, never to this listener's own port.
  */

@@ -6,7 +6,7 @@ import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './supp
 import { textContrast } from './support/textContrast'
 import { evidenceDirectory } from '../fixtures/evidence'
 
-// A question's pages (ADR-0084): the agent names its prototype by a path in the thread's folder, as agents mostly do, and
+// A question's pages (ADR-0085): the agent names its prototype by a path in the thread's folder, as agents mostly do, and
 // the question card offers it as a row that opens the file in this computer's browser. The app is real end to end; only
 // the provider's effects come from the E2E host, and only the operating system's opening of the file is recorded.
 const evidence = evidenceDirectory('artifacts/question-prototype-pages')

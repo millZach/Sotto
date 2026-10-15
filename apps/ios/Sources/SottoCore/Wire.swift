@@ -360,7 +360,7 @@ public struct Delivery: Decodable, Equatable, Sendable { public let threadId: St
 public struct AgentRequest: Decodable, Equatable, Identifiable, Sendable {
     public let id: String; public let kind: String; public let text: String; public let options: [RequestOption]
     public let questions: [Question]?; public let permissionChoices: [PermissionChoice]?; public let context: RequestContext?; public let delivery: String?
-    /// The pages the computer found for a question (ADR-0084), each one the sheet offers to open. An older computer sends
+    /// The pages the computer found for a question (ADR-0085), each one the sheet offers to open. An older computer sends
     /// none, and a page this build cannot read is left out rather than losing the request.
     public var pages: [RequestPage] = []
     /// Whether this asks what `other` asks, leaving the pages out: the computer adds those beside the provider's request a
@@ -398,7 +398,7 @@ private struct Lossy<Value: Decodable>: Decodable {
     let value: Value?
     init(from decoder: Decoder) throws { value = try? Value(from: decoder) }
 }
-/// A page the computer found for a question, in its words or the agent's message before it (ADR-0084): an HTML file in
+/// A page the computer found for a question, in its words or the agent's message before it (ADR-0085): an HTML file in
 /// the thread's folder, or a page the agent serves on that computer. The computer that runs the thread serves it at
 /// `/page/<token>/<start>`; `name` is what its row shows. `kind` stays a string, as `file` or `server`.
 public struct RequestPage: Decodable, Equatable, Identifiable, Sendable {
