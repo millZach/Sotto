@@ -44,7 +44,7 @@ export class WatcherWakeUp {
   private readonly latestEvidence = new Map<string, { fingerprint: string; id: string; legacyId?: string; restoredRefs?: Set<string> }>()
   private readonly rememberPending = new Set<string>()
   /** Finished turns, per request and generation, that left background work running: each is owed one work-settled event. */
-  private readonly settling = new Set<string>()
+  private readonly owedWorkSettled = new Set<string>()
   private pending: WatcherEvent[] = []
   private recent: WatcherEvent[] = []
   private cancelBatch: (() => void) | undefined
@@ -68,7 +68,7 @@ export class WatcherWakeUp {
     // A saved or queued finish that left background work running names the work-settled event it is owed, so a restart keeps it.
     for (const id of [...this.options.record().wakeEventIds ?? [], ...restored.map(event => event.id)]) {
       const busy = BUSY_TURN_ID.exec(id)?.[1]
-      if (busy) this.settle(busy)
+      if (busy) this.oweWorkSettled(busy)
     }
     for (const id of this.options.record().wakeEventIds ?? []) {
       this.seen.add(id)
@@ -96,9 +96,10 @@ export class WatcherWakeUp {
     return snapshot.connected && thread.clientConnected !== false && isThreadProviderConnected(snapshot, thread)
   }
   private active(thread: AgentThread): boolean { return thread.status === 'running' || thread.lastTurn?.status === 'running' || watcherBackgroundWorkCount(thread) > 0 }
-  private settle(scope: string): void {
-    this.settling.delete(scope); this.settling.add(scope)
-    while (this.settling.size > 2_000) this.settling.delete(this.settling.values().next().value!)
+  /** Records a finished turn whose work is still running, so it is owed one work-settled event when that work ends. */
+  private oweWorkSettled(scope: string): void {
+    this.owedWorkSettled.delete(scope); this.owedWorkSettled.add(scope)
+    while (this.owedWorkSettled.size > 2_000) this.owedWorkSettled.delete(this.owedWorkSettled.values().next().value!)
   }
   private workers(includeClosed = false) {
     const record = this.options.record()
@@ -136,9 +137,9 @@ export class WatcherWakeUp {
       // scope in its ID, so the saved ID alone tells a restart which turn still owes one.
       const settleScope = kind === 'turn-finished' || kind === 'turn-failed' || kind === 'work-settled'
         ? observationDigest(['work-settled', request.id, target, participant.generation, extra.turnId ?? null]) : undefined
-      if (kind === 'work-settled' && !this.settling.has(settleScope!)) continue
+      if (kind === 'work-settled' && !this.owedWorkSettled.has(settleScope!)) continue
       const busyId = settleScope && kind !== 'work-settled' ? `${stableId}.${settleScope}` : undefined
-      if (busyId && extra.backgroundWorkCount) this.settle(settleScope!)
+      if (busyId && extra.backgroundWorkCount) this.oweWorkSettled(settleScope!)
       if (kind === 'evidence-changed') {
         const scope = observationDigest([kind, request.id, target, participant.generation]), fingerprint = observationDigest(identity)
         const previous = this.latestEvidence.get(scope)
@@ -155,7 +156,7 @@ export class WatcherWakeUp {
         if (legacyId) continue
       } else if (this.seen.has(id) || busyId && this.seen.has(busyId)) continue
       else if (busyId && extra.backgroundWorkCount) id = busyId
-      if (kind === 'work-settled') this.settling.delete(settleScope!)
+      if (kind === 'work-settled') this.owedWorkSettled.delete(settleScope!)
       const event: WatcherEvent = { ...extra, kind, target, requestId: request.id, generation: participant.generation,
         observedAt: new Date(this.now()).toISOString(), id }
       this.seen.add(event.id)
