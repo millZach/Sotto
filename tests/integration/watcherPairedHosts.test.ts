@@ -5,6 +5,10 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { WatcherService } from '../../src/main/agents/watcher'
+import { createWatcherRoomDesktop } from '../../src/main/agents/watcherRoomDesktop'
+import { registerIpc } from '../../src/main/ipc/registerIpc'
+import { WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, type WatcherPrepareStopAllResult, type WatcherRoomState, type WatcherStopAllResult } from '../../src/shared/watcherRoom'
+import { createIpcHarness } from '../fixtures/ipcHarness'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { PairedClients } from '../../src/main/agents/pairing'
@@ -344,13 +348,49 @@ it('routes steer and queue by turn identity and fences a native takeover before 
   const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic fenced queue' })
   expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   await native.driver.typeInProvider(nativeId, 'Synthetic native instruction')
-  await native.driver.completeTurn(nativeId, 'Synthetic completion')
+  // The background poll can finish before it discovers this rollout. Establish takeover before releasing the queue.
+  await native.adapter.refreshThread(nativeId)
   await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+  await native.driver.completeTurn(nativeId, 'Synthetic completion')
   await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === (queued.status === 'ok' ? queued.receipt.operationId : ''))?.deliveryState).toBe('failed'))
   const written = await native.driver.requests()
   expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
   expect(written.filter(item => item.method === 'turn/steer')).toHaveLength(1)
   expect(written.filter(item => item.method === 'request/answer')).toHaveLength(0)
+}, 60_000)
+
+it('fences native input arriving at a prepared paired queue writer before another turn starts', async () => {
+  // Only the writer's targeted read can ingest the native input added while preparation is held.
+  const native = await codexFixture(undefined, false, 10_000, { pollIntervalMs: 600_000 }); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const target = first.target
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === target.threadId)?.lastTurn?.status).toBe('running'))
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  const gate = heldOperation(), prepare = native.adapter.prepareSkillInput.bind(native.adapter)
+  vi.spyOn(native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => {
+    const result = await prepare(...args)
+    if (args[1] === 'Synthetic held native queue') await gate.wait()
+    return result
+  })
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic held native queue' })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  if (queued.status !== 'ok') throw new Error('queue-refused')
+  try {
+    await native.driver.completeTurn(nativeId, 'Synthetic completion before late input')
+    await gate.entered
+    await native.typeUnseen(nativeId, 'Synthetic native input after preparation')
+    gate.release()
+    const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+    await vi.waitFor(() => expect(owner.state().watchedThreads.find(item => item.target.threadId === target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+    await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
+    const written = await native.driver.requests()
+    expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
+    expect(written.filter(item => item.method === 'turn/steer')).toHaveLength(0)
+    expect(written.filter(item => item.method === 'request/answer')).toHaveLength(0)
+  } finally { gate.release() }
 }, 60_000)
 
 it('refuses changed operation identities and master ceilings on the owning host', async () => {
@@ -405,6 +445,52 @@ it('enforces the narrower owning-host default and keeps a confirmed remote Stop 
   expect(await f.call('start_thread', acceptedInput)).toMatchObject({ status: 'ok', receipt: { operationId: first.receipt.operationId } })
   expect(writes).not.toHaveBeenCalled()
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic stopped request refusal' })).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
+})
+
+it('keeps remote Stop all ownership while desktop room IPC is held and flushes before its own answer', async () => {
+  const f = await master(), sent = vi.fn<(state: WatcherRoomState) => boolean>(() => true)
+  const timers: (() => void)[] = []
+  const desktop = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: true, watcher: f.watcher,
+    send: sent, setLimit: async () => undefined, schedule: run => { timers.push(run); return () => undefined } })!
+  const ipc = createIpcHarness(); ipc.cleanup()
+  const cleanup = registerIpc(ipc.ipc, { settings: ipc.settings, history: ipc.history, startup: ipc.startup, hotkeys: ipc.hotkeys,
+    app: ipc.app, trustedSenders: () => [{ role: 'main', webContents: ipc.trustedContents, url: ipc.trustedUrl }], watcher: desktop.bridge })
+  cleanups.push(async () => { cleanup(); desktop.dispose() })
+  const observed = vi.fn(), off = f.watcher.subscribe(observed); cleanups.push(async () => off())
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok') throw new Error('start-refused')
+  expect(timers.length).toBeGreaterThan(0)
+  expect(observed.mock.calls.length).toBeGreaterThan(sent.mock.calls.length)
+  const preview = await ipc.ipc.invoke(WATCHER_PREPARE_STOP_ALL) as WatcherPrepareStopAllResult
+  if (preview.status !== 'ok') throw new Error('stop-preview-refused')
+  const original = f.socket.watcherControl.bind(f.socket)
+  let stopId: string | undefined
+  const writes = vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => {
+    if (packet.call.name === 'stop_thread') {
+      stopId = packet.operation.id
+      const before = sent.mock.calls.length
+      await (f.watcher as unknown as { reconcileRemote(hostId: string): Promise<void> }).reconcileRemote(packet.operation.target.hostId)
+      expect(sent).toHaveBeenCalledTimes(before)
+    }
+    return original(packet)
+  })
+  const stop = f.watcher.stopAll.bind(f.watcher)
+  let ownResult: WatcherStopAllResult | undefined
+  vi.spyOn(f.watcher, 'stopAll').mockImplementation(async id => { ownResult = await stop(id); return ownResult })
+  const answer = await ipc.ipc.invoke(WATCHER_STOP_ALL, { confirmationId: preview.confirmationId })
+  expect(answer).toMatchObject({ status: 'ok', results: [{ target: started.target, status: expect.stringMatching(/stopped|requested/u) }] })
+  expect(answer).toBe(ownResult)
+  if (ownResult?.status !== 'ok') throw new Error('stop-refused')
+  const last = sent.mock.calls.at(-1)![0]
+  expect(last).toMatchObject({ requests: ownResult.state.requests, receipts: ownResult.state.receipts,
+    currentOptions: ownResult.state.currentOptions, inFlight: ownResult.state.inFlight, inFlightLimit: ownResult.state.inFlightLimit })
+  // publish() and the operation's own state() are distinct captures; keep both original timestamps.
+  expect(Date.parse(last.observedAt)).toBeLessThanOrEqual(Date.parse(ownResult.state.observedAt))
+  const count = sent.mock.calls.length
+  for (const run of timers.splice(0)) run()
+  expect(sent).toHaveBeenCalledTimes(count)
+  expect(writes.mock.calls.filter(([packet]) => packet.call.name === 'stop_thread')).toHaveLength(1)
+  expect(await f.socket.watcherRead({ master: f.control.watcherRecord().current!, call: { name: 'read_operation', input: { operationId: stopId! } } })).toMatchObject({ status: 'ok', receipt: { operationId: stopId, deliveryState: 'accepted' } })
 })
 
 it('keeps a remote Stop all in flight while reconciliation reads the owning host', async () => {

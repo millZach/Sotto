@@ -1,0 +1,21 @@
+{
+  "upstreamMain": "470b0a022bdda32788f7c3679c8038c10d36b641",
+  "head": "1681abdb50a75056bdf724addae5c6549c488044",
+  "hashes": {
+    "tests/fixtures/watcherRoomPipeline.ts": "dbd2752215b10b122073a3b15850ab9f564f11bc0377db2094b91ac0f8ed14bd",
+    "tests/perf/watcherRoomPipeline.perf.test.ts": "b55b22c17f102e56e010f67d6d0635e51d1e23fc23b531b9e5c554bb84152d45",
+    "tests/fixtures/watcherRoomCompletion.ts": "babdcfa3f3b08389a9e7df573a04668db72466a7ea102455c55b4a54e88d69a8"
+  },
+  "started": "2026-10-14T23:53:48.971Z",
+  "wrapperPid": 39796,
+  "childPid": 44020,
+  "command": [
+    "C:\\Program Files\\nodejs\\node.exe",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "tests/perf/watcherRoomPipeline.perf.test.ts",
+    "--maxWorkers=1",
+    "--disable-console-intercept"
+  ],
+  "cwd": "D:/Talk to Text Application/.worktrees/perf-watcher-room-state"
+}
