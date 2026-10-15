@@ -121,11 +121,15 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   vi.spyOn(f.watcher as unknown as { scheduleRemote: () => void }, 'scheduleRemote').mockImplementation(() => undefined)
   const background = f.watcher as unknown as { remoteTimer?: unknown; remoteFlushing: boolean; reconciling?: Promise<void> }
   await expect.poll(() => !background.remoteTimer && !background.remoteFlushing && !background.reconciling).toBe(true)
+  // Standing sends now refresh owning fences at admission too. Hold that read so this still exercises the writer.
+  vi.spyOn(f.watcher as unknown as { reconcileRemote(): Promise<void> }, 'reconcileRemote').mockResolvedValue(undefined)
   await f.control.updateWatcher(record => {
     const request = record.requests.find(item => item.id === f.requestId)!
     request.state = 'active'; request.closedAt = null
     const participant = request.participants[0]!
     participant.state = 'participating'; delete participant.automationStopped
+    // Revive the stale assignment generation as well, so the master's new guard cannot hide the owner's refusal.
+    participant.generation = record.watches!.find(watch => watch.target.threadId === first.target.threadId)!.generation
   })
   const writes = vi.spyOn(f.socket, 'watcherControl')
   expect(await f.call('send_to_thread', afterSettlement)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
@@ -190,7 +194,7 @@ it('counts paired Watcher writes once in the owning Owl archive and keeps user s
   await expect.poll(async () => (await activity()).totals.prompts).toEqual({ user: 0, watcher: 2, wakeUp: 0, total: 2, steered: 1 })
   const queue = { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic counted queue' }
   const queued = await f.call('send_to_thread', queue)
-  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  expect(queued, JSON.stringify(queued)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   expect(await f.call('send_to_thread', queue)).toMatchObject({ receipt: queued.receipt })
   expect((await activity()).totals.prompts.total).toBe(2)
   await native.driver.completeTurn(nativeId, 'Synthetic first completion')
@@ -268,10 +272,13 @@ it('rechecks a late native question at the owning Codex writer, without answerin
   await expect.poll(() => !background.remoteTimer && !background.remoteFlushing && !background.reconciling).toBe(true)
   const gate = heldOperation(), olderProjection = heldOperation()
   const read = f.socket.watcherRead.bind(f.socket)
-  let held = false
+  // A send to a watched thread first refreshes the owning host's fences; only the read started once the writer holds is
+  // the older one this test keeps back.
+  let held = false, armed = false
+  void gate.entered.then(() => { armed = true })
   vi.spyOn(f.socket, 'watcherRead').mockImplementation(async packet => {
     const projection = await read(packet)
-    if (!packet.call && !held) { held = true; await olderProjection.wait() }
+    if (!packet.call && !held && armed) { held = true; await olderProjection.wait() }
     return projection
   })
   const prepare = native.adapter.prepareSkillInput.bind(native.adapter)
@@ -387,7 +394,13 @@ it('enforces the narrower owning-host default and keeps a confirmed remote Stop 
   const progress = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic follow-up during confirmation' })
   expect(progress.status, progress.status === 'refused' ? progress.code : undefined).toBe('ok')
   expect(progress).toMatchObject({ limits: { promptCount: 2 } })
-  expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ status: 'ok', results: [{ target: first.target, status: expect.stringMatching(/stopped|requested/u) }] })
+  const stopped = await f.watcher.stopAll(confirmation.confirmationId)
+  // Should the stop come back unconfirmed, say which refusal each operation on the thread recorded, here and on the owning host.
+  const outcomes = (receipts: { action: string; deliveryState: string; refusalCode?: string | undefined; target: { threadId: string } }[]) =>
+    receipts.filter(item => item.target.threadId === first.target.threadId).map(item => `${item.action}:${item.deliveryState}:${item.refusalCode ?? '-'}`)
+  const owner = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
+  expect(stopped, JSON.stringify({ master: outcomes(f.watcher.state().receipts), owner: outcomes(owner.state().receipts) }))
+    .toMatchObject({ status: 'ok', results: [{ target: first.target, status: expect.stringMatching(/stopped|requested/u) }] })
   expect(f.watcher.state().requests.find(item => item.id === f.requestId)?.state).toBe('stopped')
   expect(f.watcher.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)?.participation[0]?.automationStopped).toBe(true)
   const writes = vi.spyOn(f.socket, 'watcherControl')
@@ -602,7 +615,7 @@ it('attributes returning paired evidence to its host, queues news after user wor
       const fact = facts.find(item => item.source === 'github' && item.checksState === state)!
       expect(fact).toBeDefined()
       const event = f.watcher.state().news?.find(item => item.kind === 'evidence-changed' && item.evidenceIds?.includes(fact.id))
-      expect(event).toMatchObject({ target: first.target, requestId: f.requestId })
+      expect(event).toMatchObject({ target: first.target, requestId: f.watcher.state().standingWatches!.find(watch => watch.target.threadId === first.target.threadId)!.id })
       expect(occurrences).not.toContain(event!.id)
     }, { timeout: 15_000 })
     const event = f.watcher.state().news!.find(item => item.kind === 'evidence-changed' && item.target.threadId === first.target.threadId)!
@@ -612,6 +625,7 @@ it('attributes returning paired evidence to its host, queues news after user wor
   }
   expect(new Set(occurrences).size).toBe(3)
   expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })).toMatchObject({ status: 'ok' })
+  expect(await f.watcher.unwatchThread({ target: first.target })).toMatchObject({ status: 'ok' })
   checks = 'passed'; f.router.replace(f.connection)
   await vi.waitFor(() => expect(f.watcher.state().news?.some(item => item.target.threadId === first.target.threadId)).toBe(false))
   await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.wakeUp)).toBe(false))
@@ -814,7 +828,7 @@ it.each([
   await vi.waitFor(() => expect(f.socket.shell().configuration.newThreadReasoningEffort).toBe('low'))
   const wire = vi.spyOn(f.socket, 'watcherControl'), input = f.start()
   const first = await f.call('start_thread', input)
-  expect(first).toMatchObject({ status: 'ok', effectiveChoices: { reasoningEffort: expected, permission: { kind: 'runtime', mode: 'approval-required' } } })
+  expect(first, JSON.stringify(first)).toMatchObject({ status: 'ok', effectiveChoices: { reasoningEffort: expected, permission: { kind: 'runtime', mode: 'approval-required' } } })
   if (first.status !== 'ok') throw new Error('start-refused')
   const packet = wire.mock.calls[0]![0]
   expect(packet.call.input).toMatchObject({ reasoningEffort: expected, permission: { kind: 'runtime', mode: 'approval-required' } })
@@ -835,7 +849,7 @@ it('uses a fresh scoped connection for an admitted queue without renewing a rest
   if (first.status !== 'ok') throw new Error('start-refused')
   await vi.waitFor(() => expect(f.socket.shell().host.threads.some(thread => thread.id === first.target.threadId)).toBe(true))
   const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic reconnect queue', delivery: 'queue' })
-  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  expect(queued, JSON.stringify(queued)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
   const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
   const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
   const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]

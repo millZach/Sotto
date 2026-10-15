@@ -39,12 +39,12 @@ const words: Record<WatcherEvent['kind'], string> = {
 }
 export function watcherNewsText(news: WatcherNews): string {
   const opening = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.'
-  const lines = news.events.map(event => `${JSON.stringify(event.target)}: ${words[event.kind]} [${event.id}]`)
+  const lines = news.events.map(event => `${JSON.stringify(event.target)}: ${words[event.kind]} Use requestId ${event.requestId} for this thread. [${event.id}]`)
   let count = lines.length
   while (count >= 0) {
     const omitted = news.omitted + lines.length - count
     const text = [opening, ...lines.slice(0, count), ...(omitted ? [`${omitted} more events omitted. Read list_threads for the current roster.`] : []),
-      'Use read_thread for evidence and worker messages separately. Use read_operation for delivery receipts. Keep the original Watcher request and its budgets.'].join('\n')
+      'Use read_thread for evidence and worker messages separately. Use read_operation for delivery receipts. A standing watch requestId authorizes a bounded continuation for that watched thread. Share four prompts per target within this Watcher turn across request and standing-watch IDs.'].join('\n')
     if (Buffer.byteLength(text) <= WATCHER_NEWS_BYTES_MAX) return text
     count--
   }

@@ -14,6 +14,10 @@ export type WatcherCommand = Extract<AgentCommand, { type: 'create-thread' | 'ma
 export interface WatcherControlHooks {
   userCommand(command: AgentCommand, threadId: string | undefined, answersQuestion: boolean): void
   beforeDispatch(command: AgentHostCommand, draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand
+  /** A provider accepted the persisted action, or could have written it. Never called for an unsaved intent. */
+  dispatched?(command: AgentHostCommand): void
+  /** Clear unproven native-write candidates when an intent or dispatch definitively fails. */
+  dispatchAborted?(command: AgentHostCommand): void
   observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void
   guardOperation(operationId: string): void
   preserveUserQueue(threadId: string): boolean

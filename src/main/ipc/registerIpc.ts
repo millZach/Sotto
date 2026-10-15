@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT,
-  watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetLimitRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
+import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
+  watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetLimitRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
 import { externalLinkSchema } from '../../shared/externalLinks'
 import { systemSettingsPaneSchema, type SystemSettingsPane } from '../../shared/systemSettings'
 
@@ -316,7 +316,7 @@ export interface RecoveryNoticeIpcService {
 
 export interface RegisterIpcDependencies {
   /** Supplied only when the immutable Watcher release gate is on. Never served over socket IPC. */
-  readonly watcher?: Omit<WatcherBridge, 'onChanged'>
+  readonly watcher?: Required<Omit<WatcherBridge, 'onChanged'>>
   readonly settings: SettingsIpcService
   readonly history: HistoryIpcService
   readonly startup: StartupIpcService
@@ -496,6 +496,9 @@ export function registerIpc(
       register(WATCHER_PREPARE_STOP_ALL, noPayloadSchema, 0, () => watcher.prepareStopAll())
       register(WATCHER_STOP_ALL, watcherStopAllRequestSchema, 1, request => watcher.stopAll(request))
       register(WATCHER_SET_LIMIT, watcherSetLimitRequestSchema, 1, request => watcher.setLimit(request))
+      register(WATCHER_SET_PERMISSION, watcherSetPermissionRequestSchema, 1, request => watcher.setPermission(request))
+      register(WATCHER_WATCH_THREAD, watcherWatchThreadRequestSchema, 1, request => watcher.watchThread(request))
+      register(WATCHER_UNWATCH_THREAD, watcherWatchThreadRequestSchema, 1, request => watcher.unwatchThread(request))
     }
     register(RECOVERY_NOTICE_LIST, noPayloadSchema, 0, () =>
       dependencies.recoveryNotices?.list() ?? [],

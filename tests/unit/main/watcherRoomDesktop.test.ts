@@ -5,6 +5,7 @@ import { createWatcherRoomDesktop } from '../../../src/main/agents/watcherRoomDe
 import type { PublishScheduler } from '../../../src/main/agents/control'
 import { registerIpc } from '../../../src/main/ipc/registerIpc'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT,
+  WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
   type WatcherRoomState, type WatcherRoomResult, type WatcherStopAllResult } from '../../../src/shared/watcherRoom'
 import { createIpcHarness } from '../../fixtures/ipcHarness'
 import { deferred } from '../../fixtures/deferred'
@@ -30,6 +31,9 @@ function fixture(watcherEnabled = true, streamingPublishCost = true) {
     subscribe: vi.fn((fn: (state: WatcherRoomState) => void) => { listener = fn; return off }),
     get: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
     open: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
+    setPermission: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
+    watchThread: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
+    unwatchThread: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
     prepareStopAll: vi.fn(() => ({ status: 'ok' as const, confirmationId: randomUUID(), targets: [], expiresAt: at })),
     stopAll: vi.fn(async (): Promise<WatcherStopAllResult> => ({ status: 'ok', state: current, results: [] })),
   }
@@ -68,6 +72,9 @@ describe('desktop Watcher room publication', () => {
       evidence: [{ id: 'proof', target, source: 'checkpoint', observedAt: at, freshness: 'fresh', availability: 'available', fact: 'files-changed', changedFiles: 3 }],
       observation: { observedAt: at, fresh: true } })
     pending.news = [{ id: 'news', kind: 'evidence-changed', requestId, target, generation: 0, observedAt: at, evidenceIds: ['proof'] }]
+    pending.runtimeMode = 'full-access'
+    pending.standingWatches = [{ id: randomUUID(), target: { ...target }, createdAt: at, generation: 0, pausedByUserMessageId: 'user' }]
+    pending.ownChanges = [{ replyMessageId: 'reply', turnId: 'turn', files: ['README.md'], fileCount: 1, reason: 'Fix the wording', source: 'provider-file-change' }]
     const expected = structuredClone(pending)
     try {
       f.publish(first)
@@ -79,6 +86,11 @@ describe('desktop Watcher room publication', () => {
       pending.watchedThreads[0]!.waitsOn[0]!.openTarget.threadId = 'later'
       pending.watchedThreads[0]!.observation!.fresh = false
       pending.news[0]!.evidenceIds![0] = 'later proof'
+      pending.runtimeMode = 'approval-required'
+      pending.standingWatches[0]!.target.threadId = 'later watch'
+      pending.standingWatches[0]!.pausedByUserMessageId = null
+      pending.ownChanges[0]!.files[0] = 'later file'
+      pending.ownChanges[0]!.reason = 'later reason'
       expect(f.send).toHaveBeenCalledTimes(1)
       f.clock.tick()
       expect(f.send.mock.calls.map(([state]) => state)).toEqual([first, expected])
@@ -117,7 +129,9 @@ describe('desktop Watcher room publication', () => {
       send: () => { throw new Error('No room exists') }, setLimit: async () => undefined, schedule: clock.schedule })!
     try {
       for (const answer of [desktop.bridge.get(), desktop.bridge.open({ provider: 'codex', modelId: 'model' }),
-        desktop.bridge.prepareStopAll(), desktop.bridge.stopAll({ confirmationId: randomUUID() }), desktop.bridge.setLimit({ limit: 2 })]) {
+        desktop.bridge.prepareStopAll(), desktop.bridge.stopAll({ confirmationId: randomUUID() }), desktop.bridge.setLimit({ limit: 2 }),
+        desktop.bridge.setPermission({ runtimeMode: 'full-access' }), desktop.bridge.watchThread({ target: { hostId: randomUUID(), threadId: 'worker' } }),
+        desktop.bridge.unwatchThread({ target: { hostId: randomUUID(), threadId: 'worker' } })]) {
         expect(await answer).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE' })
       }
       expect(clock.entries).toHaveLength(0)
@@ -132,7 +146,14 @@ describe('desktop Watcher room publication', () => {
       f.publish(room('leading')); f.publish(room('pending'))
       await expect(ipc.ipc.invoke(WATCHER_OPEN, { provider: 'codex', modelId: 'model', approved: true })).rejects.toThrow()
       await expect(ipc.ipc.invokeArgs(WATCHER_GET, [], { sender: { ...ipc.trustedContents }, senderFrame: ipc.trustedEvent.senderFrame })).rejects.toThrow()
+      for (const [channel, input] of [[WATCHER_SET_PERMISSION, { runtimeMode: 'full-access' }],
+        [WATCHER_WATCH_THREAD, { target: { hostId: randomUUID(), threadId: 'worker' } }],
+        [WATCHER_UNWATCH_THREAD, { target: { hostId: randomUUID(), threadId: 'worker' } }]] as const) {
+        await expect(ipc.ipc.invoke(channel, { ...input, approved: true })).rejects.toThrow()
+        await expect(ipc.ipc.invokeArgs(channel, [input], { sender: { ...ipc.trustedContents }, senderFrame: ipc.trustedEvent.senderFrame })).rejects.toThrow()
+      }
       expect(f.service.open).not.toHaveBeenCalled(); expect(f.service.get).not.toHaveBeenCalled()
+      expect(f.service.setPermission).not.toHaveBeenCalled(); expect(f.service.watchThread).not.toHaveBeenCalled(); expect(f.service.unwatchThread).not.toHaveBeenCalled()
       expect(f.send).toHaveBeenCalledTimes(1)
       f.clock.tick(); expect(f.send).toHaveBeenCalledTimes(2)
     } finally { cleanup(); f.desktop!.dispose() }
@@ -155,6 +176,31 @@ describe('desktop Watcher room publication', () => {
       f.clock.tick()
       expect(f.send).toHaveBeenCalledTimes(2)
     } finally { cleanup(); f.desktop!.dispose() }
+  })
+
+  it.each([
+    ['setPermission', WATCHER_SET_PERMISSION, { runtimeMode: 'full-access' }],
+    ['watchThread', WATCHER_WATCH_THREAD, { target: { hostId: randomUUID(), threadId: 'worker' } }],
+    ['unwatchThread', WATCHER_UNWATCH_THREAD, { target: { hostId: randomUUID(), threadId: 'worker' } }],
+  ] as const)('preserves %s management replies and flushes before success, rejection and synchronous failure', async (operation, channel, input) => {
+    for (const outcome of ['success', 'reject', 'throw'] as const) {
+      const f = fixture(), ipc = createIpcHarness(); ipc.cleanup()
+      const cleanup = registerIpc(ipc.ipc, { settings: ipc.settings, history: ipc.history, startup: ipc.startup, hotkeys: ipc.hotkeys,
+        app: ipc.app, trustedSenders: () => [{ role: 'main', webContents: ipc.trustedContents, url: ipc.trustedUrl }], watcher: f.desktop!.bridge })
+      const held = deferred<WatcherRoomResult>(), own = { status: 'ok' as const, state: room('management answer') }, failure = new Error('Synthetic management failure')
+      if (outcome === 'throw') f.service[operation].mockImplementation(() => { throw failure })
+      else f.service[operation].mockImplementation(() => held.promise)
+      try {
+        f.publish(room('leading')); f.publish(room('pending'))
+        const observed = ipc.ipc.invoke(channel, input).then(value => { f.order.push('answer'); return value }, error => { f.order.push('error'); return error })
+        if (outcome === 'success') held.resolve(own)
+        else if (outcome === 'reject') held.reject(failure)
+        expect(await observed).toBe(outcome === 'success' ? own : failure)
+        expect(f.service[operation]).toHaveBeenCalledExactlyOnceWith(input)
+        expect(f.order).toEqual(['send:leading', 'send:pending', outcome === 'success' ? 'answer' : 'error'])
+        f.clock.tick(); expect(f.send).toHaveBeenCalledTimes(2)
+      } finally { cleanup(); f.desktop!.dispose() }
+    }
   })
 
   it.each(['open', 'stopAll'] as const)('returns %s own captured result when a newer tied room arrives while it is pending', async operation => {

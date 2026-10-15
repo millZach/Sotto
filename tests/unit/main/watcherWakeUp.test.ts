@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { WATCHER_QUIET_MS, watcherOverview } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
@@ -141,6 +142,15 @@ it('bounds targets, UTF-8 news and omitted counts without copying worker prose',
   expect(watcherNewsText(news)).toContain('omitted')
 })
 
+it('puts each owning thread\'s request identity in the actual bounded provider news', () => {
+  const f = fixture(); f.thread.requests = [{ id: 'card', kind: 'question', text: 'private worker question', options: [] }]; f.wakes.observe()
+  const event = f.wakes.news()[0]!
+  const text = watcherNewsText({ source: 'watcher', watcher: f.record.current!.target, events: [event], omitted: 0 })
+  expect(text).toContain(`Use requestId ${event.requestId} for this thread`)
+  expect(text).toContain(JSON.stringify(event.target))
+  expect(text).not.toContain('private worker question')
+})
+
 it('fits combined sources within the provider message limit and preserves babysitting-only wording', () => {
   const f = fixture(); f.thread.requests = [{ id: 'card', kind: 'question', text: 'secret', options: [] }]; f.wakes.observe()
   const news: WatcherNews = { source: 'watcher', watcher: f.record.current!.target, omitted: 0,
@@ -186,6 +196,27 @@ it('wakes for failed, passed and failed evidence on one head, while repeated rea
   f.wakes.pullRequest({ url, head: 'same-head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'failed', checkCount: 1 })
   await f.advance(2_000)
   expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'evidence-changed')).toHaveLength(3)
+})
+
+it.each(['workspace', 'thread', 'project'] as const)('keeps standing PR news after %s settlement until unwatch, while request-only news stays withdrawn', async settlement => {
+  for (const standing of [false, true]) {
+    const f = fixture(false), url = 'https://github.com/synthetic/project/pull/87', watchId = randomUUID(), stamp = new Date(f.now()).toISOString()
+    f.thread.status = 'idle'; f.thread.lastTurn = { id: 'completed-before-settlement', status: 'completed' }
+    f.thread.pullRequests = [{ url, number: 87, title: 'Synthetic standing pull request', state: 'open', draft: false, source: 'linked', linkedAt: stamp }]
+    if (settlement === 'workspace') f.thread.workspaceSettledAt = stamp
+    if (settlement === 'thread') f.thread.settledAt = stamp
+    if (settlement === 'project') f.snapshot.projects[0]!.workspaceSettledAt = stamp
+    if (standing) f.record.watches = [{ id: watchId, target: centerTarget, createdAt: stamp, generation: 0 }]
+    f.wakes.start()
+    f.wakes.pullRequest({ url, head: 'standing-head', observedAt: stamp, availability: 'available', checks: 'failed', checkCount: 1 })
+    await f.advance(2_000)
+    const event = f.delivered.flatMap(news => news.events).find(item => item.kind === 'evidence-changed')
+    if (!standing) { expect(event).toBeUndefined(); continue }
+    expect(event).toMatchObject({ requestId: watchId, target: centerTarget })
+    expect(f.wakes.due(event!)).toBe(true)
+    f.record.watches = []; f.wakes.observe()
+    expect(f.wakes.due(event!)).toBe(false)
+  }
 })
 
 it('restores the latest evidence occurrence without replaying it or suppressing a later return to an old state', async () => {

@@ -49,6 +49,7 @@ import { resolveFilesBinding } from '../files/binding'
 import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
 import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './sottoRequests'
+import { watcherRepliesAsShown } from './watcherOwnChanges'
 import { watcherMessageRequests, watcherMessagesAsTyped } from './watcherRequestNote'
 import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
@@ -321,10 +322,11 @@ export class AgentControl {
     return this.commandShell(parsed, client, decisionId)
   }
   /** User-requested setup only, never exposed as a tool. */
-  commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>): Promise<AgentState> {
+  commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>, connectionGuard?: () => void): Promise<AgentState> {
     if (!this.watcherHooks) throw new Error('Watcher is unavailable.')
     const parsed = agentCommandSchema.parse(command)
-    this.watcherOrigins.set(parsed, { guard: () => { if (this.disposed) throw new Error('Sotto is stopping.') } })
+    const guard = () => { connectionGuard?.(); if (this.disposed) throw new Error('Sotto is stopping.') }
+    guard(); this.watcherOrigins.set(parsed, { guard })
     return this.admitCommandShell(parsed)
   }
   hasWatcherQueue(operationIds: ReadonlySet<string>): boolean { return this.followupStore.peek().items.some(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)) }
@@ -664,8 +666,9 @@ export class AgentControl {
         projects: snapshot.projects.filter(project => project.providerId !== 'muse' && parsePublicProviderEntityId(project.id)?.provider !== 'muse'),
         ...(snapshot.providers ? { providers: snapshot.providers.filter(provider => provider.id !== 'muse') } : {}) }
     }
-    // Without a line Sotto put after them, in Watcher's pane, Copy and the phone alike.
-    snapshot = watcherMessagesAsTyped(snapshot, watcherMessageRequests(this.watcher.requests))
+    // One display path for Watcher's own threads, in its pane, Copy and the phone alike: the user's messages without a line
+    // Sotto put after them, and Watcher's replies without the reason line their own-change line already shows.
+    snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(snapshot, watcherMessageRequests(this.watcher.requests)))
     return this.sottoRequests ? withSottoRequests(snapshot, this.sottoRequests.requests()) : snapshot
   }
   /**
@@ -3129,6 +3132,7 @@ export class AgentControl {
         // thread starts its CLI only for the adapter to restart it with the new settings. Each adapter checks
         // the thread's status, requests and model itself before it changes anything.
         const validate = (): void => {
+          origin?.guard()
           const thread = this.thread(command.threadId)
           if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its pending requests before changing settings.')
           if (thread.nativeSessionStarted !== false && command.modelId && thread.providerId && resolveModel(this.state.host.models, command.modelId)?.providerId !== thread.providerId) throw new Error('Choose a model from this thread provider. Existing sessions cannot move between providers.')
@@ -3141,11 +3145,11 @@ export class AgentControl {
         if (command.modelId !== undefined || command.reasoningEffort !== undefined) {
           await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId,
             ...(command.modelId !== undefined ? { modelId: command.modelId } : {}),
-            ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}) }, turn, validate)
+            ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}) }, turn, validate, undefined, client, undefined, origin)
         }
-        if (command.runtimeMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, runtimeMode: command.runtimeMode }, turn, validate)
+        if (command.runtimeMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, runtimeMode: command.runtimeMode }, turn, validate, undefined, client, undefined, origin)
         // A provider that names its own permission modes takes them on their own command, as runtimeMode does.
-        if (command.providerMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, providerMode: command.providerMode }, turn, validate)
+        if (command.providerMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, providerMode: command.providerMode }, turn, validate, undefined, client, undefined, origin)
         this.say('Thread settings saved.')
         this.observe()
         return
@@ -3400,6 +3404,7 @@ export class AgentControl {
     try { await this.persist() }
     catch (error) {
       // Nothing crossed the adapter boundary. Do not leave phantom uncertain intent.
+      this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand)
       this.outbox = this.outbox.filter(item => item.id !== command.commandId)
       if ((prompt || atomicDigest) && draftId && threadId) { this.setDelivery(threadId, draftId, 'failed'); this.publish() }
       // This write is also the one that first saves a prompt sent at once, so its failure says what admission's did.
@@ -3458,6 +3463,7 @@ export class AgentControl {
         if (endLoan && !result?.accepted) stages?.close()
       }
     } catch (error) {
+      this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand)
       if (prompt && (provider === undefined || isUsageProviderId(provider))) {
         try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
         catch { /* Only usage metadata is affected. */ }
@@ -3473,6 +3479,8 @@ export class AgentControl {
         this.setDelivery(prompt.threadId, draftId, delivery?.status ?? 'submitting', { providerLatencyMs })
       }
     }
+    if (result.accepted || result.uncertain) this.watcherHooks?.dispatched?.(command as AgentHostCommand)
+    else this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand)
     // Previews are decoration, not history: the provider hears the prompt first, and a definitive refusal records nothing.
     if (prompt && previewAttachments.length
       && (result.accepted || result.uncertain || !this.outbox.some(item => item.id === command.commandId))) {

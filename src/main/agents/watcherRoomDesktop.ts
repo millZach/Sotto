@@ -2,7 +2,8 @@ import type { WatcherBridge, WatcherRoomState } from '../../shared/watcherRoom'
 import type { WatcherService } from './watcher'
 import { coalesceAgentStatePublishes, type PublishScheduler } from './control'
 
-type RoomService = Pick<WatcherService, 'subscribe' | 'get' | 'open' | 'prepareStopAll' | 'stopAll'>
+type RoomService = Pick<WatcherService, 'subscribe' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'>
+type RoomBridge = Required<Omit<WatcherBridge, 'onChanged'>>
 
 /** Owns only the desktop room delivery. Observation, authority and other subscribers stay with Watcher. */
 export function createWatcherRoomDesktop(options: {
@@ -12,17 +13,20 @@ export function createWatcherRoomDesktop(options: {
   setLimit(limit: number): Promise<unknown>
   send(state: WatcherRoomState): boolean
   schedule?: PublishScheduler
-}): { bridge: Omit<WatcherBridge, 'onChanged'>; dispose(): void } | undefined {
+}): { bridge: RoomBridge; dispose(): void } | undefined {
   if (!options.watcherEnabled) return undefined
   const watcher = options.watcher
   const unavailable = () => ({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE',
     message: 'Turn on Run the local host in Settings and restart Sotto to use Watcher.', retryable: true } as const)
-  const bridge: Omit<WatcherBridge, 'onChanged'> = {
+  const bridge: RoomBridge = {
     get: async () => watcher?.get() ?? unavailable(),
     open: request => watcher?.open(request) ?? Promise.resolve(unavailable()),
     prepareStopAll: async () => watcher?.prepareStopAll() ?? unavailable(),
     stopAll: request => watcher?.stopAll(request.confirmationId) ?? Promise.resolve(unavailable()),
     setLimit: async request => { if (!watcher) return unavailable(); await options.setLimit(request.limit); return watcher.get() },
+    setPermission: request => watcher?.setPermission(request) ?? Promise.resolve(unavailable()),
+    watchThread: request => watcher?.watchThread(request) ?? Promise.resolve(unavailable()),
+    unwatchThread: request => watcher?.unwatchThread(request) ?? Promise.resolve(unavailable()),
   }
   // Keep the legacy callback/replies, without captures or a publisher, when either owner is absent.
   if (!options.streamingPublishCost || !watcher) {
@@ -42,6 +46,9 @@ export function createWatcherRoomDesktop(options: {
       prepareStopAll: () => reply(() => bridge.prepareStopAll()),
       stopAll: request => reply(() => bridge.stopAll(request)),
       setLimit: request => reply(() => bridge.setLimit(request)),
+      setPermission: request => reply(() => bridge.setPermission(request)),
+      watchThread: request => reply(() => bridge.watchThread(request)),
+      unwatchThread: request => reply(() => bridge.unwatchThread(request)),
     },
     dispose: () => { unsubscribe(); publisher.dispose() },
   }

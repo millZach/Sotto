@@ -543,6 +543,7 @@ export class SocketHostService implements HostService {
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
   get supportsWatcherControl(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-control') }
   get supportsWatcherReads(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-reads') }
+  get supportsWatcherStandingWatch(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-standing-watch') }
   private museWatcherHeld(request: WatcherHostRead | WatcherHostControl): boolean {
     return this.options.museEnabled !== true && watcherRequestUsesMuse(request, this.cached?.host, this.dormantMuseThreads)
   }
@@ -561,6 +562,7 @@ export class SocketHostService implements HostService {
   }
   async watcherRead(request: WatcherHostRead): Promise<unknown> {
     if (!this.supportsWatcherReads) throw new HostConnectionError('Update this host before Watcher reads its threads.', 'invalid_request')
+    if (request.standingWatches !== undefined && !this.supportsWatcherStandingWatch) throw new HostConnectionError('Update this host before Watcher watches its threads. Nothing was changed.', 'invalid_request')
     if (this.museWatcherHeld(request)) return museWatcherRefusal()
     const result = await this.call({ op: 'watcher-read', request })
     if (request.call) return watcherToolSchemas[request.call.name].output.parse(result)

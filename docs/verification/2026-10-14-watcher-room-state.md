@@ -1,6 +1,6 @@
 # Watcher room state — October 14, 2026
 
-The built Windows app is VERIFIED for the seventeen Watcher and release-track journeys below. Exact final repository gates are pending. This is not an installed-release, live-provider, Mac/Linux desktop or native-phone result.
+The historical built Windows app at 1681abdb is VERIFIED for the seventeen Watcher and release-track journeys below. The later integration of main e3e7e2c3 needs fresh repository gates and built-app proof. This is not an installed-release, live-provider, Mac/Linux desktop or native-phone result.
 
 ## Built app
 
@@ -32,4 +32,8 @@ No design baseline was regenerated. README and guide still describe the same use
 
 ## Final gates
 
-Pending on the final integrated commit: `npm run typecheck`, `npm run lint`, `npm test -- --maxWorkers=2`, and `npm run notices:verify`. Final Standards and Spec reviews remain pending. No PR has been published.
+`npm run typecheck` passed with native exit 0 on clean de3c2634853e8364336dc4d850f8e835fc131a0d, from 2026-10-15T03:02:25.900Z to 03:03:47.894Z. Its expanded quiet guard cleared with 9,819,216 KiB free; an external typecheck was observed later. The exact keeper and command child were absent after cleanup. This pass predates the required main integration and is historical evidence.
+
+The bounded main check at 20:04 PDT found e3e7e2c34f60d96b876f2de8de8140687585615c with successful Windows, Desktop, Package and Linux results, but overlapping runtime changes and merge conflicts required integration. Main's permission-mode, Watch and Stop watching operations retain complete desktop bridges and settlement flushing; optimized remote rows retain standing-watch-only targets and watched/paused flags. Complete owned captures also retain runtime mode, standing watches and own-change metadata. Main's current room uses Conversation/Watched tabs; the subscription/reload journey now checks the existing Threads in flight select, whose populated room value overrides the Settings fallback.
+
+All four exact commands remain pending on the resolved integration: `npm run typecheck`, `npm run lint`, `npm test -- --maxWorkers=2`, and `npm run notices:verify`, followed by fresh built-app Watcher/gate proof. Prior Standards and Spec are clear at de3c263; the integration delta and final PR body need their own reviews. Measurements and captures above keep their original source provenance. No PR has been published.

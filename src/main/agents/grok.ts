@@ -216,7 +216,7 @@ export class GrokAcpHost implements AgentHost {
   }
   private async sessionMeta(id: string, mode: GrokRuntimeMode | undefined) {
     const profile = await this.checkLaunchProfile(id)
-    return profile ? { ...sessionPolicy('approval-required'), systemPromptOverride: WATCHER_SYSTEM_PROMPT } : sessionPolicy(mode)
+    return profile ? { ...sessionPolicy(mode), systemPromptOverride: WATCHER_SYSTEM_PROMPT } : sessionPolicy(mode)
   }
   /** A profile failure ends the process even if native close/cancel would refuse or time out. */
   private revokeProfile(id: string, profile: WatcherLaunchProfile | undefined, reason: string): void {
@@ -1034,7 +1034,6 @@ export class GrokAcpHost implements AgentHost {
     this.assertGeneration(generation)
     if (watcherProfile) {
       assertWatcherPermission(command)
-      if (command.type === 'create-thread') command = { ...command, runtimeMode: 'approval-required' }
     }
     if ('threadId' in command && this.aliases[command.threadId]?.kind === 'personal') throw new Error('That thread is unavailable.')
     if (command.type === 'compact-thread') throw new Error('Grok does not expose supported native manual compaction.')
@@ -1121,6 +1120,7 @@ export class GrokAcpHost implements AgentHost {
             if (this.activePrompts.has(command.threadId) || thread.status === 'running' || thread.requests.length) throw new Error('Wait for Watcher to finish and answer its pending questions before changing its model or reasoning level.')
             const entry = await this.threadProcess(command.threadId), rpc = entry.rpc
             this.assertGeneration(generation)
+            watcherGuard?.()
             alias.settingsConfirmed = false
             try {
               await rpc.request('session/set_model', { sessionId: alias.grokSessionId, modelId, ...(reasoningEffort ? { _meta: { reasoningEffort } } : {}) }, value => {
@@ -1129,6 +1129,7 @@ export class GrokAcpHost implements AgentHost {
               const mcpServers = await this.toolServers(command.threadId), meta = await this.sessionMeta(command.threadId, alias.runtimeMode)
               this.assertGeneration(generation)
               if (this.processes.get(command.threadId) !== entry) throw new GrokUncertain('Grok thread process changed before its model could be checked.')
+              watcherGuard?.()
               await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers, _meta: meta }, value => {
                 const response = z.object({ models: catalogSchema, _meta: z.object({ sessionId: z.literal(alias.grokSessionId!) }) }).parse(value)
                 if (response.models.currentModelId !== modelId || reasoningEffort && response.models.availableModels.find(model => model.modelId === modelId)?._meta?.reasoningEffort !== reasoningEffort) throw new Error('Grok did not confirm the requested Watcher model and reasoning level.')
@@ -1154,19 +1155,34 @@ export class GrokAcpHost implements AgentHost {
               catch (error) { throw error instanceof GrokUncertain ? new Error('Grok history could not be verified before changing the permission mode.', { cause: error }) : error }
               const thread = this.thread(command.threadId)
               if (this.activePrompts.has(command.threadId) || thread.status === 'running' || thread.requests.length) throw new Error('Wait for this Grok thread to finish and answer its pending requests before changing its permission mode.')
-              // Until the reload is confirmed, sends are blocked and reconnect finishes the change.
-              alias.pendingRuntimeMode = mode; alias.settingsConfirmed = false; thread.status = 'error'; await this.persist(); this.emit()
-              // The change happens on the thread's own process, the one its session is resident in.
-              const entry = await this.threadProcess(command.threadId); const rpc = entry.rpc
-              this.assertGeneration(generation)
-              await this.closeSession(rpc, alias)
-              const mcpServers = await this.toolServers(command.threadId); const meta = await this.sessionMeta(command.threadId, mode)
-              this.assertGeneration(generation)
-              if (this.processes.get(command.threadId) !== entry) throw new GrokUncertain('Grok thread process changed before its settings could load.')
-              await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers, _meta: meta }, async value => {
-                this.confirmLoad(command.threadId, alias, value); await this.persist()
-              })
-              thread.status = alias.settingsConfirmed ? 'idle' : 'error'
+              watcherGuard?.()
+              const previousPending = alias.pendingRuntimeMode, previousConfirmed = alias.settingsConfirmed, previousStatus = thread.status
+              let modeWritten = false
+              try {
+                // Until the reload is confirmed, sends are blocked and reconnect finishes the change.
+                alias.pendingRuntimeMode = mode; alias.settingsConfirmed = false; thread.status = 'error'; await this.persist(); this.emit()
+                // The change happens on the thread's own process, the one its session is resident in.
+                const entry = await this.threadProcess(command.threadId); const rpc = entry.rpc
+                this.assertGeneration(generation)
+                watcherGuard?.()
+                await this.closeSession(rpc, alias)
+                const mcpServers = await this.toolServers(command.threadId); const meta = await this.sessionMeta(command.threadId, mode)
+                this.assertGeneration(generation)
+                if (this.processes.get(command.threadId) !== entry) throw new GrokUncertain('Grok thread process changed before its settings could load.')
+                watcherGuard?.(); modeWritten = true
+                await rpc.request('session/load', { sessionId: alias.grokSessionId, cwd: alias.cwd, mcpServers, _meta: meta }, async value => {
+                  this.confirmLoad(command.threadId, alias, value); await this.persist()
+                })
+                thread.status = alias.settingsConfirmed ? 'idle' : 'error'
+              } catch (error) {
+                if (watcherGuard && !modeWritten) {
+                  if (previousPending) alias.pendingRuntimeMode = previousPending
+                  else delete alias.pendingRuntimeMode
+                  alias.settingsConfirmed = previousConfirmed; thread.status = previousStatus
+                  await this.persist()
+                }
+                throw error
+              }
             }
           }
           settled = alias.settingsConfirmed && !alias.pendingRuntimeMode

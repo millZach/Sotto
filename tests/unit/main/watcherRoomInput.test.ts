@@ -109,4 +109,37 @@ describe('owned cached Watcher room inputs', () => {
       if (optimized) expect(room).toHaveBeenCalledWith(remoteId, ['one', 'two', 'missing'])
     } finally { timestamp.mockRestore(); service.close(); legacy.close(); f.close() }
   })
+
+  it.each(['active', 'stopped'] as const)('keeps standing-only watches, paused flags and %s participation without shell reads', requestState => {
+    const f = fixture(), record = emptyWatcherRecord(), at = '2026-10-14T00:00:00.000Z'
+    f.state.host.threads.push({ ...f.state.host.threads[1]!, id: 'standing-only', title: 'Standing only', requests: [] })
+    record.current = { target: { hostId: localId, threadId: 'master' }, projectId: 'local-project', provider: 'codex',
+      creationOperationId: '33333333-3333-4333-8333-333333333333', createdAt: at }
+    record.lastRuntimeMode = 'full-access'
+    record.requests.push({ id: 'request', watcher: record.current.target, rootUserMessageId: 'user', state: requestState,
+      createdAt: at, closedAt: null, participants: ['one', 'two'].map(threadId => ({ target: { hostId: remoteId, threadId },
+        requestId: 'request', startedBy: 'watcher', generation: 0, state: 'participating', promptCount: 1,
+        ...(threadId === 'two' ? { automationStopped: true } : {}) })) })
+    record.watches = [{ id: '44444444-4444-4444-8444-444444444444', target: { hostId: remoteId, threadId: 'standing-only' },
+      createdAt: at, generation: 0, pausedByUserMessageId: 'user' }]
+    const control = { watcherRecord: () => structuredClone(record), watcherSnapshot: () => emptyDesktopState(localId).host,
+      hostId: () => localId, useWatcher: () => () => undefined, subscribe: () => () => undefined } as unknown as AgentControl
+    const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, limit: () => 4, historyEnabled: () => false, streamingPublishCost: true })
+    const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, limit: () => 4, historyEnabled: () => false })
+    const remote = f.router.watcherHosts(), read = vi.spyOn(remote, 'roomThreads'), snapshot = vi.spyOn(remote, 'snapshot'), shell = vi.spyOn(f.socket, 'shell')
+    Object.assign(service, { remote }); Object.assign(legacy, { remote })
+    const timestamp = vi.spyOn(Date.prototype, 'toISOString').mockReturnValue(at)
+    try {
+      const expected = legacy.state()
+      snapshot.mockClear(); shell.mockClear()
+      const state = service.state()
+      expect(state).toEqual(expected)
+      expect(state.runtimeMode).toBe('full-access')
+      expect(state.watchedThreads.map(row => ({ id: row.target.threadId, watched: row.watched, paused: row.paused }))).toEqual([
+        { id: 'one', watched: requestState === 'active', paused: false },
+        { id: 'two', watched: false, paused: false }, { id: 'standing-only', watched: true, paused: true }])
+      expect(read).toHaveBeenCalledExactlyOnceWith(remoteId, ['one', 'two', 'standing-only'])
+      expect(snapshot).not.toHaveBeenCalled(); expect(shell).not.toHaveBeenCalled()
+    } finally { timestamp.mockRestore(); service.close(); legacy.close(); f.close() }
+  })
 })

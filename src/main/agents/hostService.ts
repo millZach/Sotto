@@ -72,6 +72,7 @@ export interface HostService {
   usageClear?(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult>
   readonly supportsWatcherControl?: boolean
   readonly supportsWatcherReads?: boolean
+  readonly supportsWatcherStandingWatch?: boolean
   subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
   watcherRoomThreads?(threadIds: readonly string[]): WatcherRoomThreadInput[]
@@ -192,6 +193,7 @@ export class LocalHostService implements HostService {
   readonly supportsUsage: boolean
   get supportsWatcherControl(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherReads(): boolean { return this.options.watcher !== undefined }
+  get supportsWatcherStandingWatch(): boolean { return this.options.watcher !== undefined }
   watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown> { return this.options.watcher!.admitRemote(request, client.clientId, guard) }
   watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown> { return this.options.watcher!.readRemote(request, client.clientId, guard) }
   watcherProjection(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection { return this.options.watcher!.remoteProjection(request.master, client.clientId) }
