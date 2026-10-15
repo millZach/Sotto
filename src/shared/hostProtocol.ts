@@ -167,14 +167,16 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * Watcher can say when a finished turn's work has ended (ADR-0073). A host that does not list it reads as unknown, not idle.
  * `watcher-outcomes`: the host's exact operation reads carry each Watcher start's or send's outcome, its text-free result
  * reference and, once answered, that turn's reply (ADR-0073). A desktop asks for them; one whose host does not list it reads unknown.
+ * `host-facts`: the host answers `host-facts` with its machine's host facts and how many of its threads are running a turn
+ * (#1031). Numbers and the system's own name only. Only a desktop is offered it; one whose host does not list it reads unknown.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts']
 /**
  * A client update as a client that does not accept `client-updates` can read it: the mise channel, which such a client
  * does not know, reads as one it will not drive, and a client waiting in the update line reads as not started. Every
@@ -333,6 +335,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   /** A page of a thread's agents, and one agent's assignments, for Agents; read on request. */
   z.object({ ...base, op: z.literal('subagent-page'), request: subagentPageRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('subagent-assignments'), request: subagentAssignmentsRequestSchema }).strict(),
+  /** The host's machine facts and running thread count, read on request and never pushed (#1031). */
+  z.object({ ...base, op: z.literal('host-facts') }).strict(),
   z.object({ ...base, op: z.literal('usage-read'), query: usageLocalQuerySchema }).strict(),
   z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(4).optional() }).strict(),
   z.object({ ...base, op: z.literal('usage-clear'), request: usageLocalClearRequestSchema }).strict(),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseOsRelease, readHostFacts, type HostFactsSystem } from '../../../src/main/agents/hostFacts'
+import { HostFactsSource, hostMachineReport, parseOsRelease, readHostFacts, type HostFactsSystem } from '../../../src/main/agents/hostFacts'
+import { HOST_FACTS_REFRESH_MS } from '../../../src/shared/hostFacts'
 
 const NOW = new Date('2026-10-14T12:00:00.000Z')
 const GIB = 1024 ** 3
@@ -138,5 +139,53 @@ describe('parseOsRelease', () => {
   it('reads unquoted, single-quoted and escaped double-quoted values and skips comments', () => {
     const fields = parseOsRelease('# comment\nNAME=Arch\r\nPRETTY_NAME="Say \\"hi\\" \\\\ there"\nVERSION=\'1 (one)\'\nnot a field\n')
     expect(Object.fromEntries(fields)).toEqual({ NAME: 'Arch', PRETTY_NAME: 'Say "hi" \\ there', VERSION: '1 (one)' })
+  })
+})
+
+describe('HostFactsSource', () => {
+  /** A machine whose memory and clock the test moves, counting what the source reads. */
+  function machine() {
+    let free = 11 * GIB, at = NOW.getTime(), platformReads = 0, memoryReads = 0, fileReads = 0
+    const os = system({ platform: () => { platformReads += 1; return 'linux' }, freemem: () => { memoryReads += 1; return free } })
+    const source = new HostFactsSource({ os, now: () => new Date(at),
+      readFile: async () => { fileReads += 1; return 'PRETTY_NAME="Omarchy"\nVERSION_ID="4.0.4"\n' } })
+    return { source, setFree: (bytes: number) => { free = bytes }, advance: (ms: number) => { at += ms },
+      counts: () => ({ platformReads, memoryReads, fileReads }) }
+  }
+
+  it('reads the operating system once and memory again only once its reading is old, never on a timer', async () => {
+    const m = machine()
+    const first = await m.source.read()
+    expect(first).toMatchObject({ observedAt: NOW.toISOString(), os: { family: 'linux', name: 'Omarchy', version: '4.0.4' }, freeMemoryBytes: 11 * GIB })
+    m.setFree(3 * GIB); m.advance(HOST_FACTS_REFRESH_MS - 1)
+    // Asked again inside the refresh window: the same reading, with nothing read again.
+    expect(await m.source.read()).toBe(first)
+    expect(m.counts()).toEqual({ platformReads: 1, memoryReads: 1, fileReads: 1 })
+    m.advance(1)
+    const refreshed = await m.source.read()
+    expect(refreshed).toEqual({ ...first, observedAt: new Date(NOW.getTime() + HOST_FACTS_REFRESH_MS).toISOString(), freeMemoryBytes: 3 * GIB })
+    // Memory was read again; the operating system was not.
+    expect(m.counts()).toEqual({ platformReads: 1, memoryReads: 2, fileReads: 1 })
+  })
+
+  it('reads memory afresh when first asked long after the start-up reading', async () => {
+    const m = machine()
+    await m.source.read()
+    m.setFree(2 * GIB); m.advance(60 * 60_000)
+    expect(await m.source.read()).toMatchObject({ freeMemoryBytes: 2 * GIB, observedAt: new Date(NOW.getTime() + 60 * 60_000).toISOString() })
+  })
+
+  it('answers several asks at once with one reading', async () => {
+    const m = machine()
+    const [a, b, c] = await Promise.all([m.source.read(), m.source.read(), m.source.read()])
+    expect(a).toEqual(b); expect(b).toEqual(c)
+    expect(m.counts()).toEqual({ platformReads: 1, memoryReads: 1, fileReads: 1 })
+  })
+
+  it('counts only the threads running a turn as the machine’s running threads', async () => {
+    const m = machine()
+    const report = await hostMachineReport(m.source, [{ status: 'running' }, { status: 'idle' }, { status: 'running' }, { status: 'error' }])
+    expect(report).toMatchObject({ runningThreads: 2, facts: { os: { name: 'Omarchy' } } })
+    expect((await hostMachineReport(m.source, [])).runningThreads).toBe(0)
   })
 })

@@ -31,6 +31,7 @@ import { codexFixture } from '../fixtures/codexFixture'
 import { heldOperation } from '../fixtures/deferred'
 import type { CodexAppServerHost } from '../../src/main/agents/codex'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
+import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
 
 const remote = useSocketHostFixture()
 const cleanups: (() => Promise<void>)[] = []
@@ -55,7 +56,10 @@ async function master(native?: CodexAppServerHost, usage = false) {
   const workspace = await workspaceFixture(undefined, { history: false })
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => false, watcherEnabled: true } })
-  const watcher = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false, limit: () => 1 })
+  // This computer's facts are read as the desktop reads them, from this machine (#1031).
+  const facts = new HostFactsSource()
+  const watcher = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false, limit: () => 1,
+    machineFacts: () => hostMachineReport(facts, f.control.shell().host.threads) })
   const tools = new WatcherToolServer(watcher); workspace.host.useWatcherTools(tools)
   const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
   const connection = { hostId: paired.pairing.hostId, name: 'Synthetic remote', kind: 'remote' as const, service: paired.socket,
@@ -99,6 +103,34 @@ it('negotiates host-v1 features only for recorded desktops and never for stable 
   const stable = await pairedDesktop(true, false)
   expect(stable.socket.supportsWatcherControl).toBe(false); expect(stable.socket.supportsWatcherWorkSettled).toBe(false)
   await expect(stable.socket.watcherRead({ master: { target: { hostId: randomUUID(), threadId: 'master' }, projectId: 'master', provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() } })).rejects.toMatchObject({ code: 'invalid_request' })
+})
+
+it('lists This computer and each paired machine with its facts, running threads and starts in flight; an older host reads unknown, a disconnected one not connected (#1031)', async () => {
+  const f = await master()
+  const family = ({ win32: 'windows', darwin: 'macos', linux: 'linux' } as Record<string, string>)[process.platform] ?? null
+  const machines = async () => { const result = await f.call('list_machines', {}); if (result.status !== 'ok') throw new Error('list-refused'); return result.machines }
+  expect(await machines()).toEqual([
+    expect.objectContaining({ hostId: f.control.hostId(), name: 'This computer', thisComputer: true, connected: true, factsState: 'reported',
+      facts: expect.objectContaining({ os: expect.objectContaining({ family }) }), inFlight: 0, inFlightLimit: 1 }),
+    expect.objectContaining({ hostId: f.pairing.hostId, name: 'Synthetic remote', thisComputer: false, connected: true, factsState: 'reported',
+      facts: expect.objectContaining({ os: expect.objectContaining({ family }) }), runningThreads: 0, inFlight: 0, inFlightLimit: 1 })])
+  // A start on the paired machine is in flight there, and its thread runs there; This computer's count is unchanged.
+  const started = await f.call('start_thread', f.start())
+  expect(started).toMatchObject({ status: 'ok' })
+  await expect.poll(async () => (await machines())[1]).toMatchObject({ runningThreads: 1, inFlight: 1 })
+  expect((await machines())[0]).toMatchObject({ inFlight: 0 })
+  // An older host does not list host-facts: it reads unknown, and nothing is asked of it.
+  const socket = f.socket as unknown as { features: readonly string[] }, features = socket.features
+  socket.features = features.filter(feature => feature !== 'host-facts')
+  const asked = vi.spyOn(f.socket, 'hostFacts')
+  expect((await machines())[1]).toMatchObject({ connected: true, factsState: 'unknown', facts: null, runningThreads: null, inFlight: 1,
+    note: expect.stringContaining('Update Sotto on it') })
+  expect(asked).not.toHaveBeenCalled()
+  socket.features = features
+  // A host that is not connected says so rather than reading its last facts as current.
+  Object.assign(f.connection, { available: () => false })
+  expect((await machines())[1]).toMatchObject({ connected: false, factsState: 'not-connected', facts: null, runningThreads: null, inFlight: 1 })
+  expect(asked).not.toHaveBeenCalled()
 })
 
 it('starts, reads positions, sends, stops and settles through the owning host without selecting it', async () => {

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, providerIdSchema } from './agents'
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
+import { hostFactsSchema, hostOsSchema } from './hostFacts'
 export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
 
 export const WATCHER_PROMPT_BYTES_MAX = 32 * 1_024
@@ -123,6 +124,19 @@ const receiptResult = { receipt: watcherDeliveryReceiptSchema, limits: watcherLi
 const result = <S extends z.ZodRawShape>(shape: S) => z.union([z.object({ status: z.literal('ok'), ...shape }).strict(), watcherRefusalSchema])
 const boundedRead = <S extends z.ZodType>(schema: S) => schema.refine(value => new TextEncoder().encode(JSON.stringify(value)).byteLength <= WATCHER_READ_BYTES_MAX, 'Response exceeds the byte limit.')
 
+/**
+ * One machine as list_machines shows it (#1031): This computer or a connected host, its host facts when it reported them,
+ * how many of its threads are running a turn, and Watcher's starts in flight on it against the limit, which today is one
+ * limit for the whole computer. `factsState` says why there are none: `unknown` for a host that does not report them or could
+ * not be read, `not-connected` for one that is not connected now. Never guessed.
+ */
+export const WATCHER_MACHINES_MAX = 100
+// Strict here, as every Watcher result is: the host's own report was already read leniently, so nothing extra remains.
+const machineFacts = hostFactsSchema.extend({ os: hostOsSchema.strict() }).strict()
+const machine = z.object({ hostId: id, name: z.string().min(1).max(200), thisComputer: z.boolean(), connected: z.boolean(),
+  factsState: z.enum(['reported', 'unknown', 'not-connected']), facts: machineFacts.nullable(), note: shortText.min(1).optional(),
+  runningThreads: counter.nullable(), inFlight: counter, inFlightLimit: z.number().int().min(1).max(8) }).strict()
+
 /** Only these named operations can cross the future sotto_threads boundary. None serve tools yet. */
 export const watcherToolSchemas = {
   watch_thread: {
@@ -172,6 +186,10 @@ export const watcherToolSchemas = {
       workers: z.array(z.object({ provider: providerIdSchema, modelId: entityId, reasoningEfforts: z.array(z.string().max(64)).max(20),
         defaultPermission: permission.nullable(), permissionComparable: z.boolean() }).strict()).max(100),
       controlAvailable: z.boolean(), readsAvailable: z.boolean(), readOnlyProfileAvailable: z.boolean(), freshness }).strict()).max(100), ...page }),
+  },
+  list_machines: {
+    input: z.object({}).strict(),
+    output: result({ machines: z.array(machine).max(WATCHER_MACHINES_MAX), observedAt: time }),
   },
   list_working_copies: {
     input: z.object({ project: watcherProjectTargetSchema, ...paging }).strict(),

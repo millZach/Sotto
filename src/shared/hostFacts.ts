@@ -37,3 +37,21 @@ export const hostFactsSchema = z.object({
   logicalCpuCount: z.number().int().positive().max(HOST_FACTS_CPU_COUNT_MAX).nullable(),
 })
 export type HostFacts = z.infer<typeof hostFactsSchema>
+
+/**
+ * How often a host reads its memory again when facts are asked for. Asking more often answers the last reading, so a
+ * busy reader costs nothing; nothing reads on a timer.
+ */
+export const HOST_FACTS_REFRESH_MS = 5_000
+/** More running threads than any machine holds reads unknown rather than refusing the whole report. */
+export const HOST_RUNNING_THREADS_MAX = 100_000
+
+/**
+ * What the optional `host-facts` feature answers (#1031): the machine's facts and how many of the host's threads are
+ * running a turn now. Read leniently, as the facts are, so a later host's additions still read on an older desktop.
+ */
+export const hostMachineReportSchema = z.object({
+  facts: hostFactsSchema,
+  runningThreads: z.number().int().nonnegative().max(HOST_RUNNING_THREADS_MAX).nullable().catch(null),
+})
+export type HostMachineReport = z.infer<typeof hostMachineReportSchema>

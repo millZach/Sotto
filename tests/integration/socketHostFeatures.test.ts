@@ -8,7 +8,7 @@ import { startSocketServer } from '../../src/host/socketServer'
 import { desktopWindowClient, type HostService } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { SCREENSHOT_NOT_ITS_TYPE, type AgentCommand, type AgentModel, type AgentThreadDetail, type AgentThreadDetailUpdate } from '../../src/shared/agents'
-import { hostVersionMismatch } from '../../src/shared/hostProtocol'
+import { hostVersionMismatch, type HostOperation } from '../../src/shared/hostProtocol'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
@@ -50,14 +50,48 @@ describe('staged images over the socket (ADR-0031)', () => {
   })
 })
 
+describe('host facts over the socket (#1031)', () => {
+  it('answers a desktop with its machine’s facts and running threads, and reads memory again only after the refresh window', async () => {
+    const { client } = await pair()
+    expect(client.supportsHostFacts).toBe(true)
+    const family = ({ win32: 'windows', darwin: 'macos', linux: 'linux' } as Record<string, string>)[process.platform] ?? null
+    const first = await client.hostFacts()
+    expect(first).toMatchObject({ facts: { os: { family } }, runningThreads: 0 })
+    expect(first.facts.logicalCpuCount).toBeGreaterThan(0)
+    // Asked again at once, the host answers its last reading rather than reading the machine again.
+    expect((await client.hostFacts()).facts.observedAt).toBe(first.facts.observedAt)
+  })
+
+  it('is not offered by an older host, which reads unknown, nor by the desktop’s phone listener', async () => {
+    const older: HostService = {
+      shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
+      command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
+    }
+    for (const [service, admin] of [[older, undefined], [fixture.host.service, false]] as const) {
+      const server = await startSocketServer({ service, pairing: fixture.host.pairing, ...(admin === false ? { admin } : {}) })
+      try {
+        expect(server.descriptor.features).not.toContain('host-facts')
+        const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Older desktop')
+        const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+        expect((await client.connect()).features).not.toContain('host-facts')
+        expect(client.supportsHostFacts).toBe(false)
+        // The desktop never asks; the version sentence stands in, and the host refuses the request if it is sent anyway.
+        await expect(client.hostFacts()).rejects.toMatchObject({ code: 'version_mismatch' })
+        const raw = client as unknown as { call(op: HostOperation): Promise<unknown> }
+        await expect(raw.call({ op: 'host-facts' })).rejects.toMatchObject({ code: 'invalid_request' })
+      } finally { await server.close() }
+    }
+  })
+})
+
 describe('host version and features', () => {
   it('advertises the Sotto version and features in health, the listener file and the hello reply', async () => {
     const health = await (await fetch(fixture.url + '/v1/health')).json() as Record<string, unknown>
-    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes'] })
+    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts'] })
     const listener = JSON.parse(await readFile(join(fixture.root, 'host-listener.json'), 'utf8')) as Record<string, unknown>
-    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes'] })
+    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts'] })
     const { client } = await pair()
-    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit'], capabilities: { mayAnswer: false } })
+    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts'], capabilities: { mayAnswer: false } })
   })
 
   it('takes the user’s Babysit pull request from a paired client, and refuses one the thread does not know in words (ADR-0061)', async () => {

@@ -1,6 +1,6 @@
 import * as nodeOs from 'node:os'
 import { readFile as nodeReadFile } from 'node:fs/promises'
-import { HOST_FACTS_CPU_COUNT_MAX, HOST_FACTS_TEXT_MAX, hostFactsSchema, type HostFacts, type HostOs } from '../../shared/hostFacts'
+import { HOST_FACTS_CPU_COUNT_MAX, HOST_FACTS_REFRESH_MS, HOST_FACTS_TEXT_MAX, HOST_RUNNING_THREADS_MAX, hostFactsSchema, type HostFacts, type HostMachineReport, type HostOs } from '../../shared/hostFacts'
 
 /**
  * Reads this machine's host facts (#1031). It lives beside `hostIdentity.ts` because the headless host
@@ -111,6 +111,10 @@ function architecture(system: HostFactsSystem): string | null {
   return machine === null ? null : ARCHITECTURES[machine.toLowerCase()] ?? machine
 }
 
+function memory(system: HostFactsSystem): Pick<HostFacts, 'totalMemoryBytes' | 'freeMemoryBytes'> {
+  return { totalMemoryBytes: count(attempt(() => system.totalmem())), freeMemoryBytes: count(attempt(() => system.freemem())) }
+}
+
 export async function readHostFacts(sources: HostFactsSources = {}): Promise<HostFacts> {
   const system = sources.os ?? nodeOs
   const readFile = sources.readFile ?? ((path: string) => nodeReadFile(path, 'utf8'))
@@ -119,8 +123,42 @@ export async function readHostFacts(sources: HostFactsSources = {}): Promise<Hos
     observedAt,
     os: await readOs(system, readFile),
     architecture: architecture(system),
-    totalMemoryBytes: count(attempt(() => system.totalmem())),
-    freeMemoryBytes: count(attempt(() => system.freemem())),
+    ...memory(system),
     logicalCpuCount: count(attempt(() => system.cpus().length), { positive: true, max: HOST_FACTS_CPU_COUNT_MAX }),
   })
+}
+
+/**
+ * One machine's facts as a host keeps them (#1031). The operating system, architecture and CPU count are read once, when
+ * the host starts; memory is read again when facts are asked for and the last reading is at least `refreshMs` old.
+ * Nothing reads on a timer, so a host nobody asks spends nothing.
+ */
+export class HostFactsSource {
+  private first: Promise<HostFacts> | undefined
+  private latest: HostFacts | undefined
+  private readonly system: HostFactsSystem
+  private readonly refreshMs: number
+
+  constructor(private readonly sources: HostFactsSources & { readonly refreshMs?: number } = {}) {
+    this.system = sources.os ?? nodeOs
+    this.refreshMs = sources.refreshMs ?? HOST_FACTS_REFRESH_MS
+  }
+
+  /** Reads everything the first time; later calls answer the latest facts, with memory read again when that reading is old. */
+  async read(): Promise<HostFacts> {
+    // A first reading that failed is tried again on the next ask rather than kept.
+    const first = await (this.first ??= readHostFacts(this.sources).catch((error: unknown) => { this.first = undefined; throw error }))
+    const latest = this.latest ?? first
+    const now = this.sources.now?.() ?? new Date()
+    const age = now.getTime() - Date.parse(latest.observedAt)
+    // A clock that went backwards reads again rather than trusting a reading from the future.
+    this.latest = age >= this.refreshMs || age < 0 ? hostFactsSchema.parse({ ...latest, observedAt: now.toISOString(), ...memory(this.system) }) : latest
+    return this.latest
+  }
+}
+
+/** A machine's facts and how many of its threads are running a turn now, as the `host-facts` feature answers them. */
+export async function hostMachineReport(facts: HostFactsSource, threads: readonly { readonly status: string }[]): Promise<HostMachineReport> {
+  const running = threads.filter(thread => thread.status === 'running').length
+  return { facts: await facts.read(), runningThreads: running <= HOST_RUNNING_THREADS_MAX ? running : null }
 }
