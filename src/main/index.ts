@@ -68,7 +68,7 @@ import {
   type WebContentsWillRedirectEventParams,
 } from 'electron'
 import { spawn } from 'node:child_process'
-import { appendFile, rename, stat, writeFile } from 'node:fs/promises'
+import { appendFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 
@@ -780,6 +780,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     offersBabysitting: () => hostService.supportsBabysitting === true,
     hostFolders: request => hostService.hostFolders(request),
     subscribeDetail: listener => agentControl.subscribeThreadDetail(listener),
+    questionPage: token => agentControl.questionPage(token),
   })
   // A Playwright journey adds hosts through a scripted ssh; development only, like the gh stand-in.
   const sshStandInScript = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_SSH_SCRIPT'] : undefined
@@ -1508,6 +1509,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         },
         trustedSenders: () => windows.getTrustedRenderers(),
         openExternalLink: url => shell.openExternal(url),
+        openQuestionPage: async input => {
+          // A file opens in this computer's own browser as a file; a loopback page and a remote host's page open at their address.
+          const opening = hostRouter.questionPageOpening(input)
+          if (!opening) return { ok: false, reason: 'gone' }
+          if (opening.kind === 'url') { await shell.openExternal(opening.url); return { ok: true } }
+          // The file must still be the HTML file found when the question was asked, after links are followed: openPath runs
+          // whatever it is handed, so a page since replaced by a link to a program is not opened.
+          const real = await realpath(opening.file).catch(() => undefined)
+          if (real !== opening.file || !/\.html?$/iu.test(real) || !await stat(real).then(info => info.isFile(), () => false)) return { ok: false, reason: 'gone' }
+          return await shell.openPath(real) === '' ? { ok: true } : { ok: false, reason: 'unavailable' }
+        },
         ...(systemSettingsOpener === null ? {} : { openSystemSettings: systemSettingsOpener }),
         dictation: {
           request(command): void {

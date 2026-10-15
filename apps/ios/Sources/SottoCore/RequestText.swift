@@ -70,6 +70,19 @@ public enum WebLinks {
         [question.question, question.header ?? ""] + question.options.flatMap { [$0.label, $0.description ?? ""] }
     }
 
+    /// The links without the loopback addresses a question's pages already open (ADR-0085). Such a page opens through the
+    /// computer that runs the thread; its own address names that computer's loopback, which a phone cannot reach.
+    public static func withoutPages(_ links: [URL], _ pages: [RequestPage]) -> [URL] {
+        let served = Set(pages.filter { $0.kind == "server" }.map { "\($0.name.lowercased())/\($0.start)" })
+        return links.filter { url in
+            let host = ((url.host ?? "") + (url.port.map { ":\($0)" } ?? "")).lowercased()
+            // The page's start is its path without the leading slash, then its query and fragment, as the computer wrote it.
+            let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? ""
+            let start = String(path.drop { $0 == "/" }) + (url.query.map { "?\($0)" } ?? "") + (url.fragment.map { "#\($0)" } ?? "")
+            return !served.contains("\(host)/\(start)")
+        }
+    }
+
     /// Where a link goes, as its row shows it: the host, its port when it names one, and the path, without the scheme.
     public static func place(_ url: URL) -> String {
         let host = (url.host ?? "") + (url.port.map { ":\($0)" } ?? "")
