@@ -1588,18 +1588,41 @@ export class AgentControl {
    * Hands a thread babysitting's news as a wake-up (ADR-0061 decision 8): Sotto's own item in the thread's follow-up
    * queue, which sends it at once when the thread is ready and otherwise when the queue would send the next one,
    * folded into a wake-up already waiting. Resolves once it is saved, which is when the news counts as told; a thread
-   * that is gone, settled or archived takes nothing, and the rejection leaves the news untold.
+   * that is gone, settled or archived takes nothing, and the rejection leaves the news untold. A resume note is read
+   * for first, and a thread that read finds working again takes nothing either (ADR-0076).
    */
   async deliverWakeUp(threadId: string, news: WakeUpNews, options: { readonly tool: boolean }): Promise<void> {
     if (this.disposed) throw new Error('Sotto is closing.')
     if (isWatcherNews(news) && (news.watcher.threadId !== threadId || !this.canDeliverWatcherNews(news.watcher))) throw new Error('Watcher is unavailable.')
-    const thread = this.state.host.threads.find(item => item.id === threadId)
-    if (!thread) throw new Error('This thread is not on this host.')
-    if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) throw new Error('This thread is settled or archived.')
+    const available = (): AgentThread => {
+      const thread = this.state.host.threads.find(item => item.id === threadId)
+      if (!thread) throw new Error('This thread is not on this host.')
+      if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) throw new Error('This thread is settled or archived.')
+      return thread
+    }
+    let thread = available()
+    if (isRestartNews(news)) {
+      await this.readBeforeRestartNote(threadId)
+      thread = available()
+      if (thread.status === 'running' || thread.lastTurn?.status === 'running') throw new Error('This thread is working again.')
+    }
     // News arriving while the thread rests follows the turn it rests on; a request waiting on the user still holds it.
     const reviewed = thread.status !== 'running' && thread.lastTurn?.status !== 'running' ? thread.lastTurn?.id ?? 'unknown' : undefined
     await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed)
     this.syncFollowups(); this.publish(); this.pumpFollowups()
+  }
+  /**
+   * The resume note is the review of the turn the restart cut off (ADR-0076), so it follows that turn, and a provider can
+   * report a thread idle before its history is read: Codex does for a thread nobody has opened since the restart. Its turn
+   * is read first, as the queue reads before it sends. A read that fails queues the note against what is known, as before
+   * this read: if the queue's own read then finds an unfinished turn, the note waits until the user resumes the queue.
+   */
+  private async readBeforeRestartNote(threadId: string): Promise<void> {
+    if (!this.dependencies.host.refreshThread) return
+    let read: AgentHostSnapshot
+    try { read = await this.readThread(threadId) } catch { return }
+    if (this.disposed) throw new Error('Sotto is closing.')
+    this.acceptSnapshot(read)
   }
   /**
    * Takes back a waiting wake-up's news of a pull request whose babysitting ended quietly, or all of it: a stop, a

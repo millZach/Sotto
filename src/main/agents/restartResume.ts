@@ -168,8 +168,14 @@ export class RestartResume {
     this.delivering.add(thread.id)
     const handing: Promise<void> = this.options.control.deliverWakeUp(thread.id, news, { tool: this.options.tool(thread.id) }).then(
       () => { if (!this.dormant(thread.id)) this.working.set(thread.id, { threadId: thread.id, since: record.since, resumes: news.resumes, queued: true }) },
-      // Nothing was queued. A thread that went is dropped; one Sotto closed on is kept for the next start.
-      () => { if (!this.frozen && !this.dormant(thread.id)) this.working.delete(thread.id) },
+      // Nothing was queued. A thread that went is dropped; one Sotto closed on is kept for the next start. A thread the
+      // read before the note found working carried the turn on by itself, and its record keeps the count.
+      () => {
+        if (this.frozen || this.dormant(thread.id) || this.working.get(thread.id) !== record) return
+        const current = this.options.control.get().host.threads.find(item => item.id === thread.id)
+        if (current && (current.status === 'running' || current.lastTurn?.status === 'running')) this.working.set(thread.id, this.started(thread.id, record.resumes))
+        else this.working.delete(thread.id)
+      },
     ).finally(() => { this.pending.delete(thread.id); this.delivering.delete(thread.id); this.handing.delete(handing); this.save() })
     this.handing.add(handing)
   }

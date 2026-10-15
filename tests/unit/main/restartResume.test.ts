@@ -135,6 +135,94 @@ describe('resuming threads after a restart', () => {
   })
 })
 
+/**
+ * Codex after a restart: a thread nobody has opened is reported connected and idle before its turns are read, so it has
+ * no last turn yet. The first read of it, which the queue makes before it sends, finds the turn the restart cut off.
+ */
+class UnreadHost extends Host {
+  reads = 0
+  private placed = false
+  constructor(private readonly found: AgentThread['lastTurn'], private readonly foundStatus: AgentThread['status'] = 'idle') { super() }
+  async connect() {
+    const snapshot = await super.connect()
+    if (this.placed) return snapshot
+    this.placed = true
+    const thread = this.state.threads.find(item => item.id === 'workshop')!
+    delete thread.lastTurn; thread.status = 'idle'
+    return this.snapshot()
+  }
+  async refreshThread(threadId: string) {
+    const thread = this.state.threads.find(item => item.id === threadId)!
+    if (threadId === 'workshop' && !this.reads++) { thread.lastTurn = this.found; thread.status = this.foundStatus }
+    return this.snapshot()
+  }
+}
+
+describe('a thread whose history is read only after Sotto restarts', () => {
+  it('sends the resume note when the first read finds the turn the restart cut off, unopened', async () => {
+    const host = new UnreadHost({ id: 't1', status: 'interrupted' })
+    const f = await fixture({ saved: [stopped()], host })
+    await expect.poll(() => sends(f.host).length).toBe(1)
+    expect(sends(f.host)[0]).toMatchObject({ threadId: 'workshop', wakeUp: true, text: RESUME_NOTE })
+    expect(host.reads).toBeGreaterThan(0)
+    await expect.poll(() => f.control.get().followups ?? []).toEqual([])
+    await expect.poll(() => saved(f.root)).toEqual([{ threadId: 'workshop', since: expect.any(String), resumes: 1 }])
+  })
+
+  it('sends it when the thread was opened before the note was queued', async () => {
+    const host = new Host()
+    await host.connect()
+    host.update('workshop', { status: 'idle', lastTurn: { id: 't1', status: 'interrupted' } })
+    const f = await fixture({ saved: [stopped()], host })
+    await expect.poll(() => sends(f.host).length).toBe(1)
+    expect(sends(f.host)[0]).toMatchObject({ threadId: 'workshop', wakeUp: true, text: RESUME_NOTE })
+  })
+
+  it('leaves alone a thread the first read finds still working, and keeps its record', async () => {
+    const host = new UnreadHost({ id: 't1', status: 'running' }, 'running')
+    const before = new Date(Date.now() - 60 * 60_000).toISOString()
+    const f = await fixture({ saved: [stopped(1, before)], host })
+    // The record now times the turn the read found, and still counts the resume before it.
+    await expect.poll(() => saved(f.root)).toEqual([{ threadId: 'workshop', since: expect.not.stringMatching(before), resumes: 1 }])
+    expect(host.reads).toBeGreaterThan(0)
+    expect(sends(f.host)).toEqual([])
+    expect(f.control.get().followups ?? []).toEqual([])
+  })
+
+  it('still holds a user’s own queued prompt for review when the read finds an unfinished turn', async () => {
+    const host = new UnreadHost({ id: 't1', status: 'interrupted' })
+    const f = await fixture({ host })
+    await f.control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'Then add the tests.', attachments: [] })
+    await expect.poll(() => host.reads).toBeGreaterThan(0)
+    await expect.poll(() => f.control.get().followups?.[0]?.status).not.toBe('sending')
+    expect(sends(f.host)).toEqual([])
+    expect(f.control.get().followups).toEqual([expect.objectContaining({ text: 'Then add the tests.' })])
+    expect(f.control.get().followups?.[0]?.status).not.toBe('queued')
+  })
+
+  it('sends a note that an earlier build left failed once the user resumes the queue', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
+    const store = new FollowupStore(root); await store.load()
+    const restart: RestartNews = { source: 'restart', since: new Date().toISOString(), resumes: 1 }
+    await store.queueWakeUp('workshop', restart, items => queuedWakeUpText(items, { tool: false }), 'unknown')
+    const stuck = store.peek().items[0]!
+    await store.claim(stuck.id)
+    await store.settle(stuck.id, 'failed', 'The thread is no longer ready. Review it and resume its queue when ready.')
+    const host = new Host()
+    await host.connect()
+    host.update('workshop', { status: 'idle', lastTurn: { id: 't1', status: 'interrupted' } })
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner }); controls.push(control)
+    control.useRestartResume({ due: () => true, sending: () => undefined, unsent: () => undefined })
+    await control.start(); await control.command({ type: 'connect' })
+    expect(control.get().followups).toEqual([expect.objectContaining({ status: 'failed', wakeUp: true })])
+    expect(sends(host)).toEqual([])
+    await control.command({ type: 'resume-followups', threadId: 'workshop' })
+    await expect.poll(() => sends(host).length).toBe(1)
+    expect(sends(host)[0]).toMatchObject({ threadId: 'workshop', wakeUp: true, text: RESUME_NOTE })
+  })
+})
+
 /** A coordinator the test drives by hand: its threads, its queue, and when a note goes. */
 function scripted(threads: { id: string; status: 'idle' | 'running' }[], followups: { threadId: string; text: string }[] = []) {
   const listeners = new Set<(state: AgentState) => void>()
@@ -278,6 +366,24 @@ describe('what the record counts', () => {
     coordinator.set([{ id: 'workshop', status: 'running' }], [])
     await resume.freeze()
     expect(await saved(root)).toEqual([{ threadId: 'workshop', since: expect.any(String), resumes: 2 }])
+  })
+
+  it('keeps the count when the read before the note finds the thread working, before anyone is told it changed', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-restart-resume-')); roots.push(root)
+    const before = new Date(Date.now() - 60 * 60_000).toISOString()
+    await writeFile(join(root, 'restart-resume.json'), JSON.stringify({ version: 1, working: [stopped(2, before)] }))
+    const coordinator = scripted([{ id: 'workshop', status: 'idle' }])
+    let working: AgentState | undefined
+    const control = { ...coordinator.control, get: () => working ?? coordinator.control.get(),
+      // The read found the turn still running; the coordinator's listeners have not heard yet.
+      deliverWakeUp: async () => {
+        const state = coordinator.control.get()
+        working = { ...state, host: { ...state.host, threads: state.host.threads.map(thread => ({ ...thread, status: 'running' as const })) } }
+        throw new Error('This thread is working again.')
+      } }
+    const resume = new RestartResume({ directory: root, control, enabled: () => true, tool: () => false }); resumes.push(resume)
+    await resume.start()
+    await expect.poll(() => saved(root)).toEqual([{ threadId: 'workshop', since: expect.not.stringMatching(before), resumes: 2 }])
   })
 
   it('drops the record of a thread that is no longer on the host', async () => {

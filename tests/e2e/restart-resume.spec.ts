@@ -3,7 +3,8 @@ import { fillPrompt, promptField } from './support/prompt'
  * Resuming threads after a restart (ADR-0076) in the built app, on the Owl track, with the real Claude adapter over the
  * fake CLI in `tests/fixtures/` (`SOTTO_E2E_NATIVE_FIXTURE_ROOT` in `src/main/index.ts`). A turn is still running when
  * Sotto quits; when Sotto opens again, the session is resumed and sent the resume note, which the thread shows as
- * Sotto's with the Resumed tag, word for word.
+ * Sotto's with the Resumed tag, word for word. The same holds for the real Codex adapter over the fake app-server, whose
+ * thread is reported idle before its turns are read back.
  *
  *   npm run build && npx playwright test tests/e2e/restart-resume.spec.ts
  */
@@ -124,6 +125,87 @@ test('a thread working when Sotto quits carries on, with the resume note, when S
       await expect.poll(() => recorded(profile), { timeout: 30_000 }).toEqual([])
       expect(await readFile(join(claude, 'violations.jsonl'), 'utf8').catch(() => '')).toBe('')
       await writeFile(test.info().outputPath('restart-resume.json'), JSON.stringify({ sent }, null, 2))
+    })
+  } finally {
+    if (launched) await closeSotto(launched)
+    for (const [key, value] of [['SOTTO_E2E_NATIVE_FIXTURE_ROOT', previous.root], ['SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE', previous.executable]] as const) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value
+    }
+    await removeOwnedE2EProfile(profile)
+  }
+})
+
+/** The Codex requests Sotto made, in order: the fake app-server's journal of every frame it was sent. */
+const codexRequests = async (codex: string): Promise<{ method?: string; params?: Record<string, unknown> }[]> =>
+  (await readFile(join(codex, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as { method?: string; params?: Record<string, unknown> })
+const codexPrompts = async (codex: string): Promise<string[]> => (await codexRequests(codex)).filter(request => request.method === 'turn/start')
+  .map(request => (request.params?.input as { type: string; text?: string }[] | undefined)?.find(item => item.type === 'text')?.text ?? '')
+
+test('a Codex thread working when Sotto quits is sent the resume note when Sotto opens again', async () => {
+  test.setTimeout(240_000)
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-restart-resume-' })).directory
+  const root = join(profile, 'native-fixture')
+  const codex = join(root, 'codex')
+  const project = join(root, 'project')
+  for (const folder of ['claude', 'codex', 'project']) await mkdir(join(root, folder), { recursive: true })
+  // No scripted reply: the fake app-server holds each turn open until the test completes it.
+  await writeFile(join(codex, 'script.json'), '{}')
+  const previous = { root: process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT, executable: process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE }
+  process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = root
+  process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = process.execPath
+  let launched: LaunchedSotto | undefined
+  try {
+    await onReleaseTrack('owl', async () => {
+      launched = await launchSotto('success', profile)
+      let page = launched.page
+      const threadId = await page.evaluate(async path => {
+        await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' })
+        const agents = window.sotto!.agents!
+        const configured = await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
+        if (configured.error) throw new Error(configured.error)
+        const connected = await agents.command({ type: 'connect', provider: 'codex' })
+        if (connected.error) throw new Error(connected.error)
+        const created = await agents.command({ type: 'create-project', provider: 'codex', title: 'Harbour', path, useExisting: true })
+        if (created.error) throw new Error(created.error)
+        const projectId = created.host.projects.find(item => item.title === 'Harbour')!.id
+        const model = (await agents.get()).host.models.find(item => item.providerId === 'codex' && item.ready)
+        if (!model) throw new Error('No ready Codex model.')
+        const thread = await agents.command({ type: 'create-thread', projectId, title: 'Tide tables', titleSource: 'user', modelId: model.id, workingCopy: 'shared' })
+        if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'No thread was created.')
+        const sent = await agents.command({ type: 'manual-send', threadId: thread.activeThreadId, text: 'Work out next week’s tide tables.' })
+        if (sent.error) throw new Error(sent.error)
+        return thread.activeThreadId
+      }, project)
+      const recordId = threadId.slice(threadId.lastIndexOf(':') + 1)
+      await expect.poll(() => codexPrompts(codex), { timeout: 30_000 }).toEqual(['Work out next week’s tide tables.'])
+      await expect.poll(() => recorded(profile), { timeout: 30_000 }).toEqual([recordId])
+
+      // Sotto quits mid-turn, and its app-servers with it.
+      await launched.app.close()
+      launched = undefined
+      expect(await recorded(profile)).toEqual([recordId])
+      // A new Codex app-server reads a turn whose app-server went back as interrupted, and the thread idle.
+      const statePath = join(codex, 'state.json')
+      const state = JSON.parse(await readFile(statePath, 'utf8')) as { threads: Record<string, { status: unknown; turns: { status: string }[] }> }
+      const native = Object.values(state.threads)
+      expect(native).toHaveLength(1)
+      expect(native[0]!.turns.at(-1)!.status).toBe('inProgress')
+      native[0]!.turns.at(-1)!.status = 'interrupted'; native[0]!.status = { type: 'idle' }
+      await writeFile(statePath, JSON.stringify(state))
+
+      // Sotto opens again: the thread is sent the note, once, and nothing waits unsent in its queue.
+      launched = await launchSotto('success', profile)
+      page = launched.page
+      await expect.poll(() => codexPrompts(codex), { timeout: 60_000 }).toEqual(['Work out next week’s tide tables.', RESUME_NOTE])
+      await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).followups ?? []), { timeout: 30_000 }).toEqual([])
+
+      // The resumed turn finishes, and the thread leaves the record.
+      const nativeId = Object.keys(state.threads)[0]!
+      await writeProviderAction(join(codex, 'control.json'), { type: 'complete', threadId: nativeId, text: 'The tide tables are done.' })
+      const { transcript } = await openThread(page, 'Tide tables')
+      await expect(transcript.getByText('The tide tables are done.')).toBeVisible({ timeout: 30_000 })
+      await expect.poll(() => recorded(profile), { timeout: 30_000 }).toEqual([])
+      expect(await codexPrompts(codex)).toHaveLength(2)
     })
   } finally {
     if (launched) await closeSotto(launched)
