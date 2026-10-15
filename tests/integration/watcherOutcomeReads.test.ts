@@ -138,6 +138,26 @@ it('reads a turn left with background work as background until that work ends', 
   f.native(started.target.threadId).backgroundWork = []
   await f.emit(started.target.threadId)
   expect(await f.read(started.receipt.operationId)).toMatchObject({ outcome: 'answered', reply: { text: 'Synthetic reply, agent still running' } })
+  // The work-settled news that moves it on names the same operation.
+  await vi.waitFor(() => expect(f.service.state().news?.find(event => event.kind === 'work-settled' && event.target.threadId === started.target.threadId))
+    .toMatchObject({ operationId: started.receipt.operationId, backgroundWorkCount: 0 }))
+})
+
+it('keeps a brief answered with nothing running answered, with no work-settled news, when work starts on its turn later', async () => {
+  const f = await fixture(), started = await f.start()
+  await f.endTurn(started.target.threadId, 'Synthetic reply, nothing running')
+  await vi.waitFor(() => expect(f.service.state().news?.find(event => event.kind === 'turn-finished' && event.target.threadId === started.target.threadId))
+    .toMatchObject({ operationId: started.receipt.operationId, backgroundWorkCount: 0 }))
+  expect(await f.read(started.receipt.operationId)).toMatchObject({ outcome: 'answered' })
+  // A finish delivered as done stays done: work that shows up on the same turn afterwards neither reopens the outcome
+  // nor earns that turn work-settled news when it ends.
+  f.native(started.target.threadId).monitoring = [{ id: randomUUID(), label: 'Synthetic watch' }]
+  await f.emit(started.target.threadId)
+  expect(await f.read(started.receipt.operationId)).toMatchObject({ outcome: 'answered', reply: { text: 'Synthetic reply, nothing running' } })
+  f.native(started.target.threadId).monitoring = []
+  await f.emit(started.target.threadId)
+  expect(await f.read(started.receipt.operationId)).toMatchObject({ outcome: 'answered' })
+  expect(f.service.state().news?.some(event => event.kind === 'work-settled' && event.target.threadId === started.target.threadId)).toBe(false)
 })
 
 it('reads a brief whose turn was running when Watcher restarted as unknown, never answered', async () => {

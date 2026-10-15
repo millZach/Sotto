@@ -75,10 +75,11 @@ export function watcherTurnOutcome(operation: Pick<WatcherOperation, 'messageId'
     // A turn cut before it answered: the user's own next message holds the thread, or it was stopped.
     return { outcome: next && !watcherMessage(messages[next.anchor]!.id) ? 'paused' : 'stopped', ...reference }
   }
-  // Finished. The newest turn is not done while the work it left running goes on, or while that work is unknown. A turn
-  // already seen in background stays there while any work remains, even once another turn has begun: the thread's
-  // count cannot say whose work it is, so it is not taken as ended until it reaches zero.
-  const working = watcherBackgroundWorkCount(thread) > 0 || (thread.subagentSummary?.unknown ?? 0) > 0
+  // Finished. The newest turn is not done while the work it left running goes on, or while that work is unknown: the
+  // same count, unknown sub-agents included, that owes its finish work-settled news. A turn already seen in background
+  // stays there while any work remains, even once another turn has begun: the thread's count cannot say whose work it
+  // is, so it is not taken as ended until it reaches zero.
+  const working = watcherBackgroundWorkCount(thread) > 0
   if (!next && (thread.status === 'running' || working) || next && operation.outcome === 'background' && working) {
     return { outcome: 'background', ...reference }
   }

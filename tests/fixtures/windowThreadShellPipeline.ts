@@ -84,7 +84,7 @@ function adapterStates(root: string, withActivity: boolean, streamCount: number)
   return { claude, codex }
 }
 
-export async function stack(root: string, withActivity: boolean, streamCount: number) {
+export async function stack(root: string, withActivity: boolean, streamCount: number, watcherEnabled = false) {
   const registry = new ThreadRegistry(root)
   await registry.load()
   const states = adapterStates(root, withActivity, streamCount)
@@ -94,10 +94,10 @@ export async function stack(root: string, withActivity: boolean, streamCount: nu
     hosts: { claude: new SottoThreadHost('claude', adapters.claude, registry), codex: new SottoThreadHost('codex', adapters.codex, registry),
       grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
   const workspace = new WorkspaceHost(native, root, () => true, undefined,
-    /* watcherEnabled */ false, /* museEnabled */ false, /* streamingPublishCostEnabled */ true)
+    watcherEnabled, /* museEnabled */ false, /* streamingPublishCostEnabled */ true)
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
-  const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, streamingPublishCost: true })
+  const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled, streamingPublishCost: true })
   await control.start()
   await control.command({ type: 'connect' })
   const stop = async () => { control.dispose(); workspace.disconnect(); await workspace.privacyChanged(); await registry.flush(); workspace.dispose() }

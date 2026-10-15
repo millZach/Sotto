@@ -17,12 +17,13 @@ export function watcherProgressFingerprint(thread: AgentThread): string {
     thread.activities?.map(activity => [activity.id, activity.status, activity.startedAt, activity.completedAt, activity.text?.length, activity.output?.length, activity.steps?.map(step => [step.status, step.text.length]), activity.agents?.map(agent => [agent.id, agent.status, agent.progress, agent.message?.length]) ]), thread.backgroundWork?.map(work => [work.id, work.type]), thread.monitoring?.map(work => work.id), thread.requests.map(card => [card.id, card.kind])])
 }
 /**
- * Work a thread's provider confirms is still running outside its foreground turn: background work (Claude's background
- * tasks), the roster's working sub-agents (Codex's `subAgentActivity`) and monitoring. Claude's background sub-agents sit
- * in both of the first two, so the larger of those counts, never their sum.
+ * The work a finished turn is still waiting on: background work (Claude's background tasks), the roster's working
+ * sub-agents (Codex's `subAgentActivity`) and monitoring. Claude's background sub-agents sit in both of the first two, so
+ * the larger of those counts, never their sum. Sub-agents a restart left unknown may still be running, so they count with
+ * the working ones: a finish with any of this is not done and is owed work-settled news, and zero is the only settled answer.
  */
 export function watcherBackgroundWorkCount(thread: AgentThread): number {
-  return Math.max(thread.backgroundWork?.length ?? 0, thread.subagentSummary?.working ?? 0) + (thread.monitoring?.length ?? 0)
+  return Math.max(thread.backgroundWork?.length ?? 0, (thread.subagentSummary?.working ?? 0) + (thread.subagentSummary?.unknown ?? 0)) + (thread.monitoring?.length ?? 0)
 }
 const finishedTurn = (thread: AgentThread) => thread.status !== 'running' && thread.lastTurn && ['completed', 'failed'].includes(thread.lastTurn.status) ? thread.lastTurn : undefined
 const BUSY_TURN_ID = /^[a-f0-9]{64}\.([a-f0-9]{64})$/u
@@ -109,7 +110,7 @@ export class WatcherWakeUp {
    * leaves them unknown, so its threads never settle.
    */
   private workSettled(thread: AgentThread, hostId: string): boolean {
-    return this.reportsWork(hostId) && watcherBackgroundWorkCount(thread) === 0 && !thread.subagentSummary?.unknown
+    return this.reportsWork(hostId) && watcherBackgroundWorkCount(thread) === 0
   }
   private reportsWork(hostId: string): boolean { return this.options.reportsWork?.(hostId) ?? true }
   /** Records a finished turn whose work is still running, so it is owed one work-settled event when that work ends. */
@@ -166,7 +167,6 @@ export class WatcherWakeUp {
         ? workSettledScope(request.id, target, participant.generation, extra.turnId) : undefined
       if (kind === 'work-settled' && !this.owedWorkSettled.has(settleScope!)) continue
       const busyId = settleScope && kind !== 'work-settled' ? `${stableId}.${settleScope}` : undefined
-      if (busyId && extra.backgroundWorkCount) this.oweWorkSettled(settleScope!)
       if (kind === 'evidence-changed') {
         const scope = observationDigest([kind, request.id, target, participant.generation]), fingerprint = observationDigest(identity)
         const previous = this.latestEvidence.get(scope)
@@ -182,7 +182,8 @@ export class WatcherWakeUp {
         // Older saved IDs remain readable and deduplicate only the first reconciled observation.
         if (legacyId) continue
       } else if (this.seen.has(id) || busyId && this.seen.has(busyId)) continue
-      else if (busyId && extra.backgroundWorkCount) id = busyId
+      // Only a finish delivered as busy is owed: one already delivered as done stays done if work shows up later.
+      else if (busyId && extra.backgroundWorkCount) { id = busyId; this.oweWorkSettled(settleScope!) }
       if (kind === 'work-settled') this.owedWorkSettled.delete(settleScope!)
       const event: WatcherEvent = { ...extra, kind, target, requestId: request.id, generation: participant.generation,
         observedAt: new Date(this.now()).toISOString(), id }
@@ -293,7 +294,8 @@ export class WatcherWakeUp {
           // The news names the delegation this turn answers, when there is one. The name is an identity, never words.
           const operationId = this.options.answers?.(target, thread)
           const answers = operationId ? { operationId } : {}
-          // A host that does not report the counts sends no count: unknown, never none running.
+          // A host that does not report the counts sends no count: unknown, never none running. Unknown sub-agents count, so
+          // a finish while they are unresolved says the turn is not done and is owed work-settled news.
           this.event(finished.status === 'failed' ? 'turn-failed' : 'turn-finished', target, [finished.id, finished.status],
             { turnId: finished.id, ...answers, ...this.reportsWork(target.hostId) ? { backgroundWorkCount: watcherBackgroundWorkCount(thread) } : {},
               evidenceIds: this.evidence.read(target).filter(item => item.turnId === finished.id).map(item => item.id) })

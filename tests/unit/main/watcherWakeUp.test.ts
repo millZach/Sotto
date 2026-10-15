@@ -852,6 +852,31 @@ it('keeps a turn unsettled while a restart has left its sub-agents unknown', asy
   expect(kinds(delivered)).toEqual(['work-settled'])
 })
 
+it('reads a turn that finishes while a restart has left sub-agents unknown as not done, and settles it once they end', async () => {
+  const f = fixture()
+  // A restart cannot see how running sub-agents ended; a turn finishing beside them is not done until they resolve.
+  f.thread.subagentSummary = { total: 2, working: 0, completed: 0, failed: 0, interrupted: 0, unknown: 2 }
+  finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  const finished = f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!
+  expect(finished.backgroundWorkCount).toBe(2)
+  expect(watcherNewsText(f.delivered[0]!)).toContain('the turn is not done until Sotto sends work-settled news for it')
+  f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished'])
+  f.thread.subagentSummary = { total: 2, working: 0, completed: 2, failed: 0, interrupted: 0, unknown: 0 }
+  f.wakes.observe(); f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished', 'work-settled'])
+})
+
+it('owes nothing for work that starts after a finish was delivered as done', async () => {
+  const f = fixture()
+  finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!.backgroundWorkCount).toBe(0)
+  // Work seen on the same finished turn after Watcher heard it was done does not reopen it.
+  f.thread.monitoring = [monitor(1)]; f.wakes.observe(); await f.advance(2_000)
+  f.thread.monitoring = []; f.wakes.observe(); await f.advance(10_000)
+  expect(kinds(f.delivered)).toEqual(['turn-finished'])
+})
+
 it('holds work-settled news when work starts again before delivery and sends it once after the final zero', async () => {
   const f = fixture()
   f.thread.providerId = 'claude'; f.thread.backgroundWork = [backgroundTask(1), backgroundTask(2)]; finish(f.thread); f.wakes.observe()
