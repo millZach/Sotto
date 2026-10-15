@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { HOST_CONNECTIONS, isTailnetAddress } from '../../shared/hostConnection'
 import { bootStatusSchema } from '../../shared/bootStart'
+import { HOST_SYSTEM_PATTERN } from '../../shared/hostUpdates'
 import type { HostConnectionPreference } from './hostConnectionPlan'
 
 /**
@@ -23,6 +24,11 @@ const entrySchema = z.looseObject({
    * has no launch, still knows it after a relaunch or a drop. One this build cannot read reads as none.
    */
   bootStart: bootStatusSchema.optional().catch(undefined),
+  /**
+   * The host's system as a launch last reported it, `linux-x64`, so a tailnet connection, which has no launch, still knows
+   * which host archive an update needs before the host's first update (ADR-0077). One this build cannot read reads as none.
+   */
+  system: z.string().max(64).regex(HOST_SYSTEM_PATTERN).optional().catch(undefined),
 })
 export type TailnetEntry = z.infer<typeof entrySchema>
 /** Saved hosts are at most 20; the file allows room for entries a later Sotto keeps for hosts it forgot. */
@@ -42,15 +48,17 @@ export class TailnetStore {
   async load(): Promise<void> { this.entries = await this.store.read() }
 
   /** A saved host's entry. No entry means SSH, as for a host saved before tailnet connections. */
-  get(id: string): { readonly prefer: HostConnectionPreference; readonly address?: string | undefined; readonly addressSeen?: number | undefined; readonly bootStart?: TailnetEntry['bootStart'] } {
+  get(id: string): { readonly prefer: HostConnectionPreference; readonly address?: string | undefined; readonly addressSeen?: number | undefined; readonly bootStart?: TailnetEntry['bootStart']; readonly system?: string | undefined } {
     return this.entries.find(entry => entry.id === id) ?? { prefer: 'ssh' }
   }
+  /** Whether the host has an entry, which only a host this computer reaches, or tried to reach, over its tailnet has. */
+  has(id: string): boolean { return this.entries.some(entry => entry.id === id) }
 
   /** Changes a host's entry, making one when it has none, and writes the file. */
   set(id: string, patch: Partial<Omit<TailnetEntry, 'id'>>): Promise<void> {
     const current = this.entries.find(entry => entry.id === id)
     const next: TailnetEntry = { ...(current ?? { id, prefer: 'ssh' as const }), ...patch, id }
-    for (const key of ['address', 'addressSeen', 'bootStart'] as const) if (next[key] === undefined) delete next[key]
+    for (const key of ['address', 'addressSeen', 'bootStart', 'system'] as const) if (next[key] === undefined) delete next[key]
     this.entries = [...this.entries.filter(entry => entry.id !== id), next]
     return this.write()
   }

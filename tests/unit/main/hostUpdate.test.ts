@@ -353,9 +353,10 @@ describe('the version this computer is downloading (ADR-0077 decision 6)', () =>
     const probe = vi.fn(async (url: string) => { asked.push(url); return published.includes(url) })
     return { asked, probe }
   }
-  function aimed(published: string[], patch: Partial<HostUpdateCandidate> = { version: RUNNING }) {
+  /** forge on this computer's version, a Linux host whose launch said so, unless `patch` says otherwise. */
+  function aimed(published: string[], patch: Partial<HostUpdateCandidate> = {}) {
     const hosts = new Hosts(), threads = new Threads(), releases = page(published)
-    hosts.list = [forge(patch)]
+    hosts.list = [forge({ version: RUNNING, system: 'linux-x64', ...patch })]
     hosts.steps['update-fetch'] = async (operation, options) => { options.onStep?.('check'); return { type: 'update-fetched', file: `Sotto-host-${(operation as { version: string }).version}-linux-x64.tar.gz`, sha256: SUM } }
     const updates = new HostUpdates({ hosts, threads, version: RUNNING, releasesUrl: RELEASES, probe: releases.probe })
     return { hosts, threads, updates, releases, one: () => updates.state()[0] }
@@ -396,9 +397,8 @@ describe('the version this computer is downloading (ADR-0077 decision 6)', () =>
   it('leaves a host off the card until after the restart when the release has no host archive', async () => {
     const { updates, releases } = aimed([])
     updates.pending(WAITING)
-    await vi.waitFor(() => expect(releases.asked).toHaveLength(6))
-    // Every system a host archive is published for was asked about, the archive alone, and none was there.
-    expect(releases.asked.every(url => url.endsWith('.tar.gz'))).toBe(true)
+    await vi.waitFor(() => expect(releases.asked).toEqual([archive(WAITING)]))
+    await vi.waitFor(() => expect(updates.checking()).toEqual([]))
     expect(updates.state()).toEqual([])
     updates.dispose()
   })
@@ -406,10 +406,47 @@ describe('the version this computer is downloading (ADR-0077 decision 6)', () =>
   it('does not offer it while an archive has no checksum beside it', async () => {
     const { updates, releases } = aimed([archive(WAITING)])
     updates.pending(WAITING)
-    await vi.waitFor(() => expect(releases.asked).toHaveLength(7))
-    expect(releases.asked.slice(0, 3)).toEqual([archive(WAITING), `${archive(WAITING)}.sha256`, archive(WAITING, 'linux-arm64')])
-    await new Promise(resolve => setTimeout(resolve, 0))
+    await vi.waitFor(() => expect(releases.asked).toEqual([archive(WAITING), `${archive(WAITING)}.sha256`]))
+    await vi.waitFor(() => expect(updates.checking()).toEqual([]))
     expect(updates.state()).toEqual([])
+    updates.dispose()
+  })
+
+  it('asks only for the host’s own system, so another system’s archive never offers it a version (Sol, review)', async () => {
+    // A release with a Linux host only, and a Mac host: nothing qualifies it.
+    const { updates, releases } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`], { system: 'darwin-arm64' })
+    updates.pending(WAITING)
+    await vi.waitFor(() => expect(releases.asked).toEqual([archive(WAITING, 'darwin-arm64')]))
+    await vi.waitFor(() => expect(updates.checking()).toEqual([]))
+    expect(updates.state()).toEqual([])
+    updates.dispose()
+  })
+
+  it('asks nothing for a host whose system Sotto has not heard, and leaves it for after the restart', () => {
+    const { updates, releases } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`], { system: undefined })
+    updates.pending(WAITING)
+    expect(releases.asked).toEqual([])
+    expect(updates.checking()).toEqual([])
+    expect(updates.state()).toEqual([])
+    updates.dispose()
+  })
+
+  it('names a host as checking from the moment it is asked about until the releases page answers', async () => {
+    const { updates, releases } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`])
+    const answer = deferred<boolean>()
+    releases.probe.mockImplementationOnce(async (url: string) => { releases.asked.push(url); return answer.promise })
+    const published: string[][] = []
+    updates.subscribe(() => published.push(updates.checking()))
+    expect(updates.checking()).toEqual([])
+    updates.pending(WAITING)
+    // Published with the state, so the window sees the check begin and end in the same changes as the offer.
+    expect(updates.checking()).toEqual([ID])
+    expect(published.at(-1)).toEqual([ID])
+    expect(updates.state()).toEqual([])
+    answer.resolve(true)
+    await vi.waitFor(() => expect(updates.state()).toMatchObject([{ to: WAITING, phase: 'needs' }]))
+    expect(updates.checking()).toEqual([])
+    expect(published.at(-1)).toEqual([])
     updates.dispose()
   })
 
@@ -439,8 +476,8 @@ describe('the version this computer is downloading (ADR-0077 decision 6)', () =>
     updates.dispose()
   })
 
-  it('asks for the host’s own system once its download has named it', async () => {
-    const { hosts, updates, releases } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`], { version: '0.1.37' })
+  it('asks for the host’s own system once its download has named it, when its launch did not', async () => {
+    const { hosts, updates, releases } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`], { version: '0.1.37', system: undefined })
     hosts.steps['update-fetch'] = async () => ({ type: 'error', reason: 'archive-unavailable', file: `Sotto-host-${RUNNING}-darwin-arm64.tar.gz` })
     await updates.command(ID, 'update')
     await vi.waitFor(() => expect(updates.state()[0]).toMatchObject({ phase: 'failed' }))
@@ -465,7 +502,7 @@ describe('the version this computer is downloading (ADR-0077 decision 6)', () =>
     const published: string[] = []
     const { updates, releases, one } = aimed(published)
     updates.pending(WAITING)
-    await vi.waitFor(() => expect(releases.asked).toHaveLength(6))
+    await vi.waitFor(() => expect(releases.asked).toHaveLength(1))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(updates.state()).toEqual([])
     // The host archive is uploaded after the installer, as the release procedure allows.

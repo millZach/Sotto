@@ -70,6 +70,8 @@ export function hostArchiveName(version: string, platform = 'linux', arch = 'x64
 }
 /** A release number, the only form a version folder or the `current` pointer may take. */
 export const HOST_VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?$/u
+/** A host's system as its launch script names it and an archive name ends with it: `linux-x64`. */
+export const HOST_SYSTEM_PATTERN = /^[a-z0-9]+-[a-z0-9]+$/u
 /** An archive name as `hostArchiveName` writes it, for a name a host reports back. */
 export const HOST_ARCHIVE_PATTERN = /^Sotto-host-(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-owl\.[1-9]\d{7}\.[1-9]\d*)?-[a-z0-9]+-[a-z0-9]+\.tar\.gz$/u
 

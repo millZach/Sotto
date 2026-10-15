@@ -24,7 +24,8 @@ describe('updating a host from the Threads page (ADR-0040)', () => {
   it('knows which Sotto a connected host runs, and offers it to an update with the folders it is installed in', async () => {
     const remote = await add()
     expect(fixture.manager.get().hosts[0]).toMatchObject({ phase: 'connected', version: '0.0.1' })
-    expect(fixture.manager.updateCandidates()).toEqual([{ id: remote.id, name: 'Forge fixture', hostId: fixture.reportedHostId, version: '0.0.1', owned: true, installPath: '/opt/sotto', dataDirectory: '/data/sotto' }])
+    // The system its launch reported names the archive an update asks the releases page about (ADR-0077).
+    expect(fixture.manager.updateCandidates()).toEqual([{ id: remote.id, name: 'Forge fixture', hostId: fixture.reportedHostId, version: '0.0.1', owned: true, installPath: '/opt/sotto', dataDirectory: '/data/sotto', system: 'linux-x64' }])
     await fixture.manager.command({ type: 'disconnect', id: remote.id })
     expect(fixture.manager.get().hosts[0]!.version).toBeUndefined()
     expect(fixture.manager.updateCandidates()).toEqual([])

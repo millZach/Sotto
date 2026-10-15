@@ -123,6 +123,8 @@ export function useDesktopHostFixture() {
 
   /** The Node the fixture host's launch script says it ran under. */
   const FIXTURE_NODE = '/home/zach/.local/share/mise/installs/node/24.4.0/bin/node'
+  /** The system the fixture's launch reports, as forge's would. */
+  const FIXTURE_SYSTEM = 'linux-x64'
 
   class FixtureSsh extends SshHostLauncher {
     callbacks?: SshCallbacks
@@ -148,7 +150,7 @@ export function useDesktopHostFixture() {
         throw stopped
       }
       const which = options.start === false ? 'admin' : 'ssh'
-      return { url: tunnelUrl?.() ?? 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned, route: { hostname: 'forge', identityFiles: [] }, node: FIXTURE_NODE,
+      return { url: tunnelUrl?.() ?? 'http://127.0.0.1:' + host.descriptor!.port, hostId: reportedHostId, owned, route: { hostname: 'forge', identityFiles: [] }, node: FIXTURE_NODE, system: FIXTURE_SYSTEM,
         close: async () => undefined,
         showHostPairingCode: async () => ({ ...host.pairing.issuePairingCode(), hostId: reportedHostId }),
         ensureDesktopAnswers: async clientId => { if (desktopAnswersFailure) throw desktopAnswersFailure; await ensureFixtureDesktopAnswers(join(root, 'remote'), reportedHostId, clientId) },
