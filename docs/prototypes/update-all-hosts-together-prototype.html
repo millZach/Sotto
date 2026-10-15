@@ -1,0 +1,252 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: how does the Update all corner card read when Sotto has a new version waiting and forge's host is
+  updated to that same version before Sotto restarts?
+
+  Settled before this prototype (14 October 2026, with Zach):
+    1. Forge first, then restart. When Sotto finds a new version, forge's host is listed right away, aimed at the
+       version this computer is downloading. One press downloads Sotto, updates forge's host, then offers Restart now.
+    2. The row's sentence is said once. The footer no longer repeats "forge's host restarts…".
+    3. The version pair must not squeeze the sentence into a one-letter column.
+
+  Variants differ in structure:
+    a  Stacked rows.   Today's card, but each row stacks name, versions, then the sentence, full width.
+    b  Per machine.    One block per machine; the versions sit once in the block's heading, shortened to what changes.
+    c  Steps.          The press as an ordered list: download, update forge, restart. Versions once, in the heading.
+
+  The bar: ← → cycle variants; state (offer, running, restart); theme; window size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Update all with hosts, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-sidebar: oklch(0.16 0.006 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-text-faint: oklch(0.68 0.012 265);
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-border: oklch(0.5 0.02 265);
+  --tt-accent: oklch(0.714 0.104 183);
+  --tt-accent-text: oklch(0.84 0.08 183);
+  --tt-on-accent: oklch(0.16 0.012 190);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-update: oklch(0.79 0.13 165);
+  --tt-shadow-lg: 0 18px 50px rgb(0 0 0 / 55%);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.995 0.002 85);
+  --tt-sidebar: oklch(0.945 0.006 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.34 0.014 75);
+  --tt-text-muted: oklch(0.47 0.014 75);
+  --tt-text-faint: oklch(0.52 0.014 75);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-border: oklch(0.7 0.016 80);
+  --tt-accent: oklch(0.52 0.13 235);
+  --tt-accent-text: oklch(0.45 0.13 235);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-success: oklch(0.5 0.12 160);
+  --tt-update: oklch(0.55 0.13 160);
+  --tt-shadow-lg: 0 18px 50px rgb(0 0 0 / 18%);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #222; font-family: var(--tt-font); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+.stage { display: flex; justify-content: center; padding: 24px 0 120px; }
+.window { flex: none; width: var(--w, 1280px); height: var(--h, 800px); position: relative; background: var(--tt-canvas); color: var(--tt-text); display: grid; grid-template-columns: 260px minmax(0, 1fr); overflow: hidden; border: 1px solid #000; font-size: 14px; }
+.side { background: var(--tt-sidebar); border-right: 1px solid var(--tt-hairline); padding: 54px 12px; display: grid; align-content: start; gap: 6px; }
+.side div { height: 36px; border-radius: 8px; background: color-mix(in srgb, var(--tt-text) 5%, transparent); }
+.pane { padding: 60px 80px; display: grid; align-content: start; gap: 18px; }
+.pane p { margin: 0; max-width: 760px; line-height: 1.6; color: var(--tt-text-2); }
+.pane .composer { position: absolute; left: 340px; right: 80px; bottom: 40px; height: 120px; border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-surface); }
+
+/* The card, shared frame (matches updateAll.css) */
+.card { position: absolute; right: 20px; bottom: 20px; z-index: 5; display: grid; width: min(380px, calc(100% - 40px)); max-height: calc(100% - 64px); border: 1px solid var(--tt-hairline); border-left: 2px solid var(--tt-update); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); overflow: hidden; font-size: 12.5px; }
+.card[data-phase='restart'] { border-left-color: var(--tt-success); }
+.head { display: flex; justify-content: space-between; gap: 10px; padding: 12px 8px 10px 14px; border-bottom: 1px solid var(--tt-hairline); }
+.head > div { display: grid; gap: 2px; min-width: 0; }
+.head strong { font-size: 13.5px; font-weight: 600; }
+.head span { color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+.fold { width: 28px; height: 28px; border: 0; border-radius: 7px; background: none; color: var(--tt-text-muted); }
+.list { overflow: auto; }
+.machine { display: grid; gap: 8px; padding: 10px 14px 12px; }
+.machine + .machine { border-top: 1px solid var(--tt-hairline); }
+.machine h3 { display: flex; align-items: baseline; gap: 6px; margin: 0; color: var(--tt-text-muted); font-size: 11.5px; font-weight: 600; }
+.machine h3 .v { margin-left: auto; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.item { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; }
+.mark { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--tt-border); border-radius: 50%; color: var(--tt-text-muted); font-size: 10px; }
+.item[data-state='done'] .mark { border-color: var(--tt-success); color: var(--tt-success); }
+.item[data-state='running'] .mark { border-color: var(--tt-accent); color: var(--tt-accent-text); }
+.item[data-state='waiting'] .mark { border-style: dashed; }
+.body { display: grid; gap: 2px; min-width: 0; }
+.name { font-weight: 600; }
+.vers { color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.body small { color: var(--tt-text-muted); font-size: 11.5px; line-height: 1.45; }
+.bar { display: block; height: 3px; margin-top: 5px; border-radius: 3px; background: var(--tt-hairline); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--tt-accent); }
+.notes { padding: 10px 14px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
+.notes p { margin: 0; }
+.actions { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--tt-hairline); background: var(--tt-surface); }
+.btn { min-height: 30px; padding: 4px 12px; border-radius: 8px; border: 1px solid transparent; background: none; font-size: 12.5px; font-weight: 500; cursor: pointer; }
+.btn.primary { background: var(--tt-text); color: var(--tt-canvas); }
+.btn.ghost { color: var(--tt-text-2); }
+.btn.ghost:hover { background: color-mix(in srgb, var(--tt-text) 8%, transparent); }
+
+/* Variant c: numbered steps with a rail */
+.steps { list-style: none; margin: 0; padding: 12px 14px; display: grid; gap: 0; }
+.steps li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; position: relative; padding-bottom: 12px; }
+.steps li:last-child { padding-bottom: 0; }
+.steps li:not(:last-child)::before { content: ''; position: absolute; left: 9.5px; top: 22px; bottom: 2px; width: 1px; background: var(--tt-hairline); }
+.steps li[data-state='done']:not(:last-child)::before { background: var(--tt-success); }
+
+/* Prototype bar */
+.proto-bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #fff; color: #111; border-radius: 16px; box-shadow: 0 8px 30px rgb(0 0 0 / 50%); font: 13px/1.2 ui-sans-serif, system-ui, sans-serif; z-index: 30; flex-wrap: wrap; justify-content: center; }
+.proto-bar button, .proto-bar select { font: inherit; color: #111; color-scheme: light; border: 1px solid #bbb; background: #f4f4f4; border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.proto-bar .vlabel { font-weight: 700; min-width: 160px; text-align: center; }
+.state-dump { position: fixed; left: 14px; top: 14px; max-width: 280px; padding: 8px 10px; background: #fff; color: #111; border-radius: 10px; font: 11.5px/1.4 ui-monospace, Consolas, monospace; white-space: pre-wrap; z-index: 30; opacity: .85; }
+</style>
+</head>
+<body>
+<div class="state-dump" id="dump"></div>
+<div class="stage">
+  <div class="window" id="win">
+    <aside class="side"><div></div><div></div><div></div><div></div><div></div></aside>
+    <main class="pane">
+      <p>The Linux build has now passed, including the socket tests and host packaging. Both release packages are ready.</p>
+      <p>GitHub is still uploading the 113 MB installer. The builds and tests are finished; this is the upload step.</p>
+      <div class="composer"></div>
+    </main>
+    <div id="card"></div>
+  </div>
+</div>
+
+<div class="proto-bar" role="toolbar" aria-label="Prototype controls">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <span class="vlabel" id="vlabel"></span>
+  <button id="next" aria-label="Next variant">→</button>
+  <label>State <select id="state"><option value="offer">Offer</option><option value="running">Running</option><option value="restart">Restart ready</option></select></label>
+  <label>Providers <select id="providers"><option value="none">None behind</option><option value="some">Codex here, Claude Code on forge</option></select></label>
+  <label>Forge <select id="busy"><option value="idle">Idle</option><option value="busy">2 threads working</option></select></label>
+  <label>Theme <select id="theme"><option value="dark">Dark</option><option value="light">Light</option></select></label>
+  <label>Size <select id="size"><option value="1600x1000">1600×1000</option><option value="1280x800" selected>1280×800</option><option value="820x560">820×560</option></select></label>
+</div>
+
+<script>
+const FROM = '0.1.38-owl.20261014.1', TO = '0.1.38-owl.20261014.2'
+const SHORT = 'owl.20261014.1 → .2'
+const VARIANTS = { a: 'Stacked rows', b: 'Per machine', c: 'Steps' }
+const keys = Object.keys(VARIANTS)
+// Providers: Codex is behind on this computer and Claude Code on forge; shown in variant C only.
+const q = new URLSearchParams(location.search)
+let s = { variant: q.get('variant') ?? 'a', state: q.get('state') ?? 'offer', busy: 'idle', providers: q.get('providers') ?? 'none', theme: 'dark', size: '1280x800' }
+
+const ICON = { app: '◎', host: '▤', codex: '✺', claude: '✳', done: '✓', running: '◌', waiting: '◷' }
+
+// The card's facts for each state. Words follow updateAll.ts, said once.
+function facts() {
+  const busy = s.busy === 'busy'
+  if (s.state === 'offer') return {
+    title: 'Updates', sub: 'This computer and forge',
+    app: { state: 'offered', detail: 'Downloads now, and installs when Sotto restarts.' },
+    host: { state: 'offered', detail: busy ? '2 threads on forge are working. It updates once they finish.' : 'Restarts forge’s host, so its threads are unavailable for a few seconds.' },
+    note: null,
+    actions: [['primary', 'Update all'], ['ghost', 'Not now']],
+  }
+  if (s.state === 'running') return {
+    title: 'Updating', sub: '1 of 2 done',
+    app: { state: 'done', detail: 'Downloaded. It installs when Sotto restarts.' },
+    host: busy ? { state: 'waiting', detail: 'Updates once its 2 threads finish.' } : { state: 'running', detail: 'Step 2 of 4 · Check the download', percent: null },
+    note: null,
+    actions: busy ? [['ghost', 'Stop 2 threads and update'], ['ghost', 'Hide']] : [['ghost', 'Hide']],
+  }
+  return {
+    title: 'Ready to restart', sub: 'forge runs ' + TO,
+    app: { state: 'done', detail: 'Downloaded. It installs when Sotto restarts.' },
+    host: { state: 'done', detail: 'forge runs Sotto host ' + TO + '.' },
+    note: 'Threads on this computer stop and resume after the restart.',
+    actions: [['primary', 'Restart now'], ['ghost', 'Later']],
+  }
+}
+
+const mark = (kind, state) => `<span class="mark" aria-hidden="true">${state === 'offered' ? ICON[kind] : ICON[state]}</span>`
+const bar = it => it.percent === undefined ? '' : `<span class="bar"><i style="width:${it.percent ?? 55}%"></i></span>`
+const head = f => `<div class="head"><div><strong>${f.title}</strong><span>${f.sub}</span></div><button class="fold" aria-label="Fold">⌄</button></div>`
+const foot = f => (f.note ? `<div class="notes"><p>${f.note}</p></div>` : '') +
+  `<div class="actions">${f.actions.map(([k, t]) => `<button class="btn ${k}">${t}</button>`).join('')}</div>`
+
+function variantA(f) {
+  const row = (kind, name, it, vers) => `<div class="item" data-state="${it.state}">${mark(kind, it.state)}<div class="body">
+    <span class="name">${name}</span><span class="vers">${vers}</span><small>${it.detail}</small>${bar(it)}</div></div>`
+  const done = s.state === 'restart'
+  return head(f) + `<div class="list">
+    <section class="machine"><h3>This computer</h3>${row('app', 'Sotto Owl', f.app, `${FROM} → ${TO}`)}</section>
+    <section class="machine"><h3>forge</h3>${row('host', 'Sotto host', f.host, done ? TO : `${FROM} → ${TO}`)}</section>
+  </div>` + foot(f)
+}
+
+function variantB(f) {
+  const row = (kind, name, it) => `<div class="item" data-state="${it.state}">${mark(kind, it.state)}<div class="body">
+    <span class="name">${name}</span><small>${it.detail}</small>${bar(it)}</div></div>`
+  return head(f) + `<div class="list">
+    <section class="machine"><h3>This computer<span class="v">${SHORT}</span></h3>${row('app', 'Sotto Owl', f.app)}</section>
+    <section class="machine"><h3>forge<span class="v">${s.state === 'restart' ? 'owl.20261014.2' : SHORT}</span></h3>${row('host', 'Sotto host', f.host)}</section>
+  </div>` + foot(f)
+}
+
+function variantC(f) {
+  const restart = s.state === 'restart', running = s.state === 'running', some = s.providers === 'some'
+  const step = (kind, it, name, where, vers) => `<li data-state="${it.state}">${mark(kind, it.state)}<div class="body">
+    <span class="name">${name}</span>${vers ? `<span class="vers">${vers}</span>` : ''}<small>${where ? where + ' · ' : ''}${it.detail}</small>${bar(it)}</div></li>`
+  const prov = (done, now) => restart || done ? { state: 'done', detail: 'Now ' + now + '.' } : running ? { state: 'running', detail: 'Updating…' } : { state: 'offered', detail: '' }
+  // Order (ADR-0077): Sotto downloads alongside; this computer's providers; then forge's providers, then forge's host.
+  const host = some && running ? { state: 'waiting', detail: 'Updates once forge’s providers have.' } : f.host
+  const app = some && running ? { state: 'running', detail: 'Downloading · 62%', percent: 62 } : f.app
+  const last = { state: restart ? 'offered' : 'waiting', detail: restart ? 'Installs ' + TO + '. Threads here stop and resume after.' : 'Last. Sotto asks before it restarts.' }
+  const g = { ...f, sub: `${FROM} → ${TO}`, note: null }
+  if (some && running) g.sub = '1 of 5 done'
+  return head(g) + `<ol class="steps">
+    ${step('app', app, 'Download Sotto Owl', 'This computer')}
+    ${some ? step('codex', prov(true, '0.48.0'), 'Update Codex', 'This computer', '0.47.2 → 0.48.0') : ''}
+    ${some ? step('claude', prov(false, '2.4.1'), 'Update Claude Code', 'forge', '2.4.0 → 2.4.1') : ''}
+    ${step('host', host, 'Update forge’s host', '')}
+    ${step('app', last, 'Restart Sotto', '')}
+  </ol>` + foot(g)
+}
+
+function render() {
+  document.documentElement.dataset.theme = s.theme
+  const [w, h] = s.size.split('x')
+  const win = document.getElementById('win'); win.style.setProperty('--w', w + 'px'); win.style.setProperty('--h', h + 'px')
+  const f = facts()
+  const html = { a: variantA, b: variantB, c: variantC }[s.variant](f)
+  document.getElementById('card').innerHTML = `<section class="card" data-phase="${s.state}" role="region" aria-label="Updates">${html}</section>`
+  document.getElementById('vlabel').textContent = `${s.variant.toUpperCase()} — ${VARIANTS[s.variant]}`
+  for (const k of ['state', 'busy', 'providers', 'theme', 'size']) document.getElementById(k).value = s[k]
+  document.getElementById('dump').textContent = JSON.stringify({ variant: s.variant, state: s.state, forge: s.busy, sotto: f.app.state, forgeHost: f.host.state }, null, 1)
+  const url = new URL(location.href); url.searchParams.set('variant', s.variant); url.searchParams.set('state', s.state); url.searchParams.set('providers', s.providers); history.replaceState(null, '', url)
+}
+const cycle = d => { s.variant = keys[(keys.indexOf(s.variant) + d + keys.length) % keys.length]; render() }
+document.getElementById('prev').onclick = () => cycle(-1)
+document.getElementById('next').onclick = () => cycle(1)
+for (const k of ['state', 'busy', 'providers', 'theme', 'size']) document.getElementById(k).onchange = e => { s[k] = e.target.value; render() }
+addEventListener('keydown', e => { if (e.target.closest('select, input, textarea')) return; if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1) })
+render()
+</script>
+</body>
+</html>
