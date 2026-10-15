@@ -10,6 +10,7 @@ import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import type { UsageLocalHostRead } from '../../src/shared/usageDashboard'
 import { rawPeer } from '../fixtures/rawHostPeer'
+import { localActivity } from '../fixtures/renderer/usageReads'
 
 describe('optional Owl usage over frozen host v1', () => {
   it.each([false, true])('advertises the host-owned collector only when it exists (enabled: %s)', async enabled => {
@@ -53,4 +54,33 @@ describe('optional Owl usage over frozen host v1', () => {
       expect(usage.read).toHaveBeenCalledOnce(); expect(usage.clear).toHaveBeenCalledOnce()
     } finally { raw?.frames.close(); await client?.close(); await server.close(); await rm(directory, { recursive: true, force: true }) }
   })
+  it('answers a desktop from before history import without what its strict schemas refuse', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-usage-wire-'))
+    const pairing = new PairedClients(directory); await pairing.load()
+    const state = emptyDesktopState('11111111-1111-4111-8111-111111111111')
+    const result: UsageLocalHostRead = { status: 'ready', activity: localActivity(), quotas: [] }
+    const metadata = { startedAt: '2026-10-12T12:00:00.000Z', revision: 4, generation: 0, legacySeedCompleted: true }
+    const usage: HostUsageReads = { read: vi.fn(async () => result), refresh: vi.fn(async () => result), clear: vi.fn(async () => ({ status: 'stale' as const, metadata })) }
+    const control = { get: () => state, shell: () => state, threadDetail: () => null, subscribe: () => () => undefined, commandShell: vi.fn(async () => state) }
+    const server = await startSocketServer({ service: new LocalHostService({ control, usage, mayClearUsage: () => false }), pairing, mayAnswer: () => false })
+    let client: SocketHostService | undefined
+    let raw: Awaited<ReturnType<typeof rawPeer>> | undefined
+    try {
+      const paired = await pairing.redeem(pairing.issuePairingCode().code, 'Desktop')
+      client = new SocketHostService({ url: `http://127.0.0.1:${server.descriptor.port}`, token: paired.token, catchUpEvents: false })
+      expect((await client.connect()).features).toContain('usage-history')
+      // An updated desktop accepts usage-history and is sent the whole read.
+      expect(await client.usageRead({})).toEqual(result)
+      // A desktop from before history import neither accepts the feature nor knows its fields.
+      raw = await rawPeer(server.descriptor.port, pairing.signSession(paired.clientId))
+      expect(await raw.call('hello', { op: 'hello', accepts: ['client-liveness'] })).toMatchObject({ ok: true })
+      for (const [id, op] of [['older-read', { op: 'usage-read', query: {} }], ['older-refresh', { op: 'usage-refresh' }]] as const) {
+        const answer = await raw.call(id, op) as { ok: boolean; result: UsageLocalHostRead }
+        expect(answer.ok).toBe(true)
+        for (const key of ['"clients"', '"history"', '"lastDay"']) expect(JSON.stringify(answer.result)).not.toContain(key)
+        expect(answer.result.activity?.totals.tokens).toEqual(result.activity?.totals.tokens)
+        expect(answer.result.activity?.models.map(row => row.modelId)).toEqual(result.activity?.models.map(row => row.modelId))
+      }
+    } finally { raw?.frames.close(); await client?.close(); await server.close(); await rm(directory, { recursive: true, force: true }) }
+  })
 })

@@ -128,7 +128,7 @@ describe('host usage collection service', () => {
     expect(write).toHaveBeenCalledTimes(2)
   })
 
-  it('counts only exact accepted original submissions and separates selected and observed models', async () => {
+  it('counts only exact accepted original submissions under the model that served them', async () => {
     const f = fixture()
     f.service.submitPrompt(submission)
     expect((await f.service.read()).activity!.totals.prompts.total).toBe(0)
@@ -139,8 +139,9 @@ describe('host usage collection service', () => {
     f.emit(token())
     const activity = (await f.service.read()).activity!
     expect(activity.totals.prompts).toEqual({ user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 })
-    expect(activity.models.find(row => row.modelId === 'selected-model')!.prompts.total).toBe(1)
-    expect(activity.models.find(row => row.modelId === 'native-model')!.tokens.total.value).toBe(120)
+    // The token report after the prompt names the served model, so the selection has no row of its own.
+    expect(activity.models.find(row => row.modelId === 'selected-model')).toBeUndefined()
+    expect(activity.models.find(row => row.modelId === 'native-model')).toMatchObject({ prompts: { total: 1 }, tokens: { total: { value: 120 } } })
   })
 
   it('retries numeric submission and acceptance after a failed save without executing native work', async () => {
@@ -231,5 +232,58 @@ describe('host usage collection service', () => {
     expect(result.quotas[0]!.windows[0]!.usedPercent).toBe(20)
     await expect(f.service.clear({ expectedRevision: 0 })).rejects.toThrow('could not be saved')
     expect(f.fake.commands).toHaveLength(0)
+  })
+})
+
+describe('host usage history import', () => {
+  it('answers with activity while a provider is slow to say its limits, and keeps the reading for later', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    f.emit(token()); f.service.flush()
+    const quota = parseCodexQuota({ rateLimits: { primary: { usedPercent: 30, windowDurationMins: 300 } } }, at)
+    let finish: (() => void) | undefined
+    f.host.readProviderQuota = vi.fn(async () => { await new Promise<void>(resolve => { finish = resolve }); return quota })
+    const pending = f.service.read()
+    await vi.advanceTimersByTimeAsync(6_000)
+    const slow = await pending
+    expect(slow.activity!.totals.tokens.total.value).toBe(120)
+    expect(slow.quotas[0]).toMatchObject({ providerId: 'codex', status: 'unavailable', reason: 'not-read' })
+    finish!(); await vi.advanceTimersByTimeAsync(0)
+    f.host.readProviderQuota = vi.fn(async () => { await new Promise<void>(() => undefined); return quota })
+    const later = f.service.read()
+    await vi.advanceTimersByTimeAsync(6_000)
+    expect((await later).quotas[0]!.windows[0]!.usedPercent).toBe(30)
+  })
+
+  it('dates a counted row from history without counting it twice, and Clear keeps older history out', async () => {
+    const store = new UsageStore(':memory:', () => at)
+    let rows: UsageTokenObservation[] = []
+    const fake = new FakeProviderHost()
+    fake.state.connected = true
+    fake.state.threads[0]!.providerId = 'codex'
+    let observation: ((record: UsageTokenObservation) => void) | undefined
+    const host: AgentHost = fake
+    host.subscribeUsage = listener => { observation = listener; return () => { observation = undefined } }
+    host.scanUsageHistory = async sink => { sink.tokens(rows) }
+    const service = new UsageService({ directory: '.', host, store })
+    opened.push(service); service.start(); fake.emit()
+    const undated = token({ phase: 'seed', at: undefined, groupKey: undefined })
+    observation!(undated); service.flush()
+    expect(store.query().totals.undatedTokenRecords).toBe(1)
+    rows = [{ ...undated, at: '2026-09-20T10:00:00.000Z', phase: 'replay', origin: 'history' }]
+    await service.read()
+    await vi.waitFor(() => expect(store.metadata().history?.status).toBe('complete'))
+    const dated = store.query({ from: '2026-09-01', to: '2026-09-30', timeZone: 'UTC' })
+    expect(dated.totals.tokens.total.value).toBe(120)
+    expect(store.query().totals).toMatchObject({ tokenRecords: 1, undatedTokenRecords: 0 })
+    expect((await service.clear({ expectedRevision: store.metadata().revision })).status).toBe('cleared')
+    rows = [{ ...undated, recordKey: hash('older-history'), at: '2026-09-21T10:00:00.000Z', phase: 'replay', origin: 'history', source: 'outside', client: 'codex-cli' },
+      { ...undated, recordKey: hash('newer-history'), at: '2026-10-13T10:00:00.000Z', phase: 'replay', origin: 'history', source: 'outside', client: 'codex-cli' }]
+    // A read starts another pass once the last one is a minute old.
+    const later = Date.now() + 60_000
+    vi.spyOn(Date, 'now').mockReturnValue(later)
+    await service.read()
+    await vi.waitFor(() => expect(store.query().totals.tokenRecords).toBe(1))
+    expect(store.query().totals.lastDay).toBe('2026-10-13')
   })
 })

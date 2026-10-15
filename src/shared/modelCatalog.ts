@@ -60,3 +60,36 @@ export function resolveModel<T extends { readonly id: string }>(models: readonly
 export function chosenModelId<T extends { readonly id: string }>(models: readonly T[], pressedId: string, ...held: readonly (string | null | undefined)[]): string {
   return held.find(id => id && catalogEntry(models, id)?.id === pressedId) ?? pressedId
 }
+
+/**
+ * One spelling per served model, for counting: the provider's own model name with Sotto's public prefix, Claude's
+ * `[1m]` context suffix, dated and Bedrock or Vertex spellings removed, lower-cased. Aliases such as `opus` stay
+ * as they are: only a provider's own report can say which model an alias served, so callers prefer a served name.
+ */
+export function canonicalModelId(provider: string, modelId: string): string {
+  const parsed = parsePublicProviderEntityId(modelId)
+  let id = (parsed?.kind === 'model' ? parsed.value : modelId.replace(/^native:[a-z]+:model:/u, '')).trim().toLowerCase()
+  if (provider === 'claude') {
+    id = id.replace(/\[1m\]$/u, '').replace(/^(?:[a-z]{2}\.)?anthropic\./u, '').replace(/-v\d+(?::\d+)?$/u, '').replace(/@\d{8}$/u, '').replace(/-\d{8}$/u, '')
+  } else id = id.replace(/-\d{4}-\d{2}-\d{2}$/u, '')
+  return id || 'unknown'
+}
+
+const MODEL_WORDS: Readonly<Record<string, string>> = { gpt: 'GPT', codex: 'Codex', mini: 'Mini', nano: 'Nano', pro: 'Pro', auto: 'auto', review: 'review' }
+
+/**
+ * A served model's name when no catalog lists it: `claude-opus-5-5` reads Claude Opus 5.5, `gpt-6.1-sol` reads
+ * GPT-6.1 Sol and `codex-auto-review` Codex auto review. A missing name reads as such rather than as an ID.
+ */
+export function servedModelName(provider: string, modelId: string): string {
+  const id = canonicalModelId(provider, modelId)
+  if (id === 'unknown') return 'Model not reported'
+  const claude = /^claude-([a-z]+)-(\d+)(?:-(\d+))?$/u.exec(id)
+  if (claude) return `Claude ${claude[1]![0]!.toUpperCase()}${claude[1]!.slice(1)} ${claude[2]}${claude[3] === undefined ? '' : `.${claude[3]}`}`
+  const gpt = /^gpt-(\d+(?:\.\d+)*)(?:-(.+))?$/u.exec(id)
+  const words = (rest: string): string => rest.split('-').map((word, index) => MODEL_WORDS[word] ?? (index === 0 || /^\d/u.test(word) ? `${word[0]!.toUpperCase()}${word.slice(1)}` : word)).join(' ')
+  if (gpt) return `GPT-${gpt[1]}${gpt[2] === undefined ? '' : ` ${words(gpt[2]).replace(/^./u, letter => letter.toUpperCase())}`}`
+  const grok = /^grok-(.+)$/u.exec(id)
+  if (grok) return `Grok ${grok[1]!.replace(/-/gu, ' ')}`
+  return words(id)
+}

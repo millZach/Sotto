@@ -17,7 +17,9 @@ import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
 import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, parsePublicProviderEntityId, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
-import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
+import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
+import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink, type UsageRecordedUserMessage } from './usageHistory/sink'
+import type { UserMessageInstantSource } from './usageHistory/sottoPrompts'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
@@ -329,6 +331,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
   readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   /**
    * What each thread babysits, with what it was last told, by thread (ADR-0061 decision 10). Saved on the thread's record
@@ -1362,6 +1365,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (this.ready && this.threadVisible(threadId)) inner.visitUsage!(threadId, visitor)
     }
     if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh) => inner.readProviderQuota!(providerId, refresh)
+    if (inner.scanUsageHistory) this.scanUsageHistory = async (sink, signal) => {
+      await this.initialize()
+      // A Sotto thread's rows follow its visibility, as its live rows do; work outside Sotto has no thread to hide.
+      const visible = <T extends { threadId: string }>(record: T): T | undefined =>
+        isUsageHistoryThreadId(record.threadId) || this.ready && this.threadVisible(record.threadId) ? record : undefined
+      await inner.scanUsageHistory!(mappedSink(sink, { token: visible, prompt: visible }), signal)
+    }
     this.launchProfiles = new WatcherLaunchProfiles(directory, () => this.hostId,
       id => this.state.snapshot.threads.find(thread => thread.id === id), watcherEnabled)
     inner.useLaunchProfiles?.({ profileFor: async id => { await this.initialize(); return this.launchProfiles.profileFor(id) } })
@@ -2100,6 +2110,26 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     if (thread?.messages.some(message => message.id === messageId && message.role === 'user')) return true
     return !this.storeUnavailable && this.threadStore.hasRecordedUserMessage(threadId, messageId)
+  }
+
+  /**
+   * Sotto's own stored user messages created before `before`, for the Usage history import (ADR-0083): identities,
+   * instants, the thread's provider and model and whether babysitting sent each. The store query names no text column.
+   * False until the thread store can be read.
+   */
+  visitRecordedUserMessages(visitor: (message: UsageRecordedUserMessage) => void, before?: string): boolean {
+    if (!this.ready || this.storeUnavailable) return false
+    const store = this.threadStore as ThreadStore & Partial<UserMessageInstantSource>
+    if (typeof store.visitUserMessageInstants !== 'function') return false
+    this.writeEvents()
+    const threads = new Map(this.state.snapshot.threads.map(thread => [thread.id, thread]))
+    store.visitUserMessageInstants(message => {
+      const thread = threads.get(message.threadId)
+      if (!thread || !isUsageProviderId(thread.providerId) || !this.threadVisible(thread.id)) return
+      visitor({ threadId: thread.id, messageId: message.messageId, providerId: thread.providerId, modelId: thread.modelId || 'unknown',
+        at: message.at, wakeUp: message.wakeUp })
+    }, before)
+    return true
   }
 
   /** Flush once and recover exact numeric identities without reading a transcript for each pending intent. */

@@ -104,12 +104,12 @@ export async function usageDashboardHarness() {
       const scroll = document.querySelector<HTMLElement>('.usage-scroll')!
       return { documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
         roomOverflow: room.scrollWidth > room.clientWidth + 1, scrollOverflow: scroll.scrollWidth > scroll.clientWidth + 1,
-        clippedNumbers: [...room.querySelectorAll<HTMLElement>('.usage-index__value:not(.usage-index__value--text),.usage-token-facts dd,.usage-window__head b')]
+        clippedNumbers: [...room.querySelectorAll<HTMLElement>('.usage-index__value:not([data-words]),.usage-tokens__legend dd,.usage-window__left b,.usage-row__n,.usage-split__item b')]
           .filter(element => element.scrollWidth > element.clientWidth + 1).map(element => element.className) }
     })
     expect(layout).toEqual({ documentOverflow: false, roomOverflow: false, scrollOverflow: false, clippedNumbers: [] })
     // Closed native details defer descendant styles; measure the rendered text.
-    const ratios = await textContrast(currentPage().locator('.usage-view'), 'h1,h2,h3,p,dt,dd,button,select,label,summary,th,td,.usage-index__label,.usage-index__note', true)
+    const ratios = await textContrast(currentPage().locator('.usage-view'), 'h1,h2,h3,p,dt,dd,li,button,label,summary,.usage-index__label,.usage-index__note,.usage-share__value,.usage-share__note', true)
     const nonempty = ratios.filter(row => row.text.trim().length > 0)
     expect(nonempty.filter(row => row.ratio < 4.5)).toEqual([])
     const minimumContrast = Math.min(...nonempty.map(row => row.ratio))
@@ -118,6 +118,13 @@ export async function usageDashboardHarness() {
     captures.push({ name, width: actual.width, height: actual.height, targetWidth: width, targetHeight: height, appearance: mode, minimumContrast })
   }
   return { root, profile, project, client, home, currentPage, currentApp, launch, connect, close, cleanup, action, read, activity, open, resize, appearance, capture, pageErrors, captures }
+}
+
+/** Opens a Usage filter by its name and picks one of its choices, as a pointer does. */
+export async function chooseUsageFilter(page: Page, name: string, choice: string): Promise<void> {
+  await page.getByRole('button', { name: new RegExp(`^${name}: `, 'u') }).click()
+  await page.getByRole('listbox', { name, exact: true }).getByRole('option', { name: choice, exact: true }).click()
+  await expect(page.getByRole('button', { name: `${name}: ${choice}`, exact: true })).toBeFocused()
 }
 
 export function usageAssistantFrame(session: string, id: string, output = 100) {
