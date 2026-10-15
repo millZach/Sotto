@@ -398,6 +398,50 @@ it('fences native input arriving at a prepared paired queue writer before anothe
   } finally { gate.release() }
 }, 60_000)
 
+it('settles a refused paired queue send even when the takeover clears the queue before the send finishes', async () => {
+  const native = await codexFixture(undefined, false, 10_000, { pollIntervalMs: 600_000 }); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const target = first.target
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === target.threadId)?.lastTurn?.status).toBe('running'))
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  const owning = remote.host.service as unknown as { options: { watcher: WatcherService; control: { finishTurn(turn: unknown, error?: string): Promise<void> } } }
+  const owner = owning.options.watcher, control = owning.options.control
+  const gate = heldOperation(), prepare = native.adapter.prepareSkillInput.bind(native.adapter)
+  vi.spyOn(native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => {
+    const result = await prepare(...args)
+    if (args[1] === 'Synthetic refused native queue') await gate.wait()
+    return result
+  })
+  // The owning queue has saved the refused send as failed but has not finished its turn. The takeover that the
+  // native input causes lands in this gap and removes the queue item: the item's failure must already be recorded.
+  const finishing = heldOperation(), finish = control.finishTurn.bind(control)
+  let held = false
+  vi.spyOn(control, 'finishTurn').mockImplementation(async (turn, error) => {
+    if (error !== undefined && !held) { held = true; await finishing.wait() }
+    return finish(turn, error)
+  })
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic refused native queue' })
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  if (queued.status !== 'ok') throw new Error('queue-refused')
+  try {
+    await native.driver.completeTurn(nativeId, 'Synthetic completion before refused input')
+    await gate.entered
+    await native.typeUnseen(nativeId, 'Synthetic native input before the refused send')
+    gate.release()
+    await finishing.entered
+    await vi.waitFor(() => expect(owner.state().watchedThreads.find(item => item.target.threadId === target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send'))
+    finishing.release()
+    await vi.waitFor(() => expect(owner.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
+    await vi.waitFor(() => expect(f.watcher.state().receipts.find(item => item.id === queued.receipt.operationId)?.deliveryState).toBe('failed'))
+    expect(f.watcher.state().inFlight).toBe(0)
+    const written = await native.driver.requests()
+    expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
+  } finally { gate.release(); finishing.release() }
+}, 60_000)
+
 it('refuses changed operation identities and master ceilings on the owning host', async () => {
   const f = await master(), original = f.socket.watcherControl.bind(f.socket)
   let packet: WatcherHostControl | undefined
