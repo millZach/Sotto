@@ -430,7 +430,7 @@ it('holds Git, working-copy and checkpoint changes through a running turn and te
   }
   expect(f.delivered).toHaveLength(0)
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }; f.wakes.observe()
-  await f.advance(2_000)
+  await f.advance(5_000)
   expect(f.delivered).toHaveLength(1)
   expect(kinds(f.delivered[0])).toEqual(['turn-finished', 'evidence-changed'])
   const told = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
@@ -440,7 +440,7 @@ it('holds Git, working-copy and checkpoint changes through a running turn and te
   f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.wakes.observe()
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-2', status: 'completed' }; f.wakes.observe()
   f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture-end', observedAt: new Date(f.now()).toISOString(), availability: 'available', changedFiles: 9 })
-  await f.advance(2_000)
+  await f.advance(5_000)
   expect(f.delivered).toHaveLength(2)
   expect(kinds(f.delivered[1])).toEqual(['turn-finished', 'evidence-changed'])
 })
@@ -448,7 +448,7 @@ it('holds Git, working-copy and checkpoint changes through a running turn and te
 it('drops held working-copy changes that come back to what Watcher was told, and never wakes for them while a thread rests', async () => {
   const f = fixture(), { git, move } = gitFixture(f)
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }; f.wakes.observe()
-  await f.advance(2_000)
+  await f.advance(5_000)
   expect(kinds(f.delivered[0])).toEqual(['turn-finished', 'evidence-changed'])
   // Resting: a background fetch, then a change of its own. Neither is news on its own.
   git.fetchedAt = new Date(f.now()).toISOString(); move({})
@@ -460,15 +460,38 @@ it('drops held working-copy changes that come back to what Watcher was told, and
   move({ changedFiles: 7 }); await f.advance(30_000)
   move({ changedFiles: 2 }); await f.advance(30_000)
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-2', status: 'completed' }; f.wakes.observe()
-  await f.advance(2_000)
+  await f.advance(5_000)
   expect(f.delivered).toHaveLength(2)
   expect(kinds(f.delivered[1])).toEqual(['turn-finished'])
   // A change made while resting is told with the next turn's end.
   move({ changedFiles: 5 }); await f.advance(60_000)
   f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-3', status: 'running' }; f.wakes.observe()
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-3', status: 'completed' }; f.wakes.observe()
-  await f.advance(2_000)
+  await f.advance(5_000)
   expect(kinds(f.delivered[2])).toEqual(['turn-finished', 'evidence-changed'])
+})
+
+it('holds a Git-backed turn end for the read its finish starts, and tells what that read found in the same wake-up', async () => {
+  const f = fixture(), { move } = gitFixture(f)
+  f.wakes.observe(); await f.advance(2_000)
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }; f.wakes.observe()
+  // The workspace reads the working copy after the turn's work settles, which lands after the two-second batch.
+  await f.advance(2_500)
+  expect(f.delivered).toHaveLength(0)
+  move({ changedFiles: 9, insertions: 40 })
+  await f.advance(5_000)
+  expect(f.delivered.map(kinds)).toEqual([['turn-finished', 'evidence-changed']])
+  const told = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  expect(told.revision).toBe(observationDigest(f.wakes.evidence.read(centerTarget).map(fact => fact.id).sort()))
+  // A change after that is the thread at rest, told with its next turn's end, never alone.
+  move({ changedFiles: 11 }); await f.advance(20 * 60_000)
+  expect(f.delivered).toHaveLength(1)
+  // A thread with no Git working copy has no read to wait for: its turn end goes after the usual batch.
+  delete f.thread.worktree
+  f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.wakes.observe()
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-2', status: 'completed' }; f.wakes.observe()
+  await f.advance(2_000)
+  expect(f.delivered).toHaveLength(2)
 })
 
 it('wakes at once for a pull request change during a running turn and keeps waiting news current without another wake-up', async () => {
@@ -1015,13 +1038,13 @@ it('gives no work-settled news for a paired host that does not report its work c
 it('holds what a finished turn’s background work changes for its work-settled news, and wakes Watcher once for it', async () => {
   const f = fixture(), { move } = gitFixture(f)
   f.thread.providerId = 'claude'; f.thread.backgroundWork = [backgroundTask(1)]; finish(f.thread); f.wakes.observe()
-  await f.advance(2_000)
+  await f.advance(5_000)
   expect(f.delivered.map(kinds)).toEqual([['turn-finished', 'evidence-changed']])
   // The turn's background work edits files after Watcher heard the turn finished busy. None of it wakes Watcher.
   for (const change of [{ changedFiles: 3 }, { insertions: 9 }, { deletions: 4 }, { ahead: 1 }]) { move(change); await f.advance(30_000) }
   expect(f.delivered).toHaveLength(1)
   // The work ends: one wake-up says the turn is done and carries what the work changed.
-  f.thread.backgroundWork = []; f.wakes.observe(); await f.advance(2_000)
+  f.thread.backgroundWork = []; f.wakes.observe(); await f.advance(5_000)
   expect(f.delivered.map(kinds)).toEqual([['turn-finished', 'evidence-changed'], ['work-settled', 'evidence-changed']])
   const told = f.delivered[1]!.events.find(event => event.kind === 'evidence-changed')!
   expect(told.revision).toBe(observationDigest(f.wakes.evidence.read(centerTarget).map(fact => fact.id).sort()))
@@ -1036,7 +1059,7 @@ it('holds what a finished turn’s background work changes for its work-settled 
 
 it('sends work-settled news alone when the background work changed nothing Watcher was told', async () => {
   const f = fixture(); gitFixture(f)
-  f.thread.monitoring = [monitor(1)]; finish(f.thread); f.wakes.observe(); await f.advance(2_000)
-  f.thread.monitoring = []; f.wakes.observe(); await f.advance(2_000)
+  f.thread.monitoring = [monitor(1)]; finish(f.thread); f.wakes.observe(); await f.advance(5_000)
+  f.thread.monitoring = []; f.wakes.observe(); await f.advance(5_000)
   expect(f.delivered.map(kinds)).toEqual([['turn-finished', 'evidence-changed'], ['work-settled']])
 })

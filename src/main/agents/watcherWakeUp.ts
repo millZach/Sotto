@@ -11,6 +11,13 @@ const RETRY_LIMIT = 8
 const RETRY_MAX_MS = 60_000
 /** A thread whose own facts Watcher has not been told: the digest of none. */
 const NOTHING_TOLD = observationDigest([])
+/**
+ * How long a Git-backed thread's turn end waits for the Git read its finish starts. The workspace reads the working
+ * copy again 1.5 seconds after a turn's work settles; the read lands just after the two-second batch otherwise, and
+ * would wait for the next turn's end. A read that changes the thread's own facts ends the wait early.
+ */
+const TURN_END_SETTLE_MS = 5_000
+const TURN_ENDS: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', 'turn-failed', 'work-settled'])
 
 interface Progress { fingerprint: string; connected: boolean; connectedAt: number; progressAt: number; quiet: boolean; links?: Set<string>; cancel?: () => void }
 /** Opaque progress only: no plan, message, tool input or output text crosses the host projection. */
@@ -67,6 +74,8 @@ export class WatcherWakeUp {
   private readonly toldLocal = new Map<string, string>()
   /** Finished turns, per request and generation, that left background work running: each is owed one work-settled event. */
   private readonly owedWorkSettled = new Set<string>()
+  /** Git-backed threads whose untold turn end waits for its Git read: until when, and their own facts when it ended. */
+  private readonly settling = new Map<string, { target: WatcherThreadTarget; until: number; local: string }>()
   private pending: WatcherEvent[] = []
   private recent: WatcherEvent[] = []
   private cancelBatch: (() => void) | undefined
@@ -234,8 +243,20 @@ export class WatcherWakeUp {
     if (this.retryAt && this.cancelBatch) return
     if (!this.cancelBatch) this.firstPending = this.now()
     this.cancelBatch?.()
-    const delay = this.retryAt ? this.retryAt - this.now() : Math.min(WATCHER_BATCH_MS, this.firstPending + WATCHER_BATCH_MAX_MS - this.now())
+    const delay = this.retryAt ? this.retryAt - this.now() : Math.max(Math.min(WATCHER_BATCH_MS, this.firstPending + WATCHER_BATCH_MAX_MS - this.now()), this.settleUntil() - this.now())
     this.cancelBatch = this.schedule(() => { this.cancelBatch = undefined; this.flush() }, Math.max(0, delay))
+  }
+  /**
+   * The latest a waiting turn end still holds the batch for its thread's Git read: none once the read has changed the
+   * thread's own facts, once its time is up, or when no turn end of that thread is waiting.
+   */
+  private settleUntil(): number {
+    let until = 0
+    for (const [key, held] of this.settling) {
+      if (held.until <= this.now() || this.evidence.digest(held.target, 'local') !== held.local) { this.settling.delete(key); continue }
+      if (this.pending.some(event => targetKey(event.target) === key && TURN_ENDS.has(event.kind))) until = Math.max(until, held.until)
+    }
+    return until
   }
   private flush(): void {
     const events = this.canDeliver() ? this.stillDue(this.pending) : [], watcher = this.options.record().current?.target
@@ -308,6 +329,8 @@ export class WatcherWakeUp {
         const pullRequests = this.evidence.digest(target, 'pull-request')
         const changedEvidence = this.evidence.observeThread(thread, target, stamp)
         const turn = thread.lastTurn, finished = finishedTurn(thread)
+        const ends = () => this.pending.filter(event => targetKey(event.target) === key && TURN_ENDS.has(event.kind)).map(event => event.id)
+        const endsBefore = new Set(ends())
         let settles = false
         if (finished) {
           // A host that does not report the counts sends no count: unknown, never none running. Unknown sub-agents count, so
@@ -321,6 +344,13 @@ export class WatcherWakeUp {
             this.event('work-settled', target, [finished.id], { turnId: finished.id, backgroundWorkCount: 0 })
             settles = settling().some(id => !waiting.has(id))
           }
+        }
+        // A turn end of a thread with a Git working copy waits, briefly, for the read its finish starts (TURN_END_SETTLE_MS).
+        if (thread.worktree?.git && ends().some(id => !endsBefore.has(id)) && !((this.settling.get(key)?.until ?? 0) > this.now())) {
+          this.settling.delete(key)
+          this.settling.set(key, { target, until: this.now() + TURN_END_SETTLE_MS, local: this.evidence.digest(target, 'local') })
+          while (this.settling.size > 2_000) this.settling.delete(this.settling.keys().next().value!)
+          this.batch()
         }
         for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
           { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })
