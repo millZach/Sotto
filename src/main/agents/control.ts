@@ -6,7 +6,7 @@ import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { immutableActivities, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
-import { FollowupStore, followupDigest, isWaitingWakeUp, type QueuedFollowup } from './followups'
+import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -33,7 +33,7 @@ import type { AgentHost, AgentHostCommand, PromptImage, ThreadReadPurpose } from
 import type { AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { FirstOutputWatches, lendSendStages, SendStageClock } from './sendStages'
-import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { clientVersionOf } from './clientVersions'
 import { locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
@@ -1588,18 +1588,41 @@ export class AgentControl {
    * Hands a thread babysitting's news as a wake-up (ADR-0061 decision 8): Sotto's own item in the thread's follow-up
    * queue, which sends it at once when the thread is ready and otherwise when the queue would send the next one,
    * folded into a wake-up already waiting. Resolves once it is saved, which is when the news counts as told; a thread
-   * that is gone, settled or archived takes nothing, and the rejection leaves the news untold.
+   * that is gone, settled or archived takes nothing, and the rejection leaves the news untold. A resume note is read
+   * for first, and a thread that read finds working again takes nothing either (ADR-0076).
    */
   async deliverWakeUp(threadId: string, news: WakeUpNews, options: { readonly tool: boolean }): Promise<void> {
     if (this.disposed) throw new Error('Sotto is closing.')
     if (isWatcherNews(news) && (news.watcher.threadId !== threadId || !this.canDeliverWatcherNews(news.watcher))) throw new Error('Watcher is unavailable.')
-    const thread = this.state.host.threads.find(item => item.id === threadId)
-    if (!thread) throw new Error('This thread is not on this host.')
-    if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) throw new Error('This thread is settled or archived.')
+    const available = (): AgentThread => {
+      const thread = this.state.host.threads.find(item => item.id === threadId)
+      if (!thread) throw new Error('This thread is not on this host.')
+      if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) throw new Error('This thread is settled or archived.')
+      return thread
+    }
+    let thread = available()
+    if (isRestartNews(news)) {
+      await this.readTurnFirst(threadId)
+      thread = available()
+      if (isThreadTurnRunning(thread)) throw new Error('This thread is working again.')
+    }
     // News arriving while the thread rests follows the turn it rests on; a request waiting on the user still holds it.
-    const reviewed = thread.status !== 'running' && thread.lastTurn?.status !== 'running' ? thread.lastTurn?.id ?? 'unknown' : undefined
+    const reviewed = !isThreadTurnRunning(thread) ? thread.lastTurn?.id ?? UNKNOWN_TURN : undefined
     await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed)
     this.syncFollowups(); this.publish(); this.pumpFollowups()
+  }
+  /**
+   * A provider can report a thread idle before its turns are read: Codex does for a thread nobody has opened since Sotto
+   * started. A review, the resume note (ADR-0076) or Resume queue, follows the turn the thread rests on, so that turn is
+   * read first, as the queue reads before it sends. A read that fails leaves what is known: the review then follows no
+   * turn, and the queue binds the resume note to the turn its own read finds.
+   */
+  private async readTurnFirst(threadId: string): Promise<void> {
+    if (!this.dependencies.host.refreshThread) return
+    let read: AgentHostSnapshot | undefined
+    try { read = await this.readThread(threadId) } catch { /* What is known stands. */ }
+    if (this.disposed) throw new Error('Sotto is closing.')
+    if (read) this.acceptSnapshot(read)
   }
   /**
    * Takes back a waiting wake-up's news of a pull request whose babysitting ended quietly, or all of it: a stop, a
@@ -2531,16 +2554,24 @@ export class AgentControl {
           this.publish({ receivedAt, threadId: thread.id, draftId: command.draftId })
           await this.followupStore.enqueue({ threadId: thread.id, draftId: command.draftId, text: command.text,
             ...(origin?.operationId ? { watcherOperationId: origin.operationId, messageId: this.watcher.operations.find(item => item.id === origin.operationId)?.messageId } : {}),
-            attachments: command.attachments ?? [], skills: command.skills, files: command.files, ...(thread.status === 'idle' && !thread.requests.length ? { resumeAfterTurnId: thread.lastTurn?.id ?? 'unknown' } : {}) })
+            attachments: command.attachments ?? [], skills: command.skills, files: command.files, ...(thread.status === 'idle' && !thread.requests.length ? { resumeAfterTurnId: thread.lastTurn?.id ?? UNKNOWN_TURN } : {}) })
         } else {
           await this.followupStore.edit(thread.id, command.itemId, { text: command.text, attachments: command.attachments ?? existing?.attachments ?? [], skills: command.skills ?? existing?.skills, files: command.files ?? existing?.files })
         }
       } else if (command.type === 'remove-followup') await this.followupStore.edit(thread.id, command.itemId)
       else if (command.type === 'reorder-followups') await this.followupStore.reorder(thread.id, command.itemIds)
       else {
-        this.canAct(thread.id)
-        if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))) throw new Error('Restore this thread and project before resuming queued follow-ups.')
-        await this.followupStore.resume(thread.id, thread.lastTurn?.id ?? 'unknown')
+        const resumable = (): AgentThread => {
+          const current = this.state.host.threads.find(t => t.id === thread.id)
+          if (!current || isThreadClosed(current) || isWorkspaceThreadSettled(current, this.state.host.projects.find(p => p.id === current.projectId))) throw new Error('Restore this thread and project before resuming queued follow-ups.')
+          this.canAct(current.id)
+          return current
+        }
+        let current = resumable()
+        // Resume queue is the user's review of the turn the thread rests on, so a thread whose turns are unread is read,
+        // and asked again after the read. A turn still running is no turn to review yet: the queue then follows none.
+        if (!current.lastTurn) { await this.readTurnFirst(thread.id); current = resumable() }
+        await this.followupStore.resume(thread.id, current.lastTurn && !isThreadTurnRunning(current) ? current.lastTurn.id : UNKNOWN_TURN)
       }
       this.syncFollowups(); this.observe(); await this.persist()
     } catch (error) {
@@ -2551,7 +2582,7 @@ export class AgentControl {
   }
   private followupReady(threadId: string, ownCommandId?: string): boolean {
     const thread = this.state.host.threads.find(t => t.id === threadId)
-    const reviewed = thread && this.followupStore.peek().items.find(i => i.threadId === threadId)?.resumeAfterTurnId === (thread.lastTurn?.id ?? 'unknown')
+    const reviewed = thread && this.followupStore.peek().items.find(i => i.threadId === threadId)?.resumeAfterTurnId === (thread.lastTurn?.id ?? UNKNOWN_TURN)
     return Boolean(thread && isThreadProviderConnected(this.state.host, thread) && (thread.status === 'idle' || thread.status === 'error' && reviewed)
       && thread.lastTurn?.status !== 'running'
       // A machine Stop holds saved user prompts even when native completion arrives before its interrupt.
@@ -2577,8 +2608,8 @@ export class AgentControl {
       if (first.news?.some(isWatcherNews) && !this.watcherHooks?.wakeReady?.()) continue
       // Native idle status can precede turn/completed. A still-running outcome is
       // neither permission to dispatch nor a terminal failure requiring review.
-      const terminalBlocked = thread && thread.status !== 'running' && thread.lastTurn?.status !== 'running'
-        && (thread.lastTurn ? thread.lastTurn.status !== 'completed' && first.resumeAfterTurnId !== thread.lastTurn.id : first.resumeAfterTurnId !== 'unknown')
+      const terminalBlocked = thread && !isThreadTurnRunning(thread)
+        && (thread.lastTurn ? thread.lastTurn.status !== 'completed' && first.resumeAfterTurnId !== thread.lastTurn.id : first.resumeAfterTurnId !== UNKNOWN_TURN)
       if (first.status === 'queued' && terminalBlocked) {
         // A machine Stop fences its own sends. A user's queue remains intact and waits for explicit review.
         if (!first.watcherOperationId && this.watcherHooks?.preserveUserQueue(threadId)) continue
@@ -2619,9 +2650,14 @@ export class AgentControl {
           // Read immediately before dispatch, as every other send does: the send and its checkpoint go from this history,
           // and naming the send lets the adapter take this read for its own.
           const readStartedAt = performance.now()
+          const unread = !this.thread(threadId).lastTurn
           const read = await this.readThread(threadId, undefined, readBeforeSend(item.messageId))
           const readMs = performance.now() - readStartedAt
           this.acceptSnapshot(read)
+          // A resume note queued while the thread rested on no turn Sotto had read reviews the turn this read finds
+          // (ADR-0076). Any other wake-up, and a user's prompt, queued the same way still waits for review.
+          const rested = this.thread(threadId)
+          if (unread && rested.lastTurn && !isThreadTurnRunning(rested)) await this.followupStore.bindResumeNote(item.id, rested.lastTurn.id)
           const validate = (): void => {
             if (item.watcherOperationId) { if (!this.watcherHooks) throw new Error('Watcher is unavailable.'); this.watcherHooks.guardOperation(item.watcherOperationId) }
             if (this.disposed || !this.followupReady(threadId, item.commandId)) throw new Error('The thread is no longer ready. Review it and resume its queue when ready.')

@@ -48,6 +48,18 @@ setting off, the record is cleared and nothing is sent. A record older than seve
 already saved in a queue goes only while the feature and the setting are both on, so a build or a setting without them
 sends nothing.
 
+October 14, 2026 amendment: before the note is queued, the coordinator reads the thread, as the queue does before
+it sends. Codex reports a thread nobody has opened since the restart connected and idle before its turns are read, so
+the note was queued against no turn; the queue's read then found the interrupted turn, took it for a turn nobody had
+reviewed, and left the note "Not sent". Read first, the note follows the turn the restart cut off and is its review,
+as above. A thread that read finds still working is left to carry on, and its record keeps its count. A read that
+fails queues the note against no turn; when the queue's own read finds the turn, finished but not completed, the note
+follows it and goes, since it is that turn's review. Only the resume note is bound that way. Any other wake-up, and a
+prompt of the user's, queued against no turn still waits for review. If the queue's read fails too, the note is left
+"Not sent" for Resume queue. Resume queue reads a thread whose turns are unread before it records the user's review,
+so a note or prompt resumed there follows the turn the thread rests on too; a turn that read finds still running is
+not reviewed, and the queue waits on no turn.
+
 **5. The note.** Every provider receives the same words:
 
 > Sotto restarted while you were working on this, and your last turn stopped partway. Any command or tool that was
