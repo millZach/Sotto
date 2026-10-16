@@ -33,8 +33,11 @@ const workSettledScope = (requestId: string, target: WatcherThreadTarget, genera
 export interface WatcherWakeOptions {
   snapshot: () => AgentHostSnapshot; record: () => WatcherRecord
   progress?: (target: WatcherThreadTarget) => string | undefined
-  /** Whether a host reports its threads' background work counts. Absent means every host does; one that does not reads as unknown. */
-  reportsWork?: (hostId: string) => boolean
+  /**
+   * Which hosts report their threads' background work counts, read once per pass: the answer it returns is asked for each
+   * host. Absent means every host does; one that does not reads as unknown.
+   */
+  reportsWork?: () => (hostId: string) => boolean
   /** The Watcher start or send a thread's newest turn answers, so its news can name that operation. */
   answers?: (target: WatcherThreadTarget, thread: AgentThread, record: WatcherRecord) => string | undefined
   restoredEvents?: () => readonly WatcherEvent[]
@@ -65,8 +68,8 @@ export class WatcherWakeUp {
   private readonly now: () => number
   private readonly schedule: NonNullable<WatcherWakeOptions['schedule']>
   private tail: Promise<unknown> = Promise.resolve()
-  /** The reads the synchronous pass under way shares; see `once`. */
-  private pass: { snapshot?: AgentHostSnapshot; record?: WatcherRecord; reportsWork: Map<string, boolean> } | undefined
+  /** The reads the synchronous pass under way shares; see `withPassReads`. */
+  private pass: { snapshot?: AgentHostSnapshot; record?: WatcherRecord; reportsWork?: (hostId: string) => boolean } | undefined
   constructor(private readonly options: WatcherWakeOptions) {
     this.now = options.now ?? Date.now
     this.schedule = options.schedule ?? ((callback, delay) => { const timer = setTimeout(callback, delay); timer.unref?.(); return () => clearTimeout(timer) })
@@ -115,21 +118,18 @@ export class WatcherWakeUp {
     return this.reportsWork(hostId) && watcherBackgroundWorkCount(thread) === 0
   }
   private reportsWork(hostId: string): boolean {
-    const known = this.pass?.reportsWork.get(hostId)
-    if (known !== undefined) return known
-    const reports = this.options.reportsWork?.(hostId) ?? true
-    this.pass?.reportsWork.set(hostId, reports)
-    return reports
+    const read = () => this.options.reportsWork?.() ?? (() => true)
+    return (this.pass ? this.pass.reportsWork ??= read() : read())(hostId)
   }
   /**
-   * Runs one synchronous pass that reads the merged snapshot, the Watcher record and each host's work reporting at most
-   * once. Each of those reads copies whole state (a paired host's shell, the record), so a pass that asked again for
-   * every thread, operation or event grew with all of them (#1023). Nothing in a pass changes them, and a pass already
-   * under way reuses its reads.
+   * Runs `read` as one synchronous pass that reads the merged snapshot, the Watcher record and which hosts report work at
+   * most once. Each of those reads copies whole state (a paired host's shell, the record) or lists every host, so a pass
+   * that asked again for every thread, operation or event grew with all of them (#1023). Nothing in a pass changes them;
+   * a pass already under way shares its reads, and the next pass, after any wait, reads afresh.
    */
-  private once<T>(read: () => T): T {
+  private withPassReads<T>(read: () => T): T {
     if (this.pass) return read()
-    this.pass = { reportsWork: new Map() }
+    this.pass = {}
     try { return read() } finally { this.pass = undefined }
   }
   private snapshot(): AgentHostSnapshot { return this.pass ? this.pass.snapshot ??= this.options.snapshot() : this.options.snapshot() }
@@ -163,7 +163,7 @@ export class WatcherWakeUp {
   private project(snapshot: AgentHostSnapshot, thread: AgentThread) {
     return snapshot.projects.find(project => project.id === thread.projectId && (project.hostId ?? snapshot.hostId) === (thread.hostId ?? snapshot.hostId))
   }
-  news(): WatcherEvent[] { return this.once(() => this.recent.filter(event => this.due(event))) }
+  news(): WatcherEvent[] { return this.withPassReads(() => this.recent.filter(event => this.due(event))) }
   /**
    * The events still due. Work-settled news whose work started again before delivery is not sent; its turn is owed it
    * again, so it comes once the work truly reaches zero.
@@ -241,14 +241,15 @@ export class WatcherWakeUp {
     this.cancelBatch = this.schedule(() => { this.cancelBatch = undefined; this.flush() }, Math.max(0, delay))
   }
   private flush(): void {
-    const { events, watcher } = this.once(() => ({ events: this.canDeliver() ? this.stillDue(this.pending) : [], watcher: this.record().current?.target }))
+    const { events, watcher } = this.withPassReads(() => ({ events: this.canDeliver() ? this.stillDue(this.pending) : [], watcher: this.record().current?.target }))
     if (events.length) this.pending = []
     if (this.closed || !events.length && !this.rememberPending.size) return
     const news = watcher && events.length ? foldWatcherNews(undefined, { source: 'watcher', watcher, events, omitted: 0 }) : undefined
     this.tail = this.tail.catch(() => undefined).then(async () => {
       if (this.closed) return
       let failed = false
-      const valid = news && { ...news, events: this.stillDue(news.events) }
+      // A fresh pass after the wait: the state may have moved, but one recheck reads it once for every event.
+      const valid = news && { ...news, events: this.withPassReads(() => this.stillDue(news.events)) }
       if (valid?.events.length) {
         try {
           // Recheck after the serialized lane; recipient refusal is held, not retried by a timer.
@@ -257,11 +258,11 @@ export class WatcherWakeUp {
             if (this.closed) return
             for (const event of valid.events) this.rememberPending.add(event.id)
             while (this.rememberPending.size > 1_000) this.rememberPending.delete(this.rememberPending.values().next().value!)
-          } else this.pending = this.stillDue(foldWatcherEvents(events, this.pending))
+          } else this.pending = this.withPassReads(() => this.stillDue(foldWatcherEvents(events, this.pending)))
         } catch {
           if (this.closed) return
           // Keep the full batch behind the delivery limit; later observations and withdrawal still win.
-          this.pending = this.stillDue(foldWatcherEvents(events, this.pending))
+          this.pending = this.withPassReads(() => this.stillDue(foldWatcherEvents(events, this.pending)))
           failed = this.canDeliver()
         }
       }
@@ -282,8 +283,8 @@ export class WatcherWakeUp {
       this.batch()
     })
   }
-  observe(): void { this.once(() => this.observeOnce()) }
-  private observeOnce(): void {
+  observe(): void { this.withPassReads(() => this.observePass()) }
+  private observePass(): void {
     if (!this.started || this.closed) return
     const snapshot = this.snapshot(), stamp = new Date(this.now()).toISOString()
     const targets = new Set<string>(), watched = new Set(this.watchedTargets().map(targetKey))

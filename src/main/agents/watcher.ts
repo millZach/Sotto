@@ -118,7 +118,12 @@ export class WatcherService implements WatcherControlHooks {
     limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void }) {
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), record: () => this.record(),
       progress: target => this.remoteProgress.get(key(target))?.fingerprint,
-      reportsWork: hostId => hostId === options.control.hostId() || this.remote?.hosts().some(host => host.hostId === hostId && host.workSettled === true) === true,
+      reportsWork: () => {
+        // One host list per pass, and only once a paired host's thread asks.
+        let reporting: Set<string> | undefined
+        return hostId => hostId === options.control.hostId()
+          || (reporting ??= new Set(this.remote?.hosts().flatMap(host => host.workSettled === true ? [host.hostId] : []) ?? [])).has(hostId)
+      },
       answers: (target, thread, record) => this.answeringOperation(target, thread, record),
       restoredEvents: () => options.control.restoredWatcherEvents(),
       canDeliver: target => options.control.canDeliverWatcherNews(target),
