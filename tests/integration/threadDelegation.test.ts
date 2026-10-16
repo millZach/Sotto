@@ -6,6 +6,8 @@ import { DelegationService } from '../../src/main/agents/delegation'
 import { DelegationToolServer } from '../../src/main/agents/delegationTools'
 import type { AgentThread, ProviderId } from '../../src/shared/agents'
 import { DELEGATE_MCP_SERVER } from '../../src/shared/delegation'
+import { DEFAULT_SETTINGS } from '../../src/shared/settings'
+import { firstMessageTitleWriter } from '../../src/main/llm/threadTitle'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 
@@ -15,14 +17,16 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 type Read = { status: 'ok'; delegation: { id: string; thread: string; outcome: string; reply?: { from: string; text: string }; refusal?: string; userSentSince?: boolean }; limits: { inFlight: number; prompts?: number } }
 type Refused = { status: 'refused'; code: string; message: string }
 
-async function fixture(options: { limit?: number; otherStarts?: number; history?: boolean } = {}) {
+async function fixture(options: { limit?: number; otherStarts?: number; history?: boolean; titles?: boolean } = {}) {
   const history = options.history ?? true
   const workspace = await workspaceFixture(undefined, { history, watcherEnabled: false })
   cleanups.push(workspace.remove)
   // Codex offers every mode, so only the ceiling can refuse a wider one.
   workspace.adapters.codex.state.models[0]!.runtimeModes = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
-    credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => history, watcherEnabled: false } })
+    credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => history, watcherEnabled: false,
+      // Sotto's own naming, as the app runs it: the first message's opening words, then a generated name after the first reply.
+      ...options.titles ? { writeFirstMessageTitle: firstMessageTitleWriter(() => DEFAULT_SETTINGS), writeThreadTitle: async () => 'Synthetic generated name' } : {} } })
   const make = () => new DelegationService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => history,
     limit: () => options.limit ?? 4, otherStartsInFlight: () => options.otherStarts ?? 0 })
   let service = make()
@@ -89,6 +93,20 @@ it('starts a Codex thread for a Claude Code thread, and the wait returns its ans
   const saved = await import('node:fs/promises').then(fs => fs.readFile(`${f.root}/delegations.json`, 'utf8'))
   expect(saved).not.toContain('Synthetic brief')
   expect(saved).not.toContain('Synthetic review reply')
+})
+
+it('keeps the title the delegating thread gave, and names an untitled delegated thread as Sotto names any thread', async () => {
+  const f = await fixture({ titles: true }), parent = await f.userThread('claude')
+  const titled = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, title: 'Synthetic chosen name', wait_seconds: 0 })).delegation.thread
+  const untitled = f.ok(await f.delegate(parent, { provider: 'grok', model: f.model('grok').id, wait_seconds: 0 })).delegation.thread
+  const thread = (threadId: string) => f.control.shell().host.threads.find(item => item.id === threadId)!
+  // The brief's opening words name the untitled thread as soon as it is sent.
+  await vi.waitFor(() => expect(thread(untitled).title).toBe('Synthetic brief'))
+  await f.endTurn(titled, 'Synthetic titled reply')
+  await f.endTurn(untitled, 'Synthetic untitled reply')
+  // After the first reply, a generated name replaces only the stand-in; the given title stays.
+  await vi.waitFor(() => expect(thread(untitled).title).toBe('Synthetic generated name'))
+  expect(thread(titled)).toMatchObject({ title: 'Synthetic chosen name', titleSource: 'user' })
 })
 
 it('turns a wait that ends first into a wake-up carrying identities only', async () => {

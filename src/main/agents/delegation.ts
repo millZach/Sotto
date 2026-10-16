@@ -91,7 +91,8 @@ type DelegationLink = z.infer<typeof linkSchema>
 const RECORDS_MAX = 2_000
 /** How a new delegated thread is created, as admission chose it. */
 interface DelegatedStart {
-  readonly projectId: string; readonly title: string; readonly modelId: string; readonly reasoningEffort?: string
+  /** A title the delegating thread gave is a deliberate name, kept as a user's is; without one, Sotto's naming applies. */
+  readonly projectId: string; readonly title: string; readonly titleSource: 'user' | 'default'; readonly modelId: string; readonly reasoningEffort?: string
   readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string; readonly workingCopy: 'shared' | 'independent'
 }
 /** How many times news of a thread's delegations is offered to its queue before it is left untold. */
@@ -447,7 +448,7 @@ export class DelegationService {
     this.creating.add(record.id)
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
     await this.saveAdmission(record)
-    const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], modelId: model.id,
+    const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], titleSource: input.title ? 'user' : 'default', modelId: model.id,
       ...(input.effort ? { reasoningEffort: input.effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared' }
     return { record, retry: false, start }
   }
@@ -471,7 +472,7 @@ export class DelegationService {
     if (record.action === 'start' && start) {
       try {
         const created = await this.options.control.commandFromDelegation({ type: 'create-thread', threadId: record.delegatedThreadId, projectId: start.projectId,
-          title: start.title, modelId: start.modelId, workingCopy: start.workingCopy,
+          title: start.title, titleSource: start.titleSource, modelId: start.modelId, workingCopy: start.workingCopy,
           ...(start.reasoningEffort ? { reasoningEffort: start.reasoningEffort } : {}),
           ...(start.runtimeMode ? { runtimeMode: start.runtimeMode } : {}), ...(start.providerMode ? { providerMode: start.providerMode } : {}) },
         () => { this.guardLive(record.id); this.guardCeiling(record, start) })
