@@ -611,6 +611,12 @@ export class ThreadWorktrees {
     // `ignored` keeps its returned order and contents; this set is only a membership index kept in
     // step with every push, so a walk of many entries does not rescan the whole array for each one.
     const ignoredSet = new Set(ignored)
+    /** Adds a path to both, and says whether it was new. */
+    const addIgnored = (entry: string): boolean => {
+      if (ignoredSet.has(entry)) return false
+      ignored.push(entry); ignoredSet.add(entry)
+      return true
+    }
 
     const items: Array<{ path: string; bytes: number; fileCount: number }> = []
     const repositories: Array<{ path: string; changeCount: number; unpushedCommitCount?: number | undefined; kind: 'worktree' | 'repository' }> = []
@@ -672,7 +678,7 @@ export class ThreadWorktrees {
               for (let i = 0; i < records.length; i++) { changeCount++; if (/^[RC]|^.[RC]/u.test(records[i]!)) i++ }
               const repositoryPath = local + '/'
               repositories.push({ path: repositoryPath, changeCount, ...history, kind })
-              if (!ignoredSet.has(repositoryPath)) { ignored.push(repositoryPath); ignoredSet.add(repositoryPath); items.push({ path: repositoryPath, bytes: 0, fileCount: 0 }) }
+              if (addIgnored(repositoryPath)) items.push({ path: repositoryPath, bytes: 0, fileCount: 0 })
             }
           }
           await visit(full, entry.name === 'node_modules' ? undefined : summary, gitMetadata || entry.name === '.git' || bare, gitMarker && !gitMetadata && entry.name !== '.git' ? full : indexRoot)
@@ -730,7 +736,7 @@ export class ThreadWorktrees {
               const existingRow = items.find(item => item.path === repositoryPath)
               const row = existingRow ?? { path: repositoryPath, bytes: 0, fileCount: 0 }
               repositories.push({ path: repositoryPath, changeCount: 0, unpushedCommitCount, kind: 'repository' })
-              if (!ignoredSet.has(repositoryPath)) { ignored.push(repositoryPath); ignoredSet.add(repositoryPath) }
+              addIgnored(repositoryPath)
               if (!existingRow) items.push(row)
               await visit(directory, row, true)
             }

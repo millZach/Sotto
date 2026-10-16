@@ -49,7 +49,11 @@ describe('reclaim facts walk', () => {
     await mkdir(nested, { recursive: true })
     await git(nested, ['init', '--bare'])
 
+    // The walk itself must hand the event loop a turn as it goes, not just the helper on its own.
+    const immediate = vi.spyOn(global, 'setImmediate')
     const facts = await f.service.reclaimFacts(a)
+    expect(immediate.mock.calls.length).toBeGreaterThanOrEqual(Math.floor(fileCount / YIELD_INTERVAL))
+    immediate.mockRestore()
 
     // Dependencies are walked for link inspection but never become a row of their own; the one
     // ignored folder outside them, and the nested repository's own ignored row, still do.
