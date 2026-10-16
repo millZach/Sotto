@@ -1081,7 +1081,9 @@ export class DevinAcpHost implements AgentHost {
    */
   private async awaitAcceptance(id: string, commandId: string, turn: ActiveTurn, generation: number): Promise<AgentHostResult> {
     const deadline = Date.now() + (this.options.requestTimeoutMs ?? 15_000)
-    const cadence = devinReadInterval(true, this.options.pollIntervalMs)
+    // At the busy pace at most, whatever the poll is set to: a slower configured poll slows the poll, never the wait for
+    // the one prompt that is out. A read that came before Devin saved the prompt is then read again before the deadline.
+    const cadence = Math.min(devinReadInterval(true, this.options.pollIntervalMs), AWAITING_READ_MS)
     let nextRead = Date.now() + (this.options.acceptanceGraceMs ?? ACCEPTANCE_GRACE_MS)
     let readAfterEnd = false
     while (true) {
