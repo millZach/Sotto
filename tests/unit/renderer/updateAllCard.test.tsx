@@ -307,3 +307,115 @@ describe('the Update all card', () => {
     expect(steps.every(step => step.querySelector('.update-all__mark')!.getAttribute('aria-hidden') === 'true')).toBe(true)
   })
 })
+
+// The owner's choice, October 16, 2026: a run that ended with everything updated goes by itself 5 seconds later, and
+// never while someone is pointing at it or has focus in it.
+describe('a finished run going by itself', () => {
+  const unsupported: UpdateStatus = { ...available, phase: { phase: 'unsupported' } }
+  const settle = () => act(async () => { await Promise.resolve() })
+  const advance = (ms: number) => act(() => { vi.advanceTimersByTime(ms) })
+  const card = () => screen.queryByRole('region', { name: 'Updates' })
+  afterEach(() => { vi.useRealTimers() })
+  /** One press of Update all on this computer's Claude Code, which then ends as `ended` says. */
+  async function run(ended: Partial<ProviderClientUpdate>, options: { app?: UpdateStatus; hosts?: HostsState } = {}) {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    provideApp(options.app ?? unsupported)
+    provideAgents(agentState({ local: [behind()] }))
+    const hosts = hostsBridge(options.hosts ?? { hosts: [], localHostEnabled: true, localHostRunning: true })
+    const view = render(<UpdateAllCard hosts={hosts.asBridge} doneMs={5_000} />)
+    await settle()
+    fireEvent.click(screen.getByRole('button', { name: /^Update all/u }))
+    await settle()
+    provideAgents(agentState({ local: [behind({ ranAt: 'now', ...ended })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} doneMs={5_000} />)
+    await settle()
+    return { hosts, view }
+  }
+  const updated = { installed: '2.1.42', behind: false, state: 'updated' } as const
+
+  it('goes 5 seconds after everything updated, saying nothing as it goes', async () => {
+    const { view } = await run(updated)
+    expect(screen.getByText('Updated')).toBeTruthy()
+    advance(4_999)
+    expect(card()).not.toBeNull()
+    advance(1)
+    expect(view.container).toBeEmptyDOMElement()
+    expect(document.querySelector('[role="status"], [role="alert"]')).toBeNull()
+  })
+
+  it('stays while something did not update, with its Try again', async () => {
+    await run({ state: 'failed' })
+    expect(screen.getByText('Not everything updated')).toBeTruthy()
+    advance(60_000)
+    expect(screen.getByRole('button', { name: 'Try again to update Claude Code' })).toBeTruthy()
+  })
+
+  it('stays while a host waits for its threads, and goes 5 seconds after that host has updated', async () => {
+    const base: HostsState = { hosts: [forge], localHostEnabled: true, localHostRunning: true }
+    const { hosts } = await run(updated, { hosts: { ...base, updates: [hostUpdate({ phase: 'waiting', working: 1 })] } })
+    expect(screen.getByRole('listitem', { name: 'Update forge’s host, waiting for its threads' })).toBeTruthy()
+    advance(60_000)
+    expect(card()).not.toBeNull()
+    // forge's thread is stopped and its update finishes: nothing is left waiting.
+    fireEvent.click(screen.getByRole('button', { name: 'Stop 1 thread on forge and update its host now' }))
+    hosts.change({ ...base, updates: [hostUpdate({ phase: 'done' })] })
+    await settle()
+    expect(screen.getByText('Updated')).toBeTruthy()
+    advance(4_999)
+    expect(card()).not.toBeNull()
+    advance(1)
+    expect(card()).toBeNull()
+  })
+
+  it('stays while the pointer is over it, and counts 5 whole seconds again once it leaves', async () => {
+    await run(updated)
+    advance(3_000)
+    fireEvent.pointerEnter(card()!)
+    advance(60_000)
+    expect(card()).not.toBeNull()
+    fireEvent.pointerLeave(card()!)
+    advance(4_999)
+    expect(card()).not.toBeNull()
+    advance(1)
+    expect(card()).toBeNull()
+  })
+
+  it('stays while focus is inside it, and counts 5 whole seconds again once it leaves', async () => {
+    await run(updated)
+    const dismiss = screen.getByRole('button', { name: 'Dismiss the results of Update all' })
+    act(() => dismiss.focus())
+    advance(60_000)
+    expect(card()).not.toBeNull()
+    act(() => dismiss.blur())
+    advance(4_999)
+    expect(card()).not.toBeNull()
+    advance(1)
+    expect(card()).toBeNull()
+  })
+
+  it('goes from its folded pill the same way, held while the pill has the pointer or focus', async () => {
+    const { view } = await run(updated)
+    fireEvent.click(screen.getByRole('button', { name: 'Fold updates into a button' }))
+    const pill = screen.getByRole('button', { name: 'Updated. Show updates' })
+    // Folding moved focus to the pill, which holds it.
+    expect(document.activeElement).toBe(pill)
+    advance(60_000)
+    act(() => pill.blur())
+    fireEvent.pointerEnter(pill)
+    advance(60_000)
+    expect(screen.getByRole('button', { name: 'Updated. Show updates' })).toBe(pill)
+    fireEvent.pointerLeave(pill)
+    advance(4_999)
+    expect(view.container).not.toBeEmptyDOMElement()
+    advance(1)
+    expect(view.container).toBeEmptyDOMElement()
+  })
+
+  it('never goes by itself while it asks to restart', async () => {
+    const downloaded: UpdateStatus = { ...available, phase: { phase: 'downloaded', version: '0.1.37-owl.20261013.1', problem: null } }
+    await run(updated, { app: downloaded })
+    expect(screen.getByText('Restart to finish')).toBeTruthy()
+    advance(60_000)
+    expect(screen.getByRole('button', { name: 'Restart Sotto now and install 0.1.37-owl.20261013.1' })).toBeTruthy()
+  })
+})

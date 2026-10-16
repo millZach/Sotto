@@ -71,6 +71,14 @@ the line's reply and the host's next shell, which the host holds back up to 16 m
 the step is marked as seen only once the host says it is in the line. This computer's own line cannot be lost without
 the card going too, so only a host's steps are read this way.
 
+The same day, by the owner's choice: a run that ends with everything updated goes by itself. Once the card reads
+"Updated", with no step failed and none waiting for a host's threads or clients, it goes 5 seconds later, as Dismiss
+does, and comes back only when something new is published. A step left for the user to do by hand does not hold it.
+The count does not run while the pointer is over the card or its pill or focus is inside either, and starts again
+from the beginning once both have left, so the card never goes while someone reads it or is about to press. Nothing
+announces it: no countdown and no message. "Not everything updated" stays, with its Try again, until it is dismissed,
+and "Restart to finish" is never put away by itself.
+
 **3. What Sotto cannot do is listed, not pressed.** A client installed with something Sotto does not drive shows the
 command to run. A host Sotto did not start shows that it cannot be restarted from here and offers its commands to
 copy. Neither counts toward the press.

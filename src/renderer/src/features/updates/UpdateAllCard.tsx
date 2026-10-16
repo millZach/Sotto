@@ -21,6 +21,11 @@ export function requestUpdateAll(): void { for (const listener of requests) list
 const ipcMessage = (error: unknown, fallback: string): string => error instanceof Error
   ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '').trim() || fallback : fallback
 const UNREACHABLE = 'Sotto could not reach the update. Nothing was changed. Try again.'
+/**
+ * How long a run that ended with everything updated stays before the card goes by itself, counted afresh each time the
+ * pointer and focus have both left it (October 16, 2026, the owner's choice).
+ */
+export const UPDATE_ALL_DONE_MS = 5_000
 
 function useHostsState(bridge: HostsBridge | undefined): HostsState | null {
   const [state, setState] = useState<HostsState | null>(null)
@@ -111,7 +116,7 @@ const targetsWith = (before: ReadonlyMap<string, string> | undefined, items: rea
  * pill, and Not now hides it until something new is published. It drives the updaters that already exist and owns
  * nothing but its press's bookkeeping.
  */
-export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { readonly hosts?: HostsBridge | undefined }): ReactNode {
+export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts, doneMs = UPDATE_ALL_DONE_MS }: { readonly hosts?: HostsBridge | undefined; readonly doneMs?: number }): ReactNode {
   const app = useOptionalApp()
   const agents = useOptionalAgents()
   const hostsState = useHostsState(hostsBridge)
@@ -121,6 +126,9 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
   const [dismissed, setDismissed] = useState<string | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /** Whether the pointer is over the card or its pill, and whether focus is inside either: both keep a finished run up. */
+  const [pointerIn, setPointerIn] = useState(false)
+  const [focusIn, setFocusIn] = useState(false)
   const card = useRef<HTMLElement>(null)
   const pill = useRef<HTMLButtonElement>(null)
   const titleId = useId()
@@ -305,6 +313,23 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     setDismissed(updateAllView(latest.current.sources, null).fingerprint)
   }, [hostsBridge, leave])
   const notNow = useCallback((): void => { leave(); setDismissed(latest.current.view.fingerprint) }, [leave])
+  // A run that ended with everything updated, and nothing still waiting, goes by itself a few seconds later, the way its
+  // Dismiss does, and says nothing as it goes. Never while the pointer is over it or focus is inside it: each time both
+  // have left, the count starts again from the beginning. A run with a failure stays until it is dismissed.
+  const clean = view.phase === 'done' && !view.items.some(item => item.state === 'failed' || item.state === 'waiting')
+  useEffect(() => {
+    if (!clean || hidden || pointerIn || focusIn) return
+    const timer = window.setTimeout(putAway, doneMs)
+    return () => window.clearTimeout(timer)
+  }, [clean, hidden, pointerIn, focusIn, doneMs, putAway])
+  // A card that went away under the pointer heard no leave; it starts unheld when it comes back.
+  useEffect(() => { if (hidden) { setPointerIn(false); setFocusIn(false) } }, [hidden])
+  const holds = {
+    onPointerEnter: () => setPointerIn(true),
+    onPointerLeave: () => setPointerIn(false),
+    onFocus: () => setFocusIn(true),
+    onBlur: (event: React.FocusEvent<HTMLElement>) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusIn(false) },
+  }
 
   useEffect(() => {
     const listener = (): void => { setFolded(false); setDismissed(null); start() }
@@ -344,13 +369,19 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     if (wasFolded.current !== folded && (card.current?.contains(document.activeElement) || pill.current === document.activeElement || document.activeElement === document.body)) {
       if (folded) pill.current?.focus(); else card.current?.querySelector<HTMLElement>('.update-all__head button')?.focus()
     }
+    // The card and its pill take each other's place, so the one shown now says whether the pointer and focus are on it.
+    if (wasFolded.current !== folded) {
+      const shown = folded ? pill.current : card.current
+      setPointerIn(shown?.matches(':hover') === true)
+      setFocusIn(shown?.contains(document.activeElement) === true)
+    }
     wasFolded.current = folded
   }, [folded])
 
   if (!app || hidden) return null
   const failed = view.items.some(item => item.state === 'failed')
   if (folded) {
-    return <button ref={pill} type="button" className="update-all-pill tt-focusable" data-phase={view.phase} data-failed={failed || undefined}
+    return <button ref={pill} type="button" className="update-all-pill tt-focusable" data-phase={view.phase} data-failed={failed || undefined} {...holds}
       aria-label={`${words.pill}. Show updates`} title={words.pill} onClick={() => setFolded(false)}>
       <PhaseGlyph phase={view.phase} failed={failed} /><span>{words.pill}</span>
     </button>
@@ -367,7 +398,7 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
         <Button variant="ghost" aria-label="Later: fold this card. The update control keeps the download." onClick={() => setFolded(true)}>Later</Button></>
       : view.phase === 'done' ? <Button variant="ghost" aria-label="Dismiss the results of Update all" onClick={putAway}>Dismiss</Button> : null
   // The landmark keeps one name whatever the phase; the heading inside says where things stand.
-  return <section ref={card} className="update-all" data-phase={view.phase} aria-label="Updates" aria-describedby={titleId}>
+  return <section ref={card} className="update-all" data-phase={view.phase} aria-label="Updates" aria-describedby={titleId} {...holds}>
     <header className="update-all__head">
       <div aria-live="polite"><strong id={titleId}>{words.title}</strong><span>{words.sub}</span></div>
       <Button variant="ghost" iconOnly aria-label="Fold updates into a button" title="Fold" onClick={() => setFolded(true)}><ChevronDown size={16} aria-hidden="true" /></Button>
