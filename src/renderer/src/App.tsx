@@ -48,6 +48,7 @@ import { WatcherRoomProvider } from './watcher/watcherRoom'
 import { WatcherView } from './watcher/WatcherView'
 import type { WatcherBridge } from '../../shared/watcherRoom'
 import { ThemeEditorHost } from './features/settings/themes/ThemeEditor'
+import { StartingScreenGate } from './features/starting/StartingScreen'
 import { appearancePreview, applyAppearance, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark } from './state/appearance'
 
 const recoveryMessages = {
@@ -529,25 +530,30 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
 
   const management = app.status === 'ready' && app.settings !== null
     && app.settings.onboardingComplete && app.navigation !== 'onboarding'
+  // The loading, unavailable and setup views, and the starting screen, sit under the window's strip.
+  const strip = (children: ReactNode): ReactNode => (
+    <AppShell
+      navigation={null}
+      platform={app.platform}
+      onMinimize={app.actions.minimizeApp}
+      onMaximize={app.actions.toggleMaximizeApp}
+      maximized={app.windowMaximized}
+      onClose={app.actions.hideApp}
+    >
+      {children}
+    </AppShell>
+  )
 
   return (
     <AgentProvider settings={app.settings}>
-      <WatcherRoomProvider bridge={watcherBridge}>
-      {management ? content : (
-        <AppShell
-          navigation={null}
-          platform={app.platform}
-          onMinimize={app.actions.minimizeApp}
-          onMaximize={app.actions.toggleMaximizeApp}
-          maximized={app.windowMaximized}
-          onClose={app.actions.hideApp}
-        >
-          {content}
-        </AppShell>
-      )}
-      </WatcherRoomProvider>
-      {/* Neither card speaks before first-run setup ends; on Owl, Update all takes the corner and speaks for clients too (ADR-0077). */}
-      {management ? updateAll ? <UpdateAllCard /> : <ClientUpdateCard /> : null}
+      {/* At launch the starting screen holds the window until providers and hosts have connected (ADR-0086). A saved host's SSH question is asked over it too. */}
+      <StartingScreenGate settingsSettled={app.status !== 'loading'} eligible={management} frame={screen => strip(<>{screen}<HostQuestionDialog /></>)}>
+        <WatcherRoomProvider bridge={watcherBridge}>
+        {management ? content : strip(content)}
+        </WatcherRoomProvider>
+        {/* Neither card speaks before first-run setup ends; on Owl, Update all takes the corner and speaks for clients too (ADR-0077). */}
+        {management ? updateAll ? <UpdateAllCard /> : <ClientUpdateCard /> : null}
+      </StartingScreenGate>
     </AgentProvider>
   )
 }

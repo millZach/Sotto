@@ -123,9 +123,11 @@ createInterface({ input: process.stdin }).on('line', line => {
  const script = read('script.json', {})
  if (frame.method === 'initialize') {
   if (p.protocolVersion !== 1 || p.clientInfo?.name !== 'sotto' || p.clientCapabilities?.terminal !== false) violate('Untruthful or unsupported ACP initialization')
-  result(frame.id, { protocolVersion: script.protocolVersion ?? 1, agentInfo: { name: 'affogato', title: 'Devin Agent', version: '0.0.0-dev' },
+  const initialized = () => result(frame.id, { protocolVersion: script.protocolVersion ?? 1, agentInfo: { name: 'affogato', title: 'Devin Agent', version: '0.0.0-dev' },
    agentCapabilities: { loadSession: true, promptCapabilities: { image: true, audio: false, embeddedContext: true }, sessionCapabilities: { list: {}, delete: {} } },
    authMethods: [{ id: 'devin-browser', name: 'Log in with browser' }] })
+  // A Devin that takes this long to answer its first start, as a cold CLI can; later starts answer at once.
+  if (script.delayInitialize) { write('script.json', { ...script, delayInitialize: 0 }); setTimeout(initialized, script.delayInitialize) } else initialized()
  } else if (frame.method === '_cognition.ai/config/read') {
   const configPath = process.argv[process.argv.indexOf('--config') + 1]
   let config = {}

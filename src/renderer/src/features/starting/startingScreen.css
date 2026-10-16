@@ -1,0 +1,119 @@
+/* The starting screen (ADR-0086): the whole room under the strip while Sotto's providers and hosts connect at launch.
+   One centred column: the mark, the line, a dot per provider and host, and after ten seconds the late line and its
+   button. Every colour is a theme role. */
+.starting-screen {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.starting-screen__block {
+  display: flex;
+  max-width: 560px;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  transition: opacity 200ms ease-out;
+}
+
+/* Kept back for a moment while Sotto learns whether there is anything to wait for; the space stays so nothing moves. */
+.starting-screen__block[data-revealed='false'] {
+  visibility: hidden;
+}
+
+/* Everything has settled: the column fades and the app takes the window. Reduced motion skips straight to the app. */
+.starting-screen--leaving .starting-screen__block {
+  opacity: 0;
+}
+
+.starting-screen__mark {
+  display: block;
+  width: 44px;
+  height: 44px;
+}
+
+.starting-screen__line {
+  min-height: 1.5em;
+  margin: 0;
+  color: var(--tt-text);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  line-height: 1.5;
+}
+
+.starting-screen__items {
+  display: flex;
+  max-width: 520px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.starting-screen__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--tt-text-muted);
+  font-size: 13px;
+}
+
+.starting-screen__dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--tt-hairline);
+}
+
+.starting-screen__dot[data-state='ready'] {
+  background: var(--tt-accent);
+}
+
+.starting-screen__dot[data-state='connecting'] {
+  background: var(--tt-text-muted);
+  animation: starting-screen-breathe 1.6s ease-in-out infinite;
+}
+
+.starting-screen__dot[data-state='late'] {
+  background: var(--tt-attention);
+}
+
+@keyframes starting-screen-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.starting-screen__late {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.starting-screen__late p {
+  max-width: 520px;
+  margin: 0;
+  text-wrap: balance;
+  color: var(--tt-text-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+/* The global rule already shortens animations to a single frame; the breathing dot holds still instead. */
+@media (prefers-reduced-motion: reduce) {
+  .starting-screen__dot[data-state='connecting'] {
+    animation: none;
+  }
+}
+
+:root[data-reduced-motion='on'] .starting-screen__dot[data-state='connecting'] {
+  animation: none;
+}
