@@ -294,10 +294,14 @@ function hostClientUpdates(host: HostStatus, sources: UpdateAllSources): readonl
 function hostClients(host: HostStatus, sources: UpdateAllSources, pass: UpdateAllPass | null): UpdateAllItem[] {
   const machine = { kind: 'host', id: host.id, name: host.name } as const
   const updates = hostClientUpdates(host, sources)
-  // A step seen in the host's line that the host does not report now, while it is out of reach or before its first check
-  // after a restart, stays listed until the host says how it went, so the press is not read as over meanwhile.
+  // A step seen in the host's line that the host does not report now stays listed, so the press is not read as over.
+  // While the host is out of reach it waits to hear from it. A connected host says everything it still has in its
+  // first shell, so one that leaves the client out lost its line, as a restarted host without results or checks does.
+  const reachable = sources.clientHosts.some(item => item.hostId === host.hostId && item.connected)
   const unheard = [...pass?.seen?.values() ?? []].filter(item => clientMachine(item) === host.id && !pass?.kept?.has(item.key) && !updates.some(update => clientKey(host.id, update.id) === item.key))
-    .map(item => ({ ...item, state: 'running' as const, detail: `Waiting to hear from ${host.name}…` }))
+    .map(item => reachable
+      ? { ...item, state: 'failed' as const, detail: lostDetail(host.name, item.name, pass?.dropped?.has(item.key) === true) }
+      : { ...item, state: 'running' as const, detail: `Waiting to hear from ${host.name}…` })
   return [...updates.flatMap(update => clientItem(machine, update, pass) ?? []), ...unheard]
 }
 

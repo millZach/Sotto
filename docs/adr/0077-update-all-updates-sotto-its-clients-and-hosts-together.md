@@ -69,12 +69,15 @@ waits for its clients". A held restart reads "Restart forge's host once its clie
 
 The same day: a client step on a host that was seen waiting or updating in the host's line since the press, or since
 its Try again, and is later out of the line with no result of its own, lost its line. A host keeps its results in
-memory, so one that restarted reports none, and that counts as no result. While the host is out of reach, or has yet
-to report the client again, the step stays listed as "Waiting to hear from forge…", so the press is not read as over.
+memory, so one that restarted reports none, and that counts as no result. While the host is out of reach, the step
+stays listed as "Waiting to hear from forge…", so the press is not read as over. A connected host says what it still
+has in its first shell, so one that leaves the client out, as a restarted host with client checks off does, lost the
+line too. The step counts as done only when the host runs another version than it did when the step was seen; whether
+the client reads as behind cannot say, because one whose registry did not answer reads as not behind.
 A step whose host was out of reach meanwhile reads "forge restarted before Codex updated. Nothing was changed. Try
 again."; one taken out of the line some other way, as by Cancel update on the host's tile, reads "The Codex update on
 forge stopped before it finished. Nothing was changed. Try again." Both offer Try again, which puts it back in the
-line, where before the step read "Starting…" for good. One the host now reports as current is done. The moment between
+line, where before the step read "Starting…" for good. The moment between
 the line's reply and the host's next shell, which the host holds back up to 16 ms, is never read as a loss, because
 the step is marked as seen only once the host says it is in the line. This computer's own line cannot be lost without
 the card going too, so only a host's steps are read this way.

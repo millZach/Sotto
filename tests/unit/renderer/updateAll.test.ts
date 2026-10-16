@@ -98,6 +98,15 @@ describe('a press of Update all', () => {
     const away = sources({ clientHosts: [{ ...codex({ state: 'updating' }), connected: false }] })
     expect(updateAllView(away, seen)).toMatchObject({ phase: 'running', items: [{ key, state: 'running', detail: 'Waiting to hear from forge…' }] })
     expect(newlyDropped(away, seen)).toEqual([key])
+    // Sotto Bug Bot on #1084: a connected host that leaves the client out of what it reports, as one restarted with checks
+    // off or the provider not connected does, lost the line; the step never waits for it forever.
+    for (const reported of [[], undefined]) {
+      const quiet = updateAllView(sources({ clientHosts: [{ ...codex(), clientUpdates: reported }] }), pass([key], { ranBefore: before, seen: new Map([[key, listed]]), dropped: new Set([key]) }))
+      expect(quiet.items).toMatchObject([{ key, state: 'failed', detail: 'forge restarted before Codex updated. Nothing was changed. Try again.' }])
+      expect(quiet.phase).toBe('done')
+    }
+    expect(updateAllView(sources({ clientHosts: [{ ...codex(), clientUpdates: [] }] }), seen).items[0])
+      .toMatchObject({ state: 'failed', detail: 'The Codex update on forge stopped before it finished. Nothing was changed. Try again.' })
     expect(newlyDropped(sources({ clientHosts: [codex({ state: 'updating' })] }), seen)).toEqual([])
     const dropped = pass([key], { ranBefore: before, seen: new Map([[key, listed]]), dropped: new Set([key]) })
     // The new host process has no results in memory, so Codex comes back with none: its line went with the restart.
