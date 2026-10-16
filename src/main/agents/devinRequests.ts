@@ -39,16 +39,25 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 export const devinMcpToolName = (server: string, tool: string): string => `mcp__${server}__${tool}`
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+/** Devin's own name for the tool a call is for, from its tool-call meta, when it gives one. */
+const metaToolName = (toolCall: Record<string, unknown>): string | undefined => {
+  const name = record(toolCall._meta)?.['cognition.ai/toolName']
+  return typeof name === 'string' ? name : undefined
+}
+/** A title that may name the tool: never a command's, whose title is the command text, which could read like a tool name. */
+const titleToolName = (toolCall: Record<string, unknown>): string | undefined =>
+  toolCall.kind !== 'execute' && typeof toolCall.title === 'string' ? toolCall.title : undefined
 /**
  * The Sotto tool a tool call is, when it names one of the session's own (`sottoTools`, by `devinMcpToolName`). Devin's
- * tool-call meta carries the tool's name, and its title may be the name too; which one it uses for an MCP tool has not
- * been seen on a real turn yet, so either counts and anything else is not a Sotto tool.
+ * tool-call meta names the tool and is trusted when present; only a call without it is named by its title.
  */
 function sottoToolOf(toolCall: Record<string, unknown>, sottoTools: ReadonlySet<string>): string | undefined {
-  return toolNames(toolCall).find(name => sottoTools.has(name))
+  const name = metaToolName(toolCall) ?? titleToolName(toolCall)
+  return name !== undefined && sottoTools.has(name) ? name : undefined
 }
-const toolNames = (toolCall: Record<string, unknown>): string[] =>
-  [record(toolCall._meta)?.['cognition.ai/toolName'], toolCall.title].filter((name): name is string => typeof name === 'string')
+/** The call names an MCP tool that is not one of the session's own, in its meta or its title. */
+const namesForeignTool = (toolCall: Record<string, unknown>, sottoTools: ReadonlySet<string>): boolean =>
+  [metaToolName(toolCall), titleToolName(toolCall)].some(name => name?.startsWith('mcp__') === true && !sottoTools.has(name))
 /** Devin says it cut the tool call's input short, so what it shows is not the whole action. */
 const truncatedInput = (toolCall: Record<string, unknown>): boolean => record(toolCall._meta)?.['cognition.ai/toolInputTruncated'] === true
 /**
@@ -76,8 +85,8 @@ export function devinPending(wireId: string | number, method: string, value: unk
     // Input Devin says it cut short is never the whole action, and an MCP tool that is not one of the session's own
     // Sotto tools is not shown at all, whatever its input looks like.
     if (truncatedInput(toolCall)) invalidRequest()
+    if (namesForeignTool(toolCall, sottoTools)) invalidRequest()
     const sottoTool = sottoToolOf(toolCall, sottoTools)
-    if (!sottoTool && toolNames(toolCall).some(name => name.startsWith('mcp__'))) invalidRequest()
     const command = !sottoTool && typeof input.command === 'string' && input.command.trim() ? input.command : undefined
     const file = typeof input.file_path === 'string' && input.file_path.trim() && (typeof input.content === 'string' || typeof input.old_string === 'string' && typeof input.new_string === 'string') ? input.file_path : undefined
     if (!command && !file && !sottoTool) invalidRequest()
