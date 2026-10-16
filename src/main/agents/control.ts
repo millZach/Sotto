@@ -21,6 +21,7 @@ import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
 import { queuedWakeUpText, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
 import { watcherWakeUpShown, watcherWakeUpsAsShown } from './watcherNews'
+import { HIDDEN_WAKE_UP_ATTEMPTS, hiddenWakeUpAction, needsWatcherNow } from './hiddenWakeUp'
 import type { UsagePromptRecorder } from './usageService'
 import { isUsageProviderId } from '../../shared/usageDashboard'
 import type { WatcherEvent } from '../../shared/watcherNews'
@@ -277,21 +278,6 @@ export class AgentControl {
    */
   private readonly threadPrompts = new Map<string, number>()
   private readonly pumping = new Set<string>()
-  /**
-   * How often each wake-up no one is shown has been tried in this run, and Watcher's last turn when it last was. Every send
-   * of it counts, however it came about, up to WAKE_UP_ATTEMPTS; a turn Watcher finishes after that starts the count again.
-   */
-  private readonly wakeAttempts = new Map<string, { count: number; turnId: string | undefined }>()
-  /** Whether a hidden wake-up, as it stands now, holds news that needs Watcher, not only a thread's own facts. */
-  private wakeUpNeedsAttention(item: Pick<QueuedFollowup, 'news'>): boolean {
-    const events = (item.news ?? []).flatMap(news => isWatcherNews(news) ? news.events : [])
-    return events.length > 0 && (this.watcherHooks?.wakeNeedsAttention?.(events) ?? true)
-  }
-  private wakeUpMayTry(item: Pick<QueuedFollowup, 'id'>, thread: AgentThread): boolean {
-    const used = this.wakeAttempts.get(item.id)
-    if (used && thread.lastTurn?.status === 'completed' && thread.lastTurn.id !== used.turnId) { this.wakeAttempts.delete(item.id); return true }
-    return (used?.count ?? 0) < WAKE_UP_ATTEMPTS
-  }
   private state: AgentState
   private outbox: Saved['outbox'] = []
   private watcher: WatcherRecord = emptyWatcherRecord()
@@ -1678,8 +1664,9 @@ export class AgentControl {
     }
     // News arriving while the thread rests follows the turn it rests on; a request waiting on the user still holds it.
     const reviewed = !isThreadTurnRunning(thread) ? thread.lastTurn?.id ?? UNKNOWN_TURN : undefined
-    const attention = isWatcherNews(news) ? this.watcherHooks?.wakeNeedsAttention?.(news.events) : undefined
-    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed, attention)
+    // Which of Watcher's events needed it when observed travels with them into the queue (hiddenWakeUp.ts, rule c).
+    const attention = isWatcherNews(news) ? this.watcherHooks?.wakeAttention?.(news.events) : undefined
+    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed, attention?.all, attention?.fresh)
     if (this.syncFollowups()) this.publish()
     this.pumpFollowups()
   }
@@ -1728,6 +1715,13 @@ export class AgentControl {
     return this.followupStore.peek().items.filter(item => (isWaitingWakeUp(item) || item.wakeUp === true && item.status === 'dispatching') && item.threadId === target.threadId)
       .flatMap(item => item.news?.flatMap(news => isWatcherNews(news) && news.watcher.hostId === target.hostId
         && news.watcher.threadId === target.threadId ? news.events : []) ?? []).slice(-400)
+  }
+  /** Which of Watcher's queued events needed it when they were observed, as its hidden wake-up keeps them. */
+  waitingWatcherAttention(): ReadonlySet<string> {
+    if (this.dependencies.watcherEnabled !== true || !this.watcherHooks || !this.watcher.current) return new Set()
+    const target = this.watcher.current.target
+    return new Set(this.followupStore.peek().items.filter(item => item.threadId === target.threadId && isWatcherOnlyWakeUp(item)
+      && (isWaitingWakeUp(item) || item.status === 'dispatching')).flatMap(item => needsWatcherNow(item) ? item.attention ?? [] : []))
   }
   async pruneWatcherWakeUps(): Promise<void> {
     if (this.dependencies.watcherEnabled !== true || this.disposed || !this.watcherHooks?.wakeReady?.()) return
@@ -2696,27 +2690,30 @@ export class AgentControl {
       const first = items.find(item => item.threadId === threadId && item.messageId && thread?.messages.some(message => message.role === 'user' && message.id === item.messageId))
         ?? items.find(item => item.threadId === threadId)!
       if (first.news?.some(isWatcherNews) && !this.watcherHooks?.wakeReady?.()) continue
-      // A wake-up holding only Watcher's news is shown nowhere, so no one can resume or remove it. One whose send is unknown,
-      // and no longer being reconciled, is let go, and its news is observed afresh rather than sent twice. One paused or
-      // unsent goes again by itself once Watcher finishes a turn after it stopped, or, unsent, while Watcher rests; each try
-      // uses the item's one budget (WAKE_UP_ATTEMPTS). It never holds the thread's other items up.
-      if (isWatcherOnlyWakeUp(first) && thread && ['paused', 'failed', 'uncertain'].includes(first.status)
-        && !this.outbox.some(item => item.id === first.commandId)
-        && !thread.messages.some(message => message.role === 'user' && message.id === first.messageId)) {
+      // Watcher's hidden wake-up is shown nowhere, so no one can resume, reorder or remove it: what Sotto does with it by
+      // itself is hiddenWakeUp.ts's to say, from what the item keeps, and never repeats without a change.
+      if (isWatcherOnlyWakeUp(first) && thread) {
         const resting = !isThreadTurnRunning(thread) && !thread.requests.length
-        const finished = resting && thread.lastTurn?.status === 'completed' && thread.lastTurn.id !== first.resumeAfterTurnId
-        const others = items.some(item => item.threadId === threadId && item.id !== first.id)
-        const revive = first.status !== 'uncertain' && this.wakeUpMayTry(first, thread) && this.wakeUpNeedsAttention(first) && (finished || first.status === 'failed' && (resting || others))
-        if (first.status === 'uncertain' || revive || others) {
-          const letGo = first.status === 'uncertain' ? (first.news ?? []).flatMap(news => isWatcherNews(news) ? news.events : []) : []
+        const action = hiddenWakeUpAction(first, { resting,
+          finished: resting && thread.lastTurn?.status === 'completed' && thread.lastTurn.id !== first.resumeAfterTurnId,
+          echoed: !!first.messageId && thread.messages.some(message => message.role === 'user' && message.id === first.messageId),
+          reconciling: this.outbox.some(item => item.id === first.commandId),
+          holdingOthers: items.slice(items.indexOf(first) + 1).some(item => item.threadId === threadId && !isWatcherOnlyWakeUp(item)) })
+        if (action !== 'send' && action !== 'none') {
           this.pumping.add(threadId)
           let changed = false
-          void (first.status === 'uncertain' || revive ? this.followupStore.reviveWakeUp(first.id, thread.lastTurn?.id ?? UNKNOWN_TURN) : this.followupStore.moveWakeUpBehind(first.id))
-            .then(() => { changed = true; if (letGo.length) this.watcherHooks?.forgetWakeEvents?.(letGo) })
+          const word = (news: readonly WakeUpNews[]) => queuedWakeUpText(news, { tool: false })
+          const step = action === 'acknowledge' ? this.followupStore.settleSent(first.id, word).then(() => true)
+            : action === 'revive' ? this.followupStore.reviveWakeUp(first.id, thread.lastTurn?.id ?? UNKNOWN_TURN).then(() => true)
+              : action === 'let-go' ? this.followupStore.letGoWakeUp(first.id, word).then(gone => { if (gone.length) this.watcherHooks?.forgetWakeEvents?.(gone); return true })
+                : this.followupStore.blockWakeUp(first.id, needsWatcherNow(first) ? 'Sotto tried this wake-up as often as it will by itself. It goes again with news that needs Watcher.'
+                  : 'This wake-up holds only a thread’s own facts, which wait for news that needs Watcher.')
+          void step.then(wrote => { changed = wrote })
             .catch(() => { this.state.error = 'Could not save the follow-up queue.'; this.publish() })
             .finally(() => { if (this.syncFollowups()) this.publish(); this.pumping.delete(threadId); if (changed) this.pumpFollowups() })
           continue
         }
+        if (action === 'none') continue
       }
       // Native idle status can precede turn/completed. A still-running outcome is
       // neither permission to dispatch nor a terminal failure requiring review.
@@ -2735,18 +2732,6 @@ export class AgentControl {
       }
       const confirmed = first.messageId && thread?.messages.some(m => m.role === 'user' && m.id === first.messageId)
       if (!confirmed && (first.status !== 'queued' || !this.followupReady(threadId))) continue
-      // A wake-up no one is shown goes only while it holds news that needs Watcher, and while its budget lasts. Otherwise it
-      // waits, behind the rest: for news that does, or for Watcher's next turn of its own.
-      const attention = isWatcherOnlyWakeUp(first) && this.wakeUpNeedsAttention(first)
-      if (!confirmed && thread && isWatcherOnlyWakeUp(first) && (!attention || !this.wakeUpMayTry(first, thread))) {
-        this.pumping.add(threadId)
-        let held = false
-        void this.followupStore.moveWakeUpBehind(first.id, attention ? 'Sotto tried this wake-up as often as it will by itself. It goes again after Watcher next finishes a turn.'
-          : 'This wake-up holds only a thread’s own facts, which wait for news that needs Watcher.')
-          .then(() => { held = true }).catch(() => { this.state.error = 'Could not save the follow-up queue.'; this.publish() })
-          .finally(() => { if (this.syncFollowups()) this.publish(); this.pumping.delete(threadId); if (held) this.pumpFollowups() })
-        continue
-      }
       if (!confirmed && this.wakeUpOutdated(threadId, first)) {
         // What babysitting ended since it was told is taken out before the wake-up goes, and the rest goes after.
         this.pumping.add(threadId)
@@ -2759,7 +2744,8 @@ export class AgentControl {
       this.pumping.add(threadId)
       let requeued = false
       void (async () => {
-        if (confirmed) { await this.followupStore.settle(first.id, 'accepted'); return }
+        // An acknowledged hidden wake-up keeps what its send did not carry (hiddenWakeUp.ts, rule d).
+        if (confirmed) { await (isWatcherOnlyWakeUp(first) ? this.followupStore.settleSent(first.id, news => queuedWakeUpText(news, { tool: false })) : this.followupStore.settle(first.id, 'accepted')); return }
         let claimed = false
         const turn = this.beginTurn(first.wakeUp ? { source: 'wake-up', commandType: 'wake-up', text: first.text } : { source: 'command', commandType: 'manual-send', text: first.text })
         // A queued follow-up is timed from the moment the queue takes it, not from when it was queued.
@@ -2769,10 +2755,6 @@ export class AgentControl {
           this.canAct(threadId)
           if (first.watcherOperationId) this.watcherHooks?.guardOperation(first.watcherOperationId)
           await this.followupStore.claim(first.id); claimed = true
-          if (isWatcherOnlyWakeUp(first)) {
-            this.wakeAttempts.set(first.id, { count: (this.wakeAttempts.get(first.id)?.count ?? 0) + 1, turnId: this.thread(threadId).lastTurn?.id })
-            while (this.wakeAttempts.size > 1_000) this.wakeAttempts.delete(this.wakeAttempts.keys().next().value!)
-          }
           this.syncFollowups(); this.publish()
           const item = this.followupStore.get().items.find(item => item.id === first.id)!
           // Read immediately before dispatch, as every other send does: the send and its checkpoint go from this history,
@@ -2814,7 +2796,7 @@ export class AgentControl {
             expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}), ...(watcherNews ? { watcherNews } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
             this.localClient, undefined, undefined, writeGuard)
           // Watcher's news that came while this was being sent stays in the item, and goes next.
-          if (isWatcherOnlyWakeUp(item)) await this.followupStore.settleSent(item.id, new Set((item.news ?? []).flatMap(news => isWatcherNews(news) ? news.events.map(event => event.id) : [])), news => queuedWakeUpText(news, { tool: false }))
+          if (isWatcherOnlyWakeUp(item)) await this.followupStore.settleSent(item.id, news => queuedWakeUpText(news, { tool: false }))
           else await this.followupStore.settle(item.id, 'accepted')
         } catch (error) {
           failure = error instanceof CheckoutSendRefusal ? error.queuedMessage() : error instanceof Error ? error.message : first.wakeUp ? 'Could not send this wake-up.' : 'Could not dispatch this follow-up.'
@@ -2838,7 +2820,7 @@ export class AgentControl {
           // Nothing may change after a hidden wake-up fails to send, so its tries again are timed (WAKE_UP_ATTEMPTS).
           const after = this.followupStore.peek().items.find(item => item.id === first.id)
           const watcher = this.state.host.threads.find(item => item.id === threadId)
-          if (after && watcher && isWatcherOnlyWakeUp(after) && after.status === 'failed' && this.wakeUpMayTry(after, watcher)) this.retryWakeUpLater()
+          if (after && watcher && isWatcherOnlyWakeUp(after) && after.status === 'failed' && needsWatcherNow(after) && (after.attempts ?? 0) < HIDDEN_WAKE_UP_ATTEMPTS) this.retryWakeUpLater()
         })
     }
   }
@@ -4098,8 +4080,6 @@ export class AgentControl {
  * One broadcast per animation frame. Below what a person can see, so no state looks late, and
  * far fewer full copies of every thread's history than a streaming provider would otherwise force.
  */
-/** How many times a wake-up holding only Watcher's news is sent, its first send and every try again, before it waits for Watcher. */
-const WAKE_UP_ATTEMPTS = 4
 /** How long such a wake-up waits before it is tried again, so a provider that refuses at once is not asked in a loop. */
 const WAKE_UP_RETRY_MS = 3_000
 export const AGENT_STATE_BROADCAST_INTERVAL_MS = 16

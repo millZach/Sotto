@@ -84,7 +84,9 @@ it('sets a stopped wake-up for Watcher alone going again behind the user’s fol
     const hostId = randomUUID(), word: WordWakeUp = items => queuedWakeUpText(items, { tool: true })
     const news = (id: string): WakeUpNews => ({ source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
       events: [{ id, requestId: randomUUID(), target: { hostId, threadId: 'worker' }, generation: 0, kind: 'turn-finished', turnId: id, observedAt: new Date().toISOString() }] })
-    await store.queueWakeUp('thread', news('first'), word)
+    // What WatcherWakeUp says of news as it comes: a finish needs Watcher, a thread's own facts do not.
+    const needed = (item: WakeUpNews) => new Set('events' in item ? item.events.filter(event => event.kind !== 'evidence-changed').map(event => event.id) : [])
+    await store.queueWakeUp('thread', news('first'), word, undefined, needed(news('first')))
     const id = store.peek().items[0]!.id
     expect(store.peek().items[0]!.text).toBe(WATCHER_WAKE_UP_PROMPT)
     // Not sent, with the user's follow-up queued behind it while it was going.
@@ -100,24 +102,25 @@ it('sets a stopped wake-up for Watcher alone going again behind the user’s fol
     // A thread's own facts moving only keep the news current: they never send it again, mid-turn or otherwise.
     const evidence: WakeUpNews = { source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
       events: [{ id: 'evidence', requestId: randomUUID(), target: { hostId, threadId: 'worker' }, generation: 0, kind: 'evidence-changed', evidenceIds: ['fact'], revision: 'revision', observedAt: new Date().toISOString() }] }
-    await store.queueWakeUp('thread', evidence, word)
+    await store.queueWakeUp('thread', evidence, word, undefined, needed(evidence))
     expect(store.peek().items[0]).toMatchObject({ id, status: 'failed' })
-    await store.queueWakeUp('thread', news('second'), word)
+    await store.queueWakeUp('thread', news('second'), word, undefined, needed(news('second')))
     expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
     // A wake-up a Stop paused starts again on news that needs Watcher, too.
     await store.pause('thread', 'Synthetic stop')
-    await store.queueWakeUp('thread', evidence, word)
+    await store.queueWakeUp('thread', evidence, word, undefined, needed(evidence))
     expect(store.peek().items[0]).toMatchObject({ id, status: 'paused' })
     // So does a pull request's change, which its caller says needs Watcher, though it is evidence.
     await store.pause('thread', 'Synthetic stop')
-    await store.queueWakeUp('thread', evidence, word, undefined, true)
+    const checks: WakeUpNews = { ...evidence, events: evidence.events.map(event => ({ ...event, id: 'checks' })) }
+    await store.queueWakeUp('thread', checks, word, undefined, new Set(['checks']))
     expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
     await store.pause('thread', 'Synthetic stop')
-    await store.queueWakeUp('thread', news('third'), word)
+    await store.queueWakeUp('thread', news('third'), word, undefined, needed(news('third')))
     expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
-    // An unknown send is never sent twice.
+    // An unknown send is never sent twice: what it carried is let go, to be observed afresh.
     await store.claim(id); await store.settle(id, 'uncertain', 'Synthetic unknown send')
-    await store.reviveWakeUp(id, 'turn-after')
+    expect((await store.letGoWakeUp(id, word)).map(event => event.id).sort()).toEqual(['checks', 'first', 'second', 'third'])
     expect(store.peek().items).toEqual([])
     // A user's own follow-up is never revived.
     await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text: 'Synthetic paused follow-up', attachments: [] })
@@ -178,16 +181,16 @@ it('folds news into a wake-up no one is shown while it is sent, and keeps what t
     const word: WordWakeUp = items => queuedWakeUpText(items, { tool: false })
     const news = (id: string): WakeUpNews => ({ source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
       events: [{ id, requestId: randomUUID(), target: { hostId, threadId: `worker-${id}` }, generation: 0, kind: 'turn-finished', turnId: id, observedAt: new Date().toISOString() }] })
-    await store.queueWakeUp('thread', news('first'), word)
+    await store.queueWakeUp('thread', news('first'), word, undefined, new Set(['first']))
     const id = store.peek().items[0]!.id
     await store.claim(id)
-    await store.queueWakeUp('thread', news('second'), word)
+    await store.queueWakeUp('thread', news('second'), word, undefined, new Set(['second']))
     expect(store.peek().items.map(item => [item.id, item.status])).toEqual([[id, 'dispatching']])
-    await store.settleSent(id, new Set(['first']), word)
+    await store.settleSent(id, word)
     expect(store.peek().items).toHaveLength(1)
     expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
     expect(store.peek().items[0]!.news!.flatMap(item => 'events' in item ? item.events.map(event => event.id) : [])).toEqual(['second'])
-    await store.claim(id); await store.settleSent(id, new Set(['second']), word)
+    await store.claim(id); await store.settleSent(id, word)
     expect(store.peek().items).toEqual([])
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

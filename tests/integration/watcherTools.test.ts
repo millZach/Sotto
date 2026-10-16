@@ -20,6 +20,7 @@ import { deferred } from '../fixtures/deferred'
 import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { initializeGitRepository } from '../fixtures/gitRepository'
 import { followupStoreOf, storedFollowups } from '../fixtures/followupQueue'
+import { HIDDEN_WAKE_UP_ATTEMPTS } from '../../src/main/agents/hiddenWakeUp'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -809,10 +810,10 @@ it('keeps one wake-up no one is shown, folding news in while it is sent, and tri
     expect(hidden()).toHaveLength(1)
     release.resolve(); await finishing
   } finally { release.resolve() }
-  // Every try uses the one budget, and then it waits for Watcher's next turn of its own.
-  await vi.waitFor(() => expect(refused).toBe(4), { timeout: 20_000 })
+  // Every try uses the one budget: the first send, then, since the news folded in renewed it, four more. Then it waits.
+  await vi.waitFor(() => expect(refused).toBe(1 + HIDDEN_WAKE_UP_ATTEMPTS), { timeout: 25_000 })
   await new Promise(resolve => setTimeout(resolve, 7_000))
-  expect(refused).toBe(4)
+  expect(refused).toBe(1 + HIDDEN_WAKE_UP_ATTEMPTS)
   expect(hidden()).toHaveLength(1)
 }, 60_000)
 
@@ -820,11 +821,11 @@ it('never sends a wake-up no one is shown that holds only a thread’s own facts
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const worker = f.native(started.target.threadId)
+  // The news is recorded as not needing Watcher when observed, as a thread's own facts are, or what a prune leaves.
+  const asked = vi.spyOn(f.service, 'wakeAttention').mockReturnValue({ all: new Set(), fresh: new Set() })
   worker.requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
   f.workspace.adapters.codex.emit()
   await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
-  // What is left in it, as WatcherWakeUp reads it now, is only the worker's own facts, as after a prune.
-  const asked = vi.spyOn(f.service, 'wakeNeedsAttention').mockReturnValue(false)
   const master = f.workspace.registry.byThread(f.id)!.sessionId
   const sent = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master && command.watcherNews)
   await f.finish(f.id)

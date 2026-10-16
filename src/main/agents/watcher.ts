@@ -109,6 +109,7 @@ export class WatcherService implements WatcherControlHooks {
       reportsWork: hostId => hostId === options.control.hostId() || this.remote?.hosts().some(host => host.hostId === hostId && host.workSettled === true) === true,
       answers: (target, thread) => this.answeringOperation(target, thread),
       waitingEvents: () => options.control.waitingWatcherEvents(),
+      waitingAttention: () => options.control.waitingWatcherAttention(),
       canDeliver: target => options.control.canDeliverWatcherNews(target),
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
       prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),
@@ -177,6 +178,7 @@ export class WatcherService implements WatcherControlHooks {
   wakeDue(event: WatcherEvent): boolean { return this.wakes.due(event) }
   wakeReady(): boolean { return this.wakes.ready() }
   wakeNeedsAttention(events: readonly WatcherEvent[]): boolean { return this.wakes.needsAttention(events) }
+  wakeAttention(events: readonly WatcherEvent[]): { all: ReadonlySet<string>; fresh: ReadonlySet<string> } { return this.wakes.attentionOf(events) }
   forgetWakeEvents(events: readonly WatcherEvent[]): void {
     if (this.closed || !events.length) return
     const ids = new Set(events.map(event => event.id))

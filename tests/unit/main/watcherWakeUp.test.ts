@@ -632,10 +632,12 @@ it.each([true, false])('retains waiting checkpoint news during incomplete restar
   f.wakes.checkpoint(checkpoint(1)); await f.advance(2_000)
   const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
   if (!savedMetadata) f.record.wakeEventIds = []
+  // What the queue keeps of which waiting events needed Watcher (hiddenWakeUp.ts).
+  const attention = f.wakes.attentionOf(f.delivered.flatMap(news => news.events)).all
   f.wakes.close()
   const retained: boolean[] = [], deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
   const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
-    waitingEvents: () => f.delivered.flatMap(news => news.events), deliver, remember: async () => undefined,
+    waitingEvents: () => f.delivered.flatMap(news => news.events), waitingAttention: () => attention, deliver, remember: async () => undefined,
     prune: async () => { retained.push(recovered.due(saved)) }, schedule: callback => { callback(); return () => undefined } })
   cleanups.push(() => recovered.close())
   recovered.start(); await recovered.drained()
@@ -772,10 +774,12 @@ it('supersedes partially restored paired news only when a known owning-host fact
   owner.pullRequest(target, { url: 'https://github.com/o/r/pull/1', head: 'head', observedAt: capture.observedAt, availability: 'available', checks: 'passed' })
   f.wakes.start(); f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now())); await f.advance(2_000)
   const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
+  // What the queue keeps of which waiting events needed Watcher (hiddenWakeUp.ts).
+  const attention = f.wakes.attentionOf(f.delivered.flatMap(news => news.events)).all
   f.wakes.close()
   const deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
   const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
-    waitingEvents: () => f.delivered.flatMap(news => news.events), deliver, remember: async () => undefined,
+    waitingEvents: () => f.delivered.flatMap(news => news.events), waitingAttention: () => attention, deliver, remember: async () => undefined,
     prune: async () => undefined, schedule: callback => { callback(); return () => undefined } })
   cleanups.push(() => recovered.close())
   recovered.start()
@@ -1195,19 +1199,46 @@ it('saves nothing while a waiting wake-up holds only a thread’s own facts, and
     .toBe(observationDigest(f.wakes.evidence.read(centerTarget).map(fact => fact.id).sort()))
 })
 
-it('works out news only for watched threads, and reads Watcher’s queue only when its batch does not already say', async () => {
+it('works out news only for watched threads', async () => {
   const waiting = vi.fn((): WatcherEvent[] => [])
   const f = fixture(true, undefined, { waitingEvents: waiting }), { move } = gitFixture(f)
   // A thread no request or watch names: its facts stay current, and no news is worked out for it.
   const other: AgentThread = { ...structuredClone(f.thread), id: 'unwatched', title: 'Unwatched' }
   f.snapshot.threads.push(other)
-  const digest = vi.spyOn(f.wakes.evidence, 'digest')
+  const digest = vi.spyOn(f.wakes.evidence, 'digest'); waiting.mockClear()
   for (let n = 0; n < 5; n++) { other.messages = [{ id: `m-${n}`, role: 'assistant', text: 'x', createdAt: centerTime }]; f.wakes.observe() }
   expect(digest.mock.calls.filter(([target]) => target.threadId === 'unwatched')).toEqual([])
-  // The watched thread's turn ends with a change; the batch already holds that end, so the queue is not read for it.
+  void move
+})
+
+it('keeps which restored evidence needed Watcher from the queue, never guessing that a thread’s own facts did', async () => {
+  const seed = fixture(), { move } = gitFixture(seed)
+  seed.wakes.observe(); await seed.advance(2_000)
+  seed.checks('failed'); await seed.advance(2_000)
+  const pullRequest = seed.delivered.at(-1)!.events.find(event => event.kind === 'evidence-changed')!
+  seed.thread.status = 'idle'; seed.thread.lastTurn = { id: 'turn-1', status: 'completed' }; move({ changedFiles: 4 }); seed.wakes.observe(); await seed.advance(5_000)
+  const local = seed.delivered.at(-1)!.events.find(event => event.kind === 'evidence-changed')!
+  seed.wakes.close()
+  // After a restart the queue says which of its events needed Watcher when observed; the rest are a thread's own facts.
+  const restored = fixture(false, undefined, { waitingEvents: () => [pullRequest, local], waitingAttention: () => new Set([pullRequest.id]) })
+  restored.wakes.start()
+  expect(restored.wakes.needsAttention([pullRequest])).toBe(true)
+  expect(restored.wakes.needsAttention([local])).toBe(false)
+})
+
+it('marks a refresh of queued pull request news as needing Watcher, though not as news of its own', async () => {
+  const waiting: WatcherEvent[] = []
+  const f = fixture(true, undefined, { waitingEvents: () => waiting, waitingAttention: () => new Set(waiting.filter(event => f.wakes.needsAttention([event])).map(event => event.id)) })
+  const { move } = gitFixture(f)
   f.wakes.observe(); await f.advance(2_000)
+  f.checks('failed'); await f.advance(2_000)
+  // The pull request's news waits in Watcher's queue; the worker's turn then ends and its working copy moves.
+  waiting.push(...f.delivered.at(-1)!.events)
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }; f.wakes.observe()
-  const reads = waiting.mock.calls.length
-  move({ changedFiles: 8 })
-  expect(waiting.mock.calls.length).toBe(reads)
+  move({ changedFiles: 6 }); await f.advance(5_000)
+  const refreshed = f.delivered.at(-1)!.events.find(event => event.kind === 'evidence-changed')!
+  expect(waiting.some(event => event.id === refreshed.id)).toBe(false)
+  const { all, fresh } = f.wakes.attentionOf([refreshed])
+  expect(all.has(refreshed.id)).toBe(true)
+  expect(fresh.has(refreshed.id)).toBe(false)
 })

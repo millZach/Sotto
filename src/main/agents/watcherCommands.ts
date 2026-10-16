@@ -28,6 +28,8 @@ export interface WatcherControlHooks {
   wakeReady?(): boolean
   /** Whether this news needs Watcher's attention, as opposed to a thread's own facts that only ride with such news. */
   wakeNeedsAttention?(events: readonly WatcherEvent[]): boolean
+  /** Which of these events need Watcher, and which of those are news in themselves rather than evidence kept current. */
+  wakeAttention?(events: readonly WatcherEvent[]): { all: ReadonlySet<string>; fresh: ReadonlySet<string> }
   /** News whose wake-up was let go with its send unknown: forget it was told, so what is still true is told afresh. */
   forgetWakeEvents?(events: readonly WatcherEvent[]): void
   pullRequestObserved?(read: PullRequestObservation): void
