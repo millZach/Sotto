@@ -924,10 +924,22 @@ export class AgentControl {
     if (thread.activities === undefined) return undefined
     return this.dependencies.host.paneActivities?.(thread.id, thread.activities) ?? thread.activities
   }
-  /** Display only; every native state, receipt and history reader keeps the complete provider message. */
+  /**
+   * Display only; every native state, receipt and history reader keeps the complete provider message. Read for a thread
+   * a window or phone is reading, never for every thread on every publish.
+   */
   private presentedMessages(thread: AgentThread): readonly AgentMessage[] {
-    if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') return thread.messages
+    if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') {
+      return thread.continuedFrom?.handover !== undefined && this.continuationDisplay ? this.continuationDisplay(thread) : thread.messages
+    }
     return this.watcherMessageDisplay?.project(this.state.host.hostId, thread.id, thread.messages) ?? thread.messages
+  }
+  /** How a continued thread's first message is shown (ADR-0088); set only while the Owl list turns continuing on. */
+  private continuationDisplay: ((thread: AgentThread) => readonly AgentMessage[]) | undefined
+  /** Shows a continued thread's handover beside the user's words in every detail read from now on. Returns the unhook. */
+  useContinuationDisplay(display: (thread: AgentThread) => readonly AgentMessage[]): () => void {
+    this.continuationDisplay = display
+    return () => { if (this.continuationDisplay === display) this.continuationDisplay = undefined }
   }
   /** Which threads main pushes detail for: what the window says it is looking at, plus work it must see land. */
   private detailTargets(): string[] {

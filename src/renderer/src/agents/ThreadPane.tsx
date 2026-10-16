@@ -27,6 +27,7 @@ import { WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchedNote, WatchHeaderToggle, WatchToast } from '../watcher/WatchControls'
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { DelegatedBy, DelegationComposerNote } from './DelegationCards'
+import { ContinueComposerNote, ContinueNow } from './ContinueThread'
 
 type Command = AgentConnection['command']
 
@@ -270,6 +271,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
+      {/* A turn stopped at its limit offers the other providers to continue on (ADR-0088; Owl only). */}
+      {ownPane ? null : <ContinueNow thread={thread} state={state} onStart={focusAnswerComposer} />}
       {!isThreadClosed(thread) && !thread.remoteHost && !ownPane ? <CloudIphoneRequest threadId={thread.id} threadTitle={thread.title} onAnswer={focusAnswerComposer} /> : null}
       {/* Answers saved for questions no live card shows, such as ones the provider closed while Sotto was shut. */}
       <RequestDraftRecovery owner={{ kind: 'thread', ownerId: thread.id, providerId: row.providerId ?? state.configuration.provider }}
@@ -297,6 +300,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {ownPane ? null : <WatchedNote threadId={thread.id} title={thread.title} />}
         {/* What Stop also stops, or what a turn here does to the thread that delegated (ADR-0081; Owl only). */}
         {ownPane ? null : <DelegationComposerNote thread={thread} state={state} />}
+        {/* Just continued elsewhere: this thread can still be sent to (ADR-0088; Owl only). */}
+        {ownPane ? null : <ContinueComposerNote thread={thread} />}
         <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
           connected={rowConnected && !closed} blocked={threadBusy} command={command} />
       </div>

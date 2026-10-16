@@ -1,6 +1,8 @@
 import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentModel, type AgentProject, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { DELEGATION_LEVELS_MAX } from '../../../shared/delegation'
+import { continuedWordsOf } from '../../../shared/continueThread'
+import { HANDOVER_LEAD } from '../../../shared/handover'
 import { babysittingWord } from './babysitting'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 
@@ -117,6 +119,16 @@ export function workingLabel(since: number, now: number): string {
   return `${Math.floor(hours / 24)}d`
 }
 
+/**
+ * A continued thread's first message begins with the handover of the thread it continues (ADR-0088), which no row
+ * shows: its excerpt is the user's words after it, or, where the excerpt was cut before they began, none at all.
+ */
+function continuedExcerpt<T extends { readonly text: string }>(thread: AgentThread, excerpt: T | undefined): T | undefined {
+  if (excerpt === undefined || thread.continuedFrom?.handover === undefined || !excerpt.text.startsWith(HANDOVER_LEAD)) return excerpt
+  const words = continuedWordsOf(thread, excerpt.text)
+  return words === undefined ? undefined : { ...excerpt, text: words }
+}
+
 /** When the run on screen began: the provider's running turn if it reported one, otherwise your last prompt. */
 function runStartedAt(thread: AgentThread, lastUserAt: number, activityAt: number): number {
   // The shell stream carries the running turn's start in the summary; a full state still has the record.
@@ -130,7 +142,8 @@ function describe(state: AgentState, thread: AgentThread, now: number): ThreadRo
   const provider = model?.provider ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : state.host.name)
   // A row's history facts come from the thread's summary: the shell stream carries it in place of the
   // messages, and a thread whose messages did arrive derives exactly the same thing.
-  const { lastAssistant, lastUser, lastMessageAt } = threadSummaryOf(thread)
+  const { lastAssistant, lastUser: lastUserExcerpt, lastMessageAt } = threadSummaryOf(thread)
+  const lastUser = continuedExcerpt(thread, lastUserExcerpt)
   const closed = isThreadClosed(thread)
   const pending = closed ? undefined : thread.requests.find(request => request.kind === 'permission') ?? thread.requests[0]
   const decision: ThreadRequestView | undefined = pending === undefined ? undefined : { requestId: pending.id, kind: pending.kind, text: pending.text }

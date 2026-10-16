@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { AgentHostSnapshot, AgentMessage, AgentThread, HandoverCounts } from '../../shared/agents'
+import type { AgentHostSnapshot, AgentMessage, AgentThread, HandoverCounts, ProviderId } from '../../shared/agents'
 import type { WatcherHandoverProvenance, WatcherIdentity, WatcherRequest } from '../../shared/watcher'
 import type { HandoverSummary } from './handover'
 import { projectWatcherMessages } from './watcherMessageDisplay'
@@ -16,9 +16,12 @@ import { watcherMessageRequests, watcherTextAsTyped } from './watcherRequestNote
 /** The line after the handover that says where the user's own message begins. */
 export const HANDOVER_CLOSE = '[End of the handover. The user’s message to Watcher follows.]'
 
-/** What goes ahead of the user's words: the handover, then the line that closes it. */
-export function handoverPrefix(text: string): string {
-  return `${text}\n\n${HANDOVER_CLOSE}\n\n`
+/**
+ * What goes ahead of the user's words: the handover, then the line that closes it. Watcher's says the user's message to
+ * Watcher follows; a continued thread's says the user's message does (ADR-0088).
+ */
+export function handoverPrefix(text: string, close: string = HANDOVER_CLOSE): string {
+  return `${text}\n\n${close}\n\n`
 }
 
 /** A handover's summary as counts, the only part of it that is kept or shown beside its words. */
@@ -30,12 +33,19 @@ export function handoverCounts(summary: HandoverSummary): HandoverCounts {
 
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
 
+/** How long a prefix is and its digest: the only record kept of which characters of a message were a handover. */
+export function handoverPrefixProof(prefix: string): { readonly prefixLength: number; readonly prefixDigest: string } {
+  return { prefixLength: prefix.length, prefixDigest: sha256(prefix) }
+}
+/** What a split needs: the recorded length and digest, and what to show beside the words it splits off. */
+export interface HandoverSplitProof { readonly prefixLength: number; readonly prefixDigest: string; readonly provider: ProviderId; readonly counts: HandoverCounts }
+
 export function watcherHandoverProvenance(prefix: string, source: WatcherIdentity, counts: HandoverCounts): WatcherHandoverProvenance {
   return { prefixLength: prefix.length, prefixDigest: sha256(prefix), source: source.target, provider: source.provider, counts }
 }
 
 /** The handover a sent message begins with, when its words still match the record; otherwise the message is shown whole. */
-function split(message: AgentMessage, proof: WatcherHandoverProvenance): AgentMessage {
+export function splitHandover(message: AgentMessage, proof: HandoverSplitProof): AgentMessage {
   const length = proof.prefixLength
   if (!Number.isSafeInteger(length) || length <= 0 || length > message.text.length) return message
   const prefix = message.text.slice(0, length)
@@ -73,7 +83,7 @@ export function watcherHandoversShown(snapshot: AgentHostSnapshot, requests: rea
     if (!proof) return message
     const cached = shownCopies.get(message)
     if (cached?.proof === proof && cached.text === message.text) return cached.shown
-    const result = split(message, proof)
+    const result = splitHandover(message, proof)
     shownCopies.set(message, { text: message.text, proof, shown: result })
     return result
   }
@@ -95,7 +105,7 @@ export function watcherMessageAsShown(hostId: string, threadId: string, message:
   if (message.role === 'assistant') { const text = watcherReplyAsShown(message); return text === message.text ? message : { ...message, text } }
   if (message.role !== 'user') return message
   const proof = proofsOf(requests).get(`${threadId}\n${message.id}`)
-  let shown = proof ? split(message, proof) : message
+  let shown = proof ? splitHandover(message, proof) : message
   if (shown.handover) { const { handover: _handover, ...words } = shown; void _handover; shown = words }
   const request = watcherMessageRequests(requests)(threadId, shown.id)
   if (request) { const text = watcherTextAsTyped(shown.text, request); if (text !== shown.text) shown = { ...shown, text } }

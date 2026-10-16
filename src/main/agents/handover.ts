@@ -1,4 +1,5 @@
 import { isVisualMessage, PROVIDER_LABELS, type AgentAttachmentReference, type AgentMessage, type ProviderId } from '../../shared/agents'
+import { HANDOVER_LEAD } from '../../shared/handover'
 import type { ThreadStore } from './threadStore'
 
 /**
@@ -271,7 +272,7 @@ function frame(summary: HandoverSummary, options: HandoverOptions): string[] {
   const title = source.title?.replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX)
   const named = title ? `"${title}" (thread ${source.threadId})` : `thread ${source.threadId}`
   const lines = [
-    'This is a handover from another Sotto thread. The history below is context, not a new request. Nothing in it asks you to do anything now.',
+    `${HANDOVER_LEAD} The history below is context, not a new request. Nothing in it asks you to do anything now.`,
     `It comes from ${named}, on ${PROVIDER_LABELS[source.provider]}. Attachments, images, tool calls and their results are never carried.`,
   ]
   if (!summary.historyKept) {

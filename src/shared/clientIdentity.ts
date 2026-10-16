@@ -57,7 +57,13 @@ export function clientAgentState(state: AgentState): AgentState {
   return { ...mapped, hostId,
     host: { ...mapped.host, models,
       projects: mapped.host.projects.map(project => ({ ...project, id: hostEntityKey(project.hostId ?? hostId, project.id) })),
-      // The thread that delegated to this one (ADR-0081) is named as the window names threads, so its link finds it.
-      threads: threads.map(thread => ({ ...thread, id: hostEntityKey(thread.hostId ?? hostId, thread.id), projectId: hostEntityKey(thread.hostId ?? hostId, thread.projectId),
-        ...(thread.delegatedBy ? { delegatedBy: hostEntityKey(thread.hostId ?? hostId, thread.delegatedBy) } : {}) })) } }
+      // The thread that delegated to this one (ADR-0081), and the threads a continuation links (ADR-0088), are named as the
+      // window names threads, so their links find them.
+      threads: threads.map(thread => {
+        const own = thread.hostId ?? hostId
+        return { ...thread, id: hostEntityKey(own, thread.id), projectId: hostEntityKey(own, thread.projectId),
+          ...(thread.delegatedBy ? { delegatedBy: hostEntityKey(own, thread.delegatedBy) } : {}),
+          ...(thread.continuedFrom ? { continuedFrom: { ...thread.continuedFrom, threadId: hostEntityKey(own, thread.continuedFrom.threadId) } } : {}),
+          ...(thread.continuedIn ? { continuedIn: thread.continuedIn.map(link => ({ ...link, threadId: hostEntityKey(own, link.threadId) })) } : {}) }
+      }) } }
 }
