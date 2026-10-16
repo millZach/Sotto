@@ -13,10 +13,17 @@ const read = (name, fallback) => { try { return JSON.parse(readFileSync(path(nam
 const write = (name, value) => writeFileSync(path(name), JSON.stringify(value))
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify(frame) + '\n')
 const violate = reason => appendFileSync(path('violations.jsonl'), JSON.stringify({ reason }) + '\n')
+// The version this fake answers as, and whether it is older than a given one, for the shapes that changed between them.
+const fakeVersion = () => read('script.json', {}).cliVersion ?? '3000.11.92'
+const olderThan = target => {
+ const [a, b] = [fakeVersion(), target].map(version => version.split('.').map(Number))
+ for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index] < b[index]
+ return false
+}
 // Every process Sotto starts says what it is, so a test can count the processes a send costs.
 record({ method: 'fixture/spawn', params: { kind: process.argv.includes('--version') ? 'version' : process.argv.includes('plugins') ? 'plugins'
  : process.argv.includes('mcp') ? 'mcp' : 'acp' } })
-if (process.argv.includes('--version')) { process.stdout.write('devin ' + (read('script.json', {}).cliVersion ?? '3000.11.92') + ' (7f4e64980e22)\n'); process.exit(0) }
+if (process.argv.includes('--version')) { process.stdout.write('devin ' + fakeVersion() + ' (7f4e64980e22)\n'); process.exit(0) }
 if (process.argv.includes('plugins') && process.argv.includes('list')) { process.stdout.write('No plugins installed.\n'); process.exit(0) }
 if (process.argv.includes('mcp') && process.argv.includes('list')) {
  process.stdout.write(read('integrations.json', {}).enabledMcp
@@ -131,7 +138,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   const initialized = () => result(frame.id, { protocolVersion: script.protocolVersion ?? 1, agentInfo: { name: 'affogato', title: 'Devin Agent', version: '0.0.0-dev' },
    agentCapabilities: { loadSession: true, promptCapabilities: { image: true, audio: false, embeddedContext: true }, sessionCapabilities: { list: {}, delete: {} },
     // 3000.11.1 and later attach servers passed on session/new and session/load; `noHttpMcp` answers as a client that cannot.
-    ...(script.noHttpMcp ? {} : { mcpCapabilities: { http: true, sse: true } }) },
+    ...(script.noHttpMcp ? {} : { mcpCapabilities: { http: !olderThan('3000.11.1'), sse: !olderThan('3000.11.1') } }) },
    authMethods: [{ id: 'devin-browser', name: 'Log in with browser' }] })
   // A Devin that takes this long to answer its first start, as a cold CLI can; later starts answer at once.
   if (script.delayInitialize) { write('script.json', { ...script, delayInitialize: 0 }); setTimeout(initialized, script.delayInitialize) } else initialized()
@@ -144,10 +151,13 @@ createInterface({ input: process.stdin }).on('line', line => {
   // it out as 3000.10.31 did, and an object is read back exactly. `newBlock` adds a block Sotto never checked. The
   // defaults 3000.11.92 adds to every readback come with it, and `readback` overrides any of them.
   const { otel, ...older } = config
-  const readOtel = script.otel === undefined || script.otel === 'profile' ? { enabled: true, ...otelDefaults, ...otel }
+  // An older version reads back as it did: no `otel` before 3000.11.1, and none of 3000.11.92's new defaults before that.
+  const readOtel = script.otel === undefined && olderThan('3000.11.1') ? undefined : script.otel === undefined || script.otel === 'profile' ? { enabled: true, ...otelDefaults, ...otel }
    : script.otel === 'default' ? { enabled: true, ...otelDefaults } : script.otel === 'absent' ? undefined : script.otel
-  const defaults = { proxy: { mode: 'system', url: null, no_proxy: null, gzip: true }, disabled_tools: [], keymap: {}, typewriter: true, local_tools_bypass_permissions: false,
-   agent: { model: null, subagent_model: null, preferred_family_models: {}, show_history_on_continue: true, thinking: { mode: 'auto' }, model_mixture: null, compaction_threshold_tokens: null, codex_tools: false } }
+  const agent = { model: null, preferred_family_models: {}, show_history_on_continue: true, thinking: { mode: 'auto' }, model_mixture: null, compaction_threshold_tokens: null, codex_tools: false }
+  const defaults = olderThan('3000.11.92') ? { proxy: { mode: 'system', url: null, no_proxy: null }, disabled_tools: [], keymap: {}, agent }
+   : { proxy: { mode: 'system', url: null, no_proxy: null, gzip: true }, disabled_tools: [], keymap: {}, typewriter: true, local_tools_bypass_permissions: false,
+    agent: { ...agent, subagent_model: null } }
   result(frame.id, { config: { ...defaults, ...older, ...script.readback, ...(readOtel ? { otel: readOtel } : {}), ...(script.newBlock ? { future_block: { enabled: true } } : {}) }, configPath })
  } else if (frame.method === 'session/new') {
   if (!p.cwd || !validServers(p.mcpServers, script)) violate('Invalid session setup')

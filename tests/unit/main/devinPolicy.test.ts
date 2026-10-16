@@ -162,6 +162,19 @@ it('reads the Source line 3000.11.92 adds to each server, and still refuses an e
   }
 })
 
+it('says a Devin that reads back an older CLI’s defaults is older than the one Sotto checked', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
+  const config = JSON.parse(await readFile(profile.path, 'utf8'))
+  const agent = { model: null, preferred_family_models: {}, show_history_on_continue: true, thinking: { mode: 'auto' }, model_mixture: null, compaction_threshold_tokens: null, codex_tools: false }
+  const older = `This Devin version is older than the one Sotto checked. Nothing was sent, and your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} or newer, then reconnect Devin.`
+  for (const read of [{ ...config, proxy: { mode: 'system', url: null, no_proxy: null } }, { ...config, agent }]) {
+    expect(() => verifyDevinPolicy({ config: read, configPath: profile.path }, profile)).toThrow(older)
+  }
+  // A known block read back wrong still says so, rather than naming a version.
+  expect(() => verifyDevinPolicy({ config: { ...config, agent, shell: { setup_complete: true } }, configPath: profile.path }, profile)).toThrow(/did not confirm/u)
+})
+
 it('confirms the defaults 3000.11.92 reads back, and refuses any of them changed', async () => {
   const { userData, cwd, nativeConfig } = await setup()
   const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)

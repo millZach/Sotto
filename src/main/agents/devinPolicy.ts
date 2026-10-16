@@ -96,7 +96,14 @@ const presentationFields = new Set(['typewriter', 'theme_mode', 'theme_auto_dete
   'skip_workspace_trust', 'notify', 'mouse_capture', 'show_hints'])
 
 /** How a readback compares with the owned profile. `newer` is a top-level block Sotto has never checked. */
-type Readback = 'matches' | 'differs' | 'telemetry' | 'newer'
+type Readback = 'matches' | 'differs' | 'telemetry' | 'newer' | 'older'
+/**
+ * The defaults a Devin CLI older than the floor reads back where 3000.11.92 reads back more: its proxy block without
+ * `gzip`, and its agent block without `subagent_model`. Connecting checks the version once, but every Devin process
+ * reads its profile back, so a CLI replaced by an older one after connecting is caught here, before a session is made.
+ */
+const OLDER_PROXY = { mode: 'system', url: null, no_proxy: null }
+const AGENT_FIELDS = ['model', 'subagent_model', 'preferred_family_models', 'show_history_on_continue', 'thinking', 'model_mixture', 'compaction_threshold_tokens', 'codex_tools']
 
 function compareNormalizedProfile(config: Record<string, unknown>, policy: Record<string, unknown>): Readback {
   if (!Object.entries(policy).every(([key, value]) => key === 'otel' || isDeepStrictEqual(config[key], value))) return 'differs'
@@ -104,21 +111,25 @@ function compareNormalizedProfile(config: Record<string, unknown>, policy: Recor
   const otel = Object.hasOwn(config, 'otel') ? compareOtel(config.otel) : 'matches'
   if (otel === 'telemetry') return 'telemetry'
   let unknown = otel === 'newer'
+  let older = false
   for (const [key, value] of Object.entries(config)) {
     if (Object.hasOwn(policy, key)) continue
-    if (Object.hasOwn(normalizedRoutes, key)) { if (!isDeepStrictEqual(value, normalizedRoutes[key])) return 'differs' }
+    if (key === 'proxy' && isDeepStrictEqual(value, OLDER_PROXY)) older = true
+    else if (Object.hasOwn(normalizedRoutes, key)) { if (!isDeepStrictEqual(value, normalizedRoutes[key])) return 'differs' }
     else if (key === 'agent') {
       const agent = object(value)
-      if (!agent || !isDeepStrictEqual(Object.keys(agent).sort(), ['model', 'subagent_model', 'preferred_family_models', 'show_history_on_continue', 'thinking', 'model_mixture', 'compaction_threshold_tokens', 'codex_tools'].sort())
-        || agent.model !== null || agent.subagent_model !== null || !isDeepStrictEqual(agent.preferred_family_models, {}) || agent.model_mixture !== null
+      const fields = agent ? Object.keys(agent).sort() : []
+      if (isDeepStrictEqual(fields, AGENT_FIELDS.filter(field => field !== 'subagent_model').sort())) older = true
+      else if (!isDeepStrictEqual(fields, [...AGENT_FIELDS].sort()) || agent!.subagent_model !== null) return 'differs'
+      if (!agent || agent.model !== null || !isDeepStrictEqual(agent.preferred_family_models, {}) || agent.model_mixture !== null
         || agent.compaction_threshold_tokens !== null || agent.codex_tools !== false || typeof agent.show_history_on_continue !== 'boolean') return 'differs'
       const thinking = object(agent.thinking)
       if (!thinking || Object.keys(thinking).length !== 1 || typeof thinking.mode !== 'string') return 'differs'
     } else if (presentationFields.has(key)) { if (value !== null && !['string', 'boolean'].includes(typeof value)) return 'differs' }
     else unknown = true
   }
-  // Judged last, so a block Sotto knows that reads back wrong is reported as that rather than as a newer version.
-  return unknown ? 'newer' : 'matches'
+  // Judged last, so a block Sotto knows that reads back wrong is reported as that rather than as another version.
+  return older ? 'older' : unknown ? 'newer' : 'matches'
 }
 
 const preparing = new Map<string, Promise<void>>()
@@ -221,6 +232,7 @@ export function verifyDevinPolicy(result: unknown, profile: DevinProfile): void 
     ? compareNormalizedProfile(config, policyFor(profile.allows)) : 'differs'
   // Refusals, not garbled replies: DevinRpc passes them on as they are, so these words reach the provider's tile.
   if (readback === 'telemetry') throw new DevinRefusal('Devin reports telemetry settings that Sotto’s profile does not set, such as a collector to send to. Nothing was sent, and your threads are kept. Remove the otel settings Devin reads, then reconnect.')
+  if (readback === 'older') throw new DevinRefusal(`This Devin version is older than the one Sotto checked. Nothing was sent, and your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} or newer, then reconnect Devin.`)
   if (readback === 'newer') throw new DevinRefusal(`This Devin version is newer than the one Sotto checked, and it has settings Sotto has not checked. Nothing was sent, and your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} until Sotto checks this version.`)
   if (readback !== 'matches') throw new DevinRefusal('Devin did not confirm the Sotto approval profile. Your thread is kept. Reconnect with the supported Devin version.')
 }

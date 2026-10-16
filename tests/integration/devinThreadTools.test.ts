@@ -70,6 +70,18 @@ describe('Devin thread tools', () => {
     expect(await send(f, id)).toEqual({ accepted: true })
   })
 
+  it.each(['3000.10.31', '3000.11.3'])('refuses a thread on a Devin replaced by %s after connecting, before any session is given Sotto’s servers', async version => {
+    const f = withTools(await devinFixture(undefined, 5000, undefined, {}, new Map(), { productionPace: true }))
+    cleanup.push(() => f.cleanup())
+    expect((await f.host.connect()).connected).toBe(true)
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await f.script({ cliVersion: version })
+    await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: randomUUID(), projectId: f.projectId, modelId: f.modelId, title: 'Downgraded' }))
+      .rejects.toThrow('This Devin version is older than the one Sotto checked. Nothing was sent, and your threads are kept. Use Devin CLI 3000.11.92 or newer, then reconnect Devin.')
+    // Only the catalog session from connecting: the downgraded process opened none.
+    expect(await given(f, 'session/new')).toEqual([[]])
+  })
+
   it('gives no servers to a Devin that does not take HTTP servers, and says so on the thread', async () => {
     const { f, id } = await setUp({ noHttpMcp: true })
     expect(await given(f, 'session/new')).toEqual([[], []])
