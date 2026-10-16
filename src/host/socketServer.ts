@@ -17,6 +17,7 @@ import { REMOTE_PERMISSION_DENIED } from '../main/agents/authority'
 import { commandFromProtocolV1, managementCommandRefusal } from '../shared/hostProtocol'
 import { REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal, remoteUsageRefusal } from './remoteCommands'
 import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageReadBeforeHistory, type UsageLocalHostRead } from '../shared/usageDashboard'
+import { hostMachineReportSchema } from '../shared/hostFacts'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { SocketFrames } from './socketFrames'
 import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
@@ -205,7 +206,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'usage-dashboard' || (service.supportsUsage === true && service.usageRead !== undefined && service.usageRefresh !== undefined && service.usageClear !== undefined))
     // Usage's place and window filters (ADR-0083) arrived with history import: an older host's strict query refuses them.
     && (feature !== 'usage-history' || (service.supportsUsage === true && service.usageRead !== undefined))
-    && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true))
+    && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true)
+    // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
+    // and the desktop's own phone listener, which serves no desktop, never does.
+    && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined)))
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => (peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature)))
     .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
@@ -817,6 +821,9 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'subagent-assignments':
         if (!service.subagentAssignments) throw new Refusal('invalid_request')
         return toolRead(() => service.subagentAssignments!(request.request))
+      case 'host-facts':
+        if (!offers(peer, 'host-facts') || !service.hostFacts) throw new Refusal('invalid_request')
+        try { return hostMachineReportSchema.parse(await service.hostFacts()) } catch { throw new Refusal('unavailable') }
       case 'usage-read':
         if (!offers(peer, 'usage-dashboard') || !service.usageRead) throw new Refusal('invalid_request')
         try { return usageForPeer(peer, usageLocalHostReadSchema.parse(await service.usageRead(request.query))) } catch { throw new Refusal('unavailable') }
