@@ -939,3 +939,47 @@ describe('a question’s pages (ADR-0085)', () => {
     expect(router.questionPageOpening({ threadId: hostEntityKey(REMOTE, 'thread'), requestId: 'question', token })).toBeNull()
   })
 })
+
+describe('a remote thread after its host restarts (#1098)', () => {
+  function remoteDetails() {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const connect = () => {
+      const host = fixture(REMOTE, 'remote')
+      let push: ((detail: AgentThreadDetailUpdate) => void) | undefined
+      host.connection.subscribeDetail = listener => { push = listener; return () => { push = undefined } }
+      router.add(host.connection)
+      return { host, push: (detail: AgentThreadDetailUpdate) => push!(detail) }
+    }
+    const forwarded: AgentThreadDetailUpdate[] = []
+    router.subscribeThreadDetail(detail => forwarded.push(detail))
+    return { router, connect, forwarded }
+  }
+  const whole = (revision: number) => ({ threadId: 'thread', revision, messages: [] })
+  const delta = (baseRevision: number, revision: number) => ({ threadId: 'thread', baseRevision, revision, messageDeltas: [], activityDeltas: [] })
+
+  it('gives the window revisions that never go back when a restarted host counts them again from one', async () => {
+    const { router, connect, forwarded } = remoteDetails()
+    const before = connect()
+    before.push(whole(40)); before.push(delta(40, 41))
+    expect(forwarded.map(item => item.revision)).toEqual([40, 41])
+    router.remove(REMOTE)
+    // The host restarted: its count starts again, and every revision it sends now lands past the window's last.
+    const after = connect()
+    after.push(whole(2)); after.push(delta(2, 3))
+    expect(forwarded.slice(2)).toEqual([whole(42), delta(42, 43)].map(item => ({ ...item, threadId: hostEntityKey(REMOTE, 'thread') })))
+    // A read the window asks for is on the same line.
+    after.host.detail.mockResolvedValueOnce(whole(3))
+    expect((await router.threadDetail(hostEntityKey(REMOTE, 'thread')))?.revision).toBe(43)
+    router.dispose()
+  })
+
+  it('leaves revisions as they are while a reconnected host carries on counting past them', () => {
+    const { router, connect, forwarded } = remoteDetails()
+    connect().push(whole(5))
+    router.remove(REMOTE)
+    const after = connect()
+    after.push(whole(9)); after.push(delta(9, 10))
+    expect(forwarded.map(item => item.revision)).toEqual([5, 9, 10])
+    router.dispose()
+  })
+})

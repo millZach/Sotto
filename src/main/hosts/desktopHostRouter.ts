@@ -5,6 +5,7 @@ import { parsePublicProviderEntityId } from '../../shared/agents'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts } from '../../shared/watcherHost'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
+import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import { agentCommandSchema, defaultNewThreadModelId, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
@@ -174,6 +175,13 @@ export class DesktopHostRouter {
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly changeListeners = new Set<() => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
+  /**
+   * Each remote thread's revisions as the window is given them. A host counts a thread's revisions in memory, so after
+   * it restarts they start again from one, and a window that held the thread at a higher revision threw every newer
+   * history away until the count caught up (#1098). A connection's first whole detail of a thread moves that
+   * connection's revisions past the last one the window was given; within a connection they all move by that amount.
+   */
+  private readonly detailLines = new Map<string, { connection: DesktopHostConnection; offset: number; last: number }>()
   private selectedHostId: string | undefined
   private selectedThreadId: string | null | undefined
   private selectedProjectId: string | null = null
@@ -352,7 +360,7 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote' && connection.service.subscribeWatcher) off.push(connection.service.subscribeWatcher(() => this.watcherChanged(connection.hostId, false)))
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
       if (!this.watcherAvailable(connection, detail.threadId)) return
-      const scoped = mapHostReferences(detail, id => hostEntityKey(connection.hostId, id))
+      const scoped = this.onDetailLine(connection, mapHostReferences(detail, id => hostEntityKey(connection.hostId, id)))
       for (const listener of this.detailListeners) listener(scoped)
     }))
     return off
@@ -507,7 +515,25 @@ export class DesktopHostRouter {
   async threadDetail(threadId: string): Promise<AgentThreadDetail | null> {
     const { connection, id } = this.target(threadId)
     const detail = await connection.detail(id!)
-    return detail ? mapHostReferences(detail, value => hostEntityKey(connection.hostId, value)) : null
+    return detail ? this.onDetailLine(connection, mapHostReferences(detail, value => hostEntityKey(connection.hostId, value))) : null
+  }
+  /** A remote thread's detail or delta with its revisions on the thread's line for the window; this computer's go as they are. */
+  private onDetailLine<T extends AgentThreadDetailUpdate>(connection: DesktopHostConnection, update: T): T {
+    if (connection.kind !== 'remote') return update
+    let line = this.detailLines.get(update.threadId)
+    if (isAgentThreadDetailDelta(update)) {
+      // A delta follows a whole detail on its own connection; one that arrives first applies to nothing the window holds.
+      if (!line || line.connection !== connection) return update
+      line.last = Math.max(line.last, update.revision + line.offset)
+      return line.offset === 0 ? update : { ...update, baseRevision: update.baseRevision + line.offset, revision: update.revision + line.offset }
+    }
+    if (!line) this.detailLines.set(update.threadId, line = { connection, offset: 0, last: update.revision })
+    else if (line.connection !== connection) {
+      line.connection = connection
+      if (update.revision + line.offset <= line.last) line.offset = line.last + 1 - update.revision
+    }
+    line.last = Math.max(line.last, update.revision + line.offset)
+    return line.offset === 0 ? update : { ...update, revision: update.revision + line.offset }
   }
   requestAnswerRecovery(threadId: string, providerId: ProviderId): RequestAnswerRecovery {
     const { connection, id } = this.target(threadId)
