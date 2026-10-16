@@ -415,6 +415,11 @@ export class WatcherWakeUp {
     if (this.evidence.checkpoint(target, read)) this.evidenceChanged(target, before)
     this.options.changed?.()
   }
+  /**
+   * Whether each of these events may still go, asked as one pass: main prunes its queued wake-ups after every pass, and
+   * asking for each queued event alone read the merged snapshot and the record once per event (#1070).
+   */
+  dueAll(events: readonly WatcherEvent[]): boolean[] { return this.withPassReads(() => events.map(event => this.due(event))) }
   due(event: WatcherEvent): boolean {
     if (!this.started || this.closed) return false
     const record = this.record(), standing = this.workers().find(item => item.request.standingWatchId === event.requestId)

@@ -34,7 +34,7 @@ describe('updating a host from the Threads page (ADR-0040)', () => {
     fixture.bootStart = { supported: true, installed: true, enabled: true, active: true, linger: true, nodeDrift: false }
     const remote = await add()
     expect(fixture.manager.updateCandidates()).toEqual([expect.objectContaining({ id: remote.id, boot: true })])
-    const updates = new HostUpdates({ version: packageVersion, threads: { working: () => [], interrupt: async () => undefined, subscribe: () => () => undefined },
+    const updates = new HostUpdates({ version: packageVersion, threads: { working: () => [], workingNow: () => [], interrupt: async () => undefined, subscribe: () => () => undefined },
       hosts: { candidates: () => fixture.manager.updateCandidates(), run: async () => ({ type: 'error', reason: 'update-failed' }), restart: async () => ({ type: 'error', reason: 'update-failed' }), subscribe: listener => fixture.manager.subscribe(() => listener()) } })
     expect(updates.state()).toEqual([expect.objectContaining({ id: remote.id, phase: 'needs', boot: true })])
     updates.dispose()
@@ -116,7 +116,7 @@ describe('updating a host from the Threads page (ADR-0040)', () => {
     const asked: string[] = []
     const updates = new HostUpdates({ version: RUNNING, releasesUrl: 'https://releases.example/download',
       probe: async url => { asked.push(url); return url.includes(`/v${WAITING}/Sotto-host-${WAITING}-linux-x64.tar.gz`) },
-      threads: { working: () => [], interrupt: async () => undefined, subscribe: () => () => undefined },
+      threads: { working: () => [], workingNow: () => [], interrupt: async () => undefined, subscribe: () => () => undefined },
       hosts: { candidates: () => fixture.manager.updateCandidates(), run: (id, operation, options) => fixture.manager.runUpdate(id, operation, options),
         restart: (id, version, options) => fixture.manager.restartForUpdate(id, version, options), subscribe: listener => fixture.manager.subscribe(() => listener()) } })
     // Nothing is behind this computer's own version; the update it is downloading brings the host's next one.
