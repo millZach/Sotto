@@ -41,6 +41,9 @@ interface World {
   echoes: Set<string>; attentionSince: boolean; automatic: number; tolds: number
   /** Holds the next wake-up's save open until released, so news can come in the middle of it. */
   holdSave?: { entered: () => void; release: Promise<void> } | undefined
+  /** Holds the next save of told IDs open until released, which holds the batcher's lane. */
+  holdRemember?: { entered: () => void; release: Promise<void> } | undefined
+  violations: string[]
 }
 const watcherId = () => 'center'
 const hidden = (w: World): QueuedFollowup[] => w.store.peek().items.filter(item => item.threadId === watcherId() && isWatcherOnlyWakeUp(item))
@@ -59,7 +62,7 @@ async function world(): Promise<World> {
   const snapshot: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), connected: true, hostId: centerTarget.hostId,
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, observe: true }, threads: [worker, watcher], projects: [{ id: 'project', title: 'Project', path: 'synthetic' }] }
   const w = { directory, record, snapshot, worker, watcher, clock: Date.parse('2026-10-11T10:00:00Z'), timers: new Set(), writes: 0, failNextWrite: false,
-    turn: 0, checks: 'passed', sends: [], told: new Set(), forgotten: new Set(), uncertain: new Map(), reconciling: new Set(), echoes: new Set(), attentionSince: false,
+    turn: 0, checks: 'passed', sends: [], told: new Set(), forgotten: new Set(), uncertain: new Map(), reconciling: new Set(), violations: [], echoes: new Set(), attentionSince: false,
     automatic: 0, tolds: 0 } as unknown as World
   await load(w)
   return w
@@ -78,8 +81,14 @@ async function load(w: World): Promise<void> {
   w.wakes = new WatcherWakeUp({ now: () => w.clock, snapshot: () => w.snapshot, record: () => w.record, canDeliver: () => true,
     schedule: (callback, delay) => { const timer = { at: w.clock + delay, callback }; w.timers.add(timer); return () => { w.timers.delete(timer) } },
     restoredEvents: () => [], wakeUpQueued: () => hidden(w).length > 0, prune: async () => undefined,
-    remember: async ids => { w.record.wakeEventIds = [...new Set([...w.record.wakeEventIds ?? [], ...ids])].slice(-1_000) },
+    remember: async ids => {
+      w.record.wakeEventIds = [...new Set([...w.record.wakeEventIds ?? [], ...ids])].slice(-1_000)
+      const hold = w.holdRemember; w.holdRemember = undefined
+      if (hold) { hold.entered(); await hold.release }
+    },
     deliver: async (news: WatcherNews) => {
+      // (c) Every wake-up made holds news that needs Watcher. Recorded here, since the batcher catches what deliver throws.
+      if (!w.wakes.needsAttention(news.events)) w.violations.push(`a wake-up of a thread’s own facts alone: ${news.events.map(event => event.kind).join(', ')}`)
       await w.store.queueWakeUp(watcherId(), news, word, w.watcher.lastTurn?.id)
       const hold = w.holdSave; w.holdSave = undefined
       if (hold) { hold.entered(); await hold.release }
@@ -158,7 +167,7 @@ async function quiesce(w: World, mode: Mode): Promise<void> {
 }
 
 type Step = 'finish' | 'start' | 'question' | 'answer' | 'checks' | 'local' | 'pump-ack' | 'pump-fail' | 'pump-unknown' | 'echo' | 'restart'
-  | 'watcher-turn' | 'save-fail' | 'legacy' | 'mid-send' | 'lose-echo' | 'crash-between-saves' | 'mid-save'
+  | 'watcher-turn' | 'save-fail' | 'legacy' | 'mid-send' | 'lose-echo' | 'crash-between-saves' | 'mid-save' | 'lane-delay'
 async function apply(w: World, step: Step): Promise<void> {
   const worker = w.worker
   switch (step) {
@@ -189,6 +198,24 @@ async function apply(w: World, step: Step): Promise<void> {
       await Promise.race([inside, passing])
       worker.requests = [...worker.requests, { id: randomUUID(), kind: 'question', text: 'Synthetic question', options: [] }]; observe(w)
       release(); w.holdSave = undefined; await passing
+      break
+    }
+    case 'lane-delay': {
+      // A batch waits its turn behind a wake-up being saved, and the turn end in it goes stale before it goes.
+      if (hidden(w).length || worker.status !== 'running') break
+      let entered!: () => void, release!: () => void
+      const inside = new Promise<void>(resolve => { entered = resolve }), held = new Promise<void>(resolve => { release = resolve })
+      w.holdRemember = { entered, release: held }
+      worker.requests = [...worker.requests, { id: randomUUID(), kind: 'question', text: 'Synthetic question', options: [] }]; w.attentionSince = true; observe(w)
+      const first = advance(w, 3_000)
+      await Promise.race([inside, first])
+      // The question's wake-up reached Watcher while its told IDs are still being saved.
+      await pump(w, 'ack')
+      worker.status = 'idle'; worker.lastTurn = { id: `turn-${w.turn}`, status: 'completed' }; observe(w)
+      w.wakes.checkpoint({ threadId: worker.id, checkpointId: randomUUID(), observedAt: new Date(w.clock).toISOString(), availability: 'available', changedFiles: 5 })
+      const second = advance(w, 3_000)
+      w.turn++; worker.status = 'running'; worker.lastTurn = { id: `turn-${w.turn}`, status: 'running' }; observe(w)
+      release(); w.holdRemember = undefined; await first; await second
       break
     }
     case 'crash-between-saves': {
@@ -241,6 +268,7 @@ async function apply(w: World, step: Step): Promise<void> {
 }
 
 async function check(w: World): Promise<void> {
+  expect(w.violations).toEqual([])
   // (a) One hidden wake-up at most, in memory and saved.
   expect(hidden(w).length).toBeLessThanOrEqual(1)
   // (b) Automatic tries are bounded: at most WAKE_UP_TRIES - 1 after each send that reached Watcher, and after the start.
@@ -279,6 +307,7 @@ it.each([
   ['an unknown send no echo ever settles', ['question', 'pump-unknown', 'lose-echo', 'pump-ack']],
   ['a restart mid-dispatch', ['question', 'pump-unknown', 'restart', 'pump-ack']],
   ['news that comes while a wake-up is being saved, after a miss', ['question', 'pump-fail', 'mid-save', 'pump-fail', 'pump-ack']],
+  ['a turn end going stale while its batch waits its turn', ['start', 'lane-delay', 'pump-ack', 'finish', 'pump-ack']],
   ['a crash between the two saves of a wake-up leaving', ['question', 'crash-between-saves', 'pump-ack', 'question', 'pump-fail', 'crash-between-saves', 'watcher-turn', 'pump-ack']],
   ['queues earlier builds saved', ['question', 'legacy', 'pump-ack', 'pump-fail', 'watcher-turn', 'pump-ack']],
   ['refusals past the bound', ['question', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn']],
@@ -296,7 +325,7 @@ it('never wakes Watcher for a thread’s own facts alone', async () => {
 
 it('keeps the hidden wake-up’s rules through seeded random sequences', async () => {
   const steps: Step[] = ['finish', 'start', 'question', 'answer', 'checks', 'local', 'local', 'pump-ack', 'pump-fail', 'pump-unknown', 'echo', 'lose-echo', 'restart',
-    'watcher-turn', 'save-fail', 'mid-send', 'legacy', 'crash-between-saves', 'mid-save']
+    'watcher-turn', 'save-fail', 'mid-send', 'legacy', 'crash-between-saves', 'mid-save', 'lane-delay']
   for (let seed = 1; seed <= 30; seed++) {
     const next = random(seed), w = await world()
     for (let step = 0; step < 16; step++) { await apply(w, steps[Math.floor(next() * steps.length)]!); await check(w) }

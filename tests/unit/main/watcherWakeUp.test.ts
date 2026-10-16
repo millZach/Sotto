@@ -1264,6 +1264,28 @@ it('keeps a retry that news needing Watcher earns while a wake-up is being saved
 })
 function deferredPromise() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done }); return { promise, resolve } }
 
+it('never sends a thread’s own facts alone when the news beside them went stale while their batch waited its turn (review P2)', async () => {
+  const f = fixture()
+  // A question's wake-up is being saved, so the next batch waits behind it.
+  const saving = deferredPromise()
+  f.deliver.mockImplementationOnce(async news => { f.delivered.push(structuredClone(news)); await saving.promise })
+  f.thread.requests = [{ id: 'card', kind: 'question', text: 'secret', options: [] }]; f.wakes.observe()
+  const first = f.advance(2_000)
+  await vi.waitFor(() => expect(f.delivered).toHaveLength(1))
+  // Meanwhile the turn ends with its working copy changed, and that batch is taken and waits its turn.
+  finish(f.thread); f.wakes.observe()
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available', changedFiles: 3 })
+  const second = f.advance(2_000)
+  // Before it goes, the thread starts its next turn: the finish is no longer true, and the facts beside it wake no one.
+  f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.wakes.observe()
+  saving.resolve(); await first; await second; await f.advance(10_000)
+  expect(f.delivered.slice(1).map(news => news.events.map(event => event.kind))).toEqual([])
+  // They ride with the turn's next end, the question having been told already.
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-2', status: 'completed' }; f.wakes.observe()
+  await f.advance(2_000)
+  expect(f.delivered.at(-1)!.events.map(event => event.kind).sort()).toEqual(['evidence-changed', 'turn-finished'])
+})
+
 it('never wakes Watcher with a thread’s own facts alone, while its hidden wake-up is on its way or after it was told', async () => {
   let waking = false
   const f = fixture(true, undefined, { wakeUpQueued: () => waking }), { move } = gitFixture(f)

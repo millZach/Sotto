@@ -78,6 +78,8 @@ export class WatcherWakeUp {
   private readonly rememberPending = new Set<string>()
   /** Each thread's own facts (working copy, Git, checkpoints) as Watcher was last told them, so a turn's end says only what differs. */
   private readonly toldLocal = new Map<string, string>()
+  /** Each evidence event's thread's own facts when it was made: what Watcher is told of them once a wake-up carries it. */
+  private readonly localAt = new Map<string, string>()
   /** Finished turns, per request and generation, that left background work running: each is owed one work-settled event. */
   private readonly owedWorkSettled = new Set<string>()
   /** Git-backed threads whose untold turn end waits for its Git read: until when, and their own facts when it ended. */
@@ -252,13 +254,24 @@ export class WatcherWakeUp {
     for (const event of events) {
       if (event.kind !== 'evidence-changed') continue
       const replaced = later.get(eventSlot(event)), wakes = this.waking.has(event.id)
+      // Not told after all, so Watcher's last word of the thread's own facts is no longer this one.
+      this.toldLocal.delete(targetKey(event.target))
       if (replaced?.kind === 'evidence-changed') { if (wakes) this.wake(replaced.id) }
-      else if (!this.due(event)) again.set(targetKey(event.target), { target: event.target, wakes: wakes || again.get(targetKey(event.target))?.wakes === true })
+      else if (!this.due(event)) {
+        again.set(targetKey(event.target), { target: event.target, wakes: wakes || again.get(targetKey(event.target))?.wakes === true })
+      }
     }
     this.pending = this.stillDue(foldWatcherEvents(events, this.pending))
     for (const [key, { target, wakes }] of again) {
       if (!this.pending.some(event => event.kind === 'evidence-changed' && targetKey(event.target) === key)) this.evidenceChanged(target, [], false, wakes ? 'again' : false)
     }
+  }
+  /** Watcher is told this evidence's thread's own facts: a wake-up was made with it. */
+  private toldLocalAs(event: WatcherEvent): void {
+    const key = targetKey(event.target), local = this.localAt.get(event.id)
+    this.toldLocal.delete(key)
+    if (local !== undefined) this.toldLocal.set(key, local)
+    while (this.toldLocal.size > 2_000) this.toldLocal.delete(this.toldLocal.keys().next().value!)
   }
   private wake(id: string): void {
     this.waking.delete(id); this.waking.add(id)
@@ -339,8 +352,8 @@ export class WatcherWakeUp {
       // News that needs Watcher in itself, and was not just let go of, may make a wake-up after one that missed.
       if ((kind !== 'evidence-changed' || this.evidenceWakes === 'fresh') && !this.reobserved.has(event.id)) this.retries++
       if (kind === 'evidence-changed') {
-        this.toldLocal.delete(targetKey(target)); this.toldLocal.set(targetKey(target), this.evidence.digest(target, 'local'))
-        while (this.toldLocal.size > 2_000) this.toldLocal.delete(this.toldLocal.keys().next().value!)
+        this.localAt.set(event.id, this.evidence.digest(target, 'local'))
+        while (this.localAt.size > 2_000) this.localAt.delete(this.localAt.keys().next().value!)
       }
       // Seen identities are bounded in memory and persisted only after a successful queue save.
       while (this.seen.size > 2_000) this.seen.delete(this.seen.values().next().value!)
@@ -418,6 +431,11 @@ export class WatcherWakeUp {
       let failed = false
       // A fresh pass after the wait: the state may have moved, but one recheck reads it once for every event.
       const valid = news && { ...news, events: this.withPassReads(() => this.stillDue(news.events)) }
+      // What went stale while it waited may leave a thread's own facts alone, which wake no one: they wait with the rest.
+      if (valid?.events.length && !this.needsAttention(valid.events)) {
+        const kept = valid.events; valid.events = []
+        this.withPassReads(() => this.returned(kept))
+      }
       if (valid?.events.length) {
         try {
           // Recheck after the serialized lane; recipient refusal is held, not retried by a timer. One hidden wake-up at a time.
@@ -425,6 +443,7 @@ export class WatcherWakeUp {
             await this.options.deliver(valid)
             if (this.closed) return
             this.consumedRetries = Math.max(this.consumedRetries, retries)
+            for (const event of valid.events) if (event.kind === 'evidence-changed') this.toldLocalAs(event)
             for (const event of valid.events) this.rememberPending.add(event.id)
             while (this.rememberPending.size > 1_000) this.rememberPending.delete(this.rememberPending.values().next().value!)
           } else this.pending = this.withPassReads(() => this.stillDue(foldWatcherEvents(events, this.pending)))
@@ -514,8 +533,10 @@ export class WatcherWakeUp {
           for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
             { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })
           // After the turn's own news, so a turn's end carries what its working copy became. A turn that finished with work
-          // still running ends again when that work settles, which carries what the work changed since.
-          if (changedEvidence || settles) this.evidenceChanged(target, before, added, added || pullRequests !== this.evidence.digest(target, 'pull-request'))
+          // still running ends again when that work settles, which carries what the work changed since. A new turn end also
+          // carries the thread's own facts when they differ from what Watcher was told, though nothing changed in this pass.
+          const untold = ends().some(id => !endsBefore.has(id)) && (this.toldLocal.get(key) ?? NOTHING_TOLD) !== this.evidence.digest(target, 'local')
+          if (changedEvidence || settles || untold) this.evidenceChanged(target, before, added, added || pullRequests !== this.evidence.digest(target, 'pull-request'))
         }
       }
       const landing = this.evidence.read(target, connected, this.now()).find(item => item.freshness === 'fresh' && ['merge-observed', 'auto-merge-observed', 'landing-action'].includes(item.fact))
