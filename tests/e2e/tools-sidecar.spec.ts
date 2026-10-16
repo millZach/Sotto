@@ -11,7 +11,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { AgentActivity, ObservedAgent } from '../../src/shared/agentActivity'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
-import { terminalOutput, waitForShellPrompt } from './support/terminal'
+import { terminalOutput, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Real Electron shell, native browser, PTY, files and Git. Only coding providers use E2E fixtures.
@@ -286,7 +286,7 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     await panel.getByRole('button', { name: 'Start terminal' }).click()
     await expect(panel.locator('.xterm-screen')).toBeVisible()
     await expect(panel.locator('.xterm-screen canvas:not(.xterm-link-layer)')).toBeVisible()
-    await waitForShellPrompt(() => terminalOutput(page))
+    await waitForShellPrompt(() => threadTerminal(page))
     await panel.locator('.xterm').click()
     await page.keyboard.type('echo SOTTO_RAIL_NATIVE_OK')
     await page.keyboard.press('Enter')

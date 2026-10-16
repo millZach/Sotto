@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
 import { bareEntityId, closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
-import { terminalOutput, waitForShellPrompt } from './support/terminal'
+import { terminalOutput, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { TERMINAL_CHANNEL, TERMINAL_LIMIT_MESSAGE, terminalSessionSchema } from '../../src/shared/terminal'
 
 const terminalTruthsEvidence = evidenceDirectory('artifacts/terminal-truths')
@@ -119,7 +119,7 @@ test('each provider exits to an interactive shell and Close reclaims a native wo
       await page.getByRole('button', { name: `${provider} exit check`, exact: true }).click()
       const input = page.locator('.terminal-view .xterm-helper-textarea')
       // The provider's exit leaves the same PowerShell running; its prompt comes after the exit line.
-      await waitForShellPrompt(async () => (await read()).output, { after: `${provider} exited with code 7.` })
+      await waitForShellPrompt(async () => { const value = await read(); return { output: value.output, status: value.terminal.status } }, { after: `${provider} exited with code 7.` })
       await input.pressSequentially("Write-Output ('SOTTO_' + 'SHELL_READY'); (Get-Location).Path")
       await input.press('Enter')
       await expect.poll(async () => (await read()).output).toContain('SOTTO_SHELL_READY')
@@ -155,7 +155,7 @@ test('a running Tools shell restores truthfully and the global ended-shell limit
     await panel.getByRole('tablist', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
     await panel.getByRole('button', { name: 'Start terminal', exact: true }).click()
     const input = panel.locator('.xterm-helper-textarea')
-    await waitForShellPrompt(() => terminalOutput(launched.page))
+    await waitForShellPrompt(() => threadTerminal(launched.page))
     await input.pressSequentially("Write-Output ('PRIVATE_' + 'OUTPUT')")
     await input.press('Enter')
     await expect(panel.locator('.xterm-screen')).toBeVisible()
@@ -190,7 +190,7 @@ test('a running Tools shell restores truthfully and the global ended-shell limit
     await expect(panel.getByText('Nothing it showed was kept.')).toHaveCount(0)
     await expect(panel.getByRole('button', { name: 'New terminal', exact: true })).toBeDisabled()
     const reopenedInput = panel.locator('.xterm-helper-textarea')
-    await waitForShellPrompt(() => terminalOutput(launched.page, threadId))
+    await waitForShellPrompt(() => threadTerminal(launched.page, threadId))
     await reopenedInput.pressSequentially("Write-Output ('RESTORED_' + 'SEARCH_MARKER')")
     await reopenedInput.press('Enter')
     await expect.poll(() => terminalOutput(launched.page, threadId)).toContain('RESTORED_SEARCH_MARKER')
@@ -289,7 +289,7 @@ test('Closed keeps a native terminal row and reopens it with fresh output', asyn
     expect(reopened.output).toContain('Opened by Sotto')
     await expect(shelf.getByRole('button', { name: 'Closed shelf check', exact: true })).toHaveCount(0)
     const input = page.locator('.terminal-view .xterm-helper-textarea')
-    await waitForShellPrompt(async () => (await read()).output)
+    await waitForShellPrompt(async () => { const value = await read(); return { output: value.output, status: value.terminal.status } })
     await input.pressSequentially("Write-Output ('SOTTO_' + 'REOPEN_READY')")
     await input.press('Enter')
     await expect.poll(async () => (await read()).output).toContain('SOTTO_REOPEN_READY')

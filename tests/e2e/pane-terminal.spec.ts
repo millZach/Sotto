@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
-import { waitForShellPrompt } from './support/terminal'
+import { threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
@@ -62,7 +62,7 @@ test('a pane opens its own terminal below the composer, keeps it running while h
     await expect(drawer.getByRole('separator', { name: 'Resize terminal' })).toBeVisible()
 
     const input = drawer.locator('.xterm-helper-textarea')
-    await waitForShellPrompt(() => drawerOutput(page, threadId))
+    await waitForShellPrompt(() => threadTerminal(page, threadId, 'drawer'))
     await input.click()
     await input.pressSequentially('Write-Output ("drawer-" + 6*7)')
     await input.press('Enter')

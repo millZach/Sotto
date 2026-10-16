@@ -8,7 +8,7 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { BUILT_IN_THEMES, getThemeColorsForMode } from '../../src/shared/themes/library'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
-import { forceDomTerminalRenderer, terminalOutput, waitForShellPrompt } from './support/terminal'
+import { forceDomTerminalRenderer, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Recovery states of the tools workspace in the complete app. AppShell, renderer, preload, IPC and production browser
@@ -198,7 +198,7 @@ test('repaints a running terminal with the DOM fallback for theme, same-mode col
     await panel.getByRole('button', { name: 'Start terminal' }).click()
     const screen = panel.locator('.xterm-rows')
     await expect(screen).toBeVisible()
-    await waitForShellPrompt(() => terminalOutput(page))
+    await waitForShellPrompt(() => threadTerminal(page))
     await panel.locator('.xterm').click()
     await page.keyboard.type('echo SOTTOPROBE')
     await page.keyboard.press('Enter')

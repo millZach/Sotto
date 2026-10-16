@@ -57,7 +57,7 @@ for (const surface of ['tools', 'workspace'] as const) {
         return { output: result.value.output, status: result.value.session.status }
       }, { surface, id })
       await expect.poll(async () => (await read()).status).toBe('running')
-      await waitForShellPrompt(async () => (await read()).output)
+      await waitForShellPrompt(read)
       await page.evaluate(async ({ surface, id }) => {
         const data = "$sottoRecovery = 'same shell'; Write-Output 'BEFORE_RELOAD'\r"
         if (surface === 'workspace') await window.sotto!.terminals!.write({ id, data })

@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
-import { terminalOutput, waitForShellPrompt } from './support/terminal'
+import { terminalOutput, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Full app, real controller/IPC/files/PTY/browser/Git/worktrees; coding providers are explicit fixtures.
@@ -132,7 +132,7 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await panel.getByRole('tab', { name: 'Terminal', exact: true }).click()
     await panel.getByRole('button', { name: 'Start terminal' }).click()
     // A running PTY and mounted xterm do not mean PowerShell has started accepting commands.
-    await waitForShellPrompt(() => terminalOutput(page, first))
+    await waitForShellPrompt(() => threadTerminal(page, first))
     await expect(panel.locator('.terminal-view')).not.toHaveAttribute('data-replaying', 'true')
     const terminalInput = panel.locator('.xterm-helper-textarea')
     await terminalInput.focus()

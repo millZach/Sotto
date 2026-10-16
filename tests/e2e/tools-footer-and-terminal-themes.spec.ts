@@ -9,7 +9,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { parseHostEntityKey } from '../../src/shared/clientIdentity'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
-import { forceDomTerminalRenderer, terminalOutput, waitForShellPrompt } from './support/terminal'
+import { forceDomTerminalRenderer, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // The Tools panel's working-folder row in a short window, and a running terminal under the real theme controls, in the
@@ -157,7 +157,7 @@ test('repaints one running terminal with the DOM fallback through the theme gall
     await panel.getByRole('button', { name: 'Start terminal' }).click()
     const screen = panel.locator('.xterm-rows')
     await expect(screen).toBeVisible()
-    await waitForShellPrompt(() => terminalOutput(page))
+    await waitForShellPrompt(() => threadTerminal(page))
     await panel.locator('.xterm').click()
     await page.keyboard.type('echo SOTTOPROBE')
     await page.keyboard.press('Enter')

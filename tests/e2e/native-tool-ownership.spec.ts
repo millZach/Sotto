@@ -59,7 +59,7 @@ test('terminal instances retain real output through renderer reload and reject a
       }, first!)
       await waitForShellPrompt(() => launched.page.evaluate(async request => {
         const value = await window.sotto!.terminal!.read(request)
-        return value.ok ? value.value.output : ''
+        return value.ok ? { output: value.value.output, status: value.value.session.status } : undefined
       }, initial.request))
       const written = await launched.page.evaluate(async request => window.sotto!.terminal!.write({ ...request,
         data: `node -e "require('fs').writeFileSync('terminal-proof.txt', 'native-terminal-ran'); console.log('SOTTO_PHASE3_TERMINAL_READY')"\r` }), initial.request)

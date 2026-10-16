@@ -8,7 +8,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { parseHostEntityKey } from '../../src/shared/clientIdentity'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
-import { forceDomTerminalRenderer, terminalOutput, waitForShellPrompt } from './support/terminal'
+import { forceDomTerminalRenderer, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Tools workspace in the complete app: AppShell, renderer, preload, IPC and production tools are real.
@@ -184,7 +184,7 @@ test('reviews changes, runs a terminal with the DOM fallback and browses a local
       await panel.getByRole('button', { name: 'Start terminal' }).click()
       const screen = panel.locator('.xterm-rows')
       await expect(screen).toBeVisible()
-      await waitForShellPrompt(() => terminalOutput(page))
+      await waitForShellPrompt(() => threadTerminal(page))
       await panel.locator('.xterm').click()
       await page.keyboard.type('echo SOTTO_UI_TERMINAL_OK')
       await page.keyboard.press('Enter')

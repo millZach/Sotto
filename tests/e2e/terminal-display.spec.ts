@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
-import { waitForShellPrompt } from './support/terminal'
+import { threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const SHOTS = evidenceDirectory('artifacts/terminal-display')
@@ -69,6 +69,9 @@ process.stdin.on('data', data => { if(data.includes(3)) process.exit(0); });
     await panel.getByRole('tablist', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
     await panel.getByRole('button', { name: 'Start terminal', exact: true }).click()
     const input = panel.locator('.xterm-helper-textarea')
+    await waitForShellPrompt(() => threadTerminal(page))
+    await input.pressSequentially('node terminal-display.cjs')
+    await input.press('Enter')
     const output = () => page.evaluate(async () => {
       const state = await window.sotto!.agents!.get()
       const threadId = state.host.threads.find(item => item.id === 'workshop' || item.id.endsWith(':workshop'))!.id
@@ -77,9 +80,6 @@ process.stdin.on('data', data => { if(data.includes(3)) process.exit(0); });
       const read = await window.sotto!.terminal!.read({ threadId, workspaceId: list.value.workspace.workspaceId, sessionId: list.value.sessions[0].id })
       return read.ok ? read.value.output : ''
     })
-    await waitForShellPrompt(output)
-    await input.pressSequentially('node terminal-display.cjs')
-    await input.press('Enter')
     await expect.poll(output).toContain('COLOR_DEPTH=24')
     await expect(panel.locator('.xterm-screen canvas:not(.xterm-link-layer)')).toBeVisible()
     for (const [width, height] of [[1280, 800], [820, 560]]) {
