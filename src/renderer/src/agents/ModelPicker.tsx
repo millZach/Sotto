@@ -1,4 +1,4 @@
-import React, { useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
 import type { AgentModel } from '../../../shared/agents'
 import { catalogEntry, resolveModel } from '../../../shared/modelCatalog'
@@ -7,6 +7,9 @@ import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { ProviderMark } from './ProviderMark'
 import './threadChips.css'
 import './modelPicker.css'
+
+/** How far a touchpad moves, in pixels, to step the provider rail once; a mouse notch is more than this. */
+const RAIL_WHEEL_STEP = 40
 
 /**
  * Newest first, with the model the provider itself recommends kept at the top whatever it is called. The
@@ -32,9 +35,10 @@ export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
  * anchored over it. The menu is two columns. On the left a rail of provider marks, one tile each and no
  * names, so the menu costs the same whatever a provider is called; the name is the tile's accessible name
  * and its tooltip. On the right the chosen provider's models under a search line, with `note` beneath them
- * -- the reminder that a new thread may still change provider, or that this one may not. A single provider
- * has no rail. Escape, a click outside or a choice closes the menu and returns focus to the chip; a choice
- * shows on the chip at once while the owner saves it.
+ * -- the reminder that a new thread may still change provider, or that this one may not. The wheel over the
+ * rail steps through the providers as its arrow keys do. A single provider has no rail. Escape, a click
+ * outside or a choice closes the menu and returns focus to the chip; a choice shows on the chip at once while
+ * the owner saves it.
  */
 export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
@@ -64,6 +68,30 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   }, [models, open])
   const selectedProvider = groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
+  // The wheel over the rail steps one provider at a time and stops at either end. A mouse notch is a step and a
+  // touchpad's small movements add up to one. React registers wheel listeners as passive, so the rail would
+  // scroll instead without this. Focus on the rail moves with the choice, so its one tab stop stays on it.
+  const selectedName = selectedProvider?.name
+  useEffect(() => {
+    const element = rail.current
+    if (!element) return
+    let travel = 0
+    const wheel = (event: WheelEvent): void => {
+      event.preventDefault()
+      if (event.deltaY === 0) return
+      travel = Math.sign(travel) === Math.sign(event.deltaY) ? travel + event.deltaY : event.deltaY
+      if (event.deltaMode === WheelEvent.DOM_DELTA_PIXEL && Math.abs(travel) < RAIL_WHEEL_STEP) return
+      const at = groups.findIndex(group => group.name === selectedName)
+      const next = Math.max(0, Math.min(groups.length - 1, at + Math.sign(travel)))
+      travel = 0
+      const group = groups[next]
+      if (!group || group.name === selectedName) return
+      if (element.contains(document.activeElement)) element.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+      else setProvider(group.name)
+    }
+    element.addEventListener('wheel', wheel, { passive: false })
+    return () => element.removeEventListener('wheel', wheel)
+  }, [groups, selectedName])
   useLayoutEffect(() => {
     if (!open) return
     const element = dialog.current

@@ -59,6 +59,46 @@ describe('provider model picker', () => {
     expect(trigger).toHaveFocus()
   })
 
+  it('steps through the providers with the wheel over the rail, one notch at a time, and stops at the ends', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const threeProviders: AgentModel[] = [...models, { id: 'grok', name: 'Grok 4.7', provider: 'Grok', ready: true }]
+    render(<ModelPicker models={threeProviders} modelId="astra" disabled={false} onChange={onChange} />)
+    await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    const rail = screen.getByRole('tablist', { name: 'Model providers' })
+    const chosen = (): string | null | undefined => within(rail).getAllByRole('tab').find(tab => tab.getAttribute('aria-selected') === 'true')?.getAttribute('aria-label')
+    // Not passive: the rail does not scroll under the step.
+    expect(fireEvent.wheel(rail, { deltaY: 100 })).toBe(false)
+    expect(chosen()).toBe('Claude')
+    expect(screen.getByRole('option', { name: 'Claude Sonnet 4.6' })).toBeInTheDocument()
+    fireEvent.wheel(rail, { deltaY: 100 })
+    fireEvent.wheel(rail, { deltaY: 100 })
+    expect(chosen()).toBe('Grok')
+    fireEvent.wheel(rail, { deltaY: -100 })
+    fireEvent.wheel(rail, { deltaY: -100 })
+    fireEvent.wheel(rail, { deltaY: -100 })
+    expect(chosen()).toBe('Codex')
+    // The search line keeps focus, so typing goes on where it was, and nothing is chosen until a model is.
+    expect(screen.getByRole('textbox', { name: 'Search models' })).toHaveFocus()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('adds a touchpad’s small wheel movements up to one step, and moves focus on the rail with the choice', async () => {
+    const user = userEvent.setup()
+    render(<ModelPicker models={models} modelId="astra" disabled={false} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    const rail = screen.getByRole('tablist', { name: 'Model providers' })
+    await user.tab({ shift: true })
+    expect(within(rail).getByRole('tab', { name: 'Codex' })).toHaveFocus()
+    fireEvent.wheel(rail, { deltaY: 15 })
+    fireEvent.wheel(rail, { deltaY: 15 })
+    expect(within(rail).getByRole('tab', { name: 'Codex' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.wheel(rail, { deltaY: 15 })
+    expect(within(rail).getByRole('tab', { name: 'Claude' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(rail).getByRole('tab', { name: 'Claude' })).toHaveFocus()
+    expect(within(rail).getByRole('tab', { name: 'Claude' })).toHaveAttribute('tabindex', '0')
+  })
+
   it('filters models and supports arrow-key selection without submitting the parent form', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn(event => event.preventDefault())
