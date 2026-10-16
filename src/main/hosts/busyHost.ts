@@ -6,7 +6,14 @@
 
 /** What the question needs of the threads: which of a host's are working, and the interrupt the composer's Stop sends. */
 export interface BusyHostThreads {
+  /** Which of a host's threads are working, as last published: cheap enough to ask on every update. */
   working(hostId: string): readonly string[]
+  /**
+   * Which are working this moment. A press that would stop threads or restart the host asks this, as does going ahead
+   * once the host looks idle: what was published can trail a turn that began a few milliseconds ago, and a restart
+   * would end that turn without asking.
+   */
+  workingNow(hostId: string): readonly string[]
   interrupt(threadId: string): Promise<void>
   subscribe(listener: () => void): () => void
 }
@@ -24,7 +31,7 @@ export function whenIdle(working: number): 'waiting' | 'begin' {
  * its Stop; the restart ends whatever is left either way.
  */
 export async function stopWorkingThreads(threads: BusyHostThreads, hostId: string): Promise<void> {
-  await Promise.all(threads.working(hostId).map(threadId => threads.interrupt(threadId).catch(() => undefined)))
+  await Promise.all(threads.workingNow(hostId).map(threadId => threads.interrupt(threadId).catch(() => undefined)))
 }
 
 /**
