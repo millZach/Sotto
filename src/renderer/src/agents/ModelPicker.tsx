@@ -36,9 +36,11 @@ export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
  * has no rail. Escape, a click outside or a choice closes the menu and returns focus to the chip; a choice
  * shows on the chip at once while the owner saves it.
  */
-export function ModelPicker({ models, modelId, disabled, onChange, note }: {
+export function ModelPicker({ models, modelId, disabled, onChange, note, label = OPTION_CHIP_NAMES.model }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
   readonly note?: string | undefined
+  /** The chip's name, where a page shows more than one model control and each must say whose model a press changes. */
+  readonly label?: string | undefined
 }): ReactNode {
   // A long-context variant the catalog does not list (`opus[1m]`) shows as its base model's entry, by that name.
   const current = resolveModel(models, modelId)
@@ -88,7 +90,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   }, [open])
   const name = current?.name ?? (modelId || 'Choose a model')
   return <div className="model-picker">
-    <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={OPTION_CHIP_NAMES.model} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
+    <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
       title={name} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); setOpen(true) }}>
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}<span>{name}</span><ChevronDown size={12} aria-hidden="true" />
     </button>

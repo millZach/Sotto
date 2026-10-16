@@ -36,6 +36,8 @@
 /* The effort and permission lists. */
 .thread-chip-menu { position: relative; min-width: 0; }
 .thread-chip-menu__list { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30; min-width: 180px; padding: 6px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+/* A chip near the top of the area that scrolls it opens its list below itself instead (`flip`). */
+.thread-chip-menu__list[data-below='true'] { top: calc(100% + 6px); bottom: auto; }
 :is(.thread-chip-menu__list, .thread-chip-menu__options) > button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
 :is(.thread-chip-menu__list, .thread-chip-menu__options) > button:hover:not(:disabled), :is(.thread-chip-menu__list, .thread-chip-menu__options) > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
 :is(.thread-chip-menu__list, .thread-chip-menu__options) > button[aria-selected='true'] { color: var(--tt-activity); }

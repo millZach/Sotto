@@ -582,6 +582,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const museEnabled = owlFeatures.muse
   const usageEnabled = owlFeatures.usage
   const delegationEnabled = owlFeatures['thread-delegation']
+  const workerRolesEnabled = owlFeatures['worker-roles']
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || museEnabled)
   // With Update all on, the host version the update this computer is downloading brings, which a host may run before
   // Sotto restarts (ADR-0077 decision 6). It stays undefined on stable, where hosts follow the running version alone.
@@ -603,7 +604,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     platformDefaults,
     logOperational,
     watcherEnabled,
-    platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {},
+    { workerRolesEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()

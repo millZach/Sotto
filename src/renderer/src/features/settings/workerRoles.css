@@ -1,0 +1,83 @@
+/* Settings, under Watcher: a card per worker role (#1041), the prototype's variant C. Each card picks a model, an effort
+   and a permission with the New thread dialog's field-style controls, and lists its defaults in order. Orchestrating is
+   a wide card beside a drawing of Watcher's composer chips. Two columns, one in a narrow window. */
+.worker-roles { display: grid; gap: 10px; margin-top: 6px; container-type: inline-size; }
+.worker-roles__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.worker-roles__head h3 { margin: 0; color: var(--tt-text); font-size: 15px; font-weight: 600; }
+.worker-roles__reset-all { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; border: 0; border-radius: 4px; background: none; color: var(--tt-accent-text); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.worker-roles__reset-all:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+.worker-roles__reset-all:disabled { color: var(--tt-text-muted); cursor: default; }
+.worker-roles__lead { max-width: 68ch; margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.55; }
+.worker-roles__said { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.worker-roles__said > button, .worker-roles__open { height: 28px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 999px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; cursor: pointer; }
+.worker-roles__said > button:hover, .worker-roles__open:hover { background: var(--tt-hover); }
+.worker-roles__summary { margin: 0; padding: 8px 12px; border-left: 2px solid var(--tt-warning); background: var(--tt-surface); color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.worker-roles__empty { display: grid; justify-items: start; gap: 10px; padding: 16px; border: 1px dashed var(--tt-field-border); border-radius: 12px; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.55; }
+.worker-roles__empty > p { margin: 0; }
+.worker-roles__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; }
+
+.worker-role { display: grid; align-content: start; gap: 10px; min-width: 0; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface); }
+.worker-role[data-chosen='true'] { border-color: var(--tt-accent-border); }
+.worker-role--wide { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, .9fr); column-gap: 22px; }
+.worker-role__main { display: grid; align-content: start; gap: 10px; min-width: 0; }
+.worker-role__head { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-2); }
+.worker-role__head h4 { margin: 0; color: var(--tt-text); font-size: 15px; font-weight: 600; }
+.worker-role__tag { display: inline-flex; align-items: center; height: 20px; margin-left: auto; padding: 0 8px; border-radius: 999px; background: var(--tt-accent-surface); color: var(--tt-accent-surface-text); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+.worker-role__tag--quiet { border: 1px solid var(--tt-hairline); background: transparent; color: var(--tt-text-muted); }
+.worker-role__tag--moved { border: 1px solid var(--tt-field-border); background: transparent; color: var(--tt-text-2); }
+.worker-role__what { margin: -6px 0 0; color: var(--tt-text-muted); font-size: 13px; }
+
+/* The fields: Model across the card, Effort and Permissions side by side, each a field-style chip under its label. */
+.worker-role__fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.worker-role__field { display: grid; align-content: start; gap: 5px; min-width: 0; }
+.worker-role__field--full { grid-column: 1 / -1; }
+.worker-role__field > span:first-child { color: var(--tt-text-muted); font-size: 11.5px; }
+.worker-role__field > :is(.model-picker, .thread-chip-menu) { display: flex; min-width: 0; }
+.worker-role__field .thread-chip { justify-content: space-between; width: 100%; max-width: none; height: 34px; min-height: 34px; padding: 0 11px; border-radius: 8px; background: var(--tt-field); color: var(--tt-text); }
+.worker-role__field .thread-chip > span:not(.provider-mark):not(.thread-chip__pending) { flex: 1; text-align: left; }
+.worker-role__field[data-away='true'] .thread-chip { border-style: dashed; }
+.worker-role__field .thread-chip-menu__list:not(.thread-chip-menu__list--foot) { min-width: 100%; width: max-content; max-width: min(320px, calc(100vw - 24px)); }
+.worker-role__field .thread-options__caption { display: none; }
+.worker-role__none { display: flex; align-items: center; min-height: 34px; padding: 0 11px; border: 1px dashed var(--tt-hairline); border-radius: 8px; color: var(--tt-text-muted); font-size: 13px; }
+p.worker-role__none { margin: 0; }
+
+.worker-role__note { margin: 0; padding: 6px 10px; border-left: 2px solid var(--tt-field-border); color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.worker-role__note[data-kind='moved'] { border-left-color: var(--tt-warning); background: var(--tt-canvas); }
+.worker-role__link { display: inline; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-accent-text); font: inherit; font-size: 12.5px; font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; cursor: pointer; }
+.worker-role__link:hover:not(:disabled) { text-decoration-color: currentColor; }
+.worker-role__link:disabled { color: var(--tt-text-muted); text-decoration: none; cursor: default; }
+.worker-role__foot { display: flex; justify-content: flex-end; }
+
+/* Defaults, in order: the one in use in the text colour, the ones not connected muted. */
+.worker-role__defaults { padding-top: 9px; border-top: 1px solid var(--tt-hairline); }
+.worker-role__defaults-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; margin: 0 0 4px; color: var(--tt-text-muted); font-size: 11.5px; }
+.worker-role__defaults ol { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; counter-reset: worker-role-default; }
+.worker-role__defaults li { display: grid; grid-template-columns: 14px 14px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-height: 22px; color: var(--tt-text-2); font-size: 12.5px; }
+.worker-role__defaults li::before { counter-increment: worker-role-default; content: counter(worker-role-default); color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.worker-role__defaults li > span:nth-of-type(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.worker-role__defaults li > span:last-child { color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.worker-role__defaults li[data-use='true'] > span:nth-of-type(2) { color: var(--tt-text); font-weight: 600; }
+.worker-role__defaults li[data-use='true'] > span:last-child { color: var(--tt-accent-text); }
+.worker-role__defaults li[data-off='true'] > span:nth-of-type(2) { color: var(--tt-text-muted); }
+.worker-role__defaults li[data-off='true'] .provider-mark { opacity: .55; }
+.worker-role__defaults .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
+.worker-role__defaults .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
+.worker-role__defaults .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
+.worker-role__defaults .provider-mark[data-provider='devin'] { color: var(--tt-provider-devin); }
+
+/* Orchestrating's drawing of Watcher's composer: the same three chips, for reading only. */
+.worker-role__mirror { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.worker-role__composer { display: grid; gap: 10px; padding: 12px 12px 10px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-canvas); color: var(--tt-text-muted); font-size: 13px; }
+.worker-role__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.worker-role__chip { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; height: 28px; padding: 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.worker-role__chip > span:not(.provider-mark) { overflow: hidden; text-overflow: ellipsis; }
+.worker-role__chip .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
+.worker-role__chip .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
+.worker-role__chip .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
+.worker-role__caption { display: flex; gap: 8px; margin: 0; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.worker-role__caption > svg { flex: none; margin-top: 2px; color: var(--tt-text-muted); }
+
+@container (max-width: 640px) {
+  .worker-roles__grid, .worker-role--wide { grid-template-columns: minmax(0, 1fr); }
+  .worker-role--wide { row-gap: 12px; }
+}
