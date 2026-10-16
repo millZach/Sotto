@@ -16,6 +16,7 @@ import { WorkspaceHost } from './workspace'
 import { WatcherService } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
+import { DelegationService } from './delegation'
 import { AgentControl } from './control'
 import { TurnRecorder } from './turns'
 import { ConfiguredAgentReasoner } from './reasoning'
@@ -54,6 +55,8 @@ export interface AgentRuntimeOptions {
   resumeAfterRestart?: boolean
   /** The Owl list's answer for cheaper publish windows while streaming (#991), read once by the process owner. Absent fails closed. */
   streamingPublishCost?: boolean
+  /** The Owl list's answer for delegation between threads (ADR-0081), read once by the process owner. Absent fails closed. */
+  delegationEnabled?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -190,9 +193,17 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     reasoner,
   })
   let watcherTools: WatcherToolServer | undefined
+  // Delegation between threads (ADR-0081): only this computer's threads take Sotto's tool servers, so a headless host has none.
+  let delegation: DelegationService | undefined
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
-      limit: () => options.settings().watcherInFlightLimit, workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads) }) : undefined
+      limit: () => options.settings().watcherInFlightLimit, workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
+      otherStartsInFlight: () => delegation?.startsInFlight() ?? 0 }) : undefined
+  if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
+    delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
+      limit: () => options.settings().watcherInFlightLimit, otherStartsInFlight: () => watcher?.startsInFlight() ?? 0,
+      tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId) })
+  }
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
     if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher); agentHost.useWatcherTools(watcherTools) }
@@ -248,6 +259,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     if (watcherStopped) return
     watcherStopped = true
     watcher?.close()
+    delegation?.close()
     closingWatcherTools = watcherTools?.close()
   }
   let stoppingProviders: Promise<void> | undefined
@@ -307,6 +319,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   } catch (error) {
     await restartResume?.freeze()
     watcher?.close()
+    delegation?.close()
     const closingWatcherTools = watcherTools?.close()
     void babysitter?.close()
     agentControl.dispose()
@@ -316,10 +329,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     throw error
   }
   if (watcher) await watcher.recover()
+  if (delegation) await delegation.recover()
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
     ...(usage ? { usage, mayClearUsage: client => (options.authority?.mayGrant(client) ?? mayGrantLocally(client)).allowed } : {}),
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),
     ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher) } : {}) })
   babysitter?.begin()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, prepareForShutdown, close }
 }

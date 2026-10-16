@@ -338,6 +338,23 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await this.initialize(); const thread = this.thread(threadId); thread.kind = kind
     this.dirty = true; await this.flush(); this.publish()
   }
+  /**
+   * Records the thread that delegated work to this one (ADR-0081), by Sotto thread ID, on the thread's own record, so the
+   * link is in the snapshot and survives a restart. Set once, before the delegated thread's first send; never changed.
+   */
+  async setDelegatedBy(threadId: string, delegatingThreadId: string): Promise<void> {
+    await this.initialize(); const thread = this.thread(threadId)
+    if (thread.delegatedBy === delegatingThreadId) return
+    if (thread.delegatedBy !== undefined) throw new Error('This thread was delegated by another thread.')
+    thread.delegatedBy = delegatingThreadId
+    this.dirty = true; await this.flush(); this.publish()
+  }
+  /** One message of a thread as Sotto's record holds it, read by its ID alone: a delegation's reply (ADR-0081). */
+  threadMessage(threadId: string, messageId: string): AgentMessage | undefined {
+    if (!this.threadVisible(threadId) || this.storeUnavailable) return undefined
+    this.applyEvents()
+    try { return this.threadStore.message(threadId, messageId) } catch { return undefined }
+  }
   useWatcherTools(tools: WatcherProfileTools): void { this.launchProfiles.useTools(tools) }
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(this.watcherEnabled ? tools : tools.filter(tool => tool.name !== 'sotto_threads')) }
@@ -2517,6 +2534,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         // The Git action and the linked pull requests are Sotto's record, not the provider's: a provider update keeps them.
         ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
         ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
+        // The thread that delegated to this one is Sotto's record too (ADR-0081).
+        ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
         ...(old?.babysitting ? { babysitting: old.babysitting } : {}),
         ...(old?.babysitEnded ? { babysitEnded: old.babysitEnded } : {}),
         ...(old?.wakeUpMessageIds ? { wakeUpMessageIds: old.wakeUpMessageIds } : {}),
@@ -3122,8 +3141,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return { folder: await this.threadWorkingDirectory(threadId), inspectAfter: false }
   }
   private readonly watcherDispatchGuards = new WeakMap<object, () => void>()
+  /** Delegation (ADR-0081) sends its guarded commands the way Watcher does, whether or not Watcher is on. */
+  private delegationGuards = false
+  admitDelegationCommands(): void { this.delegationGuards = true }
   executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> {
-    if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
+    if (!this.watcherEnabled && !this.delegationGuards) throw new Error(WATCHER_DISABLED)
     this.watcherDispatchGuards.set(command, guard); guard(); return this.execute(command)
   }
   execute(command: AgentHostCommand): Promise<AgentHostResult> {
