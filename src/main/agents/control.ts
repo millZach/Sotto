@@ -282,6 +282,11 @@ export class AgentControl {
    * of it counts, however it came about, up to WAKE_UP_ATTEMPTS; a turn Watcher finishes after that starts the count again.
    */
   private readonly wakeAttempts = new Map<string, { count: number; turnId: string | undefined }>()
+  /** Whether a hidden wake-up, as it stands now, holds news that needs Watcher, not only a thread's own facts. */
+  private wakeUpNeedsAttention(item: Pick<QueuedFollowup, 'news'>): boolean {
+    const events = (item.news ?? []).flatMap(news => isWatcherNews(news) ? news.events : [])
+    return events.length > 0 && (this.watcherHooks?.wakeNeedsAttention?.(events) ?? true)
+  }
   private wakeUpMayTry(item: Pick<QueuedFollowup, 'id'>, thread: AgentThread): boolean {
     const used = this.wakeAttempts.get(item.id)
     if (used && thread.lastTurn?.status === 'completed' && thread.lastTurn.id !== used.turnId) { this.wakeAttempts.delete(item.id); return true }
@@ -2678,7 +2683,7 @@ export class AgentControl {
         const resting = !isThreadTurnRunning(thread) && !thread.requests.length
         const finished = resting && thread.lastTurn?.status === 'completed' && thread.lastTurn.id !== first.resumeAfterTurnId
         const others = items.some(item => item.threadId === threadId && item.id !== first.id)
-        const revive = first.status !== 'uncertain' && this.wakeUpMayTry(first, thread) && (finished || first.status === 'failed' && (resting || others))
+        const revive = first.status !== 'uncertain' && this.wakeUpMayTry(first, thread) && this.wakeUpNeedsAttention(first) && (finished || first.status === 'failed' && (resting || others))
         if (first.status === 'uncertain' || revive || others) {
           const letGo = first.status === 'uncertain' ? (first.news ?? []).flatMap(news => isWatcherNews(news) ? news.events : []) : []
           this.pumping.add(threadId)
@@ -2707,11 +2712,14 @@ export class AgentControl {
       }
       const confirmed = first.messageId && thread?.messages.some(m => m.role === 'user' && m.id === first.messageId)
       if (!confirmed && (first.status !== 'queued' || !this.followupReady(threadId))) continue
-      // A wake-up no one is shown whose budget is spent waits, behind the rest, for Watcher's next turn of its own.
-      if (!confirmed && thread && isWatcherOnlyWakeUp(first) && !this.wakeUpMayTry(first, thread)) {
+      // A wake-up no one is shown goes only while it holds news that needs Watcher, and while its budget lasts. Otherwise it
+      // waits, behind the rest: for news that does, or for Watcher's next turn of its own.
+      const attention = isWatcherOnlyWakeUp(first) && this.wakeUpNeedsAttention(first)
+      if (!confirmed && thread && isWatcherOnlyWakeUp(first) && (!attention || !this.wakeUpMayTry(first, thread))) {
         this.pumping.add(threadId)
         let held = false
-        void this.followupStore.moveWakeUpBehind(first.id, 'Sotto tried this wake-up as often as it will by itself. It goes again after Watcher next finishes a turn.')
+        void this.followupStore.moveWakeUpBehind(first.id, attention ? 'Sotto tried this wake-up as often as it will by itself. It goes again after Watcher next finishes a turn.'
+          : 'This wake-up holds only a thread’s own facts, which wait for news that needs Watcher.')
           .then(() => { held = true }).catch(() => { this.state.error = 'Could not save the follow-up queue.' })
           .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (held) this.pumpFollowups() })
         continue

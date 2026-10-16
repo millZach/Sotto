@@ -810,6 +810,29 @@ it('keeps one wake-up no one is shown, folding news in while it is sent, and tri
   expect(hidden()).toHaveLength(1)
 }, 60_000)
 
+it('never sends a wake-up no one is shown that holds only a thread’s own facts, mid-turn or otherwise', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const worker = f.native(started.target.threadId)
+  worker.requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
+  f.workspace.adapters.codex.emit()
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
+  // What is left in it, as WatcherWakeUp reads it now, is only the worker's own facts, as after a prune.
+  const asked = vi.spyOn(f.service, 'wakeNeedsAttention').mockReturnValue(false)
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const sent = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master && command.watcherNews)
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(queued(f).find(item => item.threadId === f.id && item.wakeUp)).toMatchObject({ status: 'paused' }), { timeout: 15_000 })
+  await new Promise(resolve => setTimeout(resolve, 4_000))
+  expect(sent()).toHaveLength(0)
+  expect(asked).toHaveBeenCalled()
+  // News that needs Watcher comes, and it goes with it.
+  asked.mockRestore()
+  worker.status = 'error'; worker.lastTurn = { id: 'attention-turn', status: 'failed' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(sent().some(command => command.type === 'send' && command.watcherNews?.includes('turn failed'))).toBe(true), { timeout: 15_000 })
+}, 40_000)
+
 it('lets a hidden wake-up whose send is unknown go, and tells its news afresh rather than losing it', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
