@@ -781,6 +781,14 @@ export class AgentControl {
   }
   /** Internal state is available only to main's Watcher service; public project choices omit its folder. */
   watcherSnapshot(): AgentHostSnapshot { return this.state.host }
+  /**
+   * The host and the configured provider as they are, for a caller that reads one thread's request facts. The answer
+   * box's draft store asks for every owner it knows on every save; copying the whole shell for each froze main while
+   * the user typed an answer.
+   */
+  requestDraftView(): { readonly host: Readonly<AgentHostSnapshot>; readonly provider: ProviderId } {
+    return { host: this.state.host, provider: this.state.configuration.provider }
+  }
   watcherCommandOutstanding(commandId: string | undefined): boolean { return Boolean(commandId && this.outbox.some(item => item.id === commandId)) }
   private hideWatcher(state: AgentState): void {
     const folder = resolve(join(this.dependencies.directory, 'watcher', 'workspace'))
