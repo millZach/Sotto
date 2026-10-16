@@ -11,14 +11,17 @@ import { WatcherService } from '../../../src/main/agents/watcher'
 import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import type { AgentState } from '../../../src/shared/agents'
+import type { WatcherEvent } from '../../../src/shared/watcherNews'
+import type { FollowupStore, WordWakeUp } from '../../../src/main/agents/followups'
+import { isWatcherNews, queuedWakeUpText } from '../../../src/main/agents/wakeUp'
 import { agentControlFixture } from '../../fixtures/agentControlFixture'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-/** Counts per call for a paired host with `size` finished, watched threads and one accepted Watcher start on each. */
-async function counts(size: number) {
+/** A paired host with `size` finished, watched threads and one accepted Watcher start on each, and a way to count reads. */
+async function pairedWatcher(size: number) {
   const workspace = await workspaceFixture(undefined, { history: false, watcherEnabled: true })
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { historyEnabled: () => false, watcherEnabled: true, streamingPublishCost: true } })
@@ -57,14 +60,20 @@ async function counts(size: number) {
   const readRecord = f.control.watcherRecord.bind(f.control)
   f.control.watcherRecord = () => { if (measuring) tally.records++; return readRecord() }
   watcher.wakes.start()
-  const measure = (read: () => void) => {
+  const measure = async (read: () => unknown) => {
     for (const name of Object.keys(tally) as (keyof typeof tally)[]) tally[name] = 0
     measuring = true
-    try { read() } finally { measuring = false }
+    try { await read() } finally { measuring = false }
     return { ...tally }
   }
-  const observe = measure(() => watcher.wakes.observe())
-  const state = measure(() => { expect(watcher.state().receipts.filter(item => item.outcome === 'working')).toHaveLength(size) })
+  return { f, watcher, local, measure }
+}
+
+/** Counts per call for a paired host with `size` finished, watched threads and one accepted Watcher start on each. */
+async function counts(size: number) {
+  const { watcher, measure } = await pairedWatcher(size)
+  const observe = await measure(() => watcher.wakes.observe())
+  const state = await measure(() => { expect(watcher.state().receipts.filter(item => item.outcome === 'working')).toHaveLength(size) })
   // The pass did reach the finishes: each paired thread's finish is news, named for the start it answers.
   expect((watcher.state().news ?? []).filter(event => event.kind === 'turn-finished' && event.operationId)).toHaveLength(size)
   return { observe, state }
@@ -78,4 +87,34 @@ it('reads the paired shell, the host list and the Watcher record a fixed number 
   expect(small.observe).toMatchObject({ shells: 1, records: 1 })
   expect(small.state.shells).toBeLessThanOrEqual(2)
   expect(small.state.hostLists).toBeLessThanOrEqual(2)
+}, 120_000)
+
+/**
+ * Counts for one prune of queued Watcher wake-ups (#1070): `wakeUps` waiting wake-ups, each holding the paired host's
+ * `size` finishes, which are still due, and one event that is not, so every wake-up is pruned to its due news.
+ */
+async function pruneCounts(size: number, wakeUps: number) {
+  const { f, watcher, local, measure } = await pairedWatcher(size)
+  const due = watcher.wakes.news()
+  expect(due.length).toBeGreaterThanOrEqual(size)
+  const outdated: WatcherEvent = { ...due[0]!, id: 'synthetic-outdated', requestId: randomUUID() }
+  const store = (f.control as unknown as { followupStore: FollowupStore }).followupStore
+  const word: WordWakeUp = news => queuedWakeUpText(news, { tool: false })
+  // Watcher news waits in the queue while its thread is busy; a thread this computer does not have keeps it waiting here.
+  for (let index = 0; index < wakeUps; index++) await store.queueWakeUp(`watcher-${index}`,
+    { source: 'watcher', watcher: { hostId: local, threadId: `watcher-${index}` }, events: [...due, outdated], omitted: 0 }, word)
+  const prune = await measure(() => f.control.pruneWatcherWakeUps())
+  // The same wake-ups stay, each with exactly the news still due.
+  const kept = store.peek().items.filter(item => item.wakeUp)
+  expect(kept).toHaveLength(wakeUps)
+  for (const item of kept) expect(item.news?.flatMap(news => isWatcherNews(news) ? news.events.map(event => event.id) : [])).toEqual(due.map(event => event.id))
+  return prune
+}
+
+it('reads the paired shell and the Watcher record a fixed number of times per prune of queued wake-ups, however much is queued', async () => {
+  const small = await pruneCounts(2, 1), large = await pruneCounts(24, 4)
+  expect(large).toEqual(small)
+  // The prune asks once which queued events may still go and once more as the store prunes them; the publish after it
+  // runs one observation pass. Asked event by event, a prune of 4 wake-ups of 24 finishes read the shell hundreds of times.
+  expect(small.shells).toBeLessThanOrEqual(3)
 }, 120_000)

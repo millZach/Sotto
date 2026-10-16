@@ -44,6 +44,25 @@ These are fractions of a millisecond per ten reads, and the run ranges overlap f
 
 `tests/unit/main/watcherObserveCounts.test.ts` runs in the ordinary suite. It drives one observation pass and one room state read through the real router, with a paired host of 2 and then 24 finished, watched threads, each with an accepted Watcher start whose turn it answers. It counts shell reads (each one a whole-shell copy in the socket service), remote host lists and Watcher record reads. It fails if any count differs between the two sizes, or if a pass reads the shell or the record more than once. A second guard in `tests/unit/main/watcherWakeUp.test.ts` delivers a batch of 2 and then 24 events and requires the same number of snapshot and record reads for both; without the pass around the recheck before delivery it counted 3 and 7 against 25 and 51. On `origin/main` the counts were 18 shells, 11 lists and 24 records per pass at size 2, and 194, 121 and 244 at size 24. On this branch they are 1, 2 and 1 at both sizes.
 
-## Not covered
+## Pruning queued wake-ups (#1070)
 
-After each pass, main prunes queued Watcher wake-ups and asks whether each queued event is still due, one event at a time from `control.ts`. Each ask still reads the merged snapshot and the record. That is #1070.
+After each pass, main prunes queued Watcher wake-ups (`AgentControl.pruneWatcherWakeUps`). It asked Watcher whether each queued event was still due, one event at a time: once for every event to find the outdated wake-ups, and once more for every event as the queue pruned each one. Each ask read the merged snapshot, so copied every paired host's shell, and copied the Watcher record. News waits in the queue while the Watcher is busy, which is when its own turn streams and passes run most often.
+
+- **One ask per step.** `WatcherWakeUp.dueAll` answers a batch of events as one pass, and control asks it once for every queued event when it looks for outdated wake-ups, and once more when the queue prunes them.
+- **One change for every outdated wake-up.** `FollowupStore.pruneWakeUps` prunes them all in one change, and asks its caller how to prune them only when the change runs, so the answers are as fresh as before.
+- **The same wake-ups stay and go.** Each event gets the answer it got before, from the same state; only the number of reads changed. The queue's own checks before it sends a wake-up ask the same way, once per check.
+
+`tests/perf/watcherObservePass.perf.test.ts` gained a `prune` case on the same 204-thread paired host: eight queued wake-ups, each holding the 18 news events still due and one event for a request Watcher does not have, so each prune drops that event from all eight. The timed prune is awaited, so it includes the queue write and the publish after it. Run interleaved A B A B A B on the Windows laptop: A is `origin/main` at `88411663e` (with #1072), B is the fix, with the same benchmark file on both sides. CPU load at each run's start was 9, 52 and 23% (A) and 18, 28 and 8% (B), with 9.4 to 11.3 GB free. Counts are exact in every run; times are medians of three runs, with the range of the run medians.
+
+| Per prune | Before (A) | After (B) |
+| --- | ---: | ---: |
+| CPU ms | 2,604 (2,552-2,844) | 36.7 (36.3-47) |
+| wall ms | 2,675 (2,673-2,873) | 45.1 (43.6-64.6) |
+| paired shell reads | 289 | 3 |
+| whole-shell clones | 290 | 4 |
+| remote host lists | 290 | 4 |
+| Watcher record clones | 613 | 7 |
+
+After the fix, a prune reads the shell once to find the outdated wake-ups, once as the queue prunes them, and once for the observation pass the publish after it runs.
+
+`tests/unit/main/watcherObserveCounts.test.ts` guards it in CI. It queues one wake-up holding the news of 2 finished paired threads and then four holding the news of 24, each with one event no longer due, and requires the same shell, host list and record counts for both, with no more than three shell reads. On `origin/main` the counts were 13 shells, 14 lists and 33 records at the small size and 577, 578 and 1,173 at the large one. On this branch they are 3, 4 and 7 at both.
