@@ -75,7 +75,7 @@ describe('independent provider settings', () => {
     provide(state)
     render(<ProvidersSettings />)
     const models = (provider: string) => {
-      fireEvent.click(screen.getByRole('button', { name: provider, exact: true }))
+      fireEvent.click(screen.getByRole('button', { name: provider }))
       fireEvent.click(screen.getByRole('tab', { name: 'Models' }))
       return screen.getByRole('list', { name: `${provider} available models` })
     }
