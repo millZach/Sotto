@@ -73,9 +73,15 @@ const DRAFT_KEPT = ' Your draft is saved.'
 export function noProviderRefusal(where: 'host' | 'desktop', draftKept: boolean): string {
   return (where === 'host' ? `${NO_PROVIDER_ON_HOST} Connect one in Settings > Hosts.` : `${NO_PROVIDER_HERE} Connect one in Settings > Providers.`) + (draftKept ? DRAFT_KEPT : '')
 }
-/** A host's refusal as the desktop shows it: "this host" becomes the name the user saved the host under. */
+/**
+ * A host's refusal as the desktop shows it: "this host" and "this machine" become the name the user saved the host
+ * under, so a provider's "Sign in to Muse on this machine" never reads as this computer's when it is forge's.
+ */
 export function nameHostInRefusal(message: string, name: string): string {
-  return message.startsWith(NO_PROVIDER_ON_HOST) && name.trim() ? `No provider is connected on ${name.trim()}.${message.slice(NO_PROVIDER_ON_HOST.length)}` : message
+  const host = name.trim()
+  if (!host) return message
+  const named = message.startsWith(NO_PROVIDER_ON_HOST) ? `No provider is connected on ${host}.${message.slice(NO_PROVIDER_ON_HOST.length)}` : message
+  return named.replaceAll(' on this machine', () => ` on ${host}`)
 }
 /** What a host from before staged images (ADR-0031) is refused with when asked to keep one. */
 export const HOST_CANNOT_STAGE_SCREENSHOTS = 'This host cannot keep screenshots. Update Sotto there, then attach them again. Nothing was attached.'
@@ -529,7 +535,12 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   /** Where a new project goes on this host, in its own format, for Settings → Agents' row per computer (ADR-0074). */
   projectsDirectory: z.string().max(4_096).optional(),
   /** Whether this host lets this computer answer, so a permission default that grants applies there (ADR-0074). */
-  mayAnswer: z.boolean().optional() })
+  mayAnswer: z.boolean().optional(),
+  /**
+   * This computer's own entry only, for Settings > Providers: the providers it has turned on, whether it checks for client
+   * updates, and the model its agent setting starts new threads on, its Models tab's "Agent setting".
+   */
+  enabledProviders: z.array(providerIdSchema).max(5).optional(), checkClientUpdates: z.boolean().optional(), agentModelId: z.string().max(512).optional() })
 export type AgentClientHost = z.infer<typeof agentClientHostSchema>
 
 export const agentHostSnapshotSchema = z.object({
@@ -929,13 +940,15 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     newThreadRuntimeMode: agentRuntimeModeSchema.nullable().optional() }), hostId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['reasoning']), value: z.string().max(16_384) }).strict(),
   // Setup and Settings show connection status themselves; this can only suppress the Threads notice.
-  z.object({ type: z.literal('connect'), provider: providerIdSchema.optional(), notice: z.literal(false).optional() }).strict(),
-  z.object({ type: z.literal('disconnect'), provider: providerIdSchema.optional() }).strict(),
-  z.object({ type: z.literal('refresh'), provider: providerIdSchema.optional() }).strict(),
+  // `hostId` on a provider command is the desktop window's alone, like Update all's: Settings > Providers names this
+  // computer, so its buttons never reach whichever host is selected for new work. The router reads it and never sends it on.
+  z.object({ type: z.literal('connect'), provider: providerIdSchema.optional(), notice: z.literal(false).optional(), hostId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('disconnect'), provider: providerIdSchema.optional(), hostId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('refresh'), provider: providerIdSchema.optional(), hostId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('refresh-thread-skills'), threadId: id, forceReload: z.boolean().optional() }).strict(),
   z.object({ type: z.literal('check-reasoning'), provider: subscriptionProviderSchema }).strict(),
-  z.object({ type: z.literal('check-client-updates') }).strict(),
-  z.object({ type: z.literal('update-client'), provider: providerIdSchema, force: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal('check-client-updates'), hostId: z.uuid().optional() }).strict(),
+  z.object({ type: z.literal('update-client'), provider: providerIdSchema, force: z.boolean().optional(), hostId: z.uuid().optional() }).strict(),
   /**
    * Puts clients in the machine's one-at-a-time update line and answers at once; each client's reading says how it went.
    * `hostId` names the machine for Update all (ADR-0077), which need not be the selected one; the desktop's router reads it

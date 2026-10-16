@@ -42,10 +42,25 @@ export interface HostUpdateHosts {
 }
 /** What an update needs of the threads: the busy-host question's (`busyHost.ts`). */
 export type HostUpdateThreads = BusyHostThreads
+/**
+ * What an update needs of a host's client update line (ADR-0042): whether it is running, as last published. The router
+ * answers in place, without building a state, because it is asked on every change.
+ */
+export interface HostUpdateClients {
+  /** Whether a client waits in the host's update line or is updating there. */
+  updating(hostId: string): boolean
+  /** Told when the line may have moved. Main leaves it out: the router's changes already reach an update through its threads. */
+  subscribe?(listener: () => void): () => void
+}
 export interface HostUpdatesOptions {
   readonly requiresManagementUpdate?: (hostId: string) => boolean
   readonly hosts: HostUpdateHosts
   readonly threads: HostUpdateThreads
+  /**
+   * The hosts' client update lines. A host's own update waits while its line is running, whatever started it, so its
+   * restart cuts no client update off (ADR-0077 decision 2). Without it no line is ever running.
+   */
+  readonly clients?: HostUpdateClients | undefined
   /** This computer's Sotto version: what an update installs, unless Update all has a later one waiting (`pending`). */
   readonly version: string
   /** Where releases are published; tests serve their own. */
@@ -169,9 +184,12 @@ export class HostUpdates {
   /** Each saved host's system as the archive name its download asked for says, `linux-x64`, when its launch did not say. */
   private readonly systems = new Map<string, string>()
   private readonly probing = new AbortController()
+  /** Installed updates holding their restart for the host's client update line, each told on every change to look again. */
+  private readonly restarts = new Set<() => void>()
   constructor(private readonly options: HostUpdatesOptions) {
     this.releasesUrl = options.releasesUrl ?? HOST_RELEASES_URL
     this.off = [options.hosts.subscribe(() => this.sync()), options.threads.subscribe(() => this.sync())]
+    if (options.clients?.subscribe) this.off.push(options.clients.subscribe(() => this.sync()))
     this.sync()
   }
   /**
@@ -240,6 +258,7 @@ export class HostUpdates {
     for (const off of this.off) off()
     for (const entry of this.entries.values()) if (!entry.installing) entry.run?.abort()
     this.probing.abort()
+    this.restarts.clear()
     this.listeners.clear()
   }
 
@@ -249,7 +268,7 @@ export class HostUpdates {
     delete entry.error
     try {
       if (action === 'update') this.update(entry)
-      else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (whenIdle(this.workingNow(entry).length) === 'waiting') entry.phase = 'waiting'; else this.begin(entry) } }
+      else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (whenIdle(this.workingNow(entry).length) === 'waiting' || this.clientsUpdating(entry)) entry.phase = 'waiting'; else this.begin(entry) } }
       else if (action === 'stop-threads') { if (entry.phase === 'confirm' || entry.phase === 'waiting') await this.stopThreadsAndUpdate(entry) }
       else if (action === 'cancel') this.cancel(entry)
       else if (action === 'not-now') {
@@ -261,7 +280,10 @@ export class HostUpdates {
     } finally { this.sync(true) }
   }
 
-  /** Update and Try again: at once on a host with nothing working, or a question first when something is. */
+  /**
+   * Update and Try again: at once on a host with nothing working, or a question first when something is. A host whose
+   * client update line is running waits for it either way (`begin`).
+   */
   private update(entry: Entry): void {
     if (entry.phase !== 'needs' && entry.phase !== 'failed') return
     if (!entry.owned) throw new Error(`Sotto did not start the host on ${entry.name}, so it cannot restart it. Nothing was changed. Update it on ${entry.name} with the commands below.`)
@@ -286,6 +308,14 @@ export class HostUpdates {
     run?.abort()
   }
   private begin(entry: Entry): void {
+    // The host's client update line is running: the restart would cut its client off partway (ADR-0077 decision 2). The
+    // update waits, and sync begins it once the line is empty. One pressed during the archive check has run nothing yet.
+    if (this.clientsUpdating(entry)) {
+      entry.run?.abort()
+      Object.assign(entry, { phase: 'waiting', step: undefined, route: undefined, held: undefined, run: undefined, failure: undefined, reason: undefined })
+      this.sync(true)
+      return
+    }
     const run = new AbortController()
     entry.run?.abort()
     const candidate = this.options.hosts.candidates().find(item => item.id === entry.id)
@@ -317,6 +347,10 @@ export class HostUpdates {
       if (installed.type === 'error') throw new UpdateStopped(installed.reason, installed.reason === 'checksum-mismatch' ? 'check' : 'install', installed)
       if (installed.type !== 'update-installed') throw new UpdateStopped('update-failed', 'install')
       step('restart')
+      // A client put in the host's line after the download began would be cut off by the restart (ADR-0077 decision 2).
+      // The install is done and stays: the restart waits for the line to empty, and Cancel update still refuses.
+      await this.lineEmpty(entry, current)
+      if (!current()) return
       let restarted: SshHostUpdateResult | undefined
       try { restarted = await this.options.hosts.restart(entry.id, to) }
       catch (error) {
@@ -338,6 +372,14 @@ export class HostUpdates {
       const stopped = error instanceof UpdateStopped ? error : new UpdateStopped('update-lost', entry.step ?? 'download')
       Object.assign(entry, { phase: 'failed', failure: this.describe(entry, stopped), reason: stopped.reason, step: undefined })
     } finally { this.sync(true) }
+  }
+  /** Resolves once the host's client update line is empty, or the update is no longer the one running. */
+  private lineEmpty(entry: Entry, current: () => boolean): Promise<void> {
+    if (!this.clientsUpdating(entry)) return Promise.resolve()
+    return new Promise(resolve => {
+      const look = (): void => { if (current() && this.clientsUpdating(entry)) return; this.restarts.delete(look); resolve() }
+      this.restarts.add(look)
+    })
   }
   /** Download and check: on the host, or on this computer and copied over SSH when the host cannot reach the releases page. */
   private async fetch(entry: Entry, signal: AbortSignal, onStep: (step: HostUpdateStep) => void): Promise<{ file: string; sha256: string }> {
@@ -436,11 +478,13 @@ export class HostUpdates {
     const error = entry.error ?? withdrawn ?? (this.options.requiresManagementUpdate?.(entry.hostId) ? LEGACY_MANAGEMENT_UPDATE : undefined)
     return { id: entry.id, name: entry.name, from: entry.from, to: entry.to, phase: entry.phase, owned: entry.owned,
       working: this.working(entry).length, commands: this.commands(entry), ...(entry.boot ? { boot: true } : {}),
+      ...(this.clientsUpdating(entry) ? { clientsUpdating: true } : {}),
       ...(entry.step ? { step: entry.step } : {}), ...(entry.route ? { route: entry.route } : {}),
       ...(entry.failure ? { failure: entry.failure } : {}), ...(error ? { error } : {}) }
   }
   private working(entry: Entry): readonly string[] { return this.options.threads.working(entry.hostId) }
   private workingNow(entry: Entry): readonly string[] { return this.options.threads.workingNow(entry.hostId) }
+  private clientsUpdating(entry: Entry): boolean { return this.options.clients?.updating(entry.hostId) === true }
   private refresh(entry: Entry, candidate: HostUpdateCandidate): void {
     Object.assign(entry, { name: candidate.name, hostId: candidate.hostId, owned: candidate.owned, installPath: candidate.installPath, dataDirectory: candidate.dataDirectory, boot: candidate.boot === true })
     if (entry.phase !== 'done') entry.from = candidate.version
@@ -506,9 +550,11 @@ export class HostUpdates {
   /**
    * Follows the saved hosts and their threads: a host that answers with an older Sotto needs an update, one that no
    * longer does, or has gone, drops out unless its update is running or has something to say, and a host waiting for
-   * its threads starts once none is working.
+   * its threads starts once none is working and its client update line is empty.
    */
   private sync(changed = false): void {
+    // An installed update holding its restart for the client update line looks again: the router's changes arrive here.
+    for (const look of [...this.restarts]) look()
     const candidates = this.options.hosts.candidates()
     const seen = new Set<string>()
     for (const candidate of candidates) {
@@ -533,8 +579,13 @@ export class HostUpdates {
       }
       if (!older) { this.entries.delete(candidate.id); this.notNow.delete(candidate.id); continue }
       this.refresh(entry, candidate)
-      // Waiting, or asking, for threads that have all finished: the user has already pressed Update.
-      if (idleNow(entry.phase, this.working(entry).length) && !this.workingNow(entry).length) { this.begin(entry); return }
+      // Waiting, or asking, for threads that have all finished: the user has already pressed Update. A client update line
+      // still running keeps it waiting. That is read first: it is read in place, where the threads as they are this moment
+      // build every host's shell, and this runs on every change while a host waits for its clients.
+      if (idleNow(entry.phase, this.working(entry).length)) {
+        if (this.clientsUpdating(entry)) entry.phase = 'waiting'
+        else if (!this.workingNow(entry).length) { this.begin(entry); return }
+      }
     }
     for (const [id, entry] of this.entries) {
       if (!seen.has(id) && (entry.phase === 'needs' || entry.phase === 'confirm' || entry.phase === 'waiting' || entry.held)) { entry.run?.abort(); this.entries.delete(id) }
