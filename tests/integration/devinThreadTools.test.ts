@@ -82,9 +82,27 @@ describe('Devin thread tools', () => {
     await expect.poll(() => decisions(f)).toEqual([true])
   })
 
+  it('refuses an answer once the tool Devin asked about names another tool, and sends no allow', async () => {
+    const { f, id } = await setUp()
+    expect(await send(f, id)).toEqual({ accepted: true })
+    const input = { title: 'Synthetic', kind: 'diagram', source: 'flowchart LR\n  A --> B' }
+    await f.action(id, { type: 'mcp-permission', tool: `mcp__${VISUAL_MCP_SERVER}__visualize`, nameIn: 'meta', input })
+    await expect.poll(async () => (await thread(f, id)).requests.length).toBe(1)
+    const request = (await thread(f, id)).requests[0]!
+    const toolCallId = request.context!.toolCallId!
+    // The same call and input, now naming a tool that is not the thread's own.
+    await f.action(id, { type: 'update', update: { sessionUpdate: 'tool_call_update', toolCallId, title: 'Renamed tool', _meta: { 'cognition.ai/toolName': 'mcp__other_server__visualize' } } })
+    await expect.poll(async () => (await thread(f, id)).activities?.some(activity => activity.title === 'Renamed tool')).toBe(true)
+    await expect(f.host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: request.id, answer: '', approved: true }))
+      .rejects.toThrow('Devin changed this action after asking. Nothing was approved. Reconnect and review the new request.')
+    expect(await decisions(f)).toEqual([])
+  })
+
   it.each([
     ['a Sotto tool call whose input Devin cut short', { tool: `mcp__${VISUAL_MCP_SERVER}__visualize`, nameIn: 'meta', truncated: true }],
     ['a call to a tool that is not one of the thread’s own', { tool: 'mcp__other_server__visualize', nameIn: 'meta' }],
+    ['another tool’s call that looks like a command', { tool: 'mcp__other_server__run', nameIn: 'title', input: { command: 'git status' } }],
+    ['a command whose input Devin cut short', { tool: 'Run command', nameIn: 'title', input: { command: 'git status' }, truncated: true }],
   ])('refuses to present %s, and answers nothing for the user', async (_label, call) => {
     const { f, id } = await setUp()
     expect(await send(f, id)).toEqual({ accepted: true })

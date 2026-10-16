@@ -247,10 +247,11 @@ describe("requires SOTTO_DEVIN_LIVE=1", () => {
     if (!executable) throw new Error('Devin CLI was not found')
     // The tool hears the Sotto thread; only the titles it was given are kept, never the session or the reply.
     const drawn: { threadId: string; title: string }[] = []
-    const visuals = new VisualToolServer({ enabled: () => true, admits: () => true, add: async (threadId, input) => {
+    const visualServer = (): VisualToolServer => new VisualToolServer({ enabled: () => true, admits: () => true, add: async (threadId, input) => {
       drawn.push({ threadId, title: input.title })
       return { added: true, visual: { id: randomUUID(), title: input.title, kind: input.kind, source: input.source }, anchor: 'assistant' }
     } })
+    let visuals = visualServer()
     const start = (): DevinAcpHost => { const made = new DevinAcpHost(data, { executable }); made.useThreadTools([visuals]); return made }
     let host = start()
     const id = randomUUID()
@@ -279,6 +280,8 @@ describe("requires SOTTO_DEVIN_LIVE=1", () => {
       await drawOnce('Sotto live check one')
       stage = 'restart'
       host.disconnect(); await host.closed()
+      // A new server at a new address with a new token: the call after the load can only reach the one the load passed.
+      await visuals.close(); visuals = visualServer()
       host = start(); host.observeThreads([id])
       expect((await host.connect()).connected).toBe(true)
       stage = 'loaded-session-call'

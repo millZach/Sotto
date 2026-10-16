@@ -19,7 +19,7 @@ import { verifyFileMentions } from './promptFiles'
 import { markTurnActivity } from './turnActivity'
 import { DEVIN_THINKING_ID_PREFIX, devinActivities } from './devinActivity'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
-import { devinPending, devinAnswer, devinDecline, devinMcpToolName, type DevinPending } from './devinRequests'
+import { devinActionScope, devinPending, devinAnswer, devinDecline, devinMcpToolName, type DevinPending } from './devinRequests'
 import { markSendStage } from './sendStages'
 import type { ThreadLaunchProfiles } from './host'
 import { WatcherProfileRefusal } from './watcherProfile'
@@ -335,16 +335,18 @@ export class DevinAcpHost implements AgentHost {
    * servers passed on `session/new` and `session/load` from 3000.11.1 (ADR-0035), so every open passes them again, as
    * Grok Build's does. The catalog session and a history read never prompt, so they get none. A process that did not
    * say it takes HTTP servers gets none either, and its thread says so. Devin's own prompt before a call to one is shown
-   * to the user like any other: the asking profiles ask about `mcp__*`, and nothing here answers it (ADR-0004).
+   * to the user like any other: the asking profiles ask about `mcp__*`, and nothing here answers it (ADR-0004). A connection
+   * that changed while the servers were read is not the one they were for, so that refuses as uncertain.
    */
   private async toolServers(id: string, connection: Connection, generation: number): Promise<ThreadMcpServer[]> {
     const thread = this.thread(id)
+    if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
     if (!connection.httpToolServers) { thread.sottoToolsWithheld = true; return [] }
     delete thread.sottoToolsWithheld
     const servers: { server: ThreadMcpServer; tools: readonly string[] }[] = []
     if (this.browserTools) servers.push({ server: await this.browserTools.mcpServer(id), tools: this.browserTools.definitions.map(tool => tool.name) })
     for (const { server, tools } of await scopedThreadServers(this.threadTools, id)) servers.push({ server, tools: tools.definitions.map(tool => tool.name) })
-    if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
+    if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
     connection.sottoTools = new Set(servers.flatMap(({ server, tools }) => tools.map(tool => devinMcpToolName(server.name, tool))))
     return servers.map(({ server }) => server)
   }
@@ -580,7 +582,6 @@ export class DevinAcpHost implements AgentHost {
       alias.emptyReleased = false; alias.settingsConfirmed = false; await this.persist()
       if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
       const mcpServers = await this.toolServers(id, connection, generation)
-      if (this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
       await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers }, async value => {
         if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
         alias.devinSessionId = z.object({ sessionId: z.string().min(1) }).parse(value).sessionId
@@ -597,7 +598,6 @@ export class DevinAcpHost implements AgentHost {
         let loadedModel: string | undefined
         try {
           const mcpServers = await this.toolServers(id, connection, generation)
-          if (this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
           await connection.rpc.request('session/load', { sessionId: alias.devinSessionId, cwd: alias.cwd, mcpServers }, value => {
             if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
             loadedModel = modelConfig(value).current
@@ -889,7 +889,6 @@ export class DevinAcpHost implements AgentHost {
         if (generation !== this.generation) { connection.intentionalClose = true; connection.rpc.close(); throw new DevinUncertain('Devin connection changed.') }
         creation = connection; this.connections.set(command.threadId, connection)
         const mcpServers = await this.toolServers(command.threadId, connection, generation)
-        if (this.connections.get(command.threadId) !== connection) throw new DevinUncertain('Devin connection changed.')
         await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers }, async value => {
           if (generation !== this.generation || this.connections.get(command.threadId) !== connection) throw new DevinUncertain('Devin connection changed.')
           alias.devinSessionId = z.object({ sessionId: z.string().min(1) }).parse(value).sessionId
@@ -959,7 +958,7 @@ export class DevinAcpHost implements AgentHost {
           if (!saved || saved.decision.threadId !== id || saved.connection !== connection) throw new Error('That Devin request is no longer pending.')
           const decision = saved.decision
           const checkScope = (): void => {
-            if (decision.permission && JSON.stringify(connection.tools.get(decision.toolCallId!)?.rawInput) !== decision.actionDetails) {
+            if (decision.permission && devinActionScope(connection.tools.get(decision.toolCallId!), connection.sottoTools) !== decision.scope) {
               this.removeRequest(command.requestId); connection.rpc.close()
               throw new Error('Devin changed this action after asking. Nothing was approved. Reconnect and review the new request.')
             }

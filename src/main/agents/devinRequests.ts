@@ -25,7 +25,9 @@ const formSchema = z.object({
 const questionSchema = z.object({ sessionId: idSchema.optional(), mode: z.literal('form'), message: z.string().optional(), requestedSchema: formSchema })
 type Permission = z.infer<typeof permissionSchema>
 type Question = z.infer<typeof questionSchema>
-export type DevinPending = { wireId: string | number; threadId: string; toolCallId?: string; request: AgentRequest; actionDetails?: string; permission?: Permission; question?: Question; answering?: boolean }
+export type DevinPending = { wireId: string | number; threadId: string; toolCallId?: string; request: AgentRequest; actionDetails?: string
+  /** What the answer allows (`devinActionScope`), checked again before the answer goes. */
+  scope?: string; permission?: Permission; question?: Question; answering?: boolean }
 
 function invalidRequest(): never { throw new Error('Devin sent a request Sotto cannot safely answer. Stop this turn and review it in Devin.') }
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -43,8 +45,18 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
  * been seen on a real turn yet, so either counts and anything else is not a Sotto tool.
  */
 function sottoToolOf(toolCall: Record<string, unknown>, sottoTools: ReadonlySet<string>): string | undefined {
-  const names = [record(toolCall._meta)?.['cognition.ai/toolName'], toolCall.title]
-  return names.find((name): name is string => typeof name === 'string' && sottoTools.has(name))
+  return toolNames(toolCall).find(name => sottoTools.has(name))
+}
+const toolNames = (toolCall: Record<string, unknown>): string[] =>
+  [record(toolCall._meta)?.['cognition.ai/toolName'], toolCall.title].filter((name): name is string => typeof name === 'string')
+/** Devin says it cut the tool call's input short, so what it shows is not the whole action. */
+const truncatedInput = (toolCall: Record<string, unknown>): boolean => record(toolCall._meta)?.['cognition.ai/toolInputTruncated'] === true
+/**
+ * What an answer to a permission allows: the tool call's input, which of the session's Sotto tools it is, if any, and
+ * whether Devin cut its input short. An answer counts only while the tool call still reads the same in all three.
+ */
+export function devinActionScope(toolCall: Record<string, unknown> | undefined, sottoTools: ReadonlySet<string>): string {
+  return JSON.stringify(toolCall ? [toolCall.rawInput ?? null, sottoToolOf(toolCall, sottoTools) ?? null, truncatedInput(toolCall)] : null)
 }
 
 /**
@@ -61,8 +73,11 @@ export function devinPending(wireId: string | number, method: string, value: unk
     if (new Set(permission.options.map(option => option.optionId)).size !== permission.options.length) invalidRequest()
     if (!toolCall || toolCall.toolCallId !== permission.toolCall.toolCallId) invalidRequest()
     const input = parse(z.record(z.string(), z.unknown()), toolCall.rawInput)
+    // Input Devin says it cut short is never the whole action, and an MCP tool that is not one of the session's own
+    // Sotto tools is not shown at all, whatever its input looks like.
+    if (truncatedInput(toolCall)) invalidRequest()
     const sottoTool = sottoToolOf(toolCall, sottoTools)
-    if (sottoTool && record(toolCall._meta)?.['cognition.ai/toolInputTruncated'] === true) invalidRequest()
+    if (!sottoTool && toolNames(toolCall).some(name => name.startsWith('mcp__'))) invalidRequest()
     const command = !sottoTool && typeof input.command === 'string' && input.command.trim() ? input.command : undefined
     const file = typeof input.file_path === 'string' && input.file_path.trim() && (typeof input.content === 'string' || typeof input.old_string === 'string' && typeof input.new_string === 'string') ? input.file_path : undefined
     if (!command && !file && !sottoTool) invalidRequest()
@@ -72,7 +87,7 @@ export function devinPending(wireId: string | number, method: string, value: unk
     if (!choices.some(option => option.kind === 'reject_once')) invalidRequest()
     const text = sottoTool ? `Use Sotto’s ${sottoTool.slice(sottoTool.lastIndexOf('__') + 2)} tool`
       : typeof toolCall.title === 'string' ? toolCall.title.slice(0, 2_000) : 'Devin requests permission.'
-    return { wireId, threadId, toolCallId: permission.toolCall.toolCallId, permission, actionDetails: details, request: {
+    return { wireId, threadId, toolCallId: permission.toolCall.toolCallId, permission, actionDetails: details, scope: devinActionScope(toolCall, sottoTools), request: {
       id, kind: 'permission', text, options: [],
       permissionChoices: choices.map(option => ({ id: option.optionId, label: option.kind === 'allow_once' ? 'Allow once' : 'Deny', kind: option.kind === 'allow_once' ? 'allow-once' : 'deny' })),
       context: { toolCallId: permission.toolCall.toolCallId, ...(command && Object.keys(input).length === 1 ? { command } : { details }) },
