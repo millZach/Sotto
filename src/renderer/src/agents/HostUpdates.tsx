@@ -38,8 +38,8 @@ function useHostUpdateList(bridge: HostsBridge | undefined): [readonly HostUpdat
 export function hostUpdatePillText(updates: readonly HostUpdateState[]): { readonly text: string; readonly phase: HostUpdatePhase } {
   const top = [...updates].sort((a, b) => PILL_ORDER.indexOf(a.phase) - PILL_ORDER.indexOf(b.phase))[0]!
   if (updates.length > 1 && top.phase !== 'updating' && top.phase !== 'failed') return { text: `Updates for ${updates.length} hosts`, phase: 'needs' }
-  const text = top.phase === 'waiting' ? `${top.name} waits to update`
-    : top.phase === 'updating' ? `Updating ${top.name} · ${HOST_UPDATE_STEPS.indexOf(top.step ?? 'download') + 1} of 4`
+  const text = top.phase === 'waiting' ? `${top.name} waits ${top.clientsUpdating ? 'for its clients' : 'to update'}`
+    : top.phase === 'updating' ? `Updating ${top.name} · ${top.step === 'restart' && top.clientsUpdating ? 'waits for its clients' : `${HOST_UPDATE_STEPS.indexOf(top.step ?? 'download') + 1} of 4`}`
       : top.phase === 'done' ? `${top.name} updated`
         : top.phase === 'failed' ? `${top.name} not updated`
           : `Update for ${top.name}`
@@ -117,6 +117,12 @@ function HostUpdateSection({ update, showCommands, refusal, onAction, onToggleCo
     actions = <>{button('when-idle', 'Update when they finish', 'primary')}
       {button('stop-threads', `Stop ${threads} and update`, 'secondary', `Stop ${threads} and update ${name} now`)}
       {button('cancel', 'Cancel', 'ghost', `Cancel, and leave ${name} on ${from}`, key('update'))}</>
+  } else if (update.phase === 'waiting' && update.clientsUpdating) {
+    // The host's client update line is running: its restart would cut a client update off (ADR-0077 decision 2).
+    label = 'Clients updating'
+    body = <p>{name} updates once its client updates finish.{working ? ` ${threads} still working.` : ''}</p>
+    actions = <>{working ? button('stop-threads', `Stop ${threads}`, 'secondary', `Stop ${threads} on ${name}. It still updates once its client updates finish.`) : null}
+      {button('cancel', 'Cancel update', 'ghost', `Cancel update, and leave ${name} on ${from}`, key('update'))}</>
   } else if (update.phase === 'waiting') {
     label = `${working} working`
     body = <p>{name} updates when its threads finish. {working} still working.</p>
@@ -124,7 +130,8 @@ function HostUpdateSection({ update, showCommands, refusal, onAction, onToggleCo
       {button('cancel', 'Cancel update', 'ghost', `Cancel update, and leave ${name} on ${from}`, key('update'))}</>
   } else if (update.phase === 'updating') {
     label = `Step ${HOST_UPDATE_STEPS.indexOf(update.step ?? 'download') + 1} of 4`
-    body = <Steps update={update} />
+    // A client update running on the host holds the restart, however far the update has come (ADR-0077 decision 2).
+    body = <><Steps update={update} />{update.clientsUpdating ? <p className="host-update__muted">{name} restarts once its client updates finish.</p> : null}</>
     actions = update.step === 'download' || update.step === 'check' ? button('cancel', 'Cancel update', 'ghost', `Cancel update, and leave ${name} on ${from}`, key('update')) : null
   } else if (update.phase === 'done') {
     label = to
