@@ -1138,3 +1138,21 @@ it('never wakes Watcher mid-turn when a Git read only sees a pull request’s li
   expect(f.delivered).toHaveLength(told)
   expect(f.wakes.evidence.read(centerTarget).find(fact => fact.source === 'github' && fact.fact === 'pull-request-observed')).toMatchObject({ availability: 'available' })
 })
+it('counts a pull request’s change as needing Watcher, and a thread’s own facts as not', async () => {
+  const f = fixture(), { move } = gitFixture(f)
+  f.wakes.observe(); await f.advance(2_000)
+  f.checks('failed'); await f.advance(2_000)
+  const checks = f.delivered.at(-1)!.events
+  expect(checks.map(event => event.kind)).toEqual(['evidence-changed'])
+  expect(f.wakes.needsAttention(checks)).toBe(true)
+  // The thread's own record of the link is read on its next observation, as part of that same pull request's news.
+  f.wakes.observe(); await f.advance(5_000)
+  const count = f.delivered.length
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }; move({ changedFiles: 7 }); f.wakes.observe()
+  await f.advance(5_000)
+  expect(f.delivered).toHaveLength(count + 1)
+  const own = f.delivered.at(-1)!.events.filter(event => event.kind === 'evidence-changed')
+  expect(own).toHaveLength(1)
+  expect(f.wakes.needsAttention(own)).toBe(false)
+  expect(f.wakes.needsAttention(f.delivered.at(-1)!.events)).toBe(true)
+})

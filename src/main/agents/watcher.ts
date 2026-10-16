@@ -176,6 +176,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   wakeDue(event: WatcherEvent): boolean { return this.wakes.due(event) }
   wakeReady(): boolean { return this.wakes.ready() }
+  wakeNeedsAttention(events: readonly WatcherEvent[]): boolean { return this.wakes.needsAttention(events) }
   forgetWakeEvents(events: readonly WatcherEvent[]): void {
     if (this.closed || !events.length) return
     const ids = new Set(events.map(event => event.id))

@@ -108,6 +108,11 @@ it('sets a stopped wake-up for Watcher alone going again behind the user’s fol
     await store.pause('thread', 'Synthetic stop')
     await store.queueWakeUp('thread', evidence, word)
     expect(store.peek().items[0]).toMatchObject({ id, status: 'paused' })
+    // So does a pull request's change, which its caller says needs Watcher, though it is evidence.
+    await store.pause('thread', 'Synthetic stop')
+    await store.queueWakeUp('thread', evidence, word, undefined, true)
+    expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
+    await store.pause('thread', 'Synthetic stop')
     await store.queueWakeUp('thread', news('third'), word)
     expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
     // An unknown send is never sent twice.

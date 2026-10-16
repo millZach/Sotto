@@ -78,6 +78,8 @@ export class WatcherWakeUp {
   private readonly owedWorkSettled = new Set<string>()
   /** Git-backed threads whose untold turn end waits for its Git read: until when, and their own facts when it ended. */
   private readonly settling = new Map<string, { target: WatcherThreadTarget; until: number; local: string }>()
+  /** Evidence events a pull request's change made, which need Watcher's attention as a turn end does. */
+  private readonly waking = new Set<string>()
   private pending: WatcherEvent[] = []
   private recent: WatcherEvent[] = []
   private cancelBatch: (() => void) | undefined
@@ -168,6 +170,14 @@ export class WatcherWakeUp {
     return snapshot.projects.find(project => project.id === thread.projectId && (project.hostId ?? snapshot.hostId) === (thread.hostId ?? snapshot.hostId))
   }
   news(): WatcherEvent[] { return this.recent.filter(event => this.due(event)) }
+  /**
+   * Whether news needs Watcher's attention: anything but evidence, or evidence of a pull request's link, state, checks,
+   * review or merge changing. Evidence of a thread's own facts alone does not; it only rides with news that does. Which
+   * evidence woke is kept in memory, so after a restart restored evidence counts as the thread's own.
+   */
+  needsAttention(events: readonly WatcherEvent[]): boolean {
+    return events.some(event => event.kind !== 'evidence-changed' || this.waking.has(event.id))
+  }
   /**
    * Forgets that these events were told: their wake-up was let go with its send unknown, and is never sent twice. What
    * is still true is observed afresh and told in a new wake-up; what is no longer true stays untold.
@@ -445,7 +455,13 @@ export class WatcherWakeUp {
       const ending = untold.some(event => event.kind === 'turn-finished' || event.kind === 'turn-failed' || event.kind === 'work-settled')
       if (!waiting && !(ending && (this.toldLocal.get(key) ?? NOTHING_TOLD) !== this.evidence.digest(target, 'local'))) return
     }
+    const pendingBefore = new Set(this.pending.map(event => event.id))
     this.event('evidence-changed', target, evidenceIds, { evidenceIds, revision: observationDigest(evidenceIds) })
+    // A pull request's change needs Watcher; the thread's own facts only ride with what does (needsAttention).
+    if (wake) for (const event of this.pending) if (event.kind === 'evidence-changed' && !pendingBefore.has(event.id)) {
+      this.waking.add(event.id)
+      while (this.waking.size > 2_000) this.waking.delete(this.waking.values().next().value!)
+    }
   }
   pairedEvidence(hostId: string, facts: readonly WatcherEvidence[]): void {
     if (!this.started || this.closed) return

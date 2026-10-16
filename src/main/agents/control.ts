@@ -1647,7 +1647,8 @@ export class AgentControl {
     }
     // News arriving while the thread rests follows the turn it rests on; a request waiting on the user still holds it.
     const reviewed = !isThreadTurnRunning(thread) ? thread.lastTurn?.id ?? UNKNOWN_TURN : undefined
-    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed)
+    const attention = isWatcherNews(news) ? this.watcherHooks?.wakeNeedsAttention?.(news.events) : undefined
+    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed, attention)
     this.syncFollowups(); this.publish(); this.pumpFollowups()
   }
   /**

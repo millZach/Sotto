@@ -225,7 +225,7 @@ export class FollowupStore {
    * once when the thread is ready and otherwise when it would send the next one. A thread holds one waiting wake-up,
    * and later news folds into it until it goes. Resolves once it is saved.
    */
-  queueWakeUp(threadId: string, news: WakeUpNews, word: WordWakeUp, resumeAfterTurnId?: string): Promise<void> {
+  queueWakeUp(threadId: string, news: WakeUpNews, word: WordWakeUp, resumeAfterTurnId?: string, attention?: boolean): Promise<void> {
     return this.change(state => {
       const now = new Date().toISOString()
       const waiting = state.items.find(item => waitingWakeUp(item, threadId))
@@ -235,8 +235,9 @@ export class FollowupStore {
         // A resume note is the review a paused queue waits for: the turn it follows did not finish, and it says so.
         // News that needs Watcher's attention starts a stopped wake-up no one is shown, and so no one can resume, again.
         // A thread's facts alone only keep its news current: they never send it, mid-turn or otherwise.
-        const attention = isWatcherNews(news) && news.events.some(event => event.kind !== 'evidence-changed')
-        const resumes = isRestartNews(news) || attention && ['failed', 'paused'].includes(waiting.status) && isWatcherOnlyWakeUp({ wakeUp: true, news: folded })
+        // Whether Watcher's news needs it is the caller's to say (a pull request's change does); without word, anything but evidence.
+        const needs = isWatcherNews(news) && (attention ?? news.events.some(event => event.kind !== 'evidence-changed'))
+        const resumes = isRestartNews(news) || needs && ['failed', 'paused'].includes(waiting.status) && isWatcherOnlyWakeUp({ wakeUp: true, news: folded })
           ? { status: 'queued' as const, error: undefined } : {}
         const next = queuedSchema.parse({ ...waiting, news: folded, text: word(folded), updatedAt: now, ...resumeAfterTurnId ? { resumeAfterTurnId } : {}, ...resumes })
         state.items = state.items.map(item => item === waiting ? next : item)
