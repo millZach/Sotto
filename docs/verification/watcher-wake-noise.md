@@ -39,10 +39,9 @@ way; a resume note or pull request news in one keeps its own words.
 the news in its channel and an ordinary thread receives none.
 `tests/integration/watcherTools.test.ts` checks the queue panel, the
 conversation, the phone projection and the row summary show no wake-up text,
-that old saved wake-ups are hidden, that a user's identical message is kept,
-and that a paused wake-up no one can see goes on by itself after Watcher's next
-turn. `tests/unit/main/followupWakeTypes.test.ts` covers that recovery in the
-queue store.
+that old saved wake-ups are hidden, and that a user's identical message is
+kept. How a wake-up no one can see settles by itself is the round 6 section
+below.
 
 ## Gates
 
@@ -72,6 +71,35 @@ own source, even with a fifteen-second deadline. The owning host's failed
 receipt either never reaches the master's paired listener or is never
 recorded, so the master's receipt stays `dispatching`. This branch does not
 cause it, and it is not fixed here.
+
+## Round 6: a hidden wake-up never changes
+
+Review round 5 found five more cases, all from news folding into the hidden
+wake-up while it waited or was sent. ADR-0073's October 15 section "a hidden
+wake-up never changes" records the fix. Each case has a test that fails on the
+round-5 source (`c558e2170`) and passes now:
+
+1. A thread's own facts moving while a pull request's wake-up is sent never
+   send alone afterwards (`watcherTools.test.ts`, "finding 1").
+2. Two saved wake-ups from an earlier build, without the attention record, are
+   dropped on start and the still-open question reaches Watcher
+   (`watcherTools.test.ts`, "starts Watcher's news afresh after a restart").
+3. A failed save after a send loses no news that came while it was sent
+   (`watcherTools.test.ts`, "finding 3").
+4. Watcher's news never shares an item with pull request news
+   (`followupWakeTypes.test.ts`).
+5. A handover carries no hidden wake-up and counts none
+   (`handover.test.ts`).
+
+`tests/unit/main/hiddenWakeUpInvariants.test.ts` drives the real WatcherWakeUp
+and queue through table cases and 30 seeded random sequences, and reaches all
+four outcomes.
+
+From source `969119b95`, on Windows: typecheck, lint and notices:verify (189)
+passed; `npm test -- --maxWorkers=2` passed 880 files and 11,529 tests (79 files
+and 351 tests skipped) in 30 minutes, with no failures; build passed;
+`npm run test:socket` passed 23 files and 507 tests; the Watcher Playwright
+specs passed all 23 journeys in 1.8 minutes.
 
 No live provider, remote machine or installed release was used, and no look
 changed: the pane shows Watcher's reply where the bubble was.
