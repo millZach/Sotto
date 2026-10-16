@@ -1156,3 +1156,20 @@ it('counts a pull request’s change as needing Watcher, and a thread’s own fa
   expect(f.wakes.needsAttention(own)).toBe(false)
   expect(f.wakes.needsAttention(f.delivered.at(-1)!.events)).toBe(true)
 })
+
+it('tells quiet and pull request news afresh once their wake-up is let go with its send unknown, as a restart does', async () => {
+  const f = fixture()
+  await f.advance(WATCHER_QUIET_MS + 2_000)
+  const quiet = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet')
+  expect(quiet).toHaveLength(1)
+  f.checks('failed'); await f.advance(2_000)
+  const checks = f.delivered.at(-1)!.events.filter(event => event.kind === 'evidence-changed')
+  expect(checks).toHaveLength(1)
+  const told = f.delivered.length
+  // Nothing about the thread changes; only the wake-up that carried this news was let go.
+  f.wakes.forget([...quiet, ...checks]); f.wakes.observe(); await f.advance(2_000)
+  const again = f.delivered.slice(told).flatMap(news => news.events)
+  expect(again.filter(event => event.kind === 'quiet')).toHaveLength(1)
+  expect(again.filter(event => event.kind === 'evidence-changed')).toHaveLength(1)
+  expect(f.wakes.needsAttention(again)).toBe(true)
+})

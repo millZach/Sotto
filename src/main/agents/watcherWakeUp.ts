@@ -183,16 +183,24 @@ export class WatcherWakeUp {
    * is still true is observed afresh and told in a new wake-up; what is no longer true stays untold.
    */
   forget(events: readonly WatcherEvent[]): void {
+    // As a restart does: a quiet episode already told is open again, and a pull request's facts are told as they stand.
+    const pullRequests = new Map<string, WatcherThreadTarget>()
     for (const event of events) {
       this.seen.delete(event.id); this.rememberPending.delete(event.id)
       if (event.kind === 'evidence-changed') {
         const scope = observationDigest(['evidence-changed', event.requestId, event.target, event.generation])
         if (this.latestEvidence.get(scope)?.id === event.id) this.latestEvidence.delete(scope)
         this.toldLocal.delete(targetKey(event.target))
+        if (this.waking.has(event.id)) pullRequests.set(targetKey(event.target), event.target)
       }
       if (event.kind === 'work-settled') this.oweWorkSettled(workSettledScope(event.requestId, event.target, event.generation, event.turnId))
+      if (event.kind === 'quiet') {
+        const progress = this.progress.get(targetKey(event.target))
+        if (progress) { progress.quiet = false; progress.cancel?.(); delete progress.cancel }
+      }
     }
     this.recent = this.recent.filter(event => !events.some(item => item.id === event.id))
+    for (const target of pullRequests.values()) this.evidenceChanged(target, [], false, true)
   }
   /**
    * The events still due. Work-settled news whose work started again before delivery is not sent; its turn is owed it
