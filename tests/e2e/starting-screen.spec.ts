@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
@@ -29,24 +29,44 @@ async function withEnvironment<T>(values: Record<string, string>, run: () => Pro
 }
 
 /**
- * Launches with one saved host, switched on so Sotto connects it at launch, over a scripted ssh that signs in and then
- * never answers, so the host stays connecting.
+ * Launches with one saved host, switched on so Sotto connects it at launch, over a scripted ssh. By default it signs in
+ * and then never answers, so the host stays connecting; `password` asks for the password `test-secret` first. With
+ * `devinDelayMs`, Devin is turned on too and answers its first start that late.
  */
-async function launchWithSilentHost(name: string, prefix: string): Promise<{ readonly profile: string; readonly launch: () => Promise<LaunchedSotto> }> {
+async function launchWithSavedHost(name: string, prefix: string, options: { readonly sshMode?: 'timeout' | 'password'; readonly devinDelayMs?: number } = {}):
+Promise<{ readonly profile: string; readonly launch: () => Promise<LaunchedSotto> }> {
   const profile = (await ownedE2EProfile({ prefix })).directory
   const root = join(profile, 'ssh-root')
+  const devin = join(profile, 'devin-fixture')
   await mkdir(join(root, '~'), { recursive: true })
   await mkdir(evidence, { recursive: true })
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
   await writeFile(join(profile, 'remote-hosts.json'), JSON.stringify([{ id: FORGE, name, target: 'forge', identityFile: '',
     installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto', enabled: true }]))
+  if (options.devinDelayMs !== undefined) {
+    await mkdir(join(devin, 'project'), { recursive: true })
+    await writeFile(join(profile, 'agents.json'), JSON.stringify({
+      configuration: { ...defaultAgentConfiguration(), provider: 'devin', enabledProviders: ['codex', 'devin'], enabled: true },
+      activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],
+    }))
+    await writeFile(join(devin, 'script.json'), JSON.stringify({ delayInitialize: options.devinDelayMs }))
+  }
   return {
     profile,
     launch: () => withEnvironment({
       SOTTO_E2E_STARTING_SCREEN: '1', SOTTO_E2E_SSH_SCRIPT: resolve('tests/fixtures/fakeSsh.mjs'), SOTTO_E2E_SSH_EXECUTABLE: process.execPath,
-      FAKE_SSH_MODE: 'timeout', FAKE_SSH_ROOT: root, FAKE_SSH_RECORD: join(root, 'ssh.jsonl'), HOME: join(root, '~'), USERPROFILE: join(root, '~'),
+      FAKE_SSH_MODE: options.sshMode ?? 'timeout', FAKE_SSH_ROOT: root, FAKE_SSH_RECORD: join(root, 'ssh.jsonl'), HOME: join(root, '~'), USERPROFILE: join(root, '~'),
+      ...(options.devinDelayMs !== undefined ? { SOTTO_E2E_DEVIN_ROOT: devin, SOTTO_E2E_DEVIN_EXECUTABLE: process.execPath } : {}),
     }, () => launchSotto('success', profile)),
   }
+}
+
+/**
+ * Whether `locator` has the page's focus, which is where a key goes, whether or not the window is in front: another
+ * process's window can take the front for a moment on a busy machine, which `toBeFocused` would read as lost focus.
+ */
+function hasPageFocus(locator: Locator): Promise<boolean> {
+  return locator.evaluate(element => element === document.activeElement)
 }
 
 async function appearance(page: Page, mode: 'dark' | 'light'): Promise<void> {
@@ -124,7 +144,7 @@ test('covers launch until the providers connect, then opens on Threads, and a re
 
 test('names a host that has not answered in ten seconds, and opens Sotto without it from the keyboard', async () => {
   test.setTimeout(150_000)
-  const { profile, launch } = await launchWithSilentHost('forge', 'sotto-e2e-starting-late-')
+  const { profile, launch } = await launchWithSavedHost('forge', 'sotto-e2e-starting-late-')
   let launched: LaunchedSotto | undefined
   try {
     launched = await launch()
@@ -167,6 +187,12 @@ test('names a host that has not answered in ten seconds, and opens Sotto without
     }
     await appearance(page, 'dark')
 
+    // A reload while still starting shows the screen again on the same ten seconds: the late line is back as soon as
+    // the page has loaded, rather than ten seconds after the reload.
+    await page.reload()
+    await expect(status).toHaveText('Waiting for forge', { timeout: 7_000 })
+    await expect(late).toBeFocused()
+
     // Enter on the focused button opens the app; forge keeps connecting in the background.
     await late.focus()
     await page.keyboard.press('Enter')
@@ -183,7 +209,7 @@ test('names a host that has not answered in ten seconds, and opens Sotto without
 test('wraps a saved host’s longest name inside the window, down to the minimum size', async () => {
   test.setTimeout(150_000)
   expect(LONG_NAME).toHaveLength(80)
-  const { profile, launch } = await launchWithSilentHost(LONG_NAME, 'sotto-e2e-starting-long-')
+  const { profile, launch } = await launchWithSavedHost(LONG_NAME, 'sotto-e2e-starting-long-')
   let launched: LaunchedSotto | undefined
   try {
     launched = await launch()
@@ -200,6 +226,41 @@ test('wraps a saved host’s longest name inside the window, down to the minimum
       }
     }
     await page.screenshot({ path: join(evidence, 'late-long-name-820x560-dark.png'), animations: 'disabled' })
+  } finally {
+    if (launched) await closeSotto(launched)
+    await removeOwnedE2EProfile(profile).catch(() => undefined)
+  }
+})
+
+test('keeps focus and a half-typed answer in an SSH question over the screen, through ten seconds and the app opening', async () => {
+  test.setTimeout(150_000)
+  // Devin answers at fourteen seconds, so it is still connecting when the late line comes at ten.
+  const { profile, launch } = await launchWithSavedHost('forge', 'sotto-e2e-starting-question-', { sshMode: 'password', devinDelayMs: 14_000 })
+  let launched: LaunchedSotto | undefined
+  try {
+    launched = await launch()
+    const { page } = launched
+    const screen = page.locator('.starting-screen')
+    const question = page.getByRole('dialog', { name: 'Unlock the SSH connection to forge' })
+    const field = question.getByLabel('SSH password')
+    await expect(screen.getByRole('status')).toHaveText('Connecting Devin', { timeout: 15_000 })
+    await expect(field).toBeVisible({ timeout: 15_000 })
+    await expect.poll(() => hasPageFocus(field)).toBe(true)
+
+    // Ten seconds: the late button comes, and the question keeps focus, so what is typed goes on into the field.
+    await expect(screen.getByRole('button', { name: 'Open Sotto without Devin' })).toBeVisible({ timeout: 12_000 })
+    expect(await hasPageFocus(field)).toBe(true)
+    await page.keyboard.type('test-')
+
+    // Devin answers and the app takes the window under the same question, with the answer and focus where they were.
+    await expect(page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible({ timeout: 20_000 })
+    await expect(screen).toHaveCount(0)
+    await expect(question).toHaveCount(1)
+    await expect(field).toHaveValue('test-')
+    expect(await hasPageFocus(field)).toBe(true)
+    await page.keyboard.type('secret')
+    await page.keyboard.press('Enter')
+    await expect(question).toHaveCount(0, { timeout: 15_000 })
   } finally {
     if (launched) await closeSotto(launched)
     await removeOwnedE2EProfile(profile).catch(() => undefined)
