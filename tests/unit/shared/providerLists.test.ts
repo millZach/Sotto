@@ -30,6 +30,7 @@ const providerLists: ReadonlyArray<readonly [string, (ids: readonly string[]) =>
   ['installed providers', ids => agentStateSchema.shape.installedProviders.safeParse(ids).success],
   ['client updates', ids => agentStateSchema.shape.clientUpdates.safeParse(ids.map(update)).success],
   ["a host's client updates", ids => agentClientHostSchema.shape.clientUpdates.safeParse(ids.map(update)).success],
+  ["this computer's enabled providers on its host entry", ids => agentClientHostSchema.shape.enabledProviders.safeParse(ids).success],
   ['queued client updates', ids => agentCommandSchema.safeParse({ type: 'queue-client-updates', providers: ids }).success],
   ['cancelled client updates', ids => agentCommandSchema.safeParse({ type: 'cancel-client-updates', providers: ids }).success],
   ["a host's client update request", ids => hostClientUpdateRequestSchema.safeParse({ id: '6f9619ff-8b86-4011-b42d-00cf4fc964ff', action: 'update', providers: ids }).success],
@@ -81,5 +82,9 @@ describe('provider lists', () => {
     expect(everyProvider(['muse', 'devin', 'grok', 'claude', 'codex'])).toEqual(['muse', 'devin', 'grok', 'claude', 'codex'])
     // @ts-expect-error Muse is missing, and the type checker says so.
     everyProvider(['codex', 'claude', 'grok', 'devin'])
+  })
+
+  it('refuses a list of every provider that names one twice', () => {
+    expect(() => everyProvider(['codex', 'codex', 'claude', 'grok', 'devin', 'muse'])).toThrow('codex is listed twice in a list of every provider.')
   })
 })

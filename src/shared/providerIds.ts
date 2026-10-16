@@ -13,10 +13,12 @@ type MissingProvider<T extends readonly ProviderId[]> = Exclude<ProviderId, T[nu
 
 /**
  * A list that must name every provider, in an order its caller chooses. A provider left out is a type error that
- * names it, so a new provider cannot be forgotten in one.
+ * names it, so a new provider cannot be forgotten in one; a provider named twice throws when the list is made.
  */
 export function everyProvider<const T extends readonly ProviderId[]>(
   list: T & ([MissingProvider<T>] extends [never] ? unknown : { readonly missingProvider: MissingProvider<T> }),
 ): T {
+  const repeated = list.find((id, index) => list.indexOf(id) !== index)
+  if (repeated !== undefined) throw new Error(`${repeated} is listed twice in a list of every provider.`)
   return list
 }

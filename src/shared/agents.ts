@@ -539,7 +539,7 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
    * This computer's own entry only, for Settings > Providers: the providers it has turned on, whether it checks for client
    * updates, and the model its agent setting starts new threads on, its Models tab's "Agent setting".
    */
-  enabledProviders: z.array(providerIdSchema).max(5).optional(), checkClientUpdates: z.boolean().optional(), agentModelId: z.string().max(512).optional() })
+  enabledProviders: z.array(providerIdSchema).max(PROVIDER_COUNT).optional(), checkClientUpdates: z.boolean().optional(), agentModelId: z.string().max(512).optional() })
 export type AgentClientHost = z.infer<typeof agentClientHostSchema>
 
 export const agentHostSnapshotSchema = z.object({
