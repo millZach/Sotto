@@ -776,6 +776,40 @@ it('starts a stopped wake-up no one is shown again on news that needs Watcher, a
   expect(refused).toBeGreaterThanOrEqual(2)
 }, 30_000)
 
+it('keeps one wake-up no one is shown, folding news in while it is sent, and tries it a bounded number of times', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const worker = f.native(started.target.threadId)
+  worker.requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
+  f.workspace.adapters.codex.emit()
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
+  // The provider refuses every send of it.
+  const master = f.workspace.registry.byThread(f.id)!.sessionId, execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  let refused = 0
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+    if (command.type === 'send' && command.threadId === master && command.watcherNews) { refused++; throw new Error('Synthetic native pre-write failure') }
+    return execute(command)
+  })
+  const entered = deferred<void>(), release = deferred<void>()
+  f.workspace.host.setCheckpointHooks({ isBlocked: async () => false, beforeTurn: async id => { if (id === f.id) { entered.resolve(); await release.promise } } })
+  const hidden = () => queued(f).filter(item => item.threadId === f.id && item.wakeUp)
+  try {
+    const finishing = f.finish(f.id)
+    await entered.promise
+    // News that needs Watcher arrives while the wake-up is being sent: it folds into that one, not a second.
+    worker.status = 'error'; worker.lastTurn = { id: 'folded-turn', status: 'failed' }
+    f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+    await vi.waitFor(() => expect(watcherWakeUpNote(hidden()[0]?.news ?? []) ?? '').toContain('turn failed'), { timeout: 15_000 })
+    expect(hidden()).toHaveLength(1)
+    release.resolve(); await finishing
+  } finally { release.resolve() }
+  // Every try uses the one budget, and then it waits for Watcher's next turn of its own.
+  await vi.waitFor(() => expect(refused).toBe(4), { timeout: 20_000 })
+  await new Promise(resolve => setTimeout(resolve, 7_000))
+  expect(refused).toBe(4)
+  expect(hidden()).toHaveLength(1)
+}, 60_000)
+
 it('lets a hidden wake-up whose send is unknown go, and tells its news afresh rather than losing it', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')

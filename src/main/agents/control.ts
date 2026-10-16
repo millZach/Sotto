@@ -277,8 +277,16 @@ export class AgentControl {
    */
   private readonly threadPrompts = new Map<string, number>()
   private readonly pumping = new Set<string>()
-  /** How often each stopped wake-up no one is shown has been tried again by itself in this run: at most WAKE_UP_RETRIES. */
-  private readonly wakeRetries = new Map<string, number>()
+  /**
+   * How often each wake-up no one is shown has been tried in this run, and Watcher's last turn when it last was. Every send
+   * of it counts, however it came about, up to WAKE_UP_ATTEMPTS; a turn Watcher finishes after that starts the count again.
+   */
+  private readonly wakeAttempts = new Map<string, { count: number; turnId: string | undefined }>()
+  private wakeUpMayTry(item: Pick<QueuedFollowup, 'id'>, thread: AgentThread): boolean {
+    const used = this.wakeAttempts.get(item.id)
+    if (used && thread.lastTurn?.status === 'completed' && thread.lastTurn.id !== used.turnId) { this.wakeAttempts.delete(item.id); return true }
+    return (used?.count ?? 0) < WAKE_UP_ATTEMPTS
+  }
   private state: AgentState
   private outbox: Saved['outbox'] = []
   private watcher: WatcherRecord = emptyWatcherRecord()
@@ -2660,28 +2668,25 @@ export class AgentControl {
       const first = items.find(item => item.threadId === threadId && item.messageId && thread?.messages.some(message => message.role === 'user' && message.id === item.messageId))
         ?? items.find(item => item.threadId === threadId)!
       if (first.news?.some(isWatcherNews) && !this.watcherHooks?.wakeReady?.()) continue
-      // A wake-up holding only Watcher's news is shown nowhere, so no one can resume or remove it. It goes again by itself
-      // once Watcher finishes a turn after it stopped, or at once when it is holding the thread's other items up; one that
-      // failed to send is tried again while Watcher rests, a few times; one whose send is unknown, and no longer being
-      // reconciled, is let go, and its news is observed afresh rather than sent twice.
+      // A wake-up holding only Watcher's news is shown nowhere, so no one can resume or remove it. One whose send is unknown,
+      // and no longer being reconciled, is let go, and its news is observed afresh rather than sent twice. One paused or
+      // unsent goes again by itself once Watcher finishes a turn after it stopped, or, unsent, while Watcher rests; each try
+      // uses the item's one budget (WAKE_UP_ATTEMPTS). It never holds the thread's other items up.
       if (isWatcherOnlyWakeUp(first) && thread && ['paused', 'failed', 'uncertain'].includes(first.status)
         && !this.outbox.some(item => item.id === first.commandId)
         && !thread.messages.some(message => message.role === 'user' && message.id === first.messageId)) {
         const resting = !isThreadTurnRunning(thread) && !thread.requests.length
         const finished = resting && thread.lastTurn?.status === 'completed' && thread.lastTurn.id !== first.resumeAfterTurnId
-        const holding = first.status === 'failed' && items.some(item => item.threadId === threadId && item.id !== first.id)
-        const retry = first.status === 'failed' && resting && (this.wakeRetries.get(first.id) ?? 0) < WAKE_UP_RETRIES
-        if (first.status === 'uncertain' || finished || holding || retry) {
-          if (retry && !finished && !holding) {
-            this.wakeRetries.set(first.id, (this.wakeRetries.get(first.id) ?? 0) + 1)
-            while (this.wakeRetries.size > 1_000) this.wakeRetries.delete(this.wakeRetries.keys().next().value!)
-          }
+        const others = items.some(item => item.threadId === threadId && item.id !== first.id)
+        const revive = first.status !== 'uncertain' && this.wakeUpMayTry(first, thread) && (finished || first.status === 'failed' && (resting || others))
+        if (first.status === 'uncertain' || revive || others) {
           const letGo = first.status === 'uncertain' ? (first.news ?? []).flatMap(news => isWatcherNews(news) ? news.events : []) : []
           this.pumping.add(threadId)
-          let revived = false
-          void this.followupStore.reviveWakeUp(first.id, thread.lastTurn?.id ?? UNKNOWN_TURN).then(() => { revived = true; if (letGo.length) this.watcherHooks?.forgetWakeEvents?.(letGo) })
+          let changed = false
+          void (first.status === 'uncertain' || revive ? this.followupStore.reviveWakeUp(first.id, thread.lastTurn?.id ?? UNKNOWN_TURN) : this.followupStore.moveWakeUpBehind(first.id))
+            .then(() => { changed = true; if (letGo.length) this.watcherHooks?.forgetWakeEvents?.(letGo) })
             .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
-            .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (revived) this.pumpFollowups() })
+            .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (changed) this.pumpFollowups() })
           continue
         }
       }
@@ -2702,6 +2707,15 @@ export class AgentControl {
       }
       const confirmed = first.messageId && thread?.messages.some(m => m.role === 'user' && m.id === first.messageId)
       if (!confirmed && (first.status !== 'queued' || !this.followupReady(threadId))) continue
+      // A wake-up no one is shown whose budget is spent waits, behind the rest, for Watcher's next turn of its own.
+      if (!confirmed && thread && isWatcherOnlyWakeUp(first) && !this.wakeUpMayTry(first, thread)) {
+        this.pumping.add(threadId)
+        let held = false
+        void this.followupStore.moveWakeUpBehind(first.id, 'Sotto tried this wake-up as often as it will by itself. It goes again after Watcher next finishes a turn.')
+          .then(() => { held = true }).catch(() => { this.state.error = 'Could not save the follow-up queue.' })
+          .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (held) this.pumpFollowups() })
+        continue
+      }
       if (!confirmed && this.wakeUpOutdated(threadId, first)) {
         // What babysitting ended since it was told is taken out before the wake-up goes, and the rest goes after.
         this.pumping.add(threadId)
@@ -2724,6 +2738,10 @@ export class AgentControl {
           this.canAct(threadId)
           if (first.watcherOperationId) this.watcherHooks?.guardOperation(first.watcherOperationId)
           await this.followupStore.claim(first.id); claimed = true
+          if (isWatcherOnlyWakeUp(first)) {
+            this.wakeAttempts.set(first.id, { count: (this.wakeAttempts.get(first.id)?.count ?? 0) + 1, turnId: this.thread(threadId).lastTurn?.id })
+            while (this.wakeAttempts.size > 1_000) this.wakeAttempts.delete(this.wakeAttempts.keys().next().value!)
+          }
           this.syncFollowups(); this.publish()
           const item = this.followupStore.get().items.find(item => item.id === first.id)!
           // Read immediately before dispatch, as every other send does: the send and its checkpoint go from this history,
@@ -2764,7 +2782,9 @@ export class AgentControl {
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: this.queuedWords(item).trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
             expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}), ...(watcherNews ? { watcherNews } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
             this.localClient, undefined, undefined, writeGuard)
-          await this.followupStore.settle(item.id, 'accepted')
+          // Watcher's news that came while this was being sent stays in the item, and goes next.
+          if (isWatcherOnlyWakeUp(item)) await this.followupStore.settleSent(item.id, new Set((item.news ?? []).flatMap(news => isWatcherNews(news) ? news.events.map(event => event.id) : [])), news => queuedWakeUpText(news, { tool: false }))
+          else await this.followupStore.settle(item.id, 'accepted')
         } catch (error) {
           failure = error instanceof CheckoutSendRefusal ? error.queuedMessage() : error instanceof Error ? error.message : first.wakeUp ? 'Could not send this wake-up.' : 'Could not dispatch this follow-up.'
           if (first.news?.some(isRestartNews)) this.restartHooks?.unsent(threadId)
@@ -2784,9 +2804,10 @@ export class AgentControl {
         .finally(() => {
           this.syncFollowups(); this.publish(); this.pumping.delete(threadId)
           if (requeued || this.followupStore.peek().items.find(i => i.threadId === threadId)?.id !== first.id) this.pumpFollowups()
-          // Nothing may change after a hidden wake-up fails to send, so its tries again are timed (WAKE_UP_RETRIES).
+          // Nothing may change after a hidden wake-up fails to send, so its tries again are timed (WAKE_UP_ATTEMPTS).
           const after = this.followupStore.peek().items.find(item => item.id === first.id)
-          if (after && isWatcherOnlyWakeUp(after) && after.status === 'failed' && (this.wakeRetries.get(after.id) ?? 0) < WAKE_UP_RETRIES) this.retryWakeUpLater()
+          const watcher = this.state.host.threads.find(item => item.id === threadId)
+          if (after && watcher && isWatcherOnlyWakeUp(after) && after.status === 'failed' && this.wakeUpMayTry(after, watcher)) this.retryWakeUpLater()
         })
     }
   }
@@ -4046,8 +4067,8 @@ export class AgentControl {
  * One broadcast per animation frame. Below what a person can see, so no state looks late, and
  * far fewer full copies of every thread's history than a streaming provider would otherwise force.
  */
-/** How many times a wake-up holding only Watcher's news is tried again by itself after a failed send, while Watcher rests. */
-const WAKE_UP_RETRIES = 3
+/** How many times a wake-up holding only Watcher's news is sent, its first send and every try again, before it waits for Watcher. */
+const WAKE_UP_ATTEMPTS = 4
 /** How long such a wake-up waits before it is tried again, so a provider that refuses at once is not asked in a loop. */
 const WAKE_UP_RETRY_MS = 3_000
 export const AGENT_STATE_BROADCAST_INTERVAL_MS = 16

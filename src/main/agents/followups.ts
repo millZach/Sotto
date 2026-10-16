@@ -228,8 +228,15 @@ export class FollowupStore {
   queueWakeUp(threadId: string, news: WakeUpNews, word: WordWakeUp, resumeAfterTurnId?: string, attention?: boolean): Promise<void> {
     return this.change(state => {
       const now = new Date().toISOString()
-      const waiting = state.items.find(item => waitingWakeUp(item, threadId))
-      if (waiting) {
+      // Watcher has one wake-up no one is shown: news that comes while it is being sent folds into it, and what the send
+      // did not carry stays in it when the send lands (`settleSent`).
+      const sending = isWatcherNews(news) ? state.items.find(item => item.threadId === threadId && item.status === 'dispatching' && isWatcherOnlyWakeUp(item)) : undefined
+      const waiting = state.items.find(item => waitingWakeUp(item, threadId)) ?? sending
+      if (waiting === sending && sending) {
+        const folded = foldWakeUpNews(sending.news ?? [], wakeUpNewsSchema.parse(news))
+        const next = queuedSchema.parse({ ...sending, news: folded, text: word(folded), updatedAt: now })
+        state.items = state.items.map(item => item === sending ? next : item)
+      } else if (waiting) {
         const folded = foldWakeUpNews(waiting.news ?? [], wakeUpNewsSchema.parse(news))
         // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
         // A resume note is the review a paused queue waits for: the turn it follows did not finish, and it says so.
@@ -347,6 +354,33 @@ export class FollowupStore {
       const item = state.items.find(item => item.id === id)
       if (!item || item.status !== 'queued' || mode === 'send' && state.items.find(candidate => candidate.threadId === item.threadId)?.id !== id) throw new Error(item?.wakeUp ? 'This wake-up is no longer ready to send.' : 'This follow-up is no longer ready to send.')
       Object.assign(item, { status: 'dispatching', commandId: randomUUID(), messageId: item.watcherOperationId && item.messageId ? item.messageId : randomUUID(), updatedAt: new Date().toISOString() })
+    })
+  }
+  /**
+   * A wake-up's send landed carrying the events in `sent`. Watcher's news that came while it was being sent is not among
+   * them, and waits again in the same item; with nothing left, the item goes.
+   */
+  settleSent(id: string, sent: ReadonlySet<string>, word: WordWakeUp): Promise<void> {
+    return this.change(state => {
+      const item = state.items.find(candidate => candidate.id === id)
+      if (!item) return false
+      const kept = (item.news ?? []).flatMap(news => {
+        if (!isWatcherNews(news)) return []
+        const events = news.events.filter(event => !sent.has(event.id))
+        return events.length ? [{ ...news, events }] : []
+      })
+      if (!kept.length) { state.items = state.items.filter(candidate => candidate !== item); return }
+      Object.assign(item, { news: kept, text: word(kept), status: 'queued', updatedAt: new Date().toISOString() })
+      delete item.error; delete item.commandId; delete item.messageId
+    })
+  }
+  /** Puts a wake-up no one is shown behind the thread's other items, as it stands, so it holds none of them up. */
+  moveWakeUpBehind(id: string, hold?: string): Promise<void> {
+    return this.change(state => {
+      const item = state.items.find(candidate => candidate.id === id)
+      if (!item || !isWatcherOnlyWakeUp(item) || item.status === 'dispatching' || item.status === 'uncertain') return false
+      if (hold && item.status === 'queued') Object.assign(item, { status: 'paused', error: hold })
+      state.items = [...state.items.filter(candidate => candidate !== item), item]
     })
   }
   settle(id: string, status: 'accepted' | 'uncertain' | 'failed', error?: string): Promise<void> {

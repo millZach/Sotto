@@ -169,3 +169,25 @@ it('reorders the follow-ups the user sees around a wake-up no one is shown, and 
     expect(store.peek().items.map(item => item.text)).toEqual(['First', 'Second', 'Third', WATCHER_WAKE_UP_PROMPT])
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+it('folds news into a wake-up no one is shown while it is sent, and keeps what the send did not carry', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
+  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
+  try {
+    const hostId = randomUUID(), store = new FollowupStore(directory); await store.load()
+    const word: WordWakeUp = items => queuedWakeUpText(items, { tool: false })
+    const news = (id: string): WakeUpNews => ({ source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
+      events: [{ id, requestId: randomUUID(), target: { hostId, threadId: `worker-${id}` }, generation: 0, kind: 'turn-finished', turnId: id, observedAt: new Date().toISOString() }] })
+    await store.queueWakeUp('thread', news('first'), word)
+    const id = store.peek().items[0]!.id
+    await store.claim(id)
+    await store.queueWakeUp('thread', news('second'), word)
+    expect(store.peek().items.map(item => [item.id, item.status])).toEqual([[id, 'dispatching']])
+    await store.settleSent(id, new Set(['first']), word)
+    expect(store.peek().items).toHaveLength(1)
+    expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
+    expect(store.peek().items[0]!.news!.flatMap(item => 'events' in item ? item.events.map(event => event.id) : [])).toEqual(['second'])
+    await store.claim(id); await store.settleSent(id, new Set(['second']), word)
+    expect(store.peek().items).toEqual([])
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
