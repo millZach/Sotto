@@ -97,6 +97,12 @@ type ComposerContext = {
   feedback?: (error: string | null) => void
 }
 /** A queued item as the window is sent it: a wake-up's words, without the news they were worded from. */
+/** A cheap stand-in for a history's content: its length, and each message's identity, text length and wake-up mark. */
+function historySignature(messages: readonly AgentMessage[]): string {
+  let text = 0, wakeUps = 0
+  for (const message of messages) { text += message.text.length; if (message.wakeUp) wakeUps++ }
+  return `${messages.length}:${text}:${wakeUps}:${messages[0]?.id ?? ''}:${messages.at(-1)?.id ?? ''}`
+}
 function withoutNews(item: QueuedFollowup): AgentFollowup {
   if (item.news === undefined) return item
   const { news, ...rest } = item
@@ -311,7 +317,7 @@ export class AgentControl {
   }
   mutateWatcher(update: (record: WatcherRecord) => void): void {
     const next = this.watcherRecord(); update(next); this.watcher = watcherRecordSchema.parse(next)
-    this.watcherMessageDisplay?.update(this.watcher.requests)
+    this.watcherMessageDisplay?.update(this.watcher.requests); this.watcherDisplayVersion++
   }
   useWatcher(hooks: WatcherControlHooks): () => void {
     if (this.dependencies.watcherEnabled === true) this.watcherHooks = hooks
@@ -572,7 +578,7 @@ export class AgentControl {
     }
     const saved = await this.store.read()
     this.watcher = saved.watcher
-    this.watcherMessageDisplay?.update(this.watcher.requests)
+    this.watcherMessageDisplay?.update(this.watcher.requests); this.watcherDisplayVersion++
     if (this.dependencies.watcherEnabled !== true) {
       const identities = [saved.watcher.current, saved.watcher.creation?.identity, ...saved.watcher.history]
       for (const identity of identities) if (identity) { this.dormantThreadIds.add(identity.target.threadId); this.dormantWatcherIds.add(identity.target.threadId) }
@@ -891,8 +897,20 @@ export class AgentControl {
    */
   private presentedMessages(thread: AgentThread): readonly AgentMessage[] {
     if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') return thread.messages
-    return watcherWakeUpsAsShown(this.watcherMessageDisplay?.project(this.state.host.hostId, thread.id, thread.messages) ?? thread.messages)
+    // An unchanged history is shown as the same array, so a publish neither copies it again nor rebuilds what reads it.
+    const signature = `${this.watcherDisplayVersion}|${this.state.host.hostId ?? ''}|${historySignature(thread.messages)}`
+    const held = this.presentedCache.get(thread.messages)
+    if (held?.signature === signature) return held.messages
+    const messages = watcherWakeUpsAsShown(this.watcherMessageDisplay?.project(this.state.host.hostId, thread.id, thread.messages) ?? thread.messages)
+    this.presentedCache.set(thread.messages, { signature, messages })
+    return messages
   }
+  /** Each Watcher history's presented messages, by the history they were made from, and what they were made under. */
+  private readonly presentedCache = new WeakMap<readonly AgentMessage[], { signature: string; messages: readonly AgentMessage[] }>()
+  /** Each presented history's shown text lengths, for detailRevision. */
+  private readonly shownLengths = new WeakMap<readonly AgentMessage[], ReadonlyMap<string, number>>()
+  /** Changes whenever the Watcher message display learns new requests, which changes what it shows. */
+  private watcherDisplayVersion = 0
   /**
    * A thread row's summary. A Watcher row never quotes Sotto's news for Watcher: its last message, when the host
    * recorded it as a wake-up, is quoted as the conversation shows it, or not at all.
@@ -927,7 +945,8 @@ export class AgentControl {
     const activities = this.paneActivities(thread)
     const presented = this.presentedMessages(thread)
     // A shown message can be shorter than its provider message, or not shown at all (-1).
-    const shown = presented === thread.messages ? undefined : new Map(presented.map(message => [message.id, message.text.length]))
+    let shown = presented === thread.messages ? undefined : this.shownLengths.get(presented)
+    if (presented !== thread.messages && !shown) { shown = new Map(presented.map(message => [message.id, message.text.length])); this.shownLengths.set(presented, shown) }
     const messages = `${thread.historyEpoch ?? ''}|${thread.messages.length}|` + thread.messages
       .map(message => `${message.id}:${message.text.length}:${shown ? shown.get(message.id) ?? -1 : message.text.length}:${message.attachments?.length ?? 0}`).join(',')
     if (this.dependencies.streamingPublishCost === true && isImmutableActivities(activities)) {

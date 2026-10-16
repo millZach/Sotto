@@ -11,7 +11,7 @@ import { isBabysitNews, isWatcherNews, wakeUpText, watcherWakeUpNote } from '../
 import type { BabysitNews } from '../../src/main/agents/babysitNews'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
-import type { ProviderId } from '../../src/shared/agents'
+import type { AgentThread, ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { watcherToolSchemas } from '../../src/shared/watcher'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -727,6 +727,12 @@ it('hides Sotto’s wake-ups in Watcher’s conversation and on the phone, an ea
   for (const thread of [f.control.shell(), f.control.get()].map(state => state.host.threads.find(item => item.id === f.id)!)) {
     expect(thread.summary?.lastUser?.text ?? '').not.toContain(WATCHER_WAKE_UP_PROMPT)
   }
+  // An unchanged history is presented as the same array on every publish, so nothing downstream copies or rebuilds it.
+  const presented = (thread: AgentThread) => (f.control as unknown as { presentedMessages(item: AgentThread): readonly unknown[] }).presentedMessages(thread)
+  const watcher = f.control.watcherSnapshot().threads.find(thread => thread.id === f.id)!
+  const first = presented(watcher)
+  expect(first).not.toBe(watcher.messages)
+  expect(presented(watcher)).toBe(first)
 })
 
 it('lets a paused wake-up no one is shown go on by itself once Watcher finishes a turn', async () => {
