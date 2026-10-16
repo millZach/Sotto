@@ -70,8 +70,8 @@ interface StartingScreenProps {
 
 /**
  * The starting screen itself (ADR-0086): the Sotto mark, one line saying what Sotto is doing now, a dot and name for
- * each provider and host it waits for, and after ten seconds the line that names what has not answered with the
- * button that opens Sotto without it.
+ * each provider and host it waits for, and after ten seconds the late line, naming what has not answered or saying
+ * Sotto has not loaded your threads, with the button that opens Sotto anyway.
  */
 function StartingScreen({ leaving, hosts, onOpen }: StartingScreenProps): ReactNode {
   const agents = useOptionalAgents()

@@ -14,7 +14,9 @@ The screen holds while anything it watches is connecting. It watches this comput
 
 Until main answers for the agent state, the line says "Loading your threads". The last run's cached shell does not count as an answer. The screen keeps its words back for the first 200 ms, so a launch with nothing to wait for opens the app without the screen saying anything.
 
-If anything still holds after ten seconds, the screen adds one line, "forge has not answered in 10 seconds. Sotto keeps trying in the background." ("have" for more than one name, listed as "Codex, Devin and forge"), and a button, **Open Sotto without forge**, which takes keyboard focus as it appears and is described by that line. Pressing it opens the app. What it names keeps connecting in the background, exactly as it does today. A source main never answered for counts as empty at ten seconds.
+If anything still holds after ten seconds, the screen adds one line, "forge has not answered in 10 seconds. Sotto keeps trying in the background." ("have" for more than one name, listed as "Codex, Devin and forge"), and a button, **Open Sotto without forge**, which takes keyboard focus as it appears and is described by that line. Pressing it opens the app. What it names keeps connecting in the background, exactly as it does today.
+
+Ten seconds never stand in for an answer from main. If the line still says "Loading your threads" at ten seconds, because main has not given its first agent state, or has given it with nothing connecting but has not yet given the hosts state, the screen adds "Sotto has not loaded your threads in 10 seconds. It keeps trying." and a button, **Open Sotto now**, which takes focus and is described by that line in the same way. The screen does not open by itself without main's answer.
 
 When everything has settled, or the button is pressed, the app replaces the screen in one step: the column fades for 200 ms and the app takes the window. With reduced motion, or when no words had shown, there is no fade.
 

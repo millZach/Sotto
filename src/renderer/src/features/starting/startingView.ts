@@ -41,7 +41,10 @@ export interface StartingInput {
   readonly hosts: HostsState | null
   /** Main has answered for the saved hosts, or this window has no hosts bridge. */
   readonly hostsKnown: boolean
-  /** Ten seconds have passed. Whatever has still not answered is named, and a source that never answered counts as empty. */
+  /**
+   * Ten seconds have passed. Whatever has still not answered is named; if main has not given its first state, the screen
+   * says so instead. Either way it offers to open Sotto now.
+   */
   readonly late: boolean
   /** Everything this screen has seen connecting, so a provider that stops before it connects keeps its dot. */
   readonly seen: ReadonlySet<string>
@@ -53,7 +56,10 @@ export interface StartingView {
   readonly dots: readonly StartingDot[]
   /** The keys still connecting: these hold the screen. */
   readonly pending: readonly string[]
-  /** After ten seconds: the sentence naming what has not answered, and the button that opens Sotto without it. */
+  /**
+   * After ten seconds: the sentence naming what has not answered, or saying Sotto has not loaded your threads, and the
+   * button that opens Sotto anyway.
+   */
   readonly late: { readonly text: string; readonly button: string } | null
   /** Nothing is left to wait for, so the app opens. */
   readonly settled: boolean
@@ -104,25 +110,28 @@ export function listNames(names: readonly string[]): string {
  * dot: the screen shows what it waited for.
  */
 export function startingView(input: StartingInput): StartingView {
-  const agentKnown = input.agentKnown || input.late
-  const hostsKnown = input.hostsKnown || input.late
   const shown = watchedItems(input.agentKnown ? input.agent : null, input.hostsKnown ? input.hosts : null)
     .filter(item => item.state !== 'not-connected' || input.seen.has(item.key))
   const pending = shown.filter(item => item.state === 'connecting')
   const names = listNames(pending.map(item => item.name))
-  const settled = agentKnown && hostsKnown && pending.length === 0
+  // Ten seconds never stand in for an answer: without main's first state the screen holds and, once late, says so.
+  const settled = input.agentKnown && input.hostsKnown && pending.length === 0
+  const loading = !input.agentKnown || pending.length === 0
   const line = settled ? 'Ready'
-    : !agentKnown || pending.length === 0 ? 'Loading your threads'
+    : loading ? 'Loading your threads'
       : input.late ? `Waiting for ${names}`
         : `Connecting ${pending[0]!.name}`
+  const late = !input.late || settled ? null
+    : loading ? { text: 'Sotto has not loaded your threads in 10 seconds. It keeps trying.', button: 'Open Sotto now' }
+      : {
+          text: `${names} ${pending.length > 1 ? 'have' : 'has'} not answered in 10 seconds. Sotto keeps trying in the background.`,
+          button: `Open Sotto without ${names}`,
+        }
   return {
     line,
     dots: shown.map(item => ({ key: item.key, name: item.name, state: item.state === 'connecting' && input.late ? 'late' : item.state })),
     pending: pending.map(item => item.key),
-    late: input.late && pending.length > 0 ? {
-      text: `${names} ${pending.length > 1 ? 'have' : 'has'} not answered in 10 seconds. Sotto keeps trying in the background.`,
-      button: `Open Sotto without ${names}`,
-    } : null,
+    late,
     settled,
   }
 }

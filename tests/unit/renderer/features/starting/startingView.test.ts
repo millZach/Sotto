@@ -96,10 +96,17 @@ describe('the starting screen', () => {
     expect(view({ late: true }).late).toBeNull()
   })
 
-  it('at ten seconds stops waiting for a source that never answered', () => {
-    expect(view({ agent: null, agentKnown: false, late: true })).toMatchObject({ settled: true, late: null })
+  it('at ten seconds says main has not given its first state, and offers to open Sotto now rather than opening by itself', () => {
+    const notLoaded = { text: 'Sotto has not loaded your threads in 10 seconds. It keeps trying.', button: 'Open Sotto now' }
+    expect(view({ agent: null, agentKnown: false, late: true })).toMatchObject({ settled: false, line: 'Loading your threads', late: notLoaded })
+    expect(view({ hosts: null, hostsKnown: false, late: true })).toMatchObject({ settled: false, line: 'Loading your threads', late: notLoaded })
+    // A host still connecting does not change what the line and the note are about while the agent state is missing.
+    expect(view({ agent: null, agentKnown: false, hosts: forge(), late: true })).toMatchObject({
+      settled: false, line: 'Loading your threads', late: notLoaded, dots: [{ key: `host:${FORGE}`, state: 'late' }],
+    })
+    // Once the agent state is in, what is still connecting is named, whether or not the hosts state has come.
     expect(view({ hosts: null, hostsKnown: false, agent: agent([provider('codex', 'connecting')]), late: true })).toMatchObject({
-      settled: false, line: 'Waiting for Codex', pending: ['provider:codex'],
+      settled: false, line: 'Waiting for Codex', pending: ['provider:codex'], late: { button: 'Open Sotto without Codex' },
     })
   })
 

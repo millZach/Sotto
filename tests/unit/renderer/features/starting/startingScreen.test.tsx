@@ -125,15 +125,26 @@ describe('the starting screen gate', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('does not take the last run’s cached shell for an answer', async () => {
+  it('does not take the last run’s cached shell for an answer, and at ten seconds offers to open Sotto now', async () => {
     writeShellCache(agent({ codex: 'connected' }))
     bridges(agent({ codex: 'connected' }), hostsState(), () => new Promise(() => undefined))
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     render(<Window />)
     await settle(REVEAL_AFTER_MS)
     expect(screen.getByRole('status')).toHaveTextContent('Loading your threads')
     expect(screen.queryByText('The app')).not.toBeInTheDocument()
-    // Main never answered: at ten seconds the screen stops waiting for it.
+
+    // Main never answered: at ten seconds the screen says so and waits for the user, rather than opening by itself.
     await settle(LATE_AFTER_MS)
+    await settle(LEAVE_MS)
+    expect(screen.queryByText('The app')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Loading your threads')
+    const button = screen.getByRole('button', { name: 'Open Sotto now' })
+    expect(button).toHaveFocus()
+    expect(button).toHaveAccessibleDescription('Sotto has not loaded your threads in 10 seconds. It keeps trying.')
+
+    await user.keyboard('{Enter}')
     await settle(LEAVE_MS)
     expect(screen.getByText('The app')).toBeVisible()
   })
