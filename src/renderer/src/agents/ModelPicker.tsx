@@ -69,23 +69,29 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   const selectedProvider = groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
   // The wheel over the rail steps one provider at a time and stops at either end. A mouse notch is a step and a
-  // touchpad's small movements add up to one. React registers wheel listeners as passive, so the rail would
-  // scroll instead without this. Focus on the rail moves with the choice, so its one tab stop stays on it.
+  // touchpad's small movements add up to one, kept across renders: the owner may hand over a fresh list of the
+  // same models at any time. Each step moves on from the last one at once, so notches that land before the
+  // menu redraws are not lost. React registers wheel listeners as passive, so the rail would scroll instead
+  // without this. Focus on the rail moves with the choice, so its one tab stop stays on it.
   const selectedName = selectedProvider?.name
+  const wheelTravel = useRef(0)
+  const wheelChoice = useRef(selectedName)
   useEffect(() => {
+    wheelChoice.current = selectedName
     const element = rail.current
     if (!element) return
-    let travel = 0
     const wheel = (event: WheelEvent): void => {
       event.preventDefault()
       if (event.deltaY === 0) return
-      travel = Math.sign(travel) === Math.sign(event.deltaY) ? travel + event.deltaY : event.deltaY
+      const travel = Math.sign(wheelTravel.current) === Math.sign(event.deltaY) ? wheelTravel.current + event.deltaY : event.deltaY
+      wheelTravel.current = travel
       if (event.deltaMode === WheelEvent.DOM_DELTA_PIXEL && Math.abs(travel) < RAIL_WHEEL_STEP) return
-      const at = groups.findIndex(group => group.name === selectedName)
+      wheelTravel.current = 0
+      const at = groups.findIndex(group => group.name === wheelChoice.current)
       const next = Math.max(0, Math.min(groups.length - 1, at + Math.sign(travel)))
-      travel = 0
       const group = groups[next]
-      if (!group || group.name === selectedName) return
+      if (!group || group.name === wheelChoice.current) return
+      wheelChoice.current = group.name
       if (element.contains(document.activeElement)) element.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
       else setProvider(group.name)
     }

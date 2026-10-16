@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ModelPicker, newestModelsFirst } from '../../../src/renderer/src/agents/ModelPicker'
@@ -97,6 +97,31 @@ describe('provider model picker', () => {
     expect(within(rail).getByRole('tab', { name: 'Claude' })).toHaveAttribute('aria-selected', 'true')
     expect(within(rail).getByRole('tab', { name: 'Claude' })).toHaveFocus()
     expect(within(rail).getByRole('tab', { name: 'Claude' })).toHaveAttribute('tabindex', '0')
+  })
+
+  it('keeps a touchpad’s movement when the owner hands over a fresh list of the same models', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<ModelPicker models={models} modelId="astra" disabled={false} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    const rail = screen.getByRole('tablist', { name: 'Model providers' })
+    fireEvent.wheel(rail, { deltaY: 25 })
+    rerender(<ModelPicker models={models.map(model => ({ ...model }))} modelId="astra" disabled={false} onChange={vi.fn()} />)
+    fireEvent.wheel(screen.getByRole('tablist', { name: 'Model providers' }), { deltaY: 25 })
+    expect(screen.getByRole('tab', { name: 'Claude' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('counts every notch that lands before the menu redraws', async () => {
+    const user = userEvent.setup()
+    const threeProviders: AgentModel[] = [...models, { id: 'grok', name: 'Grok 4.7', provider: 'Grok', ready: true }]
+    render(<ModelPicker models={threeProviders} modelId="astra" disabled={false} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    const rail = screen.getByRole('tablist', { name: 'Model providers' })
+    // Both notches inside one act: React commits neither step until both have been handled.
+    act(() => {
+      rail.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+      rail.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+    })
+    expect(screen.getByRole('tab', { name: 'Grok' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('filters models and supports arrow-key selection without submitting the parent form', async () => {
