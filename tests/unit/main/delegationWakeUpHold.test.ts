@@ -71,7 +71,9 @@ it('keeps later news out of a delegation\'s waiting wake-up while delegation is 
   await expect.poll(() => sends(f.host).length).toBe(1)
   expect(sends(f.host)[0]!.text).toContain('Check build-1 failed')
   expect(sends(f.host)[0]!.text).not.toContain('Delegation ')
-  expect(waiting(f.control)).toEqual(['wake-up: delegation'])
+  // The sent item leaves the queue once its acceptance is saved, a step after the host hears it.
+  await expect.poll(() => waiting(f.control)).toEqual(['wake-up: delegation'])
+  expect(sends(f.host)).toHaveLength(1)
 })
 
 it('sets a delegation\'s news apart from what was folded with it while delegation was on, and sends the rest', async () => {
@@ -86,5 +88,7 @@ it('sets a delegation\'s news apart from what was folded with it while delegatio
   await expect.poll(() => sends(f.host).length).toBe(1)
   expect(sends(f.host)[0]!.text).toContain('Check build-1 failed')
   expect(sends(f.host)[0]!.text).not.toContain('Delegation ')
-  expect(waiting(f.control)).toEqual(['wake-up: delegation'])
+  // The sent item leaves the queue once its acceptance is saved, a step after the host hears it.
+  await expect.poll(() => waiting(f.control)).toEqual(['wake-up: delegation'])
+  expect(sends(f.host)).toHaveLength(1)
 })
