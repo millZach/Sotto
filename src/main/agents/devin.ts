@@ -294,6 +294,8 @@ export class DevinAcpHost implements AgentHost {
     if (!thread) {
       thread = { id, projectId: alias.projectId, title: alias.title, workingDirectory: alias.cwd,
         modelId: alias.modelId, providerMode: modeOf(alias.providerMode).id, runtimeMode: RUNTIME_OF_ALLOWANCE[modeOf(alias.providerMode).allows],
+        // This adapter gives Devin Sotto's servers; a host that predates it says nothing, which reads as none.
+        sottoToolsGiven: true,
         status: alias.devinSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] }
       this.threads.set(id, thread)
     }
@@ -341,8 +343,8 @@ export class DevinAcpHost implements AgentHost {
   private async toolServers(id: string, connection: Connection, generation: number): Promise<ThreadMcpServer[]> {
     const thread = this.thread(id)
     if (generation !== this.generation || this.connections.get(id) !== connection) throw new DevinUncertain('Devin connection changed.')
-    if (!connection.httpToolServers) { thread.sottoToolsWithheld = true; return [] }
-    delete thread.sottoToolsWithheld
+    if (!connection.httpToolServers) { thread.sottoToolsWithheld = true; delete thread.sottoToolsGiven; return [] }
+    delete thread.sottoToolsWithheld; thread.sottoToolsGiven = true
     const servers: { server: ThreadMcpServer; tools: readonly string[] }[] = []
     if (this.browserTools) servers.push({ server: await this.browserTools.mcpServer(id), tools: this.browserTools.definitions.map(tool => tool.name) })
     for (const { server, tools } of await scopedThreadServers(this.threadTools, id)) servers.push({ server, tools: tools.definitions.map(tool => tool.name) })

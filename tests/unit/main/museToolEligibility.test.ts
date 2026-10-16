@@ -39,7 +39,9 @@ it('admits Muse threads to visuals and babysitting in Owl, but offers no side-dr
     expect(workspace.admitsVisuals('session-docs')).toBe(true)
     expect(workspace.admitsBabysitting('session-workshop')).toBe(true)
     expect(threadTakesSottoTools({ providerId: 'muse' })).toBe(true)
-    expect(threadTakesSottoTools({ providerId: 'devin' })).toBe(true)
+    expect(threadTakesSottoTools({ providerId: 'devin', sottoToolsGiven: true })).toBe(true)
+    // A Devin thread from a host that predates Devin taking Sotto's tools says nothing, and has none.
+    expect(threadTakesSottoTools({ providerId: 'devin' })).toBe(false)
     expect(providerWritesShortText('muse')).toBe(false)
     expect(providerWritesShortText('codex')).toBe(true)
   } finally { await workspace.close(); await rm(root, { recursive: true, force: true }) }

@@ -47,6 +47,7 @@ describe('Devin thread tools', () => {
     // The catalog session first, then the thread's own.
     expect(await given(f, 'session/new')).toEqual([[], ['sotto_browser', VISUAL_MCP_SERVER]])
     expect((await thread(f, id)).sottoToolsWithheld).toBeUndefined()
+    expect((await thread(f, id)).sottoToolsGiven).toBe(true)
     expect(await send(f, id)).toEqual({ accepted: true })
     await f.driver.completeTurn(id, 'Finished')
     await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
@@ -86,6 +87,7 @@ describe('Devin thread tools', () => {
     const { f, id } = await setUp({ noHttpMcp: true })
     expect(await given(f, 'session/new')).toEqual([[], []])
     expect((await thread(f, id)).sottoToolsWithheld).toBe(true)
+    expect((await thread(f, id)).sottoToolsGiven).toBeUndefined()
   })
 
   it.each(['meta', 'title'])('shows Devin’s prompt for one of the thread’s Sotto tools, named in its %s, with the whole input, for the user to answer', async nameIn => {

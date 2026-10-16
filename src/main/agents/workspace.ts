@@ -209,8 +209,8 @@ function expandProviderModes(models: AgentModel[]): void {
 }
 
 function organizationOnly(thread: AgentThread, keepActivities = false): AgentThread {
-  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, sottoToolsWithheld, ...rest } = thread
-  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen; void sottoToolsWithheld
+  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, sottoToolsWithheld, sottoToolsGiven, ...rest } = thread
+  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen; void sottoToolsWithheld; void sottoToolsGiven
   return { ...rest, messages: [], ...(keepActivities && activities ? { activities: retainedActivities(activities) } : {}) }
 }
 

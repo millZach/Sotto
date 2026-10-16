@@ -133,10 +133,19 @@ describe('the test iPhone surface', () => {
   it('offers a Devin thread the same sharing as the other providers, now that Devin takes Sotto’s tools', async () => {
     const browser = fakeBrowser([page()])
     const state = threadsStateFixture()
-    state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, providerId: 'devin' as const } : thread)
+    state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, providerId: 'devin' as const, sottoToolsGiven: true as const } : thread)
     await setup(browser.bridge, { state })
     expect(await screen.findByRole('button', { name: 'Share with agent' })).toBeInTheDocument()
     expect(screen.queryByText('This provider does not support Sotto browser tools.')).not.toBeInTheDocument()
+  })
+
+  it('tells a Devin thread from a host that predates Devin taking Sotto’s tools that it cannot use them', async () => {
+    const browser = fakeBrowser([page()])
+    const state = threadsStateFixture()
+    state.host.threads = state.host.threads.map(thread => thread.id === 'visual-gate' ? { ...thread, providerId: 'devin' as const } : thread)
+    await setup(browser.bridge, { state })
+    expect(await screen.findByText('This provider does not support Sotto browser tools.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Share with agent' })).not.toBeInTheDocument()
   })
 
   it('tells a Devin thread whose client withheld Sotto’s tools that it cannot use them, and offers no Share control', async () => {
