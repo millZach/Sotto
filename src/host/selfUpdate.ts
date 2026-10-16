@@ -87,7 +87,8 @@ export interface HostSelfUpdateOptions {
   readonly platform?: NodeJS.Platform | undefined
   readonly arch?: string | undefined
   readonly runByUnit?: (() => Promise<boolean>) | undefined
-  readonly restartWaitMs?: number | undefined
+  /** The clock the restart's wait is measured by. Tests run it on so the wait ends without waiting it out. */
+  readonly now?: (() => number) | undefined
   readonly spawn?: typeof spawnProcess | undefined
   readonly log?: ((event: string) => void) | undefined
 }
@@ -317,9 +318,10 @@ export class HostSelfUpdate {
   private async awaitRestart(version: string, attempt: string, ended: Promise<void>): Promise<HostUpdateAnswer> {
     let over = false
     void ended.then(() => { over = true })
-    const deadline = Date.now() + (this.options.restartWaitMs ?? HOST_UPDATE_RESTART_WAIT_MS)
+    const now = this.options.now ?? Date.now
+    const deadline = now() + HOST_UPDATE_RESTART_WAIT_MS
     const ours = async (): Promise<HostUpdateStatus | null> => { const read = await this.readStatus(); return read?.status.attempt === attempt ? read.status : null }
-    while (Date.now() < deadline) {
+    while (now() < deadline) {
       const status = await ours()
       if (status) return this.restartAnswer(status, version)
       if (over) break

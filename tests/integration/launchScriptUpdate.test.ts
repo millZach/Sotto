@@ -260,8 +260,9 @@ describe('a restart a host asked for over its own socket (ADR-0087)', () => {
     await expect(readFile(outside)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: '9.9.10', resultFile: resultFileOf(configuration) }))).toEqual({ type: 'error', reason: 'update-missing' })
     expect(await statusOf(configuration)).toBeNull()
-    // No host says it answered: the restart waits its short while, then goes ahead anyway.
-    const restarted = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile: resultFileOf(configuration), attempt: ATTEMPT, answerWaitMs: 200 }))
+    // No host says it answered, as when the host that asked has gone: the restart waits its whole few seconds, as it would
+    // for a host, then goes ahead anyway.
+    const restarted = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile: resultFileOf(configuration), attempt: ATTEMPT }))
     hosts.push((await descriptor(configuration)).pid)
     expect(restarted).toEqual({ type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' })
     expect(await statusOf(configuration)).toEqual({ v: 1, attempt: ATTEMPT, version: NEW, state: 'finished', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } })

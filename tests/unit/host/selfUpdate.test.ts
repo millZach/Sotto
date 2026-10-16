@@ -11,7 +11,7 @@ import { createHostSelfUpdate, hostInstallation, runByBootUnit, transientRestart
 import { HOST_RELEASES_URL, hostArchiveName } from '../../../src/shared/hostUpdates'
 import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_READY_TIMEOUT_MS, HOST_STOP_DRAIN_MS } from '../../../src/shared/hostLaunchTimings'
 import { HOST_NODE_RANGE, LAUNCH_SCRIPT_SOURCE } from '../../../src/main/hosts/launchScript'
-import { HOST_UPDATE_RESTART_BUDGET_MS } from '../../../src/shared/hostSelfUpdate'
+import { HOST_UPDATE_RESTART_BUDGET_MS, HOST_UPDATE_RESTART_WAIT_MS } from '../../../src/shared/hostSelfUpdate'
 
 /**
  * A host that updates itself (ADR-0087), without running anything: the child processes it would start are stand-ins that
@@ -279,7 +279,9 @@ describe('the restart and its status file', () => {
     const place = await ready()
     const late: Call[] = []
     const { spawn } = fakeSpawn(call => { late.push(call) })
-    const host = hostWith(place, spawn, { restartWaitMs: 150 })
+    // A restart that never answers: the host's clock runs on past its whole wait, which is kept as it is.
+    let clock = 0
+    const host = hostWith(place, spawn, { now: () => (clock += HOST_UPDATE_RESTART_WAIT_MS / 2) })
     expect(await host.run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'restart-not-sent' })
     const first = late[0]!
     expect(JSON.parse(await readFile(statusFile(place), 'utf8'))).toEqual({ v: 1, attempt: first.configuration.attempt, version: '1.2.4', state: 'finished',
@@ -296,10 +298,10 @@ describe('the restart and its status file', () => {
       await writeFile(String(call.configuration.resultFile), JSON.stringify({ v: 1, attempt: 'bbbbbbbb', version: '1.2.4', state: 'restarting' }))
       setImmediate(() => child.emit('exit', 0, null))
     })
-    expect(await hostWith(place, stranger, { restartWaitMs: 24 * 60 * 60_000 }).run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'restart-not-sent' })
-    // A restart process that ended without a word is given up on at once, long before a wait this test would never outlast.
+    expect(await hostWith(place, stranger).run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'restart-not-sent' })
+    // A restart process that ended without a word is given up on at once, inside the host's whole wait.
     const { spawn: silent } = fakeSpawn((_call, child) => { setImmediate(() => child.emit('exit', 1, null)) })
-    expect(await hostWith(place, silent, { restartWaitMs: 24 * 60 * 60_000 }).run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'restart-not-sent' })
+    expect(await hostWith(place, silent).run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'restart-not-sent' })
   })
 
   it('refuses a second restart while the first still runs, and leaves the first one’s status as it was', async () => {
