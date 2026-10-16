@@ -188,7 +188,9 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     expect(git(repository, '--git-dir', remote, 'for-each-ref', '--format=%(refname)', 'refs/heads')).toBe('')
     await pane(first).getByRole('button', { name: 'More Git actions', exact: true }).click()
     const createPullRequest = page.getByRole('menuitem', { name: /^Create PR(?:\.|$)/u })
-    await expect(createPullRequest).toBeEnabled()
+    // Create PR waits for the pane's Git status to see the commit, which a loaded desktop can take more than the default
+    // five seconds to read. The deadline is generous on purpose; it ends as soon as the action is enabled.
+    await expect(createPullRequest).toBeEnabled({ timeout: 30_000 })
     await createPullRequest.click()
     await expect(pane(first).locator('.git-action-notice')).toContainText('Created PR #74', { timeout: 90_000 })
     const branch = git(working, 'branch', '--show-current')
