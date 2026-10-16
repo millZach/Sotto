@@ -235,6 +235,20 @@ describe('reading a handover from the thread store', () => {
     expect(read.text).not.toContain('Sotto, waking the thread')
   })
 
+  it('keeps the latest request the pane shows behind a hidden wake-up, and counts no hidden one it never read (review P2)', async () => {
+    const threads = await store()
+    const all = [...conversation(1), ...Array.from({ length: 30 }, (_, index) => message(`early-${index}`, 'user', WATCHER_WAKE_UP_PROMPT)),
+      message('request', 'user', 'The real latest request'), message('w-late', 'user', WATCHER_WAKE_UP_PROMPT),
+      ...Array.from({ length: 60 }, (_, index) => message(`p${index}`, 'assistant', `Progress ${index}${'.'.repeat(500)}`))]
+    threads.appendMany('thread-1', all.map(entry => ({ kind: 'message-added', at: entry.createdAt, message: entry })))
+    for (const entry of all) if (entry.text === WATCHER_WAKE_UP_PROMPT) threads.addWakeUp('thread-1', entry.id)
+    const read = readHandover(threads, { source, shown: item => watcherMessageAsShown('h', 'thread-1', item, []) })
+    const kept = all.filter(entry => entry.text !== WATCHER_WAKE_UP_PROMPT)
+    expect(read.summary.carried).toContain('request')
+    expect(read.summary.total).toBe(kept.length)
+    expect(read.text).toBe(buildHandover(kept, { source, historyKept: true }).text)
+  })
+
   it('names tool records the store holds without carrying them', async () => {
     const threads = await store()
     threads.appendMany('thread-1', conversation(1).map(entry => ({ kind: 'message-added', at: entry.createdAt, message: entry })))
