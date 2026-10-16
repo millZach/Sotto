@@ -1,7 +1,7 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ModelPicker, newestModelsFirst } from '../../../src/renderer/src/agents/ModelPicker'
 import type { AgentModel } from '../../../src/shared/agents'
 
@@ -57,6 +57,125 @@ describe('provider model picker', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith('sonnet')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
+  })
+
+  describe('the wheel over the provider rail', () => {
+    // The rail tells one turn of the wheel from the next by the time between its events, so the tests set that time.
+    let clock = 0
+    beforeEach(() => { clock = 1000; vi.spyOn(performance, 'now').mockImplementation(() => clock) })
+    afterEach(() => { vi.restoreAllMocks() })
+    const threeProviders: AgentModel[] = [...models, { id: 'grok', name: 'Grok 4.7', provider: 'Grok', ready: true }]
+    const open = async (list: AgentModel[] = threeProviders) => {
+      const user = userEvent.setup()
+      const onChange = vi.fn()
+      const view = render(<ModelPicker models={list} modelId="astra" disabled={false} onChange={onChange} />)
+      await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+      const rail = screen.getByRole('tablist', { name: 'Model providers' })
+      const chosen = (): string | null | undefined => within(rail).getAllByRole('tab').find(tab => tab.getAttribute('aria-selected') === 'true')?.getAttribute('aria-label')
+      return { user, onChange, view, rail, chosen }
+    }
+    /** One wheel event `after` milliseconds after the last; returns false when the rail took it for itself. */
+    const wheel = (rail: HTMLElement, deltaY: number, after: number, init: WheelEventInit = {}): boolean => {
+      clock += after
+      return fireEvent.wheel(rail, { deltaY, ...init })
+    }
+
+    it('steps one provider for each turn of the wheel and stops at either end', async () => {
+      const { rail, chosen, onChange } = await open()
+      // Not passive: the rail does not scroll under the step.
+      expect(wheel(rail, 100, 400)).toBe(false)
+      expect(chosen()).toBe('Claude')
+      expect(screen.getByRole('option', { name: 'Claude Sonnet 4.6' })).toBeInTheDocument()
+      wheel(rail, 100, 400)
+      wheel(rail, 100, 400)
+      expect(chosen()).toBe('Grok')
+      wheel(rail, -100, 400)
+      wheel(rail, -100, 400)
+      wheel(rail, -100, 400)
+      expect(chosen()).toBe('Codex')
+      // The search line keeps focus, so typing goes on where it was, and nothing is chosen until a model is.
+      expect(screen.getByRole('textbox', { name: 'Search models' })).toHaveFocus()
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('counts a touchpad swipe with its momentum, or a quick burst of notches, as one turn', async () => {
+      const { rail, chosen } = await open()
+      wheel(rail, 15, 400)
+      wheel(rail, 15, 16)
+      expect(chosen()).toBe('Codex')
+      wheel(rail, 15, 16)
+      expect(chosen()).toBe('Claude')
+      for (let event = 0; event < 20; event += 1) wheel(rail, 12, 16)
+      expect(chosen()).toBe('Claude')
+      wheel(rail, 100, 400)
+      wheel(rail, 100, 20)
+      wheel(rail, 100, 20)
+      expect(chosen()).toBe('Grok')
+    })
+
+    it('starts a new turn at once when the wheel turns the other way', async () => {
+      const { rail, chosen } = await open()
+      wheel(rail, 100, 400)
+      expect(chosen()).toBe('Claude')
+      wheel(rail, -100, 10)
+      expect(chosen()).toBe('Codex')
+    })
+
+    it('moves focus on the rail with the choice, so its one tab stop follows', async () => {
+      const { user, rail } = await open()
+      await user.tab({ shift: true })
+      expect(within(rail).getByRole('tab', { name: 'Codex' })).toHaveFocus()
+      wheel(rail, 100, 400)
+      expect(within(rail).getByRole('tab', { name: 'Claude' })).toHaveFocus()
+      expect(within(rail).getByRole('tab', { name: 'Claude' })).toHaveAttribute('tabindex', '0')
+    })
+
+    it('keeps a turn going when the owner hands over a fresh list of the same models', async () => {
+      const { view, rail } = await open(models)
+      wheel(rail, 25, 400)
+      view.rerender(<ModelPicker models={models.map(model => ({ ...model }))} modelId="astra" disabled={false} onChange={vi.fn()} />)
+      wheel(screen.getByRole('tablist', { name: 'Model providers' }), 25, 16)
+      expect(screen.getByRole('tab', { name: 'Claude' })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('counts every turn that lands before the menu redraws', async () => {
+      const { rail, chosen } = await open()
+      // Both turns inside one act: React commits neither step until both have been handled.
+      act(() => {
+        rail.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+        clock += 400
+        rail.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+      })
+      expect(chosen()).toBe('Grok')
+    })
+
+    it('starts afresh when the menu opens again', async () => {
+      const { rail } = await open()
+      wheel(rail, 35, 400)
+      fireEvent(screen.getByRole('dialog', { name: 'Choose model' }), new Event('cancel', { bubbles: true, cancelable: true }))
+      fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
+      wheel(screen.getByRole('tablist', { name: 'Model providers' }), 5, 16)
+      expect(screen.getByRole('tab', { name: 'Codex' })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('leaves zoom, a pinch and sideways scrolling alone', async () => {
+      const { rail, chosen } = await open()
+      expect(wheel(rail, 100, 400, { ctrlKey: true })).toBe(true)
+      expect(wheel(rail, 100, 400, { metaKey: true })).toBe(true)
+      expect(fireEvent.wheel(rail, { deltaX: 100, deltaY: 0 })).toBe(true)
+      expect(chosen()).toBe('Codex')
+    })
+
+    it('brings the chosen provider into view on a rail taller than the menu', async () => {
+      const scrolled = vi.fn()
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrolled })
+      try {
+        const { rail } = await open()
+        wheel(rail, 100, 400)
+        expect(scrolled).toHaveBeenCalledExactlyOnceWith({ block: 'nearest' })
+        expect(scrolled.mock.contexts[0]).toBe(within(rail).getByRole('tab', { name: 'Claude' }))
+      } finally { delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView }
+    })
   })
 
   it('filters models and supports arrow-key selection without submitting the parent form', async () => {
