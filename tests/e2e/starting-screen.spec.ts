@@ -16,6 +16,8 @@ import { textContrast } from './support/textContrast'
  */
 const evidence = evidenceDirectory('artifacts/starting-screen')
 const FORGE = '33333333-3333-4333-8333-333333333333'
+/** As long as a saved host's name may be (`remoteHostSchema`), and with nowhere a line could break. */
+const LONG_NAME = 'zach_workstation_under_the_desk_in_the_basement_reached_over_the_tailnet_at_home'
 
 /** Sets the variables for one launch and puts back what was there before. */
 async function withEnvironment<T>(values: Record<string, string>, run: () => Promise<T>): Promise<T> {
@@ -26,17 +28,50 @@ async function withEnvironment<T>(values: Record<string, string>, run: () => Pro
   }
 }
 
+/**
+ * Launches with one saved host, switched on so Sotto connects it at launch, over a scripted ssh that signs in and then
+ * never answers, so the host stays connecting.
+ */
+async function launchWithSilentHost(name: string, prefix: string): Promise<{ readonly profile: string; readonly launch: () => Promise<LaunchedSotto> }> {
+  const profile = (await ownedE2EProfile({ prefix })).directory
+  const root = join(profile, 'ssh-root')
+  await mkdir(join(root, '~'), { recursive: true })
+  await mkdir(evidence, { recursive: true })
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
+  await writeFile(join(profile, 'remote-hosts.json'), JSON.stringify([{ id: FORGE, name, target: 'forge', identityFile: '',
+    installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto', enabled: true }]))
+  return {
+    profile,
+    launch: () => withEnvironment({
+      SOTTO_E2E_STARTING_SCREEN: '1', SOTTO_E2E_SSH_SCRIPT: resolve('tests/fixtures/fakeSsh.mjs'), SOTTO_E2E_SSH_EXECUTABLE: process.execPath,
+      FAKE_SSH_MODE: 'timeout', FAKE_SSH_ROOT: root, FAKE_SSH_RECORD: join(root, 'ssh.jsonl'), HOME: join(root, '~'), USERPROFILE: join(root, '~'),
+    }, () => launchSotto('success', profile)),
+  }
+}
+
 async function appearance(page: Page, mode: 'dark' | 'light'): Promise<void> {
   await page.evaluate(value => window.sotto!.updateSettings({ appearance: value }), mode)
   await expect(page.locator('html')).toHaveAttribute('data-theme', mode)
 }
 
-/** Nothing scrolls sideways and the column sits wholly inside the window. */
-async function fits(page: Page): Promise<boolean> {
+/**
+ * What does not fit: nothing may scroll, the column sits wholly inside the window, and every part of it (the line, each
+ * name, the late line and its button) sits inside the column without its text running past its own edges.
+ */
+async function misfits(page: Page): Promise<string[]> {
   return page.evaluate(() => {
-    const block = document.querySelector('.starting-screen__block')!.getBoundingClientRect()
-    return document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight
-      && block.left >= 0 && block.right <= innerWidth && block.top >= 0 && block.bottom <= innerHeight
+    const problems: string[] = []
+    if (document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight) problems.push('the page scrolls')
+    const column = document.querySelector<HTMLElement>('.starting-screen__block')!
+    const outer = column.getBoundingClientRect()
+    if (outer.left < 0 || outer.right > innerWidth || outer.top < 0 || outer.bottom > innerHeight) problems.push('the column leaves the window')
+    for (const part of column.querySelectorAll<HTMLElement>('p, li, button, li > span:not(.tt-visually-hidden)')) {
+      const box = part.getBoundingClientRect()
+      const name = `${part.tagName.toLowerCase()} "${part.textContent?.slice(0, 24) ?? ''}"`
+      if (box.left < outer.left - 0.5 || box.right > outer.right + 0.5) problems.push(`${name} leaves the column`)
+      if (part.scrollWidth > part.clientWidth + 1) problems.push(`${name} runs past its edges`)
+    }
+    return problems
   })
 }
 
@@ -89,20 +124,10 @@ test('covers launch until the providers connect, then opens on Threads, and a re
 
 test('names a host that has not answered in ten seconds, and opens Sotto without it from the keyboard', async () => {
   test.setTimeout(150_000)
-  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-starting-late-' })).directory
-  const root = join(profile, 'ssh-root')
-  await mkdir(join(root, '~'), { recursive: true })
-  await mkdir(evidence, { recursive: true })
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
-  // forge is switched on, so Sotto connects it at launch; the scripted ssh signs in and then never answers.
-  await writeFile(join(profile, 'remote-hosts.json'), JSON.stringify([{ id: FORGE, name: 'forge', target: 'forge', identityFile: '',
-    installPath: '~/.local/share/sotto-host', dataDirectory: '~/.sotto', enabled: true }]))
+  const { profile, launch } = await launchWithSilentHost('forge', 'sotto-e2e-starting-late-')
   let launched: LaunchedSotto | undefined
   try {
-    launched = await withEnvironment({
-      SOTTO_E2E_STARTING_SCREEN: '1', SOTTO_E2E_SSH_SCRIPT: resolve('tests/fixtures/fakeSsh.mjs'), SOTTO_E2E_SSH_EXECUTABLE: process.execPath,
-      FAKE_SSH_MODE: 'timeout', FAKE_SSH_ROOT: root, FAKE_SSH_RECORD: join(root, 'ssh.jsonl'), HOME: join(root, '~'), USERPROFILE: join(root, '~'),
-    }, () => launchSotto('success', profile))
+    launched = await launch()
     const { page } = launched
     const screen = page.locator('.starting-screen')
     const status = screen.getByRole('status')
@@ -133,7 +158,7 @@ test('names a host that has not answered in ten seconds, and opens Sotto without
       await resizeWindow(launched, width, height)
       for (const mode of ['dark', 'light'] as const) {
         await appearance(page, mode)
-        expect(await fits(page), `${width}x${height} ${mode}`).toBe(true)
+        expect(await misfits(page), `${width}x${height} ${mode}`).toEqual([])
         for (const pair of await textContrast(screen, '.starting-screen__line, .starting-screen__item, .starting-screen__late p, .starting-screen__late button')) {
           expect(pair.ratio, `${pair.text} at ${width}x${height} ${mode}`).toBeGreaterThanOrEqual(4.5)
         }
@@ -149,6 +174,32 @@ test('names a host that has not answered in ten seconds, and opens Sotto without
     await expect(screen).toHaveCount(0)
     const forge = (await page.evaluate(() => window.sotto!.hosts!.get())).hosts.find(host => host.id === FORGE)
     expect(forge?.phase).toBe('connecting')
+  } finally {
+    if (launched) await closeSotto(launched)
+    await removeOwnedE2EProfile(profile).catch(() => undefined)
+  }
+})
+
+test('wraps a saved host’s longest name inside the window, down to the minimum size', async () => {
+  test.setTimeout(150_000)
+  expect(LONG_NAME).toHaveLength(80)
+  const { profile, launch } = await launchWithSilentHost(LONG_NAME, 'sotto-e2e-starting-long-')
+  let launched: LaunchedSotto | undefined
+  try {
+    launched = await launch()
+    const { page } = launched
+    const screen = page.locator('.starting-screen')
+    await expect(screen.getByRole('status')).toHaveText(`Waiting for ${LONG_NAME}`, { timeout: 25_000 })
+    await expect(screen.getByRole('listitem')).toHaveText([`${LONG_NAME}, not answering`])
+    await expect(page.getByRole('button', { name: `Open Sotto without ${LONG_NAME}` })).toBeFocused()
+    for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+      await resizeWindow(launched, width, height)
+      for (const mode of ['light', 'dark'] as const) {
+        await appearance(page, mode)
+        expect(await misfits(page), `${width}x${height} ${mode}`).toEqual([])
+      }
+    }
+    await page.screenshot({ path: join(evidence, 'late-long-name-820x560-dark.png'), animations: 'disabled' })
   } finally {
     if (launched) await closeSotto(launched)
     await removeOwnedE2EProfile(profile).catch(() => undefined)

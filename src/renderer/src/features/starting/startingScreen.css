@@ -12,7 +12,7 @@
 
 .starting-screen__block {
   display: flex;
-  max-width: 560px;
+  max-width: min(560px, 100%);
   flex-direction: column;
   align-items: center;
   gap: 22px;
@@ -43,11 +43,12 @@
   font-weight: 500;
   letter-spacing: -0.2px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .starting-screen__items {
   display: flex;
-  max-width: 520px;
+  max-width: min(520px, 100%);
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px 16px;
@@ -58,10 +59,18 @@
 
 .starting-screen__item {
   display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   gap: 7px;
   color: var(--tt-text-muted);
   font-size: 13px;
+}
+
+/* A saved host's name may be 80 characters with nowhere to break; it wraps inside the window rather than leaving it. */
+.starting-screen__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .starting-screen__dot {
@@ -93,18 +102,28 @@
 
 .starting-screen__late {
   display: flex;
+  max-width: 100%;
   flex-direction: column;
   align-items: center;
   gap: 10px;
 }
 
 .starting-screen__late p {
-  max-width: 520px;
+  max-width: min(520px, 100%);
   margin: 0;
+  overflow-wrap: anywhere;
   text-wrap: balance;
   color: var(--tt-text-2);
   font-size: 13.5px;
   line-height: 1.5;
+}
+
+/* The button names what it opens without, so a long name wraps its label onto more lines; one line looks as any pill. */
+.starting-screen__late .tt-button {
+  max-width: min(520px, 100%);
+  padding-block: 8px;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 /* The global rule already shortens animations to a single frame; the breathing dot holds still instead. */

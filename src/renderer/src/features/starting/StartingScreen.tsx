@@ -175,7 +175,7 @@ function StartingScreen({ leaving, hosts, onOpen }: StartingScreenProps): ReactN
             {view.dots.map(dot => (
               <li key={dot.key} className="starting-screen__item">
                 <span className="starting-screen__dot" data-state={dot.state} aria-hidden="true" />
-                {dot.name}
+                <span className="starting-screen__name">{dot.name}</span>
                 <span className="tt-visually-hidden">, {DOT_WORDS[dot.state]}</span>
               </li>
             ))}

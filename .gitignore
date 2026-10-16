@@ -627,4 +627,5 @@ artifacts/starting-screen/*
 !artifacts/starting-screen/late-1280x800-light.png
 !artifacts/starting-screen/late-820x560-dark.png
 !artifacts/starting-screen/late-820x560-light.png
+!artifacts/starting-screen/late-long-name-820x560-dark.png
 !artifacts/starting-screen/providers-1280x800-dark.png
