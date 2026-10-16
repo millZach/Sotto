@@ -331,6 +331,8 @@ export type OutputImageRequest = z.infer<typeof outputImageRequestSchema>
 
 export interface SottoBridge {
   readonly usage?: import('./usageDashboard').UsageBridge
+  /** Delegation between threads (ADR-0081), present only while the Owl list turns it on. */
+  readonly delegations?: import('./delegation').DelegationsBridge
 
   readonly omarchySetup?: import('./omarchySetup').OmarchySetupBridge
   readonly watcher?: import('./watcherRoom').WatcherBridge
