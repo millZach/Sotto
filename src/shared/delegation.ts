@@ -109,6 +109,95 @@ export const delegationNewsSchema = z.object({
 }).strict()
 export type DelegationNews = z.infer<typeof delegationNewsSchema>
 
+/**
+ * The window's read of a thread's delegations (#1029, design A): what each card in the delegating thread shows. Main
+ * answers from `DelegationService`'s own record, reading no snapshot, and only when the window asks: a delegating
+ * thread's pane opening, or a change main announced for that thread. Identities, outcome and timing only, never a brief
+ * or a reply.
+ */
+export const DELEGATIONS_READ = 'sotto:delegations:read'
+/** Main names the delegating threads whose delegations changed, batched per pass; the window reads those it shows. */
+export const DELEGATIONS_CHANGED = 'sotto:delegations:changed'
+/** Passed to the main window's preload only while the Owl list turns delegation on; without it there is no bridge. */
+export const DELEGATION_RENDERER_ARGUMENT = '--sotto-delegation-enabled'
+/**
+ * The newest finished delegations, refused ones among them, a read returns of what one thread delegated, beside every
+ * one still open, and the newest briefs it was sent: enough for every card and brief a busy thread's history shows.
+ */
+export const DELEGATION_VIEWS_MAX = 200
+/** Why a brief ended before it was delivered: the user's newer message or their turn there, a Stop, a failure, a restart. */
+export const delegationNotSentSchema = z.enum(['target-changed', 'paused', 'stopped', 'provider', 'restarted'])
+/** A delegation main accepted: a thread was started or sent a brief, and it has one of Watcher's outcomes. */
+export const delegatedViewSchema = z.object({
+  id: z.uuid(),
+  /** The delegated thread, by the window's own ID for it. */
+  thread: id,
+  action: z.enum(['start', 'send']),
+  work: delegationWorkSchema,
+  /** The user's message to the delegating thread this delegation answers, which its budget counts against (decision 3). */
+  rootUserMessageId: id,
+  /**
+   * The delegating thread's newest message when it called, the user's or a wake-up's: the turn the call was made in,
+   * where its card goes.
+   */
+  anchorMessageId: id,
+  /** The brief's own message in the delegated thread, which that thread shows as the delegating thread's, not the user's. */
+  briefMessageId: id,
+  outcome: watcherOutcomeSchema,
+  /** Why an outcome is unknown: Sotto restarted while it was open, the provider never confirmed the brief, or the thread is gone. */
+  unknownWhy: z.enum(['restarted', 'unconfirmed', 'gone']).optional(),
+  /** The delegating thread has been told this outcome, by the call's result, a read or a wake-up. */
+  told: z.boolean(),
+  createdAt: z.iso.datetime(),
+  /** When the outcome last moved, once it has. */
+  outcomeAt: z.iso.datetime().optional(),
+  notSent: delegationNotSentSchema.optional(),
+  /** How long the `delegate` call waited for the outcome, from when, and when it went on without one (decision 8). */
+  wait: z.object({ seconds: z.number().int().min(0).max(DELEGATION_WAIT_MAX_SECONDS), startedAt: z.iso.datetime(), wentOnAt: z.iso.datetime().optional() }).strict().optional(),
+  /** The `delegate` call for this brief is still under way: starting the thread, sending the brief, or waiting for the outcome. */
+  waiting: z.boolean(),
+}).strict()
+export type DelegatedView = z.infer<typeof delegatedViewSchema>
+/**
+ * A delegation main refused as it was asked for (decision 7): the rule that turned it down, and nothing started or
+ * sent, so no brief and, for a start, no thread. The card words the rule; main's own words were written for the agent.
+ */
+export const refusedViewSchema = z.object({
+  id: z.uuid(),
+  /** The thread a refused send named, when this thread delegated to it. A refused start names none: nothing was started. */
+  thread: id.optional(),
+  /** The provider a refused start named. */
+  provider: providerIdSchema.optional(),
+  action: z.enum(['start', 'send']),
+  work: delegationWorkSchema,
+  outcome: z.literal('refused'),
+  refusal: delegationRefusalCodeSchema,
+  /** The user's message the call answered, and the turn it was made in, when Sotto could find them. */
+  rootUserMessageId: id.optional(),
+  anchorMessageId: id.optional(),
+  createdAt: z.iso.datetime(),
+}).strict()
+export type RefusedView = z.infer<typeof refusedViewSchema>
+/** One delegation as the window shows it: one main accepted, or one it refused. */
+export const delegationViewSchema = z.union([delegatedViewSchema, refusedViewSchema])
+export type DelegationView = z.infer<typeof delegationViewSchema>
+export const delegationsRequestSchema = z.object({ threadId: id }).strict()
+export type DelegationsRequest = z.infer<typeof delegationsRequestSchema>
+export const delegationsReadSchema = z.object({ threadId: id,
+  /** What the thread delegated, the refused among them, oldest first. */
+  delegations: z.array(delegationViewSchema).max(DELEGATION_VIEWS_MAX * 2),
+  /** The briefs the thread was sent by the thread that delegated to it, oldest first. A refused send sent nothing. */
+  received: z.array(delegatedViewSchema).max(DELEGATION_VIEWS_MAX),
+}).strict()
+export type DelegationsRead = z.infer<typeof delegationsReadSchema>
+export const delegationsChangedSchema = z.object({ threadIds: z.array(id).max(10_000) }).strict()
+export type DelegationsChanged = z.infer<typeof delegationsChangedSchema>
+/** What the main window's preload offers while delegation is on. */
+export interface DelegationsBridge {
+  read(request: DelegationsRequest): Promise<DelegationsRead>
+  onChanged(listener: (change: DelegationsChanged) => void): () => void
+}
+
 /** The thread that delegated to this one, by Sotto thread ID, when the snapshot records one. */
 export const delegatingThreadOf = (thread: Pick<AgentThread, 'delegatedBy'> | undefined): string | undefined => thread?.delegatedBy
 

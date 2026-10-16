@@ -8,8 +8,8 @@ import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/new
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
-  DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
-  type DelegateInput, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode } from '../../shared/delegation'
+  DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
+  type DelegateInput, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { WATCHER_FINAL_OUTCOMES, watcherTurnOutcome } from './watcherOutcomes'
 import type { AgentState } from '../../shared/agents'
@@ -84,6 +84,14 @@ const recordSchema = z.object({
   told: watcherOutcomeSchema.optional(),
   /** Counts against the prompt budget. A brief refused before anything was sent does not. */
   charged: z.boolean(),
+  /** How long the `delegate` call waited for the outcome and when it began; the window's card says it (decision 8). */
+  waitSeconds: z.number().int().min(0).max(DELEGATION_WAIT_MAX_SECONDS).optional(), waitStartedAt: z.iso.datetime().optional(),
+  /** When the call returned with the brief still working, so its outcome reaches the delegating thread as a wake-up. */
+  wentOnAt: z.iso.datetime().optional(),
+  /** The delegating thread's newest message when it called, a wake-up's included: the turn the window's card goes in. */
+  callerMessageId: id.optional(),
+  /** Why the outcome became unknown, which the window's card says: a restart, a brief never confirmed, or a thread gone. */
+  unknownBecause: z.enum(['restarted', 'unconfirmed', 'gone']).optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type DelegationRecord = z.infer<typeof recordSchema>
@@ -185,6 +193,10 @@ export class DelegationService {
   private readonly untold = new Map<string, { readonly ids: Set<string>; attempts: number }>()
   private readonly telling = new Set<string>()
   private newsScheduled = false
+  /** Delegating threads whose delegations changed since the window was last told, and who listens (#1029). */
+  private readonly viewsChanged = new Set<string>()
+  private readonly viewListeners = new Set<(threadIds: readonly string[]) => void>()
+  private viewsScheduled = false
   private tail: Promise<unknown> = Promise.resolve()
   private closed = false
   private unhook: (() => void) | undefined
@@ -203,7 +215,7 @@ export class DelegationService {
     const time = now()
     this.records = file.delegations.map(record => {
       if (!this.open(record)) return record
-      const unknown: DelegationRecord = { ...record, outcome: 'unknown', outcomeAt: time, told: 'unknown', updatedAt: time }
+      const unknown: DelegationRecord = { ...record, outcome: 'unknown', unknownBecause: 'restarted', outcomeAt: time, told: 'unknown', updatedAt: time }
       if (record.deliveryState === 'queued') { unknown.deliveryState = 'failed'; unknown.failure = 'restarted' }
       if (record.deliveryState === 'dispatching') unknown.deliveryState = 'uncertain'
       delete unknown.turnMessageId; delete unknown.nativeTurnId; delete unknown.replyMessageId
@@ -233,6 +245,7 @@ export class DelegationService {
   }
   close(): void {
     this.closed = true
+    this.viewListeners.clear()
     this.unhook?.(); this.unhook = undefined
     for (const waiting of this.waiters.values()) for (const wake of waiting) wake()
     this.waiters.clear()
@@ -269,9 +282,92 @@ export class DelegationService {
       await this.execute(record, input.brief, admitted.start)
       const waitMs = Math.max(0, Math.min((input.wait_seconds ?? DELEGATION_WAIT_MAX_SECONDS) * 1000,
         context.waitMs === undefined ? Infinity : context.waitMs - 2_000))
-      if (this.open(this.record(record.id)!) && waitMs > 0) await this.wait(record.id, waitMs)
+      if (this.open(this.record(record.id)!)) {
+        // The window's card says how long this call waits, and that it went on when the wait ends first.
+        this.update(record.id, saved => { saved.waitSeconds = Math.round(waitMs / 1000); saved.waitStartedAt = now() })
+        if (waitMs > 0) await this.wait(record.id, waitMs)
+        if (this.open(this.record(record.id)!)) this.update(record.id, saved => { saved.wentOnAt = now() })
+      }
       return await this.result(this.record(record.id)!)
-    } finally { this.calling.delete(record.id) }
+    } finally { this.calling.delete(record.id); this.touched(record) }
+  }
+
+  /**
+   * What the window shows of a thread's delegations (#1029), oldest first: the ones it made, every open one and the
+   * newest finished or refused ones, and the briefs it was sent. Identities, outcome and timing from this service's own
+   * record, never a brief, a reply or a refusal's words. Reads no snapshot, so the window may ask whenever a pane opens
+   * or main names the thread.
+   */
+  views(threadId: string): { readonly made: DelegationView[]; readonly received: DelegatedView[] } {
+    const made: DelegationView[] = [], received: DelegationRecord[] = []
+    const refused = this.refusals.filter(item => item.delegatingThreadId === threadId)
+    let finished = 0, next = refused.length - 1
+    // Newest first through both lists at once: a refusal is a finished delegation that never started.
+    const refusedAfter = (createdAt: string): void => {
+      for (; next >= 0 && refused[next]!.createdAt > createdAt; next--) {
+        if (finished < DELEGATION_VIEWS_MAX && made.length < DELEGATION_VIEWS_MAX * 2) { made.push(this.refusedView(refused[next]!)); finished++ }
+      }
+    }
+    for (let index = this.records.length - 1; index >= 0; index--) {
+      const record = this.records[index]!
+      if (record.delegatingThreadId === threadId) {
+        refusedAfter(record.createdAt)
+        if ((finished < DELEGATION_VIEWS_MAX || this.open(record)) && made.length < DELEGATION_VIEWS_MAX * 2) {
+          made.push(this.view(record))
+          if (!this.open(record)) finished++
+        }
+      }
+      if (record.delegatedThreadId === threadId && received.length < DELEGATION_VIEWS_MAX) received.push(record)
+    }
+    refusedAfter('')
+    return { made: made.reverse(), received: received.reverse().map(record => this.view(record)) }
+  }
+  /**
+   * Hears which delegating threads' delegations changed, batched so a pass that moves many outcomes, for many threads,
+   * tells the window once. Returns the way to stop listening.
+   */
+  onViewsChanged(listener: (threadIds: readonly string[]) => void): () => void {
+    if (this.closed) return () => undefined
+    this.viewListeners.add(listener)
+    return () => { this.viewListeners.delete(listener) }
+  }
+  private view(record: DelegationRecord): DelegatedView {
+    const outcome = this.outcomeOf(record)
+    const outcomeAt = record.outcomeAt ?? (record.deliveryState === 'failed' ? record.updatedAt : undefined)
+    // Recovery marks what was open when Sotto stopped `unknown`; a brief the provider never confirmed reads unknown without it.
+    // A record saved before the reason was kept went unknown at a restart; an unconfirmed brief reads unknown before it is ended.
+    const unknownWhy = outcome !== 'unknown' ? undefined : record.unknownBecause ?? (record.outcome === 'unknown' || record.failure === 'restarted' ? 'restarted' : 'unconfirmed')
+    return { id: record.id, thread: record.delegatedThreadId, action: record.action, work: record.work, rootUserMessageId: record.rootUserMessageId,
+      anchorMessageId: record.callerMessageId ?? record.rootUserMessageId, briefMessageId: record.messageId, outcome,
+      ...(unknownWhy ? { unknownWhy } : {}), told: record.told === outcome, createdAt: record.createdAt, ...(outcomeAt ? { outcomeAt } : {}),
+      ...(record.deliveryState === 'failed' ? { notSent: record.failure ?? 'provider' } : {}),
+      ...(record.waitSeconds !== undefined && record.waitStartedAt ? { wait: { seconds: record.waitSeconds, startedAt: record.waitStartedAt, ...(record.wentOnAt ? { wentOnAt: record.wentOnAt } : {}) } } : {}),
+      waiting: this.calling.has(record.id) && record.wentOnAt === undefined && this.open(record) }
+  }
+  /** A refused delegation as the window shows it: the rule that turned it down, and the turn the call was made in. */
+  private refusedView(refused: RefusedDelegation): RefusedView {
+    const anchor = refused.callerMessageId ?? refused.rootUserMessageId
+    return { id: refused.id, ...(refused.delegatedThreadId ? { thread: refused.delegatedThreadId } : {}), ...(refused.provider ? { provider: refused.provider } : {}),
+      action: refused.action, work: refused.work, outcome: 'refused', refusal: refused.code,
+      ...(refused.rootUserMessageId ? { rootUserMessageId: refused.rootUserMessageId } : {}), ...(anchor ? { anchorMessageId: anchor } : {}), createdAt: refused.createdAt }
+  }
+  /**
+   * A delegation changed: the window hears, once the current pass is over, that the thread that made it and the thread
+   * it went to, when it went to one, have something new to show.
+   */
+  private touched(record: { readonly delegatingThreadId: string; readonly delegatedThreadId?: string | undefined }): void {
+    if (this.closed || !this.viewListeners.size) return
+    this.viewsChanged.add(record.delegatingThreadId)
+    if (record.delegatedThreadId !== undefined) this.viewsChanged.add(record.delegatedThreadId)
+    if (this.viewsScheduled) return
+    this.viewsScheduled = true
+    queueMicrotask(() => {
+      this.viewsScheduled = false
+      const threadIds = [...this.viewsChanged]
+      this.viewsChanged.clear()
+      if (!threadIds.length || this.closed) return
+      for (const listener of [...this.viewListeners]) { try { listener(threadIds) } catch { /* A listener's failure is its own. */ } }
+    })
   }
 
   async read(threadId: string, args: unknown): Promise<unknown> {
@@ -336,6 +432,8 @@ export class DelegationService {
     this.refusals.push(record)
     if (this.refusals.length > REFUSALS_MAX) this.refusals.splice(0, this.refusals.length - REFUSALS_MAX)
     await this.persist()
+    // The window draws its card. A thread a refused send named was sent nothing, so it has nothing new to show.
+    this.touched({ delegatingThreadId: record.delegatingThreadId })
     return { ...refusal, delegation: record.id }
   }
   private refusedOf(callerId: string, delegationId: string): RefusedDelegation | undefined {
@@ -474,7 +572,9 @@ export class DelegationService {
       }
     }
     const root = this.rootOf(caller), time = now()
-    const base = { id: randomUUID(), delegatingThreadId: caller.id, work: input.work, rootUserMessageId: root, ...(input.retry_key ? { retryKey: input.retry_key } : {}),
+    const callerHead = nativeHead(caller)
+    const base = { id: randomUUID(), delegatingThreadId: caller.id, work: input.work, rootUserMessageId: root, ...(callerHead ? { callerMessageId: callerHead } : {}),
+      ...(input.retry_key ? { retryKey: input.retry_key } : {}),
       inputDigest, draftId: randomUUID(), messageId: randomUUID(), deliveryState: 'queued' as const, charged: true, createdAt: time, updatedAt: time }
     if (input.thread !== undefined) {
       const link = this.links.get(input.thread)
@@ -493,6 +593,7 @@ export class DelegationService {
       const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId: thread.id, action: 'send', expectedLastUserMessageId: link.seenHead })
       this.records.push(record)
       await this.saveAdmission(record)
+      this.touched(record)
       return { record, retry: false }
     }
     if (!input.provider || !input.model) refuse('INVALID_INPUT', `Name the provider and model for a new thread. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
@@ -512,6 +613,7 @@ export class DelegationService {
     this.creating.add(record.id)
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
     await this.saveAdmission(record)
+    this.touched(record)
     const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], titleSource: input.title ? 'user' : 'default', modelId: model.id,
       ...(input.effort ? { reasoningEffort: input.effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared' }
     return { record, retry: false, start }
@@ -647,6 +749,7 @@ export class DelegationService {
     const record = this.record(delegationId)
     if (!record) return
     change(record); record.updatedAt = now()
+    this.touched(record)
   }
 
   /**
@@ -704,7 +807,7 @@ export class DelegationService {
     if (record.deliveryState === 'queued') { this.fail(record.id, 'provider', true); return true }
     this.update(record.id, saved => {
       if (saved.deliveryState === 'dispatching') saved.deliveryState = 'uncertain'
-      saved.outcome = 'unknown'; saved.outcomeAt = now()
+      saved.outcome = 'unknown'; saved.unknownBecause = 'gone'; saved.outcomeAt = now()
     })
     this.changed(record.id)
     return true
@@ -748,7 +851,7 @@ export class DelegationService {
       }
       if (record.deliveryState !== 'accepted') {
         if (this.unproved(record, thread)) {
-          this.update(record.id, saved => { saved.deliveryState = 'uncertain'; saved.outcome = 'unknown'; saved.outcomeAt = now() })
+          this.update(record.id, saved => { saved.deliveryState = 'uncertain'; saved.outcome = 'unknown'; saved.unknownBecause = 'unconfirmed'; saved.outcomeAt = now() })
           changed = true
           this.changed(record.id)
         }

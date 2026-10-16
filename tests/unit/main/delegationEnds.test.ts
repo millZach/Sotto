@@ -68,6 +68,8 @@ it('ends a brief whose delivery was never confirmed as unknown once nothing can 
   expect(f.hooks.observedThreadIds()).toEqual([])
   expect(f.told).toEqual([{ source: 'delegation', items: [{ delegationId: lost.id, threadId: 'child', outcome: 'unknown' }] }])
   expect(await f.delegation.read('parent', { delegation: lost.id })).toMatchObject({ delegation: { outcome: 'unknown' } })
+  // The window's card says why: the provider never confirmed the brief, not a restart.
+  expect(f.delegation.views('parent').made).toMatchObject([{ id: lost.id, outcome: 'unknown', unknownWhy: 'unconfirmed' }])
   // Unknown never moves again, even if its message turns up later.
   f.snapshot.threads[1] = thread('child', { messages: [{ id: lost.messageId, role: 'user', text: 'Synthetic brief', createdAt: at }], lastUserMessageId: lost.messageId })
   f.hooks.observe(f.snapshot)
@@ -101,4 +103,5 @@ it('ends the briefs of a delegated thread that is gone, frees what they held and
     { delegationId: working.id, threadId: 'child', outcome: 'unknown' }, { delegationId: waiting.id, threadId: 'other', outcome: 'failed' }] }])
   const read = await f.delegation.read('parent', { delegation: working.id }) as { delegation: { outcome: string; note: string } }
   expect(read.delegation).toMatchObject({ outcome: 'unknown', note: expect.stringMatching(/gone from Sotto/u) })
+  expect(f.delegation.views('parent').made).toMatchObject([{ id: working.id, unknownWhy: 'gone' }, { id: waiting.id, outcome: 'failed', notSent: 'provider' }])
 })
