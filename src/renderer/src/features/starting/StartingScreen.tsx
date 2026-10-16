@@ -10,6 +10,11 @@ import './startingScreen.css'
 
 /** Set once this window has opened the app, so a reload of the same window goes straight to it. */
 export const STARTING_SCREEN_DONE_KEY = 'sotto:starting-screen:done'
+/**
+ * When this window first showed the starting screen. A reload before the app opens shows the screen again, since Sotto is
+ * still not ready, and counts the ten seconds from here rather than from the reload.
+ */
+export const STARTING_SCREEN_SINCE_KEY = 'sotto:starting-screen:since'
 
 function openedBefore(): boolean {
   try { return sessionStorage.getItem(STARTING_SCREEN_DONE_KEY) === '1' } catch { return false }
@@ -17,7 +22,22 @@ function openedBefore(): boolean {
 
 function rememberOpened(): void {
   // A window that cannot remember shows the screen again on a reload, where everything has already settled.
-  try { sessionStorage.setItem(STARTING_SCREEN_DONE_KEY, '1') } catch { /* nothing to keep */ }
+  try {
+    sessionStorage.setItem(STARTING_SCREEN_DONE_KEY, '1')
+    sessionStorage.removeItem(STARTING_SCREEN_SINCE_KEY)
+  } catch { /* nothing to keep */ }
+}
+
+/** When this window first showed the screen: kept from before a reload, or now, remembered for the next one. */
+function firstShownAt(): number {
+  const now = Date.now()
+  try {
+    const kept = Number(sessionStorage.getItem(STARTING_SCREEN_SINCE_KEY) ?? Number.NaN)
+    // A time after now means the clock moved back; the ten seconds start again rather than stretching.
+    if (Number.isFinite(kept) && kept > 0 && kept <= now) return kept
+    sessionStorage.setItem(STARTING_SCREEN_SINCE_KEY, String(now))
+  } catch { /* a window that cannot remember starts the ten seconds again on a reload */ }
+  return now
 }
 
 /**
@@ -51,13 +71,15 @@ function useHostsReading(bridge: HostsBridge | undefined): HostsReading {
   return reading
 }
 
-/** One call per milestone: after `delay`, `fired` turns true and stays so. */
-function useElapsed(delay: number): boolean {
-  const [fired, setFired] = useState(false)
+/** One call per milestone: `delay` after `since` (by default, when the caller mounted), `fired` turns true and stays so. */
+function useElapsed(delay: number, since?: number): boolean {
+  const [start] = useState(() => since ?? Date.now())
+  const [fired, setFired] = useState(() => Date.now() - start >= delay)
   useEffect(() => {
-    const timer = setTimeout(() => setFired(true), delay)
+    if (fired) return
+    const timer = setTimeout(() => setFired(true), Math.min(delay, Math.max(0, delay - (Date.now() - start))))
     return () => clearTimeout(timer)
-  }, [delay])
+  }, [delay, start, fired])
   return fired
 }
 
@@ -105,7 +127,9 @@ interface StartingScreenProps {
 function StartingScreen({ leaving, hosts, onOpen }: StartingScreenProps): ReactNode {
   const agents = useOptionalAgents()
   const hostsReading = useHostsReading(hosts)
-  const late = useElapsed(LATE_AFTER_MS)
+  // The ten seconds run from when this window first showed the screen; the words are kept back afresh after a reload.
+  const [since] = useState(firstShownAt)
+  const late = useElapsed(LATE_AFTER_MS, since)
   const waited = useElapsed(REVEAL_AFTER_MS)
   const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set())
   const agentState = agents?.state ?? null
@@ -123,7 +147,8 @@ function StartingScreen({ leaving, hosts, onOpen }: StartingScreenProps): ReactN
   const revealed = shown || waited || view.pending.length > 0 || leaving
   const buttonRef = useRef<HTMLButtonElement>(null)
   const noteId = useId()
-  const hasLateNote = view.late !== null
+  // Only a late line that shows can give its button focus: a hidden one cannot take it.
+  const hasLateNote = view.late !== null && revealed
 
   useEffect(() => { if (revealed && !shown) setShown(true) }, [revealed, shown])
 
@@ -186,8 +211,9 @@ type GatePhase = 'deciding' | 'starting' | 'leaving' | 'open'
 /**
  * Shows the starting screen in place of the app at launch, until every provider on this computer and every saved host
  * Sotto is connecting has settled, or the user opens Sotto without what is left. It decides once, when settings load:
- * first-run setup, a window that already opened the app (a reload), and a window that cannot know what is connecting
- * all go straight to the app. Once open it never comes back, whatever disconnects later.
+ * first-run setup, a window that already opened the app (a reload after it opened), and a window that cannot know what
+ * is connecting all go straight to the app. A reload before the app opened shows the screen again on the same ten
+ * seconds. Once open it never comes back, whatever disconnects later.
  */
 export function StartingScreenGate({ settingsSettled, eligible, frame, hosts = window.sotto?.hosts, children }: StartingScreenGateProps): ReactNode {
   const [phase, setPhase] = useState<GatePhase>(() => startingScreenAvailable() && !openedBefore() ? 'deciding' : 'open')

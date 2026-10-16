@@ -9,7 +9,7 @@ import type { SottoE2EBridge } from '../../../../../src/shared/e2e'
 import { AgentProvider } from '../../../../../src/renderer/src/agents/AgentContext'
 import { HostQuestionDialog } from '../../../../../src/renderer/src/features/settings/HostQuestionDialog'
 import { writeShellCache } from '../../../../../src/renderer/src/agents/shellCache'
-import { STARTING_SCREEN_DONE_KEY, StartingScreenGate } from '../../../../../src/renderer/src/features/starting/StartingScreen'
+import { STARTING_SCREEN_DONE_KEY, STARTING_SCREEN_SINCE_KEY, StartingScreenGate } from '../../../../../src/renderer/src/features/starting/StartingScreen'
 import { LATE_AFTER_MS, LEAVE_MS, REVEAL_AFTER_MS } from '../../../../../src/renderer/src/features/starting/startingView'
 import { agentWireBridge } from '../../../../fixtures/agentBridge'
 import { hostStatus, hostsBridgeFixture, hostsState } from '../../../../fixtures/renderer/hostBridges'
@@ -78,6 +78,7 @@ describe('the starting screen gate', () => {
     expect(screen.getByText('The app')).toBeVisible()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(sessionStorage.getItem(STARTING_SCREEN_DONE_KEY)).toBe('1')
+    expect(sessionStorage.getItem(STARTING_SCREEN_SINCE_KEY)).toBeNull()
 
     // Launch only: a provider dropping and reconnecting later never brings it back.
     act(() => wire.publish(agent({ codex: 'connected', devin: 'connecting' })))
@@ -175,6 +176,25 @@ describe('the starting screen gate', () => {
     await user.keyboard('{Enter}')
     await settle(LEAVE_MS)
     expect(screen.getByText('The app')).toBeVisible()
+  })
+
+  it('shows again on a reload while still starting, and keeps the same ten seconds', async () => {
+    bridges(agent({ devin: 'connecting' }))
+    const before = render(<Window />)
+    await settle()
+    expect(screen.getByRole('status')).toHaveTextContent('Connecting Devin')
+    await settle(6_000)
+
+    // The renderer reloads: a fresh page in the same window, with the same session storage.
+    before.unmount()
+    render(<Window />)
+    await settle()
+    expect(screen.getByRole('status')).toHaveTextContent('Connecting Devin')
+    expect(screen.queryByText('The app')).not.toBeInTheDocument()
+    expect(screen.queryAllByRole('button')).toEqual([])
+    await settle(LATE_AFTER_MS - 6_000)
+    expect(screen.getByRole('status')).toHaveTextContent('Waiting for Devin')
+    expect(screen.getByRole('button', { name: 'Open Sotto without Devin' })).toHaveFocus()
   })
 
   it('goes straight to the app on a reload of a window that already opened it', async () => {
