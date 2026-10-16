@@ -3452,7 +3452,10 @@ export class AgentControl {
     const threadId = 'threadId' in command ? command.threadId : undefined
     const prompt = promptOf(command)
     const operation = draftId ? this.watcher.operations.find(item => item.draftId === draftId) : undefined
-    const origin = machineOrigin ?? (operation ? { operationId: operation.id, guard: () => this.watcherHooks!.guardOperation(operation.id) } : undefined)
+    // A delegated brief carries delegation's own guard to the writer, as a Watcher operation carries Watcher's (ADR-0081).
+    const delegationGuard = !machineOrigin && !operation && draftId ? this.delegationHooks?.guardFor(draftId) : undefined
+    const origin = machineOrigin ?? (operation ? { operationId: operation.id, guard: () => this.watcherHooks!.guardOperation(operation.id) }
+      : delegationGuard ? { guard: delegationGuard } : undefined)
     origin?.guard()
     const writeGuard = origin?.guard ?? queueGuard
     const provider = command.type === 'create-project' ? command.provider ?? this.state.configuration.provider

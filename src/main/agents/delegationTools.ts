@@ -9,7 +9,7 @@ export const delegationToolDefinitions: readonly ThreadToolDefinition[] = [
   { name: DELEGATE_TOOL, inputSchema: schema(delegateInputSchema), description: [
     'Hand work to another thread on this computer: start a new Sotto thread on any provider with your brief, or send another brief to a thread you delegated to.',
     'The thread is the user\'s to open, answer and stop. It asks the user, never you, for any permission or answer, and nothing you send approves anything.',
-    `For a new thread name the provider and model; call ${READ_DELEGATION_TOOL} with no delegation to see what is ready. Its permission is never wider than this thread's or the user's new-thread default.`,
+    `For a new thread name the provider, model, effort and permission; call ${READ_DELEGATION_TOOL} with no delegation to see what is ready. The permission may be no wider than this thread's or the user's new-thread default.`,
     `It waits up to wait_seconds (at most ${DELEGATION_WAIT_MAX_SECONDS}) for the outcome and returns the reply once answered. When the wait ends first it returns working, and Sotto sends this thread a wake-up when the outcome changes: end your turn or carry on, and do not poll.`,
     `New threads share the computer's limit on threads in flight with Watcher's. Each thread takes ${DELEGATION_PROMPTS_PER_THREAD} briefs per user message to this thread; retries and wake-ups renew nothing.`,
   ].join(' ') },

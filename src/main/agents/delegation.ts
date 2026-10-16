@@ -4,10 +4,10 @@ import { z } from 'zod'
 import { isThreadProviderConnected, lastUserMessageIdOf, threadTakesSottoTools,
   type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
-import { nearestReasoningEffort, resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
+import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
-import { cancelDelegationInputSchema, delegateInputSchema, delegationWorkSchema, readDelegationInputSchema, DELEGATION_LEVELS_MAX,
+import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationWorkSchema, readDelegationInputSchema, DELEGATION_LEVELS_MAX,
   DELEGATION_PROMPTS_PER_THREAD, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES,
   type DelegateInput, type DelegationNews, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -26,6 +26,8 @@ export interface DelegationControlHooks {
   observedThreadIds(): readonly string[]
   /** The message ID a delegation gave its brief, so the brief's turn is known by it from the first echo. */
   messageIdFor(draftId: string): string | undefined
+  /** The guard a delegated brief carries to the provider's writer, asked again after the thread's preparation. */
+  guardFor(draftId: string): (() => void) | undefined
 }
 /** The coordinator as delegation uses it: its threads, its commands, the user's composer and its wake-ups. */
 export interface DelegationCoordinator {
@@ -87,9 +89,16 @@ const linkSchema = z.object({ threadId: id, delegatingThreadId: id, createdAt: z
   seenHead: id.nullable() }).strict()
 type DelegationLink = z.infer<typeof linkSchema>
 const RECORDS_MAX = 2_000
+/** How a new delegated thread is created, as admission chose it. */
+interface DelegatedStart {
+  readonly projectId: string; readonly title: string; readonly modelId: string; readonly reasoningEffort?: string
+  readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string; readonly workingCopy: 'shared' | 'independent'
+}
+/** How many times news of a thread's delegations is offered to its queue before it is left untold. */
+const NEWS_ATTEMPTS_MAX = 5
 /** The most ready models of one provider an answer lists. */
 const MODELS_LISTED = 20
-const fileSchema = z.object({ version: z.literal(1), delegations: z.array(recordSchema).max(RECORDS_MAX), links: z.array(linkSchema).max(RECORDS_MAX),
+const fileSchema = z.object({ version: z.literal(1), delegations: z.array(recordSchema).max(RECORDS_MAX * 2), links: z.array(linkSchema).max(RECORDS_MAX),
   roots: z.array(z.object({ threadId: id, rootUserMessageId: id }).strict()).max(RECORDS_MAX) }).strict()
 type DelegationFile = z.infer<typeof fileSchema>
 
@@ -142,6 +151,12 @@ export class DelegationService {
   private readonly sending = new Set<string>()
   private readonly answeredThisRun = new Set<string>()
   private readonly dispatchRefusals = new Map<string, Failure>()
+  /** Briefs a Stop fenced while they were on their way: their guard refuses them at the writer. */
+  private readonly fenced = new Set<string>()
+  /** Delegations whose new outcome the delegating thread has not been told yet, by delegating thread, with attempts. */
+  private readonly untold = new Map<string, { readonly ids: Set<string>; attempts: number }>()
+  private readonly telling = new Set<string>()
+  private newsScheduled = false
   private tail: Promise<unknown> = Promise.resolve()
   private closed = false
   private unhook: (() => void) | undefined
@@ -180,6 +195,10 @@ export class DelegationService {
       observe: snapshot => this.observe(snapshot),
       observedThreadIds: () => this.observedThreadIds(),
       messageIdFor: draftId => this.records.findLast(record => record.draftId === draftId && this.open(record))?.messageId,
+      guardFor: draftId => {
+        const record = this.records.findLast(item => item.draftId === draftId && this.open(item))
+        return record ? () => this.guardSend(record.id) : undefined
+      },
     })
     await this.persist()
   }
@@ -205,14 +224,14 @@ export class DelegationService {
     const parsed = delegateInputSchema.safeParse(args)
     if (!parsed.success) return delegationRefusal('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema. Nothing was started.')
     const input = parsed.data
-    let admitted: { record: DelegationRecord; retry: boolean; project?: { projectId: string; title: string; modelId: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode; providerMode?: string } }
+    let admitted: { record: DelegationRecord; retry: boolean; start?: DelegatedStart }
     try { admitted = await this.transaction(() => this.admit(threadId, input)) }
     catch (error) { return error instanceof Refusal ? error.result : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.') }
     const record = admitted.record
     if (admitted.retry) return this.result(record)
     this.calling.add(record.id)
     try {
-      await this.execute(record, input.brief, admitted.project)
+      await this.execute(record, input.brief, admitted.start)
       const waitMs = Math.max(0, Math.min((input.wait_seconds ?? DELEGATION_WAIT_MAX_SECONDS) * 1000,
         context.waitMs === undefined ? Infinity : context.waitMs - 2_000))
       if (this.open(this.record(record.id)!) && waitMs > 0) await this.wait(record.id, waitMs)
@@ -393,39 +412,53 @@ export class DelegationService {
       if (thread.providerMode && current.providerMode !== thread.providerMode) refuse('PERMISSION_NOT_COMPARABLE', 'That delegated thread\'s permission cannot be compared safely. Nothing was sent.')
       if (this.prompts(caller.id, root, thread.id) >= DELEGATION_PROMPTS_PER_THREAD) refuse('PROMPT_LIMIT', `That thread has had ${DELEGATION_PROMPTS_PER_THREAD} briefs in this turn of this thread. Retries, reads and wake-ups do not renew the limit; the user's next message does. Nothing was sent.`)
       const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId: thread.id, action: 'send', expectedLastUserMessageId: link.seenHead })
-      this.records.push(record); this.trim(); await this.persist()
+      this.records.push(record)
+      await this.saveAdmission(record)
       return { record, retry: false }
     }
     if (!input.provider || !input.model) refuse('INVALID_INPUT', `Name the provider and model for a new thread. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
     const model = resolveModel(snapshot.models, input.model)
     if (!model?.ready || model.providerId !== input.provider) refuse('PROVIDER_UNAVAILABLE', `That model is not ready on this computer. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
-    if (input.effort !== undefined && !model.reasoningEfforts?.includes(input.effort)) refuse('INVALID_INPUT', `That model offers these efforts: ${(model.reasoningEfforts ?? []).join(', ') || 'none'}. Nothing was started.`)
+    const efforts = model.reasoningEfforts ?? []
+    if (input.effort === undefined ? efforts.length > 0 : !efforts.includes(input.effort)) refuse('INVALID_INPUT', `Name the effort for this model, one of: ${efforts.join(', ') || 'none, so leave it out'}. Nothing was started.`)
+    if (!model.providerModes?.length && input.permission === undefined) refuse('INVALID_INPUT', `Name the permission for a new thread, one of: ${(model.runtimeModes ?? []).join(', ') || 'none'}. It may be no wider than this thread's own or the user's new-thread default. Nothing was started.`)
     const project = snapshot.projects.find(item => item.id === caller.projectId)
     if (!project || this.reserved(project.path)) refuse('NOT_ADMITTED', NOT_ADMITTED)
     const permission = this.permission(model, caller, snapshot.models, input.permission)
     const inFlight = this.startsInFlight() + (this.options.otherStartsInFlight?.() ?? 0), limit = this.options.limit()
     if (inFlight >= limit) refuse('IN_FLIGHT_LIMIT', `${inFlight} new ${inFlight === 1 ? 'thread is' : 'threads are'} in flight on this computer, delegated or Watcher's, against a limit of ${limit}. Wait for one to finish. Nothing was started.`)
-    const configuration = this.options.control.configuration()
-    const reference = resolveModel(snapshot.models, configuration.newThreadModelId ?? '')?.reasoningEfforts ?? model.reasoningEfforts ?? []
-    const effort = input.effort ?? (configuration.newThreadReasoningEffort ? nearestReasoningEffort(configuration.newThreadReasoningEffort, reference, model.reasoningEfforts ?? []) : undefined)
     const delegatedThreadId = randomUUID()
     const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null })
     this.records.push(record)
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
-    this.trim(); await this.persist()
-    return { record, retry: false, project: { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], modelId: model.id,
-      ...(effort ? { reasoningEffort: effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared' } }
+    await this.saveAdmission(record)
+    const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], modelId: model.id,
+      ...(input.effort ? { reasoningEffort: input.effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared' }
+    return { record, retry: false, start }
+  }
+  /**
+   * Saves an admitted brief before anything is sent, so a retry after a restart finds it. A save that fails takes the
+   * brief back and refuses the call: nothing was started or sent.
+   */
+  private async saveAdmission(record: DelegationRecord): Promise<void> {
+    this.trim()
+    try { await this.save() }
+    catch {
+      this.records = this.records.filter(item => item.id !== record.id)
+      if (record.action === 'start') this.links.delete(record.delegatedThreadId)
+      refuse('PROVIDER_UNAVAILABLE', 'Sotto could not save this delegation, so nothing was started or sent. Try again.')
+    }
   }
 
   /** Creates the delegated thread when this is a start, links it, then sends the brief now or once the thread is free. */
-  private async execute(record: DelegationRecord, brief: string, project?: { projectId: string; title: string; modelId: string; reasoningEffort?: string; runtimeMode?: AgentRuntimeMode; providerMode?: string; workingCopy?: 'shared' | 'independent' }): Promise<void> {
-    if (record.action === 'start' && project) {
+  private async execute(record: DelegationRecord, brief: string, start?: DelegatedStart): Promise<void> {
+    if (record.action === 'start' && start) {
       try {
-        const created = await this.options.control.commandFromDelegation({ type: 'create-thread', threadId: record.delegatedThreadId, projectId: project.projectId,
-          title: project.title, modelId: project.modelId, workingCopy: project.workingCopy ?? 'shared',
-          ...(project.reasoningEffort ? { reasoningEffort: project.reasoningEffort } : {}),
-          ...(project.runtimeMode ? { runtimeMode: project.runtimeMode } : {}), ...(project.providerMode ? { providerMode: project.providerMode } : {}) },
-        () => this.guardLive(record.id))
+        const created = await this.options.control.commandFromDelegation({ type: 'create-thread', threadId: record.delegatedThreadId, projectId: start.projectId,
+          title: start.title, modelId: start.modelId, workingCopy: start.workingCopy,
+          ...(start.reasoningEffort ? { reasoningEffort: start.reasoningEffort } : {}),
+          ...(start.runtimeMode ? { runtimeMode: start.runtimeMode } : {}), ...(start.providerMode ? { providerMode: start.providerMode } : {}) },
+        () => { this.guardLive(record.id); this.guardCeiling(record, start) })
         if (created.error || !created.host.threads.some(thread => thread.id === record.delegatedThreadId)) { this.fail(record.id, 'provider', true); await this.persist(); return }
         // Linked on the thread's own record before its first send, so its first launch already knows its level.
         await this.options.host.setDelegatedBy(record.delegatedThreadId, record.delegatingThreadId)
@@ -443,7 +476,19 @@ export class DelegationService {
   }
   private guardLive(delegationId: string): void {
     if (this.closed) throw new Error('Sotto is stopping. Nothing was sent.')
+    if (this.fenced.has(delegationId)) { this.dispatchRefusals.set(delegationId, 'stopped'); throw new Error('This delegation was stopped. Nothing was sent.') }
     if (this.record(delegationId)?.deliveryState === 'failed') throw new Error('This delegation was stopped. Nothing was sent.')
+  }
+  /**
+   * Asked again as the delegated thread is created: the permission it starts with is still within the ceiling as it is
+   * now, so a narrower new-thread default, or a narrower delegating thread, set since admission is kept to (decision 4).
+   */
+  private guardCeiling(record: DelegationRecord, start: DelegatedStart): void {
+    const snapshot = this.snapshot()
+    const caller = snapshot.threads.find(thread => thread.id === record.delegatingThreadId), model = resolveModel(snapshot.models, start.modelId)
+    if (!caller || !model) throw new Error('The thread that delegated, or the chosen model, is gone. Nothing was started.')
+    const current = this.permission(model, caller, snapshot.models, start.runtimeMode)
+    if (start.providerMode !== undefined && current.providerMode !== start.providerMode) throw new Error('The permission changed. Nothing was started.')
   }
   /**
    * Asked as the brief dispatches: the delegation still stands, the user is not working in the thread, and its newest user
@@ -466,7 +511,8 @@ export class DelegationService {
       catch { this.fail(delegationId, this.dispatchRefusals.get(delegationId) ?? 'provider', true); return }
       this.queuedBriefs.delete(delegationId)
       this.update(delegationId, saved => { saved.deliveryState = 'dispatching' })
-      await this.persist()
+      // Saved as dispatching before the provider can hear it, so a restart reads it as unknown, never as unsent.
+      try { await this.save() } catch { this.fail(delegationId, 'provider', true); return }
       let state: DelegationRecord['deliveryState'] = 'failed'
       try {
         const result = await this.options.control.commandFromDelegation({ type: 'manual-send', threadId: record.delegatedThreadId, draftId: record.draftId, text: brief },
@@ -524,16 +570,7 @@ export class DelegationService {
   }
   /** The threads below this one, both levels, from the record's links. */
   private below(threadId: string): string[] {
-    const children = new Map<string, string[]>()
-    for (const link of this.links.values()) children.set(link.delegatingThreadId, [...children.get(link.delegatingThreadId) ?? [], link.threadId])
-    const found: string[] = []
-    let level = children.get(threadId) ?? []
-    for (let depth = 0; depth < DELEGATION_LEVELS_MAX && level.length; depth++) {
-      const next: string[] = []
-      for (const child of level) if (!found.includes(child) && child !== threadId) { found.push(child); next.push(...children.get(child) ?? []) }
-      level = next
-    }
-    return found
+    return delegatedThreadsBelow([...this.links.values()].map(link => ({ id: link.threadId, delegatedBy: link.delegatingThreadId })), threadId)
   }
   /**
    * Stops these delegated threads and everything they delegated to that is still working, without waking the thread the
@@ -545,6 +582,7 @@ export class DelegationService {
     const quiet = new Set([...above, ...targets])
     for (const record of this.records) if (targets.includes(record.delegatedThreadId) && quiet.has(record.delegatingThreadId)) {
       if (this.open(record)) record.told = 'stopped'
+      if (record.deliveryState === 'queued' || record.deliveryState === 'dispatching') this.fenced.add(record.id)
       if (record.deliveryState === 'queued') this.fail(record.id, 'stopped')
     }
     for (const delegatingId of quiet) for (const record of this.records) if (record.delegatingThreadId === delegatingId) this.waiters.get(record.id)?.forEach(wake => wake())
@@ -564,6 +602,7 @@ export class DelegationService {
   private observe(snapshot: AgentHostSnapshot): void {
     if (this.closed) return
     const open = this.records.filter(record => this.open(record))
+    if (this.untold.size) this.scheduleNews()
     if (!open.length && !this.paused.size) return
     const threads = new Map(snapshot.threads.map(thread => [thread.id, thread]))
     const briefs = new Set(this.records.map(record => record.messageId))
@@ -605,10 +644,39 @@ export class DelegationService {
     const outcome = this.outcomeOf(record)
     if (!this.open(record)) this.waiters.get(record.id)?.forEach(wake => wake())
     if (this.calling.has(record.id) || outcome === 'working' || outcome === record.told) return
-    record.told = outcome
-    const news: DelegationNews = { source: 'delegation', items: [{ delegationId: record.id, threadId: record.delegatedThreadId, outcome,
-      ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}) }] }
-    void this.options.control.deliverWakeUp(record.delegatingThreadId, news, { tool: this.options.tool?.(record.delegatingThreadId) ?? false }).catch(() => undefined)
+    const pending = this.untold.get(record.delegatingThreadId) ?? { ids: new Set<string>(), attempts: 0 }
+    pending.ids.add(record.id); this.untold.set(record.delegatingThreadId, pending)
+    this.scheduleNews()
+  }
+  /** Tells each delegating thread its news once the current pass is over: one wake-up per thread, however many changed. */
+  private scheduleNews(): void {
+    if (this.newsScheduled || this.closed) return
+    this.newsScheduled = true
+    queueMicrotask(() => { this.newsScheduled = false; void this.tellNews().catch(() => undefined) })
+  }
+  /**
+   * Hands each delegating thread the outcomes it has not been told, as one wake-up. An outcome counts as told once the
+   * queue has saved it; a thread that cannot take it now is offered it again on a later pass, a few times, then left.
+   */
+  private async tellNews(): Promise<void> {
+    const threads = new Set(this.snapshot().threads.map(thread => thread.id))
+    await Promise.allSettled([...this.untold].map(async ([threadId, pending]) => {
+      if (this.telling.has(threadId)) return
+      const records = [...pending.ids].flatMap(id => { const record = this.record(id); return record ? [record] : [] })
+        .filter(record => !this.calling.has(record.id) && this.outcomeOf(record) !== 'working' && this.outcomeOf(record) !== record.told)
+      if (!records.length || !threads.has(threadId) || pending.attempts >= NEWS_ATTEMPTS_MAX) { this.untold.delete(threadId); return }
+      const told = records.map(record => ({ record, outcome: this.outcomeOf(record) }))
+      const news: DelegationNews = { source: 'delegation', items: told.map(({ record, outcome }) => ({ delegationId: record.id, threadId: record.delegatedThreadId, outcome,
+        ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}) })) }
+      this.telling.add(threadId); pending.attempts++
+      try {
+        await this.options.control.deliverWakeUp(threadId, news, { tool: this.options.tool?.(threadId) ?? false })
+        for (const { record, outcome } of told) { record.told = outcome; pending.ids.delete(record.id) }
+        if (!pending.ids.size) this.untold.delete(threadId)
+        else pending.attempts = 0
+        await this.persist()
+      } catch { /* Offered again on a later pass. */ } finally { this.telling.delete(threadId) }
+    }))
   }
   private wait(delegationId: string, ms: number): Promise<void> {
     return new Promise(resolveWait => {
@@ -672,12 +740,16 @@ export class DelegationService {
     if (this.records.length <= RECORDS_MAX) return
     const excess = this.records.length - RECORDS_MAX
     let dropped = 0
-    this.records = this.records.filter(record => this.open(record) || dropped++ >= excess)
+    // A brief still open, or one the delegating thread's current turn counts against its budget, is never dropped.
+    this.records = this.records.filter(record => this.open(record) || this.roots.get(record.delegatingThreadId) === record.rootUserMessageId || dropped++ >= excess)
     const kept = new Set(this.records.map(record => record.delegatedThreadId))
     if (this.links.size > RECORDS_MAX) for (const threadId of [...this.links.keys()].slice(0, this.links.size - RECORDS_MAX)) if (!kept.has(threadId)) this.links.delete(threadId)
   }
-  private persist(): Promise<void> {
-    return this.store.writeLatest(() => ({ version: 1, delegations: this.records.slice(-RECORDS_MAX), links: [...this.links.values()].slice(-RECORDS_MAX),
-      roots: [...this.roots].slice(-RECORDS_MAX).map(([threadId, rootUserMessageId]) => ({ threadId, rootUserMessageId })) })).catch(() => undefined)
+  /** Writes the record as it is now; rejects when it could not be saved. */
+  private save(): Promise<void> {
+    return this.store.writeLatest(() => ({ version: 1, delegations: this.records.slice(-RECORDS_MAX * 2), links: [...this.links.values()].slice(-RECORDS_MAX),
+      roots: [...this.roots].slice(-RECORDS_MAX).map(([threadId, rootUserMessageId]) => ({ threadId, rootUserMessageId })) }))
   }
+  /** Writes the record where a failed write changes nothing already decided: the next write carries it. */
+  private persist(): Promise<void> { return this.save().catch(() => undefined) }
 }

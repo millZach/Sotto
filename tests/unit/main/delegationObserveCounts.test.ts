@@ -40,7 +40,7 @@ async function counts(size: number) {
     links.push({ threadId, delegatingThreadId: parent, createdAt: at, seenHead: messageId })
   }
   await writeFile(join(root, 'delegations.json'), JSON.stringify({ version: 1, delegations, links, roots: [] }))
-  const tally = { threadLists: 0, snapshots: 0, pendingWork: 0 }
+  const tally = { threadLists: 0, snapshots: 0, pendingWork: 0, wakeUps: 0, items: 0 }
   let measuring = false
   const base: AgentHostSnapshot = { ...EMPTY_AGENT_HOST, connected: true, threads }
   // The snapshot as main hands it to the pass, its thread list counted each time it is read.
@@ -54,31 +54,36 @@ async function counts(size: number) {
     useDelegation: given => { hooks = given; return () => { hooks = undefined } },
     commandFromDelegation: async () => { throw new Error('This pass sends nothing.') },
     hasPendingThreadWork: () => { if (measuring) tally.pendingWork++; return false }, hasUserDraft: () => false,
-    refreshDelegationObservation: () => undefined, deliverWakeUp: async () => undefined,
+    refreshDelegationObservation: () => undefined,
+    deliverWakeUp: async (_threadId, news) => { if (measuring) { tally.wakeUps++; tally.items += news.items.length } },
   }
   const live = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined },
     historyEnabled: () => true, limit: () => 4 })
   await live.recover()
   // Recovery leaves every brief from before a restart unknown; these are this run's, open for the pass to follow.
   ;(live as unknown as { records: unknown[] }).records = structuredClone(delegations)
-  const measure = (read: () => void) => {
+  const measure = async (read: () => void) => {
     for (const name of Object.keys(tally) as (keyof typeof tally)[]) tally[name] = 0
     measuring = true
-    try { read() } finally { measuring = false }
+    // The news a pass finds goes once the pass is over, so the measure runs until it has gone.
+    try { read(); await new Promise(resolve => setTimeout(resolve, 0)) } finally { measuring = false }
     return { ...tally }
   }
-  const observe = measure(() => hooks!.observe(snapshot))
+  const observe = await measure(() => hooks!.observe(snapshot))
   // The pass did reach the finished turns: each finished brief now reads answered.
   const answered = (live as unknown as { records: { outcome?: string }[] }).records.filter(record => record.outcome === 'answered').length
   expect(answered).toBe(size)
-  const observed = measure(() => { expect(hooks!.observedThreadIds()).toHaveLength(size) })
+  const observed = await measure(() => { expect(hooks!.observedThreadIds()).toHaveLength(size) })
   live.close()
   return { observe, observed }
 }
 
 it('reads the snapshot\'s threads once per pass and asks nothing per delegated thread, whatever the size', async () => {
   const small = await counts(2), large = await counts(24)
-  expect(large).toEqual(small)
-  expect(small.observe).toEqual({ threadLists: 1, snapshots: 0, pendingWork: 0 })
-  expect(small.observed).toEqual({ threadLists: 0, snapshots: 0, pendingWork: 0 })
+  // The pass reads the thread list once; the news it found goes as one wake-up to the delegating thread, which reads the
+  // snapshot once more to see the thread is still there, however many delegations it names.
+  expect({ ...large.observe, items: 0 }).toEqual({ ...small.observe, items: 0 })
+  expect(small.observe).toEqual({ threadLists: 2, snapshots: 1, pendingWork: 0, wakeUps: 1, items: 2 })
+  expect(large.observe.items).toBe(24)
+  expect(small.observed).toEqual({ threadLists: 0, snapshots: 0, pendingWork: 0, wakeUps: 0, items: 0 })
 }, 60_000)

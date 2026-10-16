@@ -59,7 +59,9 @@ async function fixture(options: { limit?: number; otherStarts?: number; history?
     expect((await f.control.commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Synthetic user request' })).error).toBeNull()
     return threadId
   }
-  const delegate = async (threadId: string, input: Record<string, unknown>) => await service.delegate(threadId, { work: 'code-review', brief: 'Synthetic brief', ...input }) as Read | Refused
+  // A new thread names its effort and permission, as delegate requires; a send to a delegated thread names neither.
+  const delegate = async (threadId: string, input: Record<string, unknown>) => await service.delegate(threadId, { work: 'code-review', brief: 'Synthetic brief',
+    ...input.thread === undefined ? { effort: 'low', permission: 'approval-required' } : {}, ...input }) as Read | Refused
   const read = async (threadId: string, delegation: string) => await service.read(threadId, { delegation }) as Read
   const ok = (result: Read | Refused): Read => { if (result.status !== 'ok') throw new Error(`refused ${result.code}: ${result.message}`); return result }
   const restart = async () => {
@@ -126,8 +128,12 @@ it('stops both levels below the thread the user stops, and only the second level
   expect(f.adapterOf(third.delegation.thread).commands.filter(command => command.type === 'interrupt' && command.threadId === f.workspace.registry.byThread(third.delegation.thread)!.sessionId)).toHaveLength(1)
 })
 
-it('refuses a start wider than the delegating thread\'s permission and the new-thread default', async () => {
+it('refuses a start wider than the delegating thread\'s permission and the new-thread default, or one that names none', async () => {
   const f = await fixture(), parent = await f.userThread('claude')
+  expect(await f.service.delegate(parent, { work: 'research', brief: 'Synthetic brief', provider: 'codex', model: f.model('codex').id, effort: 'low' }))
+    .toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  expect(await f.service.delegate(parent, { work: 'research', brief: 'Synthetic brief', provider: 'codex', model: f.model('codex').id, permission: 'approval-required' }))
+    .toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   const refused = await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, permission: 'full-access' }) as Refused
   expect(refused).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE' })
   expect(f.control.shell().host.threads.some(thread => thread.delegatedBy === parent)).toBe(false)

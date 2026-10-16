@@ -34,8 +34,8 @@ export const delegateInputSchema = z.object({
   thread: id.optional().describe('A thread this thread delegated to before, to send it another brief. Leave it out to start a new thread.'),
   provider: providerIdSchema.optional().describe('For a new thread: claude, codex, grok, muse or devin. Call read_delegation with no delegation to see what is ready.'),
   model: z.string().min(1).max(512).optional().describe('For a new thread: a ready model ID of that provider, as read_delegation lists it.'),
-  effort: z.string().min(1).max(64).optional().describe('For a new thread: a reasoning effort the model offers. Left out, the new-thread default.'),
-  permission: agentRuntimeModeSchema.optional().describe('For a new thread: approval-required, auto-accept-edits, auto or full-access. Never wider than this thread\'s own or the user\'s new-thread default; left out, the narrower of the two.'),
+  effort: z.string().min(1).max(64).optional().describe('For a new thread: a reasoning effort the model offers, required when it offers any.'),
+  permission: agentRuntimeModeSchema.optional().describe('For a new thread, required: approval-required, auto-accept-edits, auto or full-access, one the model offers. Never wider than this thread\'s own or the user\'s new-thread default.'),
   working_copy: z.enum(['shared', 'independent']).optional().describe('For a new thread: share this project\'s checkout (the default) or start its own worktree.'),
   title: z.string().trim().min(1).max(DELEGATION_TITLE_MAX).optional().describe('For a new thread: its name in the sidebar.'),
   wait_seconds: z.number().int().min(0).max(DELEGATION_WAIT_MAX_SECONDS).optional()
