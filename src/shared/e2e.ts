@@ -85,6 +85,11 @@ export interface SottoE2EBridge {
   delegationTool?(request: z.infer<typeof e2eDelegationToolSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
   agentEvent?(event: z.infer<typeof e2eAgentEventSchema>): Promise<void>
   readonly scenario: E2EScenario
+  /**
+   * Set when the spec launched with `SOTTO_E2E_STARTING_SCREEN=1`: the window shows the starting screen at launch as an
+   * installed app does (ADR-0086). Every other run opens straight onto the app, as the journeys and captures expect.
+   */
+  readonly startingScreen?: boolean
   snapshot(): Promise<E2ESnapshot>
   triggerShortcut(): Promise<void>
 }

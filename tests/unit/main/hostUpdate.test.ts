@@ -51,8 +51,13 @@ class Threads implements HostUpdateThreads {
   busy = new Map<string, string[]>()
   readonly interrupted: string[] = []
   readonly listeners = new Set<() => void>()
+  /** Turns that began after the last publish: `working` does not show them yet. */
+  begun: string[] = []
   working(hostId: string): readonly string[] { return this.busy.get(hostId) ?? [] }
-  async interrupt(threadId: string): Promise<void> { this.interrupted.push(threadId); this.busy.set(HOST_ID, this.working(HOST_ID).filter(id => id !== threadId)) }
+  workingNow(hostId: string): readonly string[] { return [...this.working(hostId), ...hostId === HOST_ID ? this.begun : []] }
+  async interrupt(threadId: string): Promise<void> {
+    this.interrupted.push(threadId); this.busy.set(HOST_ID, this.working(HOST_ID).filter(id => id !== threadId)); this.begun = this.begun.filter(id => id !== threadId)
+  }
   subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   set(ids: string[]): void { this.busy.set(HOST_ID, ids); for (const listener of this.listeners) listener() }
 }
@@ -156,6 +161,23 @@ describe('an update', () => {
     await settled()
     expect(one().phase).toBe('done')
     expect(threads.interrupted).toEqual([])
+  })
+  // What was published trails a turn that began in the last few milliseconds; a restart then would end it unasked.
+  it('asks first, and stops, for a turn that began after the last publish', async () => {
+    const { hosts, threads, updates, one, settled } = setup()
+    threads.begun = ['thread-new']
+    await updates.command(ID, 'update')
+    expect(one()).toMatchObject({ phase: 'confirm' })
+    // The threads moving on does not start it while that turn still works.
+    threads.set([])
+    expect(one()).toMatchObject({ phase: 'confirm' })
+    await updates.command(ID, 'when-idle')
+    expect(one()).toMatchObject({ phase: 'waiting' })
+    expect(hosts.operations).toEqual([])
+    await updates.command(ID, 'stop-threads')
+    expect(threads.interrupted).toEqual(['thread-new'])
+    await settled()
+    expect(one().phase).toBe('done')
   })
   it('starts the update when the threads finish while it asks, since Update was pressed', async () => {
     const { threads, updates, one, settled } = setup()

@@ -249,7 +249,7 @@ export class HostUpdates {
     delete entry.error
     try {
       if (action === 'update') this.update(entry)
-      else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (whenIdle(this.working(entry).length) === 'waiting') entry.phase = 'waiting'; else this.begin(entry) } }
+      else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (whenIdle(this.workingNow(entry).length) === 'waiting') entry.phase = 'waiting'; else this.begin(entry) } }
       else if (action === 'stop-threads') { if (entry.phase === 'confirm' || entry.phase === 'waiting') await this.stopThreadsAndUpdate(entry) }
       else if (action === 'cancel') this.cancel(entry)
       else if (action === 'not-now') {
@@ -269,7 +269,7 @@ export class HostUpdates {
     if (!candidate) { entry.error = `${entry.name} is not connected, so nothing was updated. Switch it on in Settings > Hosts, then try again.`; return }
     this.refresh(entry, candidate)
     if (!this.needsUpdate(candidate)) { this.entries.delete(entry.id); return }
-    if (this.working(entry).length) { entry.phase = 'confirm'; delete entry.failure; return }
+    if (this.workingNow(entry).length) { entry.phase = 'confirm'; delete entry.failure; return }
     this.begin(entry)
   }
   private async stopThreadsAndUpdate(entry: Entry): Promise<void> {
@@ -440,6 +440,7 @@ export class HostUpdates {
       ...(entry.failure ? { failure: entry.failure } : {}), ...(error ? { error } : {}) }
   }
   private working(entry: Entry): readonly string[] { return this.options.threads.working(entry.hostId) }
+  private workingNow(entry: Entry): readonly string[] { return this.options.threads.workingNow(entry.hostId) }
   private refresh(entry: Entry, candidate: HostUpdateCandidate): void {
     Object.assign(entry, { name: candidate.name, hostId: candidate.hostId, owned: candidate.owned, installPath: candidate.installPath, dataDirectory: candidate.dataDirectory, boot: candidate.boot === true })
     if (entry.phase !== 'done') entry.from = candidate.version
@@ -533,7 +534,7 @@ export class HostUpdates {
       if (!older) { this.entries.delete(candidate.id); this.notNow.delete(candidate.id); continue }
       this.refresh(entry, candidate)
       // Waiting, or asking, for threads that have all finished: the user has already pressed Update.
-      if (idleNow(entry.phase, this.working(entry).length)) { this.begin(entry); return }
+      if (idleNow(entry.phase, this.working(entry).length) && !this.workingNow(entry).length) { this.begin(entry); return }
     }
     for (const [id, entry] of this.entries) {
       if (!seen.has(id) && (entry.phase === 'needs' || entry.phase === 'confirm' || entry.phase === 'waiting' || entry.held)) { entry.run?.abort(); this.entries.delete(id) }

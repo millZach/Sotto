@@ -227,6 +227,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/omarchy/omarchySetup.css',
       'src/renderer/src/features/onboarding/onboarding.css',
       'src/renderer/src/features/onboarding/threadsTour.css',
+      'src/renderer/src/features/starting/startingScreen.css',
       'src/renderer/src/agents/threadsChrome.css',
       'src/renderer/src/features/settings/hosts.css',
       'src/renderer/src/features/settings/hostDevices.css',

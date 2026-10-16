@@ -18,9 +18,8 @@ import { FIGTREE_FONT_FACES } from '../shared/figtreeFonts'
 import { VISUAL_PARTITION } from '../shared/visualPages'
 import { HostProviderJobs } from './hosts/hostProviderJob'
 import { HostUpdates } from './hosts/hostUpdate'
-import type { BusyHostThreads } from './hosts/busyHost'
+import { routerBusyThreads } from './hosts/busyHost'
 import { HostBootChanges } from './hosts/hostBootStart'
-import { threadKeepsHostBusy } from '../shared/hostUpdates'
 import { coordinatorSetupThreads } from './hosts/hostSetupThreads'
 import { inactiveLocalHost, emptyDesktopState, requireLocalHistoryCleanup } from './hosts/inactiveLocalHost'
 import { registerHostsIpc } from './hosts/ipc'
@@ -195,7 +194,6 @@ import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from 
 import { createWatcherRoomDesktop } from './agents/watcherRoomDesktop'
 import { AgentStateBroadcaster } from './agents/agentStateBroadcast'
 import { registerAgentIpc } from './agents/ipc'
-import { desktopWindowClient } from './agents/hostService'
 import { createAgentRuntime } from './agents/runtime'
 import { loadHostIdentity } from './agents/hostIdentity'
 import { registerFilesIpc } from './files/ipc'
@@ -870,13 +868,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   agentControl.useSottoRequests(hostSetupRequests(hostSetup))
   desktopHosts.useSetup(hostSetup)
   desktopHosts.useProviderJob(providerJobs)
-  // The threads as the busy-host question reads them, for an update and a start at boot change alike: Stop N threads
-  // stops a turn the way the composer's Stop does.
-  const busyThreads: BusyHostThreads = {
-    working: hostId => hostRouter.shell().host.threads.filter(thread => thread.hostId === hostId && threadKeepsHostBusy(thread)).map(thread => thread.id),
-    interrupt: async threadId => { await hostRouter.command({ type: 'interrupt', threadId }, desktopWindowClient()) },
-    subscribe: listener => hostRouter.subscribeChanges(listener),
-  }
+  const busyThreads = routerBusyThreads(hostRouter)
   // Hosts that run an older Sotto than this computer, and their updates from the Threads page (ADR-0040). A development
   // end-to-end run serves its own releases.
   const releasesStandIn = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_HOST_RELEASES_URL'] : undefined
@@ -971,7 +963,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await hostRouter.reconcileRequestDrafts(requestDrafts).catch(() => undefined)
 
   // Only the threads the main window has declared viewed receive their messages.
-  const agentStateBroadcaster = new AgentStateBroadcaster({ streamingPublishCost: owlFeatures['streaming-publish-cost'] })
+  const agentStateBroadcaster = new AgentStateBroadcaster()
   const agentStatePublisher = coalesceAgentStatePublishes(state => {
     // Every published state asks for answer recovery; the router runs one pass at a time, at most twice a second.
     hostRouter.scheduleRequestDraftReconcile(requestDrafts)
@@ -1483,7 +1475,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       })
       const cleanupHosts = registerHostsIpc(ipcMain, desktopHosts, () => windows.getTrustedRenderers(), state => windows.sendToMain(HOSTS_CHANGED, state), hostTailscale)
       const cleanupPhones = registerPhonesIpc(ipcMain, phoneAccess, () => windows.getTrustedRenderers(), state => windows.sendToMain(PHONES_CHANGED, state))
-      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, resetThreadDelivery: agentStateBroadcaster.resetThreadDelivery, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
+      const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
       const desktopWatcher = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],

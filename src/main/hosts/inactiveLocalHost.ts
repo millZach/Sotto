@@ -59,6 +59,7 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
     subscribe: unsubscribe, subscribeThreadDetail: unsubscribe, dispose: idle, closed: async () => undefined,
     privacyChanged: async () => undefined, hasPendingThreadWork: () => false, watcherObservationsEnabled: () => false, useSottoRequests: idle,
     requestAnswerRecovery: () => ({ uncertainRequestIds: [], completed: [] }), refreshRequestDraft: async () => unavailable(),
+    requestDraftView: () => ({ host: state.host, provider: state.configuration.provider }),
   }
   const host = {
     watcherThreadIds,

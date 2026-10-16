@@ -48,6 +48,7 @@ import { WatcherRoomProvider } from './watcher/watcherRoom'
 import { WatcherView } from './watcher/WatcherView'
 import type { WatcherBridge } from '../../shared/watcherRoom'
 import { ThemeEditorHost } from './features/settings/themes/ThemeEditor'
+import { StartingScreenGate } from './features/starting/StartingScreen'
 import { appearancePreview, applyAppearance, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark } from './state/appearance'
 
 const recoveryMessages = {
@@ -373,8 +374,6 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
             return saved
           }}
         />
-        {/* Setup can save a computer, and a saved host reconnecting on its own can need an answer from SSH here too. */}
-        <HostQuestionDialog />
         <ToastRegion messages={recoveryToasts} />
       </>
     )
@@ -505,8 +504,6 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
             onCancel={updateFlow.cancelInstall}
           />
         ) : null}
-        {/* A saved host reconnecting on its own can need an answer from SSH on any page. */}
-        <HostQuestionDialog />
         {threadsTour && threadsPage ? <ThreadsTour shortcut={app.settings.hotkey} platform={app.platform} onDone={() => setThreadsTour(false)} /> : null}
         <ThemeEditorHost
           settings={app.settings}
@@ -529,25 +526,33 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
 
   const management = app.status === 'ready' && app.settings !== null
     && app.settings.onboardingComplete && app.navigation !== 'onboarding'
+  // The loading, unavailable and setup views, and the starting screen, sit under the window's strip.
+  const strip = (children: ReactNode): ReactNode => (
+    <AppShell
+      navigation={null}
+      platform={app.platform}
+      onMinimize={app.actions.minimizeApp}
+      onMaximize={app.actions.toggleMaximizeApp}
+      maximized={app.windowMaximized}
+      onClose={app.actions.hideApp}
+    >
+      {children}
+    </AppShell>
+  )
 
   return (
     <AgentProvider settings={app.settings}>
-      <WatcherRoomProvider bridge={watcherBridge}>
-      {management ? content : (
-        <AppShell
-          navigation={null}
-          platform={app.platform}
-          onMinimize={app.actions.minimizeApp}
-          onMaximize={app.actions.toggleMaximizeApp}
-          maximized={app.windowMaximized}
-          onClose={app.actions.hideApp}
-        >
-          {content}
-        </AppShell>
-      )}
-      </WatcherRoomProvider>
-      {/* Neither card speaks before first-run setup ends; on Owl, Update all takes the corner and speaks for clients too (ADR-0077). */}
-      {management ? updateAll ? <UpdateAllCard /> : <ClientUpdateCard /> : null}
+      {/* At launch the starting screen holds the window until providers and hosts have connected (ADR-0086). */}
+      <StartingScreenGate settingsSettled={app.status !== 'loading'} eligible={management} frame={strip}>
+        <WatcherRoomProvider bridge={watcherBridge}>
+        {management ? content : strip(content)}
+        </WatcherRoomProvider>
+        {/* Neither card speaks before first-run setup ends; on Owl, Update all takes the corner and speaks for clients too (ADR-0077). */}
+        {management ? updateAll ? <UpdateAllCard /> : <ClientUpdateCard /> : null}
+      </StartingScreenGate>
+      {/* A saved host reconnecting on its own can need an answer from SSH over setup, the starting screen or any page, and setup can
+          save a computer. One dialog serves them all, so a half-typed answer survives the starting screen giving way to the app. */}
+      {app.status === 'ready' && app.settings !== null ? <HostQuestionDialog /> : null}
     </AgentProvider>
   )
 }

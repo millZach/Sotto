@@ -6,7 +6,6 @@ export default tseslint.config(
     ignores: [
       'artifacts/watcher-room-state/**',
       'artifacts/certified-detail/**',
-      'artifacts/window-thread-shell/**',
       'artifacts/watcher-phone-wire/**',
       'artifacts/stable-from-main/**',
       'artifacts/watcher-paired-hosts/**',
@@ -143,6 +142,7 @@ export default tseslint.config(
       'artifacts/codex-connection-recovery/**',
       'artifacts/devin-local-provider/**',
       'artifacts/muse-provider/**',
+      'artifacts/starting-screen/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',

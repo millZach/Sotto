@@ -1,5 +1,12 @@
 # Desktop thread shell — October 13, 2026
 
+**Withdrawn October 15, 2026.** The change this note measures did not pay for itself: with the
+envelope on, the broadcaster's send step rose from about 4–5 ms to 6.5–7 ms per send, and
+main's total busy time while threads streamed was 5–8% higher than with it off, within noise
+otherwise. The benchmarks this note names (`tests/perf/windowThreadShell*.perf.test.ts`,
+`tests/perf/windowThreadShellPipelineElectron.perf.test.ts`) were removed with it. See
+[ADR-0028](../adr/0028-agent-state-broadcast-omits-an-unchanged-catalog.md)'s October 15 amendment.
+
 Step 4 of #991 starts from `b34e1d48be9e3495461fd35c847485e8906b520f`, after
 steps 1–3 merged. Only the desktop broadcaster's thread encoding changes, under
 the existing startup `streaming-publish-cost` Owl answer. Stable's array path,

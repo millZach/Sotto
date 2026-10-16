@@ -582,6 +582,7 @@ export function exposeE2EBridge(
       return invokeParsed(renderer, AGENT_E2E, voidSchema, { ...event, threadId: key.id })
     },
     scenario: scenario.data,
+    ...(environment.SOTTO_E2E_STARTING_SCREEN === '1' ? { startingScreen: true } : {}),
     snapshot: () => invokeParsed(renderer, E2E_SNAPSHOT_CHANNEL, e2eSnapshotSchema),
     triggerShortcut: () => invokeParsed(renderer, E2E_TRIGGER_SHORTCUT_CHANNEL, voidSchema),
   })

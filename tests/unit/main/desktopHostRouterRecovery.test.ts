@@ -9,11 +9,12 @@ import { DesktopHostRouter, REQUEST_DRAFT_PASS_INTERVAL_MS, type DesktopHostConn
 import { emptyDesktopState, inactiveLocalHost } from '../../../src/main/hosts/inactiveLocalHost'
 import { requestDraftOwnerState } from '../../../src/main/agents/requestDraftOwners'
 import { RequestDraftService, requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
-import type { RequestDraft, RequestDraftTarget } from '../../../src/shared/requestDrafts'
+import { requestDraftProvider, type RequestDraft, type RequestDraftTarget } from '../../../src/shared/requestDrafts'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
 import { deferred } from '../../fixtures/deferred'
+import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 import { testCredentials } from '../../fixtures/testCredentials'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
@@ -292,6 +293,35 @@ describe('a held answer looking up its thread', () => {
       await drafts.reconcile()
       expect((await drafts.get(target(REMOTE_A)))?.held).toBe(true)
       expect(copies).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+  })
+
+  // The draft store asks for every owner it knows on every save of an answer being typed. Each answer copied the whole
+  // shell once per owner, and main froze for most of a second at a time while the user typed in the answer box.
+  it('saves a local answer as it is typed without copying the shell', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-draft-owner-local-'))
+    roots.push(root)
+    const provider = new FakeProviderHost()
+    provider.state.threads = [{ id: 'thread', projectId: 'project', title: 'Task', modelId: 'fake:model', status: 'idle', messages: [],
+      requests: [{ id: 'request', kind: 'question', text: 'Question', options: [], questions }] }]
+    const control = createAgentControl({ directory: root, host: provider, credentials: await testCredentials(root, { mode: 'unavailable' }) })
+    controls.push(control)
+    await control.start(); await control.command({ type: 'connect' })
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const owner = { ...target(control.hostId()!), providerId: requestDraftProvider(control.shell().host, control.shell().host.threads[0]!, control.configuration().provider) }
+    const drafts = new RequestDraftService(root, item => requestDraftOwnerState(item, control, router), async () => {}, { write: async () => {} })
+    const shellThread = control.shell().host.threads.find(item => item.id === 'thread')!
+    const copies = vi.spyOn(control, 'shell')
+    try {
+      for (let revision = 1; revision <= 20; revision++) {
+        await drafts.save({ target: owner, revision, held: false, selections: { question: { optionIds: [], other: true, text: 'Typed answer'.slice(0, revision) } } })
+      }
+      expect(copies).not.toHaveBeenCalled()
+      const state = requestDraftOwnerState(owner, control, router)!
+      expect(state).toMatchObject({ connected: true, ready: true, requests: shellThread.requests })
+      // What it hands back is the caller's own copy.
+      state.requests[0]!.text = 'Changed by the caller'
+      expect(control.requestDraftView().host.threads[0]!.requests[0]!.text).toBe('Question')
     } finally { router.dispose() }
   })
 
