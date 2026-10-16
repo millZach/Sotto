@@ -363,8 +363,8 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote' && connection.service.subscribeWatcher) off.push(connection.service.subscribeWatcher(() => this.watcherChanged(connection.hostId, false)))
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
       if (!this.watcherAvailable(connection, detail.threadId)) return
-      const scoped = this.toWindowRevisions(connection, mapHostReferences(detail, id => hostEntityKey(connection.hostId, id)))
-      for (const listener of this.detailListeners) listener(scoped)
+      const scoped = this.toWindowRevisions(connection, this.hosts.get(connection.hostId)?.run, mapHostReferences(detail, id => hostEntityKey(connection.hostId, id)))
+      if (scoped) for (const listener of this.detailListeners) listener(scoped)
     }))
     return off
   }
@@ -517,17 +517,23 @@ export class DesktopHostRouter {
   }
   async threadDetail(threadId: string): Promise<AgentThreadDetail | null> {
     const { connection, id } = this.target(threadId)
-    const detail = await connection.detail(id!)
-    return detail ? this.toWindowRevisions(connection, mapHostReferences(detail, value => hostEntityKey(connection.hostId, value))) : null
-  }
-  /** A remote thread's detail or delta with its revisions as the window is given them; this computer's go as they are. */
-  private toWindowRevisions<T extends AgentThreadDetailUpdate>(connection: DesktopHostConnection, update: T): T {
     const run = this.hosts.get(connection.hostId)?.run
+    const detail = await connection.detail(id!)
+    // An answer from a connection a reconnect has since replaced is that connection's history, not the new one's.
+    if (run !== this.hosts.get(connection.hostId)?.run) return null
+    return detail ? this.toWindowRevisions(connection, run, mapHostReferences(detail, value => hostEntityKey(connection.hostId, value))) : null
+  }
+  /**
+   * A remote thread's detail or delta from connection `run` with its revisions as the window is given them, or null for a
+   * delta no whole detail from that connection came before; this computer's go as they are.
+   */
+  private toWindowRevisions<T extends AgentThreadDetailUpdate>(connection: DesktopHostConnection, run: number | undefined, update: T): T | null {
     if (connection.kind !== 'remote' || run === undefined) return update
     let line = this.windowRevisions.get(update.threadId)
     if (isAgentThreadDetailDelta(update)) {
-      // A delta follows a whole detail on its own connection; one that arrives first applies to nothing the window holds.
-      if (!line || line.run !== run) return update
+      // A delta follows a whole detail on its own connection. One that arrives first is measured from a revision the
+      // window cannot tell from the old connection's, so it goes no further; the whole detail that follows carries it.
+      if (!line || line.run !== run) return null
       line.last = Math.max(line.last, update.revision + line.offset)
       return line.offset === 0 ? update : { ...update, baseRevision: update.baseRevision + line.offset, revision: update.revision + line.offset }
     }

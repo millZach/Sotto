@@ -988,6 +988,24 @@ describe('a remote thread after its host restarts (#1098)', () => {
     router.dispose()
   })
 
+  it('drops a read the replaced connection answers late, and a delta a new connection sends before its whole detail', async () => {
+    const { router, connect, forwarded } = remoteDetails()
+    const before = connect()
+    before.push(whole(40))
+    let answer: (detail: ReturnType<typeof whole>) => void = () => undefined
+    before.host.detail.mockImplementationOnce(() => new Promise(resolve => { answer = resolve }))
+    const read = router.threadDetail(hostEntityKey(REMOTE, 'thread'))
+    const after = connect(true)
+    after.push(delta(2, 3))
+    after.push(whole(2))
+    answer(whole(40))
+    expect(await read).toBeNull()
+    expect(forwarded.map(item => item.revision)).toEqual([40, 41])
+    after.push(delta(2, 3))
+    expect(forwarded.at(-1)).toMatchObject({ baseRevision: 41, revision: 42 })
+    router.dispose()
+  })
+
   it('leaves revisions as they are while a reconnected host carries on counting past them', () => {
     const { router, connect, forwarded } = remoteDetails()
     connect().push(whole(5))
