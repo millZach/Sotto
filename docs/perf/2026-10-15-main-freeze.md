@@ -1,0 +1,61 @@
+# Main freezing while threads stream - October 15, 2026
+
+The owner's Sotto lags badly while typing with threads streaming. A live profile of the running app, with 232
+threads in the sidebar and a few of them streaming, found main's JavaScript thread busy about 82% of the time
+over 5.5 minutes, with 1,032 stretches of 100 ms or more without going idle (the longest 1.5 s). The cause is
+whole-state deep copies on every streamed update: Watcher's observe pass, a host-update busy check, and the
+coordinator's shell copy, each paid again and again as the sidebar grows. Fixes are tracked elsewhere; this note
+is the benchmark that reproduces the symptom in the built app, so a fix can be measured before and after.
+
+## What it measures
+
+`tests/e2e/main-freeze.spec.ts` launches the built app, creates about 230 threads beyond the fixture's own two
+so the sidebar holds about 232, and opens one of them (`Docs`) in a single pane. For three cases - nothing
+streaming, one thread streaming, and three threads streaming, each at about 20 chunks a second for about 15
+seconds - it measures two things at once:
+
+- Main's event-loop delay during the case, with `perf_hooks.monitorEventLoopDelay` (max, mean and p99 in
+  milliseconds) and a 50 ms drift sampler's count of gaps of 100 ms or more.
+- Keystroke-to-screen latency in the `Docs` composer: a synthetic 41-character string typed one key at a time,
+  with p50, p95 and max milliseconds from each keydown to the next animation frame after the composer's text
+  updates.
+
+It prints one `main freeze: {...}` line per case and asserts only that each case collected samples, never a time
+budget; a stopwatch budget would be `SOTTO_PERF_ASSERT=1`'s, which this benchmark does not use.
+
+## Reproduce
+
+On an idle machine, after a build:
+
+```powershell
+$env:SOTTO_PERF_BENCH = '1'; npm run build; npx playwright test tests/e2e/main-freeze.spec.ts
+```
+
+```sh
+SOTTO_PERF_BENCH=1 npm run build && npx playwright test tests/e2e/main-freeze.spec.ts
+```
+
+## Results
+
+Recorded per change, alongside the commit or branch measured.
+
+**October 15, 2026: main before and after the copy fixes (#1065–#1068), every Owl feature on.** Two runs each, in
+the order main, fixed, fixed, main, with `SOTTO_OWL_FEATURES` setting all six features to 1:
+
+| Case | Main: longest stall, stalls of 100 ms or more | Fixed: longest stall, stalls of 100 ms or more | Keystrokes, p95, both |
+| --- | --- | --- | --- |
+| Nothing streaming | 27–31 ms, 0 | 29–31 ms, 0 | 16–19 ms |
+| One thread streaming | 155–232 ms, 5–9 | 176–251 ms, 9–11 | 21–32 ms |
+| Three threads streaming | 70–271 ms, 1 | 308–340 ms, 3–4 | 21–25 ms |
+
+The two builds are not told apart, and the benchmark does not yet show the owner's lag, for two reasons that the next
+change to it should fix:
+
+- The keystroke timer starts in the renderer, at the key's arrival. In Electron, the main process runs on the thread
+  that receives the operating system's input and forwards it to the window, so a key that waits behind a long task in
+  main has already waited before the timer starts. Main's stalls are the measure of that wait here; a keystroke timer
+  that includes it has to start outside the app.
+- The 230 padding threads are drafts with no provider session, so the coordinator, the workspace and Watcher never walk
+  them, Watcher is not open, and no saved host waits for an update. The copies the fixes remove happen only when those
+  are true. `tests/perf/streamingCopyBudget.perf.test.ts` builds that state and does tell the builds apart: 95.5 rising
+  to 635.5 copies per update before, 20.5 after.

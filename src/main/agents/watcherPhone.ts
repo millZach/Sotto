@@ -73,7 +73,8 @@ export class WatcherPhoneService {
     return watcherPhoneStateSchema.parse({ hostId: this.control.hostId()!, current: room.current && room.currentOptions ? {
       target: room.current.target, provider: room.current.provider, ...room.currentOptions } : null,
     conversation: { messages, revision: detail?.revision ?? 0, earlierAvailable: Boolean(detail?.earlierAvailable || (detail?.messages.length ?? 0) > messages.length) },
-    draftDeliveries: (this.control.shell().deliveries ?? []).filter(row => row.threadId === current?.id).map(row => ({ draftId: row.draftId, status: row.status })),
+    // The deliveries alone, read without copying every thread: this runs for each phone on every update.
+    draftDeliveries: this.control.watcherSendRecords().deliveries.filter(row => row.threadId === current?.id).map(row => ({ draftId: row.draftId, status: row.status })),
     runtimeMode: room.runtimeMode, ...(standing ? { standingWatches: room.standingWatches } : {}), ownChanges: room.ownChanges,
     receiptGroups, watchedThreads, needsYou, inFlight: room.inFlight, inFlightLimit: room.inFlightLimit,
     working: room.currentOptions?.status === 'running' || room.inFlight > 0, recoveryNotice: room.recoveryNotice, observedAt: room.observedAt })

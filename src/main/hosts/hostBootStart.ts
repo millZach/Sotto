@@ -110,7 +110,7 @@ export class HostBootChanges {
     const entry = this.entries.get(id)
     if (action === 'install' || action === 'remove') this.press(id, action)
     else if (!entry) throw new Error('This start at boot change is no longer there. Nothing was changed.')
-    else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (whenIdle(this.working(entry).length) === 'waiting') entry.phase = 'waiting'; else this.begin(entry) } }
+    else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (whenIdle(this.workingNow(entry).length) === 'waiting') entry.phase = 'waiting'; else this.begin(entry) } }
     else if (action === 'stop-threads') {
       if (this.asking(entry)) {
         await stopWorkingThreads(this.options.threads, entry.hostId)
@@ -132,7 +132,7 @@ export class HostBootChanges {
     const restarts = bootChangeRestarts(change, host)
     const entry: Entry = { id, name: host.name, hostId: host.hostId, installPath: host.installPath, change, phase: 'confirm', restarts }
     this.entries.set(id, entry)
-    if (!restarts || !this.working(entry).length) this.begin(entry)
+    if (!restarts || !this.workingNow(entry).length) this.begin(entry)
   }
   private begin(entry: Entry): void {
     entry.phase = 'changing'
@@ -192,6 +192,7 @@ export class HostBootChanges {
     }
   }
   private working(entry: Entry): readonly string[] { return this.options.threads.working(entry.hostId) }
+  private workingNow(entry: Entry): readonly string[] { return this.options.threads.workingNow(entry.hostId) }
   private view(entry: Entry): HostBootState {
     return { id: entry.id, name: entry.name, change: entry.change, phase: entry.phase, working: this.working(entry).length, restarts: entry.restarts,
       ...(entry.restarted !== undefined ? { restarted: entry.restarted } : {}), ...(entry.failure ? { failure: entry.failure } : {}) }
@@ -208,7 +209,7 @@ export class HostBootChanges {
         this.fail(entry, { kind: 'failed', message: `${entry.name} was switched off or removed before start at boot changed. Nothing was changed. Switch it on, then try again.` })
         continue
       }
-      if (this.options.hosts.candidate(entry.id) && idleNow(entry.phase, this.working(entry).length)) this.begin(entry)
+      if (this.options.hosts.candidate(entry.id) && idleNow(entry.phase, this.working(entry).length) && !this.workingNow(entry).length) this.begin(entry)
     }
     this.emit()
   }

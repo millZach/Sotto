@@ -5,6 +5,7 @@
  * the remote hosts and read the Watcher record. None of those may grow with the paired host's finished threads or with
  * Watcher's starts there; each pass reads them a fixed number of times, whatever the size.
  */
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it } from 'vitest'
 import { WatcherService } from '../../../src/main/agents/watcher'
@@ -34,10 +35,14 @@ async function pairedWatcher(size: number) {
     threads: ids.map((id, index) => ({ ...template, id, hostId, status: 'idle', lastTurn: { id: `turn-${index}`, status: 'completed', messageId: `brief-${index}` },
       lastUserMessageId: `brief-${index}`, messages: [{ id: `brief-${index}`, role: 'user', text: 'Synthetic brief', createdAt: at }] })) } }
   const tally = { shells: 0, hostLists: 0, records: 0 }
-  let measuring = false
+  // A read counts only inside the measured call. The setup leaves work running (the first reconcile, saves and the publishes
+  // after them), and on a slow runner its tail landed inside a measure, so one size read more than the other.
+  const measured = new AsyncLocalStorage<object>()
+  let measuring: object | undefined
+  const counted = () => measuring !== undefined && measured.getStore() === measuring
   const service = {
     // The socket service copies its whole cached shell on every read; each read here stands for one such copy.
-    shell: () => { if (measuring) tally.shells++; return structuredClone(cached) },
+    shell: () => { if (counted()) tally.shells++; return structuredClone(cached) },
     subscribe: () => () => undefined, command: async () => undefined,
     supportsWatcherReads: false, supportsWatcherControl: false, supportsWatcherWorkSettled: true, supportsWatcherOutcomes: true,
   } as unknown as DesktopHostConnection['service']
@@ -55,15 +60,15 @@ async function pairedWatcher(size: number) {
   const watcher = new WatcherService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => false, limit: () => 8, streamingPublishCost: true })
   cleanups.push(async () => { watcher.close() })
   const remote = router.watcherHosts(), listHosts = remote.hosts.bind(remote)
-  remote.hosts = () => { if (measuring) tally.hostLists++; return listHosts() }
+  remote.hosts = () => { if (counted()) tally.hostLists++; return listHosts() }
   watcher.useRemoteHosts(remote)
   const readRecord = f.control.watcherRecord.bind(f.control)
-  f.control.watcherRecord = () => { if (measuring) tally.records++; return readRecord() }
+  f.control.watcherRecord = () => { if (counted()) tally.records++; return readRecord() }
   watcher.wakes.start()
   const measure = async (read: () => unknown) => {
     for (const name of Object.keys(tally) as (keyof typeof tally)[]) tally[name] = 0
-    measuring = true
-    try { await read() } finally { measuring = false }
+    const token = measuring = {}
+    try { await measured.run(token, read) } finally { measuring = undefined }
     return { ...tally }
   }
   return { f, watcher, local, measure }

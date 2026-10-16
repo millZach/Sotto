@@ -291,6 +291,17 @@ export class AgentControl {
     return { threadIds: identities.map(row => row.target.threadId), projectIds: identities.map(row => row.projectId) }
   }
   watcherRecord(): WatcherRecord { return structuredClone(this.watcher) }
+  /**
+   * The Watcher record itself, for a caller that only reads it. Every change replaces the record rather than editing it
+   * (mutateWatcher, start), so what this hands out never changes under its holder. Watcher's observe pass reads the
+   * record per thread on every update; copying it each time cost main more than the rest of the pass.
+   */
+  watcherRecordView(): Readonly<WatcherRecord> { return this.watcher }
+  /** The deliveries and follow-ups the shell names, read without copying every thread to reach them. */
+  watcherSendRecords(): { readonly deliveries: readonly Readonly<AgentDelivery>[]; readonly followups: readonly Readonly<AgentFollowup>[] } {
+    return { deliveries: (this.state.deliveries ?? []).filter(item => this.threadAvailable(item.threadId)),
+      followups: (this.state.followups ?? []).filter(item => this.threadAvailable(item.threadId)) }
+  }
   updateWatcher(update: (record: WatcherRecord) => void): Promise<void> {
     if (this.dependencies.watcherEnabled !== true) throw new Error('Watcher is available in Sotto Owl.')
     this.mutateWatcher(update)
@@ -788,6 +799,14 @@ export class AgentControl {
   }
   /** Internal state is available only to main's Watcher service; public project choices omit its folder. */
   watcherSnapshot(): AgentHostSnapshot { return this.state.host }
+  /**
+   * The host and the configured provider as they are, for a caller that reads one thread's request facts. The answer
+   * box's draft store asks for every owner it knows on every save; copying the whole shell for each froze main while
+   * the user typed an answer.
+   */
+  requestDraftView(): { readonly host: Readonly<AgentHostSnapshot>; readonly provider: ProviderId } {
+    return { host: this.state.host, provider: this.state.configuration.provider }
+  }
   watcherCommandOutstanding(commandId: string | undefined): boolean { return Boolean(commandId && this.outbox.some(item => item.id === commandId)) }
   private hideWatcher(state: AgentState): void {
     const folder = resolve(join(this.dependencies.directory, 'watcher', 'workspace'))

@@ -18,7 +18,6 @@ export interface AgentIpcOptions {
   /** Encodes a command's reply as a command receipt (issue #323): `AgentStateBroadcaster.encodeReceipt`,
    * so the receipt names each catalog by the revision the broadcast uses. */
   readonly encodeReceipt: (state: AgentState) => AgentCommandReceipt
-  readonly resetThreadDelivery?: () => void
   /** The working-copy choices for a project; without it the window is told they are unavailable. */
   readonly workingCopyOptions?: (projectId: string) => Promise<AgentWorkingCopyOptions>
 }
@@ -56,7 +55,6 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
   // so neither the first state nor a command's answer carries every thread's history across the bridge.
   ipc.handle(AGENT_GET, event => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_SENDER_REJECTED')
-    options.resetThreadDelivery?.()
     return control.shell()
   })
   ipc.handle(AGENT_THREAD_DETAIL_GET, (event, payload) => {
