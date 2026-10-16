@@ -15,6 +15,11 @@ export const HOST_DOWNLOAD_TIMEOUT_MS = 5 * 60_000
  * megabytes. Anything larger is not a Sotto host.
  */
 export const HOST_ARCHIVE_LIMIT_BYTES = 512 * 1024 * 1024
+/**
+ * How long an update lock that names no process counts as held: one being taken right now has not written its process
+ * yet. The launch script and a host that updates itself judge the lock by the same rule.
+ */
+export const HOST_UPDATE_LOCK_UNNAMED_MS = 30_000
 
 /** The timings every launch script operation reads from its configuration. */
 export interface HostLaunchTimings {

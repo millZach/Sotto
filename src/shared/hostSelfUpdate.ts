@@ -18,10 +18,11 @@ export const HOST_UPDATE_STATUS_LIMIT_BYTES = 4096
 export const HOST_UPDATE_RESTART_WAIT_MS = 10_000
 /**
  * How long the restart, once it has passed its checks, waits for the host to say it has answered its desktop, before it
- * stops the host anyway. The host says so in a file beside the status file, named with this suffix.
+ * stops the host anyway. The host says so in `<status file>.<attempt>.answered`.
  */
 export const HOST_UPDATE_ANSWER_WAIT_MS = 5_000
-export const HOST_UPDATE_ANSWERED_SUFFIX = '.answered'
+/** The claim file that decides one restart attempt (`<status file>.<attempt>.claim`), and the host's word that it answered. */
+export const hostUpdateAttemptFile = (statusFile: string, attempt: string, kind: 'claim' | 'answered'): string => `${statusFile}.${attempt}.${kind}`
 
 /**
  * How a host's `version` stands against an update's `target`: -1 behind it, 0 on it, 1 ahead of it, or undefined when an
@@ -49,9 +50,10 @@ export type HostUpdateRestartResult = z.infer<typeof hostUpdateRestartResultSche
  * What the status file holds: `restarting` once the restart has passed its checks and is about to stop the host, then
  * `finished` with its result. A restart refused before it touched anything is `finished` at once.
  */
+const attempt = z.string().regex(/^[a-f0-9]{8,64}$/u)
 export const hostUpdateStatusSchema = z.discriminatedUnion('state', [
-  z.object({ v: z.literal(1), state: z.literal('restarting'), version: version.nullable() }),
-  z.object({ v: z.literal(1), state: z.literal('finished'), version: version.nullable(), result: hostUpdateRestartResultSchema }),
+  z.object({ v: z.literal(1), attempt, state: z.literal('restarting'), version: version.nullable() }),
+  z.object({ v: z.literal(1), attempt, state: z.literal('finished'), version: version.nullable(), result: hostUpdateRestartResultSchema }),
 ])
 export type HostUpdateStatus = z.infer<typeof hostUpdateStatusSchema>
 

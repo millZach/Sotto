@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { EventEmitter } from 'node:events'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -214,6 +214,13 @@ describe('the restart and its status file', () => {
     return place
   }
   const statusFile = (place: { data: string }): string => join(place.data, 'host-update-status.json')
+  /** What the launch script does at its checks: claim its own attempt, then say how it stands. */
+  async function claimAs(call: Call, value: Record<string, unknown>): Promise<boolean> {
+    const resultFile = String(call.configuration.resultFile), attempt = String(call.configuration.attempt)
+    try { await writeFile(`${resultFile}.${attempt}.claim`, 'restart', { flag: 'wx' }) } catch { return false }
+    await writeFile(resultFile, JSON.stringify({ v: 1, attempt, version: call.configuration.version, ...value }))
+    return true
+  }
 
   it('refuses a version that is not installed beside it', async () => {
     const place = await installed()
@@ -222,64 +229,73 @@ describe('the restart and its status file', () => {
     expect(calls).toEqual([])
   })
 
-  it('answers once the restart claims the file, from a detached process that outlives the host', async () => {
+  it('answers once the restart claims its attempt, from a detached process that outlives the host', async () => {
     const place = await ready()
-    await writeFile(statusFile(place), JSON.stringify({ v: 1, version: '1.2.2', state: 'finished', result: { type: 'ready', hostId: HOST_ID, pid: 9 } }))
+    await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt: 'aaaaaaaa', version: '1.2.2', state: 'finished', result: { type: 'ready', hostId: HOST_ID, pid: 9 } }))
     const { spawn, calls } = fakeSpawn(async call => {
       // The last update's file is gone before this one starts.
       expect(await readFile(statusFile(place), 'utf8').catch(() => null)).toBeNull()
-      await writeFile(String(call.configuration.resultFile), JSON.stringify({ v: 1, version: '1.2.4', state: 'restarting', pid: 4242 }), { flag: 'wx' })
+      await claimAs(call, { state: 'restarting', pid: 4242 })
     })
     const steps: string[] = []
     expect(await hostWith(place, spawn).run({ action: 'restart', version: '1.2.4' }, context({}, steps))).toEqual({ type: 'update-restarting', version: '1.2.4' })
     expect(steps).toEqual(['restart'])
     expect(calls[0]!.options).toMatchObject({ detached: true, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true })
     expect(calls[0]!.stdin).toBe(LAUNCH_SCRIPT_SOURCE)
-    expect(calls[0]!.configuration).toMatchObject({ op: 'update-restart', version: '1.2.4', hostId: HOST_ID, resultFile: statusFile(place), installPath: place.install, answerWaitMs: 5000 })
+    expect(calls[0]!.configuration).toMatchObject({ op: 'update-restart', version: '1.2.4', hostId: HOST_ID, resultFile: statusFile(place), installPath: place.install,
+      attempt: expect.stringMatching(/^[a-f0-9]{16}$/u), answerWaitMs: 5000 })
   })
 
   it('tells the restart once its answer is on the way, and only after one that went ahead', async () => {
     const place = await ready()
-    let claim = { v: 1, version: '1.2.4', state: 'restarting' } as Record<string, unknown>
-    const { spawn } = fakeSpawn(async call => { await writeFile(String(call.configuration.resultFile), JSON.stringify(claim), { flag: 'wx' }) })
+    let claim: Record<string, unknown> = { state: 'restarting' }
+    const { spawn, calls } = fakeSpawn(async call => { await claimAs(call, claim) })
     const host = hostWith(place, spawn)
-    const answered = statusFile(place) + '.answered'
-    await writeFile(answered, 'left from the last update')
     expect(await host.run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'update-restarting', version: '1.2.4' })
-    // Cleared when the restart began, and written only once the host has handed its answer on.
+    const answered = `${statusFile(place)}.${String(calls[0]!.configuration.attempt)}.answered`
+    // Written only once the host has handed its answer on.
     await expect(readFile(answered)).rejects.toMatchObject({ code: 'ENOENT' })
-    host.delivered()
-    await expect.poll(() => readFile(answered, 'utf8').catch(() => null)).toBe('')
+    await host.delivered()
+    expect(await readFile(answered, 'utf8')).toBe('')
     await rm(answered)
-    host.delivered()
-    claim = { v: 1, version: '1.2.4', state: 'finished', result: { type: 'error', reason: 'update-busy' } }
+    // Said once: a second delivery, and the answer to a restart that did not go ahead, write nothing.
+    await host.delivered()
+    claim = { state: 'finished', result: { type: 'error', reason: 'update-busy' } }
     expect(await host.run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'update-busy' })
-    host.delivered()
-    await new Promise(done => setTimeout(done, 50))
-    await expect(readFile(answered)).rejects.toMatchObject({ code: 'ENOENT' })
+    await host.delivered()
+    expect((await readdir(place.data)).filter(name => name.endsWith('.answered'))).toEqual([])
   })
 
   it('answers the restart’s own refusal when it stopped before touching anything', async () => {
     const place = await ready()
-    const { spawn } = fakeSpawn(async call => {
-      await writeFile(String(call.configuration.resultFile), JSON.stringify({ v: 1, version: '1.2.4', state: 'finished', result: { type: 'error', reason: 'update-busy' } }), { flag: 'wx' })
-    })
+    const { spawn } = fakeSpawn(async call => { await claimAs(call, { state: 'finished', result: { type: 'error', reason: 'update-busy' } }) })
     expect(await hostWith(place, spawn).run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'update-busy' })
   })
 
-  it('gives up after its wait and claims the file, so a restart that comes later touches nothing', async () => {
+  it('gives up after its wait and claims the attempt, so neither that restart nor a later one goes ahead on it', async () => {
     const place = await ready()
-    const { spawn } = fakeSpawn(() => undefined)
+    const late: Call[] = []
+    const { spawn } = fakeSpawn(call => { late.push(call) })
     const host = hostWith(place, spawn, { restartWaitMs: 150 })
     expect(await host.run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'restart-not-sent' })
-    expect(JSON.parse(await readFile(statusFile(place), 'utf8'))).toEqual({ v: 1, version: '1.2.4', state: 'finished', result: { type: 'error', reason: 'restart-not-sent' } })
-    // The restart's own claim now fails, which is how the launch script knows to stop.
-    await expect(writeFile(statusFile(place), '{}', { flag: 'wx' })).rejects.toMatchObject({ code: 'EEXIST' })
-    // A restart process that ended without a word is given up on at once.
+    const first = late[0]!
+    expect(JSON.parse(await readFile(statusFile(place), 'utf8'))).toEqual({ v: 1, attempt: first.configuration.attempt, version: '1.2.4', state: 'finished',
+      result: { type: 'error', reason: 'restart-not-sent' } })
+    // The restart that comes late finds its attempt claimed, which is how the launch script knows to stop.
+    expect(await claimAs(first, { state: 'restarting' })).toBe(false)
+    // Trying again clears the status file, but the late restart still cannot claim: its attempt's claim is kept.
+    const { spawn: answering } = fakeSpawn(async call => { await claimAs(call, { state: 'restarting' }) })
+    expect(await hostWith(place, answering).run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'update-restarting', version: '1.2.4' })
+    expect(await claimAs(first, { state: 'restarting' })).toBe(false)
+    // A status another attempt wrote is not this one's answer.
+    const { spawn: stranger } = fakeSpawn(async (call, child) => {
+      await writeFile(String(call.configuration.resultFile), JSON.stringify({ v: 1, attempt: 'bbbbbbbb', version: '1.2.4', state: 'restarting' }))
+      setImmediate(() => child.emit('exit', 0, null))
+    })
+    expect(await hostWith(place, stranger, { restartWaitMs: 24 * 60 * 60_000 }).run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'restart-not-sent' })
+    // A restart process that ended without a word is given up on at once, long before a wait this test would never outlast.
     const { spawn: silent } = fakeSpawn((_call, child) => { setImmediate(() => child.emit('exit', 1, null)) })
-    const started = Date.now()
-    expect(await hostWith(place, silent, { restartWaitMs: 60_000 }).run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'restart-not-sent' })
-    expect(Date.now() - started).toBeLessThan(30_000)
+    expect(await hostWith(place, silent, { restartWaitMs: 24 * 60 * 60_000 }).run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'restart-not-sent' })
   })
 
   it('runs the restart in a transient unit of its own for a host its start at boot unit runs', async () => {
@@ -287,7 +303,7 @@ describe('the restart and its status file', () => {
     const { spawn, calls } = fakeSpawn(async (call, child) => {
       if (call.file !== 'systemd-run') return
       setImmediate(() => child.emit('exit', 0, null))
-      await writeFile(String(call.configuration.resultFile), JSON.stringify({ v: 1, version: '1.2.4', state: 'restarting' }), { flag: 'wx' })
+      await claimAs(call, { state: 'restarting' })
     })
     const host = hostWith(place, spawn, { runByUnit: async () => true, env: { PATH: '/usr/bin', HOME: '/home/zach', XDG_RUNTIME_DIR: '/run/user/1000', SOTTO_HOST_KEY_FILE: '/home/zach/.sotto-key' } })
     expect(await host.run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'update-restarting', version: '1.2.4' })
@@ -304,14 +320,17 @@ describe('the restart and its status file', () => {
     const place = await installed()
     const { spawn } = fakeSpawn(() => undefined)
     const host = hostWith(place, spawn)
+    const attempt = 'cccccccc'
     expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'none' } })
-    await writeFile(statusFile(place), JSON.stringify({ v: 1, version: '1.2.4', state: 'restarting', pid: 12 }))
+    await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt, version: '1.2.4', state: 'restarting', pid: 12 }))
     expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'restarting', version: '1.2.4' } })
-    await writeFile(statusFile(place), JSON.stringify({ v: 1, version: '1.2.4', state: 'finished', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } }))
+    await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt, version: '1.2.4', state: 'finished', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } }))
     expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3',
       restart: { state: 'finished', version: '1.2.4', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } } })
     // A file it did not write, or one too large to be one, reads as none.
-    await writeFile(statusFile(place), JSON.stringify({ v: 1, state: 'finished', version: '1.2.4', result: { type: 'error', reason: 'x', padding: 'y'.repeat(5000) } }))
+    await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt, state: 'finished', version: '1.2.4', result: { type: 'error', reason: 'x', padding: 'y'.repeat(5000) } }))
+    expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'none' } })
+    await writeFile(statusFile(place), JSON.stringify({ v: 1, version: '1.2.4', state: 'restarting' }))
     expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'none' } })
     await writeFile(statusFile(place), 'not json')
     expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'none' } })

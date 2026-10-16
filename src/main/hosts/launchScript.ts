@@ -2,7 +2,7 @@ import { HOST_NODE_MAJOR } from './sshFailure'
 import { quoteRemoteArgument, type ValidatedSshHostConfiguration } from './sshConfiguration'
 import { desktopAnswerSetupSql } from '../memory/migrations.mjs'
 import { DESKTOP_CLIENTS_FILE, DESKTOP_CLIENTS_MAX, DESKTOP_CLIENT_ID_MAX } from '../../shared/desktopClients'
-import { HOST_STOP_DRAIN_MS, hostLaunchTimings } from '../../shared/hostLaunchTimings'
+import { HOST_STOP_DRAIN_MS, HOST_UPDATE_LOCK_UNNAMED_MS, hostLaunchTimings } from '../../shared/hostLaunchTimings'
 
 /**
  * The launch script: fixed Node source the desktop pipes to one `ssh` command per operation. It finds or
@@ -77,14 +77,24 @@ process.stdout.on('error', () => { if (!finishesAlone) process.exit(0); });
 if (finishesAlone) process.on('SIGHUP', () => undefined);
 const say = event => new Promise(resolve => { if (process.stdout.destroyed) { resolve(); return; } process.stdout.write(JSON.stringify(event) + '\n', () => resolve()); });
 // A restart a host asked for over its own socket (ADR-0087) also reports in a file in its data folder, since the host that
-// asked is the one it stops. The first write claims the file: the host waiting on it claims it too when it stops waiting,
-// so exactly one of them decides whether the restart goes ahead, and nothing is touched once the host has given up.
-const resultFile = typeof cfg.resultFile === 'string' && path.isAbsolute(cfg.resultFile) && path.dirname(path.resolve(cfg.resultFile)) === data ? path.resolve(cfg.resultFile) : null;
+// asked is the one it stops. Each such restart is one attempt, named by the host. Whoever first makes the attempt's claim
+// file decides it: the restart once its checks pass, or the host when it stops waiting. A restart that finds its attempt
+// claimed touches nothing, and no later attempt can take the claim from it, since each has its own.
+const attempt = typeof cfg.attempt === 'string' && /^[a-f0-9]{8,64}$/.test(cfg.attempt) ? cfg.attempt : null;
+const resultFile = attempt && typeof cfg.resultFile === 'string' && path.isAbsolute(cfg.resultFile) && path.dirname(path.resolve(cfg.resultFile)) === data ? path.resolve(cfg.resultFile) : null;
 let claimed = false;
-const resultText = value => JSON.stringify({ v: 1, version: typeof cfg.version === 'string' && RELEASE.test(cfg.version) ? cfg.version : null, ...value }) + '\n';
+const resultText = value => JSON.stringify({ v: 1, attempt, version: typeof cfg.version === 'string' && RELEASE.test(cfg.version) ? cfg.version : null, ...value }) + '\n';
+const writeResult = async value => {
+  const temporary = resultFile + '.' + process.pid + '.tmp';
+  try { await fs.writeFile(temporary, resultText(value), { mode: 0o600 }); await fs.rename(temporary, resultFile); }
+  catch { await fs.rm(temporary, { force: true }).catch(() => undefined); }
+};
 const claim = async value => {
   if (!resultFile) return true;
-  try { await fs.writeFile(resultFile, resultText(value), { flag: 'wx', mode: 0o600 }); claimed = true; return true; } catch { return false; }
+  try { await fs.writeFile(resultFile + '.' + attempt + '.claim', String(process.pid), { flag: 'wx', mode: 0o600 }); } catch { return false; }
+  claimed = true;
+  await writeResult(value);
+  return true;
 };
 // Only what the desktop reads of a result goes in the file, so it stays small whatever the result carried.
 const briefly = event => { const kept = {}; for (const key of ['type', 'reason', 'restarted', 'cause', 'hostId', 'pid']) if (event && event[key] !== undefined) kept[key] = event[key]; return kept; };
@@ -92,16 +102,14 @@ const record = async event => {
   if (!resultFile) return;
   const value = { state: 'finished', result: briefly(event) };
   if (!claimed) { await claim(value); return; }
-  const temporary = resultFile + '.' + process.pid + '.tmp';
-  try { await fs.writeFile(temporary, resultText(value), { mode: 0o600 }); await fs.rename(temporary, resultFile); }
-  catch { await fs.rm(temporary, { force: true }).catch(() => undefined); }
+  await writeResult(value);
 };
 const finish = async event => { await record(event); await say(event); process.exit(0); };
 // The host that asked answers its desktop once the restart has claimed the file, then says so beside it. The restart waits
 // a few seconds for that before it stops the host, so the answer is not cut off; a host that never says goes ahead anyway.
 const answered = async () => {
   if (!resultFile) return;
-  const file = resultFile + '.answered', deadline = Date.now() + (Number.isInteger(cfg.answerWaitMs) && cfg.answerWaitMs >= 0 ? cfg.answerWaitMs : 5000);
+  const file = resultFile + '.' + attempt + '.answered', deadline = Date.now() + (Number.isInteger(cfg.answerWaitMs) && cfg.answerWaitMs >= 0 ? cfg.answerWaitMs : 5000);
   while (Date.now() < deadline) { if (await exists(file)) break; await pause(50); }
   await fs.rm(file, { force: true }).catch(() => undefined);
 };
@@ -544,7 +552,7 @@ const takeUpdateLock = async () => {
     let pid = 0, age = Infinity;
     try { pid = Number(await fs.readFile(path.join(updateLockPath, 'pid'), 'utf8')); } catch {}
     try { age = Date.now() - (await fs.stat(updateLockPath)).mtimeMs; } catch {}
-    if (Number.isInteger(pid) && pid > 0 ? alive(pid) : age < 30000) throw new Error('update-busy');
+    if (Number.isInteger(pid) && pid > 0 ? alive(pid) : age < ${HOST_UPDATE_LOCK_UNNAMED_MS}) throw new Error('update-busy');
     await fs.rm(updateLockPath, { recursive: true, force: true });
   }
   throw new Error('update-busy');
@@ -919,11 +927,11 @@ export type LaunchOperation =
   | { readonly op: 'update-install'; readonly version: string; readonly file: string; readonly sha256: string }
   /**
    * Start `version` in place of the running host, or start the running one again when it does not start. `resultFile`, a
-   * file in the data folder, is only for a host that updates itself over its socket (ADR-0087): the restart claims it once
-   * its checks pass and writes its final result there, since the host that asked is the one it stops. It then waits up to
-   * `answerWaitMs` for the host to say it has answered its desktop, before it stops the host.
+   * file in the data folder, and `attempt` are only for a host that updates itself over its socket (ADR-0087): the restart
+   * claims the attempt once its checks pass and writes how it stands in `resultFile`, since the host that asked is the one it
+   * stops. It then waits up to `answerWaitMs` for the host to say it has answered its desktop, before it stops the host.
    */
-  | { readonly op: 'update-restart'; readonly hostId: string; readonly version: string; readonly resultFile?: string; readonly answerWaitMs?: number }
+  | { readonly op: 'update-restart'; readonly hostId: string; readonly version: string; readonly resultFile?: string; readonly attempt?: string; readonly answerWaitMs?: number }
   /** What start at boot looks like on the host (ADR-0054). */
   | { readonly op: 'boot-status' }
   /** Turn on linger, install and enable the boot unit, and hand the running host over to it when Sotto started it. */

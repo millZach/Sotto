@@ -963,8 +963,11 @@ export async function startSocketServer(options: SocketServerOptions) {
           peer.afterSeq = peer.afterSeq === Number.MAX_SAFE_INTEGER ? latestSeq : Math.max(peer.afterSeq, latestSeq)
         }
       }
-      // A restart waits for its answer to be on the way before it stops this host (ADR-0087), whether or not it could go.
-      if (request.op === 'host-update') await peer.frames.drained().finally(() => options.hostUpdate?.delivered())
+      // A restart that went ahead waits for its own answer to be on the way before it stops this host (ADR-0087), whether or
+      // not the answer could go. Only one restart runs at a time, so its answer is the only update-restarting there is.
+      if (request.op === 'host-update' && request.action === 'restart' && response.ok && (response.result as { type?: unknown }).type === 'update-restarting') {
+        await peer.frames.drained().finally(() => options.hostUpdate?.delivered())
+      }
     })().finally(() => { peer.inFlight-- }))
   }
   const bearer = (request: IncomingMessage): string => /^Bearer ([A-Za-z0-9_.-]{1,2048})$/.exec(request.headers.authorization ?? '')?.[1] ?? ''

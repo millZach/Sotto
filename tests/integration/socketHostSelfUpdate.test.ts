@@ -39,7 +39,7 @@ async function setUp(options: { tailnet?: boolean; hostUpdate?: boolean } = {}) 
   let reply: (request: HostUpdateRequest, context: HostUpdateContext) => Promise<HostUpdateAnswer> = async () => ({ type: 'update-outcome', running: '1.2.3', restart: { state: 'none' } })
   const record = { refresh: async () => undefined, has: (id: string) => desktops.has(id) }
   const listener = await startSocketServer({ service, pairing, watcherDesktops: record, mayAnswer: client => granted.has(client.clientId),
-    ...(options.hostUpdate === false ? {} : { hostUpdate: { run: (request, context) => { asked.push({ request, context }); return reply(request, context) }, delivered: () => { delivered.push(asked.length) } } }),
+    ...(options.hostUpdate === false ? {} : { hostUpdate: { run: (request, context) => { asked.push({ request, context }); return reply(request, context) }, delivered: async () => { delivered.push(asked.length) } } }),
     ...(options.tailnet ? { admin: false, tailnet: { desktops: record, phonesAdmitted: () => true } } : {}) })
   listeners.push(listener)
   const connect = async (clientId: string) => {
@@ -61,8 +61,8 @@ for (const tailnet of [false, true]) {
     expect(featuresOf(await owner.call('hello', { op: 'hello', accepts: ['host-update'] }))).toContain('host-update')
     expect(await owner.call('outcome', { op: 'host-update', action: 'outcome' })).toMatchObject({ ok: true, result: { type: 'update-outcome', running: '1.2.3' } })
     expect(asked.map(item => item.request)).toEqual([{ action: 'outcome', version: undefined, file: undefined, sha256: undefined }])
-    // The host is told once each answer is on its way, which a restart waits for before it stops the host.
-    await expect.poll(() => delivered).toEqual([1])
+    // Only the answer of a restart that went ahead is waited on; this one is not.
+    expect(delivered).toEqual([])
     for (const [who, client] of [['a desktop without the grant', ungranted], ['a desktop the host does not know as one', unrecorded], ['a phone', phone]] as const) {
       const peer = await connect(client.clientId)
       expect(featuresOf(await peer.call('hello', { op: 'hello', accepts: ['host-update'] })), who).not.toContain('host-update')
@@ -80,6 +80,17 @@ it('takes the feature away at once when the desktop’s grant is revoked, and re
   granted.delete(desktop.clientId)
   expect(await peer.call('denied', { op: 'host-update', action: 'outcome' })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
   expect(asked).toEqual([])
+})
+
+it('tells the host once the answer of a restart that went ahead is on its way, and for no other answer', async () => {
+  const { desktop, delivered, connect, setReply } = await setUp()
+  const peer = await connect(desktop.clientId)
+  await peer.call('hello', { op: 'hello', accepts: ['host-update'] })
+  setReply(async request => request.action === 'restart' ? { type: 'update-restarting', version: '1.2.4' } : { type: 'update-cancelled', cancelled: false })
+  expect(await peer.call('cancel', { op: 'host-update', action: 'cancel' })).toMatchObject({ ok: true })
+  expect(delivered).toEqual([])
+  expect(await peer.call('restart', { op: 'host-update', action: 'restart', version: '1.2.4' })).toMatchObject({ ok: true, result: { type: 'update-restarting' } })
+  await expect.poll(() => delivered).toEqual([2])
 })
 
 it('is not offered by a host that cannot update itself', async () => {

@@ -1,12 +1,12 @@
 import { spawn as spawnProcess, type ChildProcess } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { access, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { randomBytes, randomUUID } from 'node:crypto'
+import { access, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { HOST_NODE_RANGE, LAUNCH_SCRIPT_SOURCE } from '../main/hosts/launchScript'
-import { HOST_DOWNLOAD_TIMEOUT_MS, hostLaunchTimings } from '../shared/hostLaunchTimings'
+import { HOST_DOWNLOAD_TIMEOUT_MS, HOST_UPDATE_LOCK_UNNAMED_MS, hostLaunchTimings } from '../shared/hostLaunchTimings'
 import { HOST_RELEASES_URL, HOST_UPDATE_STEPS, HOST_VERSION_PATTERN, hostArchiveName, type HostUpdateStep } from '../shared/hostUpdates'
-import { compareHostToTarget, HOST_UPDATE_ANSWER_WAIT_MS, HOST_UPDATE_ANSWERED_SUFFIX, HOST_UPDATE_RESTART_WAIT_MS, HOST_UPDATE_STATUS_FILE, HOST_UPDATE_STATUS_LIMIT_BYTES, hostUpdateErrorSchema, hostUpdateFetchedSchema, hostUpdateInstalledSchema, hostUpdateStatusSchema,
+import { compareHostToTarget, HOST_UPDATE_ANSWER_WAIT_MS, hostUpdateAttemptFile, HOST_UPDATE_RESTART_WAIT_MS, HOST_UPDATE_STATUS_FILE, HOST_UPDATE_STATUS_LIMIT_BYTES, hostUpdateErrorSchema, hostUpdateFetchedSchema, hostUpdateInstalledSchema, hostUpdateStatusSchema,
   type HostUpdateAnswer, type HostUpdateStatus } from '../shared/hostSelfUpdate'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import type { HostUpdateRequestAction } from '../shared/hostProtocol'
@@ -131,6 +131,8 @@ export class HostSelfUpdate {
   private download: { readonly owner: object; readonly abort: AbortController } | null = null
   /** A restart that went ahead waits for this host to have answered its desktop: the file that says so, once it has. */
   private answering: string | null = null
+  /** How long a finished attempt's claim and answer files are kept: far longer than any restart runs. */
+  private static readonly ATTEMPT_FILES_KEPT_MS = 10 * 60_000
   private readonly statusPath: string
   private readonly node: string
   private readonly env: NodeJS.ProcessEnv
@@ -179,7 +181,27 @@ export class HostSelfUpdate {
     let age: number
     try { age = Date.now() - (await stat(lock)).mtimeMs } catch { return false }
     const pid = Number((await readFile(join(lock, 'pid'), 'utf8').catch(() => '')).trim())
-    return Number.isInteger(pid) && pid > 0 ? processAlive(pid) : age < 30_000
+    return Number.isInteger(pid) && pid > 0 ? processAlive(pid) : age < HOST_UPDATE_LOCK_UNNAMED_MS
+  }
+  /**
+   * Takes the installation folder's update lock for this host's own download, the way the launch script takes it, so an
+   * install or restart over SSH refuses while it runs. A lock whose process has gone is taken over; one held is `busy`.
+   */
+  private async holdLock(): Promise<{ readonly release: () => Promise<void> } | 'busy' | 'failed'> {
+    const versions = join(this.installation.installPath, 'versions'), lock = join(versions, '.update-lock'), owner = join(lock, 'pid')
+    try { await mkdir(versions, { recursive: true }) } catch { return 'failed' }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await mkdir(lock)
+        await writeFile(owner, String(process.pid))
+        return { release: async () => {
+          if ((await readFile(owner, 'utf8').catch(() => '')).trim() === String(process.pid)) await rm(lock, { recursive: true, force: true }).catch(() => undefined)
+        } }
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return 'failed' }
+      if (await this.lockHeld()) return 'busy'
+      await rm(lock, { recursive: true, force: true }).catch(() => undefined)
+    }
+    return 'busy'
   }
   private take(action: HostUpdateRequestAction): boolean {
     if (this.running) return false
@@ -196,13 +218,17 @@ export class HostSelfUpdate {
     const stop = (): void => abort.abort()
     context.gone.addEventListener('abort', stop, { once: true })
     try {
-      // An update another client runs over SSH holds the folder: this one waits its turn rather than racing it.
-      if (await this.lockHeld()) return busy()
-      if (context.gone.aborted) return { type: 'update-cancelled', cancelled: true }
-      context.onStep('download')
-      const result = await this.script(this.configuration({ op: 'update-fetch', version }), context.onStep, 2 * HOST_DOWNLOAD_TIMEOUT_MS + 10_000, abort.signal)
-      if (abort.signal.aborted) return { type: 'update-cancelled', cancelled: true }
-      return fetchResult.safeParse(result).data ?? { type: 'error', reason: 'update-failed' }
+      // The download holds the folder's update lock, so it and an update another client runs over SSH refuse each other.
+      const lock = await this.holdLock()
+      if (lock === 'busy') return busy()
+      if (lock === 'failed') return { type: 'error', reason: 'update-failed' }
+      try {
+        if (context.gone.aborted) return { type: 'update-cancelled', cancelled: true }
+        context.onStep('download')
+        const result = await this.script(this.configuration({ op: 'update-fetch', version }), context.onStep, 2 * HOST_DOWNLOAD_TIMEOUT_MS + 10_000, abort.signal)
+        if (abort.signal.aborted) return { type: 'update-cancelled', cancelled: true }
+        return fetchResult.safeParse(result).data ?? { type: 'error', reason: 'update-failed' }
+      } finally { await lock.release() }
     } finally {
       context.gone.removeEventListener('abort', stop)
       this.download = null
@@ -230,26 +256,41 @@ export class HostSelfUpdate {
     if (!this.take('restart')) return busy()
     try {
       context.onStep('restart')
-      // One status file for each update: what the last one said is gone before this one starts.
+      // One status file for each update: what the last one said is gone before this one starts. Each attempt has a claim of
+      // its own, so an earlier restart this host gave up on can never take this one's.
       await rm(this.statusPath, { force: true })
-      await rm(this.statusPath + HOST_UPDATE_ANSWERED_SUFFIX, { force: true })
-      const configuration = this.configuration({ op: 'update-restart', version, resultFile: this.statusPath, answerWaitMs: HOST_UPDATE_ANSWER_WAIT_MS })
+      await this.forgetOldAttempts()
+      const attempt = randomBytes(8).toString('hex')
+      const configuration = this.configuration({ op: 'update-restart', version, resultFile: this.statusPath, attempt, answerWaitMs: HOST_UPDATE_ANSWER_WAIT_MS })
       const unit = await (this.options.runByUnit ?? (() => runByBootUnit(this.options.platform)))()
       const ended = unit ? (await this.restartInUnit(configuration)).ended : this.restartDetached(configuration)
-      const answer = await this.awaitRestart(version, ended)
-      if (answer.type === 'update-restarting') this.answering = this.statusPath + HOST_UPDATE_ANSWERED_SUFFIX
+      const answer = await this.awaitRestart(version, attempt, ended)
+      if (answer.type === 'update-restarting') this.answering = hostUpdateAttemptFile(this.statusPath, attempt, 'answered')
       return answer
     } finally { this.running = null }
   }
 
+  /** Takes away the claim and answer files of attempts long finished. */
+  private async forgetOldAttempts(): Promise<void> {
+    const directory = resolve(this.options.dataDirectory), prefix = HOST_UPDATE_STATUS_FILE + '.'
+    let names: string[]
+    try { names = await readdir(directory) } catch { return }
+    for (const name of names) {
+      if (!name.startsWith(prefix) || !/\.[a-f0-9]{8,64}\.(?:claim|answered)$/u.test(name)) continue
+      const file = join(directory, name)
+      const age = await stat(file).then(info => Date.now() - info.mtimeMs, () => 0)
+      if (age > HostSelfUpdate.ATTEMPT_FILES_KEPT_MS) await rm(file, { force: true }).catch(() => undefined)
+    }
+  }
+
   /**
-   * Told once an answer to `host-update` has been handed to its client's socket. After `update-restarting`, this says so
-   * to the restart, which waits for it before it stops this host, so the answer is not cut off with the connection.
+   * Told once the answer to the restart that went ahead has been handed to its client's socket, and only for that answer.
+   * This says so to the restart, which waits for it before it stops this host, so the answer is not cut off.
    */
-  delivered(): void {
+  async delivered(): Promise<void> {
     const file = this.answering
     this.answering = null
-    if (file) void writeFile(file, '', { mode: 0o600 }).catch(() => undefined)
+    if (file) await writeFile(file, '', { mode: 0o600 }).catch(() => undefined)
   }
 
   /** The restart in its own session, which outlives this host: setsid on Linux and macOS, its own process group on Windows. */
@@ -290,30 +331,33 @@ export class HostSelfUpdate {
    * neither in time, or ended without either, the host claims the file itself, and the restart, if it ever gets that far,
    * then stops without touching anything: `restart-not-sent` stays true.
    */
-  private async awaitRestart(version: string, ended: Promise<void>): Promise<HostUpdateAnswer> {
+  private async awaitRestart(version: string, attempt: string, ended: Promise<void>): Promise<HostUpdateAnswer> {
     let over = false
     void ended.then(() => { over = true })
     const deadline = Date.now() + (this.options.restartWaitMs ?? HOST_UPDATE_RESTART_WAIT_MS)
+    const ours = async (): Promise<HostUpdateStatus | null> => { const status = await this.readStatus(); return status?.attempt === attempt ? status : null }
     while (Date.now() < deadline) {
-      const status = await this.readStatus()
+      const status = await ours()
       if (status) return this.restartAnswer(status, version)
       if (over) break
       await pause(100)
     }
-    const abandoned = { v: 1, version, state: 'finished', result: { type: 'error', reason: 'restart-not-sent' } }
     try {
-      await writeFile(this.statusPath, JSON.stringify(abandoned) + '\n', { flag: 'wx', mode: 0o600 })
-      this.options.log?.('host-update-restart-abandoned')
-      return { type: 'error', reason: 'restart-not-sent' }
+      await writeFile(hostUpdateAttemptFile(this.statusPath, attempt, 'claim'), 'host', { flag: 'wx', mode: 0o600 })
     } catch {
       // The restart claimed it a moment earlier; its few bytes are being written.
-      for (let attempt = 0; attempt < 20; attempt++) {
-        const status = await this.readStatus()
+      for (let tries = 0; tries < 20; tries++) {
+        const status = await ours()
         if (status) return this.restartAnswer(status, version)
         await pause(50)
       }
       return { type: 'error', reason: 'restart-not-sent' }
     }
+    const temporary = this.statusPath + '.' + attempt + '.tmp'
+    const abandoned = { v: 1, attempt, version, state: 'finished', result: { type: 'error', reason: 'restart-not-sent' } }
+    await writeFile(temporary, JSON.stringify(abandoned) + '\n', { mode: 0o600 }).then(() => rename(temporary, this.statusPath)).catch(() => rm(temporary, { force: true }).catch(() => undefined))
+    this.options.log?.('host-update-restart-abandoned')
+    return { type: 'error', reason: 'restart-not-sent' }
   }
   private restartAnswer(status: HostUpdateStatus, version: string): HostUpdateAnswer {
     if (status.state === 'finished' && status.result.type === 'error') {

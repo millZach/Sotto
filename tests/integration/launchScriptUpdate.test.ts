@@ -196,53 +196,62 @@ describe('a restart a host asked for over its own socket (ADR-0087)', () => {
     expect(last(await run(configuration, { op: 'update-install', version: NEW, file: FILE, sha256: sha256(archive) }))).toMatchObject({ type: 'update-installed' })
   }
 
+  const ATTEMPT = 'a1b2c3d4e5f60718'
   it('writes why it stopped before touching anything, and how a restart that went ahead ended', async () => {
     const configuration = await fixture()
     const old = await launch(configuration)
     const resultFile = resultFileOf(configuration)
     // Not installed yet: refused before anything was touched, and the file says so.
-    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile }))).toEqual({ type: 'error', reason: 'update-missing' })
-    expect(await statusOf(configuration)).toEqual({ v: 1, version: NEW, state: 'finished', result: { type: 'error', reason: 'update-missing' } })
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: 'f'.repeat(16) }))).toEqual({ type: 'error', reason: 'update-missing' })
+    expect(await statusOf(configuration)).toEqual({ v: 1, attempt: 'f'.repeat(16), version: NEW, state: 'finished', result: { type: 'error', reason: 'update-missing' } })
     await rm(resultFile)
     await installNew(configuration, await fakeHost())
     // The host that asked has already answered its desktop, so the restart goes ahead without waiting, and tidies the mark away.
-    await writeFile(resultFile + '.answered', '')
-    const ready = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, answerWaitMs: 60_000 }))
+    const answered = `${resultFile}.${ATTEMPT}.answered`
+    await writeFile(answered, '')
+    const ready = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: ATTEMPT, answerWaitMs: 60_000 }))
     hosts.push(ready.pid as number)
     expect(ready).toMatchObject({ type: 'ready', owned: true, hostId: HOST_ID })
     // Only what the desktop reads of the result is kept.
-    expect(await statusOf(configuration)).toEqual({ v: 1, version: NEW, state: 'finished', result: { type: 'ready', hostId: HOST_ID, pid: ready.pid } })
+    expect(await statusOf(configuration)).toEqual({ v: 1, attempt: ATTEMPT, version: NEW, state: 'finished', result: { type: 'ready', hostId: HOST_ID, pid: ready.pid } })
     expect(alive(old.pid as number)).toBe(false)
     expect(await pointer(configuration)).toBe(`${NEW}\n`)
-    await expect(readFile(resultFile + '.answered')).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(answered)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('stops without touching anything once the host that asked has given up and claimed the file', async () => {
+  it('stops without touching anything once the host that asked has given up and claimed the attempt', async () => {
     const configuration = await fixture()
     const old = await launch(configuration)
     await installNew(configuration, await fakeHost())
     const resultFile = resultFileOf(configuration)
-    const abandoned = JSON.stringify({ v: 1, version: NEW, state: 'finished', result: { type: 'error', reason: 'restart-not-sent' } }) + '\n'
+    await writeFile(`${resultFile}.${ATTEMPT}.claim`, 'host')
+    const abandoned = JSON.stringify({ v: 1, attempt: ATTEMPT, version: NEW, state: 'finished', result: { type: 'error', reason: 'restart-not-sent' } }) + '\n'
     await writeFile(resultFile, abandoned)
-    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile }))).toEqual({ type: 'error', reason: 'restart-not-sent' })
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: ATTEMPT }))).toEqual({ type: 'error', reason: 'restart-not-sent' })
     expect(await readFile(resultFile, 'utf8')).toBe(abandoned)
+    // Even with the status file gone, as a later attempt clears it, the claim still stops this attempt.
+    await rm(resultFile)
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: ATTEMPT }))).toEqual({ type: 'error', reason: 'restart-not-sent' })
+    await expect(readFile(resultFile)).rejects.toMatchObject({ code: 'ENOENT' })
     expect(alive(old.pid as number)).toBe(true)
     expect(await pointer(configuration)).toBeNull()
     expect(await readdir(join(configuration.installPath, 'versions'))).toEqual(expect.not.arrayContaining(['.update-lock']))
   })
 
-  it('records a rollback, and writes nothing to a file outside the data folder', async () => {
+  it('records a rollback, and writes nothing to a file outside the data folder or without an attempt', async () => {
     const configuration = await fixture()
     await launch(configuration)
     await installNew(configuration, 'process.exit(1)\n')
     const outside = join(configuration.directory, 'status.json')
-    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: '9.9.10', resultFile: outside }))).toEqual({ type: 'error', reason: 'update-missing' })
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: '9.9.10', resultFile: outside, attempt: ATTEMPT }))).toEqual({ type: 'error', reason: 'update-missing' })
     await expect(readFile(outside)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: '9.9.10', resultFile: resultFileOf(configuration) }))).toEqual({ type: 'error', reason: 'update-missing' })
+    expect(await statusOf(configuration)).toBeNull()
     // No host says it answered: the restart waits its short while, then goes ahead anyway.
-    const restarted = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile: resultFileOf(configuration), answerWaitMs: 200 }))
+    const restarted = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile: resultFileOf(configuration), attempt: ATTEMPT, answerWaitMs: 200 }))
     hosts.push((await descriptor(configuration)).pid)
     expect(restarted).toEqual({ type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' })
-    expect(await statusOf(configuration)).toEqual({ v: 1, version: NEW, state: 'finished', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } })
+    expect(await statusOf(configuration)).toEqual({ v: 1, attempt: ATTEMPT, version: NEW, state: 'finished', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } })
   })
 
   it('reads its configuration as its last argument when it runs as a file, as it does in a transient unit', async () => {
