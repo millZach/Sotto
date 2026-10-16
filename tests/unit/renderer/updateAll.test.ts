@@ -110,6 +110,11 @@ describe('a press of Update all', () => {
     // A result of its own still says how it ended, and a host that runs the new version anyway is done.
     expect(updateAllView(sources({ clientHosts: [codex({ state: 'updated', ranAt: 'now', installed: '0.52.1', behind: false })] }), seen).items[0]).toMatchObject({ state: 'done' })
     expect(updateAllView(sources({ clientHosts: [codex({ ranAt: undefined, installed: '0.52.1', behind: false })] }), dropped).items[0]).toMatchObject({ state: 'done', detail: 'Now 0.52.1.' })
+    // Sol, review of #1084: a registry that does not answer reads as not behind, which says nothing of whether it updated.
+    const unanswered = updateAllView(sources({ clientHosts: [codex({ ranAt: undefined, behind: false, published: undefined })] }), dropped)
+    expect(unanswered.items[0]).toMatchObject({ state: 'failed', detail: 'forge restarted before Codex updated. Nothing was changed. Try again.' })
+    expect(unanswered.phase).toBe('done')
+    expect(updateAllWords(unanswered).title).toBe('Not everything updated')
     // A client this press did not ask for is never read as lost.
     expect(updateAllView(sources({ clientHosts: [codex()] }), pass([], { seen: new Map([[key, listed]]) })).items[0]).toMatchObject({ state: 'offered' })
   })

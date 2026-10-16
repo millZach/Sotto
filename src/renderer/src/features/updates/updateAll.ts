@@ -139,6 +139,11 @@ function appItem(app: UpdateStatus | null, pass: UpdateAllPass | null): UpdateAl
   return undefined
 }
 
+/** What a host client step whose line was lost says: that the host restarted, when it was out of reach meanwhile. */
+function lostDetail(host: string, name: string, restarted: boolean): string {
+  return restarted ? `${host} restarted before ${name} updated. Nothing was changed. Try again.` : `The ${name} update on ${host} stopped before it finished. Nothing was changed. Try again.`
+}
+
 function clientItem(machine: UpdateAllMachine, update: ProviderClientUpdate, pass: UpdateAllPass | null): UpdateAllItem | undefined {
   const key = clientKey(machine.kind === 'host' ? machine.id : 'local', update.id)
   const name = PROVIDER_LABELS[update.id]
@@ -170,14 +175,13 @@ function clientItem(machine: UpdateAllMachine, update: ProviderClientUpdate, pas
   }
   // The installer finished with the provider disconnected, so nothing could read the version yet (ADR-0042).
   if (ranSincePress && update.state === 'idle') return { ...base, state: 'done', detail: `The installer finished. Connect ${name} to see the version it runs now.` }
-  // Lost, but the host now runs the version it was to get: it finished before the line went.
-  if (lost && !update.behind) return { ...base, versions: { from: update.installed }, state: 'done', detail: `Now ${update.installed}.` }
-  if (!update.behind) return undefined
   if (lost && machine.kind === 'host') {
-    return { ...base, state: 'failed', detail: pass?.dropped?.has(key) === true
-      ? `${machine.name} restarted before ${name} updated. Nothing was changed. Try again.`
-      : `The ${name} update on ${machine.name} stopped before it finished. Nothing was changed. Try again.` }
+    // It finished before the line went only if the host now runs another version than when the step was seen. Whether
+    // the client reads as behind cannot say: one whose registry did not answer reads as not behind (Sol, review of #1084).
+    if (update.installed !== pass?.seen?.get(key)?.versions.from) return { ...base, versions: { from: update.installed }, state: 'done', detail: `Now ${update.installed}.` }
+    return { ...base, state: 'failed', detail: lostDetail(machine.name, name, pass?.dropped?.has(key) === true) }
   }
+  if (!update.behind) return undefined
   if (!update.canInstall) {
     const commands = update.byHand?.length ? update.byHand.join('\n') : update.command
     return { ...base, state: 'by-hand', detail: commands ? `Update it yourself with ${commands.split('\n')[0]}.` : 'Sotto cannot update this install. Update it the way you installed it.', commands }
