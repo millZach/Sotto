@@ -34,6 +34,8 @@ import { resizeContentWindow } from './support/sottoWindow'
 const evidenceRoot = evidenceDirectory('artifacts/watcher-room')
 /** Watcher's permissions, its own changes and watching (Zach's picks on October 13, 2026): captures for their note. */
 const permissionEvidence = evidenceDirectory('artifacts/watcher-permission')
+/** The handover after a provider change (ADR-0073, #1026): captures for its note. */
+const handoverEvidence = evidenceDirectory('artifacts/watcher-handover')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const THEMES = [['t3-code', 'sotto'], ['tropic', 'tropic']] as const
@@ -180,32 +182,34 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       '.watcher-dock__switch button', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
       '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro h2', '.watcher-first__intro p',
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
-      '.watcher-watched__lead > p', '.watcher-watched__label', '.watched-card__title', '.watched-card__meta', '.watched-card__doing', '.watched-card__stop']
+      '.watcher-watched__lead > p', '.watcher-watched__label', '.watched-card__title', '.watched-card__meta', '.watched-card__doing', '.watched-card__stop',
+      '.watcher-handover__lead > p', '.watcher-handover__ledger', '.watcher-handover__read', '.watcher-handover__text', '.thread-prompt__send[data-wide]',
+      '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0).slice(0, 6)
       .flatMap((element, index) => surfaces(element).map(on => ({ name: `${selector} ${index}${element.getAttribute('data-tone') ? ` (${element.getAttribute('data-tone')})` : ''}`, ink: hex(getComputedStyle(element).color), on }))))
   })
   return pairs.map(({ name, ink, on }) => ({ name, ratio: Number(contrastRatio(parseThemeRgb(ink, BLACK), parseThemeRgb(on, BLACK)).toFixed(2)) }))
 }
 
-async function capture(launched: LaunchedSotto, name: string): Promise<void> {
+/** The window, settled and with the night held still, into one evidence folder. */
+async function captureInto(folder: string, launched: LaunchedSotto, name: string): Promise<void> {
   await settle(launched.page)
   await holdOwlSky(launched.page)
-  await captureWindow(launched.app, resolve(evidenceRoot, name))
+  await captureWindow(launched.app, resolve(folder, name))
 }
-
-/** The same, for the permissions, own changes and watching note's own folder. */
-async function captureNote(launched: LaunchedSotto, name: string): Promise<void> {
-  await settle(launched.page)
-  await holdOwlSky(launched.page)
-  await captureWindow(launched.app, resolve(permissionEvidence, name))
-}
+const capture = (launched: LaunchedSotto, name: string): Promise<void> => captureInto(evidenceRoot, launched, name)
+/** The permissions, own changes and watching note's own folder. */
+const captureNote = (launched: LaunchedSotto, name: string): Promise<void> => captureInto(permissionEvidence, launched, name)
+/** The handover's own folder. */
+const captureHandover = (launched: LaunchedSotto, name: string): Promise<void> => captureInto(handoverEvidence, launched, name)
 
 /**
  * Sotto Owl over the fake Codex app server the integration tests use, with nothing seeded, so the room reads main's own
  * bridge (preload's `window.sotto.watcher`, main's WatcherService). `script` is what the fake Codex does on every turn
  * until a journey rewrites `<root>/codex/script.json`; `<root>/worker` is a folder for a worker project.
  */
-async function withMainWatcher(prefix: string, script: Readonly<Record<string, unknown>>, run: (launched: LaunchedSotto, root: string) => Promise<void>): Promise<void> {
+async function withMainWatcher(prefix: string, script: Readonly<Record<string, unknown>>, run: (launched: LaunchedSotto, root: string) => Promise<void>,
+  providers: readonly ('codex' | 'claude')[] = ['codex']): Promise<void> {
   const profile = (await ownedE2EProfile({ prefix })).directory
   const root = join(profile, 'native-fixture')
   for (const folder of ['claude', 'codex', 'worker']) await mkdir(join(root, folder), { recursive: true })
@@ -218,12 +222,12 @@ async function withMainWatcher(prefix: string, script: Readonly<Record<string, u
       const launched = await launchSotto('success', profile)
       try {
         const { page } = launched
-        await page.evaluate(async () => {
+        await page.evaluate(async providers => {
           await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
           const agents = window.sotto!.agents!
-          await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: ['codex'], checkClientUpdates: false } })
-          await agents.command({ type: 'connect', provider: 'codex' })
-        })
+          await agents.command({ type: 'configure', patch: { provider: 'codex', enabled: true, enabledProviders: [...providers], checkClientUpdates: false } })
+          for (const provider of providers) await agents.command({ type: 'connect', provider })
+        }, providers)
         await page.reload()
         await openThreads(page)
         // Main's bridge, not a stand-in: nothing is seeded, and main answers that no Watcher exists yet.
@@ -274,11 +278,13 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
-  test.beforeAll(async () => { await mkdir(evidenceRoot, { recursive: true }); await mkdir(permissionEvidence, { recursive: true }) })
+  test.beforeAll(async () => { await mkdir(evidenceRoot, { recursive: true }); await mkdir(permissionEvidence, { recursive: true }); await mkdir(handoverEvidence, { recursive: true }) })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
     const note = /^(permissions|own-changes|threads-watch|room-watched|list-watch)-/u
-    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key))], [permissionEvidence, [...recorded].filter(([key]) => note.test(key))]] as const
+    const handover = /^handover-/u
+    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key))], [permissionEvidence, [...recorded].filter(([key]) => note.test(key))],
+      [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))]] as const
     for (const [folder, entries] of folders) {
       if (entries.length > 0) await writeFile(resolve(folder, 'readings.json'), `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`, 'utf8')
     }
@@ -1156,6 +1162,113 @@ test.describe("Watcher's room on the built app", () => {
       await line.getByRole('button', { name: 'Show the file' }).click()
       await expect(line.getByRole('list', { name: 'Files Watcher changed' }).getByRole('listitem')).toHaveText([/README\.md$/])
     })
+  })
+
+  /**
+   * The handover after a provider change (ADR-0073, #1026), against main's own Watcher over the fake Codex and Claude
+   * providers: another provider's model in Watcher's picker makes a new Watcher, the strip over its composer offers the
+   * last one's handover, and Continue sends it ahead of the first message, as one message, which the room shows as
+   * Sotto's handover beside the user's words. Captured at 1280x800 and 820x560, dark and light.
+   */
+  test('against main’s own Watcher, a provider change offers the handover, and Continue sends it with the first message', async () => {
+    test.setTimeout(4 * 60_000)
+    await withMainWatcher('sotto-e2e-watcher-handover-', { reply: 'Watcher here. Release notes is missing the install line.' }, async (launched, root) => {
+      const { page } = launched
+      await writeFile(join(root, 'claude', 'script.json'), JSON.stringify({ reply: 'Claude Watcher here. I have the handover.' }))
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      await page.getByRole('textbox', { name: 'Watcher message' }).click()
+      await page.keyboard.type('Check the release notes and tell me what is missing.')
+      await page.getByRole('button', { name: 'Start Watcher and send' }).click()
+      const pane = watcherPane(page)
+      await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. Release notes is missing the install line.')
+      await expect.poll(async () => (await mainRoom(page)).currentOptions?.status).toBe('idle')
+      const codex = (await mainRoom(page)).current!
+      expect((await mainRoom(page)).handover ?? null).toBeNull()
+
+      // Another provider's model in Watcher's own picker is a new Watcher there.
+      await pane.getByRole('combobox', { name: 'Thread model' }).click()
+      const picker = page.getByRole('dialog', { name: 'Choose model' })
+      await expect(picker.getByText(/Another provider’s model starts a new Watcher\./)).toBeVisible()
+      await picker.getByRole('tab', { name: /Claude/ }).click()
+      await picker.getByRole('option').first().click()
+      const strip = pane.getByRole('region', { name: 'Handover of the last Watcher' })
+      await expect(strip).toContainText('Sending starts the new Watcher with a handover of the last one, from Codex.')
+      // The fake Codex records its turn, which the handover counts and never carries.
+      await expect(strip).toContainText('It carries all 2 messages and leaves out 1 record of its work.')
+      const room = await mainRoom(page)
+      expect(room).toMatchObject({ current: { provider: 'claude' }, history: [expect.objectContaining({ target: codex.target })],
+        handover: { source: codex.target, provider: 'codex', counts: { total: 2, carried: 2, historyKept: true } } })
+      await expect(pane.getByRole('button', { name: 'Continue with the handover' })).toBeVisible()
+      // Nothing has gone to Claude yet: the offer is only an offer.
+      const prompts = async (): Promise<string[]> => (await readFile(join(root, 'claude', 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean)
+        .map(line => JSON.parse(line) as { method: string; params: { frame: { prompt?: string } } }).filter(entry => entry.method === 'hook-context').map(entry => entry.params.frame.prompt ?? '')
+      expect(await prompts()).toEqual([])
+
+      // Read it, from the keyboard; Escape folds it again.
+      await strip.getByRole('button', { name: 'Read it' }).focus()
+      await page.keyboard.press('Enter')
+      const words = strip.getByRole('region', { name: 'The handover, word for word' })
+      await expect(words).toContainText('The history below is context, not a new request.')
+      await expect(words).toContainText('Check the release notes and tell me what is missing.')
+      for (const appearance of ['dark', 'light'] as const) {
+        await page.evaluate(async value => { await window.sotto!.updateSettings({ appearance: value }) }, appearance)
+        for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+          await resizeContentWindow(launched, width, height, [800, 540])
+          await settle(page)
+          expect(await pageBoundProblems(page), `the offer at ${width}x${height}, ${appearance}`).toEqual([])
+          await roomEdges(page, width, height)
+          await expect(strip).toBeInViewport()
+          await expect(pane.getByRole('button', { name: 'Continue with the handover' })).toBeInViewport()
+          await contrastHolds(page, `handover-offer-${appearance}-${width}x${height}`)
+          await captureHandover(launched, `offer-read-${appearance}-${width}x${height}.png`)
+        }
+      }
+      // Escape from the words folds them and returns to Read it.
+      await words.focus()
+      await page.keyboard.press('Escape')
+      await expect(words).toHaveCount(0)
+      await expect(strip.getByRole('button', { name: 'Read it' })).toBeFocused()
+      await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
+      await resizeContentWindow(launched, 1280, 800)
+      await settle(page)
+      await captureHandover(launched, 'offer-dark-1280x800.png')
+
+      // Continue: the handover and the first message go to Claude as one message, in one turn.
+      await pane.getByRole('textbox', { name: 'Watcher message' }).click()
+      await page.keyboard.type('Carry on and add the install line.')
+      await pane.getByRole('button', { name: 'Continue with the handover' }).click()
+      const card = pane.getByRole('article', { name: 'Handover from the last Watcher' })
+      await expect(card).toContainText('From the last Watcher, on Codex. Context, not a new request.')
+      await expect(card).toContainText('Carried all 2 messages. Left out 1 record of its work.')
+      await expect(pane.locator('[data-role="user"][data-message-id] .rich-message')).toHaveText('Carry on and add the install line.')
+      await expect(pane.locator('[data-role="assistant"]')).toContainText('Claude Watcher here. I have the handover.')
+      await expect(strip).toHaveCount(0)
+      await expect(pane.getByRole('button', { name: 'Continue with the handover' })).toHaveCount(0)
+      const sent = await prompts()
+      expect(sent).toHaveLength(1)
+      expect(sent[0]).toMatch(/^This is a handover from another Sotto thread\. The history below is context, not a new request\./u)
+      expect(sent[0]).toContain('Check the release notes and tell me what is missing.')
+      expect(sent[0]).toContain('Watcher here. Release notes is missing the install line.')
+      expect(sent[0]!.endsWith('\n\nCarry on and add the install line.')).toBe(true)
+      expect((await mainRoom(page)).handover ?? null).toBeNull()
+
+      // The first message, its handover's words open, at both sizes, dark and light.
+      await card.getByRole('button', { name: 'Read the handover, word for word' }).click()
+      await expect(card.getByRole('region', { name: 'The handover, word for word' })).toContainText('Check the release notes and tell me what is missing.')
+      for (const appearance of ['dark', 'light'] as const) {
+        await page.evaluate(async value => { await window.sotto!.updateSettings({ appearance: value }) }, appearance)
+        for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+          await resizeContentWindow(launched, width, height, [800, 540])
+          await card.scrollIntoViewIfNeeded()
+          await settle(page)
+          expect(await pageBoundProblems(page), `the first message at ${width}x${height}, ${appearance}`).toEqual([])
+          await roomEdges(page, width, height)
+          await contrastHolds(page, `handover-message-${appearance}-${width}x${height}`)
+          await captureHandover(launched, `first-message-${appearance}-${width}x${height}.png`)
+        }
+      }
+    }, ['codex', 'claude'])
   })
 
   test('stable shows nothing of Watcher, even with a projection seeded', async () => {

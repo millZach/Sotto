@@ -18,6 +18,8 @@ import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
 import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
+import type { HostMachineReport } from '../../shared/hostFacts'
+import { hostMachineReport, type HostFactsSource } from './hostFacts'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
 
@@ -90,6 +92,9 @@ export interface HostService {
   readonly supportsDraftRevisions?: boolean
   /** The host babysits pull requests and takes the user's Babysit pull request and Stop babysitting (ADR-0061). */
   readonly supportsBabysitting?: boolean
+  /** The host reports its machine's host facts and how many of its threads are running (#1031); without it they read unknown. */
+  readonly supportsHostFacts?: boolean
+  hostFacts?(): Promise<HostMachineReport>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
   events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[]
   subscribe(listener: (state: AgentState) => void): () => void
@@ -222,7 +227,8 @@ export class LocalHostService implements HostService {
   private readonly mayClearUsage: (client: ClientIdentity) => boolean
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
-  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService }) {
+  /** `facts` is this machine's host facts, read the same way on the desktop and on a headless host (#1031). */
+  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: HostFactsSource }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -230,6 +236,12 @@ export class LocalHostService implements HostService {
     this.usage = options.usage
     this.supportsUsage = options.usage !== undefined
     this.mayClearUsage = options.mayClearUsage ?? (client => mayGrantLocally(client).allowed)
+  }
+
+  get supportsHostFacts(): boolean { return this.options.facts !== undefined }
+  hostFacts(): Promise<HostMachineReport> {
+    if (!this.options.facts) return Promise.reject(new Error('This host does not report its machine facts.'))
+    return hostMachineReport(this.options.facts, this.control.shell().host.threads)
   }
 
   usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {

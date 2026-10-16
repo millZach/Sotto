@@ -9,7 +9,7 @@ import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from 
 import { ModelCatalogRevisions } from '../main/agents/agentStateBroadcast'
 import { RefusedImage } from '../main/agents/attachmentStore'
 import { shellForProtocolV1, clientUpdateForOlderClient, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
-import { hostCatalogKey, type AgentCommand, type AgentThreadDetail, type AgentThreadDetailDelta } from '../shared/agents'
+import { hostCatalogKey, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from '../shared/agents'
 import { isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
@@ -17,6 +17,7 @@ import { REMOTE_PERMISSION_DENIED } from '../main/agents/authority'
 import { commandFromProtocolV1, managementCommandRefusal } from '../shared/hostProtocol'
 import { REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal, remoteUsageRefusal } from './remoteCommands'
 import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageReadBeforeHistory, type UsageLocalHostRead } from '../shared/usageDashboard'
+import { hostMachineReportSchema } from '../shared/hostFacts'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { SocketFrames } from './socketFrames'
 import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
@@ -205,7 +206,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'usage-dashboard' || (service.supportsUsage === true && service.usageRead !== undefined && service.usageRefresh !== undefined && service.usageClear !== undefined))
     // Usage's place and window filters (ADR-0083) arrived with history import: an older host's strict query refuses them.
     && (feature !== 'usage-history' || (service.supportsUsage === true && service.usageRead !== undefined))
-    && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true))
+    && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true)
+    // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
+    // and the desktop's own phone listener, which serves no desktop, never does.
+    && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined)))
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => (peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature)))
     .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
@@ -243,8 +247,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   const identity = (clientId: string): ClientIdentity => ({ clientId, user: pairing.list().find(client => client.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' })
   const isPhonePeer = (peer: Peer): boolean => !peer.desktop || options.admin === false && options.watcherDesktops === undefined
   const hiddenThread = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? ''))
-  const shell = (peer: Peer) => {
-    const original = service.shell()
+  /** One phone's view of `original`, which is never edited here, so one read can serve every phone in a publish. */
+  const shell = (peer: Peer, original: AgentState = service.shell()) => {
     const visible = isPhonePeer(peer) ? visibleWatcherState(original, false) : original
     const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenThread(peer, thread.id)).map(thread => thread.projectId),
       ...service.watcherPhoneExclusions?.().projectIds ?? []]) : new Set<string>()
@@ -353,7 +357,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   // details that follow the shell wait with it, the newest standing for any skipped; detail-delta pushes
   // and responses are never held, so no delta loses the revision it applies to.
   const owedShell = new WeakSet<Peer>()
-  const sendShell = (peer: Peer): void => {
+  const sendShell = (peer: Peer, read?: () => AgentState): void => {
     if (!authenticated(peer)) { peer.frames.close(); return }
     const scope = watcherScopes.get(peer)
     if (scope && offers(peer, 'watcher-reads') && service.watcherProjection) {
@@ -366,16 +370,20 @@ export async function startSocketServer(options: SocketServerOptions) {
       void track(peer.frames.drained().then(() => { owedShell.delete(peer); if (!closing && !peer.frames.isClosed) sendShell(peer) }))
       return
     }
-    const wire = wireShell(peer, shell(peer)), state = wire.state, eventPage = events(peer, peer.afterSeq)
+    const wire = wireShell(peer, shell(peer, read?.())), state = wire.state, eventPage = events(peer, peer.afterSeq)
     const full = JSON.stringify({ v: 1, event: 'shell', state, eventPage })
     if (fits(full)) { peer.frames.sendText(full); peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
     else if (push(peer, { v: 1, event: 'shell', state, eventPage: { events: [], latestSeq: peer.afterSeq, hasMore: true } })) { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
     if (detailsFollowShell) for (const threadId of peer.observed) detail(peer, threadId)
   }
+  // One read of the service's shell per publish, for every phone: each read copies the whole coordinator state. It is
+  // read when the first phone sends, so a publish to phones that are all backed up reads nothing.
   const shellPublisher = coalesceAgentStatePublishes(() => {
+    let original: AgentState | undefined
+    const read = () => original ??= service.shell()
     for (const peer of peers) {
       if (!authenticated(peer)) { peer.frames.close(); continue }
-      if (peer.ready) sendShell(peer)
+      if (peer.ready) sendShell(peer, read)
     }
   })
   // Each observed thread's update goes out as the service published it: a whole detail as one, and a delta
@@ -817,6 +825,9 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'subagent-assignments':
         if (!service.subagentAssignments) throw new Refusal('invalid_request')
         return toolRead(() => service.subagentAssignments!(request.request))
+      case 'host-facts':
+        if (!offers(peer, 'host-facts') || !service.hostFacts) throw new Refusal('invalid_request')
+        try { return hostMachineReportSchema.parse(await service.hostFacts()) } catch { throw new Refusal('unavailable') }
       case 'usage-read':
         if (!offers(peer, 'usage-dashboard') || !service.usageRead) throw new Refusal('invalid_request')
         try { return usageForPeer(peer, usageLocalHostReadSchema.parse(await service.usageRead(request.query))) } catch { throw new Refusal('unavailable') }
