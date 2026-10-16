@@ -6,7 +6,7 @@ import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostR
 import { watcherRoomInputs } from './watcherRoomInput'
 import { type WatcherIdentity, watcherToolSchemas } from '../../shared/watcher'
 import { SocketFrames } from '../../host/socketFrames'
-import { PROVIDER_CONNECTION_NOTICES, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
@@ -28,7 +28,8 @@ import { getReleaseTrack } from '../../shared/releaseTrack'
 import { requestQuestionsDigest } from './requestDrafts'
 import { version as sourceVersion } from '../../../package.json'
 import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
-import { clientUpdateEnumerationUsesMuse, commandUsesMuse, museWatcherRefusal, threadUsesMuse, watcherRequestUsesMuse } from './museGate'
+import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from './heldProviderGate'
+import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
@@ -52,6 +53,9 @@ export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
   watcherEnabled?: boolean
   streamingPublishCost?: boolean
+  /** The providers held to Owl on this run (ADR-0072); absent holds every one. */
+  heldProviders?: HeldProviders
+  /** Muse's answer alone, from before the held set; `heldProviders` wins. */
   museEnabled?: boolean
   /** The running packaged version, which may override the source manifest during stable packaging. */
   clientVersion?: string
@@ -135,7 +139,9 @@ export class SocketHostService implements HostService {
   private catalog: { revision: number; models: unknown } | undefined
   private cachedWatcher: WatcherHostProjection | undefined
   /** Native ownership is immutable; an omitted later shell must not reopen a held thread. */
-  private readonly dormantMuseThreads = new Map<string, string>()
+  private readonly dormantProviderThreads = new Map<string, DormantProviderThread>()
+  /** The providers held to Owl on this run, read once at start. */
+  private readonly held: HeldProviders
   private readonly watcherListeners = new Set<(projection: WatcherHostProjection) => void>()
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
@@ -160,28 +166,31 @@ export class SocketHostService implements HostService {
   private retainedRefreshRequested = false
   private wireAdmission: Promise<void> | undefined
   constructor(private readonly options: SocketHostServiceOptions) {
+    this.held = heldProvidersOption(options)
     if (options.watcherEnabled === true && options.streamingPublishCost === true) this.watcherRoomThreads = ids => {
       if (!this.cached) throw new Error('Connect to the host before reading its state.')
-      return watcherRoomInputs(this.cached.host, ids, options.museEnabled === true, this.dormantMuseThreads)
+      return watcherRoomInputs(this.cached.host, ids, this.held, this.dormantProviderThreads)
     }
-    this.endpoint('/v1/health'); this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true, museEnabled: options.museEnabled === true })
+    this.endpoint('/v1/health'); this.retainedDrafts = options.retainedDrafts ?? new RetainedDraftStore({ watcherEnabled: options.watcherEnabled === true, heldProviders: this.held })
     this.retainedRegistrationId = options.retainedRegistrationId
       ?? (options.expectedHostId ? this.retainedDrafts.registrationForHost(options.expectedHostId) : undefined)
   }
   private threadAvailable(threadId: string | null | undefined): boolean {
     if (!threadId) return true
-    if (this.options.museEnabled !== true && this.dormantMuseThreads.has(threadId)) return false
+    if (this.dormantProviderThreads.has(threadId)) return false
     const thread = this.cached?.host.threads.find(thread => thread.id === threadId)
-    if (thread && this.options.museEnabled !== true && requestDraftProvider(this.cached!.host, thread, this.cached!.configuration.provider) === 'muse') return false
+    if (thread && this.held.has(requestDraftProvider(this.cached!.host, thread, this.cached!.configuration.provider))) return false
     return this.options.watcherEnabled === true || thread?.kind !== 'watcher' && thread?.kind !== 'watcher-history'
   }
   private threadRefusal(threadId: string | null | undefined): string {
     const thread = this.cached?.host.threads.find(thread => thread.id === threadId)
-    return `${threadId && this.dormantMuseThreads.has(threadId) || thread && requestDraftProvider(this.cached!.host, thread, this.cached!.configuration.provider) === 'muse' ? 'Muse' : 'Watcher'} is available in Sotto Owl. Nothing was sent.`
+    const provider = threadId ? this.dormantProviderThreads.get(threadId)?.provider : undefined
+    const owner = provider ?? (thread ? requestDraftProvider(this.cached!.host, thread, this.cached!.configuration.provider) : undefined)
+    return `${owner && this.held.has(owner) ? PROVIDER_LABELS[owner] : 'Watcher'} is available in Sotto Owl. Nothing was sent.`
   }
   private requireCommandAvailable(command: AgentCommand): void {
-    if (this.options.museEnabled !== true && (commandUsesMuse(command, this.cached?.host)
-      || clientUpdateEnumerationUsesMuse(command, this.cached?.host))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    const held = heldProviderRefusedBy(command, this.held, this.cached?.host)
+    if (held) throw new Error(heldProviderRefusal(held))
     const threadId = this.commandThreadId(command)
     if (!this.threadAvailable(threadId)) throw new Error(this.threadRefusal(threadId))
   }
@@ -462,7 +471,10 @@ export class SocketHostService implements HostService {
     void task.finally(() => { if (this.catchup === task) this.catchup = undefined }).catch(() => undefined)
   }
   private call(operation: HostOperation, id: string = randomUUID(), onPlacement?: () => void, timeoutMs = 120000): Promise<unknown> {
-    if ((operation.op === 'watcher-read' || operation.op === 'watcher-control') && this.museWatcherHeld(operation.request)) return Promise.resolve(museWatcherRefusal())
+    if (operation.op === 'watcher-read' || operation.op === 'watcher-control') {
+      const held = this.heldWatcherProvider(operation.request)
+      if (held) return Promise.resolve(heldWatcherRefusal(held))
+    }
     if (operation.op === 'command') {
       // An unknown wire command is the host's to refuse, with its version and unsupported-request wording.
       const parsed = protocolAgentCommandSchema.safeParse(operation.command)
@@ -498,9 +510,7 @@ export class SocketHostService implements HostService {
   }
   private publish(state: AgentState, authoritative = false): void {
     this.validateState(state)
-    if (this.options.museEnabled !== true) for (const thread of state.host.threads) {
-      if (threadUsesMuse(thread, state.host)) this.dormantMuseThreads.set(thread.id, thread.projectId)
-    }
+    rememberDormantProviderThreads(this.dormantProviderThreads, state.host, this.held)
     if (!this.quietConnectionNotices.has(state.notice)) this.preserveConnectionFeedback(state.notice)
     delete state.clientScoped; delete state.connections
     if (authoritative) this.snapshotEpoch++
@@ -635,13 +645,14 @@ export class SocketHostService implements HostService {
   get supportsWatcherStandingWatch(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-standing-watch') }
   get supportsWatcherWorkSettled(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-work-settled') }
   get supportsWatcherOutcomes(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-outcomes') }
-  private museWatcherHeld(request: WatcherHostRead | WatcherHostControl): boolean {
-    return this.options.museEnabled !== true && watcherRequestUsesMuse(request, this.cached?.host, this.dormantMuseThreads)
+  private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): ProviderId | undefined {
+    return heldProviderOfWatcherRequest(request, this.held, this.cached?.host, this.dormantProviderThreads)
   }
   async watcherControl(request: WatcherHostControl, _client?: ClientIdentity, guard?: () => void): Promise<unknown> {
     void _client // The socket's authenticated pairing supplies authority on the host.
     if (!this.supportsWatcherControl || !this.supportsWatcherReads) throw new HostConnectionError('Update this host before Watcher directs its threads. Nothing was sent.', 'invalid_request')
-    if (this.museWatcherHeld(request)) return museWatcherRefusal()
+    const held = this.heldWatcherProvider(request)
+    if (held) return heldWatcherRefusal(held)
     guard?.()
     return watcherToolSchemas[request.call.name].output.parse(await this.call({ op: 'watcher-control', request }))
   }
@@ -654,7 +665,8 @@ export class SocketHostService implements HostService {
   async watcherRead(request: WatcherHostRead): Promise<unknown> {
     if (!this.supportsWatcherReads) throw new HostConnectionError('Update this host before Watcher reads its threads.', 'invalid_request')
     if (request.standingWatches !== undefined && !this.supportsWatcherStandingWatch) throw new HostConnectionError('Update this host before Watcher watches its threads. Nothing was changed.', 'invalid_request')
-    if (this.museWatcherHeld(request)) return museWatcherRefusal()
+    const held = this.heldWatcherProvider(request)
+    if (held) return heldWatcherRefusal(held)
     const result = await this.call({ op: 'watcher-read', request })
     if (request.call) return watcherToolSchemas[request.call.name].output.parse(result)
     this.cachedWatcher = watcherHostProjectionSchema.parse(result)

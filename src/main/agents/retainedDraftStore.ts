@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { readFile, readdir, unlink } from 'node:fs/promises'
 import { z } from 'zod'
 import { agentThreadDraftSchema, agentThreadKindSchema, providerIdSchema, type AgentThread, type AgentThreadDraft, type ProviderId } from '../../shared/agents'
+import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
 const retainedDraftSchema = z.object({ hostId: z.uuid(), registrationId: z.uuid().optional(), providerId: providerIdSchema.optional(), threadKind: agentThreadKindSchema.optional(), draft: agentThreadDraftSchema,
@@ -30,14 +31,20 @@ export class RetainedDraftStore {
   private savedHosts: Map<string, string> | undefined
   private loadFailure: unknown
   private protectedUnread = false
-  constructor(private readonly options: { directory?: string; historyEnabled?: () => boolean; watcherEnabled?: boolean; museEnabled?: boolean; onRecovery?: () => void; onWriteFailure?: () => void } = {}) {
+  /** The providers held to Owl on this run, whose drafts are parked as read; absent holds every one. */
+  private readonly held: HeldProviders
+  /** A saved record names a held provider, matched in the file's text before it is parsed. */
+  private readonly heldProviderWords: RegExp | undefined
+  constructor(private readonly options: { directory?: string; historyEnabled?: () => boolean; watcherEnabled?: boolean; heldProviders?: HeldProviders; museEnabled?: boolean; onRecovery?: () => void; onWriteFailure?: () => void } = {}) {
+    this.held = heldProvidersOption(options)
+    this.heldProviderWords = this.held.size ? new RegExp(`"providerId"\\s*:\\s*"(?:${[...this.held].join('|')})"`, 'u') : undefined
     if (options.directory) this.disk = new AtomicJsonStore(join(options.directory, 'remote-drafts.json'), retainedDraftsSchema.parse, () => [], undefined, undefined, options.onRecovery)
   }
   private parksFeature(edit: Pick<RetainedDraft, 'threadKind' | 'providerId'>): boolean {
     return this.options.watcherEnabled !== true && (edit.threadKind === 'watcher' || edit.threadKind === 'watcher-history')
-      || this.options.museEnabled !== true && edit.providerId === 'muse'
+      || edit.providerId !== undefined && this.held.has(edit.providerId)
   }
-  private parksLegacy(edit: Pick<RetainedDraft, 'providerId'>): boolean { return this.options.museEnabled !== true && !providerIdSchema.safeParse(edit.providerId).success }
+  private parksLegacy(edit: Pick<RetainedDraft, 'providerId'>): boolean { return this.held.size > 0 && !providerIdSchema.safeParse(edit.providerId).success }
   private needsPreservation(value: unknown): boolean {
     if (!value || typeof value !== 'object') return false
     const record = value as Pick<RetainedDraft, 'threadKind' | 'providerId'>
@@ -45,7 +52,7 @@ export class RetainedDraftStore {
   }
   private mayHoldDormantWords(text: string): boolean {
     return this.options.watcherEnabled !== true && /"threadKind"\s*:\s*"watcher(?:-history)?"/u.test(text)
-      || this.options.museEnabled !== true && (/"providerId"\s*:\s*"muse"/u.test(text) || /"(?:hostId|draft)"\s*:/u.test(text))
+      || this.heldProviderWords !== undefined && (this.heldProviderWords.test(text) || /"(?:hostId|draft)"\s*:/u.test(text))
   }
   private get keepsHistory(): boolean { return this.options.historyEnabled?.() !== false }
   /** History-on unread files stay untouched; history off uses only this window's memory edits. */
@@ -56,7 +63,7 @@ export class RetainedDraftStore {
     const task = (async () => {
       if (!this.disk) return
       if (!this.keepsHistory) {
-        if (this.options.watcherEnabled !== true || this.options.museEnabled !== true) {
+        if (this.options.watcherEnabled !== true || this.held.size > 0) {
           let text = ''
           try {
             text = await readFile(join(this.options.directory!, 'remote-drafts.json'), 'utf8')
@@ -244,7 +251,7 @@ export class RetainedDraftStore {
     if (!this.options.directory) return
     for (const name of await readdir(this.options.directory)) {
       if (name.startsWith('remote-drafts.json.tmp-') || name.startsWith('remote-drafts.json.corrupt-')) {
-        if (this.options.watcherEnabled !== true || this.options.museEnabled !== true) {
+        if (this.options.watcherEnabled !== true || this.held.size > 0) {
           let text: string
           try { text = await readFile(join(this.options.directory, name), 'utf8') }
           catch (error) { if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error; continue }

@@ -4,7 +4,7 @@ import { writeClipboard } from '../../agents/richActions'
 import { PROVIDER_LABELS, type AgentProviderStatus, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
 import type { HostSetupChoice, HostsBridge, HostStatus } from '../../../../shared/hosts'
 import { HOST_PROVIDER_JOB_WORDS, hostProviderJobCase, PROVIDER_SIGN_IN_COMMANDS, PROVIDER_SIGN_IN_SHAPES, type HostProviderAction, type HostProviderJobCase, type HostProviderJobState } from '../../../../shared/hostProviders'
-import { useOwlFeature } from '../../state/owlFeature'
+import { useHeldProviders } from '../../state/owlFeature'
 import { Button } from '../../components/Button'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { useOptionalAgents } from '../../agents/AgentContext'
@@ -239,7 +239,7 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
   /** The models an agent can run on, shared with Have my agent set this up. */
   readonly choice?: HostSetupChoice | undefined
 }): ReactNode {
-  const museEnabled = useOwlFeature('muse')
+  const heldProviders = useHeldProviders()
   const [open, setOpen] = useState(false)
   const [signingIn, setSigningIn] = useState<ProviderId | null>(null)
   const [agent, setAgent] = useState<{ readonly provider: ProviderId; readonly jobCase: HostProviderJobCase } | null>(null)
@@ -285,7 +285,7 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
     </div>
     {open ? <div id={gridId} className="host-providers__panel">
       <ul ref={grid} className="host-providers__grid" aria-label={`Providers on ${host.name}`}>
-        {HOST_PROVIDER_ORDER.filter(provider => provider !== 'muse' || museEnabled).map(provider => <ProviderTile key={provider} host={host} provider={provider} bridge={bridge}
+        {HOST_PROVIDER_ORDER.filter(provider => !heldProviders.has(provider)).map(provider => <ProviderTile key={provider} host={host} provider={provider} bridge={bridge}
           status={providers.find(item => item.id === provider)} job={own?.provider === provider ? own : undefined}
           onSignIn={setSigningIn} onAgent={(id, jobCase) => setAgent({ provider: id, jobCase })} updates={tileUpdates} />)}
       </ul>

@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
-import { agentProjectSchema, EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
+import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -1551,18 +1551,4 @@ export class MuseMspHost implements AgentHost {
     this.processes.clear(); this.outdated.clear(); this.state.connected = false; this.emit()
   }
   async closed(): Promise<void> { await Promise.all([...this.exits]); await Promise.allSettled(this.loading.values()); await this.writing }
-}
-
-/**
- * Muse while its Owl feature is off (ADR-0072, ADR-0079): nothing is shown or started, and the real
- * adapter's saved records stay on disk untouched for a return to Owl. The provider keeps its place in the
- * switch so a thread bound to it is refused in words rather than taken for another provider's.
- */
-export class MuseDisabledHost implements AgentHost {
-  private readonly snapshotValue: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), name: 'Muse' }
-  async connect(): Promise<AgentHostSnapshot> { throw new Error('Muse is available in Sotto Owl; it is not in this build.') }
-  async snapshot(): Promise<AgentHostSnapshot> { return structuredClone(this.snapshotValue) }
-  async execute(): Promise<AgentHostResult> { throw new Error('Muse is available in Sotto Owl.') }
-  subscribe(): () => void { return () => undefined }
-  disconnect(): void { /* Nothing was started. */ }
 }

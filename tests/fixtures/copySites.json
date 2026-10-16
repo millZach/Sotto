@@ -37,6 +37,9 @@
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
   },
+  "src/main/agents/heldProviderGate.ts": {
+    "structuredClone(": 2
+  },
   "src/main/agents/hostService.ts": {
     "shell()": 5
   },
@@ -44,7 +47,7 @@
     "shell()": 1
   },
   "src/main/agents/muse.ts": {
-    "structuredClone(": 3,
+    "structuredClone(": 1,
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
   },
@@ -101,7 +104,7 @@
     "shell()": 1
   },
   "src/main/hosts/desktopHostRouter.ts": {
-    "shell()": 39
+    "shell()": 34
   },
   "src/main/hosts/desktopHosts.ts": {
     "structuredClone(": 1,
