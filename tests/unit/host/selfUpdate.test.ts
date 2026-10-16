@@ -290,7 +290,8 @@ describe('the restart and its status file', () => {
     const { spawn: answering } = fakeSpawn(async call => { await claimAs(call, { state: 'restarting' }) })
     expect(await hostWith(place, answering).run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'update-restarting', version: '1.2.4' })
     expect(await claimAs(first, { state: 'restarting' })).toBe(false)
-    // A status another attempt wrote is not this one's answer.
+    // That restart ends; a status another attempt wrote is not the next one's answer.
+    await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt: 'dddddddd', version: '1.2.4', state: 'finished', result: { type: 'ready', hostId: HOST_ID, pid: 1 } }))
     const { spawn: stranger } = fakeSpawn(async (call, child) => {
       await writeFile(String(call.configuration.resultFile), JSON.stringify({ v: 1, attempt: 'bbbbbbbb', version: '1.2.4', state: 'restarting' }))
       setImmediate(() => child.emit('exit', 0, null))
@@ -299,6 +300,24 @@ describe('the restart and its status file', () => {
     // A restart process that ended without a word is given up on at once, long before a wait this test would never outlast.
     const { spawn: silent } = fakeSpawn((_call, child) => { setImmediate(() => child.emit('exit', 1, null)) })
     expect(await hostWith(place, silent, { restartWaitMs: 24 * 60 * 60_000 }).run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'restart-not-sent' })
+  })
+
+  it('refuses a second restart while the first still runs, and leaves the first one’s status as it was', async () => {
+    const place = await ready()
+    const { spawn, calls } = fakeSpawn(async call => { await claimAs(call, { state: 'restarting', pid: process.pid }) })
+    const host = hostWith(place, spawn)
+    expect(await host.run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'update-restarting', version: '1.2.4' })
+    const first = await readFile(statusFile(place), 'utf8')
+    // The first restart's process is still alive, stopping and starting the host: a second one changes nothing.
+    expect(await host.run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'update-busy' })
+    expect(calls).toHaveLength(1)
+    expect(await readFile(statusFile(place), 'utf8')).toBe(first)
+    expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'restarting', version: '1.2.4' } })
+    // Once that process has gone without finishing, the next restart may go ahead.
+    const status = JSON.parse(first) as Record<string, unknown>
+    await writeFile(statusFile(place), JSON.stringify({ ...status, pid: goneProcess() }))
+    expect(await host.run({ action: 'restart', version: '1.2.4' }, context())).toEqual({ type: 'update-restarting', version: '1.2.4' })
+    expect(calls).toHaveLength(2)
   })
 
   it('runs the restart in a transient unit of its own for a host its start at boot unit runs', async () => {

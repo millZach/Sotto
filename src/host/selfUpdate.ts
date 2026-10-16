@@ -234,6 +234,10 @@ export class HostSelfUpdate {
     try { await access(join(this.installation.installPath, 'versions', version, 'host', 'index.js')) } catch { return { type: 'error', reason: 'update-missing' } }
     if (!this.take('restart')) return busy()
     try {
+      // A restart this host already answered for may still be stopping it: its status says restarting and its process is
+      // alive. Another is refused before anything is touched, so the first one's status stays for outcome to read.
+      const previous = await this.readStatus()
+      if (previous?.status.state === 'restarting' && !interrupted(previous)) return busy()
       context.onStep('restart')
       // One status file for each update: what the last one said is gone before this one starts. Each attempt has a claim of
       // its own, so an earlier restart this host gave up on can never take this one's.
