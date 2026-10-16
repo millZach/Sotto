@@ -1194,3 +1194,20 @@ it('saves nothing while a waiting wake-up holds only a thread’s own facts, and
   expect(f.delivered.at(-1)!.events.find(event => event.kind === 'evidence-changed')!.revision)
     .toBe(observationDigest(f.wakes.evidence.read(centerTarget).map(fact => fact.id).sort()))
 })
+
+it('works out news only for watched threads, and reads Watcher’s queue only when its batch does not already say', async () => {
+  const waiting = vi.fn((): WatcherEvent[] => [])
+  const f = fixture(true, undefined, { waitingEvents: waiting }), { move } = gitFixture(f)
+  // A thread no request or watch names: its facts stay current, and no news is worked out for it.
+  const other: AgentThread = { ...structuredClone(f.thread), id: 'unwatched', title: 'Unwatched' }
+  f.snapshot.threads.push(other)
+  const digest = vi.spyOn(f.wakes.evidence, 'digest')
+  for (let n = 0; n < 5; n++) { other.messages = [{ id: `m-${n}`, role: 'assistant', text: 'x', createdAt: centerTime }]; f.wakes.observe() }
+  expect(digest.mock.calls.filter(([target]) => target.threadId === 'unwatched')).toEqual([])
+  // The watched thread's turn ends with a change; the batch already holds that end, so the queue is not read for it.
+  f.wakes.observe(); await f.advance(2_000)
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }; f.wakes.observe()
+  const reads = waiting.mock.calls.length
+  move({ changedFiles: 8 })
+  expect(waiting.mock.calls.length).toBe(reads)
+})

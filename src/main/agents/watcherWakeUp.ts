@@ -178,7 +178,7 @@ export class WatcherWakeUp {
   /**
    * Whether news needs Watcher's attention: anything but evidence, or evidence of a pull request's link, state, checks,
    * review or merge changing. Evidence of a thread's own facts alone does not; it only rides with news that does. Which
-   * evidence woke is kept in memory, so after a restart restored evidence counts as the thread's own.
+   * evidence woke is kept in memory, so after a restart all restored evidence counts as needing Watcher.
    */
   needsAttention(events: readonly WatcherEvent[]): boolean {
     return events.some(event => event.kind !== 'evidence-changed' || this.waking.has(event.id))
@@ -389,40 +389,44 @@ export class WatcherWakeUp {
         const added = progress.links !== undefined && [...links].some(link => !progress.links!.has(link))
         progress.links = links
         before.push(...facts.filter(item => item.source === 'github' && item.url && !links.has(pullRequestKey(item.url) ?? '')).map(item => item.id))
-        const pullRequests = this.evidence.digest(target, 'pull-request')
+        // Every thread keeps its facts current; only a watched one's news is worked out, since no one else is told it.
+        const told = watched.has(key)
+        const pullRequests = told ? this.evidence.digest(target, 'pull-request') : ''
         const changedEvidence = this.evidence.observeThread(thread, target, stamp)
-        const turn = thread.lastTurn, finished = finishedTurn(thread)
-        const ends = () => this.pending.filter(event => targetKey(event.target) === key && TURN_ENDS.has(event.kind)).map(event => event.id)
-        const endsBefore = new Set(ends())
-        let settles = false
-        if (finished) {
-          // The news names the delegation this turn answers, when there is one. The name is an identity, never words.
-          const operationId = this.options.answers?.(target, thread)
-          const answers = operationId ? { operationId } : {}
-          // A host that does not report the counts sends no count: unknown, never none running. Unknown sub-agents count, so
-          // a finish while they are unresolved says the turn is not done and is owed work-settled news.
-          this.event(finished.status === 'failed' ? 'turn-failed' : 'turn-finished', target, [finished.id, finished.status],
-            { turnId: finished.id, ...answers, ...this.reportsWork(target.hostId) ? { backgroundWorkCount: watcherBackgroundWorkCount(thread) } : {},
-              evidenceIds: this.evidence.read(target).filter(item => item.turnId === finished.id).map(item => item.id) })
-          if (this.workSettled(thread, target.hostId)) {
-            const settling = () => this.pending.filter(event => event.kind === 'work-settled' && targetKey(event.target) === key).map(event => event.id)
-            const waiting = new Set(settling())
-            this.event('work-settled', target, [finished.id], { turnId: finished.id, ...answers, backgroundWorkCount: 0 })
-            settles = settling().some(id => !waiting.has(id))
+        if (told) {
+          const turn = thread.lastTurn, finished = finishedTurn(thread)
+          const ends = () => this.pending.filter(event => targetKey(event.target) === key && TURN_ENDS.has(event.kind)).map(event => event.id)
+          const endsBefore = new Set(ends())
+          let settles = false
+          if (finished) {
+            // The news names the delegation this turn answers, when there is one. The name is an identity, never words.
+            const operationId = this.options.answers?.(target, thread)
+            const answers = operationId ? { operationId } : {}
+            // A host that does not report the counts sends no count: unknown, never none running. Unknown sub-agents count, so
+            // a finish while they are unresolved says the turn is not done and is owed work-settled news.
+            this.event(finished.status === 'failed' ? 'turn-failed' : 'turn-finished', target, [finished.id, finished.status],
+              { turnId: finished.id, ...answers, ...this.reportsWork(target.hostId) ? { backgroundWorkCount: watcherBackgroundWorkCount(thread) } : {},
+                evidenceIds: this.evidence.read(target).filter(item => item.turnId === finished.id).map(item => item.id) })
+            if (this.workSettled(thread, target.hostId)) {
+              const settling = () => this.pending.filter(event => event.kind === 'work-settled' && targetKey(event.target) === key).map(event => event.id)
+              const waiting = new Set(settling())
+              this.event('work-settled', target, [finished.id], { turnId: finished.id, ...answers, backgroundWorkCount: 0 })
+              settles = settling().some(id => !waiting.has(id))
+            }
           }
+          // A turn end of a thread with a Git working copy waits, briefly, for the read its finish starts (TURN_END_SETTLE_MS).
+          if (thread.worktree?.git && ends().some(id => !endsBefore.has(id)) && !((this.settling.get(key)?.until ?? 0) > this.now())) {
+            this.settling.delete(key)
+            this.settling.set(key, { target, until: this.now() + TURN_END_SETTLE_MS, local: this.evidence.digest(target, 'local') })
+            while (this.settling.size > 2_000) this.settling.delete(this.settling.keys().next().value!)
+            this.batch()
+          }
+          for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
+            { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })
+          // After the turn's own news, so a turn's end carries what its working copy became. A turn that finished with work
+          // still running ends again when that work settles, which carries what the work changed since.
+          if (changedEvidence || settles) this.evidenceChanged(target, before, added, added || pullRequests !== this.evidence.digest(target, 'pull-request'))
         }
-        // A turn end of a thread with a Git working copy waits, briefly, for the read its finish starts (TURN_END_SETTLE_MS).
-        if (thread.worktree?.git && ends().some(id => !endsBefore.has(id)) && !((this.settling.get(key)?.until ?? 0) > this.now())) {
-          this.settling.delete(key)
-          this.settling.set(key, { target, until: this.now() + TURN_END_SETTLE_MS, local: this.evidence.digest(target, 'local') })
-          while (this.settling.size > 2_000) this.settling.delete(this.settling.keys().next().value!)
-          this.batch()
-        }
-        for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
-          { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })
-        // After the turn's own news, so a turn's end carries what its working copy became. A turn that finished with work
-        // still running ends again when that work settles, which carries what the work changed since.
-        if (changedEvidence || settles) this.evidenceChanged(target, before, added, added || pullRequests !== this.evidence.digest(target, 'pull-request'))
       }
       const landing = this.evidence.read(target, connected, this.now()).find(item => item.freshness === 'fresh' && ['merge-observed', 'auto-merge-observed', 'landing-action'].includes(item.fact))
       if (landing) observed.landing = { source: landing.source === 'github' ? 'github' : 'user-landing-action', observedAt: landing.observedAt, fresh: true }
@@ -476,7 +480,9 @@ export class WatcherWakeUp {
     }
     let marks = wake
     if (!wake) {
-      const key = targetKey(target), untold = [...this.pending, ...this.options.waitingEvents?.() ?? []].filter(event => targetKey(event.target) === key)
+      // The batch in memory is read first; Watcher's queue only when it does not already say what is untold here.
+      const key = targetKey(target), mine = (event: WatcherEvent) => targetKey(event.target) === key, held = this.pending.filter(mine)
+      const untold = held.some(event => event.kind === 'evidence-changed' || TURN_ENDS.has(event.kind)) ? held : [...held, ...(this.options.waitingEvents?.() ?? []).filter(mine)]
       const waiting = untold.filter(event => event.kind === 'evidence-changed')
       const ending = untold.some(event => event.kind === 'turn-finished' || event.kind === 'turn-failed' || event.kind === 'work-settled')
       if (!waiting.length && !(ending && (this.toldLocal.get(key) ?? NOTHING_TOLD) !== this.evidence.digest(target, 'local'))) return
