@@ -14,6 +14,7 @@ const descriptions: Record<WatcherToolName, string> = {
   stop_thread: 'Request interrupt of one eligible worker under the active Watcher request. Does not delete or reclaim anything.',
   settle_thread: 'Move an idle worker to Settled, preserving the thread and working copy. Does not stop background work.',
   list_projects: 'List known worker projects and available models and comparable default permissions. Project roots are display information.',
+  list_machines: 'List This computer and each connected machine: its operating system, architecture, memory and CPUs, how many threads it is running, and your starts in flight on it against the limit. A machine that does not report these reads unknown; one not connected says so.',
   list_working_copies: 'Read host-issued working-copy and base-ref choices for a known project. No arbitrary paths or remote fetch.',
   read_operation: 'Read an admitted operation’s receipt and, for a start or send, its outcome: working, background, answered, failed, stopped, paused or unknown. Accepted means delivered; the outcome says how its turn ended. Once answered it carries that turn’s reply, the worker’s own words. Uncertain or unknown means reconcile, never resend.',
 }
