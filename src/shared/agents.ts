@@ -890,15 +890,12 @@ export function providerWritesShortText(providerId: ProviderId | undefined): boo
   return providerId !== 'devin' && providerId !== 'muse'
 }
 /**
- * Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. Muse takes them
- * when its client grants session tool servers (ADR-0079); Devin's client ignores them.
+ * Whether this thread's agent gets Sotto's tool servers. Every provider takes them: Muse when its client grants session
+ * tool servers (ADR-0079), and Devin from CLI 3000.11.92, which attaches the servers a session is opened with (ADR-0056).
+ * A client that cannot take them marks its threads `sottoToolsWithheld`.
  */
-export function providerTakesSottoTools(providerId: ProviderId | undefined): boolean {
-  return providerId !== 'devin'
-}
-/** Whether this thread's agent gets Sotto's tool servers: its provider takes them and its client did not withhold them. */
 export function threadTakesSottoTools(thread: Pick<AgentThread, 'providerId' | 'sottoToolsWithheld'> | undefined): boolean {
-  return providerTakesSottoTools(thread?.providerId) && thread?.sottoToolsWithheld !== true
+  return thread?.sottoToolsWithheld !== true
 }
 /** The same facts, from the summary the shell carries or from the history a full state holds. */
 export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>): AgentThreadSummary {

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { DevinRejected, DevinRpc, devinEnvironment, findDevinExecutable, readDevinVersion } from '../../src/main/agents/devinRpc'
 import { DevinAcpHost } from '../../src/main/agents/devin'
 import { devinPolicyPath } from '../../src/main/agents/devinPolicy'
+import { VisualToolServer } from '../../src/main/agents/visualTools'
 
 describe("requires SOTTO_DEVIN_LIVE=1", () => {
   it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1')('verifies native Devin identity, decisions, questions, interrupt, and restart in a disposable Git project', async () => {
@@ -228,4 +229,67 @@ describe("requires SOTTO_DEVIN_LIVE=1", () => {
       await rm(root, { recursive: true, force: true })
     }
   }, 120_000)
+})
+
+// #1040: Devin threads get Sotto's tools from CLI 3000.11.92. Two real turns, so it spends: the first calls a Sotto tool in
+// the session it was made in, which settles that the model sees tools passed on `session/new`; the second calls it again
+// after Sotto restarts and loads the session, which settles `session/load`. Each call is asked about first, since the
+// asking profile asks about `mcp__*`, and this test answers it as the user would: that checks the shape Devin asks in.
+// SOTTO_DEVIN_EXECUTABLE points it at another Devin CLI, such as 3000.11.92 unpacked from its zip, without installing it.
+describe("requires SOTTO_DEVIN_LIVE=1", () => {
+  it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1')('gives a native Devin thread Sotto’s tools in a new session and in a loaded one', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-devin-live-'))
+    if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-devin-live-')) throw new Error('Unexpected temporary directory')
+    const cwd = join(root, 'project'); const data = join(root, 'sotto')
+    await mkdir(cwd); await mkdir(data)
+    execFileSync('git', ['init', '--quiet', cwd], { windowsHide: true, stdio: 'ignore' })
+    const executable = process.env['SOTTO_DEVIN_EXECUTABLE'] || await findDevinExecutable()
+    if (!executable) throw new Error('Devin CLI was not found')
+    // The tool hears the Sotto thread; only the titles it was given are kept, never the session or the reply.
+    const drawn: { threadId: string; title: string }[] = []
+    const visuals = new VisualToolServer({ enabled: () => true, admits: () => true, add: async (threadId, input) => {
+      drawn.push({ threadId, title: input.title })
+      return { added: true, visual: { id: randomUUID(), title: input.title, kind: input.kind, source: input.source }, anchor: 'assistant' }
+    } })
+    const start = (): DevinAcpHost => { const made = new DevinAcpHost(data, { executable }); made.useThreadTools([visuals]); return made }
+    let host = start()
+    const id = randomUUID()
+    const thread = async () => (await host.snapshot()).threads.find(thread => thread.id === id)!
+    const drawOnce = async (title: string): Promise<void> => {
+      expect(await host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: id,
+        text: `Call the visualize tool exactly once with title "${title}", kind "diagram" and source "flowchart LR\n  A --> B". Do not use any other tool, and reply DONE after it returns.` })).toEqual({ accepted: true })
+      await expect.poll(async () => (await thread()).requests.some(request => request.kind === 'permission'), { timeout: 60_000 }).toBe(true)
+      const request = (await thread()).requests[0]!
+      expect(request.text).toBe('Use Sotto’s visualize tool')
+      expect(JSON.parse(request.context!.details!).title).toBe(title)
+      await host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: request.id, answer: '', approved: true })
+      await expect.poll(() => drawn.filter(call => call.title === title).length, { timeout: 60_000 }).toBe(1)
+      await expect.poll(async () => (await thread()).status, { timeout: 60_000 }).toBe('idle')
+    }
+    let stage = 'connect'
+    try {
+      const connected = await host.connect()
+      expect(connected.connected, connected.error ?? 'refused without a reason').toBe(true)
+      const model = connected.models.find(item => item.ready)!
+      await host.execute({ type: 'create-project', commandId: randomUUID(), projectId: 'live', title: 'Synthetic tools check', path: cwd })
+      await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: 'live', title: 'Synthetic tools check', modelId: model.id })
+      host.observeThreads([id])
+      expect((await thread()).sottoToolsWithheld).toBeUndefined()
+      stage = 'new-session-call'
+      await drawOnce('Sotto live check one')
+      stage = 'restart'
+      host.disconnect(); await host.closed()
+      host = start(); host.observeThreads([id])
+      expect((await host.connect()).connected).toBe(true)
+      stage = 'loaded-session-call'
+      await drawOnce('Sotto live check two')
+      expect(drawn.every(call => call.threadId === id)).toBe(true)
+    } catch (error) {
+      console.info('devin-live-tools-failure', { stage, code: error instanceof DevinRejected ? error.code : undefined, operation: error instanceof DevinRejected ? error.operation : undefined })
+      throw error
+    } finally {
+      host.disconnect(); await host.closed(); await visuals.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 300_000)
 })

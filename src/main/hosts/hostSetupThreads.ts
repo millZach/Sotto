@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { defaultNewThreadModelId, providerTakesSottoTools, type AgentCommand, type AgentModel, type AgentState } from '../../shared/agents'
+import { defaultNewThreadModelId, type AgentCommand, type AgentModel, type AgentState } from '../../shared/agents'
 import { hostEntityKey } from '../../shared/clientIdentity'
 import type { HostSetupChoice } from '../../shared/hosts'
 import { resolveModel } from '../../shared/modelCatalog'
@@ -29,10 +29,11 @@ export function coordinatorSetupThreads(options: { coordinator: HostSetupCoordin
   const sameFolder = (left: string, right: string): boolean => process.platform === 'win32' ? resolve(left).toLowerCase() === resolve(right).toLowerCase() : resolve(left) === resolve(right)
   const project = (providerId: string | undefined) => state().host.projects.find(item => sameFolder(item.path, folder) && (!item.providerId || !providerId || item.providerId === providerId))
   /**
-   * A model the tool can reach: ready, and not Devin, whose client ignores the tool servers Sotto offers. Not Muse either:
-   * its client gives up on a call after 5 minutes, and a check can wait that long for a Tailscale approval (ADR-0079).
+   * A model the tool can reach: ready, and not Muse: its client gives up on a call after 5 minutes, and a check can wait
+   * that long for a Tailscale approval (ADR-0079). Not Devin either: how long its client waits on one call has not been
+   * checked, and in the asking mode a setup starts in it would ask before every check as well (ADR-0035).
    */
-  const usable = (model: AgentModel): boolean => model.ready && providerTakesSottoTools(model.providerId) && model.providerId !== 'muse'
+  const usable = (model: AgentModel): boolean => model.ready && model.providerId !== 'devin' && model.providerId !== 'muse'
   return {
     choice(): HostSetupChoice {
       if (!options.localHostRunning) return { unavailable: 'An agent sets a host up from a thread on this computer, which needs the local host. Turn on Run the local host above and restart Sotto.', models: [] }

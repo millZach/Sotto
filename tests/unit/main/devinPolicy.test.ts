@@ -14,7 +14,7 @@ it('writes only its owned profile and confirms the native normalized readback', 
   expect(profiles[0]).toEqual(profiles[1])
   const profile = profiles[0]!
   const config = JSON.parse(await readFile(profile.path, 'utf8'))
-  expect(() => verifyDevinPolicy({ config: { ...config, version: 1, proxy: { mode: 'system', url: null, no_proxy: null } }, configPath: profile.path }, profile)).not.toThrow()
+  expect(() => verifyDevinPolicy({ config: { ...config, version: 1, proxy: { mode: 'system', url: null, no_proxy: null, gzip: true } }, configPath: profile.path }, profile)).not.toThrow()
   expect(config.permissions.allow).toEqual([])
   expect(config.permissions.ask).toContain('exec')
   expect(Object.values(config.read_config_from).every(value => value === false)).toBe(true)
@@ -130,6 +130,29 @@ it('accepts empty or entirely disabled native MCP and rejects enabled or ambiguo
   for (const output of ['', 'Configured MCP servers:', disabled.replace('\u2717', '\u2022'), disabled.replace(' (disabled)', ''),
     disabled.replace('Command:', 'Unknown:'), disabled + 'warning', disabled.replace('    Command: private-value\n', '')]) {
     expect(() => verifyDevinMcpList(output)).toThrow(/enabled MCP servers/u)
+  }
+})
+
+it('reads the Source line 3000.11.92 adds to each server, and still refuses an enabled one', () => {
+  const disabled = 'Configured MCP servers:\n\n  ✗ private-name  (disabled)\n    Command: private-value\n    Source: private-file\n\n'
+  expect(() => verifyDevinMcpList(disabled)).not.toThrow()
+  expect(() => verifyDevinMcpList(disabled + '  ✗ second (disabled)\n    URL: private-value\n    Source: private-file\n')).not.toThrow()
+  for (const output of [disabled.replace('✗', '•'), disabled.replace(' (disabled)', ''),
+    disabled.replace('    Source: private-file\n', '    Source: private-file\n    Source: other-file\n'), disabled.replace('    Command: private-value\n', '')]) {
+    expect(() => verifyDevinMcpList(output)).toThrow(/enabled MCP servers/u)
+  }
+})
+
+it('confirms the defaults 3000.11.92 reads back, and refuses any of them changed', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
+  const config = JSON.parse(await readFile(profile.path, 'utf8'))
+  const agent = { model: null, subagent_model: null, preferred_family_models: {}, show_history_on_continue: true, thinking: { mode: 'auto' }, model_mixture: null, compaction_threshold_tokens: null, codex_tools: false }
+  const read = { ...config, proxy: { mode: 'system', url: null, no_proxy: null, gzip: true }, agent, typewriter: true, local_tools_bypass_permissions: false }
+  expect(() => verifyDevinPolicy({ config: read, configPath: profile.path }, profile)).not.toThrow()
+  // `devin connect` sessions started in Bypass Permissions, a subagent model of its own, or a proxy setting changed.
+  for (const change of [{ local_tools_bypass_permissions: true }, { agent: { ...agent, subagent_model: 'other-model' } }, { proxy: { ...read.proxy, url: 'https://example.invalid' } }]) {
+    expect(() => verifyDevinPolicy({ config: { ...read, ...change }, configPath: profile.path }, profile)).toThrow(/did not confirm/u)
   }
 })
 

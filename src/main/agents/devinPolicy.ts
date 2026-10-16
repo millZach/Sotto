@@ -38,7 +38,7 @@ const policyFor = (allows: DevinAllowance): Record<string, unknown> => ({
   read_config_from: { agents_standard: false, cursor: false, windsurf: false, claude: false, copilot: false, opencode: false, zed: false },
   hooks: {}, mcpServers: {}, auto_update: false, subagents_enabled: false,
   // OpenTelemetry export, from Devin CLI 3000.11.1. Off, so the promise does not rest on no endpoint being set.
-  // The pinned 3000.10.31 accepts the key and drops it from its readback.
+  // 3000.10.31, the floor before 3000.11.92, accepted the key and dropped it from its readback.
   otel: { enabled: false },
 })
 // 3000.11.3 reads `otel` back with every field filled in with its default. It reports the pinned `enabled: false`,
@@ -67,14 +67,16 @@ function compareOtel(value: unknown): 'matches' | 'telemetry' | 'newer' {
 // Native config/read expands the user profile with defaults. Only these known
 // fields may accompany the exact owned settings; routing and execution defaults
 // must remain unchanged. On-disk profiles still accept no extra fields at all.
+// 3000.11.92 adds `proxy.gzip` (compressed API requests, on by default) and `local_tools_bypass_permissions`, which
+// would start `devin connect` sessions in Bypass Permissions and must read back off.
 const normalizedRoutes: Record<string, unknown> = {
-  proxy: { mode: 'system', url: null, no_proxy: null },
+  proxy: { mode: 'system', url: null, no_proxy: null, gzip: true },
   devin: { org_id: null },
   shell: { setup_complete: false, startup_messages_remaining: 10, exec_shell: null },
   sandbox: { allowed_domains: [], denied_domains: [], network_mode: 'full', excluded: { allow: [], ask: [], deny: [] } },
-  disabled_tools: [], keymap: {},
+  disabled_tools: [], keymap: {}, local_tools_bypass_permissions: false,
 }
-const presentationFields = new Set(['theme_mode', 'theme_auto_detect', 'pty_for_noninteractive_exec', 'skip_home_directory_warning',
+const presentationFields = new Set(['typewriter', 'theme_mode', 'theme_auto_detect', 'pty_for_noninteractive_exec', 'skip_home_directory_warning',
   'show_path', 'include_gitignored_files', 'respect_gitignore', 'attribution', 'unicode_mode', 'legacy_terminal', 'disable_osc',
   'skip_workspace_trust', 'notify', 'mouse_capture', 'show_hints'])
 
@@ -92,8 +94,8 @@ function compareNormalizedProfile(config: Record<string, unknown>, policy: Recor
     if (Object.hasOwn(normalizedRoutes, key)) { if (!isDeepStrictEqual(value, normalizedRoutes[key])) return 'differs' }
     else if (key === 'agent') {
       const agent = object(value)
-      if (!agent || !isDeepStrictEqual(Object.keys(agent).sort(), ['model', 'preferred_family_models', 'show_history_on_continue', 'thinking', 'model_mixture', 'compaction_threshold_tokens', 'codex_tools'].sort())
-        || agent.model !== null || !isDeepStrictEqual(agent.preferred_family_models, {}) || agent.model_mixture !== null
+      if (!agent || !isDeepStrictEqual(Object.keys(agent).sort(), ['model', 'subagent_model', 'preferred_family_models', 'show_history_on_continue', 'thinking', 'model_mixture', 'compaction_threshold_tokens', 'codex_tools'].sort())
+        || agent.model !== null || agent.subagent_model !== null || !isDeepStrictEqual(agent.preferred_family_models, {}) || agent.model_mixture !== null
         || agent.compaction_threshold_tokens !== null || agent.codex_tools !== false || typeof agent.show_history_on_continue !== 'boolean') return 'differs'
       const thinking = object(agent.thinking)
       if (!thinking || Object.keys(thinking).length !== 1 || typeof thinking.mode !== 'string') return 'differs'
@@ -219,6 +221,7 @@ export function verifyDevinPluginList(stdout: string): void {
 /** `mcp list` prints command/URL fields, which may contain secrets. Parse only
  * fixed structure, retain nothing, and never include the output in an error.
  * The pinned CLI marks disabled servers with U+2717; enabled servers use U+2022.
+ * From 3000.11.92 a server may also have one `Source:` line, naming the file or plugin it came from.
  */
 export function verifyDevinMcpList(stdout: string): void {
   const text = stdout.trimEnd()
@@ -226,18 +229,22 @@ export function verifyDevinMcpList(stdout: string): void {
   const lines = text.split(/\r?\n/u)
   let servers = 0
   let details = 0
+  let sources = 0
   let valid = lines.shift() === 'Configured MCP servers:'
   for (const line of lines) {
     if (line === '') continue
     if (/^ {2}\u2717 [^\r\n]+ \(disabled\)$/u.test(line)) {
-      if (servers > 0 && details !== 1) valid = false
+      if (servers > 0 && (details !== 1 || sources > 1)) valid = false
       servers++
       details = 0
+      sources = 0
     } else if (/^ {4}(?:Command|URL): [^\r\n]+$/u.test(line) && servers > 0) {
       details++
+    } else if (/^ {4}Source: [^\r\n]+$/u.test(line) && servers > 0) {
+      sources++
     } else valid = false
   }
-  if (!valid || servers === 0 || details !== 1) {
+  if (!valid || servers === 0 || details !== 1 || sources > 1) {
     throw new Error('Devin has enabled MCP servers or could not confirm they are disabled. Your thread is kept. Disable native Devin MCP servers before reconnecting.')
   }
 }
