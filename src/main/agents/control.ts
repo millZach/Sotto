@@ -1681,7 +1681,8 @@ export class AgentControl {
     const reviewed = !isThreadTurnRunning(thread) ? thread.lastTurn?.id ?? UNKNOWN_TURN : undefined
     const attention = isWatcherNews(news) ? this.watcherHooks?.wakeNeedsAttention?.(news.events) : undefined
     await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed, attention)
-    this.syncFollowups(); this.publish(); this.pumpFollowups()
+    if (this.syncFollowups()) this.publish()
+    this.pumpFollowups()
   }
   /**
    * A provider can report a thread idle before its turns are read: Codex does for a thread nobody has opened since Sotto
@@ -2610,7 +2611,10 @@ export class AgentControl {
     } else this.serial = task.catch(() => undefined)
     return task
   }
-  private syncFollowups(): void {
+  /** Returns whether anything a client is shown changed: a change to a wake-up no one is shown alone changes nothing. */
+  private syncFollowups(): boolean {
+    const shown = (): string => JSON.stringify([this.state.followups, this.state.followupReceipts, this.state.deliveries, this.state.threadDrafts, this.state.draftThreadId, this.state.draft])
+    const before = shown()
     const { items, receipts } = this.followupStore.get()
     // A wake-up holding only Watcher's news is Sotto's background action: no queue, transcript or phone shows it.
     this.state.followups = items.filter(item => !isWatcherOnlyWakeUp(item)).map(item => withoutNews({ ...item, text: this.queuedWords(item) })); this.state.followupReceipts = receipts.map(({ threadId, draftId }) => ({ threadId, draftId }))
@@ -2623,6 +2627,7 @@ export class AgentControl {
       this.state.draft = ''; this.state.draftAttachments = []; this.state.draftThreadId = null
       this.state.draftRequestId = null; this.manualDraftId = null; this.state.composing = false
     }
+    return shown() !== before
   }
   private async followupCommand(command: Extract<AgentCommand, { type: 'queue-followup' | 'edit-followup' | 'remove-followup' | 'reorder-followups' | 'resume-followups' }>): Promise<AgentState> {
     try {
@@ -2709,8 +2714,8 @@ export class AgentControl {
           let changed = false
           void (first.status === 'uncertain' || revive ? this.followupStore.reviveWakeUp(first.id, thread.lastTurn?.id ?? UNKNOWN_TURN) : this.followupStore.moveWakeUpBehind(first.id))
             .then(() => { changed = true; if (letGo.length) this.watcherHooks?.forgetWakeEvents?.(letGo) })
-            .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
-            .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (changed) this.pumpFollowups() })
+            .catch(() => { this.state.error = 'Could not save the follow-up queue.'; this.publish() })
+            .finally(() => { if (this.syncFollowups()) this.publish(); this.pumping.delete(threadId); if (changed) this.pumpFollowups() })
           continue
         }
       }
@@ -2739,8 +2744,8 @@ export class AgentControl {
         let held = false
         void this.followupStore.moveWakeUpBehind(first.id, attention ? 'Sotto tried this wake-up as often as it will by itself. It goes again after Watcher next finishes a turn.'
           : 'This wake-up holds only a thread’s own facts, which wait for news that needs Watcher.')
-          .then(() => { held = true }).catch(() => { this.state.error = 'Could not save the follow-up queue.' })
-          .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (held) this.pumpFollowups() })
+          .then(() => { held = true }).catch(() => { this.state.error = 'Could not save the follow-up queue.'; this.publish() })
+          .finally(() => { if (this.syncFollowups()) this.publish(); this.pumping.delete(threadId); if (held) this.pumpFollowups() })
         continue
       }
       if (!confirmed && this.wakeUpOutdated(threadId, first)) {

@@ -839,6 +839,27 @@ it('never sends a wake-up no one is shown that holds only a thread’s own facts
   await vi.waitFor(() => expect(sent().some(command => command.type === 'send' && command.watcherNews?.includes('turn failed'))).toBe(true), { timeout: 15_000 })
 }, 40_000)
 
+it('publishes nothing for a change to a wake-up no one is shown', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  f.native(started.target.threadId).requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
+  f.workspace.adapters.codex.emit()
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
+  const waiting = queued(f).find(item => item.threadId === f.id && item.wakeUp)!
+  const news = waiting.news!.find(item => 'events' in item)!
+  if (!('events' in news)) throw new Error('Expected Watcher news')
+  let published = 0
+  const off = f.control.subscribe(() => { published++ })
+  try {
+    // Watcher's news folds into its hidden wake-up again: saved, and nothing any window or phone shows changed.
+    await f.control.deliverWakeUp(f.id, news, { tool: false })
+    expect(published).toBe(0)
+    // A follow-up of the user's own is shown, and is published.
+    await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'Synthetic user follow-up' })
+    expect(published).toBeGreaterThan(0)
+  } finally { off() }
+})
+
 it('lets a hidden wake-up whose send is unknown go, and tells its news afresh rather than losing it', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
