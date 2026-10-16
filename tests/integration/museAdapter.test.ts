@@ -207,7 +207,7 @@ it('refuses a client Sotto cannot drive: an older one, and another MSP version',
 it('calls an empty catalog signed out only when it is the bundled one a client with no sign-in answers with', async () => {
   // Muse 1.4.8 and 1.4.9 with no sign-in answer `bundledCatalog` and no models; signed in, `providerCatalog`, even offline.
   for (const [source, problem, said] of [['bundledCatalog', 'signed-out', 'Sign in to Muse on this machine with muse login'],
-    ['', 'signed-out', 'Sign in to Muse on this machine with muse login'],
+    ['', 'cannot-start', 'Muse is set up but listed no models'],
     ['unresolvedCatalog', 'cannot-start', 'Muse is set up but listed no models']] as const) {
     const f = await museFixture()
     try {

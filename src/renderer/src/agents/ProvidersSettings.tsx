@@ -52,19 +52,21 @@ export function ProvidersSettings(): ReactNode {
   const command = agents?.command
   if (!state || !command) return <p role="status">Loading providers…</p>
   // This page is this computer's clients, whichever host is selected for new work: it reads this computer's entry and
-  // names this computer on every command, so a Retry never reaches another host's client. Before another host is
-  // paired, the state is this computer's alone.
-  const paired = Boolean(state.connections?.length)
+  // names this computer on every command, so a Retry never reaches another host's client. Without host connections
+  // (no router joining hosts), the state is this computer's alone.
+  const hasHostConnections = Boolean(state.connections?.length)
   const localHost = localHostId(state)
-  const local = paired ? state.host.clientHosts?.find(host => host.hostId === localHost) : undefined
-  const here = paired && localHost ? { hostId: localHost } : {}
+  const local = hasHostConnections ? state.host.clientHosts?.find(host => host.hostId === localHost) : undefined
+  const here = hasHostConnections && localHost ? { hostId: localHost } : {}
+  // With this computer's host off there are no clients here to show, and nothing on this page may reach another host's.
+  if (hasHostConnections && !local) return <p role="status" className="provider-models__empty">This computer’s local host is off, so Sotto can’t run agents here. Turn on Run the local host in Settings › Hosts, then restart Sotto. A host’s own providers are on its tiles there.</p>
   const providers = localProviders(state)
-  const hostModels = paired ? local?.models ?? [] : state.host.models
-  const clientUpdates = paired ? local?.clientUpdates : state.clientUpdates
+  const hostModels = hasHostConnections ? local?.models ?? [] : state.host.models
+  const clientUpdates = hasHostConnections ? local?.clientUpdates : state.clientUpdates
   const checkClientUpdates = local?.checkClientUpdates ?? state.configuration.checkClientUpdates
   const enabled = local?.enabledProviders ?? enabledThreadProviders(state.configuration)
   const statusFor = (id: ProviderId) => providers.find(provider => provider.id === id)
-    ?? { connection: !paired && id === state.configuration.provider ? state.connection : 'disconnected', version: '', error: undefined, verifiedVersion: undefined }
+    ?? { connection: !hasHostConnections && id === state.configuration.provider ? state.connection : 'disconnected', version: '', error: undefined, verifiedVersion: undefined }
   const status = statusFor(selected)
   const connected = status.connection === 'connected'
   const working = pending[selected] || status.connection === 'connecting'

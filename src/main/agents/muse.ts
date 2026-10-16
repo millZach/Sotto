@@ -82,10 +82,10 @@ const modelEntrySchema = z.looseObject({
 const modelListSchema = z.looseObject({ models: z.array(modelEntrySchema), source: z.string().default('') })
 /**
  * Whether an empty catalog means no sign-in. A signed-out client answers with its bundled catalog, which ships empty; a
- * signed-in one answers with its provider's catalog, even offline (checked against 1.4.8 and 1.4.9). A client that names
- * no source is read the old way. Any other empty catalog is the client's setup, which signing in again would not change.
+ * signed-in one answers with its provider's catalog, even offline (checked against 1.4.8 and 1.4.9). MSP 1 requires the
+ * source, so any other empty catalog, a missing source included, is the client's setup, which signing in would not change.
  */
-const signedOutCatalog = (catalog: z.infer<typeof modelListSchema>): boolean => !catalog.models.length && (catalog.source === 'bundledCatalog' || catalog.source === '')
+const signedOutCatalog = (catalog: z.infer<typeof modelListSchema>): boolean => !catalog.models.length && catalog.source === 'bundledCatalog'
 const museSessionSchema = z.looseObject({
   sessionId: z.string().min(1), status: z.string().default('idle'), modelId: z.string().nullable().default(null),
   providerId: z.string().nullable().default(null), activeTurnId: z.string().nullable().default(null),
@@ -575,7 +575,7 @@ export class MuseMspHost implements AgentHost {
       const catalog = modelListSchema.parse(await probe.request('model/list', {}))
       // A client with no sign-in resolves no catalog: that is the refusal a host's tile offers the sign-in command for.
       if (signedOutCatalog(catalog)) throw new ProviderUnavailable('signed-out', 'Sign in to Muse on this machine with muse login, then connect it again.', client.serverInfo.version)
-      if (!catalog.models.length) throw new ProviderUnavailable('cannot-start', 'Muse is set up but listed no models, so there is nothing to start a thread with. Run muse in a terminal on this machine to see why, then connect it again.', client.serverInfo.version)
+      if (!catalog.models.length) throw new ProviderUnavailable('cannot-start', 'Muse is set up but listed no models, so there is nothing to start a thread with. Your threads and drafts are kept. Run muse in a terminal on this machine to see why, then connect it again.', client.serverInfo.version)
       await this.probeModes(probe)
       const nativeVersion = await museVersionForExecutable(executable, client.serverInfo.version)
       if (generation !== this.generation) throw new Error('Muse connection was cancelled.')

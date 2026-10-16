@@ -62,6 +62,17 @@ describe('independent provider settings', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Check for client updates' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { checkClientUpdates: false }, hostId: LOCAL }))
   })
+  it('says this computer’s host is off, and offers nothing that would reach the selected host, when it is turned off', () => {
+    const FORGE = '22222222-2222-4222-8222-222222222222'
+    const base = fixture()
+    const { command } = provide({ ...base, hostId: FORGE, connections: [{ hostId: FORGE, name: 'forge', kind: 'remote', connected: true }],
+      host: { ...base.host, clientHosts: [{ hostId: FORGE, connected: true, models: [], capabilities: caps, providers: base.host.providers }] } })
+    render(<ProvidersSettings />)
+    expect(screen.getByRole('status')).toHaveTextContent('This computer’s local host is off')
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.queryByRole('switch')).toBeNull()
+    expect(command).not.toHaveBeenCalled()
+  })
   it('asks a provider that needs attention again when Check again is pressed, after someone signs in', async () => {
     const state = fixture()
     state.host.providers = state.host.providers!.map(provider => provider.id === 'codex'
