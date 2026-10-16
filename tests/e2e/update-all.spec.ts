@@ -15,7 +15,7 @@ import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type Laun
  * real headless host whose clients are forge's on September 29 (tests/fixtures/clientUpdateProviders.ts): Claude Code,
  * Codex and Grok Build installed by mise and all behind. The corner card lists them under forge and takes the host update
  * pill's and the client update card's place; one press updates all three on forge, one at a time, carries on past
- * Codex's dropped download and says so, Try again finishes it, and Dismiss puts the card away. Sotto itself cannot update
+ * Codex's dropped download and says so, Try again finishes it, and the card then goes by itself. Sotto itself cannot update
  * in a development run, so this first journey never asks to restart.
  *
  * The other two stand an update in for Sotto's own (SOTTO_E2E_APP_UPDATE), which downloads nothing and never installs, and
@@ -137,8 +137,11 @@ test('Update all lists what is behind on every machine and updates it with one p
       await expect(card).toContainText('Updated', { timeout: 60_000 })
       await expect(card).toContainText('Nothing needs a restart.')
       await expect.poll(() => updates(page)).toEqual({ claude: 'updated 2.1.284', codex: 'updated 0.158.0', grok: 'updated 1.0.43' })
-      await card.getByRole('button', { name: 'Dismiss the results of Update all' }).click()
-      await expect(card).toHaveCount(0)
+      // Everything updated, so the card goes by itself 5 seconds after the pointer, still where Try again was, and focus
+      // have left it. The unit tests hold the timing; this proves it in the running app.
+      await page.mouse.move(400, 400)
+      await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur() })
+      await expect(card).toHaveCount(0, { timeout: 15_000 })
       await writeFile(test.info().outputPath('update-all.json'), JSON.stringify({ updates: await updates(page) }, null, 2))
       expect(errors).toEqual([])
     })

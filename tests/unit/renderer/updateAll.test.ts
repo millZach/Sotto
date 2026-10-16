@@ -3,7 +3,7 @@ import type { AgentClientHost, ProviderClientUpdate } from '../../../src/shared/
 import type { UpdateStatus } from '../../../src/shared/contracts'
 import type { HostStatus } from '../../../src/shared/hosts'
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
-import { clientKey, hostKey, updateAllSteps, updateAllView, updateAllWords, versionsText, type UpdateAllPass, type UpdateAllSources } from '../../../src/renderer/src/features/updates/updateAll'
+import { clientKey, hostKey, newlyDropped, newlyInLine, updateAllSteps, updateAllView, updateAllWords, versionsText, type UpdateAllPass, type UpdateAllSources } from '../../../src/renderer/src/features/updates/updateAll'
 
 const FORGE = '6f0d1c5e-8c5b-4f8e-9a51-1f6f3f8d2a10'
 const FORGE_HOST = '2a6c8e41-3b8f-4d4e-8a3f-7d1c2b9e5f60'
@@ -77,6 +77,74 @@ describe('a press of Update all', () => {
     const view = updateAllView(sources({ hostUpdates: [hostUpdate()], clientHosts: [forgeClients([client({ id: 'codex', state: 'updating' })])] }),
       pass([hostKey(FORGE), clientKey(FORGE, 'codex')], { after: new Set([FORGE]) }))
     expect(view.items.find(item => item.kind === 'host')).toMatchObject({ state: 'running', detail: 'Updates once forge’s clients have.' })
+  })
+
+  // The incident of October 16, 2026: forge restarted while Codex was in its line, and came back with the line empty.
+  it('reads a host client whose line was lost as failed, never as starting forever', () => {
+    const key = clientKey(FORGE, 'codex')
+    const codex = (patch: Partial<ProviderClientUpdate> = {}) => forgeClients([client({ id: 'codex', installed: '0.51.0', published: '0.52.1', ranAt: 'earlier', ...patch })])
+    const before = new Map([[key, 'earlier']])
+    // Between the queue's reply and the host's next shell, the client still reads idle: that is the start, not a loss.
+    const gap = pass([key], { ranBefore: before })
+    expect(updateAllView(sources({ clientHosts: [codex()] }), gap).items[0]).toMatchObject({ state: 'running', detail: 'Starting…' })
+    expect(newlyInLine(sources({ clientHosts: [codex()] }), gap)).toEqual([])
+    // The host says it is in the line: the card marks it seen, as it is listed then.
+    expect(newlyInLine(sources({ clientHosts: [codex({ state: 'queued' })] }), gap)).toEqual([key])
+    const listed = updateAllView(sources({ clientHosts: [codex({ state: 'queued' })] }), gap).items[0]!
+    const seen = pass([key], { ranBefore: before, seen: new Map([[key, listed]]) })
+    expect(newlyInLine(sources({ clientHosts: [codex({ state: 'updating' })] }), seen)).toEqual([])
+    expect(updateAllView(sources({ clientHosts: [codex({ state: 'updating' })] }), seen).items[0]).toMatchObject({ state: 'running' })
+    // forge goes out of reach while it restarts: the step stays listed, and the press is not read as over.
+    const away = sources({ clientHosts: [{ ...codex({ state: 'updating' }), connected: false }] })
+    expect(updateAllView(away, seen)).toMatchObject({ phase: 'running', items: [{ key, state: 'running', detail: 'Waiting to hear from forge…' }] })
+    expect(newlyDropped(away, seen)).toEqual([key])
+    // Sotto Bug Bot on #1084: a connected host that leaves the client out of what it reports, as one restarted with checks
+    // off or the provider not connected does, lost the line; the step never waits for it forever.
+    for (const reported of [[], undefined]) {
+      const quiet = updateAllView(sources({ clientHosts: [{ ...codex(), clientUpdates: reported }] }), pass([key], { ranBefore: before, seen: new Map([[key, listed]]), dropped: new Set([key]) }))
+      expect(quiet.items).toMatchObject([{ key, state: 'failed', detail: 'forge restarted before Codex updated. Nothing was changed. Try again.' }])
+      expect(quiet.phase).toBe('done')
+    }
+    expect(updateAllView(sources({ clientHosts: [{ ...codex(), clientUpdates: [] }] }), seen).items[0])
+      .toMatchObject({ state: 'failed', detail: 'The Codex update on forge stopped before it finished. Nothing was changed. Try again.' })
+    expect(newlyDropped(sources({ clientHosts: [codex({ state: 'updating' })] }), seen)).toEqual([])
+    const dropped = pass([key], { ranBefore: before, seen: new Map([[key, listed]]), dropped: new Set([key]) })
+    // The new host process has no results in memory, so Codex comes back with none: its line went with the restart.
+    const lost = updateAllView(sources({ clientHosts: [codex({ ranAt: undefined })] }), dropped)
+    expect(lost.items[0]).toMatchObject({ state: 'failed', detail: 'forge restarted before Codex updated. Nothing was changed. Try again.' })
+    expect(updateAllWords(lost)).toMatchObject({ title: 'Not everything updated', sub: 'forge’s Codex did not update.' })
+    // Out of the line without forge going away, as when Cancel update on its tile took it out, is not called a restart.
+    expect(updateAllView(sources({ clientHosts: [codex()] }), seen).items[0])
+      .toMatchObject({ state: 'failed', detail: 'The Codex update on forge stopped before it finished. Nothing was changed. Try again.' })
+    // A result of its own still says how it ended, and a host that runs the new version anyway is done.
+    expect(updateAllView(sources({ clientHosts: [codex({ state: 'updated', ranAt: 'now', installed: '0.52.1', behind: false })] }), seen).items[0]).toMatchObject({ state: 'done' })
+    expect(updateAllView(sources({ clientHosts: [codex({ ranAt: undefined, installed: '0.52.1', behind: false })] }), dropped).items[0]).toMatchObject({ state: 'done', detail: 'Now 0.52.1.' })
+    // Sol, review of #1084: a registry that does not answer reads as not behind, which says nothing of whether it updated.
+    const unanswered = updateAllView(sources({ clientHosts: [codex({ ranAt: undefined, behind: false, published: undefined })] }), dropped)
+    expect(unanswered.items[0]).toMatchObject({ state: 'failed', detail: 'forge restarted before Codex updated. Nothing was changed. Try again.' })
+    expect(unanswered.phase).toBe('done')
+    expect(updateAllWords(unanswered).title).toBe('Not everything updated')
+    // A client this press did not ask for is never read as lost.
+    expect(updateAllView(sources({ clientHosts: [codex()] }), pass([], { seen: new Map([[key, listed]]) })).items[0]).toMatchObject({ state: 'offered' })
+  })
+
+  it('reads this computer’s clients as never losing their line', () => {
+    const key = clientKey('local', 'claude')
+    const listed = updateAllView(sources({ local: [client({ state: 'queued' })] }), pass([key])).items[0]!
+    const view = updateAllView(sources({ local: [client({ ranAt: 'earlier' })] }), pass([key], { ranBefore: new Map([[key, 'earlier']]), seen: new Map([[key, listed]]) }))
+    expect(view.items[0]).toMatchObject({ state: 'running' })
+  })
+
+  it('says a host waiting for its client update line updates once its clients have', () => {
+    const waiting = updateAllView(sources({ hostUpdates: [hostUpdate({ phase: 'waiting', clientsUpdating: true })] }), pass([hostKey(FORGE)]))
+    expect(waiting.items[0]).toMatchObject({ state: 'running', detail: 'Updates once forge’s clients have.', cancellable: true })
+    expect(waiting.phase).toBe('running')
+    // Once under way, the update runs on and only its restart waits for the clients.
+    const at = (step: HostUpdateState['step']) => updateAllView(sources({ hostUpdates: [hostUpdate({ phase: 'updating', step, clientsUpdating: true })] }), pass([hostKey(FORGE)])).items[0]!.detail
+    expect(at('download')).toBe('Step 1 of 4 · Download 0.1.37 · Restarts once forge’s clients have.')
+    expect(at('restart')).toBe('Step 4 of 4 · Restart forge’s host once its clients have')
+    const busy = updateAllView(sources({ hostUpdates: [hostUpdate({ phase: 'waiting', clientsUpdating: true, working: 2 })] }), pass([hostKey(FORGE)]))
+    expect(busy.items[0]).toMatchObject({ state: 'waiting', detail: 'Updates once its 2 threads finish and its clients have.', cancellable: true })
   })
 
   it('does not read a result from before the press as the press’s own', () => {
