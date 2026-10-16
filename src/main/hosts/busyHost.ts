@@ -3,12 +3,28 @@
  * and both ask first when a thread there is working. Each keeps its own entries; these are the parts that must answer
  * alike.
  */
+import { threadKeepsHostBusy } from '../../shared/hostUpdates'
+import { desktopWindowClient } from '../agents/hostService'
+import type { DesktopHostRouter } from './desktopHostRouter'
 
 /** What the question needs of the threads: which of a host's are working, and the interrupt the composer's Stop sends. */
 export interface BusyHostThreads {
   working(hostId: string): readonly string[]
   interrupt(threadId: string): Promise<void>
   subscribe(listener: () => void): () => void
+}
+
+/**
+ * The threads as the busy-host question reads them, for an update and a start at boot change alike: Stop N threads stops a
+ * turn the way the composer's Stop does. It is asked on every change the router publishes, so working threads come from
+ * that publication; rebuilding every host's shell for it copied the whole state twice per waiting host per update.
+ */
+export function routerBusyThreads(router: Pick<DesktopHostRouter, 'publishedThreads' | 'command' | 'subscribeChanges'>): BusyHostThreads {
+  return {
+    working: hostId => router.publishedThreads(hostId).filter(threadKeepsHostBusy).map(thread => thread.id),
+    interrupt: async threadId => { await router.command({ type: 'interrupt', threadId }, desktopWindowClient()) },
+    subscribe: listener => router.subscribeChanges(listener),
+  }
 }
 
 /** Where a question stands: asked and not answered, or answered with Wait until they finish. */
