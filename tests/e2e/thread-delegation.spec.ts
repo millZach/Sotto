@@ -3,9 +3,9 @@
  * and Codex adapters over the fake CLIs in `tests/fixtures/` (`SOTTO_E2E_NATIVE_FIXTURE_ROOT` in `src/main/index.ts`).
  * A Claude Code thread delegates a review to a Codex thread through `sotto_delegate`, called as the thread's agent would
  * call it (`sottoE2E.delegationTool`): the card appears in the Claude thread with the thread as a link, Codex, This
- * computer and the wait, and its outcome moves to Answered when Codex answers; the Codex thread sits under the Claude
- * thread in the sidebar with its machine badge and says "Delegated by" with a link back; Stop on the Claude thread
- * names the delegated thread still working, and a press stops both. Stable offers neither the bridge nor the tool.
+ * computer and the wait, and its outcome moves to Answered when Codex answers; the Codex thread keeps the name it was
+ * given, sits under the Claude thread in the sidebar with its machine badge, and says "Delegated by" with a link back;
+ * Stop on the Claude thread names the delegated thread still working, and a press stops both. Stable offers neither the bridge nor the tool.
  *
  *   npm run build && npx playwright test tests/e2e/thread-delegation.spec.ts
  */
@@ -85,21 +85,18 @@ const codexPrompts = async (codex: string): Promise<number> =>
   parseProviderRecords<{ method?: string }>(await readFile(join(codex, 'requests.jsonl'), 'utf8').catch(() => '')).filter(request => request.method === 'turn/start').length
 
 /**
- * The thread `parentId` delegated to most recently, once it exists, named `title` as the user would rename it. A
- * delegated thread starts on its kind of work's name and takes the opening words of its brief, as any thread takes its
- * first message's; a name the user gave is never written over, so the journey's names hold.
+ * The thread `parentId` delegated to most recently, once it exists, which keeps the `title` the delegating thread gave
+ * it: neither first-message naming nor generated naming writes over it.
  */
-async function nameDelegated(page: Page, parentId: string, known: readonly string[], title: string): Promise<string> {
+async function delegatedThread(page: Page, parentId: string, known: readonly string[], title: string): Promise<string> {
   let id: string | undefined
   await expect.poll(async () => {
     id = await page.evaluate(async ({ parentId, known }) => (await window.sotto!.agents!.get()).host.threads
       .find(thread => thread.delegatedBy === parentId && !known.includes(thread.id))?.id, { parentId, known: [...known] })
     return id
   }, { timeout: 30_000 }).toBeDefined()
-  await page.evaluate(async ({ threadId, title }) => {
-    const renamed = await window.sotto!.agents!.command({ type: 'rename-thread', threadId, title })
-    if (renamed.error) throw new Error(renamed.error)
-  }, { threadId: id!, title })
+  const named = async (): Promise<string | undefined> => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === threadId)?.title, id!)
+  expect(await named()).toBe(title)
   return id!
 }
 
@@ -172,11 +169,11 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
       expect(model, JSON.stringify(listing)).toBeDefined()
       await page.evaluate(({ threadId, args }) => {
         (window as unknown as { delegating: Promise<unknown> }).delegating = window.sottoE2E!.delegationTool!({ threadId, name: 'delegate', arguments: args })
-      }, { threadId: parentId, args: { work: 'code-review', brief: 'Review the diff on the reconnect fix. Say what blocks a merge.', provider: 'codex', model: model!.model,
+      }, { threadId: parentId, args: { work: 'code-review', title: REVIEW, brief: 'Review the diff on the reconnect fix. Say what blocks a merge.', provider: 'codex', model: model!.model,
         ...model!.efforts.length ? { effort: model!.efforts[0] } : {}, permission: 'approval-required', wait_seconds: 120 } })
 
       // The card: the thread as a link, Codex on This computer, Working, and the wait.
-      const reviewId = await nameDelegated(page, parentId, [], REVIEW)
+      const reviewId = await delegatedThread(page, parentId, [], REVIEW)
       const card = parent.getByRole('group', { name: `Delegated to ${REVIEW}` })
       await expect(card).toBeVisible({ timeout: 30_000 })
       await expect(card.getByRole('button', { name: `Open ${REVIEW}` })).toBeVisible()
@@ -209,10 +206,10 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
       expect(answered.delegation).toMatchObject({ outcome: 'answered', reply: { text: 'Two small nits and nothing that blocks a merge.' } })
 
       // A second delegation the agent does not wait for: it keeps working, and the card says the answer comes later.
-      const second = await tool(page, parentId, 'delegate', { work: 'building', brief: 'Run the Linux journeys against the fix and report which fail.', provider: 'codex', model: model!.model,
+      const second = await tool(page, parentId, 'delegate', { work: 'building', title: JOURNEYS, brief: 'Run the Linux journeys against the fix and report which fail.', provider: 'codex', model: model!.model,
         ...model!.efforts.length ? { effort: model!.efforts[0] } : {}, permission: 'approval-required', wait_seconds: 0 })
       expect(second.delegation?.outcome, JSON.stringify(second)).toBe('working')
-      await nameDelegated(page, parentId, [reviewId], JOURNEYS)
+      const journeysId = await delegatedThread(page, parentId, [reviewId], JOURNEYS)
       const journeys = parent.getByRole('group', { name: `Delegated to ${JOURNEYS}` })
       await expect(journeys.locator('.delegation-card__wait')).toHaveText('This thread did not wait for it. The answer comes back as a wake-up.', { timeout: 30_000 })
       await expect.poll(() => codexPrompts(codex), { timeout: 30_000 }).toBe(2)
@@ -276,6 +273,7 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
       await expect(pane(page).locator('.delegation-note')).toHaveCount(0)
       const threads = await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.map(thread => ({ title: thread.title, status: thread.status })))
       expect(threads.find(thread => thread.title === JOURNEYS)?.status).not.toBe('running')
+      expect(await page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === threadId)?.title, journeysId)).toBe(JOURNEYS)
       await capture(launched, 'parent-stopped-dark-1280x800')
       expect(await readFile(join(root, 'claude', 'violations.jsonl'), 'utf8').catch(() => '')).toBe('')
     })
