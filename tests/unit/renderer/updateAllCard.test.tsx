@@ -101,6 +101,35 @@ describe('the Update all card', () => {
     await waitFor(() => expect(hosts.bridge.command).toHaveBeenCalledWith({ type: 'host-update', id: FORGE, action: 'update' }))
   })
 
+  // The incident of October 16, 2026: forge restarted with Codex in its line, and the step spun on Starting… for good.
+  it('says a host client whose line was lost did not update, and Try again puts it back in the line', async () => {
+    provideApp({ ...available, phase: { phase: 'unsupported' } })
+    const codex = (patch: Partial<ProviderClientUpdate> = {}) => behind({ id: 'codex', installed: '0.51.0', published: '0.52.1', ranAt: 'earlier', ...patch })
+    provideAgents(agentState({ forge: [codex()] }))
+    const hosts = hostsBridge({ hosts: [forge], localHostEnabled: true, localHostRunning: true })
+    const view = render(<UpdateAllCard hosts={hosts.asBridge} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Update all: 1 client' }))
+    await waitFor(() => expect(hosts.bridge.updateClients).toHaveBeenCalledWith({ id: FORGE, action: 'update', providers: ['codex'] }))
+    expect(screen.getByRole('listitem', { name: 'Update Codex, in progress' })).toHaveTextContent('Starting…')
+    provideAgents(agentState({ forge: [codex({ state: 'updating' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    // forge restarts as a new host process: Codex is idle again, with no result of its own.
+    provideAgents(agentState({ forge: [codex()] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    const step = await screen.findByRole('listitem', { name: 'Update Codex, did not finish' })
+    expect(step).toHaveTextContent('forge restarted before Codex updated. Nothing was changed. Try again.')
+    fireEvent.click(within(step).getByRole('button', { name: 'Try again to update Codex on forge' }))
+    await waitFor(() => expect(hosts.bridge.updateClients).toHaveBeenCalledTimes(2))
+    expect(hosts.bridge.updateClients).toHaveBeenLastCalledWith({ id: FORGE, action: 'update', providers: ['codex'] })
+    // Before forge says Codex is back in its line, the step is starting, not lost again.
+    expect(await screen.findByRole('listitem', { name: 'Update Codex, in progress' })).toHaveTextContent('Starting…')
+    provideAgents(agentState({ forge: [codex({ state: 'queued' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    provideAgents(agentState({ forge: [codex({ state: 'updated', installed: '0.52.1', behind: false, ranAt: 'now' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    expect(await screen.findByRole('listitem', { name: 'Update Codex, done' })).toHaveTextContent('Now 0.52.1.')
+  })
+
   it('answers a host’s busy question with Update when they finish', async () => {
     provideApp({ ...available, phase: { phase: 'unsupported' } })
     provideAgents(agentState())

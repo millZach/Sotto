@@ -11,7 +11,7 @@ import { useTransientFlag, writeClipboard } from '../../agents/richActions'
 import { focusedComposerField } from '../../agents/promptSelection'
 import { useOptionalApp } from '../../state/AppContext'
 import { useOwlFeature } from '../../state/owlFeature'
-import { APP_KEY, clientKey, hostKey, updateAllSteps, updateAllView, updateAllWords, type UpdateAllItem, type UpdateAllPass, type UpdateAllPhase, type UpdateAllStep, type UpdateAllStepState } from './updateAll'
+import { APP_KEY, clientKey, hostKey, newlyInLine, updateAllSteps, updateAllView, updateAllWords, type UpdateAllItem, type UpdateAllPass, type UpdateAllPhase, type UpdateAllStep, type UpdateAllStepState } from './updateAll'
 import './updateAll.css'
 
 const requests = new Set<() => void>()
@@ -134,6 +134,7 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     local: state?.host.clientHosts?.find(host => host.hostId === localHostId)?.clientUpdates ?? state?.clientUpdates ?? [],
   }
   const view = updateAllView(sources, pass)
+  const lined = newlyInLine(sources, pass).join('|')
   const working = (state?.host.threads ?? []).filter(thread => thread.remoteHost !== true && threadKeepsHostBusy(thread)).length
   const words = updateAllWords(view)
   const steps = updateAllSteps(view, { working, resumes: resumeFeature && app?.settings?.resumeThreadsAfterRestart === true })
@@ -205,6 +206,12 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     for (const item of offered) if (item.kind === 'host' && !after.has(hostOf(item)!)) void updateHost(hostOf(item)!)
   }, [clientUpdate, download, queueClients, updateHost])
 
+  // A client step seen in its host's update line is marked so, so that losing the line to the host's restart reads as lost.
+  useEffect(() => {
+    if (!lined) return
+    const keys = lined.split('|')
+    setPass(current => current && { ...current, seen: new Set([...current.seen ?? [], ...keys]) })
+  }, [lined])
   // A client step the press finished stays done, even once a host's restart forgets what its update line ran.
   useEffect(() => {
     if (!pass) return
@@ -256,7 +263,9 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     setPass(current => {
       const base = current ?? EMPTY_PASS
       const refused = new Map(base.refused); refused.delete(item.key)
-      return { ...base, touched: new Set([...base.touched, item.key]), refused, ranBefore: new Map([...base.ranBefore, [item.key, clientUpdate(item)?.ranAt]]), targets: targetsWith(base.targets, [item]) }
+      // Seen again only once the host says it is back in the line, so the reply's head start does not read as lost.
+      const seen = new Set(base.seen); seen.delete(item.key)
+      return { ...base, touched: new Set([...base.touched, item.key]), refused, seen, ranBefore: new Map([...base.ranBefore, [item.key, clientUpdate(item)?.ranAt]]), targets: targetsWith(base.targets, [item]) }
     })
     setDismissed(null)
     if (item.kind === 'app') download()

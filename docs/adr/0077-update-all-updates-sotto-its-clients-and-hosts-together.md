@@ -63,6 +63,14 @@ an update, and an update already under way is never interrupted. The line is rea
 published for that host, in place, because the question is asked on every change. The card words that wait as its own,
 "Updates once forge's clients have.", and the pill as "forge waits for its clients".
 
+The same day: a client step on a host that was seen waiting or updating in the host's line since the press, or since
+its Try again, and is later out of the line with no result of its own, lost the line to a restart of the host, or to
+the host coming back as a new process. It reads "forge restarted before Codex updated. Nothing was changed. Try
+again." with Try again, which puts it back in the line, where before it read "Starting…" for good. The moment between
+the line's reply and the host's next shell, which the host holds back up to 16 ms, is never read as a loss, because
+the step is marked as seen only once the host says it is in the line. This computer's own line cannot be lost without
+the card going too, so only a host's steps are read this way.
+
 **3. What Sotto cannot do is listed, not pressed.** A client installed with something Sotto does not drive shows the
 command to run. A host Sotto did not start shows that it cannot be restarted from here and offers its commands to
 copy. Neither counts toward the press.

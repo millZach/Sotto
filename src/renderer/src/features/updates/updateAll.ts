@@ -65,6 +65,12 @@ export interface UpdateAllPass {
   readonly refused: ReadonlyMap<string, string>
   /** Each client's last finished update when the press began, so a result from before it is not read as its own. */
   readonly ranBefore: ReadonlyMap<string, string | undefined>
+  /**
+   * Client steps on a host seen waiting or updating in its client update line since the press or their Try again. One
+   * that is out of the line again with no result of its own lost its line: the host restarted, or came back as a new
+   * process. Never set between a press and the host's first word about it, so the reply's head start is not a loss.
+   */
+  readonly seen?: ReadonlySet<string> | undefined
   /** Client steps the press finished, by item, kept as they were if their machine forgets them, as a host's restart does. */
   readonly kept?: ReadonlyMap<string, UpdateAllItem> | undefined
   /** The version each host the press asked for was to get, so a newer one offered later is not read as the press's. */
@@ -152,6 +158,11 @@ function clientItem(machine: UpdateAllMachine, update: ProviderClientUpdate, pas
   // The installer finished with the provider disconnected, so nothing could read the version yet (ADR-0042).
   if (ranSincePress && update.state === 'idle') return { ...base, state: 'done', detail: `The installer finished. Connect ${name} to see the version it runs now.` }
   if (!update.behind) return undefined
+  // In its host's line since the press, and out of it with no result: the host restarted, or reconnected as a new process,
+  // and the line went with it. This computer's line cannot go without the card going too.
+  if (machine.kind === 'host' && touched && pass?.seen?.has(key) === true) {
+    return { ...base, state: 'failed', detail: `${machine.name} restarted before ${name} updated. Nothing was changed. Try again.` }
+  }
   if (!update.canInstall) {
     const commands = update.byHand?.length ? update.byHand.join('\n') : update.command
     return { ...base, state: 'by-hand', detail: commands ? `Update it yourself with ${commands.split('\n')[0]}.` : 'Sotto cannot update this install. Update it the way you installed it.', commands }
@@ -255,11 +266,25 @@ function withKept(machine: string, items: readonly UpdateAllItem[], pass: Update
 const clientMachine = (item: UpdateAllItem): string => item.machine.kind === 'host' ? item.machine.id : 'local'
 
 /** A connected host's client updates, which reach the window on its `clientHosts` entry (#480). */
-function hostClients(host: HostStatus, sources: UpdateAllSources, pass: UpdateAllPass | null): UpdateAllItem[] {
+function hostClientUpdates(host: HostStatus, sources: UpdateAllSources): readonly ProviderClientUpdate[] {
   const client = host.hostId && host.hostId !== sources.localHostId ? sources.clientHosts.find(item => item.hostId === host.hostId) : undefined
-  if (!client?.connected) return []
+  return client?.connected ? client.clientUpdates ?? [] : []
+}
+function hostClients(host: HostStatus, sources: UpdateAllSources, pass: UpdateAllPass | null): UpdateAllItem[] {
   const machine = { kind: 'host', id: host.id, name: host.name } as const
-  return (client.clientUpdates ?? []).flatMap(update => clientItem(machine, update, pass) ?? [])
+  return hostClientUpdates(host, sources).flatMap(update => clientItem(machine, update, pass) ?? [])
+}
+
+/**
+ * Client steps the press asked of a host that are in the host's update line now, waiting or updating, and not yet in
+ * the pass's `seen`: the card adds them, so a line the host loses later reads as lost rather than as starting.
+ */
+export function newlyInLine(sources: UpdateAllSources, pass: UpdateAllPass | null): string[] {
+  if (!pass) return []
+  return sources.hosts.flatMap(host => hostClientUpdates(host, sources)
+    .filter(update => update.state === 'queued' || update.state === 'updating')
+    .map(update => clientKey(host.id, update.id))
+    .filter(key => pass.touched.has(key) && pass.seen?.has(key) !== true))
 }
 
 /** Whether the list ends with the restart: whenever Sotto has a download, offered, under way or ready. */

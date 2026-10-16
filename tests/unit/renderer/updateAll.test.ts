@@ -3,7 +3,7 @@ import type { AgentClientHost, ProviderClientUpdate } from '../../../src/shared/
 import type { UpdateStatus } from '../../../src/shared/contracts'
 import type { HostStatus } from '../../../src/shared/hosts'
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
-import { clientKey, hostKey, updateAllSteps, updateAllView, updateAllWords, versionsText, type UpdateAllPass, type UpdateAllSources } from '../../../src/renderer/src/features/updates/updateAll'
+import { clientKey, hostKey, newlyInLine, updateAllSteps, updateAllView, updateAllWords, versionsText, type UpdateAllPass, type UpdateAllSources } from '../../../src/renderer/src/features/updates/updateAll'
 
 const FORGE = '6f0d1c5e-8c5b-4f8e-9a51-1f6f3f8d2a10'
 const FORGE_HOST = '2a6c8e41-3b8f-4d4e-8a3f-7d1c2b9e5f60'
@@ -77,6 +77,36 @@ describe('a press of Update all', () => {
     const view = updateAllView(sources({ hostUpdates: [hostUpdate()], clientHosts: [forgeClients([client({ id: 'codex', state: 'updating' })])] }),
       pass([hostKey(FORGE), clientKey(FORGE, 'codex')], { after: new Set([FORGE]) }))
     expect(view.items.find(item => item.kind === 'host')).toMatchObject({ state: 'running', detail: 'Updates once forge’s clients have.' })
+  })
+
+  // The incident of October 16, 2026: forge restarted while Codex was in its line, and came back with the line empty.
+  it('reads a host client whose line was lost as failed, never as starting forever', () => {
+    const key = clientKey(FORGE, 'codex')
+    const codex = (patch: Partial<ProviderClientUpdate> = {}) => forgeClients([client({ id: 'codex', installed: '0.51.0', published: '0.52.1', ranAt: 'earlier', ...patch })])
+    const before = new Map([[key, 'earlier']])
+    // Between the queue's reply and the host's next shell, the client still reads idle: that is the start, not a loss.
+    const gap = pass([key], { ranBefore: before })
+    expect(updateAllView(sources({ clientHosts: [codex()] }), gap).items[0]).toMatchObject({ state: 'running', detail: 'Starting…' })
+    expect(newlyInLine(sources({ clientHosts: [codex()] }), gap)).toEqual([])
+    // The host says it is in the line: the card marks it seen.
+    expect(newlyInLine(sources({ clientHosts: [codex({ state: 'queued' })] }), gap)).toEqual([key])
+    const seen = pass([key], { ranBefore: before, seen: new Set([key]) })
+    expect(newlyInLine(sources({ clientHosts: [codex({ state: 'updating' })] }), seen)).toEqual([])
+    expect(updateAllView(sources({ clientHosts: [codex({ state: 'updating' })] }), seen).items[0]).toMatchObject({ state: 'running' })
+    // Out of the line with no result of its own: forge's line went with its restart.
+    const lost = updateAllView(sources({ clientHosts: [codex()] }), seen)
+    expect(lost.items[0]).toMatchObject({ state: 'failed', detail: 'forge restarted before Codex updated. Nothing was changed. Try again.' })
+    expect(updateAllWords(lost)).toMatchObject({ title: 'Not everything updated', sub: 'forge’s Codex did not update.' })
+    // A result of its own still says how it ended.
+    expect(updateAllView(sources({ clientHosts: [codex({ state: 'updated', ranAt: 'now', installed: '0.52.1', behind: false })] }), seen).items[0]).toMatchObject({ state: 'done' })
+    // A client this press did not ask for is never read as lost.
+    expect(updateAllView(sources({ clientHosts: [codex()] }), pass([], { seen: new Set([key]) })).items[0]).toMatchObject({ state: 'offered' })
+  })
+
+  it('reads this computer’s clients as never losing their line', () => {
+    const key = clientKey('local', 'claude')
+    const view = updateAllView(sources({ local: [client({ ranAt: 'earlier' })] }), pass([key], { ranBefore: new Map([[key, 'earlier']]), seen: new Set([key]) }))
+    expect(view.items[0]).toMatchObject({ state: 'running' })
   })
 
   it('says a host waiting for its client update line updates once its clients have', () => {
