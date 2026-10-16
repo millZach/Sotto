@@ -913,7 +913,7 @@ it('names the operation a finished turn answers on its finish and work-settled n
   const events = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'turn-finished' || event.kind === 'work-settled')
   expect(events.map(event => [event.kind, event.operationId])).toEqual([['turn-finished', operationId], ['work-settled', operationId]])
   expect(watcherNewsText(f.delivered[0]!)).toContain(`This turn answers operation ${operationId}; read_operation gives its outcome and reply.`)
-  expect(answers).toHaveBeenCalledWith(centerTarget, expect.objectContaining({ id: f.thread.id }))
+  expect(answers).toHaveBeenCalledWith(centerTarget, expect.objectContaining({ id: f.thread.id }), expect.objectContaining({ operations: expect.any(Array) }))
 })
 
 it('names no operation for a turn no brief of Watcher\'s began', async () => {

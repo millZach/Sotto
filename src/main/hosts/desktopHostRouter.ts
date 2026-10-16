@@ -138,7 +138,8 @@ export class DesktopHostRouter {
         hostId: host.hostId, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
         workSettled: host.service.supportsWatcherWorkSettled === true, outcomes: host.service.supportsWatcherOutcomes === true,
         connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
-        permissionCeiling: host.service.shell().configuration.newThreadRuntimeMode ?? 'approval-required' })),
+        // Read only when asked: the shell read copies the host's whole cached shell, and Watcher lists hosts on every pass (#1023).
+        get permissionCeiling() { return host.service.shell().configuration.newThreadRuntimeMode ?? 'approval-required' } })),
       snapshot: id => {
         allowed(); const entry = this.hosts.get(id)?.connection
         if (!entry || entry.kind !== 'remote') return undefined

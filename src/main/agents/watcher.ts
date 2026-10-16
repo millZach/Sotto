@@ -119,7 +119,7 @@ export class WatcherService implements WatcherControlHooks {
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), record: () => this.record(),
       progress: target => this.remoteProgress.get(key(target))?.fingerprint,
       reportsWork: hostId => hostId === options.control.hostId() || this.remote?.hosts().some(host => host.hostId === hostId && host.workSettled === true) === true,
-      answers: (target, thread) => this.answeringOperation(target, thread),
+      answers: (target, thread, record) => this.answeringOperation(target, thread, record),
       restoredEvents: () => options.control.restoredWatcherEvents(),
       canDeliver: target => options.control.canDeliverWatcherNews(target),
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
@@ -312,6 +312,9 @@ export class WatcherService implements WatcherControlHooks {
     const acting = new Set(record.requests.filter(request => request.state === 'active'
       && (request.remoteOrigin || record.current && key(request.watcher) === key(record.current.target))).map(request => request.id))
     const offer = this.currentOffer()
+    // One host list for the whole read: each list reads every paired host, so asking per operation grew with them (#1023).
+    let hosts: ReturnType<WatcherRemoteHosts['hosts']> | undefined
+    const reportsOutcomes = (hostId: string) => (hosts ??= this.remote?.hosts() ?? []).find(host => host.hostId === hostId)?.outcomes === true
     return { current: record.current, currentOptions: current ? { modelId: current.modelId, reasoningEffort: current.reasoningEffort ?? null,
       runtimeMode: current.runtimeMode ?? 'approval-required', status: current.status, connected: this.connected(current) } : null,
       runtimeMode: record.lastRuntimeMode ?? current?.runtimeMode ?? 'approval-required', standingWatches: watches,
@@ -340,7 +343,7 @@ export class WatcherService implements WatcherControlHooks {
           waitsOn: thread?.requests.map(request => ({ id: request.id, kind: request.kind, openTarget: target })) ?? [],
           participation }
       }), inFlight: this.inFlight(record), inFlightLimit: this.options.limit(),
-      receipts: record.operations.map(operation => { const outcome = this.outcomeOf(operation); return outcome ? { ...operation, outcome } : operation }),
+      receipts: record.operations.map(operation => { const outcome = this.outcomeOf(operation, reportsOutcomes); return outcome ? { ...operation, outcome } : operation }),
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(),
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null }
   }
@@ -961,10 +964,10 @@ export class WatcherService implements WatcherControlHooks {
    * The start or send a thread's newest turn answers, which its news names: the brief whose own message began the turn,
    * or else the newest steer of Watcher's read into it. None when the turn is the user's own.
    */
-  private answeringOperation(target: WatcherThreadTarget, thread: AgentThread): string | undefined {
+  private answeringOperation(target: WatcherThreadTarget, thread: AgentThread, record: WatcherRecord): string | undefined {
     const turn = watcherLatestTurnMessageId(thread)
     if (!turn) return undefined
-    const record = this.record(), watcherMessages = new Set(record.operations.flatMap(item => item.messageId ? [item.messageId] : []))
+    const watcherMessages = new Set(record.operations.flatMap(item => item.messageId ? [item.messageId] : []))
     const briefs = record.operations.filter(item => (item.action === 'start' || item.action === 'send') && key(item.target) === key(target)
       && item.messageId !== undefined && item.deliveryState !== 'failed')
     return (briefs.find(item => item.messageId === turn)
@@ -974,14 +977,14 @@ export class WatcherService implements WatcherControlHooks {
    * Where a start or send stands: from its receipt until it is delivered, then as its owning host observed its turn.
    * Undefined for stop and settle, which carry no brief. A paired host that does not report outcomes reads as unknown.
    */
-  outcomeOf(operation: WatcherOperation): WatcherOutcome | undefined {
+  outcomeOf(operation: WatcherOperation, reportsOutcomes = (hostId: string) => this.remoteReportsOutcomes(hostId)): WatcherOutcome | undefined {
     if (operation.action !== 'start' && operation.action !== 'send') return undefined
     if (operation.deliveryState === 'failed') return operation.refusalCode === 'THREAD_TAKEN_OVER' ? 'paused'
       : operation.refusalCode === 'REQUEST_NOT_ACTIVE' ? 'stopped' : 'failed'
     if (operation.outcome === 'unknown' || operation.deliveryState === 'uncertain') return 'unknown'
     if (operation.deliveryState !== 'accepted') return 'working'
     if (operation.outcome) return operation.outcome
-    return operation.target.hostId === this.options.control.hostId() || this.remoteReportsOutcomes(operation.target.hostId) ? 'working' : 'unknown'
+    return operation.target.hostId === this.options.control.hostId() || reportsOutcomes(operation.target.hostId) ? 'working' : 'unknown'
   }
   private remoteReportsOutcomes(hostId: string): boolean { return this.remote?.hosts().find(host => host.hostId === hostId)?.outcomes === true }
   /** The outcome, its turn's evidence and, once answered, the worker's reply, for a start or send this host owns. */
