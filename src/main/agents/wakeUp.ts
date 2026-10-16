@@ -6,6 +6,8 @@ import { pullRequestKey } from '../../shared/gitPullRequests'
 import { watcherNewsSchema, type WatcherNews } from '../../shared/watcherNews'
 import { RESUME_NOTE, restartNewsSchema, type RestartNews } from '../../shared/restartResume'
 import { foldWatcherNews, watcherNewsText } from './watcherNews'
+import { delegationNewsSchema, type DelegationNews } from '../../shared/delegation'
+import { delegationNewsText, foldDelegationNews } from './delegationNews'
 
 /**
  * The wake-up (ADR-0061 decision 7): the one message babysitting sends a thread, worded by Sotto from the reader's
@@ -48,29 +50,34 @@ export const babysitNewsSchema = z.object({
   unreadable: z.enum(['sign-in', 'not-found', 'no-answer', 'answer']).optional(),
 })
 
-/** Old queue files remain readable; neither Watcher nor a restart ever impersonates a pull request. */
-export const wakeUpNewsSchema = z.union([babysitNewsSchema, watcherNewsSchema, restartNewsSchema])
-export type WakeUpNews = BabysitNews | WatcherNews | RestartNews
+/** Old queue files remain readable; neither Watcher, a restart nor a delegation ever impersonates a pull request. */
+export const wakeUpNewsSchema = z.union([babysitNewsSchema, watcherNewsSchema, restartNewsSchema, delegationNewsSchema])
+export type WakeUpNews = BabysitNews | WatcherNews | RestartNews | DelegationNews
 export const isWatcherNews = (news: WakeUpNews): news is WatcherNews => 'source' in news && news.source === 'watcher'
 /** A resume note's news (ADR-0076): Sotto closing stopped the thread's turn. */
 export const isRestartNews = (news: WakeUpNews): news is RestartNews => 'source' in news && news.source === 'restart'
-export const isBabysitNews = (news: WakeUpNews): news is BabysitNews => !isWatcherNews(news) && !isRestartNews(news)
+/** News of this thread's delegations (ADR-0081): which delegation, which thread, which turn and its outcome. */
+export const isDelegationNews = (news: WakeUpNews): news is DelegationNews => 'source' in news && news.source === 'delegation'
+export const isBabysitNews = (news: WakeUpNews): news is BabysitNews => !isWatcherNews(news) && !isRestartNews(news) && !isDelegationNews(news)
 /**
  * Later news folded into a waiting wake-up's: one resume note, the newest, first, then each pull request's part, then
  * Watcher's. The note opens the message, which is how a thread tells a resume from a wake-up about something else.
  */
 export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews): WakeUpNews[] {
   const restart = earlier.filter(isRestartNews), workers = earlier.filter(isWatcherNews), prs = earlier.filter(isBabysitNews)
-  if (isRestartNews(later)) return [later, ...prs, ...workers]
-  if (isWatcherNews(later)) return [...restart, ...prs, foldWatcherNews(workers[0], later)]
-  return [...restart, ...foldNews(prs, later), ...workers]
+  const delegations = earlier.filter(isDelegationNews)
+  if (isRestartNews(later)) return [later, ...prs, ...workers, ...delegations]
+  if (isWatcherNews(later)) return [...restart, ...prs, foldWatcherNews(workers[0], later), ...delegations]
+  if (isDelegationNews(later)) return [...restart, ...prs, ...workers, foldDelegationNews(delegations[0], later)]
+  return [...restart, ...foldNews(prs, later), ...workers, ...delegations]
 }
 export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOptions): string {
   const restart = news.some(isRestartNews) ? RESUME_NOTE : ''
   const prs = news.filter(isBabysitNews)
   const watcher = news.filter(isWatcherNews).map(watcherNewsText).join('\n\n')
-  const room = AGENT_TEXT_MAX - [restart, watcher].reduce((used, part) => used + (part ? part.length + 2 : 0), 0)
-  return [...restart ? [restart] : [], ...prs.length ? [wakeUpText(prs, options, room)] : [], ...watcher ? [watcher] : []].join('\n\n')
+  const delegation = news.filter(isDelegationNews).map(delegationNewsText).join('\n\n')
+  const room = AGENT_TEXT_MAX - [restart, watcher, delegation].reduce((used, part) => used + (part ? part.length + 2 : 0), 0)
+  return [...restart ? [restart] : [], ...prs.length ? [wakeUpText(prs, options, room)] : [], ...watcher ? [watcher] : [], ...delegation ? [delegation] : []].join('\n\n')
 }
 
 const sameAddress = (left: string, right: string): boolean => (pullRequestKey(left) ?? left) === (pullRequestKey(right) ?? right)
