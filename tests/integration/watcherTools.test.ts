@@ -794,6 +794,31 @@ it('saves a refused wake-up’s news as untold before the wake-up leaves the que
   for (const id of events) expect(atRemoval[0]).not.toContain(id)
 }, 40_000)
 
+it('settles a hidden wake-up once when two settles overlap, so a crash while the first saves its news as untold loses nothing (review P1)', async () => {
+  const f = await fixture(), { hidden } = await heldQuestion(f)
+  const item = hidden()[0]!, events = item.news!.flatMap(news => 'events' in news ? news.events.map(event => event.id) : [])
+  await vi.waitFor(async () => expect(await savedTold(f.root)).toEqual(expect.arrayContaining(events)))
+  // The save of agents.json that forgets the wake-up's news is held open, as a slow disk holds it.
+  const inner = (f.control as unknown as { store: { write: (...args: unknown[]) => Promise<void> } }).store, write = inner.write.bind(inner)
+  const entered = deferred<void>(), release = deferred<void>()
+  vi.spyOn(inner, 'write').mockImplementation(async (...args) => { entered.resolve(); await release.promise; return write(...args) })
+  const settle = (f.control as unknown as { settleWatcherWakeUp: (item: unknown, outcome: string) => Promise<void> }).settleWatcherWakeUp.bind(f.control)
+  try {
+    // The pump withdraws the wake-up, and advisory pruning settles it again while the first save is on its way.
+    const first = settle(item, 'withdrawn')
+    await entered.promise
+    const second = settle(item, 'withdrawn')
+    await Promise.race([second, new Promise(resolve => setTimeout(resolve, 1_000))])
+    // Sotto stops here. The next start reads both files: the wake-up is still queued, so its news is dropped and observed afresh.
+    const saved = JSON.parse(await readFile(join(f.root, 'followups.json'), 'utf8')) as { items: { id: string }[] }
+    expect(saved.items.map(entry => entry.id)).toContain(item.id)
+    expect(await savedTold(f.root)).toEqual(expect.arrayContaining(events))
+    release.resolve(); await Promise.all([first, second])
+  } finally { release.resolve() }
+  expect(hidden()).toEqual([])
+  for (const id of events) expect(await savedTold(f.root)).not.toContain(id)
+}, 40_000)
+
 it('asks a provider that refused a wake-up no one is shown again only with news that needs Watcher, and sends both then', async () => {
   const f = await fixture(), { worker, master, sends, hidden } = await heldQuestion(f)
   const refused = refuseWakeUps(f, master, 1)

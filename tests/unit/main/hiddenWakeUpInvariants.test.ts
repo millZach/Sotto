@@ -7,7 +7,7 @@ import { afterEach, expect, it } from 'vitest'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 import type { WatcherEvent, WatcherNews } from '../../../src/shared/watcherNews'
 import { FollowupStore, type QueuedFollowup, type WordWakeUp } from '../../../src/main/agents/followups'
-import { hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from '../../../src/main/agents/hiddenWakeUp'
+import { HiddenWakeUpSettlements, hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from '../../../src/main/agents/hiddenWakeUp'
 import { isWatcherOnlyWakeUp, queuedWakeUpText } from '../../../src/main/agents/wakeUp'
 import { WatcherWakeUp, WAKE_UP_TRIES } from '../../../src/main/agents/watcherWakeUp'
 import { watcherNewsText } from '../../../src/main/agents/watcherNews'
@@ -17,7 +17,8 @@ import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/w
  * Drives Watcher's news (WatcherWakeUp) and its hidden wake-up in the real queue (FollowupStore) through table-driven and
  * seeded random sequences, with the coordinator's own step for the item (hiddenWakeUpStep): a worker's turns, questions,
  * pull request checks and working copy; sends that land, fail or go unknown, with news arriving mid-send and late echoes;
- * failed saves; withdrawals; Watcher's own turns; restarts mid-dispatch; and queues earlier builds saved. After every step:
+ * failed saves; withdrawals; two settles of one wake-up overlapping with a crash between; Watcher's own turns; restarts
+ * mid-dispatch; and queues earlier builds saved. After every step:
  * (a) at most one hidden wake-up; (b) no send without new news that needs Watcher, and automatic tries bounded; (c) a
  * thread's own facts never wake Watcher by themselves; (d) every event told at most once unless forgotten and observed
  * again, and none lost; (e) pumping with nothing new writes nothing.
@@ -43,6 +44,10 @@ interface World {
   holdSave?: { entered: () => void; release: Promise<void> } | undefined
   /** Holds the next save of told IDs open until released, which holds the batcher's lane. */
   holdRemember?: { entered: () => void; release: Promise<void> } | undefined
+  /** Holds the next save of news as untold open until released, which a crash can come in the middle of. */
+  holdUntell?: { entered: () => void; release: Promise<void> } | undefined
+  /** The coordinator's settles, one per wake-up at a time; a restart makes new ones. */
+  settlements: HiddenWakeUpSettlements
   violations: string[]
 }
 const watcherId = () => 'center'
@@ -77,7 +82,7 @@ async function load(w: World): Promise<void> {
   for (const event of dropped) w.forgotten.add(event.id)
   const ids = new Set(dropped.map(event => event.id))
   w.record.wakeEventIds = (w.record.wakeEventIds ?? []).filter(id => !ids.has(id))
-  w.uncertain.clear(); w.reconciling.clear()
+  w.uncertain.clear(); w.reconciling.clear(); w.settlements = new HiddenWakeUpSettlements()
   w.wakes = new WatcherWakeUp({ now: () => w.clock, snapshot: () => w.snapshot, record: () => w.record, canDeliver: () => true,
     schedule: (callback, delay) => { const timer = { at: w.clock + delay, callback }; w.timers.add(timer); return () => { w.timers.delete(timer) } },
     restoredEvents: () => [], wakeUpQueued: () => hidden(w).length > 0, prune: async () => undefined,
@@ -109,10 +114,18 @@ const observe = (w: World) => { w.wakes.observe() }
 
 const untell = (w: World, events: readonly WatcherEvent[]) => { const ids = new Set(events.map(event => event.id)); w.record.wakeEventIds = (w.record.wakeEventIds ?? []).filter(id => !ids.has(id)) }
 /** Takes the item out whole, as the coordinator does, and tells Watcher's news how it ended. */
-async function settleItem(w: World, item: QueuedFollowup, outcome: HiddenWakeUpOutcome): Promise<void> {
+function settleItem(w: World, item: QueuedFollowup, outcome: HiddenWakeUpOutcome): Promise<void> {
+  return w.settlements.settle([item], () => settleOnce(w, item, outcome))
+}
+async function settleOnce(w: World, item: QueuedFollowup, outcome: HiddenWakeUpOutcome): Promise<void> {
   const events = hiddenEvents(item.news)
-  // As the coordinator does: news that did not reach Watcher is saved as untold before its wake-up leaves the queue.
-  if (outcome !== 'told') untell(w, events)
+  // As the coordinator does: news that did not reach Watcher is saved as untold before its wake-up leaves the queue, and
+  // news already untold in memory is not saved again.
+  if (outcome !== 'told' && events.some(event => w.record.wakeEventIds?.includes(event.id))) {
+    untell(w, events)
+    const hold = w.holdUntell; w.holdUntell = undefined
+    if (hold) { hold.entered(); await hold.release }
+  }
   await w.store.removeWakeUp(item.id)
   outcomes[outcome]++
   if (outcome === 'told') {
@@ -167,7 +180,7 @@ async function quiesce(w: World, mode: Mode): Promise<void> {
 }
 
 type Step = 'finish' | 'start' | 'question' | 'answer' | 'checks' | 'local' | 'pump-ack' | 'pump-fail' | 'pump-unknown' | 'echo' | 'restart'
-  | 'watcher-turn' | 'save-fail' | 'legacy' | 'mid-send' | 'lose-echo' | 'crash-between-saves' | 'mid-save' | 'lane-delay'
+  | 'watcher-turn' | 'save-fail' | 'legacy' | 'mid-send' | 'lose-echo' | 'crash-between-saves' | 'mid-save' | 'lane-delay' | 'overlap-settle'
 async function apply(w: World, step: Step): Promise<void> {
   const worker = w.worker
   switch (step) {
@@ -225,6 +238,21 @@ async function apply(w: World, step: Step): Promise<void> {
       await load(w)
       break
     }
+    case 'overlap-settle': {
+      // The pump and advisory pruning both settle the wake-up, and Sotto stops while the first still saves its news as
+      // untold: the record on disk is as it was before, and the queue as far as it was written.
+      const item = hidden(w)[0]
+      if (!item || !hiddenEvents(item.news).some(event => w.record.wakeEventIds?.includes(event.id))) break
+      let entered!: () => void
+      const inside = new Promise<void>(resolve => { entered = resolve }), saved = [...w.record.wakeEventIds ?? []]
+      w.holdUntell = { entered, release: new Promise<void>(() => undefined) }
+      void settleItem(w, item, 'withdrawn')
+      await inside
+      await Promise.race([settleItem(w, item, 'withdrawn'), new Promise(resolve => setTimeout(resolve, 100))])
+      w.record.wakeEventIds = saved
+      await load(w)
+      break
+    }
     case 'watcher-turn':
       w.watcher.status = 'running'; w.watcher.lastTurn = { id: randomUUID(), status: 'running' }; observe(w)
       w.watcher.status = 'idle'; w.watcher.lastTurn = { ...w.watcher.lastTurn, status: 'completed' }; observe(w)
@@ -258,6 +286,8 @@ async function apply(w: World, step: Step): Promise<void> {
         item({ news: [news('turn-finished')], attention: [], status: 'dispatching', commandId: randomUUID(), messageId: randomUUID() }),
         item({ news: [news('needs-user')], attention: ['x'], carried: ['x'], attempts: 3, status: 'paused' })]
       for (const entry of items) for (const event of hiddenEvents(entry.news as WatcherNews[])) w.record.wakeEventIds = [...w.record.wakeEventIds ?? [], event.id]
+      // The earlier build's queue replaces this one, so what this one held was never made, and is observed afresh.
+      for (const entry of hidden(w)) { untell(w, hiddenEvents(entry.news)); for (const event of hiddenEvents(entry.news)) w.forgotten.add(event.id) }
       await writeFile(join(w.directory, 'followups.json'), JSON.stringify({ items, receipts: [] }))
       await load(w)
       expect(hidden(w)).toEqual([])
@@ -271,6 +301,9 @@ async function check(w: World): Promise<void> {
   expect(w.violations).toEqual([])
   // (a) One hidden wake-up at most, in memory and saved.
   expect(hidden(w).length).toBeLessThanOrEqual(1)
+  // (d) News is saved as told only once told, or while a queued wake-up carries it, which a restart drops and observes afresh.
+  const carried = new Set(hidden(w).flatMap(item => hiddenEvents(item.news).map(event => event.id)))
+  expect((w.record.wakeEventIds ?? []).filter(id => !w.told.has(id) && !carried.has(id)), 'news saved as told that never reached Watcher').toEqual([])
   // (b) Automatic tries are bounded: at most WAKE_UP_TRIES - 1 after each send that reached Watcher, and after the start.
   expect(w.automatic).toBeLessThanOrEqual((WAKE_UP_TRIES - 1) * (w.tolds + 1) + w.forgotten.size)
   // (e) With nothing new, pumping again changes nothing and writes nothing.
@@ -309,6 +342,7 @@ it.each([
   ['news that comes while a wake-up is being saved, after a miss', ['question', 'pump-fail', 'mid-save', 'pump-fail', 'pump-ack']],
   ['a turn end going stale while its batch waits its turn', ['start', 'lane-delay', 'pump-ack', 'finish', 'pump-ack']],
   ['a crash between the two saves of a wake-up leaving', ['question', 'crash-between-saves', 'pump-ack', 'question', 'pump-fail', 'crash-between-saves', 'watcher-turn', 'pump-ack']],
+  ['two settles of one wake-up overlapping, and a crash while the first saves', ['question', 'overlap-settle', 'pump-ack', 'question', 'pump-fail', 'overlap-settle', 'watcher-turn', 'pump-ack']],
   ['queues earlier builds saved', ['question', 'legacy', 'pump-ack', 'pump-fail', 'watcher-turn', 'pump-ack']],
   ['refusals past the bound', ['question', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn']],
 ] as const)('keeps the hidden wake-up’s rules through %s', async (_, steps) => {
@@ -325,7 +359,7 @@ it('never wakes Watcher for a thread’s own facts alone', async () => {
 
 it('keeps the hidden wake-up’s rules through seeded random sequences', async () => {
   const steps: Step[] = ['finish', 'start', 'question', 'answer', 'checks', 'local', 'local', 'pump-ack', 'pump-fail', 'pump-unknown', 'echo', 'lose-echo', 'restart',
-    'watcher-turn', 'save-fail', 'mid-send', 'legacy', 'crash-between-saves', 'mid-save', 'lane-delay']
+    'watcher-turn', 'save-fail', 'mid-send', 'legacy', 'crash-between-saves', 'mid-save', 'lane-delay', 'overlap-settle']
   for (let seed = 1; seed <= 30; seed++) {
     const next = random(seed), w = await world()
     for (let step = 0; step < 16; step++) { await apply(w, steps[Math.floor(next() * steps.length)]!); await check(w) }

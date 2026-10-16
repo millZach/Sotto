@@ -21,7 +21,7 @@ import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
 import { queuedWakeUpText, isDelegationNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
 import { watcherWakeUpShown, watcherWakeUpsAsShown } from './watcherNews'
-import { hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from './hiddenWakeUp'
+import { HiddenWakeUpSettlements, hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from './hiddenWakeUp'
 import type { UsagePromptRecorder } from './usageService'
 import { isUsageProviderId } from '../../shared/usageDashboard'
 import type { WatcherEvent } from '../../shared/watcherNews'
@@ -266,6 +266,7 @@ const readBeforeSend = (sendMessageId: string | undefined): ThreadReadPurpose =>
 
 export class AgentControl {
   private readonly followupStore: FollowupStore
+  private readonly wakeUpSettlements = new HiddenWakeUpSettlements()
   private babysitting: Pick<Babysitter, 'start' | 'stop'> | undefined
   private wakeUpGuard: WakeUpGuard | undefined
   /** Resuming after a restart (ADR-0076): whether a note may still go, and who hears that one is going. Absent where the Owl list keeps it off. */
@@ -1779,9 +1780,15 @@ export class AgentControl {
     const target = this.watcher.current?.target
     return !!target && this.followupStore.peek().items.some(item => item.threadId === target.threadId && isWatcherOnlyWakeUp(item))
   }
-  /** Takes Watcher's hidden wake-ups out of the queue in one change and tells Watcher's news how they ended (hiddenWakeUp.ts). */
-  private async settleWatcherWakeUp(item: Pick<QueuedFollowup, 'id' | 'news'> | readonly Pick<QueuedFollowup, 'id' | 'news'>[], outcome: HiddenWakeUpOutcome): Promise<void> {
-    const items = Array.isArray(item) ? item : [item], events = items.flatMap(entry => hiddenEvents(entry.news))
+  /**
+   * Takes Watcher's hidden wake-ups out of the queue in one change and tells Watcher's news how they ended (hiddenWakeUp.ts).
+   * Each settles once: the pump and advisory pruning can both reach one, and the later joins the earlier.
+   */
+  private settleWatcherWakeUp(item: Pick<QueuedFollowup, 'id' | 'news'> | readonly Pick<QueuedFollowup, 'id' | 'news'>[], outcome: HiddenWakeUpOutcome): Promise<void> {
+    return this.wakeUpSettlements.settle(Array.isArray(item) ? item : [item], items => this.settleWakeUpsOnce(items, outcome))
+  }
+  private async settleWakeUpsOnce(items: readonly Pick<QueuedFollowup, 'id' | 'news'>[], outcome: HiddenWakeUpOutcome): Promise<void> {
+    const events = items.flatMap(entry => hiddenEvents(entry.news))
     // News that did not reach Watcher is untold, and saved so, before its wake-up leaves the queue: a crash between the two
     // saves then leaves the wake-up, which a restart drops and observes afresh, never told news that is nowhere.
     if (outcome !== 'told') {
