@@ -186,7 +186,8 @@ export class HostUpdates {
   private readonly probing = new AbortController()
   constructor(private readonly options: HostUpdatesOptions) {
     this.releasesUrl = options.releasesUrl ?? HOST_RELEASES_URL
-    this.off = [options.hosts.subscribe(() => this.sync()), options.threads.subscribe(() => this.sync()), ...options.clients?.subscribe ? [options.clients.subscribe(() => this.sync())] : []]
+    this.off = [options.hosts.subscribe(() => this.sync()), options.threads.subscribe(() => this.sync())]
+    if (options.clients?.subscribe) this.off.push(options.clients.subscribe(() => this.sync()))
     this.sync()
   }
   /**

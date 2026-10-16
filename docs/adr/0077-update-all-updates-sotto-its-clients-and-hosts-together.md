@@ -59,14 +59,19 @@ Only the card's first press kept it before, and on October 16 Try again on forge
 installing there. A host whose client update line is running, a client waiting in it or updating, moves to waiting
 and begins by itself once the line is empty: Update all's press and Try again, the host update pill's Update and Try
 again (ADR-0040), Update when they finish and Stop N threads and update alike. Cancel update takes it back to needing
-an update, and an update already under way is never interrupted. The line is read from what the router last
+an update, and an update already under way is never interrupted: a client put in the line after the download has
+begun can still be cut off by that update's restart. The line is read from what the router last
 published for that host, in place, because the question is asked on every change. The card words that wait as its own,
 "Updates once forge's clients have.", and the pill as "forge waits for its clients".
 
 The same day: a client step on a host that was seen waiting or updating in the host's line since the press, or since
-its Try again, and is later out of the line with no result of its own, lost the line to a restart of the host, or to
-the host coming back as a new process. It reads "forge restarted before Codex updated. Nothing was changed. Try
-again." with Try again, which puts it back in the line, where before it read "Starting…" for good. The moment between
+its Try again, and is later out of the line with no result of its own, lost its line. A host keeps its results in
+memory, so one that restarted reports none, and that counts as no result. While the host is out of reach, or has yet
+to report the client again, the step stays listed as "Waiting to hear from forge…", so the press is not read as over.
+A step whose host was out of reach meanwhile reads "forge restarted before Codex updated. Nothing was changed. Try
+again."; one taken out of the line some other way, as by Cancel update on the host's tile, reads "The Codex update on
+forge stopped before it finished. Nothing was changed. Try again." Both offer Try again, which puts it back in the
+line, where before the step read "Starting…" for good. One the host now reports as current is done. The moment between
 the line's reply and the host's next shell, which the host holds back up to 16 ms, is never read as a loss, because
 the step is marked as seen only once the host says it is in the line. This computer's own line cannot be lost without
 the card going too, so only a host's steps are read this way.

@@ -113,8 +113,13 @@ describe('the Update all card', () => {
     expect(screen.getByRole('listitem', { name: 'Update Codex, in progress' })).toHaveTextContent('Starting…')
     provideAgents(agentState({ forge: [codex({ state: 'updating' })] }))
     view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
-    // forge restarts as a new host process: Codex is idle again, with no result of its own.
-    provideAgents(agentState({ forge: [codex()] }))
+    // forge restarts: it is out of reach for a moment, and the step waits to hear from it.
+    const away = agentState({ forge: [codex({ state: 'updating' })] })
+    provideAgents({ ...away, host: { ...away.host, clientHosts: away.host.clientHosts!.map(entry => ({ ...entry, connected: false })) } })
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    expect(await screen.findByRole('listitem', { name: 'Update Codex, in progress' })).toHaveTextContent('Waiting to hear from forge…')
+    // The new host process has Codex idle again, with no result in memory.
+    provideAgents(agentState({ forge: [codex({ ranAt: undefined })] }))
     view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
     const step = await screen.findByRole('listitem', { name: 'Update Codex, did not finish' })
     expect(step).toHaveTextContent('forge restarted before Codex updated. Nothing was changed. Try again.')
@@ -356,8 +361,7 @@ describe('a finished run going by itself', () => {
     expect(screen.getByRole('listitem', { name: 'Update forge’s host, waiting for its threads' })).toBeTruthy()
     advance(60_000)
     expect(card()).not.toBeNull()
-    // forge's thread is stopped and its update finishes: nothing is left waiting.
-    fireEvent.click(screen.getByRole('button', { name: 'Stop 1 thread on forge and update its host now' }))
+    // forge's thread finishes and its update runs: nothing is left waiting.
     hosts.change({ ...base, updates: [hostUpdate({ phase: 'done' })] })
     await settle()
     expect(screen.getByText('Updated')).toBeTruthy()
@@ -386,7 +390,11 @@ describe('a finished run going by itself', () => {
     act(() => dismiss.focus())
     advance(60_000)
     expect(card()).not.toBeNull()
-    act(() => dismiss.blur())
+    // Another window taking focus blurs the button but leaves it focused here: it still holds the card.
+    await act(async () => { fireEvent.blur(dismiss) })
+    advance(60_000)
+    expect(card()).not.toBeNull()
+    await act(async () => { dismiss.blur() })
     advance(4_999)
     expect(card()).not.toBeNull()
     advance(1)
@@ -400,7 +408,7 @@ describe('a finished run going by itself', () => {
     // Folding moved focus to the pill, which holds it.
     expect(document.activeElement).toBe(pill)
     advance(60_000)
-    act(() => pill.blur())
+    await act(async () => { pill.blur() })
     fireEvent.pointerEnter(pill)
     advance(60_000)
     expect(screen.getByRole('button', { name: 'Updated. Show updates' })).toBe(pill)

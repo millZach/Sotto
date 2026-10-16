@@ -68,9 +68,15 @@ export interface UpdateAllPass {
   /**
    * Client steps on a host seen waiting or updating in its client update line since the press or their Try again. One
    * that is out of the line again with no result of its own lost its line: the host restarted, or came back as a new
-   * process. Never set between a press and the host's first word about it, so the reply's head start is not a loss.
+   * process. Never set between a press and the host's first word about it, so the reply's head start is not a loss. Each
+   * is kept as it was seen, so it stays listed while its host is out of reach or has yet to report it again.
    */
-  readonly seen?: ReadonlySet<string> | undefined
+  readonly seen?: ReadonlyMap<string, UpdateAllItem> | undefined
+  /**
+   * Seen steps whose host was out of reach since, as while it restarts: a line lost then went with the restart. One lost
+   * without that, as when Cancel update on the host's tile took it out, is not said to be a restart.
+   */
+  readonly dropped?: ReadonlySet<string> | undefined
   /** Client steps the press finished, by item, kept as they were if their machine forgets them, as a host's restart does. */
   readonly kept?: ReadonlyMap<string, UpdateAllItem> | undefined
   /** The version each host the press asked for was to get, so a newer one offered later is not read as the press's. */
@@ -97,7 +103,9 @@ export interface UpdateAllView {
   readonly fingerprint: string
 }
 
-export const clientKey = (machine: 'local' | string, provider: ProviderId): string => `client:${machine}:${provider}`
+/** What every client step's key on a machine begins with. */
+const clientPrefix = (machine: 'local' | string): string => `client:${machine}:`
+export const clientKey = (machine: 'local' | string, provider: ProviderId): string => `${clientPrefix(machine)}${provider}`
 export const hostKey = (id: string): string => `host:${id}`
 export const APP_KEY = 'sotto'
 
@@ -139,8 +147,13 @@ function clientItem(machine: UpdateAllMachine, update: ProviderClientUpdate, pas
   const base = { key, machine, kind: 'client' as const, name, provider: update.id, versions: behindVersions }
   const refused = pass?.refused.get(key)
   if (refused) return { ...base, state: 'failed', detail: refused }
-  // A result already there when the press began is not the press's own: the line has yet to take the client.
-  const ranSincePress = touched && update.ranAt !== pass?.ranBefore.get(key)
+  // A result already there when the press began is not the press's own: the line has yet to take the client. A host keeps
+  // its results in memory, so one that restarted has none, and that is no result either.
+  const ranSincePress = touched && update.ranAt !== undefined && update.ranAt !== pass?.ranBefore.get(key)
+  // In its host's line since the press, and out of it with no result: the host restarted, or reconnected as a new process,
+  // and the line went with it, or the update was cancelled on the host's tile. This computer's line cannot go without the
+  // card going too.
+  const lost = machine.kind === 'host' && touched && pass?.seen?.has(key) === true
   if (update.state === 'queued') return { ...base, state: 'running', detail: 'Waiting for the update before it.' }
   if (update.state === 'updating') {
     const step = update.steps && update.steps > 1 ? `, step ${update.step ?? 1} of ${update.steps}` : ''
@@ -157,11 +170,13 @@ function clientItem(machine: UpdateAllMachine, update: ProviderClientUpdate, pas
   }
   // The installer finished with the provider disconnected, so nothing could read the version yet (ADR-0042).
   if (ranSincePress && update.state === 'idle') return { ...base, state: 'done', detail: `The installer finished. Connect ${name} to see the version it runs now.` }
+  // Lost, but the host now runs the version it was to get: it finished before the line went.
+  if (lost && !update.behind) return { ...base, versions: { from: update.installed }, state: 'done', detail: `Now ${update.installed}.` }
   if (!update.behind) return undefined
-  // In its host's line since the press, and out of it with no result: the host restarted, or reconnected as a new process,
-  // and the line went with it. This computer's line cannot go without the card going too.
-  if (machine.kind === 'host' && touched && pass?.seen?.has(key) === true) {
-    return { ...base, state: 'failed', detail: `${machine.name} restarted before ${name} updated. Nothing was changed. Try again.` }
+  if (lost && machine.kind === 'host') {
+    return { ...base, state: 'failed', detail: pass?.dropped?.has(key) === true
+      ? `${machine.name} restarted before ${name} updated. Nothing was changed. Try again.`
+      : `The ${name} update on ${machine.name} stopped before it finished. Nothing was changed. Try again.` }
   }
   if (!update.canInstall) {
     const commands = update.byHand?.length ? update.byHand.join('\n') : update.command
@@ -272,7 +287,12 @@ function hostClientUpdates(host: HostStatus, sources: UpdateAllSources): readonl
 }
 function hostClients(host: HostStatus, sources: UpdateAllSources, pass: UpdateAllPass | null): UpdateAllItem[] {
   const machine = { kind: 'host', id: host.id, name: host.name } as const
-  return hostClientUpdates(host, sources).flatMap(update => clientItem(machine, update, pass) ?? [])
+  const updates = hostClientUpdates(host, sources)
+  // A step seen in the host's line that the host does not report now, while it is out of reach or before its first check
+  // after a restart, stays listed until the host says how it went, so the press is not read as over meanwhile.
+  const unheard = [...pass?.seen?.values() ?? []].filter(item => clientMachine(item) === host.id && !pass?.kept?.has(item.key) && !updates.some(update => clientKey(host.id, update.id) === item.key))
+    .map(item => ({ ...item, state: 'running' as const, detail: `Waiting to hear from ${host.name}…` }))
+  return [...updates.flatMap(update => clientItem(machine, update, pass) ?? []), ...unheard]
 }
 
 /**
@@ -285,6 +305,16 @@ export function newlyInLine(sources: UpdateAllSources, pass: UpdateAllPass | nul
     .filter(update => update.state === 'queued' || update.state === 'updating')
     .map(update => clientKey(host.id, update.id))
     .filter(key => pass.touched.has(key) && pass.seen?.has(key) !== true))
+}
+
+/**
+ * Seen steps whose host is out of reach now, as while it restarts, and not yet in the pass's `dropped`: the card adds
+ * them, so a line lost to the restart says so.
+ */
+export function newlyDropped(sources: UpdateAllSources, pass: UpdateAllPass | null): string[] {
+  if (!pass?.seen?.size) return []
+  return sources.hosts.filter(host => !sources.clientHosts.some(item => item.hostId === host.hostId && item.connected))
+    .flatMap(host => [...pass.seen?.keys() ?? []].filter(key => key.startsWith(clientPrefix(host.id)) && pass.dropped?.has(key) !== true))
 }
 
 /** Whether the list ends with the restart: whenever Sotto has a download, offered, under way or ready. */

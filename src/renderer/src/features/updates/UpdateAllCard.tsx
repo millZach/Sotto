@@ -11,7 +11,7 @@ import { useTransientFlag, writeClipboard } from '../../agents/richActions'
 import { focusedComposerField } from '../../agents/promptSelection'
 import { useOptionalApp } from '../../state/AppContext'
 import { useOwlFeature } from '../../state/owlFeature'
-import { APP_KEY, clientKey, hostKey, newlyInLine, updateAllSteps, updateAllView, updateAllWords, type UpdateAllItem, type UpdateAllPass, type UpdateAllPhase, type UpdateAllStep, type UpdateAllStepState } from './updateAll'
+import { APP_KEY, clientKey, hostKey, newlyDropped, newlyInLine, updateAllSteps, updateAllView, updateAllWords, type UpdateAllItem, type UpdateAllPass, type UpdateAllPhase, type UpdateAllStep, type UpdateAllStepState } from './updateAll'
 import './updateAll.css'
 
 const requests = new Set<() => void>()
@@ -143,6 +143,7 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts, doneMs
   }
   const view = updateAllView(sources, pass)
   const lined = newlyInLine(sources, pass).join('|')
+  const dropped = newlyDropped(sources, pass).join('|')
   const working = (state?.host.threads ?? []).filter(thread => thread.remoteHost !== true && threadKeepsHostBusy(thread)).length
   const words = updateAllWords(view)
   const steps = updateAllSteps(view, { working, resumes: resumeFeature && app?.settings?.resumeThreadsAfterRestart === true })
@@ -218,8 +219,15 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts, doneMs
   useEffect(() => {
     if (!lined) return
     const keys = lined.split('|')
-    setPass(current => current && { ...current, seen: new Set([...current.seen ?? [], ...keys]) })
+    const items = latest.current.view.items.filter(item => keys.includes(item.key))
+    setPass(current => current && { ...current, seen: new Map([...current.seen ?? [], ...items.map(item => [item.key, item] as const)]) })
   }, [lined])
+  // One whose host then goes out of reach, as while it restarts, is marked too, so a line lost then says the host restarted.
+  useEffect(() => {
+    if (!dropped) return
+    const keys = dropped.split('|')
+    setPass(current => current && { ...current, dropped: new Set([...current.dropped ?? [], ...keys]) })
+  }, [dropped])
   // A client step the press finished stays done, even once a host's restart forgets what its update line ran.
   useEffect(() => {
     if (!pass) return
@@ -272,8 +280,9 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts, doneMs
       const base = current ?? EMPTY_PASS
       const refused = new Map(base.refused); refused.delete(item.key)
       // Seen again only once the host says it is back in the line, so the reply's head start does not read as lost.
-      const seen = new Set(base.seen); seen.delete(item.key)
-      return { ...base, touched: new Set([...base.touched, item.key]), refused, seen, ranBefore: new Map([...base.ranBefore, [item.key, clientUpdate(item)?.ranAt]]), targets: targetsWith(base.targets, [item]) }
+      const seen = new Map(base.seen); seen.delete(item.key)
+      const dropped = new Set(base.dropped); dropped.delete(item.key)
+      return { ...base, touched: new Set([...base.touched, item.key]), refused, seen, dropped, ranBefore: new Map([...base.ranBefore, [item.key, clientUpdate(item)?.ranAt]]), targets: targetsWith(base.targets, [item]) }
     })
     setDismissed(null)
     if (item.kind === 'app') download()
@@ -328,7 +337,11 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts, doneMs
     onPointerEnter: () => setPointerIn(true),
     onPointerLeave: () => setPointerIn(false),
     onFocus: () => setFocusIn(true),
-    onBlur: (event: React.FocusEvent<HTMLElement>) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusIn(false) },
+    // Read once the blur is over: focus that stays put while another window takes it still holds the card.
+    onBlur: (event: React.FocusEvent<HTMLElement>) => {
+      const box = event.currentTarget
+      queueMicrotask(() => { if (!box.contains(document.activeElement)) setFocusIn(false) })
+    },
   }
 
   useEffect(() => {
