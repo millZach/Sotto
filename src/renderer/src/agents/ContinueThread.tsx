@@ -13,7 +13,7 @@ import { ProviderMark } from './ProviderMark'
 import { clockLabel } from './threadFacts'
 import { ChoiceChip, effortChoices, modeChoices, startingProviderMode } from './ThreadOptions'
 import { continueChoiceFor, continuedSince, continueModels, continueStore, lastLimitStop, providerDefaults, unavailableProviders,
-  useContinueEnabled, useContinueLinks, type ContinueChoice } from './continuations'
+  sameFolderOffered, useContinueChoice, useContinueEnabled, useContinueLinks, type ContinueChoice } from './continuations'
 import './continueThread.css'
 
 /**
@@ -32,13 +32,11 @@ const LIMIT_OWNER: Partial<Record<ProviderId, string>> = { claude: 'Claude' }
  */
 export function ContinueNow({ thread, state, onStart }: { readonly thread: AgentThread; readonly state: AgentState; readonly onStart: () => void }): ReactNode {
   const enabled = useContinueEnabled()
-  const [, rerender] = useState(0)
-  useEffect(() => continueStore.subscribe(() => rerender(value => value + 1)), [])
+  const chosen = useContinueChoice(thread.id)
   if (!enabled || lastLimitStop(thread) === undefined || continueThreadRefusal(thread) !== null || continuedSince(thread) !== undefined) return null
   const models = continueModels(state, thread)
   const unavailable = unavailableProviders(state, thread)
   if (models.length === 0 && unavailable.length === 0) return null
-  const chosen = continueStore.get(thread.id)
   const begin = (model: AgentModel, pick = false): void => {
     continueStore.set(thread.id, { ...continueChoiceFor(state, thread, model.id, chosen), ...(pick ? { pick: true as const } : {}) })
     if (!pick) onStart()
@@ -127,8 +125,9 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
   const ledger = counts === null ? null : handoverLedger(counts)
   const branch = thread.worktree?.branch ?? thread.worktree?.git?.branch ?? undefined
   const here = thread.worktree?.mode === 'independent' ? 'This thread’s worktree' : 'This thread’s project folder'
+  // A worktree that was put away offers only a new one until a send to this thread brings it back (ADR-0041).
   const copies = [
-    { id: 'same', label: 'Same folder', description: `${here}${branch ? `, on ${branch}` : ''}. Both threads change the same files.` },
+    ...(sameFolderOffered(thread) ? [{ id: 'same', label: 'Same folder', description: `${here}${branch ? `, on ${branch}` : ''}. Both threads change the same files.` }] : []),
     ...(branch ? [{ id: 'new-worktree', label: `New worktree from ${branch}`, description: `Starts from ${branch}’s last commit. Uncommitted changes stay where they are.` }] : []),
   ]
   return <section ref={strip} className="continue-strip" aria-label={`Continue on ${target}`} data-tone={choice.error ? 'error' : undefined}
@@ -148,7 +147,7 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
       {copies.length > 1
         ? <ChoiceChip label="Where the new thread works" placeholder="Same folder" value={choice.workingCopy} options={copies} disabled={choice.sending} pending={false}
           onChange={id => continueStore.update(thread.id, { workingCopy: id === 'new-worktree' ? 'new-worktree' : 'same' })} />
-        : <span className="continue-strip__fact" title={copies[0]!.description}>Same folder</span>}
+        : copies[0] ? <span className="continue-strip__fact" title={copies[0].description}>{copies[0].label}</span> : null}
       <span className="continue-strip__fact" title="Starting on another machine isn’t available yet."><Laptop size={14} aria-hidden="true" />This computer</span>
     </div>
     <p className="continue-strip__ledger">

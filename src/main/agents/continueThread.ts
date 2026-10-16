@@ -28,6 +28,8 @@ export interface ContinueCoordinator {
   watcherSnapshot(): AgentHostSnapshot
   /** The user's own command, as the window would send it: creating the continued thread and sending its first message. */
   commandShell(command: AgentCommand): Promise<AgentState>
+  /** Whether a send to the thread is still on its way or unconfirmed, which a retry must never send behind. */
+  hasPendingThreadWork(threadId: string): boolean
   /** How a continued thread's messages are shown, asked only for a thread a window or phone is reading. Returns the unhook. */
   useContinuationDisplay(display: (thread: AgentThread) => readonly AgentMessage[]): () => void
 }
@@ -36,6 +38,7 @@ export interface ContinueHost {
   threadHandover(threadId: string): Handover | undefined
   setContinuedFrom(threadId: string, from: ThreadContinuedFrom): Promise<void>
   addContinuedIn(threadId: string, link: ThreadContinuedIn): Promise<void>
+  noteContinuedMessage(threadId: string, messageId: string): Promise<void>
   watcherCreationPhase(threadId: string): 'unstarted' | 'starting' | 'retryable' | 'started' | undefined
 }
 
@@ -108,6 +111,8 @@ const refused = (message: string): { readonly status: 'refused'; readonly messag
 const UNREADABLE = 'Sotto could not read this thread’s history, so nothing was sent. Try again.'
 const UNREAD_REQUEST = 'Sotto could not read that request. Nothing was sent.'
 const GONE = 'This thread is no longer here. Nothing was sent.'
+/** Anything else that went wrong before the first message went: never a code or a path. */
+const UNEXPECTED = 'Sotto could not start the new thread, so your message was not sent. Try again; nothing is sent twice.'
 
 class Refusal extends Error {}
 function refuse(message: string): never { throw new Refusal(message) }
@@ -157,17 +162,21 @@ export class ContinueService {
       if (model.providerId === source.providerId) refuse(`This thread is already on ${PROVIDER_LABELS[model.providerId]}. Choose a model from another provider to continue there.`)
       const providerRefusal = continueProviderRefusal(snapshot, model.providerId)
       if (providerRefusal !== null) refuse(providerRefusal)
+      // A retry after a refusal names the same new thread. It is used again while nothing has reached it: unstarted, or
+      // started by a first send whose message the provider then refused.
       const existing = snapshot.threads.find(thread => thread.id === request.newThreadId)
-      if (existing && (existing.continuedFrom?.threadId !== source.id || this.options.host.watcherCreationPhase(existing.id) === 'started')) {
+      const phase = existing === undefined ? undefined : this.options.host.watcherCreationPhase(existing.id)
+      if (existing && (existing.continuedFrom?.threadId !== source.id || hasMessages(existing) || this.options.control.hasPendingThreadWork(existing.id))) {
         refuse('That continued thread has started already, so nothing more was sent. Open it to carry on there.')
       }
+      const copy = workingCopyOf(source, request.workingCopy)
       const handover = this.handover(source.id)
       const prefix = continuePrefix(handover.text)
       if (prefix.length + request.text.length > AGENT_TEXT_MAX) refuse('Your message and the handover together are too long to send. Shorten your message, then continue. Nothing was sent.')
       if (!existing) {
         const created = await this.options.control.commandShell({ type: 'create-thread', projectId: source.projectId, title: source.title, modelId: model.id,
           threadId: request.newThreadId, ...(source.titleSource === 'user' ? { titleSource: 'user' as const } : {}),
-          ...workingCopyOf(source, request.workingCopy),
+          ...copy,
           ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
           ...(request.runtimeMode ? { runtimeMode: request.runtimeMode } : {}),
           ...(request.providerMode ? { providerMode: request.providerMode } : {}) })
@@ -180,20 +189,30 @@ export class ContinueService {
           ...(request.providerMode ? { providerMode: request.providerMode } : {}) })
         if (configured.error) refuse(configured.error)
       }
+      if (existing && !sameWorkingCopy(existing, copy)) {
+        // The folder can still change only before anything started there.
+        if (phase !== 'unstarted') refuse('The new thread already started in the folder chosen first, so nothing was sent. Continue in that folder, or put this away and begin again.')
+        const moved = await this.options.control.commandShell({ type: 'configure-thread-working-copy', threadId: existing.id, ...copy })
+        if (moved.error) refuse(moved.error)
+      }
       const at = new Date().toISOString()
       await this.options.host.setContinuedFrom(request.newThreadId, { threadId: source.id, provider: source.providerId!, at,
         handover: { ...handoverPrefixProof(prefix), counts: handoverCounts(handover.summary) } })
       const sent = await this.options.control.commandShell({ type: 'manual-send', threadId: request.newThreadId, draftId: request.draftId, text: prefix + request.text,
         ...(request.attachments?.length ? { attachments: request.attachments } : {}), ...(request.files?.length ? { files: request.files } : {}) })
       // A send whose result the provider never gave may have gone, so the link is made for it as for one it took.
-      const delivery = sent.deliveries?.find(item => item.threadId === request.newThreadId && item.draftId === request.draftId)?.status
-      const went = delivery === 'accepted' || delivery === 'uncertain' || delivery === 'submitting'
+      const delivery = sent.deliveries?.find(item => item.threadId === request.newThreadId && item.draftId === request.draftId)
+      const went = delivery?.status === 'accepted' || delivery?.status === 'uncertain' || delivery?.status === 'submitting'
         || sent.deliveredDrafts?.some(item => item.threadId === request.newThreadId && item.draftId === request.draftId) === true
       if (!went) refuse(sent.error ?? `${PROVIDER_LABELS[model.providerId]} didn’t take the first message, so nothing was sent. Check it under Settings → Providers, then continue again.`)
-      await this.options.host.addContinuedIn(source.id, { threadId: request.newThreadId, provider: model.providerId, at })
+      // The message went, so nothing below may turn this into a refusal: a link that could not be saved is the only loss.
+      try {
+        if (delivery?.messageId) await this.options.host.noteContinuedMessage(request.newThreadId, delivery.messageId)
+        await this.options.host.addContinuedIn(source.id, { threadId: request.newThreadId, provider: model.providerId, at })
+      } catch { /* The new thread still names the source; the source's link back is what was not saved. */ }
       return { status: 'ok', threadId: hostEntityKey(this.options.control.hostId(), request.newThreadId) }
     } catch (error) {
-      return refused(error instanceof Refusal ? error.message : error instanceof Error ? error.message : 'Sotto could not continue this thread. Nothing was sent. Try again.')
+      return refused(error instanceof Refusal ? error.message : UNEXPECTED)
     } finally {
       if (sourceId !== undefined) this.continuing.delete(sourceId)
     }
@@ -217,11 +236,25 @@ export class ContinueService {
   }
 }
 
+/** Whether anything reached a thread: a message of the user's, or any message Sotto holds. */
+function hasMessages(thread: AgentThread): boolean {
+  return thread.lastUserMessageId !== undefined || thread.messages.length > 0 || (thread.summary?.messageCount ?? 0) > 0
+}
+
+/** Whether a thread already works where a continuation chose. */
+function sameWorkingCopy(thread: AgentThread, copy: ReturnType<typeof workingCopyOf>): boolean {
+  const worktree = thread.worktree
+  if (copy.workingCopy === 'shared') return worktree === undefined || worktree.mode === 'shared'
+  if (worktree?.mode !== 'independent') return false
+  if (copy.existingWorktreePath !== undefined) return worktree.existingWorktreePath === copy.existingWorktreePath || worktree.path === copy.existingWorktreePath
+  return worktree.existingWorktreePath === undefined && worktree.reused !== true && worktree.baseBranch === copy.baseBranch
+}
+
 /**
  * Where the continued thread works. The same folder is the source's own: its project folder, or the worktree it works
  * in, used again rather than copied. A new worktree is made from the branch the source is on.
  */
-function workingCopyOf(source: AgentThread, choice: ContinueWorkingCopy): Pick<Extract<AgentCommand, { type: 'create-thread' }>, 'workingCopy' | 'baseBranch' | 'existingWorktreePath'> {
+function workingCopyOf(source: AgentThread, choice: ContinueWorkingCopy): { readonly workingCopy: 'independent' | 'shared'; readonly baseBranch?: string; readonly existingWorktreePath?: string } {
   const worktree = source.worktree
   if (choice === 'new-worktree') {
     const branch = worktree?.branch ?? worktree?.git?.branch ?? undefined

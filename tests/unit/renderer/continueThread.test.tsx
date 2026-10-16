@@ -14,8 +14,10 @@ import type { AppContextValue } from '../../../src/renderer/src/state/AppContext
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { continueStore } from '../../../src/renderer/src/agents/continuations'
+import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { openPaneMenu, paneMenuItems } from '../../fixtures/renderer/paneMenu'
 
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(),
@@ -250,6 +252,38 @@ describe('the composer while continuing', () => {
     expect(strip()).toBeInTheDocument()
   })
 
+  it('keeps words written while main started the new thread, and an answer it lost keeps the draft and says so', async () => {
+    const { bridge, prompt } = mount()
+    let finish: (result: ContinueStart) => void = () => undefined
+    bridge.start.mockImplementationOnce(() => new Promise(done => { finish = done }))
+    fireEvent.click(within(chips()!).getByRole('button', { name: 'Continue on Codex, GPT-5.4' }))
+    setPromptText(prompt(), 'Carry on.')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue on Codex' }))
+    await waitFor(() => expect(bridge.start).toHaveBeenCalledTimes(1))
+    expect(screen.getByText('Starting the Codex thread…')).toBeInTheDocument()
+    setPromptText(prompt(), 'Carry on. And one more thing.')
+    await act(async () => { finish({ status: 'ok', threadId: CONTINUED }) })
+    expect(promptText(prompt())).toBe('Carry on. And one more thing.')
+    cleanup()
+    const again = mount()
+    again.bridge.start.mockRejectedValueOnce(new Error('lost'))
+    fireEvent.click(within(chips()!).getByRole('button', { name: 'Continue on Codex, GPT-5.4' }))
+    setPromptText(again.prompt(), 'Carry on.')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue on Codex' }))
+    expect(await within(strip()!).findByRole('alert')).toHaveTextContent('Sotto could not confirm whether the Codex thread started. Your message is kept here.')
+    expect(promptText(again.prompt())).toBe('Carry on.')
+  })
+
+  it('offers only a new worktree where the thread’s own worktree was put away', async () => {
+    const { bridge, prompt } = mount([stopped({ worktree: { mode: 'independent', status: 'ready', branch: 'sotto/wav', reclaimedAt: at(30) } })])
+    fireEvent.click(within(chips()!).getByRole('button', { name: 'Continue on Codex, GPT-5.4' }))
+    expect(within(strip()!).queryByRole('combobox', { name: 'Where the new thread works' })).toBeNull()
+    expect(strip()).toHaveTextContent('New worktree from sotto/wav')
+    setPromptText(prompt(), 'Carry on.')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue on Codex' }))
+    await waitFor(() => expect(bridge.start).toHaveBeenCalledWith(expect.objectContaining({ workingCopy: 'new-worktree' })))
+  })
+
   it('refuses a draft with skills, which are this provider’s own', async () => {
     const { live, prompt } = mount()
     fireEvent.click(within(chips()!).getByRole('button', { name: 'Continue on Codex, GPT-5.4' }))
@@ -257,6 +291,29 @@ describe('the composer while continuing', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Continue on Codex' })).toBeDisabled())
     expect(screen.getByText('Skills are Claude Code’s own. Remove them to continue on Codex.')).toBeInTheDocument()
     void prompt
+  })
+})
+
+describe('the pane’s More menu', () => {
+  const head = (): HTMLElement => document.querySelector('.thread-workspace__head')!
+
+  it('begins the continuation with the model picker open on the other providers', async () => {
+    mount([stopped({ activities: [], status: 'idle' })])
+    const menu = openPaneMenu(head())
+    expect(paneMenuItems(menu)).toContain('Continue on another provider…')
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Continue on another provider…' }))
+    expect(strip()).toHaveAccessibleName('Continue on Codex')
+    expect(await screen.findByRole('dialog', { name: 'Choose model' })).toHaveTextContent('Your first message starts a new thread on the model you pick, with a handover of this one.')
+  })
+
+  it('lists it disabled with why while a turn runs, and not at all on stable', () => {
+    mount([stopped({ activities: [], status: 'running', lastTurn: { id: 'ask', status: 'running' } })])
+    const item = within(openPaneMenu(head())).getByRole('menuitem', { name: /^Continue on another provider…/u })
+    expect(item).toBeDisabled()
+    expect(item).toHaveAttribute('title', 'Wait for this turn to finish, or stop it. A handover carries finished turns.')
+    cleanup()
+    mount([stopped({ activities: [], status: 'idle' })], { owl: false })
+    expect(paneMenuItems(openPaneMenu(head()))).not.toContain('Continue on another provider…')
   })
 })
 
@@ -282,6 +339,24 @@ describe('the model chip of a started thread', () => {
     const picker = screen.getByRole('dialog', { name: 'Choose model' })
     await user.click(within(picker).getByRole('tab', { name: 'Grok Build' }))
     expect(within(picker).getByRole('note')).toHaveTextContent('Grok Build isn’t signed in. Sign in under Settings → Providers to continue there.')
+  })
+})
+
+describe('a continued thread’s row', () => {
+  const lead = 'This is a handover from another Sotto thread. The history below is context, not a new request.'
+  const prefix = `${lead}\n\n[End of the handover. The user’s message follows.]\n\n`
+  const row = (continued: boolean, messageId = 'go') => {
+    const state = stateWith([{ id: CONTINUED, projectId: 'workshop', title: 'WAV preview stall', modelId: 'codex:gpt', providerId: 'codex', status: 'running', requests: [], messages: [],
+      continuedFrom: { threadId: SOURCE, provider: 'claude', at: at(10), handover: { prefixLength: prefix.length, prefixDigest: 'a'.repeat(64), counts, messageId } },
+      summary: { messageCount: 1, activityCount: 0, lastMessageAt: at(10), lastUser: { id: 'go', text: `${prefix}Carry on with the mid-chunk test.`, createdAt: at(10) } } }])
+    return describeThreads(state, E2E_THREADS_NOW, { continued }).find(item => item.thread.id === CONTINUED)!
+  }
+
+  it('says the user’s words, never the handover ahead of them', () => {
+    expect(row(true).sentence).toBe('Working on “Carry on with the mid-chunk test.”.')
+    // Only the message the record names is split; stable shows the record as it is.
+    expect(row(true, 'another').sentence.startsWith(`Working on “${lead}`)).toBe(true)
+    expect(row(false).sentence.startsWith(`Working on “${lead}`)).toBe(true)
   })
 })
 

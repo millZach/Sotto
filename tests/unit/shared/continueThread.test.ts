@@ -50,10 +50,18 @@ describe('a continued thread’s excerpt', () => {
   const continued = { continuedFrom: { threadId: 'source', provider: 'claude' as const, at: '2026-10-16T10:00:00.000Z', handover: proof } }
   it('is the user’s words after the handover, and nothing when it was cut before them', () => {
     const text = `${HANDOVER_LEAD}${'x'.repeat(20)}Carry on.`
-    expect(continuedWordsOf(continued, text)).toBe('Carry on.')
-    expect(continuedWordsOf(continued, text.slice(0, proof.prefixLength))).toBeUndefined()
-    expect(continuedWordsOf(continued, 'A later message.')).toBeUndefined()
-    expect(continuedWordsOf({}, text)).toBeUndefined()
+    expect(continuedWordsOf(continued, { id: 'first', text })).toBe('Carry on.')
+    expect(continuedWordsOf(continued, { id: 'first', text: text.slice(0, proof.prefixLength) })).toBeUndefined()
+    expect(continuedWordsOf(continued, { id: 'later', text: 'A later message.' })).toBeUndefined()
+    expect(continuedWordsOf({}, { id: 'first', text })).toBeUndefined()
+  })
+
+  it('splits only the message the proof names, once the send named one', () => {
+    const named = { continuedFrom: { ...continued.continuedFrom, handover: { ...proof, messageId: 'first' } } }
+    const text = `${HANDOVER_LEAD}${'x'.repeat(20)}Carry on.`
+    expect(continuedWordsOf(named, { id: 'first', text })).toBe('Carry on.')
+    // A later message that only looks like a handover is left whole.
+    expect(continuedWordsOf(named, { id: 'later', text })).toBeUndefined()
   })
 })
 

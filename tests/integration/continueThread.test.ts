@@ -102,7 +102,7 @@ it('sends the handover and the user’s request to the new thread as one message
   const original = f.thread(sourceId)!
   expect(continued).toMatchObject({ providerId: 'codex', projectId: original.projectId, title: 'WAV preview stall', titleSource: 'user' })
   expect(continued.worktree?.mode).toBe('shared')
-  expect(continued.continuedFrom).toMatchObject({ threadId: sourceId, provider: 'claude', handover: { counts: { total: 2, carried: 2, historyKept: true, answered: true } } })
+  expect(continued.continuedFrom).toMatchObject({ threadId: sourceId, provider: 'claude', handover: { messageId: sent!.messageId, counts: { total: 2, carried: 2, historyKept: true, answered: true } } })
   expect(original.continuedIn).toEqual([{ threadId: input.newThreadId, provider: 'codex', at: continued.continuedFrom!.at }])
   // Every copy shows the user's words, with the handover beside them as Sotto's, by the recorded proof.
   await f.control.commandShell({ type: 'observe-threads', threadIds: [input.newThreadId] })
@@ -167,6 +167,26 @@ it('links the source only once the first message went, and a retry uses the same
   expect(f.sends('codex')).toHaveLength(1)
   expect(f.thread(sourceId)!.continuedIn).toEqual([expect.objectContaining({ threadId: input.newThreadId })])
   expect(f.control.shell().host.threads.filter(item => item.continuedFrom?.threadId === sourceId)).toHaveLength(1)
+})
+
+it('uses the same new thread again when the provider started it but refused the first message, and moves it to a new folder only before it starts', async () => {
+  const f = await fixture()
+  const sourceId = await f.source()
+  const codex = f.workspace.adapters.codex
+  const execute = codex.execute.bind(codex)
+  let refuseSend = true
+  codex.execute = async command => {
+    if (command.type === 'send' && refuseSend) { refuseSend = false; throw new Error('Synthetic refusal') }
+    return execute(command)
+  }
+  const input = f.request(sourceId)
+  expect((await f.start(input)).status).toBe('refused')
+  expect(f.thread(input.newThreadId)?.nativeSessionStarted).toBe(true)
+  expect(f.thread(sourceId)!.continuedIn).toBeUndefined()
+  // Nothing reached it, so the retry goes there, in the folder it started in.
+  expect(await f.start({ ...input, draftId: randomUUID() })).toEqual({ status: 'ok', threadId: expect.any(String) })
+  expect(f.sends('codex').at(-1)!.text.endsWith('\n\nAlso add a test for a stream that ends mid-chunk.')).toBe(true)
+  expect(f.thread(sourceId)!.continuedIn).toEqual([expect.objectContaining({ threadId: input.newThreadId })])
 })
 
 it('leaves the source readable and sendable', async () => {

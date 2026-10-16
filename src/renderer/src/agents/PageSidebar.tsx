@@ -10,6 +10,7 @@ import { useClock } from './paneGrid'
 import { SidebarFoot, SidebarTop, useSidebarMode, type SidebarMode } from './SidebarFrame'
 import { useShared } from './stateSharing'
 import { describeThreads, organizeWorkspace } from './threadFacts'
+import { useContinueEnabled } from './continuations'
 import { setNewThreadIntent } from './threadIntent'
 import { ThreadSidebar } from './ThreadSidebar'
 
@@ -39,7 +40,8 @@ export function PageSidebar({ now: fixedNow }: {
   const roomWatcher = useRoomWatcherThreadId()
   const state = useMemo(() => withoutRoomWatcher(visibleWatcherState(overlayDraftThreads(published, drafts), watcherEnabled), watcherEnabled, roomWatcher),
     [published, drafts, watcherEnabled, roomWatcher])
-  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now), [state, now]))
+  const continued = useContinueEnabled()
+  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued]))
   // Delegated threads sit under the thread that delegated to them (ADR-0081; Owl only).
   const nestDelegated = useOwlFeature('thread-delegation')
   const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId, nestDelegated), [state, rows, query, nestDelegated]))

@@ -380,12 +380,22 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   async setContinuedFrom(threadId: string, from: ThreadContinuedFrom): Promise<void> {
     await this.initialize(); const thread = this.thread(threadId)
     if (thread.continuedFrom !== undefined && thread.continuedFrom.threadId !== from.threadId) throw new Error('This thread continues another thread.')
-    if (this.state.creations.find(item => item.threadId === threadId)?.phase === 'started') throw new Error('This thread has started already, so it cannot take a handover now.')
     const previous = { continuedFrom: thread.continuedFrom, titleSource: thread.titleSource, titledFromFirstMessage: thread.titledFromFirstMessage }
     thread.continuedFrom = from
     if (thread.titleSource !== 'user') { thread.titleSource = 'generated'; delete thread.titledFromFirstMessage }
     this.dirty = true
     try { await this.flush() } catch (error) { Object.assign(thread, previous); if (previous.titledFromFirstMessage === undefined) delete thread.titledFromFirstMessage; throw error }
+    this.publish()
+  }
+  /** Records which message carried a continued thread's handover, once its send named it (ADR-0088). */
+  async noteContinuedMessage(threadId: string, messageId: string): Promise<void> {
+    await this.initialize(); const thread = this.thread(threadId)
+    const handover = thread.continuedFrom?.handover
+    if (!thread.continuedFrom || !handover || handover.messageId === messageId) return
+    const previous = thread.continuedFrom
+    thread.continuedFrom = { ...previous, handover: { ...handover, messageId } }
+    this.dirty = true
+    try { await this.flush() } catch (error) { thread.continuedFrom = previous; throw error }
     this.publish()
   }
   /** Records a thread that continues this one (ADR-0088), newest last, on this thread's own record. */

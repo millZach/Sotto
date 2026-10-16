@@ -236,10 +236,16 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         ...(choice.reasoningEffort ? { reasoningEffort: choice.reasoningEffort } : {}), ...(choice.runtimeMode ? { runtimeMode: choice.runtimeMode } : {}),
         ...(choice.providerMode ? { providerMode: choice.providerMode } : {}), workingCopy: choice.workingCopy, draftId: crypto.randomUUID(), text: written.text,
         ...(written.attachments.length ? { attachments: [...written.attachments] } : {}), ...(written.files?.length ? { files: [...written.files] } : {}) })
-    } catch { result = { status: 'refused', message: `Sotto could not start the ${continueTarget} thread. Nothing was sent. Try again.` } }
+    } catch {
+      // Main's answer was lost, so whether the new thread started is unknown. A retry names the same new thread, which main
+      // refuses once it has started, so nothing is sent twice.
+      result = { status: 'refused', message: `Sotto could not confirm whether the ${continueTarget} thread started. Your message is kept here. If it started, it is in the sidebar; continuing again sends nothing twice.` }
+    }
     if (result.status === 'refused') { continueStore.update(threadId, { sending: false, error: result.message }); return }
     continueStore.set(threadId, undefined)
-    store.edit(threadId, { text: '', attachments: [], skills: [], files: [] })
+    // Only the words that went are cleared: anything written while main started the thread stays.
+    const now = store.draft(threadId)
+    if (now.text === written.text && now.attachments === written.attachments && now.files === written.files) store.edit(threadId, { text: '', attachments: [], skills: [], files: [] })
     if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
     void command({ type: 'select-thread', threadId: result.threadId })
   }

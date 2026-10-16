@@ -1,7 +1,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, Columns2, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
+import { Archive, ArchiveRestore, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
 import { capabilitiesForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
+import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
 import { PaneMenu, type PaneMenuItem } from './PaneMenu'
@@ -28,6 +29,7 @@ import { WatchedNote, WatchHeaderToggle, WatchToast } from '../watcher/WatchCont
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { DelegatedBy, DelegationComposerNote } from './DelegationCards'
 import { ContinueComposerNote, ContinueNow } from './ContinueThread'
+import { continueChoiceFor, continueModels, continueStore, providerDefaults, useContinueEnabled } from './continuations'
 
 type Command = AgentConnection['command']
 
@@ -230,6 +232,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     ? [{ id: 'settle', label: 'Settle', icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void settleThread(thread, row.project) }]
     : row.settledBy === 'thread'
       ? [{ id: 'restore', label: 'Restore', icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'restore-thread', threadId: thread.id }) }] : []
+  // Continue on another provider (ADR-0088; Owl only): the composer begins it, with the model picker open on the other providers.
+  const continueOn = useContinueEnabled() && !ownPane && thread.nativeSessionStarted !== false && thread.remoteHost !== true && !isThreadArchived(thread)
+    && thread.kind !== 'watcher' && thread.kind !== 'watcher-history'
+  const continueTargets = continueOn ? providerDefaults(state, continueModels(state, thread)) : []
+  const continueRefusal = continueOn ? continueThreadRefusal(thread) : null
+  const continuing: PaneMenuItem[] = continueTargets.length > 0 ? [{ id: 'continue', label: 'Continue on another provider…', icon: <CornerDownRight size={15} aria-hidden="true" />,
+    disabled: continueRefusal !== null, ...(continueRefusal !== null ? { hint: continueRefusal } : {}),
+    run: () => { continueStore.set(thread.id, { ...continueChoiceFor(state, thread, continueTargets[0]!.id, continueStore.get(thread.id)), pick: true }) } }] : []
   const recovery: PaneMenuItem[] = [
     ...(!rowConnected ? [{ id: 'reconnect', label: 'Reconnect', icon: <Plug size={15} aria-hidden="true" />, disabled: state.connection === 'connecting', run: () => void command({ type: 'connect', ...reconnect }) }] : []),
   ]
@@ -254,7 +264,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
         {!closed ? <GitActionButton thread={thread} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {actions}
-        <PaneMenu groups={[naming, context, shelf, recovery]} />
+        <PaneMenu groups={[naming, continuing, context, shelf, recovery]} />
       </div>
       {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>}

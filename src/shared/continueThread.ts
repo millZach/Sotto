@@ -102,11 +102,13 @@ export function continueProviderRefusal(host: Pick<AgentHostSnapshot, 'providers
 
 /**
  * The user's own words in a continued thread's first message, by the length its handover proof records, for a copy that
- * only has the text (the sidebar's excerpt). Undefined when the text is not one that began with the handover, or when
- * the excerpt was cut before the user's words began.
+ * has the message's ID and words but not the digest's means (the sidebar's excerpt). Only the message the proof names is
+ * split, or, before its send named one, a message that begins as a handover does. Undefined for any other message, and
+ * when the excerpt was cut before the user's words began.
  */
-export function continuedWordsOf(thread: Pick<AgentThread, 'continuedFrom'>, text: string): string | undefined {
+export function continuedWordsOf(thread: Pick<AgentThread, 'continuedFrom'>, message: { readonly id: string; readonly text: string }): string | undefined {
   const proof = thread.continuedFrom?.handover
-  if (proof === undefined || !text.startsWith(HANDOVER_LEAD)) return undefined
-  return text.length > proof.prefixLength ? text.slice(proof.prefixLength) : undefined
+  if (proof === undefined || !message.text.startsWith(HANDOVER_LEAD)) return undefined
+  if (proof.messageId !== undefined && proof.messageId !== message.id) return undefined
+  return message.text.length > proof.prefixLength ? message.text.slice(proof.prefixLength) : undefined
 }

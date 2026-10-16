@@ -103,7 +103,13 @@ export function continueChoiceFor(state: AgentState, thread: AgentThread, modelI
   const model = resolveModel(hostForThread(state.host, thread).models, modelId)
   const permission = resolveNewThreadPermission(model, state.configuration.newThreadRuntimeMode)
   return { modelId, reasoningEffort: model?.defaultReasoningEffort, runtimeMode: permission.runtimeMode, providerMode: permission.providerMode,
-    workingCopy: previous?.workingCopy ?? 'same', newThreadId: previous?.newThreadId ?? crypto.randomUUID(), sending: false, error: null }
+    workingCopy: previous?.workingCopy ?? (sameFolderOffered(thread) ? 'same' : 'new-worktree'), newThreadId: previous?.newThreadId ?? crypto.randomUUID(), sending: false, error: null }
+}
+
+/** Whether the thread's own folder can be the continued thread's: not a worktree that was put away (ADR-0041). */
+export function sameFolderOffered(thread: Pick<AgentThread, 'worktree'>): boolean {
+  const worktree = thread.worktree
+  return worktree?.mode !== 'independent' || (worktree.path !== undefined || worktree.existingWorktreePath !== undefined) && worktree.reclaimedAt === undefined
 }
 
 /** The limit the thread's last turn stopped at, when it stopped at one Sotto names. */

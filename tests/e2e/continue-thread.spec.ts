@@ -180,11 +180,11 @@ test.describe('continuing a thread on another provider', () => {
       await everyWindow(launched, 'stopped', () => [codex])
 
       await page.keyboard.press('Enter')
-      const strip = source.getByRole('region', { name: 'Continue on Codex' })
+      const strip = source.getByRole('region', { name: 'Continue on Codex', exact: true })
       await expect(strip).toContainText('Sending starts a new Codex thread with a handover of this one.')
       await expect(strip).toContainText('This computer')
       await expect(strip).toContainText('Handover first: it carries all 3 messages')
-      const send = source.getByRole('button', { name: 'Continue on Codex' })
+      const send = source.getByRole('button', { name: 'Continue on Codex', exact: true })
       await expect(send).toBeDisabled()
       const prompt = source.getByRole('textbox', { name: 'Prompt' })
       await expect(prompt).toBeFocused()

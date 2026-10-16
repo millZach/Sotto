@@ -254,7 +254,9 @@ export type AgentMessageHandover = z.infer<typeof agentMessageHandoverSchema>
  * user-facing copy shows the handover apart from the user's words by this record alone.
  */
 export const threadHandoverProofSchema = z.object({ prefixLength: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  prefixDigest: z.string().regex(/^[0-9a-f]{64}$/u), counts: handoverCountsSchema }).strict()
+  prefixDigest: z.string().regex(/^[0-9a-f]{64}$/u), counts: handoverCountsSchema,
+  /** The first message's Sotto message ID, once its send said it: the only message a copy without the words may split. */
+  messageId: id.optional() }).strict()
 export type ThreadHandoverProof = z.infer<typeof threadHandoverProofSchema>
 /**
  * The thread a **continued thread** continues (ADR-0088): its Sotto thread ID, its provider, when, and the proof of the
@@ -266,8 +268,8 @@ export type ThreadContinuedFrom = z.infer<typeof threadContinuedFromSchema>
 /** One thread that continues this one on another provider (ADR-0088): its Sotto thread ID, its provider and when. */
 export const threadContinuedInSchema = z.object({ threadId: id, provider: providerIdSchema, at: z.string().datetime() }).strict()
 export type ThreadContinuedIn = z.infer<typeof threadContinuedInSchema>
-/** The newest continuations a thread's record keeps; older links fall away first. */
-export const THREAD_CONTINUED_IN_MAX = 20
+/** The most continuations a thread's record names, the newest kept, so a record cannot grow without end. */
+export const THREAD_CONTINUED_IN_MAX = 100
 export const agentMessageSchema = z.object({
   // A projected message combines bounded events and can exceed any one event's limit.
   id, role: z.enum(['user', 'assistant']), text: z.string(), createdAt: z.string(),

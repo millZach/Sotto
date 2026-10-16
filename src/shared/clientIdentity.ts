@@ -63,7 +63,21 @@ export function clientAgentState(state: AgentState): AgentState {
         const own = thread.hostId ?? hostId
         return { ...thread, id: hostEntityKey(own, thread.id), projectId: hostEntityKey(own, thread.projectId),
           ...(thread.delegatedBy ? { delegatedBy: hostEntityKey(own, thread.delegatedBy) } : {}),
-          ...(thread.continuedFrom ? { continuedFrom: { ...thread.continuedFrom, threadId: hostEntityKey(own, thread.continuedFrom.threadId) } } : {}),
-          ...(thread.continuedIn ? { continuedIn: thread.continuedIn.map(link => ({ ...link, threadId: hostEntityKey(own, link.threadId) })) } : {}) }
+          ...(thread.continuedFrom ? { continuedFrom: keyedLinks(thread.continuedFrom, own) } : {}),
+          ...(thread.continuedIn ? { continuedIn: keyedLinks(thread.continuedIn, own) } : {}) }
       }) } }
+}
+
+/**
+ * A continuation's links (ADR-0088) as the window names threads. Each record's links are keyed once and the copy reused
+ * while the record holds the same links, so a broadcast copies none of them and the window's memoised notes stay put.
+ */
+const keyedLinkCopies = new WeakMap<object, { readonly hostId: string; readonly keyed: unknown }>()
+function keyedLinks<T extends { readonly threadId: string } | readonly { readonly threadId: string }[]>(links: T, hostId: string): T {
+  const held = keyedLinkCopies.get(links)
+  if (held?.hostId === hostId) return held.keyed as T
+  const key = <L extends { readonly threadId: string }>(link: L): L => ({ ...link, threadId: hostEntityKey(hostId, link.threadId) })
+  const keyed = (Array.isArray(links) ? links.map(key) : key(links as { readonly threadId: string })) as T
+  keyedLinkCopies.set(links, { hostId, keyed })
+  return keyed
 }
