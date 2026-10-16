@@ -6,7 +6,7 @@ import type { PublishScheduler } from '../../../src/main/agents/control'
 import { registerIpc } from '../../../src/main/ipc/registerIpc'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT,
   WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
-  type WatcherRoomState, type WatcherRoomResult, type WatcherStopAllResult } from '../../../src/shared/watcherRoom'
+  type WatcherHandoverRead, type WatcherRoomState, type WatcherRoomResult, type WatcherStopAllResult } from '../../../src/shared/watcherRoom'
 import { createIpcHarness } from '../../fixtures/ipcHarness'
 import { deferred } from '../../fixtures/deferred'
 
@@ -36,6 +36,9 @@ function fixture(watcherEnabled = true, streamingPublishCost = true) {
     unwatchThread: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
     prepareStopAll: vi.fn(() => ({ status: 'ok' as const, confirmationId: randomUUID(), targets: [], expiresAt: at })),
     stopAll: vi.fn(async (): Promise<WatcherStopAllResult> => ({ status: 'ok', state: current, results: [] })),
+    readHandover: vi.fn((): WatcherHandoverRead => ({ status: 'refused', code: 'TARGET_CHANGED', message: 'There is no handover to read.', retryable: false })),
+    continueWithHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
+    dismissHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
   }
   const send = vi.fn((state: WatcherRoomState) => { order.push(`send:${state.recoveryNotice}`); return available })
   const setLimit = vi.fn(async (limit: number) => { current = { ...current, inFlightLimit: limit } })

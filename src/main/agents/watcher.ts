@@ -2,16 +2,16 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf,
-  type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentThread } from '../../shared/agents'
+  type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentThread, type HandoverCounts } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
-  type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherThreadTarget, type WatcherStandingWatch,
+  type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput } from '../../shared/watcher'
-import { takesPartInActiveRequest, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
-  type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
+import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
+  type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
   type WatcherPrepareStopAllResult, type WatcherStopAllResult } from '../../shared/watcherRoom'
 import type { AgentHostCommand } from './host'
 import type { AgentControl } from './control'
@@ -19,6 +19,8 @@ import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherProgressFingerprint } from './watcherWakeUp'
 import { watcherRequestNote } from './watcherRequestNote'
 import { watcherDisplayPrompt } from './watcherMessageDisplay'
+import type { Handover } from './handover'
+import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessageAsShown } from './watcherHandover'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
@@ -74,6 +76,7 @@ function cutUtf8(text: string, bytes: number): string {
   while (end > 0 && (encoded[end]! & 0xc0) === 0x80) end--
   return new TextDecoder().decode(encoded.subarray(0, end))
 }
+const HANDOVER_UNREADABLE = 'Sotto could not read the last Watcher’s history, so there is no handover to show. Nothing was sent. Its conversation is still in Watcher history on the Threads page; put the offer away to start the new Watcher without it.'
 const HOST_WITHOUT_OUTCOMES = 'This host does not report outcomes, so Sotto cannot say how this ended. Update Sotto on that host, or read the thread.'
 function refuse(code: WatcherRefusal['code'], message: string, retryable = false): never { throw new Refusal({ ...watcherRefusal(code, message, retryable), ...(code === 'CURSOR_EXPIRED' ? { restartCursor: 'restart' } : {}) }) }
 
@@ -101,6 +104,15 @@ export class WatcherService implements WatcherControlHooks {
   private readonly pendingPromptTurns = new Map<string, { watcher: WatcherThreadTarget; messageId: string }>()
   /** Operations this run saw answered. With history off, a reply from before a restart is not Sotto's to show. */
   private readonly answeredThisRun = new Set<string>()
+  /**
+   * The handover offered to the current Watcher after a provider change (ADR-0073), until its first message goes or the
+   * user puts the offer away. In memory only: a restart drops the offer and sends nothing. `acceptedDraftId` is the draft
+   * the user chose to continue with, and `sendingCommandId` the send carrying the handover until the provider has it.
+   */
+  private handoverOffer: { readonly source: WatcherIdentity; readonly to: WatcherThreadTarget; readonly counts: HandoverCounts
+    acceptedDraftId?: string; sendingCommandId?: string } | null = null
+  /** Drafts chosen to carry a handover that another send to the new Watcher overtook. */
+  private readonly overtakenHandovers = new Set<string>()
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
     limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void }) {
@@ -299,6 +311,7 @@ export class WatcherService implements WatcherControlHooks {
     // The requests Watcher acts for: the current Watcher's, and a paired master's on the threads this host owns.
     const acting = new Set(record.requests.filter(request => request.state === 'active'
       && (request.remoteOrigin || record.current && key(request.watcher) === key(record.current.target))).map(request => request.id))
+    const offer = this.currentOffer()
     return { current: record.current, currentOptions: current ? { modelId: current.modelId, reasoningEffort: current.reasoningEffort ?? null,
       runtimeMode: current.runtimeMode ?? 'approval-required', status: current.status, connected: this.connected(current) } : null,
       runtimeMode: record.lastRuntimeMode ?? current?.runtimeMode ?? 'approval-required', standingWatches: watches,
@@ -328,10 +341,86 @@ export class WatcherService implements WatcherControlHooks {
           participation }
       }), inFlight: this.inFlight(record), inFlightLimit: this.options.limit(),
       receipts: record.operations.map(operation => { const outcome = this.outcomeOf(operation); return outcome ? { ...operation, outcome } : operation }),
-      news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now() }
+      news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(),
+      handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null }
   }
   private roomObservation(observation: WatcherObservation) { const { landing: _landing, ...result } = observation; void _landing; return result }
   get(): WatcherRoomResult { return { status: 'ok', state: this.state() } }
+
+  /** A handover of an earlier Watcher conversation, its messages as its pane shows them (ADR-0073). */
+  private buildHandover(source: WatcherIdentity): Handover | undefined {
+    const requests = this.record().requests
+    return this.options.host.watcherHandover(source.target.threadId, message => watcherMessageAsShown(source.target.hostId, source.target.threadId, message, requests))
+  }
+  /**
+   * After a provider change, offers a handover of the conversation the new Watcher replaced, when that one has history.
+   * Any earlier offer goes with it. A history that cannot be read offers nothing.
+   */
+  private offerHandover(previous: WatcherIdentity, to: WatcherThreadTarget): void {
+    this.handoverOffer = null
+    let handover: Handover | undefined
+    try { handover = this.buildHandover(previous) } catch { handover = undefined }
+    if (handover && handover.summary.total > 0) this.handoverOffer = { source: previous, to, counts: handoverCounts(handover.summary) }
+  }
+  /** The offer, while it is still for the current Watcher. */
+  private currentOffer(): NonNullable<WatcherService['handoverOffer']> | null {
+    const offer = this.handoverOffer, current = this.record().current
+    return offer && current && key(offer.to) === key(current.target) ? offer : null
+  }
+  /** The offered handover's words, as the new Watcher would receive them. Read only when the user asks to read it. */
+  readHandover(): WatcherHandoverRead {
+    try {
+      const offer = this.currentOffer()
+      if (!offer) refuse('TARGET_CHANGED', 'There is no handover to read: the new Watcher has had its first message, or the offer was put away. The last Watcher’s conversation is in Watcher history on the Threads page.')
+      const handover = this.buildHandover(offer.source)
+      if (!handover || handover.summary.total === 0) refuse('HISTORY_UNAVAILABLE', HANDOVER_UNREADABLE)
+      return { status: 'ok', text: handoverPrefix(handover.text).trimEnd(), counts: handoverCounts(handover.summary) }
+    } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('HISTORY_UNAVAILABLE', HANDOVER_UNREADABLE) }
+  }
+  /** The user chose to continue: the send of this draft carries the handover ahead of its words. */
+  continueWithHandover(input: WatcherContinueHandoverRequest): WatcherRoomResult {
+    try {
+      const parsed = watcherContinueHandoverRequestSchema.safeParse(input)
+      if (!parsed.success) refuse('INVALID_INPUT', 'Write a message to send with the handover.')
+      const offer = this.currentOffer()
+      if (!offer) refuse('TARGET_CHANGED', 'The handover is no longer offered, so nothing was sent. Retry sends your message to the new Watcher without it.')
+      offer.acceptedDraftId = parsed.data.draftId
+      return this.get()
+    } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('TARGET_CHANGED', 'Sotto could not take the handover. Nothing was sent. Send your message again.', true) }
+  }
+  /** Puts the offer away. Nothing is sent, and the new Watcher's first message goes without a handover. */
+  dismissHandover(): WatcherRoomResult {
+    if (this.currentOffer()) { this.handoverOffer = null; this.publish() }
+    return this.get()
+  }
+  /**
+   * What a user send to the current Watcher carries ahead of its words. Only the draft the user chose to continue with,
+   * as the first message of a new request, gets the handover, built afresh; any other send begins the new Watcher's
+   * conversation without one, so the offer goes. A history that can no longer be read refuses the send, since the user
+   * asked for the handover, and the next send goes without it.
+   */
+  private handoverFor(threadId: string, commandId: string, draftId: string | undefined): { prefix: string; provenance: NonNullable<WatcherRequest['handover']> } | undefined {
+    if (draftId !== undefined && this.overtakenHandovers.delete(draftId)) {
+      refuse('TARGET_CHANGED', 'Another message reached the new Watcher first, so the handover is no longer offered and nothing was sent. Retry sends your message without it.')
+    }
+    const offer = this.currentOffer()
+    if (!offer || offer.to.threadId !== threadId) return undefined
+    if (offer.acceptedDraftId === undefined || offer.acceptedDraftId !== draftId) {
+      // The user chose to continue with a draft that has not gone yet: when it comes, it is refused rather than sent bare.
+      if (offer.acceptedDraftId !== undefined) this.overtakenHandovers.add(offer.acceptedDraftId)
+      this.handoverOffer = null
+      return undefined
+    }
+    let built: Handover | undefined
+    try { built = this.buildHandover(offer.source) } catch { built = undefined }
+    if (!built || built.summary.total === 0) {
+      this.handoverOffer = null
+      refuse('HISTORY_UNAVAILABLE', 'Sotto could not read the last Watcher’s history, so nothing was sent. Retry sends your message to the new Watcher without the handover.')
+    }
+    const prefix = handoverPrefix(built.text)
+    offer.sendingCommandId = commandId
+    return { prefix, provenance: watcherHandoverProvenance(prefix, offer.source, handoverCounts(built.summary)) }
+  }
 
   async setPermission(input: WatcherSetPermissionRequest, guard?: () => void): Promise<WatcherRoomResult> {
     try {
@@ -567,7 +656,10 @@ export class WatcherService implements WatcherControlHooks {
         if (record.creation.identity.provider !== input.provider || record.creation.modelId !== input.modelId
           || record.creation.reasoningEffort !== input.reasoningEffort) refuse('TARGET_CHANGED', 'Watcher creation is pending with another choice. Reopen that choice before changing it.')
         await this.finishCreation(record.creation.identity, input)
-        this.recoveryNotice = null; return this.get()
+        // A replacement whose creation stopped part-way and is finished now offers the replaced conversation's handover too.
+        const replaced = record.history.at(-1)
+        if (replaced && previous && key(previous.target) === key(record.creation.identity.target) && replaced.provider !== previous.provider) this.offerHandover(replaced, previous.target)
+        this.recoveryNotice = null; this.publish(); return this.get()
       }
       if (!previous || previous.provider !== input.provider) this.creationPermission(model)
       if (previous) {
@@ -608,6 +700,7 @@ export class WatcherService implements WatcherControlHooks {
       })
       if (previous) { this.options.revoke?.(previous.target.threadId); await this.options.host.setWatcherKind(previous.target.threadId, 'watcher-history') }
       await this.finishCreation(identity, input)
+      if (previous) this.offerHandover(previous, identity.target)
       this.scheduleRemote(); this.publish(); return this.get()
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'Watcher could not be opened. Nothing was sent. Check its provider and reopen Watcher.', true) }
     finally { this.changing = false }
@@ -726,6 +819,9 @@ export class WatcherService implements WatcherControlHooks {
     const record = this.record()
     let request = record.requests.find(item => item.rootUserMessageId === command.messageId
       || _draftId && item.userFollowups?.some(followup => followup.draftId === _draftId))
+    // Decided before anything is recorded, so a refused handover leaves no request behind.
+    const continuing = request !== undefined && request.rootUserMessageId !== command.messageId
+    const handover = continuing ? undefined : this.handoverFor(command.threadId, command.commandId, _draftId)
     if (!request) {
       request = { id: randomUUID(), watcher: this.target(command.threadId), rootUserMessageId: command.messageId,
         state: 'active', createdAt: now(), closedAt: null, participants: [], ...(origin?.phoneOrigin ? { phoneOrigin: origin.phoneOrigin } : {}) }
@@ -750,8 +846,10 @@ export class WatcherService implements WatcherControlHooks {
         if (!sameMessage) { if (displayPrompt) delivered.displayPrompt = displayPrompt; else delete delivered.displayPrompt }
         else if (displayPrompt && delivered.displayPrompt === undefined) delivered.displayPrompt = displayPrompt
       } else if (displayPrompt && saved.rootUserMessageId === command.messageId && saved.displayPrompt === undefined) saved.displayPrompt = displayPrompt
+      // The handover goes ahead of the words in the same message; its record is how every copy shows the two apart.
+      if (handover && saved.rootUserMessageId === command.messageId) saved.handover = handover.provenance
     })
-    return { ...command, watcherRequestNote: note }
+    return { ...command, ...(handover ? { text: handover.prefix + command.text } : {}), watcherRequestNote: note }
   }
   private activatePromptTurn(commandId: string): void {
     const candidate = this.pendingPromptTurns.get(commandId)
@@ -760,8 +858,15 @@ export class WatcherService implements WatcherControlHooks {
     })
     this.pendingPromptTurns.delete(commandId)
   }
-  dispatched(command: AgentHostCommand): void { this.activatePromptTurn(command.commandId) }
-  dispatchAborted(command: AgentHostCommand): void { this.pendingPromptTurns.delete(command.commandId) }
+  dispatched(command: AgentHostCommand): void {
+    this.activatePromptTurn(command.commandId)
+    // The provider has the handover, or may have: it is never offered again.
+    if (this.handoverOffer?.sendingCommandId === command.commandId) { this.handoverOffer = null; this.publish() }
+  }
+  dispatchAborted(command: AgentHostCommand): void {
+    this.pendingPromptTurns.delete(command.commandId)
+    if (this.handoverOffer?.sendingCommandId === command.commandId) delete this.handoverOffer.sendingCommandId
+  }
   observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void {
     const master = snapshot.threads.find(thread => thread.id === this.record().current?.target.threadId)
     if (master) for (const [commandId, candidate] of this.pendingPromptTurns) if (candidate.watcher.threadId === master.id && knownUserMessages.has(candidate.messageId)
@@ -1999,5 +2104,5 @@ export class WatcherService implements WatcherControlHooks {
     }
     this.publish(); return { status: 'ok', state: this.state(), results }
   }
-  close(): void { this.closed = true; this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
+  close(): void { this.closed = true; this.handoverOffer = null; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear() }
 }

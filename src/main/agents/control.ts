@@ -52,6 +52,7 @@ import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './s
 import { QuestionPages, type QuestionPageTarget } from './questionPages'
 import { watcherRepliesAsShown } from './watcherOwnChanges'
 import { watcherMessageRequests, watcherMessagesAsTyped } from './watcherRequestNote'
+import { watcherHandoversShown } from './watcherHandover'
 import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
@@ -678,8 +679,9 @@ export class AgentControl {
         ...(snapshot.providers ? { providers: snapshot.providers.filter(provider => provider.id !== 'muse') } : {}) }
     }
     // One display path for Watcher's own threads, in its pane, Copy and the phone alike: the user's messages without a line
-    // Sotto put after them, and Watcher's replies without the reason line their own-change line already shows.
-    snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(snapshot, watcherMessageRequests(this.watcher.requests)))
+    // Sotto put after them or a handover it put before them, and Watcher's replies without the reason line their
+    // own-change line already shows.
+    snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(watcherHandoversShown(snapshot, this.watcher.requests), watcherMessageRequests(this.watcher.requests)))
     if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
     return this.questionPages.decorate(snapshot)
   }
