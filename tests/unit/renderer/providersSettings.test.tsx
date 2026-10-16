@@ -32,6 +32,52 @@ function provide(state = fixture()) {
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe('independent provider settings', () => {
+  it('shows and acts on this computer’s clients while another host is selected for new work', async () => {
+    const LOCAL = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222'
+    const base = fixture()
+    const here = base.host.providers!.map(provider => provider.id === 'codex' ? { ...provider, version: '0.130.0' } : provider)
+    // The selected host is forge, whose Codex is signed out. Its status is what the top level carries.
+    const forge = base.host.providers!.map(provider => provider.id === 'codex'
+      ? { ...provider, version: '0.120.0', connection: 'error' as const, problem: 'signed-out' as const, error: 'Could not connect Codex. Sign in to Codex on forge, then connect it again.' } : provider)
+    const state: AgentState = { ...base, hostId: FORGE,
+      configuration: { ...base.configuration, enabledProviders: ['grok'], checkClientUpdates: false },
+      connections: [{ hostId: LOCAL, name: 'This computer', kind: 'local', connected: true }, { hostId: FORGE, name: 'forge', kind: 'remote', connected: true }],
+      host: { ...base.host, providers: forge, clientHosts: [
+        { hostId: LOCAL, connected: true, models: base.host.models, capabilities: caps, providers: here, enabledProviders: ['codex', 'claude', 'grok'], checkClientUpdates: true },
+        { hostId: FORGE, connected: true, models: [], capabilities: caps, providers: forge },
+      ] } }
+    const { command } = provide(state)
+    render(<ProvidersSettings />)
+    // This computer's switches, version and status, never forge's.
+    expect(screen.getByRole('switch', { name: 'Enable Codex' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByText('0.130.0')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(within(screen.getByRole('button', { name: 'Codex' })).getByText('Connected')).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Check for client updates' })).toHaveAttribute('aria-checked', 'true')
+    // Every press names this computer, so none reaches forge.
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect Codex' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'disconnect', provider: 'codex', hostId: LOCAL }))
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'check-client-updates', hostId: LOCAL }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Check for client updates' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { checkClientUpdates: false }, hostId: LOCAL }))
+  })
+  it('asks a provider that needs attention again when Check again is pressed, after someone signs in', async () => {
+    const state = fixture()
+    state.host.providers = state.host.providers!.map(provider => provider.id === 'codex'
+      ? { ...provider, connection: 'error' as const, problem: 'signed-out' as const, error: 'Could not connect Codex. Sign in to Codex on this machine, then connect it again.' } : provider)
+    const { command } = provide(state)
+    render(<ProvidersSettings />)
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'check-client-updates' }))
+    expect(command).toHaveBeenNthCalledWith(1, { type: 'refresh', provider: 'codex' })
+    // A connected provider is left alone: Check again then only reads versions.
+    command.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'check-client-updates' }))
+    expect(command).toHaveBeenCalledTimes(1)
+  })
   it('shows three enabled connections and disconnects only the selected provider', async () => {
     const { state, command } = provide()
     render(<ProvidersSettings />)
