@@ -238,3 +238,49 @@ it('gives each delegated thread four briefs per turn of the delegating thread, r
   const key = randomUUID()
   expect(await f.delegate(parent, { thread: child, brief: 'Synthetic brief 5', retry_key: key })).toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
 })
+
+it('records a delegation it refuses as refused, holding no slot, starting and sending nothing, and telling no wake-up', async () => {
+  const f = await fixture({ limit: 2, otherStarts: 1 }), parent = await f.userThread('claude')
+  const first = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
+  const started = () => f.control.shell().host.threads.filter(thread => thread.delegatedBy === parent).length
+  const refused = await f.delegate(parent, { provider: 'grok', model: f.model('grok').id, wait_seconds: 0 }) as Refused & { delegation?: string }
+  expect(refused).toMatchObject({ status: 'refused', code: 'IN_FLIGHT_LIMIT' })
+  expect(refused.delegation).toBeDefined()
+  expect(started()).toBe(1)
+  const read = f.ok(await f.read(parent, refused.delegation!))
+  expect(read.delegation).toMatchObject({ id: refused.delegation, outcome: 'refused', refusal: 'IN_FLIGHT_LIMIT', note: refused.message, provider: 'grok', action: 'start' })
+  expect(read.delegation.thread).toBeUndefined()
+  // It holds no slot: the in-flight count is the first delegation's and Watcher's alone.
+  expect(read.limits.inFlight).toBe(2)
+  expect(f.service.startsInFlight()).toBe(1)
+  // A cancel has nothing to stop, and the listing names it beside the delegation that started.
+  expect(await f.service.cancel(parent, { delegation: refused.delegation })).toMatchObject({ status: 'ok', delegation: { outcome: 'refused' } })
+  const listed = await f.service.read(parent, {}) as { delegations: { id: string; outcome: string }[] }
+  expect(listed.delegations.map(item => [item.id, item.outcome])).toEqual([[first.delegation.id, 'working'], [refused.delegation, 'refused']])
+  // A refused send to a thread it delegated to names that thread, and sends nothing.
+  await f.control.commandShell({ type: 'save-thread-draft', threadId: first.delegation.thread, draftId: randomUUID(), text: 'The user is typing', requestId: null })
+  const send = await f.delegate(parent, { thread: first.delegation.thread, brief: 'Synthetic second brief', wait_seconds: 0 }) as Refused & { delegation?: string }
+  expect(send).toMatchObject({ status: 'refused', code: 'PAUSED' })
+  expect(f.ok(await f.read(parent, send.delegation!)).delegation).toMatchObject({ outcome: 'refused', refusal: 'PAUSED', thread: first.delegation.thread, action: 'send' })
+  expect(f.native(first.delegation.thread).messages.some(message => message.text === 'Synthetic second brief')).toBe(false)
+  // A call with arguments to correct is not a delegation, so nothing is recorded.
+  const invalid = await f.service.delegate(parent, { work: 'research', brief: 'Synthetic brief', provider: 'codex', model: f.model('codex').id }) as Refused & { delegation?: string }
+  expect(invalid).toMatchObject({ code: 'INVALID_INPUT' })
+  expect(invalid.delegation).toBeUndefined()
+  // It is kept across a restart, and nothing about it reaches the delegating thread as a wake-up.
+  await f.restart()
+  expect(f.ok(await f.read(parent, refused.delegation!)).delegation).toMatchObject({ outcome: 'refused', refusal: 'IN_FLIGHT_LIMIT' })
+  expect(f.control.shell().followups?.some(item => item.threadId === parent && item.wakeUp)).toBeFalsy()
+})
+
+it('records the refusal of a thread that may not delegate, with its rule, through the tool server', async () => {
+  const f = await fixture(), parent = await f.userThread('claude')
+  const child = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 })).delegation.thread
+  const grandchild = f.ok(await f.delegate(child, { provider: 'grok', model: f.model('grok').id, wait_seconds: 0 })).delegation.thread
+  const call = await f.tools.call(grandchild, 'delegate', { work: 'research', brief: 'Synthetic brief', provider: 'codex', model: f.model('codex').id, effort: 'low', permission: 'approval-required' })
+  expect(call.isError).toBe(true)
+  expect(call.structuredContent).toMatchObject({ status: 'refused', code: 'LEVEL_LIMIT', delegation: expect.any(String) })
+  const saved = JSON.parse(await import('node:fs/promises').then(fs => fs.readFile(`${f.root}/delegations.json`, 'utf8'))) as { refusals?: { delegatingThreadId: string; code: string; provider?: string }[] }
+  expect(saved.refusals).toEqual([expect.objectContaining({ delegatingThreadId: grandchild, code: 'LEVEL_LIMIT', provider: 'codex' })])
+  expect(JSON.stringify(saved)).not.toContain('Synthetic brief')
+})

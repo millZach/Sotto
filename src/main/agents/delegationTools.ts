@@ -14,7 +14,7 @@ export const delegationToolDefinitions: readonly ThreadToolDefinition[] = [
     `New threads share the computer's limit on threads in flight with Watcher's. Each thread takes ${DELEGATION_PROMPTS_PER_THREAD} briefs per user message to this thread; retries and wake-ups renew nothing.`,
   ].join(' ') },
   { name: READ_DELEGATION_TOOL, inputSchema: schema(readDelegationInputSchema), description:
-    'Read one of this thread\'s delegations: its outcome (working, background, answered, failed, stopped, paused or unknown) and, once answered, the delegated thread\'s reply, labelled as its own words. With no delegation, list this thread\'s delegations, the ready models it can delegate to, and the limits. Reading charges nothing.',
+    'Read one of this thread\'s delegations: its outcome (working, background, answered, failed, stopped, paused, unknown, or refused when Sotto turned it down as it was asked for) and, once answered, the delegated thread\'s reply, labelled as its own words. With no delegation, list this thread\'s delegations, the ready models it can delegate to, and the limits. Reading charges nothing.',
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
   { name: CANCEL_DELEGATION_TOOL, inputSchema: schema(cancelDelegationInputSchema), description:
     'Cancel one of this thread\'s delegations: a brief still waiting is dropped, and a delegated thread working on it is stopped, with any thread it delegated to. Nothing is deleted.' },
@@ -47,8 +47,9 @@ export class DelegationToolServer implements ScopedThreadTools {
   revoke(threadId: string): void { this.server.revoke(threadId) }
   close(): Promise<void> { return this.server.close() }
   private async invoke(threadId: string, name: string, args: unknown, context: ThreadToolCallContext): Promise<ThreadToolResult> {
-    const result = !this.service.admits(threadId) ? { status: 'refused', code: 'NOT_ADMITTED', message: NOT_ADMITTED }
-      : name === DELEGATE_TOOL ? await this.service.delegate(threadId, args, context)
+    // A delegate call goes to admission even from a thread that may not delegate, so its refusal is recorded with its rule.
+    const result = name === DELEGATE_TOOL ? await this.service.delegate(threadId, args, context)
+      : !this.service.admits(threadId) ? { status: 'refused', code: 'NOT_ADMITTED', message: NOT_ADMITTED }
         : name === READ_DELEGATION_TOOL ? await this.service.read(threadId, args) : await this.service.cancel(threadId, args)
     return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result as Record<string, unknown>,
       ...((result as { status: string }).status === 'refused' ? { isError: true } : {}) }

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, providerIdSchema, type AgentThread } from './agents'
-import { watcherOutcomeSchema, type WatcherOutcome } from './watcher'
+import { WATCHER_OUTCOMES, watcherOutcomeSchema } from './watcher'
 
 /**
  * Delegation between threads (ADR-0081): an ordinary thread hands work to a thread it starts, through the scoped
@@ -52,16 +52,37 @@ export const delegationRefusalCodeSchema = z.enum(['INVALID_INPUT', 'NOT_ADMITTE
   'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST',
   'UNKNOWN_THREAD', 'UNKNOWN_DELEGATION', 'RETRY_KEY_CONFLICT', 'STOPPING'])
 export type DelegationRefusalCode = z.infer<typeof delegationRefusalCodeSchema>
-export interface DelegationRefusal { readonly status: 'refused'; readonly code: DelegationRefusalCode; readonly message: string }
+/**
+ * A refusal, and the delegation it is recorded as when the call was a delegation main refused under its rules: the
+ * delegating thread can read it again, and the window can show it, by that ID.
+ */
+export interface DelegationRefusal { readonly status: 'refused'; readonly code: DelegationRefusalCode; readonly message: string; readonly delegation?: string }
+/**
+ * The refusals of a well-formed `delegate` call that are recorded as a delegation whose outcome is `refused`: every one
+ * main makes under ADR-0081's rules. A call with arguments to correct, a retry key used twice, or Sotto stopping
+ * refuses without one, since no delegation was asked for that the rules turned down.
+ */
+export const RECORDED_REFUSALS: ReadonlySet<DelegationRefusalCode> = new Set(['NOT_ADMITTED', 'LEVEL_LIMIT', 'NO_USER_MESSAGE', 'PROVIDER_UNAVAILABLE',
+  'PERMISSION_NOT_COMPARABLE', 'PERMISSION_TOO_WIDE', 'IN_FLIGHT_LIMIT', 'PROMPT_LIMIT', 'PAUSED', 'TARGET_CHANGED', 'PENDING_USER_REQUEST', 'UNKNOWN_THREAD'])
+
+/**
+ * Where a delegation stands (CONTEXT.md, Outcome): Watcher's outcomes (ADR-0073), and `refused`, a delegation main
+ * turned down when it was asked for, so nothing was started or sent and nothing will come of it (ADR-0081 decision 7).
+ */
+export const DELEGATION_OUTCOMES = [...WATCHER_OUTCOMES, 'refused'] as const
+export const delegationOutcomeSchema = z.enum(DELEGATION_OUTCOMES)
+export type DelegationOutcome = z.infer<typeof delegationOutcomeSchema>
 
 /** Where a delegation stands, with the delegated thread's words only once answered and only when asked for. */
 export interface DelegationRead {
   readonly id: string
-  /** The delegated thread, by its Sotto thread ID (ADR-0002). */
-  readonly thread: string
+  /** The delegated thread, by its Sotto thread ID (ADR-0002). A refused start has none: nothing was started. */
+  readonly thread?: string
+  /** The provider a refused start named. */
+  readonly provider?: string
   readonly work: DelegationWork
   readonly action: 'start' | 'send'
-  readonly outcome: WatcherOutcome
+  readonly outcome: DelegationOutcome
   readonly note: string
   readonly createdAt: string
   readonly turnMessageId?: string
@@ -69,8 +90,11 @@ export interface DelegationRead {
   readonly replyUnavailable?: string
   /** The user has sent their own message in the delegated thread since this thread's last brief to it. */
   readonly userSentSince?: boolean
-  /** Why a brief was refused before it was delivered: the user's newer message, or their turn, in the delegated thread. */
-  readonly refusal?: 'TARGET_CHANGED' | 'PAUSED'
+  /**
+   * Why it was refused: for a `refused` delegation, the rule that turned it down, with `note` in plain words; for a `paused`
+   * one, the user's newer message (`TARGET_CHANGED`) or their turn (`PAUSED`) in the delegated thread, before delivery.
+   */
+  readonly refusal?: DelegationRefusalCode
 }
 
 /**
