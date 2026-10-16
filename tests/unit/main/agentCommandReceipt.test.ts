@@ -62,7 +62,9 @@ describe('a command receipt', () => {
     const onWire = agentCommandReceiptSchema.parse(wire)
     expect(onWire.host.models).toEqual({ revision: 1, omitted: true })
     expect(onWire.host.clientHosts?.map(client => client.models)).toEqual([{ revision: 1, omitted: true }])
-    expect(JSON.stringify(wire)).not.toContain('synthetic-model')
+    // The one model this computer's agent setting starts threads on is a name for Settings > Providers, not a catalog entry.
+    const agentModel = onWire.host.clientHosts?.[0]?.agentModelId
+    expect(JSON.stringify(wire).replace(`"agentModelId":${JSON.stringify(agentModel)}`, '')).not.toContain('synthetic-model')
     expect(serialize(wire).length).toBeLessThan(10_000)
     // The page puts back the catalog the broadcast sent, without asking main for it.
     expect(f.gets()).toBe(0)

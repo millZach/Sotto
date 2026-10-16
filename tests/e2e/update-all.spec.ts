@@ -177,7 +177,10 @@ async function withForgeBehindTheUpdate(prefix: string, run: (forge: AheadRun) =
   // Each answer is held back a little, so the host's download can be seen under way.
   const releases = await releasesPage(new Map<string, Uint8Array | string>([[`/v${PENDING}/${file}`, archive], [`/v${PENDING}/${file}.sha256`, sidecar(archive, file)]]), 1500,
     ({ method }) => method === 'HEAD' ? heads.held : undefined)
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: false, reducedMotion: 'on' }))
+  // Sotto finds its own update only when the journey asks. Left on, its automatic check 15 seconds after start finds it
+  // first whenever adding forge takes that long, and the releases page answers for forge before a journey can hold it.
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: false, reducedMotion: 'on',
+    autoUpdateCheck: false }))
   const modeFile = join(root, 'mode')
   const steering = join(root, 'client-updates')
   await mkdir(steering, { recursive: true })
