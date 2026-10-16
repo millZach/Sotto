@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentProviderStatus, type AgentThread } from '../../../src/shared/agents'
-import { CONTINUE_REFUSALS, continuedWordsOf, continueProviderRefusal, continueThreadRefusal } from '../../../src/shared/continueThread'
+import { CONTINUE_REFUSALS, continuedWordsOf, continuePermission, continueProviderRefusal, continueThreadRefusal } from '../../../src/shared/continueThread'
+import type { AgentModel } from '../../../src/shared/agents'
 import { HANDOVER_LEAD } from '../../../src/shared/handover'
 import { CLAUDE_SPENDING_LIMIT_SENTENCE, claudeUsageLimitSentence, limitStopOf } from '../../../src/shared/limitStops'
 
@@ -62,6 +63,39 @@ describe('a continued thread’s excerpt', () => {
     expect(continuedWordsOf(named, { id: 'first', text })).toBe('Carry on.')
     // A later message that only looks like a handover is left whole.
     expect(continuedWordsOf(named, { id: 'later', text })).toBeUndefined()
+  })
+})
+
+describe('the permission a continued thread starts on (Zach, October 16)', () => {
+  const claude: AgentModel = { id: 'claude:opus', provider: 'Claude Code', providerId: 'claude', name: 'Opus 5.5', ready: true, runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] }
+  const codex: AgentModel = { id: 'codex:gpt', provider: 'Codex', providerId: 'codex', name: 'GPT-5.5', ready: true, runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] }
+  const narrow: AgentModel = { ...codex, id: 'grok:4', providerId: 'grok', name: 'Grok 4', runtimeModes: ['approval-required', 'auto-accept-edits'] }
+  const devin: AgentModel = { id: 'devin', provider: 'Devin', providerId: 'devin', name: 'Devin', ready: true,
+    providerModes: [{ id: 'ask', name: 'Ask', allows: 'nothing' }, { id: 'edit', name: 'Edit', allows: 'edits' }] }
+
+  it('is the source’s own: Ask for approval on Claude Code continues asking on Codex', () => {
+    expect(continuePermission({ runtimeMode: 'approval-required' }, claude, codex, 'full-access')).toEqual({ runtimeMode: 'approval-required' })
+    expect(continuePermission({ runtimeMode: 'auto' }, claude, codex, 'full-access')).toEqual({ runtimeMode: 'auto' })
+  })
+
+  it('is capped by the new-thread default, and says so', () => {
+    expect(continuePermission({ runtimeMode: 'full-access' }, claude, codex, 'auto-accept-edits'))
+      .toEqual({ runtimeMode: 'auto-accept-edits', narrowed: { from: 'full-access', by: 'default' } })
+    // With no default chosen, a new thread asks.
+    expect(continuePermission({ runtimeMode: 'full-access' }, claude, codex, undefined))
+      .toEqual({ runtimeMode: 'approval-required', narrowed: { from: 'full-access', by: 'default' } })
+  })
+
+  it('is the nearest the new provider offers, never wider, and says so', () => {
+    expect(continuePermission({ runtimeMode: 'auto' }, claude, narrow, 'full-access')).toEqual({ runtimeMode: 'auto-accept-edits', narrowed: { from: 'auto', by: 'provider' } })
+  })
+
+  it('reads a provider’s own profile by what it allows, and a source on its provider’s default as asking', () => {
+    expect(continuePermission({ providerMode: 'edit' }, devin, codex, 'full-access')).toEqual({ runtimeMode: 'auto-accept-edits' })
+    expect(continuePermission({ providerMode: 'unknown' }, devin, codex, 'full-access')).toEqual({ runtimeMode: 'approval-required' })
+    expect(continuePermission({}, claude, codex, 'full-access')).toEqual({ runtimeMode: 'approval-required' })
+    // A new thread on a provider with profiles of its own starts on its first, as every new thread there does.
+    expect(continuePermission({ runtimeMode: 'full-access' }, claude, devin, 'full-access')).toEqual({ providerMode: 'ask' })
   })
 })
 

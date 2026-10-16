@@ -1,10 +1,9 @@
 import { createContext, useCallback, useContext, useSyncExternalStore } from 'react'
 import { hostForThread, PROVIDER_LABELS, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread,
   type ProviderId, type ThreadContinuedIn } from '../../../shared/agents'
-import { continueProviderRefusal, type ContinueWorkingCopy } from '../../../shared/continueThread'
+import { continuePermission, continueProviderRefusal, type ContinuePermission, type ContinueWorkingCopy } from '../../../shared/continueThread'
 import { limitStopOf, type LimitStop } from '../../../shared/limitStops'
 import { resolveModel } from '../../../shared/modelCatalog'
-import { resolveNewThreadPermission } from '../../../shared/newThreadDefaults'
 import { useOwlFeature } from '../state/owlFeature'
 import { newestModelsFirst } from './ModelPicker'
 
@@ -33,6 +32,8 @@ export interface ContinueChoice {
   readonly error: string | null
   /** The model picker opens on the strip as it appears, from the error's More. */
   readonly pick?: true | undefined
+  /** Why the permission it started on is narrower than the source's, until the user chooses one. */
+  readonly narrowed?: ContinuePermission['narrowed'] | undefined
 }
 
 /** The continuations begun in this window, by the thread each continues. Nothing of it is saved. */
@@ -96,13 +97,14 @@ export function providerDefaults(state: AgentState, models: readonly AgentModel[
 }
 
 /**
- * A continuation begun on `modelId`: the model's own default effort, the new-thread default permission (the user's
- * choice for new threads, never the source's), the source's folder, and a new thread ID.
+ * A continuation begun on `modelId`: the model's own default effort, the source's permission mapped to that model and
+ * capped by the new-thread default (Zach, October 16; `continuePermission`), the source's folder, and a new thread ID.
  */
 export function continueChoiceFor(state: AgentState, thread: AgentThread, modelId: string, previous?: ContinueChoice): ContinueChoice {
-  const model = resolveModel(hostForThread(state.host, thread).models, modelId)
-  const permission = resolveNewThreadPermission(model, state.configuration.newThreadRuntimeMode)
-  return { modelId, reasoningEffort: model?.defaultReasoningEffort, runtimeMode: permission.runtimeMode, providerMode: permission.providerMode,
+  const models = hostForThread(state.host, thread).models
+  const permission = continuePermission(thread, resolveModel(models, thread.modelId), resolveModel(models, modelId), state.configuration.newThreadRuntimeMode)
+  return { modelId, reasoningEffort: resolveModel(models, modelId)?.defaultReasoningEffort, runtimeMode: permission.runtimeMode, providerMode: permission.providerMode,
+    ...(permission.narrowed ? { narrowed: permission.narrowed } : {}),
     workingCopy: previous?.workingCopy ?? (sameFolderOffered(thread) ? 'same' : 'new-worktree'), newThreadId: previous?.newThreadId ?? crypto.randomUUID(), sending: false, error: null }
 }
 

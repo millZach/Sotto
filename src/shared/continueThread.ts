@@ -1,8 +1,9 @@
 import { z } from 'zod'
-import { agentAttachmentHandlesSchema, agentRuntimeModeSchema, handoverCountsSchema, AGENT_TEXT_MAX, PROVIDER_LABELS,
+import { agentAttachmentHandlesSchema, agentRuntimeModeSchema, handoverCountsSchema, AGENT_TEXT_MAX, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode,
   type AgentHostSnapshot, type AgentThread, type ProviderId } from './agents'
 import { agentFileReferencesSchema } from './agentFiles'
 import { HANDOVER_LEAD } from './handover'
+import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from './newThreadDefaults'
 import { isThreadArchived, isThreadTurnRunning } from './threadActivity'
 
 /**
@@ -86,6 +87,35 @@ export function continueThreadRefusal(thread: Pick<AgentThread, 'kind' | 'remote
   if (thread.nativeSessionStarted === false) return CONTINUE_REFUSALS.unstarted
   if ((thread.summary?.messageCount ?? thread.messages.length) === 0 && thread.messages.length === 0) return CONTINUE_REFUSALS.empty
   return null
+}
+
+/**
+ * The permission a continued thread starts on (Zach, October 16): the source thread's own, mapped to the nearest the new
+ * thread's model offers and never wider, and capped by the user's new-thread default, as every new thread is. A source
+ * on a provider's own profile counts as what that profile allows; one on its provider's default, or a profile that says
+ * nothing of what it allows, counts as asking. `narrowed` says why the new thread starts narrower than the source:
+ * the default capped it, or the new provider offers nothing as wide. The user can still choose another before sending.
+ */
+export interface ContinuePermission {
+  readonly runtimeMode?: AgentRuntimeMode
+  readonly providerMode?: string
+  /** The source's own permission in Sotto's four, when the new thread starts narrower than it, and why. */
+  readonly narrowed?: { readonly from: AgentRuntimeMode; readonly by: 'default' | 'provider' }
+}
+const ALLOWS: Readonly<Record<'nothing' | 'edits' | 'everything', AgentRuntimeMode>> = { nothing: 'approval-required', edits: 'auto-accept-edits', everything: 'full-access' }
+export function continuePermission(source: Pick<AgentThread, 'runtimeMode' | 'providerMode'>, sourceModel: AgentModel | undefined, target: AgentModel | undefined,
+  newThreadDefault: AgentRuntimeMode | undefined): ContinuePermission {
+  const index = (mode: AgentRuntimeMode): number => RUNTIME_MODE_ORDER.indexOf(mode)
+  const allows = source.providerMode === undefined ? undefined : sourceModel?.providerModes?.find(mode => mode.id === source.providerMode)?.allows
+  const own: AgentRuntimeMode = source.providerMode !== undefined ? allows ? ALLOWS[allows] : 'approval-required' : source.runtimeMode ?? 'approval-required'
+  const cap = newThreadDefault ?? 'approval-required'
+  const wanted = index(own) <= index(cap) ? own : cap
+  const resolved = resolveNewThreadPermission(target, wanted)
+  if (resolved.providerMode !== undefined) return { providerMode: resolved.providerMode }
+  if (resolved.runtimeMode === undefined) return {}
+  const known = source.runtimeMode !== undefined || allows !== undefined
+  const narrowed = known && index(resolved.runtimeMode) < index(own) ? { from: own, by: index(wanted) < index(own) ? 'default' as const : 'provider' as const } : undefined
+  return { runtimeMode: resolved.runtimeMode, ...(narrowed ? { narrowed } : {}) }
 }
 
 /** Why a provider cannot take a continued thread now, or null when it can. */

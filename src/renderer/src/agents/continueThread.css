@@ -46,6 +46,8 @@
 .continue-strip__text { max-height: min(200px, 26vh); margin: 8px 0 0 23px; padding: 10px 12px; overflow: auto; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm);
   background: var(--tt-surface-sunken); color: var(--tt-text); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .continue-strip__error { margin: 6px 0 0 23px; color: var(--tt-error-text); }
+/* Said once, when the new thread starts narrower than this one, until a permission is chosen below. */
+.continue-strip__permission { margin: 6px 0 0 23px; color: var(--tt-text-2); }
 
 /* In each thread's history: where it continues from, and where it was continued. Sotto's notes, so dashed and quiet. */
 .continue-note { display: flex; align-items: flex-start; gap: 9px; margin: 0 0 22px; padding: 10px 12px; border: 1px dashed var(--tt-border); border-radius: var(--tt-radius-md);

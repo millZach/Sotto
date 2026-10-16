@@ -11,7 +11,7 @@ import { ModelPicker } from './ModelPicker'
 import { usesProviderModes } from './pendingSettings'
 import { ProviderMark } from './ProviderMark'
 import { clockLabel } from './threadFacts'
-import { ChoiceChip, effortChoices, modeChoices, startingProviderMode } from './ThreadOptions'
+import { ChoiceChip, effortChoices, modeChoices, RUNTIME_LABELS, startingProviderMode } from './ThreadOptions'
 import { continueChoiceFor, continuedSince, continueModels, continueStore, lastLimitStop, providerDefaults, unavailableProviders,
   sameFolderOffered, useContinueChoice, useContinueEnabled, useContinueLinks, type ContinueChoice } from './continuations'
 import './continueThread.css'
@@ -21,6 +21,13 @@ import './continueThread.css'
  * opens a dialog: the error offers the providers, the composer becomes "Continue on Codex" under a strip that says
  * where the new thread works and what the handover carries, and each thread links to the other in its own history.
  */
+
+/** Why the new thread starts on a narrower permission than the source's, in the words its chip uses. */
+function narrowedWords(mode: AgentRuntimeMode, narrowed: NonNullable<ContinueChoice['narrowed']>, target: string, model: string | undefined): string {
+  return narrowed.by === 'default'
+    ? `It starts on ${RUNTIME_LABELS[mode]}, not this thread’s ${RUNTIME_LABELS[narrowed.from]}, since your new-thread default allows no more. You can change it below.`
+    : `It starts on ${RUNTIME_LABELS[mode]}, the nearest ${model ?? target} offers to this thread’s ${RUNTIME_LABELS[narrowed.from]}. You can change it below.`
+}
 
 /** Whose limit a stop was, as the line under the composer says it. */
 const LIMIT_OWNER: Partial<Record<ProviderId, string>> = { claude: 'Claude' }
@@ -158,6 +165,7 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
         disabled={reading || bridge === undefined} onClick={() => void toggle()}>{open ? 'Hide it' : reading ? 'Reading it…' : 'Read it'}</button>
     </p>
     {open && text !== null ? <div id={regionId} className="continue-strip__text tt-focusable" tabIndex={0} role="region" aria-label="The handover, word for word">{text}</div> : null}
+    {choice.narrowed && choice.runtimeMode ? <p className="continue-strip__permission">{narrowedWords(choice.runtimeMode, choice.narrowed, target, model?.name)}</p> : null}
     {readError === null ? null : <p className="continue-strip__error" role="alert">{readError}</p>}
     {choice.error === null ? null : <p className="continue-strip__error" role="alert">{choice.error}</p>}
   </section>
@@ -183,7 +191,7 @@ export function ContinueOptions({ thread, state, choice }: { readonly thread: Ag
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name} onChange={reasoningEffort => continueStore.update(thread.id, { reasoningEffort })} /> : null}
       {modes.length > 0 ? <ChoiceChip label="Permissions the new thread starts on" placeholder="Provider default" value={(own ? startingProviderMode(model, choice.providerMode) : choice.runtimeMode) ?? ''}
         options={modes} disabled={choice.sending} pending={false}
-        onChange={mode => continueStore.update(thread.id, own ? { providerMode: mode } : { runtimeMode: mode as AgentRuntimeMode })} /> : null}
+        onChange={mode => continueStore.update(thread.id, own ? { providerMode: mode, narrowed: undefined } : { runtimeMode: mode as AgentRuntimeMode, narrowed: undefined })} /> : null}
     </div>
   </div>
 }

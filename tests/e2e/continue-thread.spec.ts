@@ -118,7 +118,7 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
       return hex(getComputedStyle(document.body).backgroundColor)
     }
     const selectors = ['.continue-now__lead', '.continue-chip', '.continue-chip small', '.continue-strip__lead > p', '.continue-strip__fact', '.continue-strip .thread-chip',
-      '.continue-strip__ledger', '.continue-strip__read', '.continue-strip__text', '.continue-strip__error', '.thread-prompt__send[data-wide]', '.continue-note > p', '.continue-note strong',
+      '.continue-strip__ledger', '.continue-strip__read', '.continue-strip__text', '.continue-strip__error', '.continue-strip__permission', '.thread-prompt__send[data-wide]', '.continue-note > p', '.continue-note strong',
       '.continue-note__open', '.continue-composer-note', '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose', '.watcher-handover__text']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0).slice(0, 6)
       .map((element, index) => ({ name: `${selector} ${index}`, ink: hex(getComputedStyle(element).color), on: background(element) })))
@@ -187,6 +187,9 @@ test.describe('continuing a thread on another provider', () => {
       await expect(strip).toContainText('Handover first: it carries all 3 messages')
       const send = source.getByRole('button', { name: 'Continue on Codex', exact: true })
       await expect(send).toBeDisabled()
+      // The source asks for approval, so the new thread starts asking too (Zach, October 16), and the strip has nothing to explain.
+      await expect(source.getByRole('combobox', { name: 'Permissions the new thread starts on' })).toHaveText('Ask for approval')
+      await expect(strip).not.toContainText('It starts on')
       const prompt = source.getByRole('textbox', { name: 'Prompt' })
       await expect(prompt).toBeFocused()
       // Nothing has gone to Codex yet: the strip is only a choice.
@@ -230,6 +233,7 @@ test.describe('continuing a thread on another provider', () => {
       expect(state.find(thread => thread.id === sourceId)?.continuedIn).toEqual([expect.objectContaining({ threadId: made.id, provider: 'codex' })])
       const card = continued.getByRole('article', { name: 'Handover from WAV preview stall' })
       await expect(card).toContainText('From WAV preview stall on Claude Code. Context, not a new request.')
+      await expect(continued.getByRole('combobox', { name: 'Thread permissions' })).toHaveText('Ask for approval')
       await expect(continued.locator('[data-role="user"][data-message-id] .rich-message').first()).toHaveText('Carry on with the mid-chunk test.')
       await expect(continued.getByRole('note').filter({ hasText: 'Continued from' })).toContainText('Continued from WAV preview stall on Claude Code. It stays readable there.')
       await card.getByRole('button', { name: 'Read the handover, word for word' }).click()

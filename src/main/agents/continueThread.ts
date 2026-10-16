@@ -1,7 +1,7 @@
-import { AGENT_TEXT_MAX, PROVIDER_LABELS, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentState, type AgentThread,
+import { AGENT_TEXT_MAX, PROVIDER_LABELS, type AgentCommand, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentState, type AgentThread,
   type ThreadContinuedFrom, type ThreadContinuedIn } from '../../shared/agents'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
-import { CONTINUE_HANDOVER_CLOSE, CONTINUE_REFUSALS, continueProviderRefusal, continueReadRequestSchema, continueStartRequestSchema,
+import { CONTINUE_HANDOVER_CLOSE, CONTINUE_REFUSALS, continuePermission, continueProviderRefusal, continueReadRequestSchema, continueStartRequestSchema,
   continueThreadRefusal, type ContinueRead, type ContinueStart, type ContinueWorkingCopy } from '../../shared/continueThread'
 import { HANDOVER_LEAD } from '../../shared/handover'
 import { resolveModel } from '../../shared/modelCatalog'
@@ -30,6 +30,8 @@ export interface ContinueCoordinator {
   commandShell(command: AgentCommand): Promise<AgentState>
   /** Whether a send to the thread is still on its way or unconfirmed, which a retry must never send behind. */
   hasPendingThreadWork(threadId: string): boolean
+  /** The user's new-thread defaults, which cap the permission a continued thread starts on. */
+  configuration(): { readonly newThreadRuntimeMode?: AgentRuntimeMode | undefined }
   /** How a continued thread's messages are shown, asked only for a thread a window or phone is reading. Returns the unhook. */
   useContinuationDisplay(display: (thread: AgentThread) => readonly AgentMessage[]): () => void
 }
@@ -170,6 +172,11 @@ export class ContinueService {
         refuse('That continued thread has started already, so nothing more was sent. Open it to carry on there.')
       }
       const copy = workingCopyOf(source, request.workingCopy)
+      // The permission the user chose in the composer; without one, the source's own, capped as any new thread is.
+      const chosen = request.runtimeMode !== undefined || request.providerMode !== undefined
+        ? { ...(request.runtimeMode ? { runtimeMode: request.runtimeMode } : {}), ...(request.providerMode ? { providerMode: request.providerMode } : {}) }
+        : continuePermission(source, resolveModel(snapshot.models, source.modelId), model, this.options.control.configuration().newThreadRuntimeMode)
+      const runtimeMode = chosen.runtimeMode, providerMode = chosen.providerMode
       const handover = this.handover(source.id)
       const prefix = continuePrefix(handover.text)
       if (prefix.length + request.text.length > AGENT_TEXT_MAX) refuse('Your message and the handover together are too long to send. Shorten your message, then continue. Nothing was sent.')
@@ -178,15 +185,15 @@ export class ContinueService {
           threadId: request.newThreadId, ...(source.titleSource === 'user' ? { titleSource: 'user' as const } : {}),
           ...copy,
           ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
-          ...(request.runtimeMode ? { runtimeMode: request.runtimeMode } : {}),
-          ...(request.providerMode ? { providerMode: request.providerMode } : {}) })
+          ...(runtimeMode ? { runtimeMode } : {}),
+          ...(providerMode ? { providerMode } : {}) })
         if (created.error) refuse(created.error)
       } else if (existing.modelId !== model.id || request.reasoningEffort !== undefined && existing.reasoningEffort !== request.reasoningEffort
         || request.runtimeMode !== undefined && existing.runtimeMode !== request.runtimeMode || request.providerMode !== undefined && existing.providerMode !== request.providerMode) {
         // A retry after a refusal, on another choice: the thread nothing was sent to takes it, as an unstarted thread does.
         const configured = await this.options.control.commandShell({ type: 'configure-thread', threadId: existing.id, modelId: model.id,
-          ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}), ...(request.runtimeMode ? { runtimeMode: request.runtimeMode } : {}),
-          ...(request.providerMode ? { providerMode: request.providerMode } : {}) })
+          ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}), ...(runtimeMode ? { runtimeMode } : {}),
+          ...(providerMode ? { providerMode } : {}) })
         if (configured.error) refuse(configured.error)
       }
       if (existing && !sameWorkingCopy(existing, copy)) {

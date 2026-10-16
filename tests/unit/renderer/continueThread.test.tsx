@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentActivity } from '../../../src/shared/agentActivity'
-import type { AgentCommand, AgentProviderStatus, AgentState, AgentThread, HandoverCounts } from '../../../src/shared/agents'
+import type { AgentCommand, AgentProviderStatus, AgentRuntimeMode, AgentState, AgentThread, HandoverCounts } from '../../../src/shared/agents'
 import type { ContinueBridge, ContinueRead, ContinueStart, ContinueStartRequest } from '../../../src/shared/continueThread'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { claudeUsageLimitSentence } from '../../../src/shared/limitStops'
@@ -48,9 +48,9 @@ function stopped(patch: Partial<AgentThread> = {}): AgentThread {
     activities: [turn], updatedAt: at(19), worktree: { mode: 'shared', status: 'ready', path: 'C:/workshop', branch: 'main' }, workingDirectory: 'C:/workshop', ...patch }
 }
 
-function stateWith(threads: AgentThread[], options: { readonly grok?: 'signed-out' | 'connected' } = {}): AgentState {
+function stateWith(threads: AgentThread[], options: { readonly grok?: 'signed-out' | 'connected'; readonly newThreadRuntimeMode?: AgentRuntimeMode } = {}): AgentState {
   const state = threadsStateFixture()
-  state.configuration = { ...state.configuration, enabledProviders: ['claude', 'codex', 'grok'], newThreadRuntimeMode: 'approval-required' }
+  state.configuration = { ...state.configuration, enabledProviders: ['claude', 'codex', 'grok'], newThreadRuntimeMode: options.newThreadRuntimeMode ?? 'approval-required' }
   state.host.capabilities = capabilities
   state.host.models = [
     { id: 'claude:sonnet', provider: 'Claude Code', providerId: 'claude', name: 'Sonnet 4.5', ready: true, runtimeModes: ['approval-required', 'full-access'] },
@@ -74,7 +74,7 @@ function fakeBridge() {
   return bridge as ContinueBridge & typeof bridge
 }
 
-function mount(threads: AgentThread[] = [stopped()], options: { readonly owl?: boolean; readonly bridge?: boolean; readonly grok?: 'signed-out' | 'connected' } = {}) {
+function mount(threads: AgentThread[] = [stopped()], options: { readonly owl?: boolean; readonly bridge?: boolean; readonly grok?: 'signed-out' | 'connected'; readonly newThreadRuntimeMode?: AgentRuntimeMode } = {}) {
   const on = options.owl !== false
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'threads', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
     update: { owlFeatures: { 'continue-on-provider': on } },
@@ -186,6 +186,28 @@ describe('the composer while continuing', () => {
     setPromptText(prompt(), 'Carry on.')
     fireEvent.click(screen.getByRole('button', { name: 'Continue on Codex' }))
     await waitFor(() => expect(bridge.start).toHaveBeenCalledWith(expect.objectContaining({ workingCopy: 'new-worktree' })))
+  })
+
+  it('starts on the source’s permission, says so when the new-thread default narrows it, and a choice in the composer wins', async () => {
+    const { bridge, prompt } = mount([stopped({ runtimeMode: 'auto-accept-edits' })])
+    fireEvent.click(within(chips()!).getByRole('button', { name: 'Continue on Codex, GPT-5.4' }))
+    // The source is on Allow edits; the new-thread default, Ask for approval, caps it.
+    expect(screen.getByRole('combobox', { name: 'Permissions the new thread starts on' })).toHaveTextContent('Ask for approval')
+    expect(strip()).toHaveTextContent('It starts on Ask for approval, not this thread’s Allow edits, since your new-thread default allows no more. You can change it below.')
+    await userEvent.setup().click(screen.getByRole('combobox', { name: 'Permissions the new thread starts on' }))
+    await userEvent.setup().click(screen.getByRole('option', { name: /^Allow edits/u }))
+    expect(screen.getByRole('combobox', { name: 'Permissions the new thread starts on' })).toHaveTextContent('Allow edits')
+    expect(strip()).not.toHaveTextContent('It starts on')
+    setPromptText(prompt(), 'Carry on.')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue on Codex' }))
+    await waitFor(() => expect(bridge.start).toHaveBeenCalledWith(expect.objectContaining({ runtimeMode: 'auto-accept-edits' })))
+  })
+
+  it('starts on the source’s own permission where the default allows it', () => {
+    mount([stopped({ runtimeMode: 'auto-accept-edits' })], { newThreadRuntimeMode: 'full-access' })
+    fireEvent.click(within(chips()!).getByRole('button', { name: 'Continue on Codex, GPT-5.4' }))
+    expect(screen.getByRole('combobox', { name: 'Permissions the new thread starts on' })).toHaveTextContent('Allow edits')
+    expect(strip()).not.toHaveTextContent('It starts on')
   })
 
   it('keeps the draft and says why in the strip when main refuses, and a retry names the same new thread', async () => {

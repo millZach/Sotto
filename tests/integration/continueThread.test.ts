@@ -10,7 +10,7 @@ import type { AgentHostCommand } from '../../src/main/agents/host'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { CONTINUE_HANDOVER_CLOSE, CONTINUE_REFUSALS, type ContinueStart, type ContinueStartRequest } from '../../src/shared/continueThread'
 import { HANDOVER_LEAD } from '../../src/shared/handover'
-import type { AgentThread, ProviderId } from '../../src/shared/agents'
+import type { AgentRuntimeMode, AgentThread, ProviderId } from '../../src/shared/agents'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 
@@ -23,6 +23,8 @@ type Workspace = Awaited<ReturnType<typeof workspaceFixture>>
 async function run(options: { readonly root?: string; readonly history?: boolean; readonly service?: boolean } = {}) {
   const history = options.history ?? true
   const workspace = await workspaceFixture(options.root, { history, watcherEnabled: false })
+  // Every provider here offers Sotto's four modes, so only the source and the new-thread default decide the permission.
+  for (const adapter of Object.values(workspace.adapters)) adapter.state.models[0]!.runtimeModes = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { historyEnabled: () => history, watcherEnabled: false } })
   const service = options.service === false ? undefined : new ContinueService({ control: f.control, host: workspace.host })
@@ -63,11 +65,13 @@ async function fixture(options: { readonly history?: boolean } = {}) {
     await emit(threadId)
   }
   /** A Claude Code thread the user opened and that answered once, as the source of a continuation. */
-  const source = async (title = 'WAV preview stall', provider: ProviderId = 'claude') => {
+  const source = async (title = 'WAV preview stall', provider: ProviderId = 'claude', runtimeMode: AgentRuntimeMode = 'approval-required') => {
     const project = control().shell().host.projects.find(item => item.providerId === provider) ?? control().shell().host.projects[0]!
     const threadId = randomUUID()
-    expect((await control().commandShell({ type: 'create-thread', threadId, projectId: project.id, title, titleSource: 'user', modelId: model(provider).id, workingCopy: 'shared' })).error).toBeNull()
+    expect((await control().commandShell({ type: 'create-thread', threadId, projectId: project.id, title, titleSource: 'user', modelId: model(provider).id, workingCopy: 'shared', runtimeMode })).error).toBeNull()
     expect((await control().commandShell({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'The WAV preview stalls after two seconds. Find out why.' })).error).toBeNull()
+    // The fake provider keeps no settings of its own, so it reports the permission the thread was created with, as a real one does.
+    native(threadId).runtimeMode = runtimeMode
     await endTurn(threadId, 'The length marker was written once, before any audio arrived.')
     return threadId
   }
@@ -187,6 +191,27 @@ it('uses the same new thread again when the provider started it but refused the 
   expect(await f.start({ ...input, draftId: randomUUID() })).toEqual({ status: 'ok', threadId: expect.any(String) })
   expect(f.sends('codex').at(-1)!.text.endsWith('\n\nAlso add a test for a stream that ends mid-chunk.')).toBe(true)
   expect(f.thread(sourceId)!.continuedIn).toEqual([expect.objectContaining({ threadId: input.newThreadId })])
+})
+
+it('starts the new thread on the source’s permission, capped by the new-thread default, unless the user chose one', async () => {
+  const f = await fixture()
+  await f.control.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: 'auto-accept-edits' } })
+  // What each new thread was created with, as Codex was asked to create it.
+  const created = (threadId: string) => f.workspace.adapters.codex.commands
+    .filter((command): command is Extract<AgentHostCommand, { type: 'create-thread' }> => command.type === 'create-thread')
+    .find(command => f.workspace.registry.byThread(threadId)?.sessionId === command.threadId)?.runtimeMode
+  // Ask for approval on Claude Code continues as the asking mode on Codex.
+  const asking = f.request(await f.source('Asking', 'claude', 'approval-required'))
+  expect(await f.start(asking)).toMatchObject({ status: 'ok' })
+  expect(created(asking.newThreadId)).toBe('approval-required')
+  // A source wider than the new-thread default is capped by it.
+  const wide = f.request(await f.source('Wide', 'claude', 'full-access'))
+  expect(await f.start(wide)).toMatchObject({ status: 'ok' })
+  expect(created(wide.newThreadId)).toBe('auto-accept-edits')
+  // What the user chose in the composer wins.
+  const chosen = f.request(await f.source('Chosen', 'claude', 'full-access'), { runtimeMode: 'full-access' })
+  expect(await f.start(chosen)).toMatchObject({ status: 'ok' })
+  expect(created(chosen.newThreadId)).toBe('full-access')
 })
 
 it('leaves the source readable and sendable', async () => {
