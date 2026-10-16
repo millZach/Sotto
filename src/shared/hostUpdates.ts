@@ -13,8 +13,8 @@ export const HOST_UPDATE_STEPS = ['download', 'check', 'install', 'restart'] as 
 export type HostUpdateStep = typeof HOST_UPDATE_STEPS[number]
 /**
  * `needs` until Update is pressed. `confirm` while the host has working threads and the user has not said whether to
- * wait for them; `waiting` until none of the host's threads is working; `updating` through the steps; then `done` or
- * `failed`.
+ * wait for them; `waiting` until none of the host's threads is working and its client update line is empty; `updating`
+ * through the steps; then `done` or `failed`.
  */
 export type HostUpdatePhase = 'needs' | 'confirm' | 'waiting' | 'updating' | 'done' | 'failed'
 /** How the archive reached the host: the host downloaded it, or this computer downloaded it and copied it over SSH. */
@@ -43,6 +43,11 @@ export interface HostUpdateState {
   readonly owned: boolean
   /** How many of the host's threads are working now. */
   readonly working: number
+  /**
+   * The host's client update line is running. An update waits for it to empty, as it waits for working threads, so its
+   * restart cuts no client update off (ADR-0077 decision 2).
+   */
+  readonly clientsUpdating?: boolean | undefined
   /** The host starts at boot, so its systemd unit restarts it into the new version (ADR-0054). */
   readonly boot?: boolean | undefined
   readonly step?: HostUpdateStep | undefined

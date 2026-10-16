@@ -2,7 +2,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { LocalHostService, type LocalHostControl } from '../../../src/main/agents/hostService'
 import type { WatcherService } from '../../../src/main/agents/watcher'
+import { routerBusyThreads } from '../../../src/main/hosts/busyHost'
 import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
+import { HostUpdates } from '../../../src/main/hosts/hostUpdate'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import type { AgentState } from '../../../src/shared/agents'
 
@@ -39,6 +41,68 @@ describe('questions asked on every change read what was published', () => {
       expect(router.publishedThreads('another-host')).toEqual([])
       expect(shell).not.toHaveBeenCalled()
     } finally { router.dispose() }
+  })
+
+  // A host update asks on every change whether the host's client update line runs, and waits while it does (ADR-0077).
+  it('answers whether a host\'s client update line runs from the last publication without reading any shell', () => {
+    const state = hostState()
+    let push: ((state: AgentState) => void) | undefined
+    const shell = vi.fn(() => state)
+    const connection: DesktopHostConnection = { hostId: LOCAL, name: 'This computer', kind: 'local', detail: () => null, preview: () => null,
+      service: { shell, subscribe: listener => { push = listener; return () => undefined }, command: async () => state } }
+    const router = new DesktopHostRouter(emptyDesktopState)
+    router.add(connection)
+    const update = { id: 'codex' as const, installed: '0.51.0', published: '0.52.1', behind: true, channel: 'npm' as const, canInstall: true, checkedAt: '2026-10-16T10:00:00.000Z' }
+    try {
+      router.subscribe(() => undefined)
+      push!({ ...state, clientUpdates: [{ ...update, state: 'idle' }] })
+      shell.mockClear()
+      expect(router.clientLineRunning(LOCAL)).toBe(false)
+      push!({ ...state, clientUpdates: [{ ...update, state: 'queued' }], clientUpdateRun: { total: 1, done: 0 } })
+      shell.mockClear()
+      expect(router.clientLineRunning(LOCAL)).toBe(true)
+      expect(router.clientLineRunning('another-host')).toBe(false)
+      // The last client has finished and the run is not yet cleared: still running until the line says it is empty.
+      push!({ ...state, clientUpdates: [{ ...update, state: 'updated' }], clientUpdateRun: { total: 1, done: 1 } })
+      shell.mockClear()
+      expect(router.clientLineRunning(LOCAL)).toBe(true)
+      push!({ ...state, clientUpdates: [{ ...update, state: 'updated' }] })
+      shell.mockClear()
+      expect(router.clientLineRunning(LOCAL)).toBe(false)
+      // A host that is not connected keeps what it last said, stale: its line is not counted as running.
+      push!({ ...state, host: { ...state.host, connected: false }, clientUpdates: [{ ...update, state: 'queued' }], clientUpdateRun: { total: 1, done: 0 } })
+      shell.mockClear()
+      expect(router.clientLineRunning(LOCAL)).toBe(false)
+      expect(shell).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+  })
+
+  // A host update waiting for the host's client update line is asked on every change; reading the threads as they are
+  // this moment, which builds every host's shell, waits until the line is empty.
+  it('reads no shell on the changes that come while a host update waits for its client update line', () => {
+    const state = { ...hostState(), clientUpdates: [{ id: 'codex' as const, installed: '0.51.0', published: '0.52.1', behind: true, channel: 'npm' as const, canInstall: true,
+      checkedAt: '2026-10-16T10:00:00.000Z', state: 'updating' as const }], clientUpdateRun: { total: 1, done: 0 } }
+    state.host.threads = state.host.threads.map(thread => ({ ...thread, status: 'idle' as const }))
+    let push: ((state: AgentState) => void) | undefined
+    const shell = vi.fn(() => state)
+    const connection: DesktopHostConnection = { hostId: LOCAL, name: 'forge', kind: 'local', detail: () => null, preview: () => null,
+      service: { shell, subscribe: listener => { push = listener; return () => undefined }, command: async () => state } }
+    const router = new DesktopHostRouter(emptyDesktopState)
+    router.add(connection)
+    router.subscribe(() => undefined)
+    const updates = new HostUpdates({ version: '0.1.24', releasesUrl: 'https://releases.example/download', threads: routerBusyThreads(router),
+      clients: { updating: hostId => router.clientLineRunning(hostId) },
+      hosts: { candidates: () => [{ id: 'saved-forge', name: 'forge', hostId: LOCAL, version: '0.1.22', owned: true, installPath: '/opt/sotto', dataDirectory: '/var/sotto' }],
+        run: async () => { throw new Error('No host commands here.') }, restart: async () => { throw new Error('No restarts here.') }, subscribe: () => () => undefined } })
+    try {
+      push!(state)
+      void updates.command('saved-forge', 'update')
+      expect(updates.state()).toMatchObject([{ phase: 'waiting', clientsUpdating: true }])
+      shell.mockClear()
+      for (let index = 0; index < 5; index++) push!({ ...state })
+      expect(updates.state()).toMatchObject([{ phase: 'waiting' }])
+      expect(shell).not.toHaveBeenCalled()
+    } finally { updates.dispose(); router.dispose() }
   })
 
   it('reads afresh once a change arrives that nothing was published for', () => {
