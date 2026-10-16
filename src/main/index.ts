@@ -225,7 +225,7 @@ import { githubPullRequestMerged } from './agents/worktreeCleanup'
 import type { GitHubRateLimitEvent } from './agents/github'
 import type { BabysitEvent } from './agents/babysitting'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
-import { CodexAppServerHost } from './agents/codex'
+import { CodexAppServerHost, type CodexAdapterEvent } from './agents/codex'
 import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
 import { removeRetiredVoiceCache } from './agents/retiredVoiceCache'
@@ -286,6 +286,7 @@ type NativeDiagnostic =
   | GitHubRateLimitEvent
   | BabysitEvent
   | ClaudeAdapterEvent
+  | CodexAdapterEvent
   | PhoneAccessEvent
   | 'host-phones-read-failed'
   | 'host-phones-command-failed'
@@ -751,6 +752,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },
     claudeSettingsLog: event => { logOperational(event) },
+    codexLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
   const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
   // A Playwright journey runs a babysitting pass when it asks, rather than waiting on the two-minute timer; development only.
@@ -1248,7 +1250,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     async onSettingsChanged(settings): Promise<void> {
       const grantDefaultChanged = settings.browserWithoutAsking !== workingCopySettings.browserWithoutAsking
       const babysittingChanged = settings.babysitPullRequests !== workingCopySettings.babysitPullRequests
+      const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
       workingCopySettings = settings
+      // Each provider's own sub-agents follow the worker roles (#1042): Codex's role files are written again for the
+      // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
+      if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
       worktreeCleanup?.settingsChanged()
       phoneAccess.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()

@@ -14,7 +14,9 @@ import { z } from 'zod'
 import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode, type ProviderId } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
+import { subagentRoleInstructions } from '../../shared/workerRoles'
+import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { watcherRequestLine } from './watcherRequestNote'
@@ -236,6 +238,18 @@ export class GrokAcpHost implements AgentHost {
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
   private threadTools: readonly ScopedThreadTools[] = []
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
+  private workerRoles: WorkerRoleSource | undefined
+  useWorkerRoles(roles: WorkerRoleSource): void { this.workerRoles = roles }
+  /**
+   * The rules a new session starts with: how to ask the user (ADR-0080) and, while worker roles are on, the role table
+   * (#1042). Grok Build takes rules only when a session is made, so a changed table reaches the threads made after it.
+   * Grok's own sub-agents get instructions only: their model is not Sotto's to set until it is checked.
+   */
+  private sessionRules(mcpServers: readonly { readonly name: string }[]): string {
+    const table = this.workerRoles?.table()
+    const roles = table ? subagentRoleInstructions(table, { provider: 'grok', agents: new Set(), canDelegate: mcpServers.some(server => server.name === DELEGATE_MCP_SERVER) }) : undefined
+    return roles ? `${GROK_QUESTIONS}\n\n${roles}` : GROK_QUESTIONS
+  }
   /**
    * Sotto's own tool servers for this thread: the browser's, the host setup tools while its setup runs (ADR-0035), and
    * the visual tool while visuals are on (ADR-0056).
@@ -1074,7 +1088,7 @@ export class GrokAcpHost implements AgentHost {
           watcherGuard?.()
           // Rules are appended to Grok's own system text, taken only at creation and kept through every later load
           // (ADR-0080). Watcher's override replaces that text whole, so its launch stays exactly as ADR-0073 pins it.
-          await rpc.request('session/new', { cwd: alias.cwd, mcpServers, _meta: 'systemPromptOverride' in meta ? meta : { ...meta, rules: GROK_QUESTIONS } }, async value => {
+          await rpc.request('session/new', { cwd: alias.cwd, mcpServers, _meta: 'systemPromptOverride' in meta ? meta : { ...meta, rules: this.sessionRules(mcpServers) } }, async value => {
             const response = z.object({ sessionId: z.string().uuid(), models: catalogSchema }).parse(value)
             alias.grokSessionId = response.sessionId; alias.nativeModelId = response.models.currentModelId; await this.persist(); this.thread(command.threadId).status = 'error'; this.emit()
           })
