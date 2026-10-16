@@ -7,8 +7,8 @@
  * hundred threads, so this runs the real update path at 20 and at 200 threads and fails when what one update copies
  * grows with the thread count or passes its budget. It counts calls, never time, so it runs in the default suite.
  *
- * A failure names what grew. If a new copy is truly needed on this path, say why in the PR and raise the budget below;
- * docs/perf/2026-10-15-copy-budget.md has the numbers and how to read them.
+ * A failure names what grew. Read the state without copying it, or move the copy off the update path. The budgets only
+ * tighten; docs/perf/2026-10-15-copy-budget.md has the numbers and how to read them.
  */
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -69,13 +69,14 @@ async function measure(threads: number, owl: boolean) {
 }
 
 /**
- * The budgets, per coordinator update while one thread streams. Measured October 15, 2026 after the fixes: Owl 15.5
- * copies and 2.9 whole-state copies, stable 8.9 and 2.95; the main branch before them made 67.5 rising to 427.5 copies
- * on Owl as threads went from 20 to 200, with 7.9 whole-state copies. The whole-state copies left are the coordinator's
- * shell for the broadcast and the workspace's activity snapshots (#925). Lower a budget when a change lowers the count.
+ * The budgets, per coordinator update while one thread streams, with an open Watcher watching that thread on Owl.
+ * Measured October 15, 2026 after the fixes: Owl 20.5 copies and 2.9 whole-state copies, stable 8.9 and 2.95; the main
+ * branch before them grew with the threads on Owl and copied the whole state 7.9 times per update. The whole-state copies
+ * left are the coordinator's shell for the broadcast and the workspace's activity snapshots (#925). A change that lowers
+ * a count lowers its budget in the same PR; a change that needs more copies on this path asks Zach first.
  */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 18, wholeStateCopiesPerUpdate: 3.5 },
+  Owl: { copiesPerUpdate: 23.5, wholeStateCopiesPerUpdate: 3.5 },
   stable: { copiesPerUpdate: 10.5, wholeStateCopiesPerUpdate: 3.5 },
 } as const
 

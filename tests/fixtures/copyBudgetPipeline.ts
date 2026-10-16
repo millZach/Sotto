@@ -1,15 +1,12 @@
 import { join } from 'node:path'
-import * as activitySnapshots from '../../src/main/agents/activitySnapshots'
-import { ActivitySubscribers } from '../../src/main/agents/activitySnapshots'
 import { AgentStateBroadcaster } from '../../src/main/agents/agentStateBroadcast'
 import { AgentControl, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../../src/main/agents/control'
-import type { ActivitySubscriptionOptions, ThreadHostEvent } from '../../src/main/agents/host'
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
-import { adapterItemCount, ProviderSnapshotPublisher } from '../../src/main/agents/providerSnapshotPublisher'
-import { ThreadMessageLog } from '../../src/main/agents/threadMessageLog'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { WatcherService } from '../../src/main/agents/watcher'
+import { createWatcherRoomDesktop } from '../../src/main/agents/watcherRoomDesktop'
+import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { routerBusyThreads } from '../../src/main/hosts/busyHost'
@@ -19,34 +16,9 @@ import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../src/shared/agents'
 import { FakeProviderHost } from './fakeProviderHost'
+import { StreamingAdapter } from './streamingAdapter'
 import { syntheticModelCatalog } from './modelCatalog'
 import { testCredentials } from './testCredentials'
-
-/**
- * Main's update path as `src/main/index.ts` wires it, for counting what one update copies: an event-sourced adapter
- * built like Claude's, the provider switch, the workspace, the coordinator, Watcher (Owl), the local host service, the
- * desktop router, the window's state publisher and broadcaster, and the host-update pill's busy check with one saved host
- * on an older Sotto. Every payload is generated.
- */
-class StreamingAdapter extends FakeProviderHost {
-  readonly log = new ThreadMessageLog()
-  private readonly activityListeners = new ActivitySubscribers()
-  private readonly publisher = new ProviderSnapshotPublisher(() => {
-    super.emit()
-    this.activityListeners.publish(historyFromEvents => this.activityView(historyFromEvents))
-  }, () => adapterItemCount(this.log, this.state.threads))
-  subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
-  subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
-    return this.activityListeners.add(listener, options)
-  }
-  observeThreads(threadIds: readonly string[]): void { super.observeThreads(threadIds); this.log.observe([...threadIds]) }
-  publish(streaming: boolean): void { this.publisher.publish(streaming) }
-  emit(): void { this.publish(false) }
-  private activityView(historyFromEvents: boolean): AgentHostSnapshot {
-    activitySnapshots.certifyActivityView(this.state, this.state.threads)
-    return { ...this.state, threads: this.state.threads.map(thread => this.log.activityThread(thread, historyFromEvents)) }
-  }
-}
 
 function records(prefix: string, count: number): AgentActivity[] {
   return Array.from({ length: count }, (_, position): AgentActivity => ({ id: `${prefix}-a${position}`, turnId: `${prefix}-t${Math.floor(position / 4)}`,
@@ -63,15 +35,21 @@ export interface CopyBudgetPipeline {
   stop(): Promise<void>
 }
 
-/** `threads` in all, one of them streaming; `owl` turns on Watcher, Muse and the cheaper publish windows, as an Owl build does. */
+/**
+ * Main's update path as `src/main/index.ts` wires it, for counting what one update copies: an event-sourced adapter
+ * built like Claude's, the provider switch, the workspace, the coordinator, Watcher (Owl), the local host service, the
+ * desktop router, the window's state publisher and broadcaster, and the host-update pill's busy check with one saved host
+ * on an older Sotto. `threads` in all, one of them streaming; `owl` turns on Watcher, Muse and the cheaper publish
+ * windows, as an Owl build does. Every payload is generated.
+ */
 export async function copyBudgetPipeline(root: string, threads: number, owl: boolean): Promise<CopyBudgetPipeline> {
   const registry = new ThreadRegistry(root)
   await registry.load()
   const at = '2026-10-15T12:00:00.000Z'
   const state: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), name: 'claude', version: '1', connected: true,
-    capabilities: { ...structuredClone(EMPTY_AGENT_HOST.capabilities), projects: true, threads: true, submit: true, observe: true },
+    capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, steer: true },
     projects: Array.from({ length: 12 }, (_, index) => ({ id: index === 0 ? 'project' : `project-${index}`, title: `Synthetic project ${index}`, path: join(root, `project-${index}`) })),
-    models: [{ id: 'fake:model', provider: 'Fake', name: 'Synthetic model', ready: true }, ...syntheticModelCatalog(200)], threads: [] }
+    models: [{ id: 'fake:model', provider: 'Fake', name: 'Synthetic model', ready: true, runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] }, ...syntheticModelCatalog(200)], threads: [] }
   const thread = (id: string, activities?: AgentActivity[]): AgentThread => ({ id, projectId: `project-${state.threads.length % 12 || ''}`.replace(/-$/, ''),
     title: `Synthetic thread ${id}`, modelId: 'fake:model', status: 'idle', messages: [], requests: [], ...(activities ? { activities } : {}),
     usage: { latest: { input: 1200, output: 560, cached: 820 }, total: { input: 19340, output: 5250, cached: 12030 }, contextUsed: 2200, contextWindow: 200000,
@@ -90,6 +68,10 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
   await control.start()
   await control.command({ type: 'connect' })
   const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true, limit: () => 4 }) : undefined
+  const tools = watcher ? new WatcherToolServer(watcher) : undefined
+  if (tools) workspace.useWatcherTools(tools)
+  // The window's Watcher room, as main wires it on Owl: it copies the room state for each Watcher publication.
+  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: () => true, setLimit: async () => undefined })
   const service = new LocalHostService({ control, events: workspace, ...(watcher ? { watcher } : {}) })
   const router = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: owl, museEnabled: owl, streamingPublishCost: owl })
   router.add({ hostId: control.hostId()!, name: 'This computer', kind: 'local', service,
@@ -109,13 +91,23 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
   const streamIds = [registry.bySession('claude', 'stream-0')!.threadId]
   await control.command({ type: 'observe-threads', threadIds: [...streamIds] })
   control.threadDetail(streamIds[0]!)
+  const stop = async (): Promise<void> => {
+    offCount(); updates.dispose(); room?.dispose(); offState(); offDetail(); statePublisher.dispose(); detailPublisher.dispose(); router.dispose(); watcher?.close(); await tools?.close()
+    control.dispose(); workspace.disconnect(); await workspace.privacyChanged(); await registry.flush(); workspace.dispose()
+  }
+  if (watcher && tools) try {
+    // A Watcher with records, as an Owl user has one: open, with a standing watch on the streaming thread.
+    const model = control.watcherSnapshot().models.find(item => item.providerId === 'claude')!
+    const opened = await watcher.open({ provider: 'claude', modelId: model.id })
+    if (opened.status !== 'ok') throw new Error(`Watcher did not open: ${JSON.stringify(opened)}`)
+    // The user's Watch, as the window's Watch button sends it.
+    const watched = await watcher.watchThread({ target: { hostId: control.hostId()!, threadId: streamIds[0]! } })
+    if (watched.status !== 'ok') throw new Error(`Watcher did not watch the thread: ${JSON.stringify(watched)}`)
+  } catch (error) { await stop(); throw error }
   return {
     adapter, control, streamIds,
     broadcasts: () => broadcasts,
     resetCounts: () => { broadcasts = 0 },
-    stop: async () => {
-      offCount(); updates.dispose(); offState(); offDetail(); statePublisher.dispose(); detailPublisher.dispose(); router.dispose(); watcher?.close()
-      control.dispose(); workspace.disconnect(); await workspace.privacyChanged(); await registry.flush(); workspace.dispose()
-    },
+    stop,
   }
 }

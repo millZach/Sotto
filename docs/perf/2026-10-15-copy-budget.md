@@ -23,9 +23,10 @@ Two checks run in every CI run. They count calls; they never time anything.
 
 - `tests/perf/streamingCopyBudget.perf.test.ts` runs the update path as `src/main/index.ts` wires it: an event-sourced
   adapter, the provider switch, the workspace, the coordinator, Watcher on Owl, the local host service, the desktop
-  router, the window's publisher and broadcaster, and the host-update busy check with one saved host on an older Sotto.
-  It streams one reply with 20 threads and with 200, and counts every `structuredClone`, `cloneHostSnapshot` and
-  `cloneActivitySnapshot` call, and which of them copy the whole state. It fails when one update copies more with 200
+  router, the window's publisher and broadcaster, the Watcher room's publisher, and the host-update busy check with one
+  saved host on an older Sotto. On Owl, Watcher is open and watching the streaming thread. It streams one reply with
+  20 threads and with 200, and counts every `structuredClone`, `cloneHostSnapshot` and `cloneActivitySnapshot` call,
+  and which of them copy the whole state. It fails when one update copies more with 200
   threads than with 20, or when an update passes its budget.
 - `tests/unit/main/copySites.test.ts` counts every copy call site in `src/main` and `src/host` (`structuredClone(`,
   `.shell()`, `watcherRecord()`, `cloneHostSnapshot(`, `cloneActivitySnapshot(` and JSON round trips) per file, and
@@ -36,25 +37,27 @@ composer's keystroke latency in the built app while threads stream (`docs/perf/2
 
 ## Numbers
 
-Per coordinator update while one thread streams:
+Per coordinator update while one thread streams, with Watcher open and watching that thread on Owl:
 
 | | Copies, 20 threads | Copies, 200 threads | Whole-state copies |
 | --- | ---: | ---: | ---: |
-| Owl before the fixes | 67.5 | 427.5 | 7.9 |
-| Owl after | 15.5 | 15.5 | 2.9 |
+| Owl before the fixes | 95.5 | 635.5 | 7.9 |
+| Owl after | 20.5 | 20.5 | 2.9 |
 | Stable before | 12.9 | 12.9 | 5.0 |
 | Stable after | 8.9 | 8.9 | 2.95 |
 
 Three runs after the fixes gave the same counts to two decimals. The whole-state copies left are the coordinator's shell
 for the broadcast and the workspace's activity snapshots; sharing unchanged threads through those layers is #925's.
 
-The budgets are 18 copies and 3.5 whole-state copies per update on Owl, and 10.5 and 3.5 on stable. A change that lowers
-a count lowers its budget in the same PR.
+The budgets are 23.5 copies and 3.5 whole-state copies per update on Owl, and 10.5 and 3.5 on stable. They only
+tighten: a change that lowers a count lowers its budget in the same PR, and a change that needs more copies on this path
+asks Zach first.
 
 ## When a guard goes red
 
 Read the failure: it says what grew, with the measured numbers. Move the copy off the update path, or read the state
-without copying it. If the copy is truly needed, say why in the PR, then raise the budget or rewrite the list:
+without copying it. The copy-site list is different: a new copy that runs only for a command or a read is fine there.
+Say why in the PR and rewrite the list:
 
 ```powershell
 $env:SOTTO_UPDATE_COPY_SITES = '1'; npx vitest run tests/unit/main/copySites.test.ts
