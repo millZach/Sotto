@@ -481,6 +481,8 @@ export class DelegationService {
       } catch { this.fail(record.id, 'provider', true); await this.persist(); return }
       finally { this.creating.delete(record.id) }
     }
+    // A Stop while the thread was created or linked ended the brief: it is not held for a send that will never come.
+    if (this.record(record.id)?.deliveryState !== 'queued') return
     this.queuedBriefs.set(record.id, brief)
     const snapshot = this.snapshot(), thread = snapshot.threads.find(item => item.id === record.delegatedThreadId)
     if (thread && this.free(thread, snapshot)) await this.dispatch(record.id)
@@ -558,6 +560,8 @@ export class DelegationService {
     }
   }
   private accept(delegationId: string, state: 'accepted' | 'uncertain'): void {
+    // Past the writer, a fence has nothing left to refuse.
+    this.fenced.delete(delegationId)
     this.update(delegationId, saved => {
       if (saved.deliveryState !== 'accepted') saved.deliveryState = state
       const link = this.links.get(saved.delegatedThreadId)
@@ -566,7 +570,7 @@ export class DelegationService {
   }
   /** Ends a brief that was never delivered. One refused before anything was sent costs its thread no prompt. */
   private fail(delegationId: string, failure: Failure, refund = false): void {
-    this.queuedBriefs.delete(delegationId)
+    this.queuedBriefs.delete(delegationId); this.fenced.delete(delegationId)
     this.update(delegationId, saved => {
       if (saved.deliveryState === 'accepted' || saved.deliveryState === 'failed') return
       saved.deliveryState = 'failed'; saved.failure = failure

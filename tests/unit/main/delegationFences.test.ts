@@ -120,3 +120,16 @@ it('fences a brief already on its way when the delegating thread cancels it, and
   expect(await cancelled).toMatchObject({ status: 'ok', delegation: { outcome: 'stopped' } })
   expect(written).toEqual([])
 })
+
+it('keeps no brief and no fence for a start the user stopped while its thread was being linked', async () => {
+  const linking = gate()
+  const f = await service([], [thread('parent', { status: 'running', lastUserMessageId: 'root', messages: [{ id: 'root', role: 'user', text: 'Synthetic request', createdAt: at }] })],
+    { setDelegatedBy: linking.wait })
+  const call = f.delegation.delegate('parent', { work: 'code-review', brief: 'Synthetic brief', provider: 'codex', model: 'model', permission: 'approval-required', wait_seconds: 0 })
+  await linking.reached
+  f.hooks.userCommand({ type: 'interrupt', threadId: 'parent' }, 'parent', false)
+  linking.release()
+  expect(await call).toMatchObject({ status: 'ok', delegation: { outcome: 'stopped' } })
+  expect(f.internals.queuedBriefs.size).toBe(0)
+  expect(f.internals.fenced.size).toBe(0)
+})
