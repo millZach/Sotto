@@ -261,25 +261,35 @@ export class WatcherWakeUp {
     if (this.retryAt && this.cancelBatch) return
     if (!this.cancelBatch) this.firstPending = this.now()
     this.cancelBatch?.()
-    const delay = this.retryAt ? this.retryAt - this.now() : Math.max(Math.min(WATCHER_BATCH_MS, this.firstPending + WATCHER_BATCH_MAX_MS - this.now()), this.settleUntil() - this.now())
+    // A turn end waiting for its Git read holds only its own thread's news; everything else keeps the batch's own limits.
+    const held = this.heldForGitRead(), free = this.pending.some(event => !this.waitsForGitRead(event, held))
+    const delay = this.retryAt ? this.retryAt - this.now() : free || !held.size ? Math.min(WATCHER_BATCH_MS, this.firstPending + WATCHER_BATCH_MAX_MS - this.now())
+      : Math.min(...held.values()) - this.now()
     this.cancelBatch = this.schedule(() => { this.cancelBatch = undefined; this.flush() }, Math.max(0, delay))
   }
   /**
-   * The latest a waiting turn end still holds the batch for its thread's Git read: none once the read has changed the
-   * thread's own facts, once its time is up, or when no turn end of that thread is waiting.
+   * The threads whose waiting turn end still holds their own news for its Git read, and until when: none once the read
+   * has changed the thread's own facts, once its time is up, or when no turn end of that thread is waiting.
    */
-  private settleUntil(): number {
-    let until = 0
-    for (const [key, held] of this.settling) {
-      if (held.until <= this.now() || this.evidence.digest(held.target, 'local') !== held.local) { this.settling.delete(key); continue }
-      if (this.pending.some(event => targetKey(event.target) === key && TURN_ENDS.has(event.kind))) until = Math.max(until, held.until)
+  /** A turn end, and the thread's own facts that ride with it, wait for that thread's Git read; nothing else does. */
+  private waitsForGitRead(event: WatcherEvent, held: ReadonlyMap<string, number>): boolean {
+    return held.has(targetKey(event.target)) && (TURN_ENDS.has(event.kind) || event.kind === 'evidence-changed')
+  }
+  private heldForGitRead(): Map<string, number> {
+    const held = new Map<string, number>()
+    for (const [key, wait] of this.settling) {
+      if (wait.until <= this.now() || this.evidence.digest(wait.target, 'local') !== wait.local) { this.settling.delete(key); continue }
+      if (this.pending.some(event => targetKey(event.target) === key && TURN_ENDS.has(event.kind))) held.set(key, wait.until)
     }
-    return until
+    return held
   }
   private flush(): void {
-    const events = this.canDeliver() ? this.stillDue(this.pending) : [], watcher = this.options.record().current?.target
-    if (events.length) this.pending = []
-    if (this.closed || !events.length && !this.rememberPending.size) return
+    const held = this.heldForGitRead(), due = this.canDeliver() ? this.stillDue(this.pending) : []
+    const events = due.filter(event => !this.waitsForGitRead(event, held)), watcher = this.options.record().current?.target
+    if (events.length) this.pending = due.filter(event => this.waitsForGitRead(event, held))
+    if (this.closed) return
+    // Only news still waiting for its thread's Git read is left: it goes when that wait ends.
+    if (!events.length && !this.rememberPending.size) { if (held.size) this.batch(); return }
     const news = watcher && events.length ? foldWatcherNews(undefined, { source: 'watcher', watcher, events, omitted: 0 }) : undefined
     this.tail = this.tail.catch(() => undefined).then(async () => {
       if (this.closed) return

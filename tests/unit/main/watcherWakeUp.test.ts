@@ -1101,3 +1101,26 @@ it('tells news afresh once its wake-up is let go with its send unknown, and only
   f.wakes.forget(f.delivered[1]!.events); f.wakes.observe(); await f.advance(10_000)
   expect(f.delivered).toHaveLength(2)
 })
+
+it('lets a Git read hold only its own thread’s turn end, never a question beside it', async () => {
+  const f = fixture(), { move } = gitFixture(f)
+  f.wakes.observe(); await f.advance(2_000)
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }; f.wakes.observe()
+  await f.advance(500)
+  f.thread.requests = [{ id: 'card', kind: 'question', text: 'secret', options: [] }]; f.wakes.observe()
+  // The question goes with the usual batch; the finish waits for its Git read.
+  await f.advance(2_000)
+  expect(f.delivered.map(kinds)).toEqual([['needs-user']])
+  await f.advance(3_000)
+  expect(f.delivered.map(kinds)).toEqual([['needs-user'], ['turn-finished', 'evidence-changed']])
+  // Finishes four seconds apart each wait for their own read, and a question among them still goes within the batch.
+  f.thread.requests = []; f.wakes.observe()
+  for (const [n, turn] of ['turn-2', 'turn-3', 'turn-4'].entries()) {
+    f.thread.status = 'running'; f.thread.lastTurn = { id: turn, status: 'running' }; f.wakes.observe()
+    f.thread.status = 'idle'; f.thread.lastTurn = { id: turn, status: 'completed' }; move({ changedFiles: n + 3 })
+    if (n === 1) f.thread.requests = [{ id: 'card-2', kind: 'question', text: 'secret', options: [] }]
+    f.wakes.observe()
+    if (n === 1) { await f.advance(2_000); expect(f.delivered.at(-1)!.events.map(event => event.requestCardId)).toContain('card-2'); await f.advance(2_000) }
+    else await f.advance(4_000)
+  }
+})
