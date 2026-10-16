@@ -19,6 +19,8 @@ export interface WatcherControlHooks {
   /** Clear unproven native-write candidates when an intent or dispatch definitively fails. */
   dispatchAborted?(command: AgentHostCommand): void
   observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void
+  /** These operations' queued items failed to send. Their items may already be gone, so this is the only word of it. */
+  queueFailed?(operationIds: ReadonlySet<string>): void
   guardOperation(operationId: string): void
   preserveUserQueue(threadId: string): boolean
   watchedThreadIds?(): string[]
