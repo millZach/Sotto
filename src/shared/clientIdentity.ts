@@ -59,5 +59,7 @@ export function clientAgentState(state: AgentState): AgentState {
       projects: mapped.host.projects.map(project => ({ ...project, id: hostEntityKey(project.hostId ?? hostId, project.id) })),
       // The thread that delegated to this one (ADR-0081) is named as the window names threads, so its link finds it.
       threads: threads.map(thread => ({ ...thread, id: hostEntityKey(thread.hostId ?? hostId, thread.id), projectId: hostEntityKey(thread.hostId ?? hostId, thread.projectId),
-        ...(thread.delegatedBy ? { delegatedBy: hostEntityKey(thread.hostId ?? hostId, thread.delegatedBy) } : {}) })) } }
+        ...(thread.delegatedBy ? { delegatedBy: hostEntityKey(thread.hostId ?? hostId, thread.delegatedBy) } : {}),
+        // So is the thread one began from (#1028), so its note opens it.
+        ...(thread.startedFrom ? { startedFrom: { ...thread.startedFrom, threadId: hostEntityKey(thread.hostId ?? hostId, thread.startedFrom.threadId) } } : {}) })) } }
 }

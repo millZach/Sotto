@@ -1,3 +1,4 @@
+import { THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
 import { clientUpdateEnumerationUsesMuse, commandUsesMuse, modelsWithoutMuse, museWatcherRefusal, threadUsesMuse, watcherRequestUsesMuse } from '../agents/museGate'
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { visibleWatcherState, withoutThreads } from '../../shared/watcherVisibility'
@@ -30,7 +31,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsHostFacts' | 'hostFacts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsHostFacts' | 'hostFacts' | 'supportsThreadStarts' | 'startHandover' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -58,7 +59,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
 export type QuestionPageOpening = { readonly kind: 'file'; readonly file: string } | { readonly kind: 'url'; readonly url: string }
 
 /** Creation opens its result unless the window selected something else while it ran. */
-const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['create-thread', 'create-project'])
+const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['create-thread', 'create-project', 'continue-agent'])
 
 /** A state without its client updates, which belong to the machine that runs those clients. */
 function withoutClientUpdates(state: AgentState): AgentState {
@@ -674,6 +675,13 @@ export class DesktopHostRouter {
     if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read its pull requests.')
     return connection.gitPullRequest({ ...request, threadId: id! })
   }
+  /** The words of a started thread's handover, read on the thread's own host when the user asks to read them (#1028). */
+  async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
+    const { connection, id } = this.target(threadId)
+    if (connection.service.supportsThreadStarts !== true || !connection.service.startHandover) throw new Error(THREAD_STARTS_UNSUPPORTED)
+    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read the handover. Nothing was sent.')
+    return connection.service.startHandover(id!)
+  }
   /** The folder browser names its host directly: it has no thread yet to carry a client-scoped key. */
   async hostFolders(request: HostFoldersClientRequest): Promise<HostFoldersResult> {
     const entry = this.hosts.get(request.hostId)
@@ -782,6 +790,8 @@ export class DesktopHostRouter {
     const windowShowed = { hostId: this.selectedHostId, threadId: this.selectedThreadId }
     let refused = false
     let repeatedUnsupportedCompose = false
+    // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, never the banner.
+    let inPlace: string | undefined
     try {
       let decisionId: string | undefined
       let answerTarget: HostAnswerTarget | undefined
@@ -799,9 +809,12 @@ export class DesktopHostRouter {
           request.questions?.length ? command.questionAnswers : { [request.id]: { optionIds: [command.answer] } })
         }
       }
-      const result = await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
-        : connection.service.command(command as AgentCommand, client))
-      if (result.error) {
+      // A host from before continuing agents (#1028) would refuse the command as unknown; it is told why here instead.
+      const result = command.type === 'continue-agent' && connection.kind === 'remote' && connection.service.supportsThreadStarts !== true ? { error: THREAD_STARTS_UNSUPPORTED }
+        : await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
+          : connection.service.command(command as AgentCommand, client))
+      if (result.error && command.type === 'continue-agent') { refused = true; inPlace = this.refusal(connection, result.error) }
+      else if (result.error) {
         refused = true
         const unsupportedCompose = command.type === 'compose' && command.threadId !== undefined
           && connection.kind === 'remote' && (connection.service.supportsAtomicSend === false || connection.service.supportsDraftRevisions === false) && result.error === REMOTE_COMPOSE_UNSAVED
@@ -817,7 +830,9 @@ export class DesktopHostRouter {
       // as a coordinator refusal, so a permission chip does not mistake it for a lost provider answer.
       // A dropped connection is still uncertain and must keep the renderer's recovery path.
       if (connection.kind !== 'remote' || !(error instanceof HostConnectionError) || error.code !== 'forbidden') throw error
-      refused = true; this.notice = { message: this.refusal(connection, error.message) }
+      refused = true
+      if (command.type === 'continue-agent') inPlace = this.refusal(connection, error.message)
+      else this.notice = { message: this.refusal(connection, error.message) }
     } finally {
       if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) this.follow(connection, { activeThreadId, activeProjectId })
     }
@@ -826,11 +841,13 @@ export class DesktopHostRouter {
     if (command.type === 'create-thread' && command.threadId !== undefined && connection.kind === 'remote' && !refused && unmoved) {
       await this.openCreated(connection, command.threadId, client)
     }
+    if (command.type === 'continue-agent' && connection.kind === 'remote' && !refused && unmoved) await this.openCreated(connection, command.newThreadId, client)
     if (!repeatedUnsupportedCompose) this.emit()
     const shell = agentShell(this.shell())
     // A settings save may go to a host other than the selected one, so it answers with its own outcome, never with the
     // selected host's last error, which belongs to some other command (ADR-0074).
-    return command.type === 'configure' ? { ...shell, error: refused ? this.notice?.message ?? null : null } : shell
+    return command.type === 'configure' ? { ...shell, error: refused ? this.notice?.message ?? null : null }
+      : command.type === 'continue-agent' ? { ...shell, error: inPlace ?? null } : shell
   }
   /** The host a command's references name, or the selected host, and the command in that host's own IDs. */
   private route(input: unknown): { connection: DesktopHostConnection; command: AgentCommand } {

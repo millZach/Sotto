@@ -218,6 +218,13 @@ Use `npm run build` followed by `npx playwright test tests/e2e/devin-provider.sp
 
 ## Claude settings live check
 
+`tests/integration/codexThreadForkLive.test.ts` is gated by `SOTTO_CODEX_LIVE=1`. With the installed, signed-in Codex it runs one model turn in a temporary project that asks Codex to start one small agent and wait for it, then continues that agent as its own thread and forks the thread at its reply through Sotto's adapter (#1028, ADR-0088), which asks the model nothing more. Each fork is durable and is written beside the user's other Codex rollouts. Codex opens its usual Responses websocket when a fork starts, as opening any thread does, and the check expects it. It has not been run yet:
+
+```powershell
+$env:SOTTO_CODEX_LIVE = '1'
+npx vitest run tests/integration/codexThreadForkLive.test.ts --maxWorkers=1
+```
+
 `tests/integration/claudeSettingsLive.test.ts` is gated by `SOTTO_CLAUDE_LIVE=1`. It starts one thread's CLI in a temporary synthetic project with the installed, signed-in Claude Code and changes that thread's effort, model and permission mode over the control channel, then reads back what the CLI reports. It sends no prompt and runs no model turn. It prints the CLI version, the IDs of the models it moved between, whether each value matched and the timings, never a prompt, a reply or a key. It was last run on Claude Code 2.1.283 (`docs/verification/2026-09-25-claude-settings-live.md`):
 
 ```powershell

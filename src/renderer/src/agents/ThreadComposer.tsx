@@ -18,6 +18,7 @@ import type { ThreadRow } from './threadFacts'
 import { followupsFor, ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions, watcherPermissionFixedReason } from './ThreadOptions'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
+import { useThreadStarts } from './ThreadStart'
 import { useWatcherSendGate } from '../watcher/WatcherHandover'
 import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
@@ -177,7 +178,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const reason = blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
   const editable = !row.thread.archivedAt && !permission
   const working = row.thread.status === 'running' && !isThreadClosed(row.thread)
-  const placeholder = row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : working ? (row.thread.compaction?.status === 'running' ? 'Compacting the context. Write a follow-up to queue it.' : `${watcher ? 'Watcher' : row.provider} is working. Write a follow-up to queue it.`) : watcher ? 'Ask about your threads, or say what to start or send' : 'What would you like to do next?'
+  // A thread that began from another asks what its agent should do next, before anything of the user's is in it (#1028).
+  const started = useThreadStarts() && row.thread.startedFrom !== undefined && !row.thread.lastUserMessageId && (row.thread.summary?.lastUser === undefined)
+  const placeholder = row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : working ? (row.thread.compaction?.status === 'running' ? 'Compacting the context. Write a follow-up to queue it.' : `${watcher ? 'Watcher' : row.provider} is working. Write a follow-up to queue it.`) : watcher ? 'Ask about your threads, or say what to start or send' : started ? `What should ${row.provider} do next?` : 'What would you like to do next?'
   // Review comments ride with the next prompt, not with an answer to a question.
   const carried = answering ? [] : comments
   const content = hasContent || carried.length > 0

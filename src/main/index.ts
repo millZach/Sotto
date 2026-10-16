@@ -582,6 +582,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const museEnabled = owlFeatures.muse
   const usageEnabled = owlFeatures.usage
   const delegationEnabled = owlFeatures['thread-delegation']
+  const threadStartsEnabled = owlFeatures['continue-agent-thread']
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || museEnabled)
   // With Update all on, the host version the update this computer is downloading brings, which a host may run before
   // Sotto restarts (ADR-0077 decision 6). It stays undefined on stable, where hosts follow the running version alone.
@@ -711,7 +712,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, museEnabled, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
-    delegationEnabled,
+    delegationEnabled, threadStartsEnabled,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,

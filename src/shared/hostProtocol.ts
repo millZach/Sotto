@@ -169,8 +169,11 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * reference and, once answered, that turn's reply (ADR-0073). A desktop asks for them; one whose host does not list it reads unknown.
  * `host-facts`: the host answers `host-facts` with its machine's host facts and how many of its threads are running a turn
  * (#1031). Numbers and the system's own name only. Only a desktop is offered it; one whose host does not list it reads unknown.
+ * `thread-starts`: the host takes `continue-agent`, which continues one of a thread's agents as a thread of its own, and
+ * answers `start-handover` with the handover a thread that began from another goes with on its first message (#1028). Only
+ * a host whose Owl answer turns them on lists it; a desktop refuses both for a host that does not.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'thread-starts'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -337,6 +340,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('subagent-assignments'), request: subagentAssignmentsRequestSchema }).strict(),
   /** The host's machine facts and running thread count, read on request and never pushed (#1031). */
   z.object({ ...base, op: z.literal('host-facts') }).strict(),
+  /** The words of a started thread's handover, read only when the user asks to read them (#1028). */
+  z.object({ ...base, op: z.literal('start-handover'), threadId: id }).strict(),
   z.object({ ...base, op: z.literal('usage-read'), query: usageLocalQuerySchema }).strict(),
   z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(4).optional() }).strict(),
   z.object({ ...base, op: z.literal('usage-clear'), request: usageLocalClearRequestSchema }).strict(),
@@ -424,6 +429,8 @@ const aboutShape = {
 export const hostPhoneAccessSchema = z.object({ status: z.enum(HOST_PHONE_ACCESS_STATUSES), phones: z.number().int().nonnegative().max(1000) })
 export const hostHelloSchema = z.object({ ...eventPageShape, hostId: z.uuid(), clientId: id, shell: protocolAgentStateSchema, capabilities: z.object({ mayAnswer: z.boolean() }), sottoVersion, features: featureList,
   ...aboutShape, phoneAccess: hostPhoneAccessSchema.optional().catch(undefined) })
+/** A started thread's handover as a host answers `start-handover`: its words, or null when it has none (#1028). */
+export const hostStartHandoverSchema = z.object({ handover: z.object({ text: z.string() }).strict().nullable() }).strict()
 export const hostHealthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), sottoVersion, features: featureList, ...aboutShape })
 /**
  * The host ID, Sotto version and features a host's health advertises, or null when the host does not speak the

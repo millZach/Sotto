@@ -1,3 +1,4 @@
+import { startHandoverPrefix } from '../../shared/threadStarts'
 import { userInfo } from 'node:os'
 import type { WatcherHostControl, WatcherHostRead, WatcherHostProjection, WatcherRoomThreadInput } from '../../shared/watcherHost'
 import type { WatcherIdentity } from '../../shared/watcher'
@@ -95,6 +96,10 @@ export interface HostService {
   /** The host reports its machine's host facts and how many of its threads are running (#1031); without it they read unknown. */
   readonly supportsHostFacts?: boolean
   hostFacts?(): Promise<HostMachineReport>
+  /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
+  readonly supportsThreadStarts?: boolean
+  /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
+  startHandover?(threadId: string): Promise<{ readonly text: string } | null>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
   events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[]
   subscribe(listener: (state: AgentState) => void): () => void
@@ -228,7 +233,9 @@ export class LocalHostService implements HostService {
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
   /** `facts` is this machine's host facts, read the same way on the desktop and on a headless host (#1031). */
-  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: HostFactsSource }) {
+  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: HostFactsSource
+    /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
+    threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined } }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -239,6 +246,12 @@ export class LocalHostService implements HostService {
   }
 
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
+  get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
+  async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
+    if (!this.options.threadStarts) throw new Error('Continuing an agent as a thread is unavailable on this host.')
+    const built = this.options.threadStarts.startHandover(threadId)
+    return built ? { text: startHandoverPrefix(built.text).trimEnd() } : null
+  }
   hostFacts(): Promise<HostMachineReport> {
     if (!this.options.facts) return Promise.reject(new Error('This host does not report its machine facts.'))
     return hostMachineReport(this.options.facts, this.control.shell().host.threads)

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { EMPTY_AGENT_HOST, agentRuntimeModeSchema, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { designThreadsFixture, type E2EScenario, type SottoE2EBridge } from '../../shared/e2e'
 import { resolveModel } from '../../shared/modelCatalog'
-import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope } from '../agents/host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ThreadForkRequest } from '../agents/host'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import type { AgentReasoner } from '../agents/reasoning'
 
@@ -93,6 +93,24 @@ export class E2EAgentHost implements AgentHost {
     this.emit()
     return { accepted: true }
   }
+  /** The refusal the next fork answers with, as Codex refuses an agent it no longer has (`fork-refuse`). */
+  private forkRefusal: string | null = null
+  /**
+   * Codex's own copy of an agent's conversation (#1028): a new thread holding the agent's reported result as its reply,
+   * in the folder it was asked for, or the refusal a test scripted. Nothing is read of the agent's task.
+   */
+  async forkThread(request: ThreadForkRequest): Promise<AgentHostResult> {
+    if (this.forkRefusal !== null) { const message = this.forkRefusal; this.forkRefusal = null; throw new Error(message) }
+    const source = this.state.threads.find(thread => thread.id === request.source.threadId)
+    if (!source) throw new Error('E2E_FORK_SOURCE_UNAVAILABLE')
+    const agent = source.activities?.flatMap(activity => activity.agents ?? []).find(item => item.id === request.source.agentId)
+    this.state.threads.push({ id: request.threadId, title: request.title, projectId: source.projectId, modelId: request.modelId,
+      ...(source.providerId ? { providerId: source.providerId } : {}), ...(request.workingDirectory ? { workingDirectory: request.workingDirectory } : {}),
+      runtimeMode: request.runtimeMode ?? 'approval-required', reasoningEffort: request.reasoningEffort ?? 'low', status: 'idle', requests: [],
+      messages: agent?.message ? [{ id: randomUUID(), role: 'assistant', text: agent.message, createdAt: new Date().toISOString() }] : [] })
+    this.emit()
+    return { accepted: true }
+  }
   disconnect(): void { this.state.connected = false }
   private emit(): void { for (const listener of this.listeners) listener(structuredClone(this.state)) }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> {
@@ -164,6 +182,7 @@ export class E2EAgentHost implements AgentHost {
     }
     if (event.type === 'settings-unconfirmed') { this.settingsGate.unconfirmed = event.text; return }
     if (event.type === 'disconnect') { this.state.connected = false; this.emit(); return }
+    if (event.type === 'fork-refuse') { this.forkRefusal = event.text; return }
     const thread = this.state.threads.find(t => t.id === event.threadId)
     if (!thread) throw new Error('E2E_THREAD_UNAVAILABLE')
     if (event.type === 'monitoring') {
