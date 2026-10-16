@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { agentRuntimeModeSchema, handoverCountsSchema, providerIdSchema } from './agents'
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
 import { hostFactsSchema, hostOsSchema } from './hostFacts'
+import { workerKindSchema } from './workerRoles'
 export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
 
 export const WATCHER_PROMPT_BYTES_MAX = 32 * 1_024
@@ -163,9 +164,13 @@ export const watcherToolSchemas = {
       nextPosition: counter.nullable(), truncated: z.boolean(), earlierAvailable: z.boolean(), observedAt: time })),
   },
   start_thread: {
-    input: z.object({ ...mutation, project: watcherProjectTargetSchema, modelId: entityId, reasoningEffort: z.string().min(1).max(64).optional(),
+    // A start names its worker role, its model, or both (#1041). Main fills the rest from the role before admission, and
+    // never sends `role` to a paired host: an older one refuses keys it does not know.
+    input: z.object({ ...mutation, project: watcherProjectTargetSchema, role: workerKindSchema.optional(), modelId: entityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
       permission: permission.optional(), workingCopy, baseRefChoiceId: id.optional(), title: z.string().min(1).max(WATCHER_TITLE_MAX), firstPrompt: prompt }).strict(),
-    output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id }),
+    output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id,
+      // What the start's worker role gave it and what the request named in its place. In memory only: a retry after a restart has none.
+      role: z.object({ id: workerKindSchema, named: z.array(z.enum(['model', 'effort', 'permission'])).max(3), note: shortText.min(1) }).strict().optional() }),
   },
   send_to_thread: {
     input: z.object({ ...mutation, target: watcherThreadTargetSchema, text: prompt, delivery: deliveryMode,

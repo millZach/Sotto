@@ -57,6 +57,8 @@ export interface AgentRuntimeOptions {
   streamingPublishCost?: boolean
   /** The Owl list's answer for delegation between threads (ADR-0081), read once by the process owner. Absent fails closed. */
   delegationEnabled?: boolean
+  /** The Owl list's answer for worker roles (#1041), read once by the process owner. Absent fails closed. */
+  workerRolesEnabled?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -195,18 +197,20 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   let watcherTools: WatcherToolServer | undefined
   // Delegation between threads (ADR-0081): only this computer's threads take Sotto's tool servers, so a headless host has none.
   let delegation: DelegationService | undefined
+  // Worker roles (#1041): Settings are read only when a start or a delegation asks for its role.
+  const roles = options.workerRolesEnabled === true ? { roles: () => options.settings().workerRoles } : {}
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       limit: () => options.settings().watcherInFlightLimit, workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
-      otherStartsInFlight: () => delegation?.startsInFlight() ?? 0 }) : undefined
+      otherStartsInFlight: () => delegation?.startsInFlight() ?? 0, ...roles }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
       limit: () => options.settings().watcherInFlightLimit, otherStartsInFlight: () => watcher?.startsInFlight() ?? 0,
-      tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId) })
+      tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles })
   }
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
-    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher); agentHost.useWatcherTools(watcherTools) }
+    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true }); agentHost.useWatcherTools(watcherTools) }
   }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's

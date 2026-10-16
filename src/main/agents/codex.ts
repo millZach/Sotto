@@ -807,7 +807,8 @@ export class CodexAppServerHost implements AgentHost {
         instructions = parsed.success ? parsed.data.config.developer_instructions ?? '' : undefined
       })
       if (typeof instructions !== 'string') throw new Error('Invalid native instructions')
-      return [instructions, codexQuestions, ...(id && this.watcherProfiles.has(id) ? [WATCHER_SYSTEM_PROMPT] : [])].filter(Boolean).join('\n\n')
+      const watcher = id ? this.watcherProfiles.get(id) : undefined
+      return [instructions, codexQuestions, ...(watcher ? [watcher.instructions ?? WATCHER_SYSTEM_PROMPT] : [])].filter(Boolean).join('\n\n')
     } catch {
       throw new Error('Codex settings could not be read. No new work was sent. Reconnect and try again.')
     }

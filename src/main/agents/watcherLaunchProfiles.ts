@@ -128,6 +128,7 @@ export class WatcherLaunchProfiles implements ThreadLaunchProfiles {
     const profile: WatcherLaunchProfile = Object.freeze({ kind: 'watcher',
       server: Object.freeze({ ...server, headers: Object.freeze(server.headers.map(header => Object.freeze({ ...header }))) }),
       toolNames: Object.freeze(tools.definitions.map(tool => tool.name)),
+      ...(tools.instructions !== undefined ? { instructions: tools.instructions } : {}),
       revoke: (failure: string): void => { this.revoked.set(threadId, failure); tools.revoke(threadId) },
     })
     validateWatcherProfile(profile)
