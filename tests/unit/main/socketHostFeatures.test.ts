@@ -250,6 +250,29 @@ describe('a remote thread behind a backlog', () => {
     expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'followed' })
   })
 
+  it('reads a thread whole after a command when a delta missed it and the read that followed failed', async () => {
+    const state = emptyDesktopState(hostId)
+    state.host.threads = [{ ...thread, id: 'followed' }]
+    const call = vi.fn(async (operation: HostOperation) => operation.op === 'detail' ? { threadId: operation.threadId, revision: 9, messages: [] } : operation.op === 'command' ? state : null)
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    Object.assign(client, { features: [], cached: state, call })
+    await client.observe(['followed'])
+    const transport = client as unknown as Transport & { applyDelta(threadId: string, delta: { threadId: string; baseRevision: number; revision: number; messageDeltas: []; activityDeltas: [] }): void }
+    transport.cacheDetail('followed', { threadId: 'followed', revision: 4, messages: [] })
+    call.mockImplementationOnce(async () => { throw new Error('Wait for the pending host request to finish.') })
+    transport.applyDelta('followed', { threadId: 'followed', baseRevision: 2, revision: 6, messageDeltas: [], activityDeltas: [] })
+    await vi.waitFor(() => expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'followed' }))
+    await Promise.resolve()
+    call.mockClear()
+    await client.command({ type: 'select-thread', threadId: 'followed' })
+    expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'followed' })
+    expect(client.threadDetail('followed')?.revision).toBe(9)
+    // Current again, the next command reads nothing more.
+    call.mockClear()
+    await client.command({ type: 'select-thread', threadId: 'followed' })
+    expect(call.mock.calls.map(([operation]) => operation.op)).toEqual(['command'])
+  })
+
   it('keeps a thread read the host answers after the read timed out, so the deltas after it still apply', async () => {
     vi.useFakeTimers()
     try {

@@ -121,6 +121,8 @@ export class SocketHostService implements HostService {
   private features: readonly string[] = []
   /** Threads being read whole because a delta did not follow the revision held, so a run of them costs one read. */
   private readonly resyncing = new Set<string>()
+  /** Threads whose held detail a delta could not follow. Only a whole detail stored afterwards makes one current again. */
+  private readonly behind = new Set<string>()
   /** Threads the host said are too large to send. No delta asks for one again until it is observed again or arrives whole. */
   private readonly tooLarge = new Set<string>()
   /**
@@ -247,7 +249,7 @@ export class SocketHostService implements HostService {
     if (session.v !== 1 || typeof session.session !== 'string') throw new HostConnectionError('The host answered with something else. Connect again.', 'unauthenticated')
     if (this.options.expectedHostId && session.hostId !== this.options.expectedHostId) throw new WrongHostError()
     this.session = session
-    this.details.clear(); this.tooLarge.clear(); this.lateDetails.clear(); this.catalog = undefined
+    this.details.clear(); this.tooLarge.clear(); this.lateDetails.clear(); this.behind.clear(); this.catalog = undefined
     const url = this.endpoint('/v1/socket'), key = randomBytes(16).toString('base64')
     const expected = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
     this.frames = await new Promise<SocketFrames>((resolve, reject) => {
@@ -300,7 +302,7 @@ export class SocketHostService implements HostService {
       clearTimeout(item.timer)
       item.reject(new HostConnectionError(item.command ? 'The connection closed before the host confirmed this command. Refresh before deciding what to do next.' : 'The host connection closed. Connect again to refresh.', 'disconnected', item.command ? id : undefined))
     }
-    this.pending.clear(); this.lateDetails.clear(); this.confirmedObserved = new Set()
+    this.pending.clear(); this.lateDetails.clear(); this.behind.clear(); this.confirmedObserved = new Set()
     if (this.cached) this.publish({ ...this.cached, stale: true })
     this.options.onConnectionChange?.(false)
   }
@@ -425,14 +427,17 @@ export class SocketHostService implements HostService {
     const held = this.details.get(threadId)
     if (held && delta.revision <= held.revision) return
     const applied = held ? applyAgentThreadDetailDelta(held, delta) : null
-    if (applied === null) { this.resync(threadId); return }
+    if (applied === null) { this.behind.add(threadId); this.resync(threadId); return }
     this.details.set(threadId, applied)
     for (const listener of this.detailListeners) listener(structuredClone(delta))
     if (this.pushErrorThread === threadId) this.clearPushError()
   }
-  /** Whether the host's pushes keep `threadId` current here: observed, and held or already being read whole. */
+  /**
+   * Whether the host's pushes keep `threadId` current here: observed, and either being read whole or held with nothing
+   * missed since. A read that failed after a missed delta leaves the thread behind, so the next command reads it again.
+   */
   private follows(threadId: string): boolean {
-    return this.confirmedObserved.has(threadId) && (Boolean(this.details.get(threadId)) || this.resyncing.has(threadId))
+    return this.confirmedObserved.has(threadId) && (this.resyncing.has(threadId) || Boolean(this.details.get(threadId)) && !this.behind.has(threadId))
   }
   /** Reads a thread whole after a delta could not follow it. A thread too large to send is reported, not asked for again. */
   private resync(threadId: string): void {
@@ -542,7 +547,7 @@ export class SocketHostService implements HostService {
     if (!this.threadAvailable(threadId)) return
     const current = this.details.get(threadId)
     if (detail && current && detail.revision < current.revision) return
-    this.details.set(threadId, detail); this.tooLarge.delete(threadId)
+    this.details.set(threadId, detail); this.tooLarge.delete(threadId); this.behind.delete(threadId)
     if (detail) for (const listener of this.detailListeners) listener(detail)
     if (this.pushErrorThread === threadId) this.clearPushError()
   }
