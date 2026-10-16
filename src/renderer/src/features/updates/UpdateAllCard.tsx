@@ -11,7 +11,7 @@ import { useTransientFlag, writeClipboard } from '../../agents/richActions'
 import { focusedComposerField } from '../../agents/promptSelection'
 import { useOptionalApp } from '../../state/AppContext'
 import { useOwlFeature } from '../../state/owlFeature'
-import { APP_KEY, clientKey, hostKey, updateAllSteps, updateAllView, updateAllWords, type UpdateAllItem, type UpdateAllPass, type UpdateAllPhase, type UpdateAllStep, type UpdateAllStepState } from './updateAll'
+import { APP_KEY, clientKey, hostKey, newlyDropped, newlyInLine, updateAllSteps, updateAllView, updateAllWords, type UpdateAllItem, type UpdateAllPass, type UpdateAllPhase, type UpdateAllStep, type UpdateAllStepState } from './updateAll'
 import './updateAll.css'
 
 const requests = new Set<() => void>()
@@ -21,6 +21,11 @@ export function requestUpdateAll(): void { for (const listener of requests) list
 const ipcMessage = (error: unknown, fallback: string): string => error instanceof Error
   ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '').trim() || fallback : fallback
 const UNREACHABLE = 'Sotto could not reach the update. Nothing was changed. Try again.'
+/**
+ * How long a run that ended with everything updated stays before the card goes by itself, counted afresh each time the
+ * pointer and focus have both left it (October 16, 2026, the owner's choice).
+ */
+export const UPDATE_ALL_DONE_MS = 5_000
 
 function useHostsState(bridge: HostsBridge | undefined): HostsState | null {
   const [state, setState] = useState<HostsState | null>(null)
@@ -73,7 +78,10 @@ function StepRow({ step, busy, onRetry, onStopThreads, onCancel }: {
   const threads = `${item?.working ?? 0} ${item?.working === 1 ? 'thread' : 'threads'}`
   const actions = item ? [
     item.state === 'failed' ? <Button key="retry" variant="secondary" disabled={busy} aria-label={`Try again to update ${item.name}${where}`} onClick={() => onRetry(item)}>Try again</Button> : null,
-    item.state === 'waiting' ? <Button key="stop" variant="secondary" disabled={busy} aria-label={`Stop ${threads}${where} and update its host now`} onClick={() => onStopThreads(item)}>Stop {threads} and update</Button> : null,
+    // While the host's clients also update, stopping the threads does not start its update, and the press says so.
+    item.state === 'waiting' ? <Button key="stop" variant="secondary" disabled={busy}
+      aria-label={item.clientsUpdating ? `Stop ${threads}${where}. Its host still updates once its clients have.` : `Stop ${threads}${where} and update its host now`}
+      onClick={() => onStopThreads(item)}>{item.clientsUpdating ? `Stop ${threads}` : `Stop ${threads} and update`}</Button> : null,
     item.cancellable ? <Button key="cancel" variant="ghost" disabled={busy} aria-label={`Cancel update, and leave ${item.machine.kind === 'host' ? item.machine.name : item.name} on ${item.versions.from}`} onClick={() => onCancel(item)}>Cancel update</Button> : null,
     item.commands ? <Button key="copy" variant="ghost" aria-label={`Copy the commands that update ${item.name}${where}`} onClick={copy}><Copy size={13} aria-hidden="true" />{copied ?? 'Copy commands'}</Button> : null,
   ].filter(Boolean) : []
@@ -121,6 +129,9 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
   const [dismissed, setDismissed] = useState<string | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /** Whether the pointer is over the card or its pill, and whether focus is inside either: both keep a finished run up. */
+  const [pointerIn, setPointerIn] = useState(false)
+  const [focusIn, setFocusIn] = useState(false)
   const card = useRef<HTMLElement>(null)
   const pill = useRef<HTMLButtonElement>(null)
   const titleId = useId()
@@ -134,6 +145,8 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     local: state?.host.clientHosts?.find(host => host.hostId === localHostId)?.clientUpdates ?? state?.clientUpdates ?? [],
   }
   const view = updateAllView(sources, pass)
+  const lined = newlyInLine(sources, pass).join('|')
+  const dropped = newlyDropped(sources, pass).join('|')
   const working = (state?.host.threads ?? []).filter(thread => thread.remoteHost !== true && threadKeepsHostBusy(thread)).length
   const words = updateAllWords(view)
   const steps = updateAllSteps(view, { working, resumes: resumeFeature && app?.settings?.resumeThreadsAfterRestart === true })
@@ -205,6 +218,19 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     for (const item of offered) if (item.kind === 'host' && !after.has(hostOf(item)!)) void updateHost(hostOf(item)!)
   }, [clientUpdate, download, queueClients, updateHost])
 
+  // A client step seen in its host's update line is marked so, so that losing the line to the host's restart reads as lost.
+  useEffect(() => {
+    if (!lined) return
+    const keys = lined.split('|')
+    const items = latest.current.view.items.filter(item => keys.includes(item.key))
+    setPass(current => current && { ...current, seen: new Map([...current.seen ?? [], ...items.map(item => [item.key, item] as const)]) })
+  }, [lined])
+  // One whose host then goes out of reach, as while it restarts, is marked too, so a line lost then says the host restarted.
+  useEffect(() => {
+    if (!dropped) return
+    const keys = dropped.split('|')
+    setPass(current => current && { ...current, dropped: new Set([...current.dropped ?? [], ...keys]) })
+  }, [dropped])
   // A client step the press finished stays done, even once a host's restart forgets what its update line ran.
   useEffect(() => {
     if (!pass) return
@@ -256,7 +282,10 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     setPass(current => {
       const base = current ?? EMPTY_PASS
       const refused = new Map(base.refused); refused.delete(item.key)
-      return { ...base, touched: new Set([...base.touched, item.key]), refused, ranBefore: new Map([...base.ranBefore, [item.key, clientUpdate(item)?.ranAt]]), targets: targetsWith(base.targets, [item]) }
+      // Seen again only once the host says it is back in the line, so the reply's head start does not read as lost.
+      const seen = new Map(base.seen); seen.delete(item.key)
+      const dropped = new Set(base.dropped); dropped.delete(item.key)
+      return { ...base, touched: new Set([...base.touched, item.key]), refused, seen, dropped, ranBefore: new Map([...base.ranBefore, [item.key, clientUpdate(item)?.ranAt]]), targets: targetsWith(base.targets, [item]) }
     })
     setDismissed(null)
     if (item.kind === 'app') download()
@@ -296,6 +325,27 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     setDismissed(updateAllView(latest.current.sources, null).fingerprint)
   }, [hostsBridge, leave])
   const notNow = useCallback((): void => { leave(); setDismissed(latest.current.view.fingerprint) }, [leave])
+  // A run that ended with everything updated, and nothing still waiting, goes by itself a few seconds later, the way its
+  // Dismiss does, and says nothing as it goes. Never while the pointer is over it or focus is inside it: each time both
+  // have left, the count starts again from the beginning. A run with a failure stays until it is dismissed.
+  const clean = view.phase === 'done' && !view.items.some(item => item.state === 'failed' || item.state === 'waiting')
+  useEffect(() => {
+    if (!clean || hidden || pointerIn || focusIn) return
+    const timer = window.setTimeout(putAway, UPDATE_ALL_DONE_MS)
+    return () => window.clearTimeout(timer)
+  }, [clean, hidden, pointerIn, focusIn, putAway])
+  // A card that went away under the pointer heard no leave; it starts unheld when it comes back.
+  useEffect(() => { if (hidden) { setPointerIn(false); setFocusIn(false) } }, [hidden])
+  const holds = {
+    onPointerEnter: () => setPointerIn(true),
+    onPointerLeave: () => setPointerIn(false),
+    onFocus: () => setFocusIn(true),
+    // Read once the blur is over: focus that stays put while another window takes it still holds the card.
+    onBlur: (event: React.FocusEvent<HTMLElement>) => {
+      const box = event.currentTarget
+      queueMicrotask(() => { if (!box.contains(document.activeElement)) setFocusIn(false) })
+    },
+  }
 
   useEffect(() => {
     const listener = (): void => { setFolded(false); setDismissed(null); start() }
@@ -335,13 +385,19 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
     if (wasFolded.current !== folded && (card.current?.contains(document.activeElement) || pill.current === document.activeElement || document.activeElement === document.body)) {
       if (folded) pill.current?.focus(); else card.current?.querySelector<HTMLElement>('.update-all__head button')?.focus()
     }
+    // The card and its pill take each other's place, so the one shown now says whether the pointer and focus are on it.
+    if (wasFolded.current !== folded) {
+      const shown = folded ? pill.current : card.current
+      setPointerIn(shown?.matches(':hover') === true)
+      setFocusIn(shown?.contains(document.activeElement) === true)
+    }
     wasFolded.current = folded
   }, [folded])
 
   if (!app || hidden) return null
   const failed = view.items.some(item => item.state === 'failed')
   if (folded) {
-    return <button ref={pill} type="button" className="update-all-pill tt-focusable" data-phase={view.phase} data-failed={failed || undefined}
+    return <button ref={pill} type="button" className="update-all-pill tt-focusable" data-phase={view.phase} data-failed={failed || undefined} {...holds}
       aria-label={`${words.pill}. Show updates`} title={words.pill} onClick={() => setFolded(false)}>
       <PhaseGlyph phase={view.phase} failed={failed} /><span>{words.pill}</span>
     </button>
@@ -358,7 +414,7 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
         <Button variant="ghost" aria-label="Later: fold this card. The update control keeps the download." onClick={() => setFolded(true)}>Later</Button></>
       : view.phase === 'done' ? <Button variant="ghost" aria-label="Dismiss the results of Update all" onClick={putAway}>Dismiss</Button> : null
   // The landmark keeps one name whatever the phase; the heading inside says where things stand.
-  return <section ref={card} className="update-all" data-phase={view.phase} aria-label="Updates" aria-describedby={titleId}>
+  return <section ref={card} className="update-all" data-phase={view.phase} aria-label="Updates" aria-describedby={titleId} {...holds}>
     <header className="update-all__head">
       <div aria-live="polite"><strong id={titleId}>{words.title}</strong><span>{words.sub}</span></div>
       <Button variant="ghost" iconOnly aria-label="Fold updates into a button" title="Fold" onClick={() => setFolded(true)}><ChevronDown size={16} aria-hidden="true" /></Button>
