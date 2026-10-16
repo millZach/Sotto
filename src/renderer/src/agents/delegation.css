@@ -1,0 +1,70 @@
+/* Delegation between threads (#1029, design A): cards in the delegating thread's transcript, "Delegated by" under a
+   delegated thread's header, and the line under the composer. Every colour is a theme role. */
+
+/* The cards of one turn sit under its reply, in the transcript's column. */
+.delegation-cards { display: grid; gap: 8px; margin: -12px 0 28px; }
+.delegation-card { display: grid; gap: 4px; min-width: 0; padding: 11px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface); }
+.delegation-card__top { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; }
+.delegation-card__glyph { flex: none; color: var(--tt-text-muted); }
+.delegation-card__lead { flex: none; color: var(--tt-text-muted); }
+.delegation-card__name { min-width: 0; overflow: hidden; color: var(--tt-text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+/* The thread's name is a link: underlined, in the text's own colour, opening the thread in this pane. */
+.delegation-card__link { display: inline; min-width: 0; max-width: 100%; overflow: hidden; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-text); font: inherit; font-weight: 500;
+  text-align: left; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-overflow: ellipsis; text-underline-offset: 3px; white-space: nowrap; cursor: pointer; }
+.delegation-card__link:hover { text-decoration-color: currentColor; }
+.delegation-card__outcome { display: inline-flex; flex: none; align-items: center; gap: 6px; margin-left: auto; font-size: 13px; white-space: nowrap; }
+.delegation-card__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; margin: 0; padding-left: 23px; color: var(--tt-text-muted); font-size: 12.5px; }
+.delegation-card__meta .provider-mark { color: var(--tt-text-muted); }
+.delegation-card__machine { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.delegation-card__machine > svg { flex: none; }
+.delegation-card__machine[data-kind='remote'] > svg { color: var(--tt-accent-text, var(--tt-text-muted)); }
+.delegation-card__wait { margin: 0; padding-left: 23px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+/* A delegation Sotto refused: an error's edge and mark, and the kind of work or the thread in the text's own colour. */
+.delegation-card[data-outcome='refused'] { border-color: color-mix(in srgb, var(--tt-error) 45%, var(--tt-hairline)); }
+.delegation-card[data-outcome='refused'] .delegation-card__glyph { color: var(--tt-error-text); }
+
+/* An outcome's word and its ring, coloured by what it means for the thread that delegated. */
+.delegation-card__outcome:is([data-outcome='working'], [data-outcome='background']) { color: var(--tt-activity); }
+.delegation-card__outcome:is([data-outcome='answered'], [data-outcome='stopped']) { color: var(--tt-text-muted); }
+.delegation-card__outcome[data-outcome='paused'] { color: var(--tt-text-2); }
+.delegation-card__outcome[data-outcome='failed'] { color: var(--tt-error-text); }
+.delegation-card__outcome[data-outcome='unknown'] { color: var(--tt-warning-text); }
+.delegation-ring { display: block; flex: none; width: 10px; height: 10px; box-sizing: border-box; border: 1.5px solid var(--tt-hairline); border-radius: 50%; }
+/* A turning ring while it works, as the sidebar draws a working thread. */
+.delegation-ring:is([data-outcome='working'], [data-outcome='background']) { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%);
+  mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
+.delegation-ring[data-outcome='paused'] { border-color: var(--tt-text-2); border-style: dotted; }
+.delegation-ring[data-outcome='failed'] { border-color: var(--tt-error-text); }
+.delegation-ring[data-outcome='unknown'] { border-color: var(--tt-warning-text); border-style: dashed; }
+.delegation-ring[data-outcome='answered'] { border-color: var(--tt-text-muted); background: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); }
+.delegation-ring[data-outcome='stopped'] { width: 9px; height: 9px; border-color: var(--tt-text-muted); border-radius: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .delegation-ring:is([data-outcome='working'], [data-outcome='background']) { animation: delegation-ring 1.1s linear infinite; }
+}
+@keyframes delegation-ring { to { rotate: 360deg; } }
+
+/* A brief the delegating thread sent, in the delegated thread: that thread's words, not the user's, so its edge is dashed. */
+.thread-message[data-role='user'][data-from='delegation'] { border-style: dashed; border-color: var(--tt-field-border, var(--tt-hairline)); background: var(--tt-surface); }
+.thread-message[data-from='delegation'] .thread-message__who { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text); }
+.thread-message[data-from='delegation'] .thread-message__who > svg { flex: none; color: var(--tt-text-muted); }
+
+/* "Delegated by" the thread that started this one, under the header and in the transcript's column. */
+.delegated-by { display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; margin: 0 max(24px, calc((100% - 760px) / 2)); padding: 2px 0 10px;
+  box-shadow: inset 0 -1px 0 var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; }
+.delegated-by > svg { flex: none; }
+.delegated-by > span:first-of-type { display: flex; align-items: baseline; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.delegated-by .delegation-card__outcome { margin-left: 0; }
+.delegated-by__gone { color: var(--tt-text-2); }
+
+/* The line under the composer: what Stop also stops, or what the user's turn in a delegated thread does. */
+.delegation-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 6px 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
+.delegation-note > svg { flex: none; }
+.delegation-note > span { min-width: 0; }
+
+/* Delegated threads in the sidebar, under the thread that delegated to them, with a guide down their left. */
+.thread-nav__row[data-delegation-level] { margin-left: 22px; }
+.thread-nav__row[data-delegation-level='2'] { margin-left: 44px; }
+.thread-nav__row[data-delegation-level]::before { content: ''; position: absolute; top: -1px; bottom: -1px; left: -9px; border-left: 1px solid var(--tt-hairline); }
+.thread-nav__row[data-delegation-level] .thread-nav__title { font-weight: 400; }
+/* The machine badge says This computer whole where the row has room, and gives way before the status does. */
+.thread-nav__metadata .host-badge { flex: 0 1 auto; max-width: none; }

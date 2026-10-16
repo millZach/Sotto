@@ -25,6 +25,8 @@ import { sessionSeenOpen, startOnTyping } from './earlyStart'
 import { PromptEditor, promptSelection, setPromptSelection, type PromptEditorElement } from './PromptEditor'
 import { promptDocText } from './promptDocument'
 import { toolbarApplies } from './branchToolbar.logic'
+import { useDelegationsEnabled } from './delegations'
+import { stopLabel, workingDelegatedThreads } from './delegationWords'
 import './composer.css'
 import './reviewComments.css'
 
@@ -184,6 +186,11 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // Steering is a direct delivery: it waits for any prompt still on its way, the queue's included.
   const canSteer = running && capabilities.steer === true && canSend && !sendInFlight
   const canStop = working && capabilities.interrupt === true && row.connected && !isThreadBusy(state, threadId)
+  // Stop names the delegated threads below this one that a press also stops (ADR-0081 decision 6).
+  const delegationsOn = useDelegationsEnabled()
+  // Counted once per state, not on every keystroke the composer redraws for.
+  const threads = state.host.threads
+  const stopName = useMemo(() => stopLabel(delegationsOn && working ? workingDelegatedThreads(threads, threadId) : 0), [delegationsOn, working, threads, threadId])
   const [menuOpen, setMenuOpen] = useState(false)
   const leavePickers = useRef<() => void>(() => undefined)
   const statusId = `${composerId}-status`
@@ -287,7 +294,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {running && capabilities.steer === true
             ? <Button variant="secondary" className="thread-prompt__steer" disabled={!canSteer} title={canSteer ? 'Send this now, without waiting for the turn to end' : reason ?? undefined} onClick={() => send(performance.now(), 'steer')}>Steer now</Button>
             : null}
-          {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label="Stop agent" title="Stop agent" disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={11} fill="currentColor" aria-hidden="true" /></Button> : null}
+          {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label={stopName} title={stopName} disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={11} fill="currentColor" aria-hidden="true" /></Button> : null}
           {/* With nothing to send, Stop holds the send button's place; typed text brings the send back to the end, so Enter's button is never Stop. */}
           {/* One disc: an arrow sends, a list-plus queues. The full name stays in the label and title, so Queue prompt is never called Send. */}
           {handover !== null && !working

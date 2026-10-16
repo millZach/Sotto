@@ -352,6 +352,11 @@ export const agentThreadSchema = z.object({
   hostId: z.uuid().optional(),
   id, providerId: providerIdSchema.optional(), projectId: providerEntityId, title: id, modelId: z.string(),
   kind: agentThreadKindSchema.optional(),
+  /**
+   * The thread that delegated work to this one (ADR-0081), by its Sotto thread ID and nothing else. Sotto's record, kept on
+   * the thread's own record so it survives a restart; absent on every thread no other thread started, and from older hosts.
+   */
+  delegatedBy: id.optional(),
   /** Who named this thread: the user by hand, Sotto through the thread's own provider, or the stand-in/provider name.
    * Absent on threads saved before Sotto recorded it, which counts as `default`. */
   titleSource: z.enum(['user', 'default', 'generated']).optional(),
