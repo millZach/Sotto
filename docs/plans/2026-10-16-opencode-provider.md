@@ -7,9 +7,9 @@ Zach asked on October 16, 2026 for OpenCode the way T3 Code has it, and chose: a
 1. **#1101 Let a sixth provider fit Sotto's provider lists.** Derive the provider-count caps from `providerIdSchema`, drop the duplicated enum in `agentSkills.ts`, make side writing and Sotto tools opt-in per provider, and have the browser and iPhone surfaces ask the shared predicate. No change for the five providers.
 2. **#1102 Gate a held provider in one place.** One gate, keyed by provider and Owl feature, replaces Muse's hand-written checks. Muse's behaviour and tests unchanged.
 3. **#1103 Add OpenCode 2 as an Owl thread provider.** The adapter over OpenCode's HTTP server and event stream, a fake OpenCode 2 server for the adapter contract, registration behind the gate, and the documents.
-4. **#1104 Find and update OpenCode 2 like every other client.** Discovery, version floor, Settings controls, `opencode upgrade`, Update all.
-5. **#1105 Open OpenCode's model menu on its model sources.** Variant C, the chip naming the source, OpenCode's mark and colour token, **Model source** in the glossary.
-6. **#1106 Give OpenCode threads Sotto's tools and side writing.** MCP on the thread's own server; deny-all side writing that falls back when a free model refuses it.
+4. **#1104 Find and update OpenCode 2 like every other client.** CLI lookup with `~/.opencode/bin`, the verified version, Settings controls, updates by the channel that installed it (ADR-0042), Update all.
+5. **#1105 Open OpenCode's model menu on its model sources.** Variant C, the chip naming the source, OpenCode's mark and colour token.
+6. **#1106 Give OpenCode threads Sotto's tools and side writing.** MCP on the thread's own server; side calls on OpenCode's stateless generation route, checked on a signed-in model source to list nothing and offer no tools, and none where it is refused.
 7. **#1107 Run OpenCode threads on hosts and phones.** Host contracts, host tiles, and the phone clients' provider lists.
 
 1 and 2 run side by side; 4, 5 and 6 run side by side once 3 has merged; 7 follows 3 and 4.
