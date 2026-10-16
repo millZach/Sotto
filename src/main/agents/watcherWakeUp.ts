@@ -80,6 +80,8 @@ export class WatcherWakeUp {
   private readonly settling = new Map<string, { target: WatcherThreadTarget; until: number; local: string }>()
   /** Evidence events a pull request's change made, which need Watcher's attention as a turn end does. */
   private readonly waking = new Set<string>()
+  /** Set while evidenceChanged makes an event for news that needs Watcher, so the event is marked before it is batched. */
+  private evidenceWakes = false
   private pending: WatcherEvent[] = []
   private recent: WatcherEvent[] = []
   private cancelBatch: (() => void) | undefined
@@ -112,6 +114,9 @@ export class WatcherWakeUp {
     }
     for (const event of restored) {
       this.seen.add(event.id)
+      // Which waiting evidence a pull request's change made was kept in memory only, so after a restart all of it counts
+      // as needing Watcher: a thread's own facts may then be told once more than they need be, never a pull request's less.
+      if (event.kind === 'evidence-changed') this.waking.add(event.id)
       if (event.kind !== 'evidence-changed' || !event.evidenceIds?.length) continue
       const fingerprint = observationDigest([...event.evidenceIds].sort())
       if (event.revision !== fingerprint && event.revision !== observationDigest(event.evidenceIds)) continue
@@ -247,6 +252,10 @@ export class WatcherWakeUp {
       const event: WatcherEvent = { ...extra, kind, target, requestId: request.id, generation: participant.generation,
         observedAt: new Date(this.now()).toISOString(), id }
       this.seen.add(event.id)
+      if (kind === 'evidence-changed' && this.evidenceWakes) {
+        this.waking.add(event.id)
+        while (this.waking.size > 2_000) this.waking.delete(this.waking.values().next().value!)
+      }
       if (kind === 'evidence-changed') {
         this.toldLocal.delete(targetKey(target)); this.toldLocal.set(targetKey(target), this.evidence.digest(target, 'local'))
         while (this.toldLocal.size > 2_000) this.toldLocal.delete(this.toldLocal.keys().next().value!)
@@ -275,6 +284,9 @@ export class WatcherWakeUp {
       this.cancelBatch?.(); this.cancelBatch = undefined
       return
     }
+    // A thread's own facts, with nothing that needs Watcher beside them here or in its queue, wait in memory: telling them
+    // would save the queue and wake no one. News that does needs Watcher, or a turn end, takes them along.
+    if (!this.rememberPending.size && !this.worthTelling(this.pending)) { this.cancelBatch?.(); this.cancelBatch = undefined; return }
     // Observations and new events cannot shorten an outstanding persistence backoff.
     if (this.retryAt && this.cancelBatch) return
     if (!this.cancelBatch) this.firstPending = this.now()
@@ -285,14 +297,18 @@ export class WatcherWakeUp {
       : Math.min(...held.values()) - this.now()
     this.cancelBatch = this.schedule(() => { this.cancelBatch = undefined; this.flush() }, Math.max(0, delay))
   }
-  /**
-   * The threads whose waiting turn end still holds their own news for its Git read, and until when: none once the read
-   * has changed the thread's own facts, once its time is up, or when no turn end of that thread is waiting.
-   */
+  /** Whether these events are worth a wake-up's save: they, or Watcher's news still in its queue, need Watcher. */
+  private worthTelling(events: readonly WatcherEvent[]): boolean {
+    return events.length > 0 && (this.needsAttention(events) || this.needsAttention(this.options.waitingEvents?.() ?? []))
+  }
   /** A turn end, and the thread's own facts that ride with it, wait for that thread's Git read; nothing else does. */
   private waitsForGitRead(event: WatcherEvent, held: ReadonlyMap<string, number>): boolean {
     return held.has(targetKey(event.target)) && (TURN_ENDS.has(event.kind) || event.kind === 'evidence-changed')
   }
+  /**
+   * The threads whose waiting turn end still holds their own news for its Git read, and until when: none once the read
+   * has changed the thread's own facts, once its time is up, or when no turn end of that thread is waiting.
+   */
   private heldForGitRead(): Map<string, number> {
     const held = new Map<string, number>()
     for (const [key, wait] of this.settling) {
@@ -303,7 +319,8 @@ export class WatcherWakeUp {
   }
   private flush(): void {
     const held = this.heldForGitRead(), due = this.canDeliver() ? this.stillDue(this.pending) : []
-    const events = due.filter(event => !this.waitsForGitRead(event, held)), watcher = this.options.record().current?.target
+    const ready = due.filter(event => !this.waitsForGitRead(event, held)), watcher = this.options.record().current?.target
+    const events = this.worthTelling(ready) ? ready : []
     if (events.length) this.pending = due.filter(event => this.waitsForGitRead(event, held))
     if (this.closed) return
     // Only news still waiting for its thread's Git read is left: it goes when that wait ends.
@@ -466,13 +483,9 @@ export class WatcherWakeUp {
       // Keeping a pull request's untold news current keeps it news that needs Watcher.
       marks = waiting.some(event => this.waking.has(event.id))
     }
-    const pendingBefore = new Set(this.pending.map(event => event.id))
-    this.event('evidence-changed', target, evidenceIds, { evidenceIds, revision: observationDigest(evidenceIds) })
     // A pull request's change needs Watcher; the thread's own facts only ride with what does (needsAttention).
-    if (marks) for (const event of this.pending) if (event.kind === 'evidence-changed' && !pendingBefore.has(event.id)) {
-      this.waking.add(event.id)
-      while (this.waking.size > 2_000) this.waking.delete(this.waking.values().next().value!)
-    }
+    this.evidenceWakes = marks
+    try { this.event('evidence-changed', target, evidenceIds, { evidenceIds, revision: observationDigest(evidenceIds) }) } finally { this.evidenceWakes = false }
   }
   pairedEvidence(hostId: string, facts: readonly WatcherEvidence[]): void {
     if (!this.started || this.closed) return

@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { WATCHER_QUIET_MS, watcherOverview } from '../../../src/shared/watcherOverview'
-import type { WatcherNews } from '../../../src/shared/watcherNews'
+import type { WatcherEvent, WatcherNews } from '../../../src/shared/watcherNews'
 import { WatcherWakeUp, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
@@ -1172,4 +1172,25 @@ it('tells quiet and pull request news afresh once their wake-up is let go with i
   expect(again.filter(event => event.kind === 'quiet')).toHaveLength(1)
   expect(again.filter(event => event.kind === 'evidence-changed')).toHaveLength(1)
   expect(f.wakes.needsAttention(again)).toBe(true)
+})
+
+it('saves nothing while a waiting wake-up holds only a thread’s own facts, and tells them with the next news that needs Watcher', async () => {
+  const waiting: WatcherEvent[] = []
+  const f = fixture(true, undefined, { waitingEvents: () => waiting }), { move } = gitFixture(f)
+  f.wakes.observe(); await f.advance(2_000)
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }; f.wakes.observe(); await f.advance(5_000)
+  // What is left waiting in Watcher's queue is that turn's working copy alone, as after a prune.
+  waiting.push(...f.delivered.at(-1)!.events.filter(event => event.kind === 'evidence-changed'))
+  expect(f.wakes.needsAttention(waiting)).toBe(false)
+  const saves = f.deliver.mock.calls.length
+  // The next turn's tool calls move the working copy. Each keeps that news current in memory, and saves nothing.
+  f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.wakes.observe()
+  for (const change of [{ changedFiles: 3 }, { insertions: 9 }, { deletions: 1 }, { ahead: 1 }]) { move(change); await f.advance(30_000) }
+  expect(f.deliver.mock.calls.length).toBe(saves)
+  // A question is news that needs Watcher: it goes, and the thread's current facts go with it.
+  f.thread.requests = [{ id: 'card', kind: 'question', text: 'secret', options: [] }]; f.wakes.observe(); await f.advance(2_000)
+  expect(f.deliver.mock.calls.length).toBe(saves + 1)
+  expect(f.delivered.at(-1)!.events.map(event => event.kind).sort()).toEqual(['evidence-changed', 'needs-user'])
+  expect(f.delivered.at(-1)!.events.find(event => event.kind === 'evidence-changed')!.revision)
+    .toBe(observationDigest(f.wakes.evidence.read(centerTarget).map(fact => fact.id).sort()))
 })
