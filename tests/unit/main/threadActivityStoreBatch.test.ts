@@ -144,7 +144,7 @@ describe('saving busy threads\' activity', () => {
     const run = StatementSync.prototype.run
     let middle = 0
     const failing = vi.spyOn(StatementSync.prototype, 'run').mockImplementation(function (this: StatementSync, ...args: Parameters<StatementSync['run']>) {
-      if (args[0] === 'two' && ++middle === 2) throw new Error('disk full')
+      if ((args as unknown[])[0] === 'two' && ++middle === 2) throw new Error('disk full')
       return run.apply(this, args)
     })
     expect(() => store.syncActivitiesMany(next)).toThrow('disk full')
