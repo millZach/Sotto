@@ -428,8 +428,18 @@ export class DesktopHostRouter {
    * anything is published it reads afresh.
    */
   publishedThreads(hostId: string): readonly AgentThread[] {
-    return (this.published ?? this.shell()).host.threads.filter(thread => thread.hostId === hostId)
+    return this.lastPublished().host.threads.filter(thread => thread.hostId === hostId)
   }
+  /**
+   * Whether a host's client update line is running, as the router last published it: a client waits in it or is
+   * updating. A host update asks this on every change, and holds its restart until the line is empty (ADR-0077 decision 2).
+   */
+  clientLineRunning(hostId: string): boolean {
+    const entry = this.lastPublished().host.clientHosts?.find(item => item.hostId === hostId)
+    return entry?.clientUpdateRun !== undefined || entry?.clientUpdates?.some(update => update.state === 'queued' || update.state === 'updating') === true
+  }
+  /** What the router last published, read in place; afresh before anything is published. */
+  private lastPublished(): AgentState { return this.published ?? this.shell() }
   private build(read: (connection: DesktopHostConnection) => AgentState): AgentState {
     this.settleAnswerNotice()
     const entries = [...this.hosts.values()].map(({ connection }) => {

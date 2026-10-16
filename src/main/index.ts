@@ -866,7 +866,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     requiresManagementUpdate: hostId => hostRouter.requiresManagementUpdate(hostId),
     hosts: { candidates: () => desktopHosts.updateCandidates(), run: (id, operation, options) => desktopHosts.runUpdate(id, operation, options),
       restart: (id, version, options) => desktopHosts.restartForUpdate(id, version, options), subscribe: listener => desktopHosts.subscribe(() => listener()) },
-    threads: busyThreads })
+    threads: busyThreads,
+    // A host's own update waits for its client update line, read in place; the router's changes reach it through busyThreads.
+    clients: { updating: hostId => hostRouter.clientLineRunning(hostId) } })
   desktopHosts.useUpdates(hostUpdates)
   quitHandles.hostUpdates = hostUpdates
   // Start at boot from Settings > Hosts (ADR-0054), which asks the same busy-host question before it restarts a host.

@@ -184,8 +184,11 @@ function hostItem(update: HostUpdateState, pass: UpdateAllPass | null): UpdateAl
     const step = update.step ?? 'download'
     return { ...base, state: 'running', detail: `Step ${HOST_UPDATE_STEPS.indexOf(step) + 1} of 4 · ${stepTitle(update, step)}`, cancellable: step === 'download' || step === 'check' }
   }
+  // Waiting for the host's client update line and nothing else reads as the press's own wait for its clients.
+  if (update.phase === 'waiting' && update.clientsUpdating && !working) return { ...base, state: 'running', detail: `Updates once ${name}’s clients have.`, cancellable: true }
   if (update.phase === 'waiting' || update.phase === 'confirm' && !touched) {
-    return { ...base, state: 'waiting', detail: `Updates once its ${threads} ${working === 1 ? 'finishes' : 'finish'}.`, cancellable: true }
+    const clients = update.phase === 'waiting' && update.clientsUpdating ? ' and its clients have' : ''
+    return { ...base, state: 'waiting', detail: `Updates once its ${threads} ${working === 1 ? 'finishes' : 'finish'}${clients}.`, cancellable: true }
   }
   if (refused) return { ...base, state: 'failed', detail: refused }
   if (update.phase === 'failed') {

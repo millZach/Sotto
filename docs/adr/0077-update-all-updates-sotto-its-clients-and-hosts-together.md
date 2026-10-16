@@ -54,6 +54,15 @@ line (on this computer and on each connected host that offers client updates), a
 A host's own update waits until the clients it was asked to update have finished, so its restart does not cut one
 off. Everything else runs side by side, each in the updater that already owned it.
 
+October 16, 2026 amendment: the wait is now kept by the host update itself (`HostUpdates` in main), whatever starts it.
+Only the card's first press kept it before, and on October 16 Try again on forge's host restarted it while Codex was
+installing there. A host whose client update line is running, a client waiting in it or updating, moves to waiting
+and begins by itself once the line is empty: Update all's press and Try again, the host update pill's Update and Try
+again (ADR-0040), Update when they finish and Stop N threads and update alike. Cancel update takes it back to needing
+an update, and an update already under way is never interrupted. The line is read from what the router last
+published for that host, in place, because the question is asked on every change. The card words that wait as its own,
+"Updates once forge's clients have.", and the pill as "forge waits for its clients".
+
 **3. What Sotto cannot do is listed, not pressed.** A client installed with something Sotto does not drive shows the
 command to run. A host Sotto did not start shows that it cannot be restarted from here and offers its commands to
 copy. Neither counts toward the press.

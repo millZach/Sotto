@@ -25,6 +25,7 @@ describe('the pill', () => {
   it('speaks for the host the user most needs to hear about, or for all of them', () => {
     expect(hostUpdatePillText([forge()]).text).toBe('Update for forge')
     expect(hostUpdatePillText([forge({ phase: 'waiting' })]).text).toBe('forge waits to update')
+    expect(hostUpdatePillText([forge({ phase: 'waiting', clientsUpdating: true })]).text).toBe('forge waits for its clients')
     expect(hostUpdatePillText([forge({ phase: 'updating', step: 'check' })]).text).toBe('Updating forge · 2 of 4')
     expect(hostUpdatePillText([forge({ phase: 'done' })]).text).toBe('forge updated')
     expect(hostUpdatePillText([forge({ phase: 'failed' })]).text).toBe('forge not updated')
@@ -91,6 +92,21 @@ describe('the panel', () => {
     publish([forge({ phase: 'confirm', working: 1 })])
     await user.keyboard('{Escape}')
     expect(sent(command).at(-1)).toEqual({ type: 'host-update', id: FORGE, action: 'cancel' })
+  })
+  // ADR-0077 decision 2: a host's restart waits for its client update line, whatever pressed Update.
+  it('says a host waits for its client updates, and offers Cancel update, with Stop threads only while some work', async () => {
+    const user = userEvent.setup()
+    const { bridge, command, publish } = hosts([forge({ phase: 'waiting', clientsUpdating: true })])
+    render(<HostUpdateControl bridge={bridge} />)
+    await user.click(await screen.findByRole('button', { name: 'forge waits for its clients. Show host updates' }))
+    expect(screen.getByText('forge updates once its client updates finish.')).toBeInTheDocument()
+    expect(screen.getByText('Clients updating')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Stop/u })).toBeNull()
+    publish([forge({ phase: 'waiting', clientsUpdating: true, working: 2 })])
+    expect(screen.getByText('forge updates once its client updates finish. 2 threads still working.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Stop 2 threads on forge. It still updates once its client updates finish.' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel update, and leave forge on 0.1.22' }))
+    expect(sent(command).map(value => value.type === 'host-update' ? value.action : value.type)).toEqual(['stop-threads', 'cancel'])
   })
   it('offers Cancel update during the download and the check only', async () => {
     const user = userEvent.setup()

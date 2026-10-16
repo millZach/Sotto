@@ -81,9 +81,10 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
   const detailPublisher = coalesceAgentThreadDetailPublishes(() => undefined, { beforeOpening: () => statePublisher.flush() })
   const offState = router.subscribe(next => statePublisher.publish(next))
   const offDetail = router.subscribeThreadDetail(detail => detailPublisher.publish(detail))
-  // One saved host on an older Sotto, as after every new Owl build until it is updated: the pill asks which threads keep it busy.
+  // One saved host on an older Sotto, as after every new Owl build until it is updated: the pill asks which threads keep it busy, and whether its client update line runs.
   const updates = new HostUpdates({ version: '99.0.0', releasesUrl: 'http://127.0.0.1:9/releases', probe: async () => false,
     download: async () => { throw new Error('No download in this benchmark.') }, threads: routerBusyThreads(router),
+    clients: { updating: hostId => router.clientLineRunning(hostId) },
     hosts: { candidates: () => [{ id: 'saved-forge', name: 'forge', hostId: 'remote-forge', version: '0.0.1', owned: true, installPath: '/opt/sotto', dataDirectory: '/var/sotto' }],
       run: async () => { throw new Error('No host commands in this benchmark.') }, restart: async () => { throw new Error('No restarts in this benchmark.') }, subscribe: () => () => undefined } })
   let broadcasts = 0

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { compareOwlHostTarget, HostUpdates, publishedAnswer, type HostUpdateCandidate, type HostUpdateHosts, type HostUpdateThreads } from '../../../src/main/hosts/hostUpdate'
+import { compareOwlHostTarget, HostUpdates, publishedAnswer, type HostUpdateCandidate, type HostUpdateClients, type HostUpdateHosts, type HostUpdateThreads } from '../../../src/main/hosts/hostUpdate'
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from '../../../src/main/hosts/sshLauncher'
 import { SshFailure } from '../../../src/main/hosts/sshFailure'
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
@@ -61,14 +61,22 @@ class Threads implements HostUpdateThreads {
   subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   set(ids: string[]): void { this.busy.set(HOST_ID, ids); for (const listener of this.listeners) listener() }
 }
+/** The hosts' client update lines: forge's runs while `running` is true. */
+class Clients implements HostUpdateClients {
+  running = false
+  readonly listeners = new Set<() => void>()
+  updating(hostId: string): boolean { return hostId === HOST_ID && this.running }
+  subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  set(running: boolean): void { this.running = running; for (const listener of this.listeners) listener() }
+}
 function setup(options: { download?: (url: string, limit: number, signal: AbortSignal) => Promise<Uint8Array> } = {}) {
-  const hosts = new Hosts(), threads = new Threads()
-  const updates = new HostUpdates({ hosts, threads, version: DESKTOP, releasesUrl: 'https://releases.example/download', ...options })
+  const hosts = new Hosts(), threads = new Threads(), clients = new Clients()
+  const updates = new HostUpdates({ hosts, threads, clients, version: DESKTOP, releasesUrl: 'https://releases.example/download', ...options })
   const seen: HostUpdateState[][] = []
   updates.subscribe(() => seen.push(updates.state()))
   const one = (): HostUpdateState => updates.state()[0]!
   const settled = () => vi.waitFor(() => expect(['done', 'failed', 'needs']).toContain(one().phase))
-  return { hosts, threads, updates, seen, one, settled }
+  return { hosts, threads, clients, updates, seen, one, settled }
 }
 
 describe('which hosts need an update', () => {
@@ -341,6 +349,92 @@ describe('an update', () => {
     expect(one().phase).toBe('failed')
     await updates.command(ID, 'update')
     expect(one()).toMatchObject({ phase: 'failed', error: 'forge is not connected, so nothing was updated. Switch it on in Settings > Hosts, then try again.' })
+  })
+})
+
+// The incident of October 16, 2026: Try again on forge's host restarted it while Codex was installing there.
+describe('a host whose client update line is running (ADR-0077 decision 2)', () => {
+  it('waits on Update, and begins by itself once the line is empty', async () => {
+    const { hosts, clients, updates, one, settled } = setup()
+    clients.set(true)
+    expect(one()).toMatchObject({ phase: 'needs', clientsUpdating: true })
+    await updates.command(ID, 'update')
+    expect(one()).toMatchObject({ phase: 'waiting', clientsUpdating: true, working: 0 })
+    expect(hosts.operations).toEqual([])
+    clients.set(false)
+    await settled()
+    expect(one().phase).toBe('done')
+    expect(one().clientsUpdating).toBeUndefined()
+  })
+  it('waits on Try again after a failure the same way', async () => {
+    const { hosts, clients, updates, one, settled } = setup()
+    hosts.steps['update-fetch'] = async () => ({ type: 'error', reason: 'download-failed' })
+    await updates.command(ID, 'update')
+    await settled()
+    expect(one().phase).toBe('failed')
+    hosts.steps['update-fetch'] = async (_operation, options) => { options.onStep?.('check'); return { type: 'update-fetched', file: FILE, sha256: SUM } }
+    clients.set(true)
+    const before = hosts.operations.length
+    await updates.command(ID, 'update')
+    expect(one()).toMatchObject({ phase: 'waiting', clientsUpdating: true })
+    expect(one().failure).toBeUndefined()
+    expect(hosts.operations.length).toBe(before)
+    clients.set(false)
+    await vi.waitFor(() => expect(one().phase).toBe('done'))
+  })
+  it('waits for the line after the threads, whichever answer the busy question got', async () => {
+    const { hosts, threads, clients, updates, one, settled } = setup()
+    clients.set(true)
+    threads.set(['thread-a'])
+    await updates.command(ID, 'update')
+    expect(one()).toMatchObject({ phase: 'confirm', working: 1 })
+    await updates.command(ID, 'when-idle')
+    expect(one()).toMatchObject({ phase: 'waiting', working: 1, clientsUpdating: true })
+    threads.set([])
+    expect(one()).toMatchObject({ phase: 'waiting', working: 0, clientsUpdating: true })
+    // Stop N threads stops them, and the update still waits for the line.
+    threads.set(['thread-b'])
+    await updates.command(ID, 'stop-threads')
+    expect(threads.interrupted).toEqual(['thread-b'])
+    expect(one()).toMatchObject({ phase: 'waiting', clientsUpdating: true })
+    expect(hosts.operations).toEqual([])
+    clients.set(false)
+    await settled()
+    expect(one().phase).toBe('done')
+  })
+  it('asks nothing more of a host whose threads finish while it asks, and waits for its line', async () => {
+    const { hosts, threads, clients, updates, one } = setup()
+    threads.set(['thread-a'])
+    await updates.command(ID, 'update')
+    clients.set(true)
+    threads.set([])
+    expect(one()).toMatchObject({ phase: 'waiting', clientsUpdating: true })
+    expect(hosts.operations).toEqual([])
+    updates.dispose()
+  })
+  it('goes back to needing an update on Cancel update while it waits, and does not begin when the line empties', async () => {
+    const { hosts, clients, updates, one } = setup()
+    clients.set(true)
+    await updates.command(ID, 'update')
+    expect(one().phase).toBe('waiting')
+    await updates.command(ID, 'cancel')
+    expect(one()).toMatchObject({ phase: 'needs', clientsUpdating: true })
+    clients.set(false)
+    expect(one().phase).toBe('needs')
+    expect(hosts.operations).toEqual([])
+    updates.dispose()
+  })
+  it('never interrupts an update already under way when a client joins the line', async () => {
+    const { hosts, clients, updates, one } = setup()
+    let unpack!: () => void
+    hosts.steps['update-install'] = (_operation, options) => { const pending = deferred<SshHostUpdateResult>(); options.onStep?.('install'); unpack = () => pending.resolve({ type: 'update-installed', version: DESKTOP }); return pending.promise }
+    await updates.command(ID, 'update')
+    await vi.waitFor(() => expect(one()).toMatchObject({ phase: 'updating', step: 'install' }))
+    clients.set(true)
+    expect(one()).toMatchObject({ phase: 'updating', step: 'install', clientsUpdating: true })
+    unpack()
+    await vi.waitFor(() => expect(one().phase).toBe('done'))
+    expect(hosts.operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install', 'update-restart'])
   })
 })
 

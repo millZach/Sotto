@@ -79,6 +79,14 @@ describe('a press of Update all', () => {
     expect(view.items.find(item => item.kind === 'host')).toMatchObject({ state: 'running', detail: 'Updates once forge’s clients have.' })
   })
 
+  it('says a host waiting for its client update line updates once its clients have', () => {
+    const waiting = updateAllView(sources({ hostUpdates: [hostUpdate({ phase: 'waiting', clientsUpdating: true })] }), pass([hostKey(FORGE)]))
+    expect(waiting.items[0]).toMatchObject({ state: 'running', detail: 'Updates once forge’s clients have.', cancellable: true })
+    expect(waiting.phase).toBe('running')
+    const busy = updateAllView(sources({ hostUpdates: [hostUpdate({ phase: 'waiting', clientsUpdating: true, working: 2 })] }), pass([hostKey(FORGE)]))
+    expect(busy.items[0]).toMatchObject({ state: 'waiting', detail: 'Updates once its 2 threads finish and its clients have.', cancellable: true })
+  })
+
   it('does not read a result from before the press as the press’s own', () => {
     const key = clientKey('local', 'claude')
     const failedBefore = client({ state: 'failed', ranAt: 'earlier', error: 'EBUSY' })

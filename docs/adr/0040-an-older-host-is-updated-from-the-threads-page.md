@@ -16,6 +16,10 @@ Accepted September 29, 2026, for issue #475. The design is variant C, pill and p
 
 ADR-0053, accepted the same day, takes the separate decision the third consequence below leaves open: a dropped connection, and a move between the tailnet and SSH, keep the host's threads as reconnecting, the way an update's restart does. "During the restart the threads stay" now describes every reconnect, and its rule that the threads go when only the user can fix why is the rule for all of them.
 
+## October 16, 2026 amendment: an update waits for the host's client updates
+
+An update waits for the host's client update line ([ADR-0042](0042-provider-clients-update-in-place.md)) as it waits for the host's threads, so its restart cuts no client update off. Update, Try again, Update when they finish and Stop N threads and update all move a host whose line is running to waiting, and it starts by itself once the line is empty. The pill reads "forge waits for its clients", and the panel "forge updates once its client updates finish." with **Cancel update**, and **Stop N threads** while some still work. An update already under way is never interrupted. [ADR-0077](0077-update-all-updates-sotto-its-clients-and-hosts-together.md) decision 2 has the incident that led here.
+
 ## Context
 
 A host outlives updates to this computer. On September 29 the desktop was on 0.1.24 and forge's host on 0.1.22. Connecting used whatever host was already running, the launch script only ever started `<installation folder>/host/index.js`, and a version difference was noticed only when the protocol changed (`version_mismatch`). None of 0.1.23's and 0.1.24's host changes reached forge until it was updated by hand: the checksum checked, the old files backed up, the new ones unpacked over the flat folder, the old host sent SIGTERM (it saves its workspace and exits in about a second), and the desktop reconnected and started the new one by itself. This ADR is that, done by Sotto when the user asks.

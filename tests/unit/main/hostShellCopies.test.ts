@@ -41,6 +41,36 @@ describe('questions asked on every change read what was published', () => {
     } finally { router.dispose() }
   })
 
+  // A host update asks on every change whether the host's client update line runs, and waits while it does (ADR-0077).
+  it('answers whether a host\'s client update line runs from the last publication without reading any shell', () => {
+    const state = hostState()
+    let push: ((state: AgentState) => void) | undefined
+    const shell = vi.fn(() => state)
+    const connection: DesktopHostConnection = { hostId: LOCAL, name: 'This computer', kind: 'local', detail: () => null, preview: () => null,
+      service: { shell, subscribe: listener => { push = listener; return () => undefined }, command: async () => state } }
+    const router = new DesktopHostRouter(emptyDesktopState)
+    router.add(connection)
+    const update = { id: 'codex' as const, installed: '0.51.0', published: '0.52.1', behind: true, channel: 'npm' as const, canInstall: true, checkedAt: '2026-10-16T10:00:00.000Z' }
+    try {
+      router.subscribe(() => undefined)
+      push!({ ...state, clientUpdates: [{ ...update, state: 'idle' }] })
+      shell.mockClear()
+      expect(router.clientLineRunning(LOCAL)).toBe(false)
+      push!({ ...state, clientUpdates: [{ ...update, state: 'queued' }], clientUpdateRun: { total: 1, done: 0 } })
+      shell.mockClear()
+      expect(router.clientLineRunning(LOCAL)).toBe(true)
+      expect(router.clientLineRunning('another-host')).toBe(false)
+      // The last client has finished and the run is not yet cleared: still running until the line says it is empty.
+      push!({ ...state, clientUpdates: [{ ...update, state: 'updated' }], clientUpdateRun: { total: 1, done: 1 } })
+      shell.mockClear()
+      expect(router.clientLineRunning(LOCAL)).toBe(true)
+      push!({ ...state, clientUpdates: [{ ...update, state: 'updated' }] })
+      shell.mockClear()
+      expect(router.clientLineRunning(LOCAL)).toBe(false)
+      expect(shell).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+  })
+
   it('reads afresh once a change arrives that nothing was published for', () => {
     const state = hostState()
     let push: ((state: AgentState) => void) | undefined
