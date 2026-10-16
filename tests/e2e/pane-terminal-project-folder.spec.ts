@@ -4,6 +4,7 @@ import { mkdir, realpath } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { waitForShellPrompt } from './support/terminal'
 
 /**
  * A worktree thread's terminal drawer (#908): a real Git project and a thread with its own worktree, real Git and
@@ -68,6 +69,7 @@ test('a worktree thread’s terminal drawer starts in the project folder and nam
     await expect(drawer.getByRole('tab', { selected: true })).toBeVisible()
 
     const input = drawer.locator('.xterm-helper-textarea')
+    await waitForShellPrompt(() => drawerOutput(page, threadId))
     await input.click()
     // The marker is joined by the shell, so the echoed command line never matches it.
     await input.pressSequentially('Write-Output ("start" + "-cwd=" + (Get-Location).Path + "=end")')

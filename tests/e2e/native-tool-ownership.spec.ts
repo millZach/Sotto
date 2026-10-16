@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
 import { closeSotto, launchSotto } from './support/sottoLaunch'
+import { waitForShellPrompt } from './support/terminal'
 
 const run = promisify(execFile)
 
@@ -54,11 +55,15 @@ test('terminal instances retain real output through renderer reload and reject a
         const target = { threadId, workspaceId: listing.value.workspace.workspaceId }
         const created = await bridge.create({ ...target, cols: 90, rows: 24 })
         if (!created.ok) throw new Error(created.error.message)
-        const request = { ...target, sessionId: created.value.session.id }
-        const written = await bridge.write({ ...request, data: `node -e "require('fs').writeFileSync('terminal-proof.txt', 'native-terminal-ran'); console.log('SOTTO_PHASE3_TERMINAL_READY')"\r` })
-        if (!written.ok) throw new Error(written.error.message)
-        return { request, directory: created.value.session.workspace.workingDirectory }
+        return { request: { ...target, sessionId: created.value.session.id }, directory: created.value.session.workspace.workingDirectory }
       }, first!)
+      await waitForShellPrompt(() => launched.page.evaluate(async request => {
+        const value = await window.sotto!.terminal!.read(request)
+        return value.ok ? value.value.output : ''
+      }, initial.request))
+      const written = await launched.page.evaluate(async request => window.sotto!.terminal!.write({ ...request,
+        data: `node -e "require('fs').writeFileSync('terminal-proof.txt', 'native-terminal-ran'); console.log('SOTTO_PHASE3_TERMINAL_READY')"\r` }), initial.request)
+      expect(written.ok).toBe(true)
       expect(initial.directory).toBe(directories[0])
       await expect.poll(() => readFile(join(directories[0]!, 'terminal-proof.txt'), 'utf8').catch(() => '')).toBe('native-terminal-ran')
       await expect.poll(async () => launched.page.evaluate(async request => {

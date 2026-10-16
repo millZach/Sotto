@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { bareEntityId, closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const SHOTS = evidenceDirectory('artifacts/terminal-loading')
@@ -56,6 +57,7 @@ for (const surface of ['tools', 'workspace'] as const) {
         return { output: result.value.output, status: result.value.session.status }
       }, { surface, id })
       await expect.poll(async () => (await read()).status).toBe('running')
+      await waitForShellPrompt(async () => (await read()).output)
       await page.evaluate(async ({ surface, id }) => {
         const data = "$sottoRecovery = 'same shell'; Write-Output 'BEFORE_RELOAD'\r"
         if (surface === 'workspace') await window.sotto!.terminals!.write({ id, data })

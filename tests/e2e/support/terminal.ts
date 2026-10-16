@@ -1,4 +1,36 @@
-import type { Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
+
+/**
+ * PowerShell's prompt, `PS <folder>> `. ConPTY may wrap the folder, and it often draws the trailing space as a cursor
+ * move rather than a space until something is typed after it, so only the `>` is required.
+ */
+export const POWERSHELL_PROMPT = /PS [\s\S]*>/u
+
+/**
+ * How long a fresh shell may take to print its first prompt. A cold `pwsh` start on a loaded runner has taken longer
+ * than Playwright's default five seconds (#1051). The wait ends as soon as the prompt appears, so a deadline that is
+ * never reached costs nothing.
+ */
+export const SHELL_START_TIMEOUT = 60_000
+
+/**
+ * Wait until a fresh shell has printed its first prompt, before anything is typed or written into it.
+ *
+ * A running PTY and a mounted xterm do not mean the shell reads commands. Keys typed while PowerShell is still starting
+ * can reach it before PSReadLine does: on a loaded CI runner the command line was drawn but never run (#1051).
+ * `read` returns the terminal's whole output. `after` names text the shell prints before the prompt that counts, such as
+ * a provider's exit line; only a prompt after its last occurrence matches. On other platforms the shell's prompt
+ * is the user's own, so any printed text stands for it.
+ */
+export async function waitForShellPrompt(read: () => Promise<string>, options: { after?: string } = {}): Promise<void> {
+  const prompt = process.platform === 'win32' ? POWERSHELL_PROMPT : /\S/u
+  await expect.poll(async () => {
+    const output = await read()
+    if (options.after === undefined) return output
+    const at = output.lastIndexOf(options.after)
+    return at < 0 ? '' : output.slice(at + options.after.length)
+  }, { message: 'The shell must print its first prompt before anything is typed into it', timeout: SHELL_START_TIMEOUT }).toMatch(prompt)
+}
 
 /** Exercise xterm's DOM fallback without disabling the 2D canvas used to resolve theme colors. */
 export async function forceDomTerminalRenderer(page: Page): Promise<void> {
