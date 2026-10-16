@@ -1537,6 +1537,10 @@ export class WatcherService implements WatcherControlHooks {
             const thread = this.owningSnapshot(host.hostId)?.threads.find(item => item.id === reservation.target.threadId)
             if (!thread) return !operations.every(item => item.deliveryState === 'failed')
             if (!this.connected(thread)) return true
+            // The owning host can accept a start before this desktop's copy of the thread shows its first turn. A thread
+            // with an accepted start and no turn or message yet is still starting, not finished.
+            if (!thread.lastTurn && (thread.summary?.messageCount ?? thread.messages.length) === 0
+              && operations.some(item => item.action === 'start' && item.deliveryState === 'accepted')) return true
             return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
           })
         }

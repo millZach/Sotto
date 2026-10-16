@@ -116,7 +116,21 @@ it('lists This computer and each paired machine with its facts, running threads 
       facts: expect.objectContaining({ os: expect.objectContaining({ family }) }), runningThreads: 0, inFlight: 0, inFlightLimit: 1 })])
   // A start on the paired machine is in flight there, and its thread runs there; This computer's count is unchanged.
   const started = await f.call('start_thread', f.start())
-  expect(started).toMatchObject({ status: 'ok' })
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start-refused')
+  // The owning host's reply can arrive before the desktop's copy of the thread shows its first turn. A reconcile in
+  // that gap reads a created thread with no turn and no message yet: the start is still in flight, not finished.
+  const shell = f.socket.shell.bind(f.socket)
+  const behind = vi.spyOn(f.socket, 'shell').mockImplementation(() => {
+    const state = shell()
+    return { ...state, host: { ...state.host, threads: state.host.threads.map(thread => {
+      if (thread.id !== started.target.threadId) return thread
+      const created = { ...thread }; delete created.lastTurn
+      return { ...created, status: 'idle' as const, messages: [], ...thread.summary ? { summary: { ...thread.summary, messageCount: 0 } } : {} }
+    }) } }
+  })
+  await (f.watcher as unknown as { reconcileRemote(hostId: string): Promise<void> }).reconcileRemote(f.pairing.hostId)
+  expect((await machines())[1]).toMatchObject({ inFlight: 1 })
+  behind.mockRestore()
   await expect.poll(async () => (await machines())[1]).toMatchObject({ runningThreads: 1, inFlight: 1 })
   expect((await machines())[0]).toMatchObject({ inFlight: 0 })
   // An older host does not list host-facts: it reads unknown, and nothing is asked of it.
