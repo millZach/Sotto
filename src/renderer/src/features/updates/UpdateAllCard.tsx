@@ -119,7 +119,7 @@ const targetsWith = (before: ReadonlyMap<string, string> | undefined, items: rea
  * pill, and Not now hides it until something new is published. It drives the updaters that already exist and owns
  * nothing but its press's bookkeeping.
  */
-export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts, doneMs = UPDATE_ALL_DONE_MS }: { readonly hosts?: HostsBridge | undefined; readonly doneMs?: number }): ReactNode {
+export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { readonly hosts?: HostsBridge | undefined }): ReactNode {
   const app = useOptionalApp()
   const agents = useOptionalAgents()
   const hostsState = useHostsState(hostsBridge)
@@ -331,9 +331,9 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts, doneMs
   const clean = view.phase === 'done' && !view.items.some(item => item.state === 'failed' || item.state === 'waiting')
   useEffect(() => {
     if (!clean || hidden || pointerIn || focusIn) return
-    const timer = window.setTimeout(putAway, doneMs)
+    const timer = window.setTimeout(putAway, UPDATE_ALL_DONE_MS)
     return () => window.clearTimeout(timer)
-  }, [clean, hidden, pointerIn, focusIn, doneMs, putAway])
+  }, [clean, hidden, pointerIn, focusIn, putAway])
   // A card that went away under the pointer heard no leave; it starts unheld when it comes back.
   useEffect(() => { if (hidden) { setPointerIn(false); setFocusIn(false) } }, [hidden])
   const holds = {

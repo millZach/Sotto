@@ -7,7 +7,7 @@ import type { HostsBridge, HostsState, HostStatus } from '../../../src/shared/ho
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { useOptionalApp, type AppContextValue } from '../../../src/renderer/src/state/AppContext'
-import { UpdateAllCard, requestUpdateAll } from '../../../src/renderer/src/features/updates/UpdateAllCard'
+import { UPDATE_ALL_DONE_MS, UpdateAllCard, requestUpdateAll } from '../../../src/renderer/src/features/updates/UpdateAllCard'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { threadsStateFixture } from '../../fixtures/agentState'
 
@@ -340,21 +340,23 @@ describe('a finished run going by itself', () => {
     provideApp(options.app ?? unsupported)
     provideAgents(agentState({ local: [behind()] }))
     const hosts = hostsBridge(options.hosts ?? { hosts: [], localHostEnabled: true, localHostRunning: true })
-    const view = render(<UpdateAllCard hosts={hosts.asBridge} doneMs={5_000} />)
+    const view = render(<UpdateAllCard hosts={hosts.asBridge} />)
     await settle()
     fireEvent.click(screen.getByRole('button', { name: /^Update all/u }))
     await settle()
     provideAgents(agentState({ local: [behind({ ranAt: 'now', ...ended })] }))
-    view.rerender(<UpdateAllCard hosts={hosts.asBridge} doneMs={5_000} />)
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
     await settle()
     return { hosts, view }
   }
   const updated = { installed: '2.1.42', behind: false, state: 'updated' } as const
 
   it('goes 5 seconds after everything updated, saying nothing as it goes', async () => {
+    // The owner's 5 seconds, as the card runs them.
+    expect(UPDATE_ALL_DONE_MS).toBe(5_000)
     const { view } = await run(updated)
     expect(screen.getByText('Updated')).toBeTruthy()
-    advance(4_999)
+    advance(UPDATE_ALL_DONE_MS - 1)
     expect(card()).not.toBeNull()
     advance(1)
     expect(view.container).toBeEmptyDOMElement()
@@ -378,7 +380,7 @@ describe('a finished run going by itself', () => {
     hosts.change({ ...base, updates: [hostUpdate({ phase: 'done' })] })
     await settle()
     expect(screen.getByText('Updated')).toBeTruthy()
-    advance(4_999)
+    advance(UPDATE_ALL_DONE_MS - 1)
     expect(card()).not.toBeNull()
     advance(1)
     expect(card()).toBeNull()
@@ -391,7 +393,7 @@ describe('a finished run going by itself', () => {
     advance(60_000)
     expect(card()).not.toBeNull()
     fireEvent.pointerLeave(card()!)
-    advance(4_999)
+    advance(UPDATE_ALL_DONE_MS - 1)
     expect(card()).not.toBeNull()
     advance(1)
     expect(card()).toBeNull()
@@ -408,7 +410,7 @@ describe('a finished run going by itself', () => {
     advance(60_000)
     expect(card()).not.toBeNull()
     await act(async () => { dismiss.blur() })
-    advance(4_999)
+    advance(UPDATE_ALL_DONE_MS - 1)
     expect(card()).not.toBeNull()
     advance(1)
     expect(card()).toBeNull()
@@ -426,7 +428,7 @@ describe('a finished run going by itself', () => {
     advance(60_000)
     expect(screen.getByRole('button', { name: 'Updated. Show updates' })).toBe(pill)
     fireEvent.pointerLeave(pill)
-    advance(4_999)
+    advance(UPDATE_ALL_DONE_MS - 1)
     expect(view.container).not.toBeEmptyDOMElement()
     advance(1)
     expect(view.container).toBeEmptyDOMElement()
