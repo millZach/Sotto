@@ -10,6 +10,12 @@ import './modelPicker.css'
 
 /** How far a touchpad moves, in pixels, to step the provider rail once; a mouse notch is more than this. */
 const RAIL_WHEEL_STEP = 40
+/** The quiet, in milliseconds, that ends one turn of the wheel: a swipe and its momentum are one turn. */
+const RAIL_WHEEL_PAUSE = 150
+
+/** One turn of the wheel over the provider rail: when it last moved, which way, how far, and whether it has stepped. */
+interface RailWheelTurn { at: number; direction: number; travel: number; stepped: boolean }
+const restingWheel = (): RailWheelTurn => ({ at: -Infinity, direction: 0, travel: 0, stepped: false })
 
 /**
  * Newest first, with the model the provider itself recommends kept at the top whatever it is called. The
@@ -68,31 +74,38 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   }, [models, open])
   const selectedProvider = groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
-  // The wheel over the rail steps one provider at a time and stops at either end. A mouse notch is a step and a
-  // touchpad's small movements add up to one, kept across renders: the owner may hand over a fresh list of the
-  // same models at any time. Each step moves on from the last one at once, so notches that land before the
-  // menu redraws are not lost. React registers wheel listeners as passive, so the rail would scroll instead
-  // without this. Focus on the rail moves with the choice, so its one tab stop stays on it.
+  // Each turn of the wheel over the rail steps one provider and stops at either end. A turn ends when the wheel
+  // rests for a moment or turns the other way, so a mouse notch is a step and so is a touchpad swipe with its
+  // momentum, whose small movements add up to one. A turn is kept across renders, since the owner may hand over a
+  // fresh list of the same models at any time, and starts afresh when the menu opens. Each step moves on from the
+  // last one at once, so turns that land before the menu redraws are not lost. Zoom, a pinch and sideways
+  // scrolling keep their own meaning. React registers wheel listeners as passive, so the rail would scroll
+  // instead without this. Focus on the rail moves with the choice, so its one tab stop stays on it.
   const selectedName = selectedProvider?.name
-  const wheelTravel = useRef(0)
+  const wheelTurn = useRef(restingWheel())
   const wheelChoice = useRef(selectedName)
   useEffect(() => {
     wheelChoice.current = selectedName
     const element = rail.current
     if (!element) return
     const wheel = (event: WheelEvent): void => {
+      if (event.ctrlKey || event.metaKey || event.deltaY === 0) return
       event.preventDefault()
-      if (event.deltaY === 0) return
-      const travel = Math.sign(wheelTravel.current) === Math.sign(event.deltaY) ? wheelTravel.current + event.deltaY : event.deltaY
-      wheelTravel.current = travel
-      if (event.deltaMode === WheelEvent.DOM_DELTA_PIXEL && Math.abs(travel) < RAIL_WHEEL_STEP) return
-      wheelTravel.current = 0
+      const now = performance.now(), direction = Math.sign(event.deltaY), turn = wheelTurn.current
+      if (now - turn.at > RAIL_WHEEL_PAUSE || direction !== turn.direction) wheelTurn.current = { ...restingWheel(), direction }
+      wheelTurn.current.at = now
+      if (wheelTurn.current.stepped) return
+      wheelTurn.current.travel += Math.abs(event.deltaY)
+      if (event.deltaMode === WheelEvent.DOM_DELTA_PIXEL && wheelTurn.current.travel < RAIL_WHEEL_STEP) return
+      wheelTurn.current.stepped = true
       const at = groups.findIndex(group => group.name === wheelChoice.current)
-      const next = Math.max(0, Math.min(groups.length - 1, at + Math.sign(travel)))
+      const next = Math.max(0, Math.min(groups.length - 1, at + direction))
       const group = groups[next]
       if (!group || group.name === wheelChoice.current) return
       wheelChoice.current = group.name
-      if (element.contains(document.activeElement)) element.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+      const tile = element.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]
+      tile?.scrollIntoView?.({ block: 'nearest' })
+      if (element.contains(document.activeElement)) tile?.focus()
       else setProvider(group.name)
     }
     element.addEventListener('wheel', wheel, { passive: false })
@@ -123,7 +136,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   const name = current?.name ?? (modelId || 'Choose a model')
   return <div className="model-picker">
     <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={OPTION_CHIP_NAMES.model} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
-      title={name} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); setOpen(true) }}>
+      title={name} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); wheelTurn.current = restingWheel(); setOpen(true) }}>
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}<span>{name}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
     {open && <dialog ref={dialog} id={dialogId} className="model-picker__dialog" aria-label="Choose model" data-rail={groups.length > 1 || undefined}

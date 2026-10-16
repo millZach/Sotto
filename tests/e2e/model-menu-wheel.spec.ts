@@ -29,18 +29,27 @@ test('the mouse wheel over the model menu steps through its providers', async ()
     const start = names.indexOf(await chosen())
     await mkdir(evidence, { recursive: true })
     await captureWindow(launched.app, join(evidence, 'before.png'))
-    // A real wheel over the rail, one notch at a time, the way a mouse turns it.
+    // A real wheel over the rail, the way a mouse turns it. A pause longer than the rail's ends one turn.
     const box = (await rail.boundingBox())!
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-    const forward = start < names.length - 1 ? 1 : -1
-    await page.mouse.wheel(0, 100 * forward)
-    await expect.poll(chosen).toBe(names[start + forward])
-    await expect(menu.getByRole('listbox', { name: `${names[start + forward]} models`, exact: true })).toBeVisible()
+    const pause = (): Promise<void> => page.waitForTimeout(300)
+    expect(start + 2).toBeLessThan(names.length)
+    await page.mouse.wheel(0, 100)
+    await expect.poll(chosen).toBe(names[start + 1])
+    await expect(menu.getByRole('listbox', { name: `${names[start + 1]} models`, exact: true })).toBeVisible()
     await expect(menu.getByRole('textbox', { name: 'Search models', exact: true })).toBeFocused()
     await captureWindow(launched.app, join(evidence, 'after-one-notch.png'))
+    await pause()
+    await page.mouse.wheel(0, -100)
+    await expect.poll(chosen).toBe(names[start])
+    // Three notches turned quickly together are one turn, so they step once.
+    await pause()
+    for (let notch = 0; notch < 3; notch += 1) await page.mouse.wheel(0, 100)
+    await pause()
+    expect(await chosen()).toBe(names[start + 1])
     // Past the end it stays on the last provider rather than wrapping round.
-    for (let step = 0; step < names.length + 1; step += 1) await page.mouse.wheel(0, 100 * forward)
-    await expect.poll(chosen).toBe(forward > 0 ? names.at(-1) : names[0])
+    for (let step = 0; step < names.length + 1; step += 1) { await page.mouse.wheel(0, 100); await pause() }
+    await expect.poll(chosen).toBe(names.at(-1))
     await expect(chip).toBeVisible()
     await expect(menu).toBeVisible()
   } finally { await closeSotto(launched) }
