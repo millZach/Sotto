@@ -457,16 +457,19 @@ export class WatcherWakeUp {
       const latest = this.latestEvidence.get(observationDigest(['evidence-changed', request.id, target, participant.generation]))
       if (latest) delete latest.restoredRefs
     }
+    let marks = wake
     if (!wake) {
       const key = targetKey(target), untold = [...this.pending, ...this.options.waitingEvents?.() ?? []].filter(event => targetKey(event.target) === key)
-      const waiting = untold.some(event => event.kind === 'evidence-changed')
+      const waiting = untold.filter(event => event.kind === 'evidence-changed')
       const ending = untold.some(event => event.kind === 'turn-finished' || event.kind === 'turn-failed' || event.kind === 'work-settled')
-      if (!waiting && !(ending && (this.toldLocal.get(key) ?? NOTHING_TOLD) !== this.evidence.digest(target, 'local'))) return
+      if (!waiting.length && !(ending && (this.toldLocal.get(key) ?? NOTHING_TOLD) !== this.evidence.digest(target, 'local'))) return
+      // Keeping a pull request's untold news current keeps it news that needs Watcher.
+      marks = waiting.some(event => this.waking.has(event.id))
     }
     const pendingBefore = new Set(this.pending.map(event => event.id))
     this.event('evidence-changed', target, evidenceIds, { evidenceIds, revision: observationDigest(evidenceIds) })
     // A pull request's change needs Watcher; the thread's own facts only ride with what does (needsAttention).
-    if (wake) for (const event of this.pending) if (event.kind === 'evidence-changed' && !pendingBefore.has(event.id)) {
+    if (marks) for (const event of this.pending) if (event.kind === 'evidence-changed' && !pendingBefore.has(event.id)) {
       this.waking.add(event.id)
       while (this.waking.size > 2_000) this.waking.delete(this.waking.values().next().value!)
     }
