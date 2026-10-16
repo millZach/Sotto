@@ -592,6 +592,43 @@ describe('a host restarting for an update (ADR-0040)', () => {
     expect(local.command).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['claude'] }, desktopWindowClient())
     expect(remote.command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'queue-client-updates' }), expect.anything())
   })
+  it('sends Settings > Providers’ presses to this computer while another host is selected, answering with their own outcome', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState, { museEnabled: true }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    local.state.configuration = { ...local.state.configuration, enabledProviders: ['codex', 'muse'], checkClientUpdates: false }
+    remote.state.error = 'Codex did not confirm the connection.'
+    router.add(local.connection); router.add(remote.connection)
+    router.select(REMOTE)
+    // This computer's entry carries its own provider settings, which the selected host's configuration does not.
+    expect(router.shell().host.clientHosts!.find(item => item.hostId === LOCAL)).toMatchObject({ enabledProviders: ['codex', 'muse'], checkClientUpdates: false, agentModelId: expect.any(String) })
+    expect(router.shell().host.clientHosts!.find(item => item.hostId === REMOTE)).not.toHaveProperty('enabledProviders')
+    for (const command of [{ type: 'connect', provider: 'muse', notice: false }, { type: 'disconnect', provider: 'muse' }, { type: 'refresh', provider: 'muse' },
+      { type: 'check-client-updates' }, { type: 'update-client', provider: 'muse' }] as const) {
+      const result = await router.command({ ...command, hostId: LOCAL }, desktopWindowClient())
+      expect(local.command).toHaveBeenLastCalledWith(command, desktopWindowClient())
+      // The selected host's last error belongs to some other command.
+      expect(result.error).toBeNull()
+    }
+    expect(remote.command).not.toHaveBeenCalled()
+    expect(router.shell().hostId).toBe(REMOTE)
+    // This computer's own refusal is what the press answers with.
+    local.command.mockResolvedValueOnce({ ...local.state, error: 'Could not connect Muse. Sign in to Muse on this machine with muse login, then connect it again.' })
+    expect((await router.command({ type: 'connect', provider: 'muse', hostId: LOCAL }, desktopWindowClient())).error)
+      .toBe('Could not connect Muse. Sign in to Muse on this machine with muse login, then connect it again.')
+  })
+  it('names a remote host where its provider errors say “this machine”, and leaves this computer’s as they are', () => {
+    const router = new DesktopHostRouter(emptyDesktopState, { museEnabled: true }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const said = 'Could not connect Muse. Sign in to Muse on this machine with muse login, then connect it again.'
+    const muse = { id: 'muse' as const, name: 'Muse', capabilities: local.state.host.capabilities, connection: 'error' as const, problem: 'signed-out' as const, version: '1.4.8', error: said }
+    local.state.host.providers = [muse]; remote.state.host.providers = [muse]
+    router.add(local.connection); router.add(remote.connection)
+    const entry = (hostId: string) => router.shell().host.clientHosts!.find(item => item.hostId === hostId)!.providers![0]!.error
+    expect(entry(LOCAL)).toBe(said)
+    expect(entry(REMOTE)).toBe('Could not connect Muse. Sign in to Muse on Forge with muse login, then connect it again.')
+    router.select(REMOTE)
+    expect(router.shell().host.providers![0]!.error).toBe('Could not connect Muse. Sign in to Muse on Forge with muse login, then connect it again.')
+    // The host's own state is never rewritten.
+    expect(remote.state.host.providers?.[0]?.error).toBe(said)
+  })
   it('marks the hosts that babysit pull requests, so the window offers Babysit pull request only on their threads (ADR-0061)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), older = fixture(LOCAL, 'remote'), newer = fixture(REMOTE, 'remote')
     router.add(older.connection); router.add({ ...newer.connection, offersBabysitting: () => true })

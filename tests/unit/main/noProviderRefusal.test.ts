@@ -45,4 +45,11 @@ describe('the refusal with no provider connected', () => {
     expect(nameHostInRefusal('Codex did not confirm the connection.', 'forge')).toBe('Codex did not confirm the connection.')
     expect(nameHostInRefusal(noProviderRefusal('host', false), '  ')).toBe(noProviderRefusal('host', false))
   })
+
+  it('from a host names it where a provider says "this machine", so a remote sign-in is never read as this computer’s', () => {
+    expect(nameHostInRefusal('Could not connect Muse. Sign in to Muse on this machine with muse login, then connect it again.', 'forge'))
+      .toBe('Could not connect Muse. Sign in to Muse on forge with muse login, then connect it again.')
+    // A host name is text, never a replacement pattern.
+    expect(nameHostInRefusal('Grok Build is not signed in on this machine.', 'lab $&')).toBe('Grok Build is not signed in on lab $&.')
+  })
 })

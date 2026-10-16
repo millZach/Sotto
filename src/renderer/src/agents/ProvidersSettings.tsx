@@ -9,6 +9,7 @@ import { useOwlFeature } from '../state/owlFeature'
 import { newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
 import { useTransientFlag, writeClipboard } from './richActions'
+import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import './providers.css'
 
 const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse' }
@@ -50,18 +51,31 @@ export function ProvidersSettings(): ReactNode {
   const state = agents?.state
   const command = agents?.command
   if (!state || !command) return <p role="status">Loading providers…</p>
-  const enabled = enabledThreadProviders(state.configuration)
-  const statusFor = (id: ProviderId) => state.host.providers?.find(provider => provider.id === id)
-    ?? { connection: id === state.configuration.provider ? state.connection : 'disconnected', version: '', error: undefined, verifiedVersion: undefined }
+  // This page is this computer's clients, whichever host is selected for new work: it reads this computer's entry and
+  // names this computer on every command, so a Retry never reaches another host's client. Without host connections
+  // (no router joining hosts), the state is this computer's alone.
+  const hasHostConnections = Boolean(state.connections?.length)
+  const localHost = localHostId(state)
+  const local = hasHostConnections ? state.host.clientHosts?.find(host => host.hostId === localHost) : undefined
+  const here = hasHostConnections && localHost ? { hostId: localHost } : {}
+  // With this computer's host off there are no clients here to show, and nothing on this page may reach another host's.
+  if (hasHostConnections && !local) return <p role="status" className="provider-models__empty">This computer’s local host is off, so Sotto can’t run agents here. Turn on Run the local host in Settings › Hosts, then restart Sotto. A host’s own providers are on its tiles there.</p>
+  const providers = localProviders(state)
+  const hostModels = hasHostConnections ? local?.models ?? [] : state.host.models
+  const clientUpdates = hasHostConnections ? local?.clientUpdates : state.clientUpdates
+  const checkClientUpdates = local?.checkClientUpdates ?? state.configuration.checkClientUpdates
+  const enabled = local?.enabledProviders ?? enabledThreadProviders(state.configuration)
+  const statusFor = (id: ProviderId) => providers.find(provider => provider.id === id)
+    ?? { connection: !hasHostConnections && id === state.configuration.provider ? state.connection : 'disconnected', version: '', error: undefined, verifiedVersion: undefined }
   const status = statusFor(selected)
   const connected = status.connection === 'connected'
   const working = pending[selected] || status.connection === 'connecting'
-  const models = newestModelsFirst(state.host.models.filter(model => model.providerId === selected
+  const models = newestModelsFirst(hostModels.filter(model => model.providerId === selected
     || (!model.providerId && model.provider === PROVIDER_LABELS[selected])))
   const label = PROVIDER_LABELS[selected]
   const detailError = errors[selected] ?? status.error
-  const update = state.clientUpdates?.find(item => item.id === selected)
-  const updating = (state.clientUpdates ?? []).some(item => item.state === 'updating' || item.state === 'queued') || Object.values(updatePending).some(Boolean)
+  const update = clientUpdates?.find(item => item.id === selected)
+  const updating = (clientUpdates ?? []).some(item => item.state === 'updating' || item.state === 'queued') || Object.values(updatePending).some(Boolean)
   const selectedUpdating = Boolean(updatePending[selected]) || update?.state === 'updating' || update?.state === 'queued'
   const check = async (): Promise<void> => {
     if (checkInFlight.current) return
@@ -70,7 +84,9 @@ export function ProvidersSettings(): ReactNode {
     setCheckingUpdates(true)
     setErrors(previous => ({ ...previous, [provider]: undefined }))
     try {
-      const result = await command({ type: 'check-client-updates' })
+      // A provider that needs attention is asked again too: after signing in, Check again is the press that should see it.
+      if (statusFor(provider).connection === 'error' && !inFlight.current.has(provider)) await perform(provider, 'refresh')
+      const result = await command({ type: 'check-client-updates', ...here })
       if (!result || result.error) setErrors(previous => ({ ...previous, [provider]: result?.error ?? 'Could not check for client updates. Try again.' }))
     } catch { setErrors(previous => ({ ...previous, [provider]: 'Could not check for client updates. Try again.' })) }
     finally { checkInFlight.current = false; setCheckingUpdates(false) }
@@ -81,7 +97,7 @@ export function ProvidersSettings(): ReactNode {
     setUpdatePending(previous => ({ ...previous, [provider]: true }))
     setErrors(previous => ({ ...previous, [provider]: undefined }))
     try {
-      const result = await command({ type: 'update-client', provider })
+      const result = await command({ type: 'update-client', provider, ...here })
       if (!result || result.error) setErrors(previous => ({ ...previous, [provider]: result?.error ?? `Could not update ${PROVIDER_LABELS[provider]}. Try again.` }))
     } catch { setErrors(previous => ({ ...previous, [provider]: `Could not update ${PROVIDER_LABELS[provider]}. Try again.` })) }
     finally { inFlight.current.delete(provider); setUpdatePending(previous => ({ ...previous, [provider]: undefined })) }
@@ -106,12 +122,13 @@ export function ProvidersSettings(): ReactNode {
     setPending(previous => ({ ...previous, [provider]: type }))
     setErrors(previous => ({ ...previous, [provider]: undefined }))
     try {
-      const result = await command({ type, provider, ...(type === 'connect' ? { notice: false as const } : {}) })
+      const result = await command({ type, provider, ...here, ...(type === 'connect' ? { notice: false as const } : {}) })
       if (!result || result.error) setErrors(previous => ({ ...previous, [provider]: result?.error ?? 'Could not update this provider. Try again.' }))
     } catch { setErrors(previous => ({ ...previous, [provider]: 'Could not update this provider. Try again.' })) }
     finally { inFlight.current.delete(provider); setPending(previous => ({ ...previous, [provider]: undefined })) }
   }
-  const inheritedModelId = defaultThreadModelId(state.configuration, state.host.models, state.reasoningAccounts)
+  // The selected host's agent setting is not this computer's, so a joined window reads this computer's from its entry.
+  const inheritedModelId = local ? local.agentModelId ?? '' : defaultThreadModelId(state.configuration, hostModels, state.reasoningAccounts)
   // A long-context variant the catalog does not list (`opus[1m]`) is its base model's entry here.
   const inheritedEntryId = catalogEntry(models, inheritedModelId)?.id
   return <div className="providers-settings">
@@ -125,7 +142,7 @@ export function ProvidersSettings(): ReactNode {
           <button type="button" className="providers-list__select" aria-label={PROVIDER_LABELS[provider]} aria-pressed={provider === selected}
             onClick={() => setSelected(provider)}><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={21} /><span><strong>{PROVIDER_LABELS[provider]}</strong>
               <small data-status={current.connection}><i aria-hidden="true" />{statusLabel}</small></span></button>
-          <Toggle label={`Enable ${PROVIDER_LABELS[provider]}`} checked={active} disabled={Boolean(connecting) || Boolean(updatePending[provider]) || Boolean(state.clientUpdates?.some(item => item.id === provider && (item.state === 'updating' || item.state === 'queued')))} onCheckedChange={value => void perform(provider, value ? 'connect' : 'disconnect')} />
+          <Toggle label={`Enable ${PROVIDER_LABELS[provider]}`} checked={active} disabled={Boolean(connecting) || Boolean(updatePending[provider]) || Boolean(clientUpdates?.some(item => item.id === provider && (item.state === 'updating' || item.state === 'queued')))} onCheckedChange={value => void perform(provider, value ? 'connect' : 'disconnect')} />
         </div>
       })}</nav>
       <section className="provider-detail" aria-label="Provider configuration">
@@ -145,17 +162,17 @@ export function ProvidersSettings(): ReactNode {
             <div className="provider-client" aria-busy={checkingUpdates || selectedUpdating}>
               <div>
                 <h4>Installed client</h4>
-                <p role="status">{updatePending[selected] && update?.state !== 'updating' && update?.state !== 'queued' ? 'Starting the update…' : clientLine(update, status.verifiedVersion, state.configuration.checkClientUpdates, connected, checkingUpdates)}</p>
+                <p role="status">{updatePending[selected] && update?.state !== 'updating' && update?.state !== 'queued' ? 'Starting the update…' : clientLine(update, status.verifiedVersion, checkClientUpdates, connected, checkingUpdates)}</p>
               </div>
               <div className="provider-client__actions">
-                {state.configuration.checkClientUpdates && update?.canInstall && update.state !== 'updating' && update.state !== 'queued'
+                {checkClientUpdates && update?.canInstall && update.state !== 'updating' && update.state !== 'queued'
                   ? <Button variant="primary" aria-label={selected === 'muse' ? update.state === 'failed' ? 'Try updating Muse again' : 'Update Muse' : undefined} disabled={Boolean(working) || updating || checkingUpdates} onClick={() => void runUpdate(selected)}>
                     {update.state === 'failed' ? 'Try again' : 'Update'}</Button>
                   : null}
-                <Button variant="secondary" disabled={updating || checkingUpdates || !state.configuration.checkClientUpdates} onClick={() => void check()}>{checkingUpdates ? 'Checking…' : 'Check again'}</Button>
+                <Button variant="secondary" disabled={updating || checkingUpdates || !checkClientUpdates} onClick={() => void check()}>{checkingUpdates ? 'Checking…' : 'Check again'}</Button>
               </div>
             </div>
-            {selected === 'muse' && state.configuration.checkClientUpdates && update && ((update.behind && !update.canInstall) || update.state === 'failed' || update.state === 'unchanged') && <details className="provider-client__steps"><summary>Installation steps</summary><p>{update.channel === 'unknown' || !update.byHand?.length ? 'Update Muse with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.'}</p>{update.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openMuseGuide()}>Open Muse installation guide</Button></details>}
+            {selected === 'muse' && checkClientUpdates && update && ((update.behind && !update.canInstall) || update.state === 'failed' || update.state === 'unchanged') && <details className="provider-client__steps"><summary>Installation steps</summary><p>{update.channel === 'unknown' || !update.byHand?.length ? 'Update Muse with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.'}</p>{update.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openMuseGuide()}>Open Muse installation guide</Button></details>}
             {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.</p>}
             <p className="provider-models__empty">Choose what new threads start with under Agents.</p>
             {selected === 'muse' && <details className="provider-support"><summary>Threads with Muse</summary><p>Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
@@ -169,8 +186,8 @@ export function ProvidersSettings(): ReactNode {
         <h4>Check for client updates</h4>
         <p>{museEnabled ? "Checks each client's published version, at most once an hour. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates." : 'Asks the npm registry for each client’s latest version, at most hourly. Only the package name is sent.'}</p>
       </div>
-      <Toggle label="Check for client updates" checked={state.configuration.checkClientUpdates}
-        onCheckedChange={value => void command({ type: 'configure', patch: { checkClientUpdates: value } })} />
+      <Toggle label="Check for client updates" checked={checkClientUpdates}
+        onCheckedChange={value => void command({ type: 'configure', patch: { checkClientUpdates: value }, ...here })} />
     </div>
   </div>
 }
