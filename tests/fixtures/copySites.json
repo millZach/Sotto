@@ -1,6 +1,6 @@
 {
   "src/host/socketServer.ts": {
-    "shell()": 10
+    "shell()": 11
   },
   "src/main/agents/activitySnapshots.ts": {
     "cloneHostSnapshot(": 1,
@@ -38,7 +38,7 @@
     "cloneActivitySnapshot(": 1
   },
   "src/main/agents/hostService.ts": {
-    "shell()": 4
+    "shell()": 5
   },
   "src/main/agents/ipc.ts": {
     "shell()": 1
@@ -60,13 +60,16 @@
     "structuredClone(": 1
   },
   "src/main/agents/requestDraftOwners.ts": {
-    "shell()": 1
+    "structuredClone(": 1
   },
   "src/main/agents/requestDrafts.ts": {
     "structuredClone(": 10
   },
   "src/main/agents/retainedDraftStore.ts": {
     "structuredClone(": 5
+  },
+  "src/main/agents/runtime.ts": {
+    "shell()": 1
   },
   "src/main/agents/socketHostService.ts": {
     "structuredClone(": 9,
@@ -86,9 +89,6 @@
     "shell()": 1,
     "watcherRecord()": 1
   },
-  "src/main/agents/watcherPhone.ts": {
-    "shell()": 1
-  },
   "src/main/agents/watcherRoomDesktop.ts": {
     "structuredClone(": 1
   },
@@ -96,6 +96,9 @@
     "structuredClone(": 6,
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
+  },
+  "src/main/hosts/busyHost.ts": {
+    "shell()": 1
   },
   "src/main/hosts/desktopHostRouter.ts": {
     "shell()": 39
