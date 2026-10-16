@@ -599,7 +599,7 @@ describe('a host restarting for an update (ADR-0040)', () => {
     router.add(local.connection); router.add(remote.connection)
     router.select(REMOTE)
     // This computer's entry carries its own provider settings, which the selected host's configuration does not.
-    expect(router.shell().host.clientHosts!.find(item => item.hostId === LOCAL)).toMatchObject({ enabledProviders: ['codex', 'muse'], checkClientUpdates: false })
+    expect(router.shell().host.clientHosts!.find(item => item.hostId === LOCAL)).toMatchObject({ enabledProviders: ['codex', 'muse'], checkClientUpdates: false, agentModelId: expect.any(String) })
     expect(router.shell().host.clientHosts!.find(item => item.hostId === REMOTE)).not.toHaveProperty('enabledProviders')
     for (const command of [{ type: 'connect', provider: 'muse', notice: false }, { type: 'disconnect', provider: 'muse' }, { type: 'refresh', provider: 'muse' },
       { type: 'check-client-updates' }, { type: 'update-client', provider: 'muse' }] as const) {

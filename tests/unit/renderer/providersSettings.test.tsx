@@ -62,6 +62,26 @@ describe('independent provider settings', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Check for client updates' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { checkClientUpdates: false }, hostId: LOCAL }))
   })
+  it('tags this computer’s agent setting on the Models tab, never the selected host’s', () => {
+    const LOCAL = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222'
+    const base = fixture()
+    // Forge's agent setting would start threads on Claude Code; this computer's starts them on Codex.
+    const state: AgentState = { ...base, hostId: FORGE, configuration: { ...base.configuration, defaultModelId: 'claude:same-native-model' },
+      connections: [{ hostId: LOCAL, name: 'This computer', kind: 'local', connected: true }, { hostId: FORGE, name: 'forge', kind: 'remote', connected: true }],
+      host: { ...base.host, clientHosts: [
+        { hostId: LOCAL, connected: true, models: base.host.models, capabilities: caps, providers: base.host.providers, enabledProviders: ['codex', 'claude'], agentModelId: 'codex:same-native-model' },
+        { hostId: FORGE, connected: true, models: [], capabilities: caps, providers: base.host.providers },
+      ] } }
+    provide(state)
+    render(<ProvidersSettings />)
+    const models = (provider: string) => {
+      fireEvent.click(screen.getByRole('button', { name: provider, exact: true }))
+      fireEvent.click(screen.getByRole('tab', { name: 'Models' }))
+      return screen.getByRole('list', { name: `${provider} available models` })
+    }
+    expect(models('Codex')).toHaveTextContent('Agent setting')
+    expect(models('Claude Code')).not.toHaveTextContent('Agent setting')
+  })
   it('says this computer’s host is off, and offers nothing that would reach the selected host, when it is turned off', () => {
     const FORGE = '22222222-2222-4222-8222-222222222222'
     const base = fixture()

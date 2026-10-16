@@ -127,7 +127,8 @@ export function ProvidersSettings(): ReactNode {
     } catch { setErrors(previous => ({ ...previous, [provider]: 'Could not update this provider. Try again.' })) }
     finally { inFlight.current.delete(provider); setPending(previous => ({ ...previous, [provider]: undefined })) }
   }
-  const inheritedModelId = defaultThreadModelId(state.configuration, hostModels, state.reasoningAccounts)
+  // The selected host's agent setting is not this computer's, so a joined window reads this computer's from its entry.
+  const inheritedModelId = local ? local.agentModelId ?? '' : defaultThreadModelId(state.configuration, hostModels, state.reasoningAccounts)
   // A long-context variant the catalog does not list (`opus[1m]`) is its base model's entry here.
   const inheritedEntryId = catalogEntry(models, inheritedModelId)?.id
   return <div className="providers-settings">

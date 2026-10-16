@@ -5,7 +5,7 @@ import { parsePublicProviderEntityId } from '../../shared/agents'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts } from '../../shared/watcherHost'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
-import { agentCommandSchema, defaultNewThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { agentCommandSchema, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
@@ -472,7 +472,8 @@ export class DesktopHostRouter {
           // This computer may always answer its own host; a remote one says so in the shell it sends this client.
           mayAnswer: connection.kind === 'local' || (original as HostClientShell).clientCapabilities?.mayAnswer === true,
           // Settings > Providers is this computer's own page, whichever host is selected for new work.
-          ...(connection.kind === 'local' ? { enabledProviders: enabledThreadProviders(original.configuration), checkClientUpdates: original.configuration.checkClientUpdates } : {}),
+          ...(connection.kind === 'local' ? { enabledProviders: enabledThreadProviders(original.configuration), checkClientUpdates: original.configuration.checkClientUpdates,
+            agentModelId: defaultThreadModelId(original.configuration, original.host.models, original.reasoningAccounts) } : {}),
         })),
       },
       threadDrafts: entries.flatMap(item => item.state.threadDrafts ?? []),
