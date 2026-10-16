@@ -186,3 +186,9 @@ The desktop now sends the whole ordered thread array on every broadcast again, w
 Measured with the switch on and with it off, the envelope cost main more than the smaller payload saved. The broadcaster's send step rose from about 4–5 ms to 6.5–7 ms per send, and main's total busy time while threads streamed was 5–8% higher with the envelope on (30–45 ms more per second), within noise otherwise. `docs/perf/2026-10-13-window-thread-shell.md` already said its full-pipeline runs did not establish a consistent win, and the deeper comparison and the extra copies the envelope needed were the reason: main paid for a comparison on every thread on every publish to save a payload that was not the bottleneck.
 
 Unchanged-thread sharing in the snapshot and ingestion layers remains #925's; this amendment only withdraws the broadcast transport layered on top of it.
+
+## October 16, 2026: the desktop's host client takes the catalog once per revision too
+
+The October 3 amendment left the desktop's own host client taking the whole catalog in every shell. On the owner's forge host that client fell more than an hour behind a busy Claude Code thread: in 1 hour 46 minutes the host wrote 938 MB to it over Tailscale Serve while it received 186 KB, and the desktop's main process spent a whole core reading. The catalog went whole in every shell push, every command's answer and every `shell` read.
+
+The desktop's client now accepts `model-catalog-revision` like the iPhone. It keeps the catalog its connection last carried whole, puts it back into every shell naming that revision before it reads the shell, and drops `modelsRevision`, so nothing past the client sees the wire's form. It does this before matching an answer to its request, so a catalog carried by an answer that arrived after its request timed out is still kept. A shell naming a revision it does not hold fails to read, and the connection starts again, with a hello that carries the catalog.

@@ -87,6 +87,8 @@ export interface SocketHostServiceOptions {
 const LOOPBACK: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]', 'localhost'])
 /** An `afterSeq` past any sequence a host can reach: the host has no event after it, so it sends none. */
 const NO_EVENTS_AFTER = Number.MAX_SAFE_INTEGER
+/** One field of a frame not yet read, or undefined when it is not an object. */
+const field = (value: unknown, key: string): unknown => value !== null && typeof value === 'object' ? (value as Record<string, unknown>)[key] : undefined
 /**
  * A 429 is the host's request budget, not this device's pairing, so it says to wait rather than to pair again. A 403 keeps
  * the pairing: the host knows this client but will not take it here, as a tailnet listener refuses a client it does not
@@ -121,6 +123,14 @@ export class SocketHostService implements HostService {
   private readonly resyncing = new Set<string>()
   /** Threads the host said are too large to send. No delta asks for one again until it is observed again or arrives whole. */
   private readonly tooLarge = new Set<string>()
+  /**
+   * Thread reads that timed out, by request ID. The host holds this client at the revision it answered with once it
+   * wrote the answer, so an answer arriving behind a backlog is kept; dropping it made every later delta miss and
+   * asked for the whole thread again, behind the same backlog.
+   */
+  private readonly lateDetails = new Map<string, string>()
+  /** The model catalog this connection was last sent whole, under the revision the host named (ADR-0028, October 3 amendment). */
+  private catalog: { revision: number; models: unknown } | undefined
   private cachedWatcher: WatcherHostProjection | undefined
   /** Native ownership is immutable; an omitted later shell must not reopen a held thread. */
   private readonly dormantMuseThreads = new Map<string, string>()
@@ -235,7 +245,7 @@ export class SocketHostService implements HostService {
     if (session.v !== 1 || typeof session.session !== 'string') throw new HostConnectionError('The host answered with something else. Connect again.', 'unauthenticated')
     if (this.options.expectedHostId && session.hostId !== this.options.expectedHostId) throw new WrongHostError()
     this.session = session
-    this.details.clear(); this.tooLarge.clear()
+    this.details.clear(); this.tooLarge.clear(); this.lateDetails.clear(); this.catalog = undefined
     const url = this.endpoint('/v1/socket'), key = randomBytes(16).toString('base64')
     const expected = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
     this.frames = await new Promise<SocketFrames>((resolve, reject) => {
@@ -256,7 +266,7 @@ export class SocketHostService implements HostService {
     })
     if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError('This host connection was closed.', 'disconnected') }
     try {
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', 'model-catalog-revision', ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
@@ -288,19 +298,24 @@ export class SocketHostService implements HostService {
       clearTimeout(item.timer)
       item.reject(new HostConnectionError(item.command ? 'The connection closed before the host confirmed this command. Refresh before deciding what to do next.' : 'The host connection closed. Connect again to refresh.', 'disconnected', item.command ? id : undefined))
     }
-    this.pending.clear()
+    this.pending.clear(); this.lateDetails.clear()
     if (this.cached) this.publish({ ...this.cached, stale: true })
     this.options.onConnectionChange?.(false)
   }
   private receive(text: string): void {
     let raw: unknown
     try { raw = JSON.parse(text) } catch { this.frames?.close(); return }
+    // Before any reading, so a catalog carried whole by an answer that arrives too late is still remembered.
+    if (field(raw, 'event') === 'shell') this.withCatalog(field(raw, 'state'))
+    else { const result = field(raw, 'result'); this.withCatalog(result); this.withCatalog(field(result, 'shell')) }
     const parsed = raw !== null && typeof raw === 'object' && 'event' in raw ? hostPushSchema.safeParse(raw) : hostResponseSchema.safeParse(raw)
     if (!parsed.success) { this.unreadable(raw); return }
     const message: HostResponse | HostPush = parsed.data
     try {
       if ('event' in message) {
-        if (message.event === 'shell') { if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() } this.publish(this.read(protocolAgentStateSchema, message.state), true) }
+        // hostPushSchema has already read the shell and the detail with their own schemas, catalog required; a shell or a
+        // detail can be megabytes, so neither is read a second time.
+        if (message.event === 'shell') { if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() } this.publish(message.state as AgentState, true) }
         else if (message.event === 'answer-receipt') { if (this.cacheAcceptedAnswer(message.acceptedAnswer) && this.cached) this.notifyState() }
         else if (message.event === 'watcher-state') {
           if (this.options.watcherEnabled === true && this.supportsWatcherReads && this.cached) {
@@ -309,12 +324,12 @@ export class SocketHostService implements HostService {
             this.notifyState()
           }
         }
-        else if (message.event === 'detail') this.cacheDetail(message.threadId, agentThreadDetailResultSchema.parse(message.detail))
+        else if (message.event === 'detail') this.cacheDetail(message.threadId, message.detail)
         else if (message.event === 'detail-delta') this.applyDelta(message.threadId, message.delta)
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
       } else {
         const pending = this.pending.get(message.id)
-        if (!pending) return
+        if (!pending) { this.lateDetail(message); return }
         this.pending.delete(message.id); clearTimeout(pending.timer)
         if (message.ok) pending.resolve(message.result)
         // A host of another version refusing a request as unreadable is version skew, not a bad request.
@@ -336,6 +351,28 @@ export class SocketHostService implements HostService {
     if (id === undefined || !pending) { this.pushErrorThread = undefined; this.options.onPushError?.(this.mismatch()); return }
     this.pending.delete(id); clearTimeout(pending.timer)
     pending.reject(new HostConnectionError(this.mismatch(), 'version_mismatch', pending.command ? id : undefined))
+  }
+  /** Keeps the answer to a thread read that timed out, as the answer in time would have been kept. */
+  private lateDetail(message: HostResponse): void {
+    const threadId = this.lateDetails.get(message.id)
+    if (threadId === undefined) return
+    this.lateDetails.delete(message.id)
+    if (!message.ok) return
+    const detail = agentThreadDetailResultSchema.safeParse(message.result)
+    if (detail.success) this.cacheDetail(threadId, detail.data)
+  }
+  /**
+   * Puts a shell's model catalog back as the host wrote it. A shell naming the revision this connection was last sent
+   * whole leaves `models` out; one carrying it is remembered. The revision itself is the wire's, and goes no further.
+   */
+  private withCatalog(shell: unknown): void {
+    const host = field(shell, 'host')
+    const revision = field(host, 'modelsRevision')
+    if (typeof revision !== 'number') return
+    const wire = host as { models?: unknown; modelsRevision?: unknown }
+    if (wire.models !== undefined) this.catalog = { revision, models: wire.models }
+    else if (this.catalog?.revision === revision) wire.models = this.catalog.models
+    delete wire.modelsRevision
   }
   /** Whether the host runs another Sotto version than this client, by what it advertised. */
   private skewed(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion }
@@ -384,6 +421,10 @@ export class SocketHostService implements HostService {
     for (const listener of this.detailListeners) listener(structuredClone(delta))
     if (this.pushErrorThread === threadId) this.clearPushError()
   }
+  /** Whether the host's pushes keep `threadId` current here: observed, and held or already being read whole. */
+  private follows(threadId: string): boolean {
+    return this.observed.includes(threadId) && (Boolean(this.details.get(threadId)) || this.resyncing.has(threadId))
+  }
   /** Reads a thread whole after a delta could not follow it. A thread too large to send is reported, not asked for again. */
   private resync(threadId: string): void {
     if (!this.threadAvailable(threadId) || this.resyncing.has(threadId) || this.tooLarge.has(threadId)) return
@@ -424,7 +465,11 @@ export class SocketHostService implements HostService {
     if (this.pending.has(id) || this.pending.size >= 32) return Promise.reject(new HostConnectionError('Wait for the pending host request to finish.', 'busy'))
     return new Promise((resolve, reject) => {
       const command = operation.op === 'command'
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new HostConnectionError(command ? 'The host has not confirmed this command. Refresh before deciding what to do next.' : 'The host did not answer in time. Try refreshing.', 'disconnected', command ? id : undefined)) }, timeoutMs)
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        if (operation.op === 'detail') { this.lateDetails.set(id, operation.threadId); if (this.lateDetails.size > 32) this.lateDetails.delete(this.lateDetails.keys().next().value!) }
+        reject(new HostConnectionError(command ? 'The host has not confirmed this command. Refresh before deciding what to do next.' : 'The host did not answer in time. Try refreshing.', 'disconnected', command ? id : undefined))
+      }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer, command })
       onPlacement?.()
       if (!frames.send({ v: 1, id, session: session.session, ...operation })) { clearTimeout(timer); this.pending.delete(id); reject(new HostConnectionError('The connection closed before this request could be confirmed.', 'disconnected', command ? id : undefined)) }
@@ -925,7 +970,10 @@ export class SocketHostService implements HostService {
       && receipt.questionsDigest === answer.questionsDigest
     // The host already confirmed the command. Refresh failures must not invite sending it again.
     try {
-      if ('threadId' in command && command.threadId) await this.readThreadDetail(command.threadId)
+      // A thread this client observes and holds follows in the host's own pushes, which come after this answer on the
+      // same socket. Reading it whole as well cost a whole-thread download for every prompt, answer and selection, and
+      // each one waited behind whatever the socket was still delivering.
+      if ('threadId' in command && command.threadId && !this.follows(command.threadId)) await this.readThreadDetail(command.threadId)
       if (this.catchesUp) { let page = await this.readEvents(this.latestSeq); while (page.hasMore) page = await this.readEvents(this.latestSeq) }
     } catch (error) {
       if (generation === this.generation) {

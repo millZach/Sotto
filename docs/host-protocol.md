@@ -228,7 +228,7 @@ A client that includes `model-catalog-revision` in hello's `accepts` is sent eve
 
 The client keeps the last catalog this connection carried whole, with its revision, and puts it back into every shell that names that revision before anything reads the shell. It keeps it in the order frames arrive, so a reply read after a later push is still matched with the catalog that was current when the reply arrived. A shell that names a revision the client does not hold should not happen. The iPhone then drops the connection and connects again, and that connection's hello carries the catalog, rather than show the computer with no models.
 
-A revision means something only on its own connection to its own listener; a client never compares one across connections. Only `host.models` is named this way. A client that does not accept the feature, such as every iPhone build before it and the desktop's own host client, is sent `models` whole in every shell and no `modelsRevision`, exactly as before.
+A revision means something only on its own connection to its own listener; a client never compares one across connections. Only `host.models` is named this way. The desktop's own host client accepts it too (ADR-0028, October 16 amendment) and puts the catalog back the same way, a shell naming a revision it does not hold failing to read and the connection starting again. A client that does not accept the feature, such as every iPhone build before it and earlier desktops, is sent `models` whole in every shell and no `modelsRevision`, exactly as before.
 
 ### Detail deltas
 
