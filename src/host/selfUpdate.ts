@@ -6,10 +6,11 @@ import { z } from 'zod'
 import { HOST_NODE_RANGE, LAUNCH_SCRIPT_SOURCE } from '../main/hosts/launchScript'
 import { HOST_DOWNLOAD_TIMEOUT_MS, hostLaunchTimings } from '../shared/hostLaunchTimings'
 import { HOST_RELEASES_URL, HOST_UPDATE_STEPS, HOST_VERSION_PATTERN, hostArchiveName, type HostUpdateStep } from '../shared/hostUpdates'
-import { compareHostToTarget, HOST_UPDATE_ANSWER_WAIT_MS, hostUpdateAttemptFile, HOST_UPDATE_RESTART_WAIT_MS, HOST_UPDATE_STATUS_FILE, HOST_UPDATE_STATUS_LIMIT_BYTES, hostUpdateErrorSchema, hostUpdateFetchedSchema, hostUpdateInstalledSchema, hostUpdateStatusSchema,
+import { compareHostToTarget, HOST_UPDATE_ANSWER_WAIT_MS, hostUpdateAttemptFile, HOST_UPDATE_RESTART_BUDGET_MS, HOST_UPDATE_RESTART_WAIT_MS, HOST_UPDATE_STATUS_FILE, HOST_UPDATE_STATUS_LIMIT_BYTES, hostUpdateErrorSchema, hostUpdateFetchedSchema, hostUpdateInstalledSchema, hostUpdateStatusSchema,
   type HostUpdateAnswer, type HostUpdateStatus } from '../shared/hostSelfUpdate'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import type { HostUpdateRequestAction } from '../shared/hostProtocol'
+import { processAlive } from './lock'
 
 /**
  * A host that updates itself when a paired desktop asks over its socket (ADR-0087). It runs the launch script it ships for
@@ -122,6 +123,11 @@ const INSTALL_BUDGET_MS = 10 * 60_000
 const fetchResult = z.union([hostUpdateFetchedSchema, hostUpdateErrorSchema])
 const installResult = z.union([hostUpdateInstalledSchema, hostUpdateErrorSchema])
 const invalid = (): HostUpdateAnswer => ({ type: 'error', reason: 'update-invalid' })
+/** The status file as read, with how long ago it was last written. */
+interface StatusRead { readonly status: HostUpdateStatus; readonly age: number }
+/** Whether a `restarting` status belongs to a restart that can no longer finish: its process has gone, or it is too old. */
+const interrupted = (read: StatusRead): boolean => read.age > HOST_UPDATE_RESTART_BUDGET_MS
+  || (read.status.state === 'restarting' && read.status.pid !== undefined && !processAlive(read.status.pid))
 const busy = (): HostUpdateAnswer => ({ type: 'error', reason: 'update-busy' })
 
 export class HostSelfUpdate {
@@ -157,9 +163,16 @@ export class HostSelfUpdate {
         return { type: 'update-cancelled', cancelled: true }
       }
       case 'outcome': {
-        const status = await this.readStatus()
+        const read = await this.readStatus()
+        if (!read) return { type: 'update-outcome', running: this.options.sottoVersion, restart: { state: 'none' } }
+        const { status } = read
+        // A restart whose process has gone, or that has run far past any restart's time, was interrupted before it could
+        // say how it ended: Sotto cannot tell which version is running beyond what this host says it runs.
+        if (status.state === 'restarting' && interrupted(read)) {
+          return { type: 'update-outcome', running: this.options.sottoVersion, restart: { state: 'finished', version: status.version, result: { type: 'error', reason: 'update-lost' } } }
+        }
         return { type: 'update-outcome', running: this.options.sottoVersion,
-          restart: !status ? { state: 'none' } : status.state === 'restarting' ? { state: 'restarting', version: status.version } : { state: 'finished', version: status.version, result: status.result } }
+          restart: status.state === 'restarting' ? { state: 'restarting', version: status.version } : { state: 'finished', version: status.version, result: status.result } }
       }
     }
   }
@@ -301,7 +314,7 @@ export class HostSelfUpdate {
     let over = false
     void ended.then(() => { over = true })
     const deadline = Date.now() + (this.options.restartWaitMs ?? HOST_UPDATE_RESTART_WAIT_MS)
-    const ours = async (): Promise<HostUpdateStatus | null> => { const status = await this.readStatus(); return status?.attempt === attempt ? status : null }
+    const ours = async (): Promise<HostUpdateStatus | null> => { const read = await this.readStatus(); return read?.status.attempt === attempt ? read.status : null }
     while (Date.now() < deadline) {
       const status = await ours()
       if (status) return this.restartAnswer(status, version)
@@ -333,10 +346,12 @@ export class HostSelfUpdate {
     return { type: 'update-restarting', version }
   }
   /** The status file, when it is one a restart wrote: small, and in its shape. */
-  private async readStatus(): Promise<HostUpdateStatus | null> {
+  private async readStatus(): Promise<StatusRead | null> {
     try {
-      if ((await stat(this.statusPath)).size > HOST_UPDATE_STATUS_LIMIT_BYTES) return null
-      return hostUpdateStatusSchema.safeParse(JSON.parse(await readFile(this.statusPath, 'utf8'))).data ?? null
+      const info = await stat(this.statusPath)
+      if (info.size > HOST_UPDATE_STATUS_LIMIT_BYTES) return null
+      const status = hostUpdateStatusSchema.safeParse(JSON.parse(await readFile(this.statusPath, 'utf8'))).data
+      return status ? { status, age: Date.now() - info.mtimeMs } : null
     } catch { return null }
   }
 

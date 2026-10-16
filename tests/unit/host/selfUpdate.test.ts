@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { EventEmitter } from 'node:events'
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -10,6 +11,7 @@ import { createHostSelfUpdate, hostInstallation, runByBootUnit, transientRestart
 import { HOST_RELEASES_URL, hostArchiveName } from '../../../src/shared/hostUpdates'
 import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_READY_TIMEOUT_MS, HOST_STOP_DRAIN_MS } from '../../../src/shared/hostLaunchTimings'
 import { HOST_NODE_RANGE, LAUNCH_SCRIPT_SOURCE } from '../../../src/main/hosts/launchScript'
+import { HOST_UPDATE_RESTART_BUDGET_MS } from '../../../src/shared/hostSelfUpdate'
 
 /**
  * A host that updates itself (ADR-0087), without running anything: the child processes it would start are stand-ins that
@@ -60,6 +62,8 @@ function hostWith(place: Awaited<ReturnType<typeof installed>>, spawn: typeof sp
   if (!created.ok) throw new Error(created.reason)
   return created.update
 }
+/** The number of a process that has already exited. */
+const goneProcess = (): number => spawnSync(process.execPath, ['-e', ''], { windowsHide: true }).pid!
 const context = (owner: object = {}, steps: string[] = [], gone = new AbortController()): HostUpdateContext => ({ owner, gone: gone.signal, onStep: step => { steps.push(step) } })
 
 describe('where a host was installed', () => {
@@ -321,8 +325,18 @@ describe('the restart and its status file', () => {
     const host = hostWith(place, spawn)
     const attempt = 'cccccccc'
     expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'none' } })
-    await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt, version: '1.2.4', state: 'restarting', pid: 12 }))
+    // A restart still running: its process is alive, and it is well inside a restart's time.
+    await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt, version: '1.2.4', state: 'restarting', pid: process.pid }))
     expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3', restart: { state: 'restarting', version: '1.2.4' } })
+    // One whose process has gone, killed or lost with a restart of the machine, can no longer say how it ended.
+    const lost = { type: 'update-outcome', running: '1.2.3', restart: { state: 'finished', version: '1.2.4', result: { type: 'error', reason: 'update-lost' } } }
+    await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt, version: '1.2.4', state: 'restarting', pid: goneProcess() }))
+    expect(await host.run({ action: 'outcome' }, context())).toEqual(lost)
+    // Nor can one written longer ago than any restart takes, whatever process now has its number.
+    await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt, version: '1.2.4', state: 'restarting', pid: process.pid }))
+    const longAgo = new Date(Date.now() - HOST_UPDATE_RESTART_BUDGET_MS - 60_000)
+    await utimes(statusFile(place), longAgo, longAgo)
+    expect(await host.run({ action: 'outcome' }, context())).toEqual(lost)
     await writeFile(statusFile(place), JSON.stringify({ v: 1, attempt, version: '1.2.4', state: 'finished', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } }))
     expect(await host.run({ action: 'outcome' }, context())).toEqual({ type: 'update-outcome', running: '1.2.3',
       restart: { state: 'finished', version: '1.2.4', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } } })

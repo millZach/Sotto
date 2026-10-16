@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { HOST_READY_TIMEOUT_MS, HOST_STOP_DRAIN_MS } from './hostLaunchTimings'
 import { hostIsNewer, hostIsOlder } from './hostProtocol'
 import { compareOwlHostTarget, HOST_ARCHIVE_PATTERN } from './hostUpdates'
 import { getReleaseTrack } from './releaseTrack'
@@ -21,6 +22,12 @@ export const HOST_UPDATE_RESTART_WAIT_MS = 10_000
  * stops the host anyway. The host says so in `<status file>.<attempt>.answered`.
  */
 export const HOST_UPDATE_ANSWER_WAIT_MS = 5_000
+/**
+ * The longest a restart can take once it has claimed its attempt: the wait for the host's answer, the old host's drain, and
+ * a start of the new version and of the old one again, with room to spare. A `restarting` status older than this, or
+ * whose process has gone, is a restart that was interrupted, as by a kill or the machine restarting.
+ */
+export const HOST_UPDATE_RESTART_BUDGET_MS = HOST_UPDATE_ANSWER_WAIT_MS + HOST_STOP_DRAIN_MS + 2 * HOST_READY_TIMEOUT_MS + 60_000
 /** The claim file that decides one restart attempt (`<status file>.<attempt>.claim`), and the host's word that it answered. */
 export const hostUpdateAttemptFile = (statusFile: string, attempt: string, kind: 'claim' | 'answered'): string => `${statusFile}.${attempt}.${kind}`
 
@@ -52,7 +59,7 @@ export type HostUpdateRestartResult = z.infer<typeof hostUpdateRestartResultSche
  */
 const attempt = z.string().regex(/^[a-f0-9]{8,64}$/u)
 export const hostUpdateStatusSchema = z.discriminatedUnion('state', [
-  z.object({ v: z.literal(1), attempt, state: z.literal('restarting'), version: version.nullable() }),
+  z.object({ v: z.literal(1), attempt, state: z.literal('restarting'), version: version.nullable(), pid: z.number().int().positive().optional() }),
   z.object({ v: z.literal(1), attempt, state: z.literal('finished'), version: version.nullable(), result: hostUpdateRestartResultSchema }),
 ])
 export type HostUpdateStatus = z.infer<typeof hostUpdateStatusSchema>
