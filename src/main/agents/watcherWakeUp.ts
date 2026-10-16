@@ -90,12 +90,14 @@ export class WatcherWakeUp {
    */
   private evidenceWakes: false | 'fresh' | 'inherited' = false
   /**
-   * Hidden wake-ups in a row that did not reach Watcher (hiddenWakeUp.ts). After one, the next is made only when `retry`
-   * says so: news that needs Watcher came since the last was made, or Watcher came to rest, or the miss was unknown, the
-   * last two only while fewer than WAKE_UP_TRIES missed.
+   * Hidden wake-ups in a row that did not reach Watcher (hiddenWakeUp.ts). After one, the next is made only on a retry:
+   * news that needs Watcher came since the last was made, or Watcher came to rest, or the miss was unknown, the last two
+   * only while fewer than WAKE_UP_TRIES missed. Retries are counted, and a made wake-up consumes only those counted before
+   * its news was taken, so one counted while it was being saved is not lost.
    */
   private misses = 0
-  private retry = false
+  private retries = 0
+  private consumedRetries = 0
   /** Whether Watcher rested at the last pass, so a pass can see it come to rest. */
   private watcherResting: boolean | undefined
   /** Events an unknown send let go of: observed again, they are not news that came since. */
@@ -227,14 +229,14 @@ export class WatcherWakeUp {
   settled(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void {
     if (!this.started || this.closed) return
     if (outcome !== 'told') for (const event of events) this.rememberPending.delete(event.id)
-    // `retry` already says whether news that needs Watcher came since that one was made, which is news it did not carry.
+    // An unconsumed retry already says news that needs Watcher came since that one was made, which is news it did not carry.
     if (outcome === 'told') this.misses = 0
-    else if (outcome === 'withdrawn') this.retry = true
+    else if (outcome === 'withdrawn') this.retries++
     else {
       this.misses++
       // Observed afresh, as after a restart, it goes again by itself, a bounded number of times. A sure failure waits for
       // news that needs Watcher, or for Watcher to come to rest.
-      if (outcome === 'unknown' && this.misses < WAKE_UP_TRIES) this.retry = true
+      if (outcome === 'unknown' && this.misses < WAKE_UP_TRIES) this.retries++
     }
     if (outcome === 'unknown') { this.forget(events); this.observe(); return }
     if (outcome !== 'told') this.withPassReads(() => this.returned(events))
@@ -335,7 +337,7 @@ export class WatcherWakeUp {
       this.seen.add(event.id)
       if (kind === 'evidence-changed' && this.evidenceWakes) this.wake(event.id)
       // News that needs Watcher in itself, and was not just let go of, may make a wake-up after one that missed.
-      if ((kind !== 'evidence-changed' || this.evidenceWakes === 'fresh') && !this.reobserved.has(event.id)) this.retry = true
+      if ((kind !== 'evidence-changed' || this.evidenceWakes === 'fresh') && !this.reobserved.has(event.id)) this.retries++
       if (kind === 'evidence-changed') {
         this.toldLocal.delete(targetKey(target)); this.toldLocal.set(targetKey(target), this.evidence.digest(target, 'local'))
         while (this.toldLocal.size > 2_000) this.toldLocal.delete(this.toldLocal.keys().next().value!)
@@ -382,7 +384,7 @@ export class WatcherWakeUp {
    * its queue, and none missed since the last that reached it, or a retry is due.
    */
   private worthTelling(events: readonly WatcherEvent[]): boolean {
-    return events.length > 0 && this.needsAttention(events) && (this.misses === 0 || this.retry) && this.options.wakeUpQueued?.() !== true
+    return events.length > 0 && this.needsAttention(events) && (this.misses === 0 || this.retries > this.consumedRetries) && this.options.wakeUpQueued?.() !== true
   }
   /** A turn end, and the thread's own facts that ride with it, wait for that thread's Git read; nothing else does. */
   private waitsForGitRead(event: WatcherEvent, held: ReadonlyMap<string, number>): boolean {
@@ -409,6 +411,8 @@ export class WatcherWakeUp {
     // Only news still waiting for its thread's Git read is left: it goes when that wait ends.
     if (!events.length && !this.rememberPending.size) { if (held.size) this.batch(); return }
     const news = watcher && events.length ? foldWatcherNews(undefined, { source: 'watcher', watcher, events, omitted: 0 }) : undefined
+    // The retries this wake-up answers: those counted by now. One counted while it is saved is for the next.
+    const retries = this.retries
     this.tail = this.tail.catch(() => undefined).then(async () => {
       if (this.closed) return
       let failed = false
@@ -420,7 +424,7 @@ export class WatcherWakeUp {
           if (this.canDeliver() && this.options.wakeUpQueued?.() !== true) {
             await this.options.deliver(valid)
             if (this.closed) return
-            this.retry = false
+            this.consumedRetries = Math.max(this.consumedRetries, retries)
             for (const event of valid.events) this.rememberPending.add(event.id)
             while (this.rememberPending.size > 1_000) this.rememberPending.delete(this.rememberPending.values().next().value!)
           } else this.pending = this.withPassReads(() => this.stillDue(foldWatcherEvents(events, this.pending)))
@@ -543,7 +547,7 @@ export class WatcherWakeUp {
     const watcher = this.record().current?.target
     const own = watcher && snapshot.threads.find(thread => thread.id === watcher.threadId && (thread.hostId ?? snapshot.hostId) === watcher.hostId)
     const resting = !!own && own.status !== 'running' && own.lastTurn?.status !== 'running' && !own.requests.length
-    if (resting && this.watcherResting === false && this.misses > 0 && this.misses < WAKE_UP_TRIES) this.retry = true
+    if (resting && this.watcherResting === false && this.misses > 0 && this.misses < WAKE_UP_TRIES) this.retries++
     this.watcherResting = resting
     this.pending = this.stillDue(this.pending)
     if (!this.pending.length && !this.rememberPending.size) { this.cancelBatch?.(); this.cancelBatch = undefined }

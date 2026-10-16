@@ -1240,6 +1240,30 @@ it('tells quiet and pull request news afresh once their wake-up is let go with i
   expect(f.wakes.needsAttention(again)).toBe(true)
 })
 
+it('keeps a retry that news needing Watcher earns while a wake-up is being saved, for the next wake-up (review P2)', async () => {
+  let waking = false
+  const f = fixture(true, undefined, { wakeUpQueued: () => waking })
+  finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  // That one missed, with nothing new beside it: the next needs news that needs Watcher.
+  waking = true; f.wakes.settled(f.delivered[0]!.events, 'failed'); waking = false
+  f.thread.requests = [{ id: 'card-1', kind: 'question', text: 'secret', options: [] }]; f.wakes.observe()
+  // While that question's wake-up is being saved, a second question comes.
+  const saving = deferredPromise()
+  f.deliver.mockImplementationOnce(async news => { f.delivered.push(structuredClone(news)); await saving.promise })
+  const flushed = f.advance(2_000)
+  await vi.waitFor(() => expect(f.delivered).toHaveLength(2))
+  f.thread.requests.push({ id: 'card-2', kind: 'question', text: 'secret', options: [] }); f.wakes.observe()
+  saving.resolve(); await flushed
+  waking = true
+  await f.advance(10_000)
+  expect(f.delivered).toHaveLength(2)
+  // The first question's wake-up misses too. The second question is news it did not carry, so it makes the next.
+  waking = false; f.wakes.settled(f.delivered[1]!.events, 'failed'); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(3)
+  expect(f.delivered[2]!.events.map(event => event.requestCardId).filter(Boolean).sort()).toEqual(['card-1', 'card-2'])
+})
+function deferredPromise() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done }); return { promise, resolve } }
+
 it('never wakes Watcher with a thread’s own facts alone, while its hidden wake-up is on its way or after it was told', async () => {
   let waking = false
   const f = fixture(true, undefined, { wakeUpQueued: () => waking }), { move } = gitFixture(f)

@@ -39,6 +39,8 @@ interface World {
   writes: number; failNextWrite: boolean; turn: number; checks: 'failed' | 'passed'
   sends: { events: WatcherEvent[]; warranted: boolean }[]; told: Set<string>; forgotten: Set<string>; uncertain: Map<string, string>; reconciling: Set<string>
   echoes: Set<string>; attentionSince: boolean; automatic: number; tolds: number
+  /** Holds the next wake-up's save open until released, so news can come in the middle of it. */
+  holdSave?: { entered: () => void; release: Promise<void> } | undefined
 }
 const watcherId = () => 'center'
 const hidden = (w: World): QueuedFollowup[] => w.store.peek().items.filter(item => item.threadId === watcherId() && isWatcherOnlyWakeUp(item))
@@ -77,7 +79,11 @@ async function load(w: World): Promise<void> {
     schedule: (callback, delay) => { const timer = { at: w.clock + delay, callback }; w.timers.add(timer); return () => { w.timers.delete(timer) } },
     restoredEvents: () => [], wakeUpQueued: () => hidden(w).length > 0, prune: async () => undefined,
     remember: async ids => { w.record.wakeEventIds = [...new Set([...w.record.wakeEventIds ?? [], ...ids])].slice(-1_000) },
-    deliver: async (news: WatcherNews) => { await w.store.queueWakeUp(watcherId(), news, word, w.watcher.lastTurn?.id) } })
+    deliver: async (news: WatcherNews) => {
+      await w.store.queueWakeUp(watcherId(), news, word, w.watcher.lastTurn?.id)
+      const hold = w.holdSave; w.holdSave = undefined
+      if (hold) { hold.entered(); await hold.release }
+    } })
   w.wakes.start()
   w.attentionSince = true // A restart observes afresh.
 }
@@ -152,7 +158,7 @@ async function quiesce(w: World, mode: Mode): Promise<void> {
 }
 
 type Step = 'finish' | 'start' | 'question' | 'answer' | 'checks' | 'local' | 'pump-ack' | 'pump-fail' | 'pump-unknown' | 'echo' | 'restart'
-  | 'watcher-turn' | 'save-fail' | 'legacy' | 'mid-send' | 'lose-echo' | 'crash-between-saves'
+  | 'watcher-turn' | 'save-fail' | 'legacy' | 'mid-send' | 'lose-echo' | 'crash-between-saves' | 'mid-save'
 async function apply(w: World, step: Step): Promise<void> {
   const worker = w.worker
   switch (step) {
@@ -172,6 +178,19 @@ async function apply(w: World, step: Step): Promise<void> {
     case 'echo': for (const [id, messageId] of w.uncertain) { w.echoes.add(messageId); w.reconciling.delete(id) } break
     case 'lose-echo': w.reconciling.clear(); break
     case 'restart': await load(w); break
+    case 'mid-save': {
+      // A wake-up is being saved when a question comes: the question is for the next one, and keeps its claim to go.
+      if (hidden(w).length) break
+      let entered!: () => void, release!: () => void
+      const inside = new Promise<void>(resolve => { entered = resolve }), held = new Promise<void>(resolve => { release = resolve })
+      w.holdSave = { entered, release: held }
+      worker.requests = [...worker.requests, { id: randomUUID(), kind: 'question', text: 'Synthetic question', options: [] }]; w.attentionSince = true; observe(w)
+      const passing = advance(w, 6_000)
+      await Promise.race([inside, passing])
+      worker.requests = [...worker.requests, { id: randomUUID(), kind: 'question', text: 'Synthetic question', options: [] }]; observe(w)
+      release(); w.holdSave = undefined; await passing
+      break
+    }
     case 'crash-between-saves': {
       // Sotto stops after a wake-up's news was saved as untold and before the wake-up left the queue.
       const item = hidden(w)[0]
@@ -259,6 +278,7 @@ it.each([
   ['a withdrawal as the worker starts a new turn', ['finish', 'start', 'pump-ack', 'checks', 'local', 'pump-ack']],
   ['an unknown send no echo ever settles', ['question', 'pump-unknown', 'lose-echo', 'pump-ack']],
   ['a restart mid-dispatch', ['question', 'pump-unknown', 'restart', 'pump-ack']],
+  ['news that comes while a wake-up is being saved, after a miss', ['question', 'pump-fail', 'mid-save', 'pump-fail', 'pump-ack']],
   ['a crash between the two saves of a wake-up leaving', ['question', 'crash-between-saves', 'pump-ack', 'question', 'pump-fail', 'crash-between-saves', 'watcher-turn', 'pump-ack']],
   ['queues earlier builds saved', ['question', 'legacy', 'pump-ack', 'pump-fail', 'watcher-turn', 'pump-ack']],
   ['refusals past the bound', ['question', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn']],
@@ -276,7 +296,7 @@ it('never wakes Watcher for a thread’s own facts alone', async () => {
 
 it('keeps the hidden wake-up’s rules through seeded random sequences', async () => {
   const steps: Step[] = ['finish', 'start', 'question', 'answer', 'checks', 'local', 'local', 'pump-ack', 'pump-fail', 'pump-unknown', 'echo', 'lose-echo', 'restart',
-    'watcher-turn', 'save-fail', 'mid-send', 'legacy', 'crash-between-saves']
+    'watcher-turn', 'save-fail', 'mid-send', 'legacy', 'crash-between-saves', 'mid-save']
   for (let seed = 1; seed <= 30; seed++) {
     const next = random(seed), w = await world()
     for (let step = 0; step < 16; step++) { await apply(w, steps[Math.floor(next() * steps.length)]!); await check(w) }
