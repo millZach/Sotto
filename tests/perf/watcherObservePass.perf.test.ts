@@ -122,6 +122,13 @@ describe.skipIf(!PERF_BENCH)('Watcher observation pass and room state with a pai
         }
         return Reflect.apply(nativeClone, globalThis, [value, options]) as Value
       }
+      /** One round's figures per call: its time and the reads counted while it was measured. */
+      const row = (iterations: number, wallMs: number, cpuMs: number): Record<string, number> => {
+        const per = (value: number) => Math.round(value / iterations * 100) / 100
+        return { wallMsPerCall: per(wallMs), cpuMsPerCall: per(cpuMs), shellCallsPerCall: per(counts.shellCalls), shellClonesPerCall: per(counts.shellClones),
+          hostListsPerCall: per(counts.hostLists), recordClonesPerCall: per(counts.recordClones) }
+      }
+      const medians = (rows: Record<string, number>[]) => Object.fromEntries(Object.keys(rows[0]!).map(key => [key, median(rows.map(item => item[key]!))]))
       const accepted = () => watcher.state().receipts.filter(item => item.action === 'start' && item.deliveryState === 'accepted').length
       const startsBefore = accepted()
       const results: Record<string, unknown> = {}
@@ -137,14 +144,10 @@ describe.skipIf(!PERF_BENCH)('Watcher observation pass and room state with a pai
               else expect(watcher.state().watchedThreads).toHaveLength(STARTS)
             }
           } finally { measuring = false }
-          const used = process.cpuUsage(cpu), wallMs = performance.now() - started
-          const per = (value: number) => Math.round(value / ITERATIONS[method] * 100) / 100
-          rows.push({ wallMsPerCall: per(wallMs), cpuMsPerCall: per((used.user + used.system) / 1000),
-            shellCallsPerCall: per(counts.shellCalls), shellClonesPerCall: per(counts.shellClones),
-            hostListsPerCall: per(counts.hostLists), recordClonesPerCall: per(counts.recordClones) })
+          const used = process.cpuUsage(cpu)
+          rows.push(row(ITERATIONS[method], performance.now() - started, (used.user + used.system) / 1000))
         }
-        const medians = Object.fromEntries(Object.keys(rows[0]!).map(key => [key, median(rows.map(row => row[key]!))]))
-        results[method] = { iterations: ITERATIONS[method], rounds: ROUNDS, rows, medians }
+        results[method] = { iterations: ITERATIONS[method], rounds: ROUNDS, rows, medians: medians(rows) }
       }
       // Queued wake-ups (#1070): news waits in a busy Watcher thread's queue, and main prunes the queue after every pass.
       // Each wake-up holds all the news still due and one event for a request Watcher does not have, which each prune drops.
@@ -167,15 +170,12 @@ describe.skipIf(!PERF_BENCH)('Watcher observation pass and room state with a pai
           const used = process.cpuUsage(cpu)
           wallMs += performance.now() - started; cpuMs += (used.user + used.system) / 1000
         }
-        const per = (value: number) => Math.round(value / ITERATIONS.prune * 100) / 100
-        rows.push({ wallMsPerCall: per(wallMs), cpuMsPerCall: per(cpuMs), shellCallsPerCall: per(counts.shellCalls), shellClonesPerCall: per(counts.shellClones),
-          hostListsPerCall: per(counts.hostLists), recordClonesPerCall: per(counts.recordClones) })
+        rows.push(row(ITERATIONS.prune, wallMs, cpuMs))
       }
       const queued = store.peek().items.filter(item => item.wakeUp)
       expect(queued).toHaveLength(WAKE_UPS)
       for (const item of queued) expect(item.news?.flatMap(news => isWatcherNews(news) ? news.events.map(event => event.id) : [])).toEqual(due.map(event => event.id))
-      results.prune = { iterations: ITERATIONS.prune, rounds: ROUNDS, wakeUps: WAKE_UPS, eventsPerWakeUp: due.length + 1, rows,
-        medians: Object.fromEntries(Object.keys(rows[0]!).map(key => [key, median(rows.map(row => row[key]!))])) }
+      results.prune = { iterations: ITERATIONS.prune, rounds: ROUNDS, wakeUps: WAKE_UPS, eventsPerWakeUp: due.length + 1, rows, medians: medians(rows) }
       console.log(`Watcher observe pass: ${JSON.stringify({ shape: { remoteThreads: cache.host.threads.length, remoteFinished: finished,
         remoteAcceptedStarts: startsBefore, remoteAcceptedStartsAfter: accepted() }, ...results })}`)
     } catch (error) { failures.push(error) }

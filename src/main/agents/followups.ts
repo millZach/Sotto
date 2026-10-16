@@ -270,17 +270,11 @@ export class FollowupStore {
     })
   }
   /**
-   * Drops from a wake-up about to go every part `due` says may no longer go, because its babysitting ended quietly or
-   * by the switch since it was told, and the item when nothing is left. One that had started to send goes back to
-   * waiting, since nothing was sent. A wake-up without its news is left as it is.
-   */
-  pruneWakeUp(id: string, due: (news: WakeUpNews) => boolean, word: WordWakeUp, transform?: (news: WakeUpNews) => WakeUpNews | undefined): Promise<void> {
-    return this.pruneWakeUps([id], () => () => ({ due, word, ...(transform ? { transform } : {}) }))
-  }
-  /**
-   * Prunes several wake-ups as `pruneWakeUp` does, in one change. `pruning` is asked once, with every wake-up about to
-   * be pruned, before any of them is, and says how to prune each: a caller whose answers read whole state reads it once
-   * there, however many wake-ups and how much news are queued.
+   * Drops from each of these wake-ups about to go every part `due` says may no longer go, because its babysitting ended
+   * quietly or by the switch since it was told, and the item when nothing is left. One that had started to send goes
+   * back to waiting, since nothing was sent. A wake-up without its news is left as it is. All of them are pruned in one
+   * change, and `pruning` is asked once, with every wake-up about to be pruned, before any of them is, and says how to
+   * prune each: a caller whose answers read whole state reads it once there, however much is queued.
    */
   pruneWakeUps(ids: readonly string[], pruning: (items: readonly QueuedFollowup[]) => (item: QueuedFollowup) => WakeUpPruning): Promise<void> {
     return this.change(state => {
