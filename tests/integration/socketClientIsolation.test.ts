@@ -141,21 +141,24 @@ describe('socket client isolation and reconnect', () => {
     const firstId = threads[0]!.id, secondId = threads[1]!.id
     await first.client.command({ type: 'select-thread', threadId: firstId })
     await second.client.command({ type: 'select-thread', threadId: secondId })
-    await first.client.observe([firstId]); await second.client.observe([secondId])
     const firstDetails: string[] = [], secondDetails: string[] = []
     first.client.subscribeThreadDetail(detail => firstDetails.push(detail.threadId))
     second.client.subscribeThreadDetail(detail => secondDetails.push(detail.threadId))
-    // A thread's history reaches only the clients observing it, when it changes.
-    await first.client.command({ type: 'manual-send', threadId: firstId, draftId: randomUUID(), text: 'Synthetic first prompt' })
+    // A thread's history reaches only the clients observing it: whole when observed, then as it changes.
+    await first.client.observe([firstId]); await second.client.observe([secondId])
     await expect.poll(() => firstDetails).toContain(firstId)
-    await second.client.command({ type: 'manual-send', threadId: secondId, draftId: randomUUID(), text: 'Synthetic second prompt' })
     await expect.poll(() => secondDetails).toContain(secondId)
+    await first.client.command({ type: 'manual-send', threadId: firstId, draftId: randomUUID(), text: 'Synthetic first prompt' })
+    await second.client.command({ type: 'manual-send', threadId: secondId, draftId: randomUUID(), text: 'Synthetic second prompt' })
+    fixture.native.event({ type: 'stream', threadId: 'docs', messageId: randomUUID(), text: 'Synthetic reply' })
+    await expect.poll(() => secondDetails.filter(id => id === secondId).length).toBeGreaterThan(1)
     expect(firstDetails).not.toContain(secondId); expect(secondDetails).not.toContain(firstId)
     expect((await first.client.readShell()).activeThreadId).toBe(firstId)
     expect((await second.client.readShell()).activeThreadId).toBe(secondId)
     await first.client.close()
     secondDetails.length = 0
     await second.client.command({ type: 'manual-send', threadId: secondId, draftId: randomUUID(), text: 'Synthetic prompt, still observed' })
+    fixture.native.event({ type: 'stream', threadId: 'docs', messageId: randomUUID(), text: 'Synthetic reply, still observed' })
     await expect.poll(() => secondDetails).toContain(secondId)
   })
   it('rechecks session expiry on every operation, even on an already opened socket', async () => {

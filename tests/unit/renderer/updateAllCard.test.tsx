@@ -7,7 +7,7 @@ import type { HostsBridge, HostsState, HostStatus } from '../../../src/shared/ho
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { useOptionalApp, type AppContextValue } from '../../../src/renderer/src/state/AppContext'
-import { UpdateAllCard, requestUpdateAll } from '../../../src/renderer/src/features/updates/UpdateAllCard'
+import { UPDATE_ALL_DONE_MS, UpdateAllCard, requestUpdateAll } from '../../../src/renderer/src/features/updates/UpdateAllCard'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { threadsStateFixture } from '../../fixtures/agentState'
 
@@ -101,6 +101,40 @@ describe('the Update all card', () => {
     await waitFor(() => expect(hosts.bridge.command).toHaveBeenCalledWith({ type: 'host-update', id: FORGE, action: 'update' }))
   })
 
+  // The incident of October 16, 2026: forge restarted with Codex in its line, and the step spun on Starting… for good.
+  it('says a host client whose line was lost did not update, and Try again puts it back in the line', async () => {
+    provideApp({ ...available, phase: { phase: 'unsupported' } })
+    const codex = (patch: Partial<ProviderClientUpdate> = {}) => behind({ id: 'codex', installed: '0.51.0', published: '0.52.1', ranAt: 'earlier', ...patch })
+    provideAgents(agentState({ forge: [codex()] }))
+    const hosts = hostsBridge({ hosts: [forge], localHostEnabled: true, localHostRunning: true })
+    const view = render(<UpdateAllCard hosts={hosts.asBridge} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Update all: 1 client' }))
+    await waitFor(() => expect(hosts.bridge.updateClients).toHaveBeenCalledWith({ id: FORGE, action: 'update', providers: ['codex'] }))
+    expect(screen.getByRole('listitem', { name: 'Update Codex, in progress' })).toHaveTextContent('Starting…')
+    provideAgents(agentState({ forge: [codex({ state: 'updating' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    // forge restarts: it is out of reach for a moment, and the step waits to hear from it.
+    const away = agentState({ forge: [codex({ state: 'updating' })] })
+    provideAgents({ ...away, host: { ...away.host, clientHosts: away.host.clientHosts!.map(entry => ({ ...entry, connected: false })) } })
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    expect(await screen.findByRole('listitem', { name: 'Update Codex, in progress' })).toHaveTextContent('Waiting to hear from forge…')
+    // The new host process has Codex idle again, with no result in memory.
+    provideAgents(agentState({ forge: [codex({ ranAt: undefined })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    const step = await screen.findByRole('listitem', { name: 'Update Codex, did not finish' })
+    expect(step).toHaveTextContent('forge restarted before Codex updated. Nothing was changed. Try again.')
+    fireEvent.click(within(step).getByRole('button', { name: 'Try again to update Codex on forge' }))
+    await waitFor(() => expect(hosts.bridge.updateClients).toHaveBeenCalledTimes(2))
+    expect(hosts.bridge.updateClients).toHaveBeenLastCalledWith({ id: FORGE, action: 'update', providers: ['codex'] })
+    // Before forge says Codex is back in its line, the step is starting, not lost again.
+    expect(await screen.findByRole('listitem', { name: 'Update Codex, in progress' })).toHaveTextContent('Starting…')
+    provideAgents(agentState({ forge: [codex({ state: 'queued' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    provideAgents(agentState({ forge: [codex({ state: 'updated', installed: '0.52.1', behind: false, ranAt: 'now' })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    expect(await screen.findByRole('listitem', { name: 'Update Codex, done' })).toHaveTextContent('Now 0.52.1.')
+  })
+
   it('answers a host’s busy question with Update when they finish', async () => {
     provideApp({ ...available, phase: { phase: 'unsupported' } })
     provideAgents(agentState())
@@ -155,6 +189,19 @@ describe('the Update all card', () => {
     expect(screen.getByRole('listitem', { name: 'Update Claude Code, to do' })).toHaveTextContent('This computer')
     fireEvent.click(screen.getByRole('button', { name: 'Update all: 1 client' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['claude'], hostId: LOCAL }))
+  })
+
+  // Sol, review of #1084: the press stops the threads and the update still waits for the clients, so it does not say "now".
+  it('names Stop N threads for what it does while the host also waits for its clients', async () => {
+    provideApp({ ...available, phase: { phase: 'unsupported' } })
+    provideAgents(agentState())
+    const hosts = hostsBridge({ hosts: [forge], localHostEnabled: true, localHostRunning: true, updates: [hostUpdate({ phase: 'waiting', working: 2, clientsUpdating: true })] })
+    render(<UpdateAllCard hosts={hosts.asBridge} />)
+    const stop = await screen.findByRole('button', { name: 'Stop 2 threads on forge. Its host still updates once its clients have.' })
+    expect(stop).toHaveTextContent(/^Stop 2 threads$/u)
+    expect(screen.queryByRole('button', { name: /update its host now/u })).toBeNull()
+    fireEvent.click(stop)
+    await waitFor(() => expect(hosts.bridge.command).toHaveBeenCalledWith({ type: 'host-update', id: FORGE, action: 'stop-threads' }))
   })
 
   it('cancels a host’s waiting update, keeping focus in the card', async () => {
@@ -276,5 +323,122 @@ describe('the Update all card', () => {
     expect(screen.queryByText(/restarts, so its threads/u)).toBeNull()
     expect(screen.getByText('Threads keep working while clients update.')).toBeTruthy()
     expect(steps.every(step => step.querySelector('.update-all__mark')!.getAttribute('aria-hidden') === 'true')).toBe(true)
+  })
+})
+
+// The owner's choice, October 16, 2026: a run that ended with everything updated goes by itself 5 seconds later, and
+// never while someone is pointing at it or has focus in it.
+describe('a finished run going by itself', () => {
+  const unsupported: UpdateStatus = { ...available, phase: { phase: 'unsupported' } }
+  const settle = () => act(async () => { await Promise.resolve() })
+  const advance = (ms: number) => act(() => { vi.advanceTimersByTime(ms) })
+  const card = () => screen.queryByRole('region', { name: 'Updates' })
+  afterEach(() => { vi.useRealTimers() })
+  /** One press of Update all on this computer's Claude Code, which then ends as `ended` says. */
+  async function run(ended: Partial<ProviderClientUpdate>, options: { app?: UpdateStatus; hosts?: HostsState } = {}) {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    provideApp(options.app ?? unsupported)
+    provideAgents(agentState({ local: [behind()] }))
+    const hosts = hostsBridge(options.hosts ?? { hosts: [], localHostEnabled: true, localHostRunning: true })
+    const view = render(<UpdateAllCard hosts={hosts.asBridge} />)
+    await settle()
+    fireEvent.click(screen.getByRole('button', { name: /^Update all/u }))
+    await settle()
+    provideAgents(agentState({ local: [behind({ ranAt: 'now', ...ended })] }))
+    view.rerender(<UpdateAllCard hosts={hosts.asBridge} />)
+    await settle()
+    return { hosts, view }
+  }
+  const updated = { installed: '2.1.42', behind: false, state: 'updated' } as const
+
+  it('goes 5 seconds after everything updated, saying nothing as it goes', async () => {
+    // The owner's 5 seconds, as the card runs them.
+    expect(UPDATE_ALL_DONE_MS).toBe(5_000)
+    const { view } = await run(updated)
+    expect(screen.getByText('Updated')).toBeTruthy()
+    advance(UPDATE_ALL_DONE_MS - 1)
+    expect(card()).not.toBeNull()
+    advance(1)
+    expect(view.container).toBeEmptyDOMElement()
+    expect(document.querySelector('[role="status"], [role="alert"]')).toBeNull()
+  })
+
+  it('stays while something did not update, with its Try again', async () => {
+    await run({ state: 'failed' })
+    expect(screen.getByText('Not everything updated')).toBeTruthy()
+    advance(60_000)
+    expect(screen.getByRole('button', { name: 'Try again to update Claude Code' })).toBeTruthy()
+  })
+
+  it('stays while a host waits for its threads, and goes 5 seconds after that host has updated', async () => {
+    const base: HostsState = { hosts: [forge], localHostEnabled: true, localHostRunning: true }
+    const { hosts } = await run(updated, { hosts: { ...base, updates: [hostUpdate({ phase: 'waiting', working: 1 })] } })
+    expect(screen.getByRole('listitem', { name: 'Update forge’s host, waiting for its threads' })).toBeTruthy()
+    advance(60_000)
+    expect(card()).not.toBeNull()
+    // forge's thread finishes and its update runs: nothing is left waiting.
+    hosts.change({ ...base, updates: [hostUpdate({ phase: 'done' })] })
+    await settle()
+    expect(screen.getByText('Updated')).toBeTruthy()
+    advance(UPDATE_ALL_DONE_MS - 1)
+    expect(card()).not.toBeNull()
+    advance(1)
+    expect(card()).toBeNull()
+  })
+
+  it('stays while the pointer is over it, and counts 5 whole seconds again once it leaves', async () => {
+    await run(updated)
+    advance(3_000)
+    fireEvent.pointerEnter(card()!)
+    advance(60_000)
+    expect(card()).not.toBeNull()
+    fireEvent.pointerLeave(card()!)
+    advance(UPDATE_ALL_DONE_MS - 1)
+    expect(card()).not.toBeNull()
+    advance(1)
+    expect(card()).toBeNull()
+  })
+
+  it('stays while focus is inside it, and counts 5 whole seconds again once it leaves', async () => {
+    await run(updated)
+    const dismiss = screen.getByRole('button', { name: 'Dismiss the results of Update all' })
+    act(() => dismiss.focus())
+    advance(60_000)
+    expect(card()).not.toBeNull()
+    // Another window taking focus blurs the button but leaves it focused here: it still holds the card.
+    await act(async () => { fireEvent.blur(dismiss) })
+    advance(60_000)
+    expect(card()).not.toBeNull()
+    await act(async () => { dismiss.blur() })
+    advance(UPDATE_ALL_DONE_MS - 1)
+    expect(card()).not.toBeNull()
+    advance(1)
+    expect(card()).toBeNull()
+  })
+
+  it('goes from its folded pill the same way, held while the pill has the pointer or focus', async () => {
+    const { view } = await run(updated)
+    fireEvent.click(screen.getByRole('button', { name: 'Fold updates into a button' }))
+    const pill = screen.getByRole('button', { name: 'Updated. Show updates' })
+    // Folding moved focus to the pill, which holds it.
+    expect(document.activeElement).toBe(pill)
+    advance(60_000)
+    await act(async () => { pill.blur() })
+    fireEvent.pointerEnter(pill)
+    advance(60_000)
+    expect(screen.getByRole('button', { name: 'Updated. Show updates' })).toBe(pill)
+    fireEvent.pointerLeave(pill)
+    advance(UPDATE_ALL_DONE_MS - 1)
+    expect(view.container).not.toBeEmptyDOMElement()
+    advance(1)
+    expect(view.container).toBeEmptyDOMElement()
+  })
+
+  it('never goes by itself while it asks to restart', async () => {
+    const downloaded: UpdateStatus = { ...available, phase: { phase: 'downloaded', version: '0.1.37-owl.20261013.1', problem: null } }
+    await run(updated, { app: downloaded })
+    expect(screen.getByText('Restart to finish')).toBeTruthy()
+    advance(60_000)
+    expect(screen.getByRole('button', { name: 'Restart Sotto now and install 0.1.37-owl.20261013.1' })).toBeTruthy()
   })
 })
