@@ -140,6 +140,8 @@ export class SocketHostService implements HostService {
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
   private connecting: Promise<HostHello> | undefined
   private observed: string[] = []
+  /** The threads the host confirmed this connection observes: `observed` once its observe was answered, and nothing before. */
+  private confirmedObserved: ReadonlySet<string> = new Set()
   private generation = 0
   private opening: AbortController | undefined
   private previewTail: Promise<unknown> = Promise.resolve()
@@ -298,7 +300,7 @@ export class SocketHostService implements HostService {
       clearTimeout(item.timer)
       item.reject(new HostConnectionError(item.command ? 'The connection closed before the host confirmed this command. Refresh before deciding what to do next.' : 'The host connection closed. Connect again to refresh.', 'disconnected', item.command ? id : undefined))
     }
-    this.pending.clear(); this.lateDetails.clear()
+    this.pending.clear(); this.lateDetails.clear(); this.confirmedObserved = new Set()
     if (this.cached) this.publish({ ...this.cached, stale: true })
     this.options.onConnectionChange?.(false)
   }
@@ -306,8 +308,12 @@ export class SocketHostService implements HostService {
     let raw: unknown
     try { raw = JSON.parse(text) } catch { this.frames?.close(); return }
     // Before any reading, so a catalog carried whole by an answer that arrives too late is still remembered.
-    if (field(raw, 'event') === 'shell') this.withCatalog(field(raw, 'state'))
-    else { const result = field(raw, 'result'); this.withCatalog(result); this.withCatalog(field(result, 'shell')) }
+    // A shell naming a catalog this connection does not hold cannot be shown, so the connection starts again, and its
+    // hello carries the catalog whole (ADR-0028, October 16 amendment).
+    const result = field(raw, 'result')
+    const restored = field(raw, 'event') === 'shell' ? this.restoreCatalog(field(raw, 'state'))
+      : this.restoreCatalog(result) && this.restoreCatalog(field(result, 'shell'))
+    if (!restored) { this.frames?.close(); return }
     const parsed = raw !== null && typeof raw === 'object' && 'event' in raw ? hostPushSchema.safeParse(raw) : hostResponseSchema.safeParse(raw)
     if (!parsed.success) { this.unreadable(raw); return }
     const message: HostResponse | HostPush = parsed.data
@@ -364,15 +370,18 @@ export class SocketHostService implements HostService {
   /**
    * Puts a shell's model catalog back as the host wrote it. A shell naming the revision this connection was last sent
    * whole leaves `models` out; one carrying it is remembered. The revision itself is the wire's, and goes no further.
+   * False for a shell naming a revision this connection was never sent.
    */
-  private withCatalog(shell: unknown): void {
+  private restoreCatalog(shell: unknown): boolean {
     const host = field(shell, 'host')
     const revision = field(host, 'modelsRevision')
-    if (typeof revision !== 'number') return
+    if (typeof revision !== 'number') return true
     const wire = host as { models?: unknown; modelsRevision?: unknown }
     if (wire.models !== undefined) this.catalog = { revision, models: wire.models }
     else if (this.catalog?.revision === revision) wire.models = this.catalog.models
+    else return false
     delete wire.modelsRevision
+    return true
   }
   /** Whether the host runs another Sotto version than this client, by what it advertised. */
   private skewed(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion }
@@ -423,7 +432,7 @@ export class SocketHostService implements HostService {
   }
   /** Whether the host's pushes keep `threadId` current here: observed, and held or already being read whole. */
   private follows(threadId: string): boolean {
-    return this.observed.includes(threadId) && (Boolean(this.details.get(threadId)) || this.resyncing.has(threadId))
+    return this.confirmedObserved.has(threadId) && (Boolean(this.details.get(threadId)) || this.resyncing.has(threadId))
   }
   /** Reads a thread whole after a delta could not follow it. A thread too large to send is reported, not asked for again. */
   private resync(threadId: string): void {
@@ -607,7 +616,14 @@ export class SocketHostService implements HostService {
   async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> { if (!this.threadAvailable(threadId)) return null; const generation = this.generation; const detail = this.read(agentThreadDetailResultSchema, await this.call({ op: 'detail', threadId })); this.sameGeneration(generation); this.cacheDetail(threadId, detail); return this.threadDetail(threadId) }
   async readEvents(afterSeq: number, threadId?: string): Promise<HostEventPage> { if (!this.threadAvailable(threadId)) return { events: [], latestSeq: this.latestSeq, hasMore: false }; const page = this.read(hostEventPageSchema, await this.call({ op: 'events', afterSeq, ...(threadId ? { threadId } : {}) })); this.cacheEvents(page, threadId === undefined); return page }
   /** Observing a thread again lets one the host found too large be tried again: the host sends whole each observed thread this client does not hold. */
-  async observe(threadIds: string[]): Promise<void> { threadIds = threadIds.filter(id => this.threadAvailable(id)); this.observed = [...threadIds]; for (const id of threadIds) this.tooLarge.delete(id); await this.call({ op: 'observe', threadIds }) }
+  async observe(threadIds: string[]): Promise<void> {
+    threadIds = threadIds.filter(id => this.threadAvailable(id))
+    const requested = [...threadIds]
+    this.observed = requested; this.confirmedObserved = new Set()
+    for (const id of threadIds) this.tooLarge.delete(id)
+    await this.call({ op: 'observe', threadIds })
+    if (this.observed === requested) this.confirmedObserved = new Set(requested)
+  }
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
   get supportsWatcherControl(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-control') }
   get supportsWatcherReads(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-reads') }

@@ -243,6 +243,11 @@ describe('a remote thread behind a backlog', () => {
     expect(call.mock.calls.map(([operation]) => operation.op)).toEqual(['command'])
     await client.command({ type: 'select-thread', threadId: 'unheld' })
     expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'unheld' })
+    // An observation the host never confirmed keeps nothing current, so the thread is read whole again.
+    call.mockImplementationOnce(async () => { throw new Error('Wait for the pending host request to finish.') })
+    await expect(client.observe(['followed'])).rejects.toThrow('Wait for the pending host request')
+    await client.command({ type: 'select-thread', threadId: 'followed' })
+    expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'followed' })
   })
 
   it('keeps a thread read the host answers after the read timed out, so the deltas after it still apply', async () => {
@@ -271,5 +276,18 @@ describe('a remote thread behind a backlog', () => {
       expect(client.threadDetail('thread')?.revision).toBe(7)
       expect(close).not.toHaveBeenCalled()
     } finally { vi.useRealTimers() }
+  })
+
+  it('closes the connection for a shell naming a catalog it was never sent, so the next hello carries it', () => {
+    const state = emptyDesktopState(hostId)
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    const close = vi.fn(), listener = vi.fn()
+    Object.assign(client, { cached: state, frames: { send: () => true, close } })
+    client.subscribe(listener)
+    const { models, ...host } = state.host
+    void models
+    ;(client as unknown as Transport).receive(JSON.stringify({ v: 1, event: 'shell', state: { ...state, host: { ...host, modelsRevision: 5 } } }))
+    expect(close).toHaveBeenCalledOnce()
+    expect(listener).not.toHaveBeenCalled()
   })
 })
