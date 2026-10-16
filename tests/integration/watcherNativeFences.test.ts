@@ -164,3 +164,52 @@ it('fences a wake-up at the native writer when Watcher stops its worker during p
     expect(f.control.shell().followups!.find(item => item.threadId === f.target.threadId && item.wakeUp)).toMatchObject({ status: 'failed', wakeUp: true })
   } finally { gate.release() }
 }, 60_000)
+
+// A takeover keeps a dispatching item and removes a failed one, and Watcher reads a queued send's failure from its item.
+// The pump lets Watcher read it as soon as the failure is saved; a cancel that removes the item first reports it instead.
+// Either way the send is failed and refunded once, and the taken-over thread holds no reservation.
+it.each(['while it is dispatching', 'just after its failure is saved'])('fails a queued send whose dispatch fails when the user takes over %s', async when => {
+  const f = await fixture(), gate = heldOperation()
+  const queued = (await f.tools.call(f.id, 'send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: f.target, delivery: 'queue', text: 'Synthetic failing queue' })).structuredContent!
+  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  const operationId = (queued.receipt as { operationId: string }).operationId
+  const prepare = f.native.adapter.prepareSkillInput.bind(f.native.adapter)
+  vi.spyOn(f.native.adapter, 'prepareSkillInput').mockImplementation(async (...args) => {
+    const result = await prepare(...args)
+    if (args[1] === 'Synthetic failing queue') { await gate.wait(); throw new Error('Synthetic preparation failure') }
+    return result
+  })
+  const service = f.service as unknown as { takeover(threadId: string, reason: string): void }
+  const takeover = () => service.takeover(f.target.threadId, 'native-user-send')
+  // Taken over just as the failure is saved, the takeover's cancel runs right behind it in the queue's lane.
+  const store = (f.control as unknown as { followupStore: { settle(id: string, status: string, error?: string): Promise<void> } }).followupStore
+  const settle = store.settle.bind(store)
+  vi.spyOn(store, 'settle').mockImplementation((id, status, error) => {
+    const saved = settle(id, status, error)
+    if (status === 'failed' && when !== 'while it is dispatching') takeover()
+    return saved
+  })
+  try {
+    await f.native.driver.completeTurn(f.binding.sessionId, 'Synthetic completion before the queue')
+    await gate.entered
+    expect(f.service.state().receipts.find(item => item.id === operationId)?.deliveryState).toBe('dispatching')
+    // From here Watcher observes nothing, not even the pump's read after the failure, so only the cancel's report can record it.
+    const silenced = when === 'while it is dispatching' ? undefined : vi.spyOn(f.service, 'observe').mockImplementation(() => undefined)
+    if (when === 'while it is dispatching') takeover()
+    gate.release()
+    await vi.waitFor(() => expect(f.service.state().receipts.find(item => item.id === operationId)?.deliveryState).toBe('failed'))
+    expect(f.service.state().watchedThreads.find(item => item.target.threadId === f.target.threadId)?.participation[0]?.takeover?.reason).toBe('native-user-send')
+    // The first prompt stays counted; the failed queued one is refunded once. The taken-over thread holds no place.
+    expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
+    expect(f.control.watcherRecord().reservations).toEqual([]); expect(f.service.state().inFlight).toBe(0)
+    const messageId = f.service.state().receipts.find(item => item.id === operationId)!.messageId; expect(messageId).toBeTruthy()
+    expect((await f.native.driver.requests()).some(item => item.method === 'turn/start' && item.params?.clientUserMessageId === messageId)).toBe(false)
+    // Were the same message to show up in the thread after all, the send was delivered and takes its refunded prompt back.
+    silenced?.mockRestore()
+    const snapshot = structuredClone(f.control.watcherSnapshot()), thread = snapshot.threads.find(item => item.id === f.target.threadId)!
+    thread.messages.push({ ...thread.messages.findLast(item => item.role === 'user')!, id: messageId! })
+    f.service.observe(snapshot, new Set())
+    expect(f.service.state().receipts.find(item => item.id === operationId)?.deliveryState).toBe('accepted')
+    expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(2)
+  } finally { gate.release() }
+}, 60_000)
