@@ -116,6 +116,16 @@ describe('continuing a Codex agent as its own thread', () => {
     expect(threads).not.toContain('archived'); expect(threads).not.toContain('gone'); expect(threads).not.toContain('unknown')
   })
 
+  it('binds nothing when Codex does not confirm the fork in time, and leaves the copy it made alone', async () => {
+    const { f, childId, agentId } = await withFinishedAgent()
+    await f.script({ holdReply: 'thread/fork' })
+    expect(await f.host.forkThread!({ commandId: 'late', threadId: 'late', title: 'stream_perf', modelId: f.modelId, source: { threadId: 'parent', agentId } }))
+      .toEqual({ accepted: false, uncertain: true })
+    // The app-server the fork was asked of is let go, so its answer, if it ever comes, binds no thread.
+    expect(Object.values((await readState(f)).threads).filter(thread => thread.forkedFromId === childId)).toHaveLength(1)
+    expect((await f.host.snapshot()).threads.map(thread => thread.id)).toEqual(['parent'])
+  })
+
   it('says plainly when Codex no longer has the conversation a fork came from', async () => {
     const { f, childId, agentId } = await withFinishedAgent()
     await f.host.forkThread!({ commandId: 'fork', threadId: 'continued', title: 'stream_perf', modelId: f.modelId, source: { threadId: 'parent', agentId } })

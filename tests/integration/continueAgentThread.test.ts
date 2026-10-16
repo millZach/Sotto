@@ -1,9 +1,11 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
+import { mkdir, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentThread } from '../../src/shared/agents'
-import { AGENT_FORK_GONE, AGENT_STILL_WORKING, START_HANDOVER_CLOSE } from '../../src/shared/threadStarts'
+import { AGENT_FORK_GONE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, START_HANDOVER_CLOSE } from '../../src/shared/threadStarts'
 import type { AgentHostCommand, ThreadForkRequest } from '../../src/main/agents/host'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -89,6 +91,60 @@ describe('continuing a Claude Code agent as its own thread', () => {
     const answer = await f.control.commandShell({ type: 'continue-agent', threadId: f.sotto('claude'), agentId, newThreadId: randomUUID(), modelId: f.model('claude') })
     expect(answer.error).toBe(AGENT_STILL_WORKING)
     expect(f.control.shell().host.threads).toHaveLength(before)
+  })
+
+  it('refuses an agent Sotto last saw working, since it has not seen it finish', async () => {
+    const f = await fixture()
+    const agentId = await f.agent('claude', 'running')
+    await f.control.commandShell({ type: 'disconnect', provider: 'claude' })
+    await expect.poll(async () => (await f.workspace.host.subagentPage({ threadId: f.sotto('claude') })).rows.find(row => row.id === agentId)?.status).toBe('unknown')
+    const before = f.workspace.host.workspaceSnapshot().threads.length
+    await expect(f.workspace.host.continueAgent({ threadId: randomUUID(), sourceThreadId: f.sotto('claude'), agentId, modelId: f.model('claude') })).rejects.toThrow(AGENT_NOT_SEEN_FINISHING)
+    expect(f.workspace.host.workspaceSnapshot().threads).toHaveLength(before)
+  })
+
+  it('sends the handover again with a first message the provider refused', async () => {
+    const f = await fixture()
+    const agentId = await f.agent('claude')
+    const newThreadId = randomUUID()
+    expect((await f.control.commandShell({ type: 'continue-agent', threadId: f.sotto('claude'), agentId, newThreadId, modelId: f.model('claude') })).error).toBeNull()
+    // The provider's session starts, then it refuses the message itself.
+    const adapter = f.workspace.adapters.claude, execute = adapter.execute.bind(adapter)
+    let refuse = true
+    adapter.execute = async command => {
+      if (command.type === 'send' && refuse) { refuse = false; throw new Error('Claude Code refused the message.') }
+      return execute(command)
+    }
+    expect((await f.control.commandShell({ type: 'manual-send', threadId: newThreadId, draftId: randomUUID(), text: 'First try.' })).error).not.toBeNull()
+    expect(f.thread(newThreadId)!.nativeSessionStarted).toBe(true)
+    await expect.poll(() => f.thread(newThreadId)!.startedFrom?.handover?.sent).toBeUndefined()
+    expect((await f.control.commandShell({ type: 'manual-send', threadId: newThreadId, draftId: randomUUID(), text: 'Second try.' })).error).toBeNull()
+    const [send] = f.sends('claude')
+    expect(send!.text.startsWith('This is a handover from an agent of another Sotto thread.')).toBe(true)
+    expect(send!.text.endsWith(`${START_HANDOVER_CLOSE}\n\nSecond try.`)).toBe(true)
+  })
+
+  it('starts in the source thread’s own worktree when it continues in the same folder', async () => {
+    const f = await fixture()
+    const agentId = await f.agent('claude')
+    const folder = join(f.workspace.root, 'source-worktree'); await mkdir(folder)
+    // The parent works in a worktree of its own, not in the project folder.
+    const saved = Reflect.get(f.workspace.host, 'state') as { snapshot: { threads: AgentThread[] } }
+    saved.snapshot.threads.find(thread => thread.id === f.sotto('claude'))!.worktree = { mode: 'independent', status: 'ready', path: folder, reused: true }
+    const newThreadId = randomUUID()
+    expect((await f.control.commandShell({ type: 'continue-agent', threadId: f.sotto('claude'), agentId, newThreadId, modelId: f.model('claude'), workingCopy: 'shared' })).error).toBeNull()
+    expect(f.workspace.host.workspaceSnapshot().threads.find(thread => thread.id === newThreadId)!.worktree).toMatchObject({ mode: 'independent', existingWorktreePath: folder })
+  })
+
+  it('keeps no agent title on the saved record while Keep local history is off', async () => {
+    const f = await fixture()
+    const agentId = await f.agent('claude')
+    const newThreadId = randomUUID()
+    expect((await f.control.commandShell({ type: 'continue-agent', threadId: f.sotto('claude'), agentId, newThreadId, modelId: f.model('claude') })).error).toBeNull()
+    f.workspace.setHistory(false); await f.workspace.host.privacyChanged()
+    const record = (JSON.parse(await readFile(join(f.workspace.root, 'workspace.json'), 'utf8')) as { snapshot: { threads: AgentThread[] } }).snapshot.threads.find(thread => thread.id === newThreadId)!
+    expect(record.startedFrom).toMatchObject({ threadId: f.sotto('claude'), from: 'agent', route: 'handover', handover: { thin: true } })
+    expect(record.startedFrom).not.toHaveProperty('agentTitle')
   })
 
   it('makes nothing on stable, where continuing agents is an Owl feature', async () => {

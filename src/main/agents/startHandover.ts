@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
-import type { AgentHostSnapshot, AgentMessage, AgentThread } from '../../shared/agents'
+import type { AgentHostSnapshot, AgentThread } from '../../shared/agents'
 import { startHandoverPrefix } from '../../shared/threadStarts'
 import type { StartHandoverSent } from './host'
+import { recordedPrefix } from './watcherHandover'
 
 /**
  * The handover a thread that began from another goes with on its first message (#1028), ahead of the user's words in the
@@ -18,45 +19,49 @@ export function startHandoverSend(text: string, messageId: string): { prefix: st
   return { prefix, sent: { messageId, prefixLength: prefix.length, prefixDigest: sha256(prefix) } }
 }
 
-/** The handover a sent message begins with, when its words still match the record; otherwise the message is shown whole. */
-function split(thread: AgentThread, message: AgentMessage, sent: StartHandoverSent, from: AgentThread['providerId']): AgentMessage {
-  const length = sent.prefixLength
-  if (!Number.isSafeInteger(length) || length <= 0 || length > message.text.length) return message
-  const prefix = message.text.slice(0, length)
-  if (sha256(prefix) !== sent.prefixDigest) return message
-  const counts = thread.startedFrom?.handover?.counts
-  return { ...message, text: message.text.slice(length),
-    ...(counts && from ? { handover: { text: prefix.trimEnd(), provider: from, counts } } : {}) }
-}
+/**
+ * Each thread as shown, by the thread it was shown from: the coordinator hands the same thread object on while nothing in
+ * it changed, so an update that changed nothing here builds nothing, and each list of threads is shown once.
+ */
+const shownThreads = new WeakMap<AgentThread, { readonly from: AgentThread['providerId']; readonly shown: AgentThread }>()
+const shownLists = new WeakMap<readonly AgentThread[], readonly AgentThread[]>()
 
-/** Each provider message shown once per record, so a snapshot taken again reuses the split it made. */
-const shownCopies = new WeakMap<AgentMessage, { readonly text: string; readonly sent: StartHandoverSent; readonly shown: AgentMessage }>()
+function shownThread(thread: AgentThread, from: AgentThread['providerId']): AgentThread {
+  const sent = thread.startedFrom?.handover?.sent
+  const counts = thread.startedFrom?.handover?.counts
+  if (!sent || !counts || !thread.messages.length) return thread
+  const cached = shownThreads.get(thread)
+  if (cached && cached.from === from) return cached.shown
+  const index = thread.messages.findIndex(message => message.id === sent.messageId && message.role === 'user' && !message.handover)
+  const message = index < 0 ? undefined : thread.messages[index]!
+  const prefix = message ? recordedPrefix(message.text, sent) : undefined
+  let shown = thread
+  if (message && prefix !== undefined && from) {
+    const messages = thread.messages.slice()
+    messages[index] = { ...message, text: message.text.slice(prefix.length), handover: { text: prefix.trimEnd(), provider: from, counts } }
+    shown = { ...thread, messages }
+  }
+  shownThreads.set(thread, { from, shown })
+  return shown
+}
 
 /**
  * Threads that began from another as everything user-facing shows them: the first message that went with a handover is
- * the user's words, with the handover beside them. Only the message the thread's record names is looked at, and only its
- * recorded characters, checked against their digest, come off. A snapshot with no such thread is handed back as it is.
+ * the user's words, with the handover beside them, from the provider it came from. Only the message the thread's record
+ * names is looked at, and only its recorded characters, checked against their digest, come off. A snapshot with no such
+ * thread is handed back as it is.
  */
 export function startHandoversShown(snapshot: AgentHostSnapshot): AgentHostSnapshot {
-  if (!snapshot.threads.some(thread => thread.startedFrom?.handover?.sent !== undefined)) return snapshot
-  const shown = (thread: AgentThread, message: AgentMessage): AgentMessage => {
-    const sent = thread.startedFrom?.handover?.sent
-    if (!sent || message.role !== 'user' || message.id !== sent.messageId || message.handover) return message
-    const cached = shownCopies.get(message)
-    if (cached?.sent.prefixDigest === sent.prefixDigest && cached.sent.prefixLength === sent.prefixLength && cached.text === message.text) return cached.shown
-    // The provider the handover came from: its source thread's, or this thread's own when the source is not listed.
-    const from = snapshot.threads.find(item => item.id === thread.startedFrom?.threadId)?.providerId ?? thread.providerId
-    const result = split(thread, message, sent, from)
-    shownCopies.set(message, { text: message.text, sent, shown: result })
-    return result
-  }
+  const cached = shownLists.get(snapshot.threads)
+  if (cached) return cached === snapshot.threads ? snapshot : { ...snapshot, threads: cached as AgentThread[] }
+  if (!snapshot.threads.some(thread => thread.startedFrom?.handover?.sent !== undefined)) { shownLists.set(snapshot.threads, snapshot.threads); return snapshot }
   let changed = false
   const threads = snapshot.threads.map(thread => {
-    if (thread.startedFrom?.handover?.sent === undefined || !thread.messages.length) return thread
-    const messages = thread.messages.map(message => shown(thread, message))
-    if (messages.every((message, index) => message === thread.messages[index])) return thread
-    changed = true
-    return { ...thread, messages }
+    const shown = shownThread(thread, snapshot.threads.find(item => item.id === thread.startedFrom?.threadId)?.providerId ?? thread.providerId)
+    if (shown !== thread) changed = true
+    return shown
   })
+  const list = changed ? threads : snapshot.threads
+  shownLists.set(snapshot.threads, list)
   return changed ? { ...snapshot, threads } : snapshot
 }

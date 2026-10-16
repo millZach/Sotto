@@ -12,7 +12,7 @@ Codex runs each sub-agent as a full Codex thread, and Codex 0.162.1's app-server
 
 ## Decision
 
-**1. An agent continues as a thread of its own, and leaves its parent as it was.** A finished agent's row in the roster offers Continue as a thread. It makes a new Sotto thread in the parent's project, with its own Sotto thread ID, in the same folder by default or a new worktree. The agent's row and the parent thread do not change. A working agent is refused until it finishes.
+**1. An agent continues as a thread of its own, and leaves its parent as it was.** A finished agent's row in the roster offers Continue as a thread. It makes a new Sotto thread in the parent's project, with its own Sotto thread ID, in the same folder by default or a new worktree. The same folder is the parent's own: its worktree when it works in one, so the agent's work is where the new thread starts. A new worktree starts from the branch the parent works on. The agent's row and the parent thread do not change. A working agent is refused until it finishes, and so is one Sotto last saw working before a restart or a lost connection, until it is seen to finish.
 
 - **Codex:** the new thread is Codex's own durable fork of the agent's thread, made without its turns in the answer and read back with `thread/turns/list`. Sotto never reads the agent's task: it travels inside the copy, encrypted, and the new thread opens with a note Sotto writes saying so, in place of a brief it cannot show.
 - **Claude Code:** the new thread starts from a **thin handover** of the agent's task and the result it reported, which says plainly that it is thin. It goes ahead of the new thread's first message, as the handover does after a Watcher provider change, so no turn is spent on it.
@@ -24,11 +24,15 @@ Codex runs each sub-agent as a full Codex thread, and Codex 0.162.1's app-server
 
 **4. A Codex fork depends on its source's rollout.** Codex keeps a fork's history in its source's rollout. If that rollout is removed, Codex can no longer read, resume or fork the copy; the thread then says so in plain words and keeps what Sotto shows. An archived source still reads. Sotto never archives, unarchives or deletes a Codex rollout: an agent whose conversation Codex keeps archived is refused in plain words, and the user unarchives it in Codex. When Codex no longer has an agent's conversation at all, the row offers a thin handover of the agent's title and result instead.
 
-**5. Refusals make nothing, and are said where they were asked.** A refused or unconfirmed fork leaves no thread behind, and a new worktree made for it is removed again. An unconfirmed fork is never asked for twice; Codex may have kept a copy, which Sotto leaves alone. A refusal answers in the agent's row, never as the window's banner.
+**5. Refusals make nothing, and are said where they were asked.** A refused or unconfirmed fork leaves no thread behind, and a new worktree made for it is removed again. A worktree that cannot be removed then keeps the thread, as an ordinary unstarted one, and the refusal says so: the worktree sweep and Remove folder reach only a thread's worktree (ADR-0041), so a folder without one would be lost track of. An unconfirmed fork is never asked for twice, and Codex's answer to it, should one come later, binds nothing; Codex may have kept a copy, which Sotto leaves alone. A refusal answers in the agent's row, never as the window's banner.
+
+**5a. The handover goes with the first message the provider takes.** A first send the provider refuses puts the handover back, and the next send carries it, even when the provider's session had already started. Once a send went with it, or may have, no later message carries it again.
 
 **6. Paired hosts.** A thread on a paired host continues its agents on that host. The command is on the host's remote allow-list, and the host lists the optional `thread-starts` feature when it offers it; an older host is refused in plain words and nothing is made.
 
-**7. Owl.** `continue-agent-thread` is an Owl feature. Stable shows and starts none of it, and keeps a forked thread's record whole.
+**7. Owl.** `continue-agent-thread` is an Owl feature. Stable shows and starts none of it, and keeps a forked thread's record whole. A first message that went with a handover shows on stable as it was sent.
+
+**8. History off keeps no agent words.** With Keep local history off, the saved record of where a thread began keeps the source's thread ID and the route, not the agent's title, which may be its task's words (ADR-0016). The handover itself is built from Sotto's roster whenever it is needed and kept nowhere else. The new thread's own title is a thread title, kept as every thread's is, and the user can rename it.
 
 ## Consequences
 

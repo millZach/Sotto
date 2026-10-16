@@ -24,7 +24,7 @@ import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type 
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { confirmedSettingsSnapshot, type AgentContinuation, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { agentHandover, type AgentHandover } from './agentHandover'
-import { AGENT_HANDOVER_UNAVAILABLE, AGENT_STILL_WORKING } from '../../shared/threadStarts'
+import { AGENT_HANDOVER_UNAVAILABLE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING } from '../../shared/threadStarts'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual } from './threadStore'
 import { readHandover, type Handover, type HandoverStore } from './handover'
 import { placeVisuals } from './visualPlacement'
@@ -377,6 +377,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const row = this.subagentStore.row(source.id, request.agentId)
     if (!row || row.kind === 'workflow') throw new Error('Sotto no longer lists this agent, so nothing was made. Open Agents again and choose it.')
     if (row.status === 'running') throw new Error(AGENT_STILL_WORKING)
+    if (row.status === 'unknown') throw new Error(AGENT_NOT_SEEN_FINISHING)
     const fork = request.handover !== true && source.providerId === 'codex'
     const handover = fork ? undefined : this.agentStartHandover(source, row, row.assignmentId)
     if (!fork && !handover) throw new Error(AGENT_HANDOVER_UNAVAILABLE)
@@ -392,10 +393,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private async startThread(request: Omit<AgentContinuation, 'sourceThreadId' | 'agentId' | 'handover'> & { readonly title: string; readonly startedFrom: AgentThreadStart
     readonly fork?: { readonly agentId?: string; readonly messageId?: string } }): Promise<AgentHostResult> {
     const source = this.thread(request.startedFrom.threadId)
+    // Same folder is the source thread's own: its worktree when it has one, else the project folder it shares.
+    const own = source.worktree?.mode === 'independent' ? source.worktree.path ?? source.worktree.existingWorktreePath : undefined
+    const workingCopy = request.workingCopy === 'independent' ? { workingCopy: 'independent' as const, ...(request.baseBranch ? { baseBranch: request.baseBranch } : {}),
+      ...(request.startFromOrigin !== undefined ? { startFromOrigin: request.startFromOrigin } : {}) }
+      : own ? { workingCopy: 'independent' as const, existingWorktreePath: own } : { workingCopy: 'shared' as const }
     await this.execute({ type: 'create-thread', commandId: randomUUID(), threadId: request.threadId, projectId: source.projectId, title: request.title, titleSource: 'user', modelId: request.modelId,
       ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}), ...(request.runtimeMode ? { runtimeMode: request.runtimeMode } : {}),
-      ...(request.providerMode ? { providerMode: request.providerMode } : {}), ...(request.workingCopy ? { workingCopy: request.workingCopy } : {}),
-      ...(request.baseBranch ? { baseBranch: request.baseBranch } : {}), ...(request.startFromOrigin !== undefined ? { startFromOrigin: request.startFromOrigin } : {}) })
+      ...(request.providerMode ? { providerMode: request.providerMode } : {}), ...workingCopy })
     return this.onLane(request.threadId, async () => {
       this.thread(request.threadId).startedFrom = request.startedFrom
       if (!request.fork) { this.dirty = true; await this.flush(); this.publish(); return { accepted: true } }
@@ -412,22 +417,43 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}), ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}),
           ...(thread.providerMode ? { providerMode: thread.providerMode } : {}), source: { threadId: source.id, ...request.fork } })
         if (!result.accepted) throw new Error(`${PROVIDER_LABELS[source.providerId!]} did not confirm the copy, so Sotto made no thread for it. It may have kept one, which Sotto leaves alone. Nothing in “${source.title}” changed. Try again.`)
-      } catch (error) { await this.discardStart(request.threadId); throw error }
+      } catch (error) {
+        if (await this.discardStart(request.threadId)) throw error
+        const message = error instanceof Error ? error.message : 'The copy was not made.'
+        throw new Error(`${message} Its new worktree couldn’t be removed, so it stays with an empty thread, “${request.title}”. Remove the thread’s folder or use the thread.`, { cause: error })
+      }
       this.accept(await this.inner.snapshot(source.providerId)); await this.flush(); this.publish()
       return { accepted: true }
     })
   }
-  /** A thread a refused or unconfirmed fork was to be (#1028): its record goes, and a worktree made for it is removed again. */
-  private async discardStart(threadId: string): Promise<void> {
+  /**
+   * A thread a refused or unconfirmed fork was to be (#1028): its record goes, and a worktree made for it is removed again.
+   * A worktree that cannot be removed keeps its thread, made an ordinary unstarted one, so the folder is not lost track of:
+   * the worktree sweep and the user's own Remove folder reach only a thread's (ADR-0041). Answers whether the record went.
+   */
+  private async discardStart(threadId: string): Promise<boolean> {
     const worktree = this.state.snapshot.threads.find(item => item.id === threadId)?.worktree
-    // A fresh worktree holds nothing of the user's; one that cannot go stays for the worktree sweep (ADR-0041).
-    if (worktree?.mode === 'independent' && worktree.path && !worktree.reused) await this.worktrees.reclaim(worktree, { automatic: true }).catch(() => undefined)
+    if (worktree?.mode === 'independent' && worktree.path && !worktree.reused) {
+      // A fresh worktree holds nothing of the user's. No status read is left working in it when it goes.
+      const releaseStatus = this.gitStatus?.hold?.(worktree.path)
+      try { await this.gitStatus?.idle?.(worktree.path); await this.worktrees.reclaim(worktree, { automatic: true }) }
+      catch {
+        const thread = this.thread(threadId), creation = this.state.creations.find(item => item.threadId === threadId)
+        delete thread.startedFrom; thread.nativeSessionStarted = false
+        if (creation) creation.phase = 'unstarted'
+        this.dirty = true
+        try { await this.flush() } catch { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.' }
+        this.publish()
+        return false
+      } finally { releaseStatus?.() }
+    }
     this.state.snapshot.threads = this.state.snapshot.threads.filter(item => item.id !== threadId)
     this.state.creations = this.state.creations.filter(item => item.threadId !== threadId)
     this.privateLegacyMessages.delete(threadId)
     this.dirty = true
     try { await this.flush() } catch { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.' }
     this.publish()
+    return true
   }
   private agentStartHandover(source: Pick<AgentThread, 'id' | 'title' | 'providerId'>, row: SubagentRow, assignmentId: string): AgentHandover | undefined {
     if (!source.providerId || this.subagentUnavailable) return undefined
@@ -2809,6 +2835,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             if (!this.historyEnabled()) for (const thread of saved.snapshot.threads.filter(thread => this.visible(thread))) {
               thread.requests = []
               delete thread.activities
+              // The agent a thread was continued from is named by its title, which may be its task's words (#1028).
+              if (thread.startedFrom?.agentTitle !== undefined) { const { agentTitle, ...start } = thread.startedFrom; void agentTitle; thread.startedFrom = start }
               if (thread.nativeSessionStarted) {
                 thread.historyStatus = 'loading'
                 delete thread.historyError

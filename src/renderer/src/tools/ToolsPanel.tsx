@@ -261,13 +261,15 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // Continue as a thread on a finished agent (#1028; Owl only): the agents Codex and Claude Code threads report.
   const startsOn = useThreadStarts()
   const continueModels = thread ? hostForThread(state.host, thread).models : undefined
+  const sourceRepository = thread?.worktree?.git?.isRepository === true, sourceBranch = thread?.worktree?.git?.branch ?? null
   const continuation = useMemo<AgentContinueOptions | undefined>(() => {
     if (!startsOn || !thread || !continueModels || !command || (thread.providerId !== 'codex' && thread.providerId !== 'claude') || thread.kind === 'watcher' || thread.kind === 'watcher-history') return undefined
     return { threadId: thread.id, threadTitle: thread.title, provider: thread.providerId, projectId: thread.projectId, remote: thread.remoteHost === true,
       where: thread.remoteHost ? thread.hostLabel ?? 'The host' : 'This computer', models: continueModels, sourceModelId: thread.modelId, command,
+      ...(sourceRepository ? { sourceBranch: { currentBranch: sourceBranch } } : {}),
       workingCopyOptions: thread.remoteHost ? undefined : window.sotto?.agents?.workingCopyOptions }
   // The thread is read by the fields the form shows, so a publish that changes none of them keeps the form as it is.
-  }, [startsOn, thread?.id, thread?.title, thread?.providerId, thread?.projectId, thread?.remoteHost, thread?.hostLabel, thread?.modelId, thread?.kind, continueModels, command])
+  }, [startsOn, thread?.id, thread?.title, thread?.providerId, thread?.projectId, thread?.remoteHost, thread?.hostLabel, thread?.modelId, thread?.kind, continueModels, command, sourceRepository, sourceBranch])
   const filesFor = thread?.remoteHost ? hostFiles : bridge
   const changesFor = thread?.remoteHost ? hostChanges : changesBridge
   const workingCopyTarget = chrome.pinnedThreadId ?? focusedThreadId

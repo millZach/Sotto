@@ -92,7 +92,7 @@ describe('Continue as a thread', () => {
     expect(form.textContent).toContain('This handover is thin.')
     expect(form.textContent).toContain('Carries the task and the result. Leaves out everything the agent did on the way.')
     expect(form.textContent).toContain('forge')
-    // A paired host's thread keeps its folder; a worktree is made on the host machine itself.
+    // A paired host's thread whose Git status has not arrived offers only its own folder.
     expect(screen.queryByRole('option', { name: /New worktree/u })).toBeNull()
     expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['GPT-5.5', 'GPT-5.4', 'Sonnet 5.5', 'Same folder'])
     await user.click(screen.getByRole('button', { name: 'Start the thread' }))
@@ -103,5 +103,39 @@ describe('Continue as a thread', () => {
     const counts = { total: 2, carried: 2, tooLong: 0, notCarried: 0, images: 0, files: 0, visuals: 0, toolRecords: 0, historyKept: true, answered: true }
     expect(thinLedger(counts, 'claude')).toEqual({ carried: 'the task and the result', leftOut: 'everything the agent did on the way' })
     expect(thinLedger({ ...counts, total: 1, carried: 1 }, 'codex')).toEqual({ carried: 'the agent’s title and the result', leftOut: 'its task, which Codex kept encrypted and everything the agent did on the way' })
+  })
+
+  it('says a part too long to carry was left out, and never claims it', () => {
+    const counts = { total: 2, carried: 1, tooLong: 1, notCarried: 0, images: 0, files: 0, visuals: 0, toolRecords: 0, historyKept: true, answered: true }
+    expect(thinLedger(counts, 'claude')).toEqual({ carried: 'only one of the task and the result', leftOut: 'the other, too long to carry and everything the agent did on the way' })
+    expect(thinLedger({ ...counts, carried: 0, tooLong: 2 }, 'claude')).toEqual({ carried: 'only the agent’s title', leftOut: 'the task and the result, too long to carry and everything the agent did on the way' })
+  })
+
+  it('refuses an agent Sotto last saw working before any press', () => {
+    show(options(vi.fn()), row({ status: 'unknown' }))
+    expect(screen.getByRole('button', { name: 'Continue Check streaming performance as its own thread' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByText('Sotto last saw it working. Continue it once it shows as finished.')).toBeTruthy()
+  })
+
+  it('starts a new worktree from the branch its thread works on, on a paired host too', async () => {
+    const user = userEvent.setup()
+    const command = vi.fn(async () => answer(null))
+    show(options(command, { remote: true, where: 'forge', workingCopyOptions: undefined, sourceBranch: { currentBranch: 'sotto/audio' } }))
+    await user.click(screen.getByRole('button', { name: /as its own thread/u }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Working copy for the new thread' }), 'New worktree from sotto/audio')
+    await user.click(screen.getByRole('button', { name: 'Start the thread' }))
+    expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'continue-agent', workingCopy: 'independent', baseBranch: 'sotto/audio' }))
+  })
+
+  it('lets Escape go past the row once the form is closed', async () => {
+    const user = userEvent.setup()
+    const outside = vi.fn()
+    render(<div onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) outside() }}><AgentContinueContext.Provider value={options(vi.fn())}><AgentContinue row={row()} /></AgentContinueContext.Provider></div>)
+    await user.click(screen.getByRole('button', { name: /as its own thread/u }))
+    await user.keyboard('{Escape}')
+    expect(outside).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /as its own thread/u })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(outside).toHaveBeenCalledTimes(1)
   })
 })

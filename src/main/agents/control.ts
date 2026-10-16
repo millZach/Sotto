@@ -734,7 +734,7 @@ export class AgentControl {
     // own-change line already shows.
     snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(watcherHandoversShown(snapshot, this.watcher.requests), watcherMessageRequests(this.watcher.requests)))
     // A thread that began from another shows its first message as the user's words, with its handover beside them (#1028).
-    snapshot = startHandoversShown(snapshot)
+    if (this.dependencies.threadStartsEnabled === true) snapshot = startHandoversShown(snapshot)
     if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
     return this.questionPages.decorate(snapshot)
   }
@@ -3464,7 +3464,9 @@ export class AgentControl {
     if (this.dependencies.threadStartsEnabled !== true) return undefined
     const thread = this.state.host.threads.find(item => item.id === command.threadId)
     const start = thread?.startedFrom
-    if (!thread || start?.route !== 'handover' || !start.handover || start.handover.sent || thread.nativeSessionStarted !== false) return undefined
+    // Not by whether the provider's session started: a first send it refused after starting one is sent again with it.
+    if (!thread || start?.route !== 'handover' || !start.handover || start.handover.sent
+      || thread.messages.some(message => message.role === 'user' && message.id !== command.messageId)) return undefined
     const built = this.dependencies.host.startHandover?.(thread.id)
     if (!built) {
       await this.dependencies.host.markStartHandover?.(thread.id, 'drop').catch(() => undefined)

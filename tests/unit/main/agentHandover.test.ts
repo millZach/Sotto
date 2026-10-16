@@ -71,4 +71,15 @@ describe('a started thread’s first message as everything shows it', () => {
     const plain = snapshot({ ...thread(), startedFrom: undefined })
     expect(startHandoversShown(plain)).toBe(plain)
   })
+
+  it('shows an unchanged thread once, so an update that changed nothing in it builds nothing', () => {
+    const started = thread(), other: AgentThread = { ...thread(), id: 'other', startedFrom: undefined }
+    const first = snapshot(started, other)
+    const shown = startHandoversShown(first)
+    expect(startHandoversShown(first).threads).toBe(shown.threads)
+    // The next update hands on a new list holding the same thread objects: each is shown as it was, without a copy.
+    const next = startHandoversShown(snapshot(started, other))
+    expect(next.threads[0]).toBe(shown.threads[0])
+    expect(next.threads[1]).toBe(other)
+  })
 })

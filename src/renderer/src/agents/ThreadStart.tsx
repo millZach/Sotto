@@ -29,8 +29,12 @@ export interface ThreadStartView {
   /** The words of a handover still waiting for the first message, read only when asked for. */
   readonly readHandover: (() => Promise<string | null>) | undefined
 }
-export const ThreadStartContext = createContext<ThreadStartView | null>(null)
-export function useThreadStartView(): ThreadStartView | null { return useContext(ThreadStartContext) }
+/**
+ * The view of the thread a transcript shows, `'off'` for a thread that began from another while the feature is off, whose
+ * handover is then not drawn at all, and null for every other thread.
+ */
+export const ThreadStartContext = createContext<ThreadStartView | 'off' | null>(null)
+export function useThreadStartView(): ThreadStartView | 'off' | null { return useContext(ThreadStartContext) }
 
 /** The view of a thread that began from another, or null for every other thread and while the feature is off. */
 export function threadStartView(thread: Pick<AgentThread, 'id' | 'startedFrom' | 'providerId'>, source: Pick<AgentThread, 'title' | 'providerId'> | undefined,
@@ -43,20 +47,22 @@ export function threadStartView(thread: Pick<AgentThread, 'id' | 'startedFrom' |
 }
 
 const named = (title: string | undefined): ReactNode => title ? <strong>{title}</strong> : 'a thread that is no longer listed'
+/** The agent by its title, which is not kept while Keep local history is off. */
+const agentNamed = (title: string | undefined): ReactNode => title ? <>the agent <strong>{title}</strong></> : 'one of its agents'
 
 /** The note at the head of a thread an agent was continued into: where it came from and what came with it. */
 export function ThreadStartNote({ view }: { readonly view: ThreadStartView }): ReactNode {
   const { start, sourceTitle, sourceProvider } = view
   if (start.from !== 'agent') return null
-  const agent = start.agentTitle ? <strong>{start.agentTitle}</strong> : 'an agent'
+  const agent = agentNamed(start.agentTitle)
   const open = view.openSource && sourceTitle ? <> <button type="button" className="thread-start-note__open tt-focusable" onClick={view.openSource}>Open {sourceTitle}</button></> : null
   if (start.route === 'fork') {
     const provider = sourceProvider ? PROVIDER_LABELS[sourceProvider] : 'The provider'
     return <div className="thread-start-note" role="note"><GitFork size={15} aria-hidden="true" />
-      <p>{provider} forked the agent {agent} from {named(sourceTitle)} into this thread, {clockLabel(Date.parse(start.at))}. It carried the agent’s whole conversation, including its task, which {provider} keeps encrypted, so Sotto can’t show it here. The agent’s row in {sourceTitle ?? 'that thread'} is unchanged.{open}</p></div>
+      <p>{provider} forked {agent} from {named(sourceTitle)} into this thread, {clockLabel(Date.parse(start.at))}. It carried the agent’s whole conversation, including its task, which {provider} keeps encrypted, so Sotto can’t show it here. The agent’s row in {sourceTitle ?? 'that thread'} is unchanged.{open}</p></div>
   }
   return <div className="thread-start-note" role="note"><CornerUpLeft size={15} aria-hidden="true" />
-    <p>Continued from the agent {agent} in {named(sourceTitle)}.{open}</p></div>
+    <p>Continued from {agent} in {named(sourceTitle)}.{open}</p></div>
 }
 
 /** What a thin handover carried and left out, in words. */
@@ -64,8 +70,10 @@ export function thinLedger(counts: HandoverCounts, provider: ProviderId | undefi
   // Codex keeps a v2 agent's task encrypted, so a Codex agent's handover carries its title in the task's place.
   const task = counts.total >= 2 ? 'the task' : provider === 'codex' ? 'the agent’s title' : null
   const result = counts.answered ? 'the result' : null
-  const carried = [task, result].filter(Boolean).join(' and ') || 'the agent’s title'
-  const leftOut = [counts.tooLong > 0 ? `${counts.tooLong === 1 ? 'one part' : `${counts.tooLong} parts`} too long to carry` : '',
+  const whole = [task, result].filter(Boolean).join(' and ') || 'the agent’s title'
+  // A part too long to carry is left out whole; the counts say how many, not which.
+  const carried = counts.tooLong === 0 ? whole : counts.carried === 0 ? 'only the agent’s title' : `only one of ${whole}`
+  const leftOut = [counts.tooLong > 0 ? counts.carried === 0 ? `${whole}, too long to carry` : 'the other, too long to carry' : '',
     counts.total < 2 && provider === 'codex' ? 'its task, which Codex kept encrypted' : '', 'everything the agent did on the way'].filter(Boolean)
   return { carried, leftOut: leftOut.length < 2 ? leftOut.join('') : `${leftOut.slice(0, -1).join(', ')} and ${leftOut.at(-1)!}` }
 }
@@ -99,7 +107,7 @@ export function StartHandoverCard({ view, handover, createdAt }: { readonly view
     finally { setReading(false) }
   }
   const from = view.start.from === 'agent'
-    ? <>From the agent {view.start.agentTitle ? <strong>{view.start.agentTitle}</strong> : 'an agent'} in {named(view.sourceTitle)}.</>
+    ? <>From {agentNamed(view.start.agentTitle)} in {named(view.sourceTitle)}.</>
     : <>From {named(view.sourceTitle)}.</>
   return <article className="thread-message thread-start-handover" data-role="user" data-from="sotto" aria-label="Handover this thread started from"
     onKeyDown={event => {

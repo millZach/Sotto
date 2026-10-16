@@ -6,6 +6,8 @@
 
 /** The agent is still working: nothing is made until it has finished. */
 export const AGENT_STILL_WORKING = 'This agent is still working, so nothing was made. Continue it once it finishes.'
+/** Sotto last saw the agent working, before a restart or a lost connection, and has not seen it finish. */
+export const AGENT_NOT_SEEN_FINISHING = 'Sotto last saw this agent working and hasn’t seen it finish, so nothing was made. Continue it once it shows as finished.'
 /** Codex no longer has the agent's own conversation, so it cannot fork it; a thin handover is offered instead. */
 export const AGENT_FORK_GONE = 'Codex no longer has this agent’s conversation, so nothing was made. Sotto still has its title and result: a new thread can start from a handover of those instead. It would be thin.'
 /** Codex keeps the agent's conversation archived. Sotto leaves the user's Codex archive alone. */

@@ -293,6 +293,8 @@ export class CodexAppServerHost implements AgentHost {
   }, () => adapterItemCount(this.log, this.threads.values()))
   private readonly unconfirmedDispatchSessionIds = new Set<string>()
   private readonly creating = new Set<string>()
+  /** Forks Sotto gave up on before Codex answered (#1028): a late answer leaves Codex's copy unbound. */
+  private readonly abandonedForks = new Set<string>()
   /**
    * The provider's own app-server: the version, models, account, skills and settings reads. It never holds a
    * thread, so it never runs a turn, and one that stops is started again when next needed.
@@ -1409,6 +1411,8 @@ export class CodexAppServerHost implements AgentHost {
         const response = settingsResponse.parse(value)
         const policy = runtimePolicy(request.runtimeMode)
         const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
+        // An answer that comes after Sotto gave up on the fork leaves Codex's copy where it is, bound to nothing.
+        if (this.abandonedForks.delete(request.threadId) || generation !== this.generation) { this.creating.delete(request.threadId); this.stopSession(request.threadId); return }
         if (response.model !== request.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer
           || response.sandbox.type !== sandboxType || request.reasoningEffort !== undefined && response.reasoningEffort !== request.reasoningEffort) throw new Error('Codex did not confirm the requested thread options.')
         this.aliases[request.threadId] = { codexThreadId: response.thread.id, projectId: source.projectId, cwd, title: request.title, modelId: request.modelId,
@@ -1428,10 +1432,11 @@ export class CodexAppServerHost implements AgentHost {
         if (error.unknownTurnId !== undefined) throw new Error('Codex doesn’t have that turn in this thread any more, so nothing was made. Refresh the thread and try again.', { cause: error })
         throw error
       }
-      // Codex may have made a copy it did not confirm. It is never made again for this thread.
-      if (error instanceof Uncertain && !this.aliases[request.threadId]) return { accepted: false, uncertain: true }
+      // Codex may have made a copy it did not confirm. It is never made again for this thread, and a late answer binds nothing.
+      if (error instanceof Uncertain && !this.aliases[request.threadId]) { this.abandonedForks.add(request.threadId); this.stopSession(request.threadId); return { accepted: false, uncertain: true } }
       throw error
     }
+    if (!this.aliases[request.threadId]) throw new Error('Codex connection changed before the copy was bound, so Sotto made no thread for it. It may have kept the copy, which Sotto leaves alone. Try again.')
     // The copy's turns, read back the way a thread's are when it is first opened.
     try { await this.sync(request.threadId) }
     catch {

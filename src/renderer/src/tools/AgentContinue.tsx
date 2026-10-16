@@ -31,7 +31,12 @@ export interface AgentContinueOptions {
   readonly models: readonly AgentModel[]
   readonly sourceModelId: string
   readonly command: AgentConnection['command']
-  /** The working-copy choices of the project, read on this computer only. */
+  /**
+   * The branch the source thread works on, from its own Git status, so a new worktree starts from the agent's work: null
+   * for a detached checkout, undefined while the status has not arrived or the folder is not a repository.
+   */
+  readonly sourceBranch?: { readonly currentBranch: string | null } | undefined
+  /** The working-copy choices of the project, read on this computer only, while the thread's status has not arrived. */
   readonly workingCopyOptions?: ((projectId: string) => Promise<AgentWorkingCopyOptions>) | undefined
 }
 export const AgentContinueContext = createContext<AgentContinueOptions | null>(null)
@@ -67,16 +72,18 @@ export function AgentContinue({ row }: { readonly row: SubagentRow }): ReactNode
   if (!options || row.kind === 'workflow') return null
   const fork = options.provider === 'codex'
   const label = `Continue ${row.title || 'this agent'} as its own thread`
-  if (row.status === 'running') {
+  if (row.status === 'running' || row.status === 'unknown') {
     return <div className="agent-continue"><div className="agent-continue__actions">
       <Button variant="secondary" aria-disabled="true" aria-label={label} aria-describedby={`${formId}-why`}><CornerDownRight size={15} aria-hidden="true" />Continue as a thread</Button>
-      <span id={`${formId}-why`} className="agent-continue__why">It’s still working. Continue it once it finishes.</span></div></div>
+      <span id={`${formId}-why`} className="agent-continue__why">{row.status === 'running' ? 'It’s still working. Continue it once it finishes.'
+        : 'Sotto last saw it working. Continue it once it shows as finished.'}</span></div></div>
   }
   const close = (): void => { focusNext.current = 'press'; setStage('closed'); setError(null) }
   const openForm = (): void => {
     setError(null); setModelId(agentStartModel(options, row, options.provider === 'codex')); setCopy('shared')
     focusNext.current = 'start'; setStage('open')
-    if (!options.remote && options.workingCopyOptions && git === null) {
+    if (options.sourceBranch) setGit(options.sourceBranch)
+    else if (!options.remote && options.workingCopyOptions && git === null) {
       void options.workingCopyOptions(options.projectId).then(read => setGit(read.isGit ? { currentBranch: read.currentBranch } : null), () => setGit(null))
     }
   }
@@ -96,7 +103,7 @@ export function AgentContinue({ row }: { readonly row: SubagentRow }): ReactNode
   }
   const onKeyDown = (event: React.KeyboardEvent): void => {
     // Escape closes the form first, and focus goes back to the press that opened it; the row stays open.
-    if (event.key !== 'Escape' || event.defaultPrevented) return
+    if (event.key !== 'Escape' || event.defaultPrevented || stage === 'closed') return
     event.preventDefault(); event.stopPropagation(); close()
   }
   const ready = options.models.filter(model => model.ready)

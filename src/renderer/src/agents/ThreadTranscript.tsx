@@ -239,7 +239,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   // The handover Watcher's first message carried goes ahead of the user's words, as Sotto's (ADR-0073), and so does the one
   // a thread that began from another started with (#1028).
   const started = useThreadStartView()
-  return <>{message.handover && message.role === 'user' ? started ? <StartHandoverCard view={started} handover={message.handover} createdAt={message.createdAt} />
+  return <>{message.handover && message.role === 'user' ? started === 'off' ? null : started ? <StartHandoverCard view={started} handover={message.handover} createdAt={message.createdAt} />
     : <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
   <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={article}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
@@ -646,7 +646,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
             : null}
         {startView ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
-        {thread.messages.length || showsActivity ? <ThreadStartContext.Provider value={startView}><DelegationCardProvider world={cardWorld}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
+        {thread.messages.length || showsActivity ? <ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><DelegationCardProvider world={cardWorld}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegationCards.size ? delegationCards : undefined} briefs={briefs} /></DelegationCardProvider></ThreadStartContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null

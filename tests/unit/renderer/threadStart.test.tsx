@@ -2,8 +2,10 @@ import React from 'react'
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AgentThreadStart, HandoverCounts } from '../../../src/shared/agents'
-import { StartHandoverCard, ThreadStartNote, threadStartView } from '../../../src/renderer/src/agents/ThreadStart'
+import type { AgentMessage, AgentThreadStart, HandoverCounts } from '../../../src/shared/agents'
+import { StartHandoverCard, ThreadStartContext, ThreadStartNote, threadStartView } from '../../../src/renderer/src/agents/ThreadStart'
+import { MessageList } from '../../../src/renderer/src/agents/ThreadTranscript'
+import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 
 // Where a thread that began from another began, as its transcript says it (#1028).
 
@@ -59,5 +61,20 @@ describe('a thread that began from an agent', () => {
     expect(card.textContent).not.toContain('It goes with your first message.')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Read the handover, word for word' }))
     expect(screen.getByRole('region', { name: 'The handover, word for word' }).textContent).toBe('The words as sent.')
+  })
+
+  it('names the agent plainly when Keep local history kept no title for it', () => {
+    const { agentTitle, ...untitled } = handed; void agentTitle
+    const view = threadStartView({ id: 'continued', startedFrom: untitled, providerId: 'claude' }, { title: 'WAV preview stall', providerId: 'claude' }, vi.fn(), undefined)!
+    render(<ThreadStartNote view={view} />)
+    expect(screen.getByRole('note').textContent).toBe('Continued from one of its agents in WAV preview stall. Open WAV preview stall')
+  })
+
+  it('draws no handover at all for a thread that began from another while the feature is off', () => {
+    const messages: AgentMessage[] = [{ id: 'first', role: 'user', text: 'Add a test for the drafts.', createdAt: at, handover: { text: 'The handover as sent.', provider: 'claude', counts } }]
+    render(<ThreadStartContext.Provider value="off"><MessageList messages={messages} provider="claude" running={false} placement={placeActivities(messages, messages, [])} context={{ liveTurn: null, running: false, connected: true, provider: 'claude', onDisclosure: () => undefined }} /></ThreadStartContext.Provider>)
+    expect(screen.queryByRole('article', { name: 'Handover this thread started from' })).toBeNull()
+    expect(screen.queryByText(/Watcher/u)).toBeNull()
+    expect(screen.getByText('Add a test for the drafts.')).toBeTruthy()
   })
 })

@@ -34,13 +34,22 @@ export function watcherHandoverProvenance(prefix: string, source: WatcherIdentit
   return { prefixLength: prefix.length, prefixDigest: sha256(prefix), source: source.target, provider: source.provider, counts }
 }
 
+/**
+ * The characters a sent message's handover was, when the message still begins with them: the recorded length of its text,
+ * checked against the recorded digest. Undefined otherwise, and the message is shown whole.
+ */
+export function recordedPrefix(text: string, proof: { readonly prefixLength: number; readonly prefixDigest: string }): string | undefined {
+  const length = proof.prefixLength
+  if (!Number.isSafeInteger(length) || length <= 0 || length > text.length) return undefined
+  const prefix = text.slice(0, length)
+  return sha256(prefix) === proof.prefixDigest ? prefix : undefined
+}
+
 /** The handover a sent message begins with, when its words still match the record; otherwise the message is shown whole. */
 function split(message: AgentMessage, proof: WatcherHandoverProvenance): AgentMessage {
-  const length = proof.prefixLength
-  if (!Number.isSafeInteger(length) || length <= 0 || length > message.text.length) return message
-  const prefix = message.text.slice(0, length)
-  if (sha256(prefix) !== proof.prefixDigest) return message
-  return { ...message, text: message.text.slice(length), handover: { text: prefix.trimEnd(), provider: proof.provider, counts: proof.counts } }
+  const prefix = recordedPrefix(message.text, proof)
+  if (prefix === undefined) return message
+  return { ...message, text: message.text.slice(prefix.length), handover: { text: prefix.trimEnd(), provider: proof.provider, counts: proof.counts } }
 }
 
 type Proofs = ReadonlyMap<string, WatcherHandoverProvenance>
