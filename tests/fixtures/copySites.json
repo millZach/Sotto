@@ -1,0 +1,128 @@
+{
+  "src/host/socketServer.ts": {
+    "shell()": 11
+  },
+  "src/main/agents/activitySnapshots.ts": {
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 2
+  },
+  "src/main/agents/claude.ts": {
+    "structuredClone(": 3,
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
+  "src/main/agents/cloneHostSnapshot.ts": {
+    "cloneHostSnapshot(": 1
+  },
+  "src/main/agents/codex.ts": {
+    "structuredClone(": 3,
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
+  "src/main/agents/control.ts": {
+    "structuredClone(": 24,
+    "shell()": 36,
+    "watcherRecord()": 2
+  },
+  "src/main/agents/devin.ts": {
+    "structuredClone(": 1,
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
+  "src/main/agents/followups.ts": {
+    "structuredClone(": 3
+  },
+  "src/main/agents/grok.ts": {
+    "structuredClone(": 1,
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
+  "src/main/agents/hostService.ts": {
+    "shell()": 5
+  },
+  "src/main/agents/ipc.ts": {
+    "shell()": 1
+  },
+  "src/main/agents/muse.ts": {
+    "structuredClone(": 3,
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
+  "src/main/agents/providerRetirement.ts": {
+    "structuredClone(": 1
+  },
+  "src/main/agents/providerSwitch.ts": {
+    "structuredClone(": 3,
+    "cloneHostSnapshot(": 5,
+    "cloneActivitySnapshot(": 1
+  },
+  "src/main/agents/questionPages.ts": {
+    "structuredClone(": 1
+  },
+  "src/main/agents/requestDraftOwners.ts": {
+    "structuredClone(": 1
+  },
+  "src/main/agents/requestDrafts.ts": {
+    "structuredClone(": 10
+  },
+  "src/main/agents/retainedDraftStore.ts": {
+    "structuredClone(": 5
+  },
+  "src/main/agents/runtime.ts": {
+    "shell()": 1
+  },
+  "src/main/agents/socketHostService.ts": {
+    "structuredClone(": 9,
+    "shell()": 10
+  },
+  "src/main/agents/sottoRequests.ts": {
+    "structuredClone(": 1
+  },
+  "src/main/agents/threadMessageLog.ts": {
+    "structuredClone(": 1
+  },
+  "src/main/agents/usageStore.ts": {
+    "structuredClone(": 2
+  },
+  "src/main/agents/watcher.ts": {
+    "structuredClone(": 1,
+    "shell()": 1,
+    "watcherRecord()": 1
+  },
+  "src/main/agents/watcherRoomDesktop.ts": {
+    "structuredClone(": 1
+  },
+  "src/main/agents/workspace.ts": {
+    "structuredClone(": 6,
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
+  "src/main/hosts/busyHost.ts": {
+    "shell()": 1
+  },
+  "src/main/hosts/desktopHostRouter.ts": {
+    "shell()": 39
+  },
+  "src/main/hosts/desktopHosts.ts": {
+    "structuredClone(": 1,
+    "shell()": 3
+  },
+  "src/main/hosts/hostSetupThreads.ts": {
+    "shell()": 2
+  },
+  "src/main/hosts/inactiveLocalHost.ts": {
+    "structuredClone(": 4
+  },
+  "src/main/hosts/tailnetStore.ts": {
+    "structuredClone(": 1
+  },
+  "src/main/omarchy/setup.ts": {
+    "structuredClone(": 3
+  },
+  "src/main/tools/browser.ts": {
+    "structuredClone(": 3
+  },
+  "src/main/tools/cloudIphone/service.ts": {
+    "structuredClone(": 12
+  }
+}

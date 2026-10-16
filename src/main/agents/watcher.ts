@@ -380,8 +380,10 @@ export class WatcherService implements WatcherControlHooks {
     if (handover && handover.summary.total > 0) this.handoverOffer = { source: previous, to, counts: handoverCounts(handover.summary) }
   }
   /** The offer, while it is still for the current Watcher. */
+  // Read in place: every state read asks this, twice per coordinator update, and a copy of the record for one field was
+  // two whole-record copies per update.
   private currentOffer(): NonNullable<WatcherService['handoverOffer']> | null {
-    const offer = this.handoverOffer, current = this.record().current
+    const offer = this.handoverOffer, current = this.view().current
     return offer && current && key(offer.to) === key(current.target) ? offer : null
   }
   /** The offered handover's words, as the new Watcher would receive them. Read only when the user asks to read it. */
