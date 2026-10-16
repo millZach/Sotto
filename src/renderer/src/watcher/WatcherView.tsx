@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { ArrowUp, ChevronDown, List, MoreHorizontal } from 'lucide-react'
-import { PROVIDER_LABELS, type AgentModel, type AgentState } from '../../../shared/agents'
+import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { releaseTrackName } from '../../../shared/releaseTrack'
-import type { WatcherOpenRequest } from '../../../shared/watcherRoom'
 import { Button } from '../components/Button'
 import { Field } from '../components/Field'
 import { Select } from '../components/Select'
@@ -17,7 +16,7 @@ import { OwlRoomSky } from '../agents/OwlSky'
 import { useClock } from '../agents/paneGrid'
 import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
 import { useShared } from '../agents/stateSharing'
-import { describeThreads, providerKey, type ThreadRow } from '../agents/threadFacts'
+import { describeThreads, type ThreadRow } from '../agents/threadFacts'
 import { effortChoices } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
 import { BrowserPageRouteContext } from '../tools/webLinks'
@@ -26,6 +25,8 @@ import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, show
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
 import { WatcherDock } from './WatcherDock'
 import { WatcherGlance } from './WatcherGlance'
+import { watcherProviderOf } from './watcherProviders'
+import { WatcherHandoverOffer, WatcherSendGateContext, watcherSendGate } from './WatcherHandover'
 import { overviewCount, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
 import { WatcherOwl } from './WatcherOwl'
 import { WatcherOwnChangesContext } from './WatcherOwnChange'
@@ -35,14 +36,6 @@ import { WatcherWatchedView, watchedCount } from './WatcherWatched'
 const WATCHER_PROMPT_ID = 'watcher-prompt'
 const WATCHER_PANE_ID = 'watcher-pane'
 const LIMITS = [1, 2, 3, 4, 5, 6, 7, 8] as const
-type WatcherProvider = WatcherOpenRequest['provider']
-const WATCHER_PROVIDERS: ReadonlySet<string> = new Set<WatcherProvider>(['codex', 'claude', 'grok'])
-
-/** Devin cannot host Watcher's tools, so only Codex, Claude Code and Grok Build models are offered for it. */
-function watcherProviderOf(model: AgentModel): WatcherProvider | null {
-  const provider = model.providerId ?? providerKey(model.provider)
-  return WATCHER_PROVIDERS.has(provider) ? provider as WatcherProvider : null
-}
 
 const ROOM_TABS: readonly RoomTab[] = ['conversation', 'watched']
 const TAB_KEYS: Readonly<Record<string, (index: number) => number>> = {
@@ -270,12 +263,18 @@ function WatcherPane({ state, row, header, watched, error, focused, now }: {
   const room = useWatcherRoom()
   const ownChanges = room?.state?.ownChanges
   const changes = useMemo(() => new Map((ownChanges ?? []).map(change => [change.replyMessageId, change] as const)), [ownChanges])
+  // After a provider change, the handover of the last Watcher is offered over the composer until the first send or X
+  // (ADR-0073), and while it stands a send carries it.
+  const offer = room?.state?.handover ?? null
+  const offered = offer !== null && room?.handover != null
+  const gate = useMemo(() => watcherSendGate(room?.handover, room?.settle, offered), [room?.handover, room?.settle, offered])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
   // system browser.
-  return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}>
+  return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
     <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
-      error={error} now={now} watcherHeader={header} watcherBody={watched} />
-  </WatcherOwnChangesContext.Provider></BrowserPageRouteContext.Provider>
+      error={error} now={now} watcherHeader={header} watcherBody={watched}
+      notice={offered && room !== null && offer !== null ? <WatcherHandoverOffer key={offer.source.threadId} room={room} offer={offer} composerId={WATCHER_PROMPT_ID} /> : undefined} />
+  </WatcherSendGateContext.Provider></WatcherOwnChangesContext.Provider></BrowserPageRouteContext.Provider>
 }
 
 /** Room left above a failed turn's line when it is brought into view, so the line does not sit flush on the edge. */

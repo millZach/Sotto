@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { agentRuntimeModeSchema, type AgentHostSnapshot, type AgentRuntimeMode } from './agents'
 import { watcherIdentitySchema, type WatcherIdentity, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema, watcherStandingWatchSchema } from './watcher'
 import type { WatcherRoomState } from './watcherRoom'
+import type { HostMachineReport } from './hostFacts'
 
 /** Text-free attribution, bound by the host to its authenticated SSH-recorded desktop. No local tool token travels. */
 export const watcherHostScopeSchema = watcherIdentitySchema
@@ -43,11 +44,14 @@ export type WatcherRoomThreadInput = Pick<WatcherRoomState['watchedThreads'][num
 }
 
 export interface WatcherRemoteHosts {
-  hosts(): { hostId: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
+  /** `name` is the machine's name as this computer saved it; `facts` says whether the host lists `host-facts` (#1031). */
+  hosts(): { hostId: string; name?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
   snapshot(hostId: string): AgentHostSnapshot | undefined
   roomThreads?(hostId: string, threadIds: readonly string[]): WatcherRoomThreadInput[] | undefined
   projection?(hostId: string, master: WatcherIdentity): WatcherHostProjection | undefined
   subscribe(listener: (hostId?: string, force?: boolean) => void): () => void
+  /** A connected host's machine facts and running threads, or undefined when it does not report them (#1031). */
+  machineFacts?(hostId: string): Promise<HostMachineReport | undefined>
 }
