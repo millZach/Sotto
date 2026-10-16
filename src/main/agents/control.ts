@@ -3460,13 +3460,8 @@ export class AgentControl {
    * and only while the feature is on. When it can no longer be built, this send is refused, the handover is put away,
    * and the next send goes without it.
    */
-  private async startHandoverFor(command: Extract<DispatchCommand, { type: 'send' }>): Promise<{ prefix: string; sent: StartHandoverSent } | undefined> {
-    if (this.dependencies.threadStartsEnabled !== true) return undefined
-    const thread = this.state.host.threads.find(item => item.id === command.threadId)
-    const start = thread?.startedFrom
-    // Not by whether the provider's session started: a first send it refused after starting one is sent again with it.
-    if (!thread || start?.route !== 'handover' || !start.handover || start.handover.sent
-      || thread.messages.some(message => message.role === 'user' && message.id !== command.messageId)) return undefined
+  private async startHandoverFor(command: Extract<DispatchCommand, { type: 'send' }>): Promise<{ prefix: string; sent: StartHandoverSent }> {
+    const thread = this.thread(command.threadId)
     const built = this.dependencies.host.startHandover?.(thread.id)
     if (!built) {
       await this.dependencies.host.markStartHandover?.(thread.id, 'drop').catch(() => undefined)
@@ -3475,6 +3470,18 @@ export class AgentControl {
     const send = startHandoverSend(built.text, command.messageId)
     await this.dependencies.host.markStartHandover?.(thread.id, send.sent)
     return send
+  }
+  /**
+   * Whether a send is a started thread's first, which goes with its handover, answered without waiting, so that every
+   * other send dispatches exactly as it did before (#1028). Not by whether the provider's session started: a first send
+   * it refused after starting one is sent again with the handover.
+   */
+  private startHandoverDue(command: Extract<DispatchCommand, { type: 'send' }>): boolean {
+    if (this.dependencies.threadStartsEnabled !== true || command.wakeUp === true) return false
+    const thread = this.state.host.threads.find(item => item.id === command.threadId)
+    const start = thread?.startedFrom
+    return thread !== undefined && start?.route === 'handover' && start.handover !== undefined && start.handover.sent === undefined
+      && !thread.messages.some(message => message.role === 'user' && message.id !== command.messageId)
   }
   private guardThreadPermission(client: ClientIdentity, options: { runtimeMode?: AgentRuntimeMode | undefined; providerMode?: string | undefined }, model: AgentModel | undefined): void {
     if ((options.runtimeMode !== undefined && options.runtimeMode !== 'approval-required')
@@ -3594,7 +3601,7 @@ export class AgentControl {
       ? resolveModel(this.state.host.models, command.modelId)?.defaultReasoningEffort : undefined
     command = (this.watcherHooks?.beforeDispatch(command as AgentHostCommand, draftId, origin) ?? command) as DispatchCommand
     // A thread that began from another sends its first message with the handover ahead of the words (#1028).
-    const startHandover = command.type === 'send' && command.wakeUp !== true ? await this.startHandoverFor(command) : undefined
+    const startHandover = command.type === 'send' && this.startHandoverDue(command) ? await this.startHandoverFor(command) : undefined
     if (startHandover && command.type === 'send') command = { ...command, text: startHandover.prefix + command.text }
     const startAborted = (): void => { if (startHandover) void this.dependencies.host.markStartHandover?.(threadId!, null).catch(() => undefined) }
     this.outbox.push({ id: command.commandId, type: command.type, ...(provider ? { provider } : {}), ...(threadId ? { threadId } : {}),

@@ -218,7 +218,7 @@ Use `npm run build` followed by `npx playwright test tests/e2e/devin-provider.sp
 
 ## Claude settings live check
 
-`tests/integration/codexThreadForkLive.test.ts` is gated by `SOTTO_CODEX_LIVE=1`. With the installed, signed-in Codex it runs one model turn in a temporary project that asks Codex to start one small agent and wait for it, then continues that agent as its own thread and forks the thread at its reply through Sotto's adapter (#1028, ADR-0088), which asks the model nothing more. Each fork is durable and is written beside the user's other Codex rollouts. Codex opens its usual Responses websocket when a fork starts, as opening any thread does, and the check expects it. It has not been run yet:
+`tests/integration/codexThreadForkLive.test.ts` is gated by `SOTTO_CODEX_LIVE=1`. With the installed, signed-in Codex it runs one model turn in a temporary project that asks Codex to start one small agent and wait for it, then continues that agent as its own thread and forks the thread at its reply through Sotto's adapter (#1028, ADR-0089), which asks the model nothing more. Each fork is durable and is written beside the user's other Codex rollouts. Codex opens its usual Responses websocket when a fork starts, as opening any thread does, and the check expects it. It has not been run yet:
 
 ```powershell
 $env:SOTTO_CODEX_LIVE = '1'

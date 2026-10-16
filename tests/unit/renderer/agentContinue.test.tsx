@@ -127,6 +127,16 @@ describe('Continue as a thread', () => {
     expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'continue-agent', workingCopy: 'independent', baseBranch: 'sotto/audio' }))
   })
 
+  it('offers the new worktree once the thread’s Git status arrives with the form open', async () => {
+    const user = userEvent.setup()
+    const remote = options(vi.fn(), { remote: true, where: 'forge', workingCopyOptions: undefined })
+    const { rerender } = show(remote)
+    await user.click(screen.getByRole('button', { name: /as its own thread/u }))
+    expect(screen.queryByRole('option', { name: /New worktree/u })).toBeNull()
+    rerender(<AgentContinueContext.Provider value={{ ...remote, sourceBranch: { currentBranch: 'sotto/audio' } }}><ul><li className="subagent-item"><div className="subagent-details"><AgentContinue row={row()} /></div></li></ul></AgentContinueContext.Provider>)
+    expect(screen.getByRole('option', { name: 'New worktree from sotto/audio' })).toBeTruthy()
+  })
+
   it('lets Escape go past the row once the form is closed', async () => {
     const user = userEvent.setup()
     const outside = vi.fn()

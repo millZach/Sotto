@@ -69,6 +69,9 @@ export function AgentContinue({ row }: { readonly row: SubagentRow }): ReactNode
     if (next === 'start') start.current?.focus()
     else if (next === 'press') press.current?.focus()
   }, [stage])
+  // The thread's Git status may arrive while the form is open: its worktree is offered then.
+  const sourceRepository = options?.sourceBranch !== undefined, sourceBranch = options?.sourceBranch?.currentBranch ?? null
+  useEffect(() => { if (sourceRepository) setGit({ currentBranch: sourceBranch }) }, [sourceRepository, sourceBranch])
   if (!options || row.kind === 'workflow') return null
   const fork = options.provider === 'codex'
   const label = `Continue ${row.title || 'this agent'} as its own thread`
