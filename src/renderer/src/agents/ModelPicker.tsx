@@ -1,4 +1,4 @@
-import React, { useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
 import type { AgentModel, ProviderId } from '../../../shared/agents'
 import { catalogEntry, resolveModel } from '../../../shared/modelCatalog'
@@ -7,6 +7,15 @@ import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { ProviderMark } from './ProviderMark'
 import './threadChips.css'
 import './modelPicker.css'
+
+/** How far a touchpad moves, in pixels, to step the provider rail once; a mouse notch is more than this. */
+const RAIL_WHEEL_STEP = 40
+/** The quiet, in milliseconds, that ends one turn of the wheel: a swipe and its momentum are one turn. */
+const RAIL_WHEEL_PAUSE = 150
+
+/** One turn of the wheel over the provider rail: when it last moved, which way, how far, and whether it has stepped. */
+interface RailWheelTurn { at: number; direction: number; travel: number; stepped: boolean }
+const restingWheel = (): RailWheelTurn => ({ at: -Infinity, direction: 0, travel: 0, stepped: false })
 
 /**
  * Newest first, with the model the provider itself recommends kept at the top whatever it is called. The
@@ -40,10 +49,11 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
  * anchored over it. The menu is two columns. On the left a rail of provider marks, one tile each and no
  * names, so the menu costs the same whatever a provider is called; the name is the tile's accessible name
  * and its tooltip. On the right the chosen provider's models under a search line, with `note` beneath them
- * -- the reminder that a new thread may still change provider, or that this one may not. A single provider
- * has no rail. Escape, a click outside or a choice closes the menu and returns focus to the chip; a choice
- * shows on the chip at once while the owner saves it. A provider in `unavailable` has a tile whose panel says why it
- * cannot be chosen now; one in `continueOn` heads its models with where they start.
+ * -- the reminder that a new thread may still change provider, or that this one may not. The wheel over the
+ * rail steps through the providers as its arrow keys do. A single provider has no rail. Escape, a click
+ * outside or a choice closes the menu and returns focus to the chip; a choice shows on the chip at once while
+ * the owner saves it. A provider in `unavailable` has a tile whose panel says why it cannot be chosen now; one in
+ * `continueOn` heads its models with where they start.
  */
 export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = [], continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
@@ -81,6 +91,43 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const selectedProvider = groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
   const continuing = selectedProvider !== undefined && continueOn?.providers.has(selectedProvider.name) === true
+  // Each turn of the wheel over the rail steps one provider and stops at either end. A turn ends when the wheel
+  // rests for a moment or turns the other way, so a mouse notch is a step and so is a touchpad swipe with its
+  // momentum, whose small movements add up to one. A turn is kept across renders, since the owner may hand over a
+  // fresh list of the same models at any time, and starts afresh when the menu opens. Each step moves on from the
+  // last one at once, so turns that land before the menu redraws are not lost. Zoom, a pinch and sideways
+  // scrolling keep their own meaning. React registers wheel listeners as passive, so the rail would scroll
+  // instead without this. Focus on the rail moves with the choice, so its one tab stop stays on it.
+  const selectedName = selectedProvider?.name
+  const wheelTurn = useRef(restingWheel())
+  const wheelChoice = useRef(selectedName)
+  useEffect(() => {
+    wheelChoice.current = selectedName
+    const element = rail.current
+    if (!element) return
+    const wheel = (event: WheelEvent): void => {
+      if (event.ctrlKey || event.metaKey || event.deltaY === 0) return
+      event.preventDefault()
+      const now = performance.now(), direction = Math.sign(event.deltaY), turn = wheelTurn.current
+      if (now - turn.at > RAIL_WHEEL_PAUSE || direction !== turn.direction) wheelTurn.current = { ...restingWheel(), direction }
+      wheelTurn.current.at = now
+      if (wheelTurn.current.stepped) return
+      wheelTurn.current.travel += Math.abs(event.deltaY)
+      if (event.deltaMode === WheelEvent.DOM_DELTA_PIXEL && wheelTurn.current.travel < RAIL_WHEEL_STEP) return
+      wheelTurn.current.stepped = true
+      const at = groups.findIndex(group => group.name === wheelChoice.current)
+      const next = Math.max(0, Math.min(groups.length - 1, at + direction))
+      const group = groups[next]
+      if (!group || group.name === wheelChoice.current) return
+      wheelChoice.current = group.name
+      const tile = element.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]
+      tile?.scrollIntoView?.({ block: 'nearest' })
+      if (element.contains(document.activeElement)) tile?.focus()
+      else setProvider(group.name)
+    }
+    element.addEventListener('wheel', wheel, { passive: false })
+    return () => element.removeEventListener('wheel', wheel)
+  }, [groups, selectedName])
   useLayoutEffect(() => {
     if (!open) return
     const element = dialog.current
@@ -106,7 +153,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const name = current?.name ?? (modelId || 'Choose a model')
   return <div className="model-picker">
     <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
-      title={name} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); setOpen(true) }}>
+      title={name} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); wheelTurn.current = restingWheel(); setOpen(true) }}>
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}<span>{name}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
     {open && <dialog ref={dialog} id={dialogId} className="model-picker__dialog" aria-label="Choose model" data-rail={groups.length > 1 || undefined}
