@@ -192,7 +192,9 @@ test('main stays responsive while a large sidebar streams', async () => {
     await expect.poll(async () => (await agentState(page)).host.threads.length).toBe(PADDING_THREADS + 2)
     await openThreads(page)
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
-    await sidebar.getByRole('button', { name: COMPOSER_THREAD_TITLE, exact: true }).click()
+    // Opened from the keyboard: on Owl the row's Open beside action sits over the middle of the row and takes a click.
+    await sidebar.getByRole('button', { name: COMPOSER_THREAD_TITLE, exact: true }).focus()
+    await page.keyboard.press('Enter')
     const composer = promptField(page)
     await composer.click()
     await expect(page.locator('section.thread-pane')).toHaveAttribute('data-focused')
