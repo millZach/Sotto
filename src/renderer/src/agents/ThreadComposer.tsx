@@ -18,6 +18,7 @@ import type { ThreadRow } from './threadFacts'
 import { followupsFor, ThreadFollowups } from './ThreadFollowups'
 import { ThreadOptions, watcherPermissionFixedReason } from './ThreadOptions'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
+import { useWatcherSendGate } from '../watcher/WatcherHandover'
 import { listedHosts } from './HostBadge'
 import { BranchToolbar } from './BranchToolbar'
 import { sessionSeenOpen, startOnTyping } from './earlyStart'
@@ -60,11 +61,16 @@ function queuesByDefault(row: ThreadRow, state: AgentState, localAdmissions: boo
  * queue row) renders before the command leaves the renderer, and the composer is already empty.
  * With `retryDraftId` the prompt is sent again from its own copy, under the revision it already has.
  */
-export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow, command: Command, submittedAt: number, mode: SubmissionMode = 'send', retryDraftId?: string): Promise<void> {
+export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow, command: Command, submittedAt: number, mode: SubmissionMode = 'send', retryDraftId?: string,
+  /** A step before the prompt goes, given its draft: Watcher's handover is told which draft carries it. A refusal keeps the prompt back. */
+  beforeSend?: (draftId: string) => Promise<string | null>): Promise<void> {
   const threadId = row.thread.id
   const draft = retryDraftId === undefined ? store.submit(threadId, submittedAt, mode, 'main') : store.retry(threadId, retryDraftId, submittedAt)
   if (draft === null) return
   try {
+    const refused = beforeSend === undefined ? null : await beforeSend(draft.draftId)
+    // Refused before it left the window: it is back in the composer, with why under it.
+    if (refused !== null) { store.resolve(threadId, draft.draftId, refused, true); return }
     const payload = {
       threadId, draftId: draft.draftId, text: draft.text,
       ...(draft.attachments.length ? { attachments: [...draft.attachments] } : {}),
@@ -163,6 +169,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const queueBlocked = threadSendInFlight(state, threadId, localUnconfirmed, true)
   // Enter behind a prompt on its way queues instead of being refused, so the order typed is the order sent.
   const queueing = !answering && (queuesByDefault(row, state, localAdmissions) || sendInFlight && !queueBlocked)
+  // While Watcher's handover is offered, a send is the choice to continue with it (ADR-0073).
+  const gate = useWatcherSendGate()
+  const handover = watcher && gate !== null && !answering && !queueing ? gate : null
   const reason = blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? 'This answer’s question is no longer pending.' : null)
   const editable = !row.thread.archivedAt && !permission
   const working = row.thread.status === 'running' && !isThreadClosed(row.thread)
@@ -212,7 +221,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     // shows what was sent, and a refused prompt comes back to the composer with them written out.
     if (carried.length > 0) store.edit(threadId, { text: composeReviewMessage(store.draft(threadId).text, carried) })
     onSend()
-    void sendThreadRevision(store, row, command, submittedAt, mode)
+    void sendThreadRevision(store, row, command, submittedAt, mode, undefined, handover !== null && mode === 'send' ? handover.prepare : undefined)
     if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
   }
   /** A removed chip hands focus to the next one, or back to the prompt after the last. */
@@ -281,8 +290,11 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label="Stop agent" title="Stop agent" disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={11} fill="currentColor" aria-hidden="true" /></Button> : null}
           {/* With nothing to send, Stop holds the send button's place; typed text brings the send back to the end, so Enter's button is never Stop. */}
           {/* One disc: an arrow sends, a list-plus queues. The full name stays in the label and title, so Queue prompt is never called Send. */}
-          {!working || content ? <Button iconOnly className="thread-prompt__send" aria-label={primaryLabel} title={reason ?? primaryLabel} disabled={!canSend} type="submit">
-            {queueing ? <ListPlus size={15} aria-hidden="true" /> : <ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" />}</Button> : null}
+          {handover !== null && !working
+            ? <Button className="thread-prompt__send" data-wide aria-label={handover.label} title={reason ?? handover.label} disabled={!canSend} type="submit">
+              Continue<ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" /></Button>
+            : !working || content ? <Button iconOnly className="thread-prompt__send" aria-label={primaryLabel} title={reason ?? primaryLabel} disabled={!canSend} type="submit">
+              {queueing ? <ListPlus size={15} aria-hidden="true" /> : <ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" />}</Button> : null}
         </div>
       </div>
       <div ref={setSettingsNotices} className="thread-options-notices" />

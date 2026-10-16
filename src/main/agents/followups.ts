@@ -33,6 +33,12 @@ type State = { items: QueuedFollowup[]; receipts: z.infer<typeof receiptsSchema>
 const storedSchema = z.object({ items: z.array(queuedSchema.extend({ attachments: z.array(z.union([agentAttachmentHandleSchema, agentAttachmentSchema])) })), receipts: receiptsSchema })
 /** How a wake-up's news is worded, given all of it: the store folds news and the caller words it (`wakeUpText`). */
 export type WordWakeUp = (news: readonly WakeUpNews[]) => string
+/** How `pruneWakeUps` prunes one wake-up: what may still go, how the rest is worded, and what each part becomes first. */
+export interface WakeUpPruning {
+  readonly due: (news: WakeUpNews) => boolean
+  readonly word: WordWakeUp
+  readonly transform?: (news: WakeUpNews) => WakeUpNews | undefined
+}
 /** The review token of an item queued while the thread rested on no turn Sotto had read. */
 export const UNKNOWN_TURN = 'unknown'
 /** Sotto's wake-up still waiting in a queue (ADR-0061 decision 8): one that has not started to send. */
@@ -179,9 +185,20 @@ export class FollowupStore {
       await new AtomicJsonStore(path, input => input, () => ({})).write(value)
     }
   }
-  cancelWatcher(operationIds: ReadonlySet<string>): Promise<void> {
-    return this.change(state => { state.items = state.items.filter(item => !item.watcherOperationId || !operationIds.has(item.watcherOperationId)
-      || item.status === 'dispatching' || item.status === 'uncertain') })
+  /**
+   * Removes the named Watcher items that can no longer be sent, keeping any whose dispatch is still unresolved. Answers the
+   * operations whose removed item had already failed: a dispatch can fail just ahead of the cancel in this lane, and once
+   * its item is gone that failure is nowhere else to read.
+   */
+  async cancelWatcher(operationIds: ReadonlySet<string>): Promise<string[]> {
+    let failed: string[] = []
+    await this.change(state => {
+      const cancelled = state.items.filter(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)
+        && item.status !== 'dispatching' && item.status !== 'uncertain')
+      failed = cancelled.flatMap(item => item.status === 'failed' ? [item.watcherOperationId!] : [])
+      state.items = state.items.filter(item => !cancelled.includes(item))
+    })
+    return failed
   }
   edit(threadId: string, itemId: string, update?: Pick<AgentFollowup, 'text' | 'attachments' | 'skills' | 'files'>): Promise<void> {
     return this.change(state => {
@@ -253,20 +270,30 @@ export class FollowupStore {
     })
   }
   /**
-   * Drops from a wake-up about to go every part `due` says may no longer go, because its babysitting ended quietly or
-   * by the switch since it was told, and the item when nothing is left. One that had started to send goes back to
-   * waiting, since nothing was sent. A wake-up without its news is left as it is.
+   * Drops from each of these wake-ups about to go every part `due` says may no longer go, because its babysitting ended
+   * quietly or by the switch since it was told, and the item when nothing is left. One that had started to send goes
+   * back to waiting, since nothing was sent. A wake-up without its news is left as it is. All of them are pruned in one
+   * change, and `pruning` is asked once, with every wake-up about to be pruned, before any of them is, and says how to
+   * prune each: a caller whose answers read whole state reads it once there, however much is queued.
    */
-  pruneWakeUp(id: string, due: (news: WakeUpNews) => boolean, word: WordWakeUp, transform?: (news: WakeUpNews) => WakeUpNews | undefined): Promise<void> {
+  pruneWakeUps(ids: readonly string[], pruning: (items: readonly QueuedFollowup[]) => (item: QueuedFollowup) => WakeUpPruning): Promise<void> {
     return this.change(state => {
-      const item = state.items.find(candidate => candidate.id === id)
-      if (!item?.wakeUp || !item.news || !['queued', 'dispatching', 'paused', 'failed'].includes(item.status)) return false
-      const kept = item.news.flatMap(news => { const next = transform ? transform(news) : news; return next && due(next) ? [next] : [] })
-      if (JSON.stringify(kept) === JSON.stringify(item.news) && item.status === 'queued') return false
-      if (!kept.length) { state.items = state.items.filter(candidate => candidate !== item); return }
-      Object.assign(item, { news: kept, text: word(kept), status: item.status === 'dispatching' ? 'queued' : item.status, updatedAt: new Date().toISOString() })
-      delete item.commandId; delete item.messageId
-      if (item.status === 'queued') delete item.error
+      const items = ids.flatMap(id => state.items.filter(candidate => candidate.id === id && candidate.wakeUp && candidate.news
+        && ['queued', 'dispatching', 'paused', 'failed'].includes(candidate.status)))
+      if (!items.length) return false
+      const prune = pruning(items)
+      let changed = false
+      for (const item of items) {
+        const { due, word, transform } = prune(item)
+        const kept = item.news!.flatMap(news => { const next = transform ? transform(news) : news; return next && due(next) ? [next] : [] })
+        if (JSON.stringify(kept) === JSON.stringify(item.news) && item.status === 'queued') continue
+        changed = true
+        if (!kept.length) { state.items = state.items.filter(candidate => candidate !== item); continue }
+        Object.assign(item, { news: kept, text: word(kept), status: item.status === 'dispatching' ? 'queued' : item.status, updatedAt: new Date().toISOString() })
+        delete item.commandId; delete item.messageId
+        if (item.status === 'queued') delete item.error
+      }
+      if (!changed) return false
     })
   }
   pause(threadId: string, error: string): Promise<void> {

@@ -146,6 +146,8 @@ function sameMessage(base: AgentMessage, next: AgentMessage): boolean {
   return base.id === next.id && base.role === next.role && base.text === next.text
     && base.createdAt === next.createdAt && base.commandId === next.commandId
     && sameAttachments(base.attachments, next.attachments)
+    // A handover is told apart from the user's words by its provenance, which can arrive after them (ADR-0073).
+    && base.handover?.text === next.handover?.text
 }
 function sameAttachments(base: AgentMessage['attachments'], next: AgentMessage['attachments']): boolean {
   if (base === next) return true

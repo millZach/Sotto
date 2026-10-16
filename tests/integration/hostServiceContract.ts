@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AdapterContractSkips, AdapterSessionOptions, HostServiceFixture, RecordedRpc } from '../fixtures/adapterFixture'
 import { skipUnsupportedFixture, withFixtureSkip } from '../fixtures/contractSkip'
+import { hostMachineReportSchema } from '../../src/shared/hostFacts'
 
 export function describeHostServiceContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<HostServiceFixture>, skips: AdapterContractSkips): void {
   describe(name + ' host service contract', () => {
@@ -43,6 +44,21 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       await expect.poll(() => f.service.threadDetail(threadId)?.messages.some(message => message.text.includes('Completed reply'))).toBe(true)
       expect(f.service.events(0, threadId).some(event => event.event.kind === 'message-added')).toBe(true)
       expect(f.service.shell().host.threads.every(item => item.messages.length === 0)).toBe(true)
+    })
+
+    it('reports its machine’s host facts and running threads, and reads the count again after a change (#1031)', async () => {
+      expect(f.service.supportsHostFacts).toBe(true)
+      const family = ({ win32: 'windows', darwin: 'macos', linux: 'linux' } as Record<string, string>)[process.platform] ?? null
+      const idle = hostMachineReportSchema.parse(await f.service.hostFacts!())
+      expect(idle.facts.os.family).toBe(family)
+      expect(idle.facts.totalMemoryBytes).toBeGreaterThan(0)
+      expect(idle.runningThreads).toBe(0)
+      expect((await send()).error).toBeNull()
+      expect(thread().status).toBe('running')
+      expect((await f.service.hostFacts!()).runningThreads).toBe(1)
+      await f.driver.completeTurn(threadId, 'Completed reply')
+      await expect.poll(() => thread().status).toBe('idle')
+      await expect.poll(async () => (await f.service.hostFacts!()).runningThreads).toBe(0)
     })
 
     it('observes provider takeover without inventing a Sotto command for native user input', async () => {

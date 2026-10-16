@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { WATCHER_QUIET_MS, watcherOverview } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
+import type { WatcherRecord } from '../../../src/shared/watcher'
 import { WatcherWakeUp, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText } from '../../../src/main/agents/watcherNews'
@@ -892,7 +893,7 @@ it('holds work-settled news when work starts again before delivery and sends it 
 })
 
 it('gives no work-settled news for a paired host that does not report its work counts', async () => {
-  const f = fixture(true, undefined, { reportsWork: hostId => hostId !== centerTarget.hostId })
+  const f = fixture(true, undefined, { reportsWork: () => hostId => hostId !== centerTarget.hostId })
   f.thread.providerId = 'claude'; f.thread.backgroundWork = [backgroundTask(1), backgroundTask(2)]; finish(f.thread); f.wakes.observe()
   await f.advance(2_000)
   // Missing counts are unknown, not none running: the finish carries no count and claims nothing about the work.
@@ -913,7 +914,7 @@ it('names the operation a finished turn answers on its finish and work-settled n
   const events = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'turn-finished' || event.kind === 'work-settled')
   expect(events.map(event => [event.kind, event.operationId])).toEqual([['turn-finished', operationId], ['work-settled', operationId]])
   expect(watcherNewsText(f.delivered[0]!)).toContain(`This turn answers operation ${operationId}; read_operation gives its outcome and reply.`)
-  expect(answers).toHaveBeenCalledWith(centerTarget, expect.objectContaining({ id: f.thread.id }))
+  expect(answers).toHaveBeenCalledWith(centerTarget, expect.objectContaining({ id: f.thread.id }), expect.objectContaining({ operations: expect.any(Array) }))
 })
 
 it('names no operation for a turn no brief of Watcher\'s began', async () => {
@@ -922,4 +923,21 @@ it('names no operation for a turn no brief of Watcher\'s began', async () => {
   const finished = f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!
   expect(finished.operationId).toBeUndefined()
   expect(watcherNewsText(f.delivered[0]!)).not.toContain('answers operation')
+})
+
+it('rechecks a batch of news with a fixed number of snapshot and record reads, whatever its size (#1023)', async () => {
+  const reads = async (size: number) => {
+    const count = { snapshots: 0, records: 0 }
+    const own: { snapshot?: AgentHostSnapshot; record?: WatcherRecord } = {}
+    let counting = false
+    const f = fixture(false, undefined, { snapshot: () => { if (counting) count.snapshots++; return own.snapshot! },
+      record: () => { if (counting) count.records++; return own.record! } })
+    own.snapshot = f.snapshot; own.record = f.record; f.wakes.start()
+    for (let n = 0; n < size; n++) f.thread.requests.push({ id: `question-${n}`, kind: 'question', text: 'Synthetic question', options: [] })
+    f.wakes.observe()
+    counting = true; await f.advance(2_000); counting = false
+    expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'needs-user')).toHaveLength(size)
+    return count
+  }
+  expect(await reads(24)).toEqual(await reads(2))
 })
