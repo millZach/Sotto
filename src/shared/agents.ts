@@ -751,15 +751,7 @@ export type AgentHostSnapshotBroadcast = Omit<AgentHostSnapshot, 'models' | 'cli
   clientHosts?: AgentClientHostBroadcast[]
 }
 /** What actually crosses `sotto:agents:state`: `AgentState` with its catalogs replaced by `AgentModelCatalogBroadcast`. */
-export interface AgentThreadsBroadcast {
-  revision: number
-  baseRevision: number | null
-  roster: Array<{ id: string; revision: number }>
-  changed: Array<{ revision: number; thread: AgentThread }>
-}
-export type AgentStateBroadcast = Omit<AgentState, 'host'> & {
-  host: Omit<AgentHostSnapshotBroadcast, 'threads'> & { threads: AgentThread[] | AgentThreadsBroadcast }
-}
+export type AgentStateBroadcast = Omit<AgentState, 'host'> & { host: AgentHostSnapshotBroadcast }
 
 const PRIMARY_CATALOG_KEY = '__primary__'
 
