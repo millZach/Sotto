@@ -5,8 +5,9 @@
  * call it (`sottoE2E.delegationTool`): the card appears in the Claude thread with the thread as a link, Codex, This
  * computer and the wait, and its outcome moves to Answered when Codex answers; a delegation wider than the Claude
  * thread's own permission is refused, and its card says so with no link; the Codex thread keeps the name it was given,
- * sits under the Claude thread in the sidebar with its machine badge, and says "Delegated by" with a link back; Stop on
- * the Claude thread names the delegated thread still working, and a press stops both. Stable offers neither the bridge nor the tool.
+ * sits under the Claude thread in the sidebar with its machine badge, and says "Delegated by" with a link back; the
+ * line under its composer speaks only while the user's own turn there runs; Stop on the Claude thread names the
+ * delegated thread still working, and a press stops both. Stable offers neither the bridge nor the tool.
  *
  *   npm run build && npx playwright test tests/e2e/thread-delegation.spec.ts
  */
@@ -269,7 +270,8 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
       await expect(brief.locator('header')).toContainText(`${PARENT}delegated`)
       await expect(brief).toContainText('Review the diff on the reconnect fix. Say what blocks a merge.')
       await expect(delegated.locator('.thread-message[data-role="user"] .thread-message__who', { hasText: /^You$/u })).toHaveCount(0)
-      await expect(delegated.locator('.delegation-note')).toHaveText(`${PARENT} cannot send here while you have a turn running.`)
+      // Done, with no turn of the user's running there: nothing holds either thread back, so nothing is said.
+      await expect(delegated.locator('.delegation-note')).toHaveCount(0)
       for (const [width, height] of [[1280, 800], [820, 560]] as const) {
         await resizeWindow(launched, width, height)
         for (const appearance of ['dark', 'light'] as const) {
@@ -282,6 +284,19 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
       }
       await resizeWindow(launched, 1280, 800)
       await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
+
+      // The user's own turn there: while it runs, the thread that delegated waits it out, and the line says so.
+      await page.evaluate(async threadId => {
+        const sent = await window.sotto!.agents!.command({ type: 'manual-send', threadId, text: 'Also check the reconnect on a sleeping laptop.' })
+        if (sent.error) throw new Error(sent.error)
+      }, reviewId)
+      await expect.poll(() => codexPrompts(codex), { timeout: 30_000 }).toBe(3)
+      await expect(delegated.locator('.delegation-note')).toHaveText(`Your turn is running. ${PARENT} sends nothing here until it ends.`, { timeout: 30_000 })
+      await fits(page, 'delegated your turn dark 1280x800')
+      await readable(page, 'delegated your turn dark 1280x800')
+      await capture(launched, 'delegated-your-turn-dark-1280x800')
+      await writeProviderAction(join(codex, 'control.json'), { type: 'complete', threadId: reviewNative, text: 'It reconnects after sleep too.' })
+      await expect(delegated.locator('.delegation-note')).toHaveCount(0, { timeout: 30_000 })
       const back = by.getByRole('button', { name: `Open ${PARENT}, the thread that delegated to this one` })
       await back.focus()
       await page.keyboard.press('Enter')

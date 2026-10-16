@@ -6,8 +6,8 @@ import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActiv
 import type { AgentConnection } from './AgentContext'
 import { threadHostName } from './HostBadge'
 import { ProviderMark } from './ProviderMark'
-import { DELEGATION_OUTCOME_WORDS, delegatedNote, delegationRefusalLine, delegationWaitLine, stopLine, workingDelegatedThreads } from './delegationWords'
-import { useDelegationsEnabled, useNewestBrief } from './delegations'
+import { DELEGATION_OUTCOME_WORDS, delegatedNote, delegationRefusalLine, delegationWaitLine, stopLine, userTurnRunning, workingDelegatedThreads } from './delegationWords'
+import { useDelegations, useDelegationsEnabled, useNewestBrief } from './delegations'
 import './delegation.css'
 
 /** What a card needs of the window besides its delegation: the threads it names, where they run, and a way to open one. */
@@ -162,12 +162,12 @@ export function DelegatedBy({ thread, state, command }: { readonly thread: Agent
 
 /**
  * The line under the composer delegation owns (#1029, design A). In a thread that delegated, while it works: Stop also
- * stops the threads it delegated that are working. In a delegated thread: what the user's own turn there does to the
- * thread that delegated.
+ * stops the threads it delegated that are working. In a delegated thread, only while something holds a send back: the
+ * user's own turn there, which the thread that delegated waits out, or that thread's brief still being worked on.
  */
 export function DelegationComposerNote({ thread, state }: { readonly thread: AgentThread; readonly state: AgentState }): ReactNode {
   const enabled = useDelegationsEnabled()
-  const newest = useNewestBrief(thread)
+  const received = useDelegations(thread.delegatedBy === undefined ? undefined : thread.id).received
   const parentId = enabled ? thread.delegatedBy : undefined
   // Stop shows while the thread works, as the composer decides it; what it also stops is main's rule, a turn still running.
   const working = enabled && thread.status === 'running' && !isThreadClosed(thread) ? workingDelegatedThreads(state.host.threads, thread.id) : 0
@@ -175,6 +175,6 @@ export function DelegationComposerNote({ thread, state }: { readonly thread: Age
   if (working) return <p className="delegation-note"><GitFork size={13} aria-hidden="true" /><span>{stopLine(working)}</span></p>
   if (parentId === undefined) return null
   const parent = state.host.threads.find(item => item.id === parentId)
-  return <p className="delegation-note"><GitFork size={13} aria-hidden="true" />
-    <span>{delegatedNote(parent?.title ?? 'The thread that delegated', newest?.outcome, isThreadTurnRunning(thread))}</span></p>
+  const note = delegatedNote(parent?.title ?? 'The thread that delegated', received.at(-1), userTurnRunning(thread, received), isThreadTurnRunning(thread))
+  return note === undefined ? null : <p className="delegation-note"><GitFork size={13} aria-hidden="true" /><span>{note}</span></p>
 }

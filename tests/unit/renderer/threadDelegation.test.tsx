@@ -7,7 +7,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { DelegationCardProvider, delegationsByTurn, type DelegationCardWorld } from '../../../src/renderer/src/agents/DelegationCards'
 import { DelegationStore } from '../../../src/renderer/src/agents/delegations'
-import { delegationDuration, delegationRefusalLine, delegationWaitLine, stopLabel, stopLine, workingDelegatedThreads } from '../../../src/renderer/src/agents/delegationWords'
+import { delegatedNote, delegationDuration, delegationRefusalLine, delegationWaitLine, stopLabel, stopLine, userTurnRunning, workingDelegatedThreads } from '../../../src/renderer/src/agents/delegationWords'
 import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
@@ -120,6 +120,28 @@ describe('delegation words', () => {
       expect(line, refusal).not.toMatch(/Sotto turned it down|[A-Z]{2,}_[A-Z]/u)
       expect(line, refusal).toMatch(/Nothing was sent\.$/u)
     }
+  })
+
+  it('says the pause only while the user\'s own turn in the delegated thread runs (decision 6)', () => {
+    const brief = view({ outcome: 'answered', briefMessageId: 'brief-1' })
+    const thread = (status: AgentThread['status'], newestUser: string): AgentThread => ({ id: CHILD, title: 'Review the gate fix', projectId: 'workshop', modelId: 'codex:gpt', providerId: 'codex',
+      status, delegatedBy: PARENT, requests: [], messages: [{ id: 'brief-1', role: 'user', text: 'Brief', createdAt: at(5) },
+        ...newestUser === 'brief-1' ? [] : [{ id: newestUser, role: 'user' as const, text: 'Mine', createdAt: at(1) }]] })
+    // Done, with nothing running: nothing holds either thread back, so nothing is said.
+    expect(userTurnRunning(thread('idle', 'brief-1'), [brief])).toBe(false)
+    expect(delegatedNote('Visual gate flake', brief, false, false)).toBeUndefined()
+    // The brief's own turn running is not the user's.
+    expect(userTurnRunning(thread('running', 'brief-1'), [brief])).toBe(false)
+    // The user's own message started the turn that runs: the thread that delegated waits it out.
+    expect(userTurnRunning(thread('running', 'mine-1'), [brief])).toBe(true)
+    expect(delegatedNote('Visual gate flake', brief, true, true)).toBe('Your turn is running. Visual gate flake sends nothing here until it ends.')
+    // Until its briefs are read, a running turn is not called the user's.
+    expect(userTurnRunning(thread('running', 'mine-1'), [])).toBe(false)
+    // A brief the user's turn paused says so while the turn runs; one still being worked on warns before a send.
+    expect(delegatedNote('Visual gate flake', { outcome: 'paused' }, false, true)).toBe('Your turn is running. Visual gate flake sends nothing here until it ends.')
+    expect(delegatedNote('Visual gate flake', { outcome: 'paused' }, false, false)).toBeUndefined()
+    expect(delegatedNote('Visual gate flake', { outcome: 'working' }, false, true)).toBe('If you send here, Visual gate flake sends nothing more until your turn ends.')
+    for (const outcome of ['answered', 'failed', 'stopped', 'unknown'] as const) expect(delegatedNote('Visual gate flake', { outcome }, false, false), outcome).toBeUndefined()
   })
 
   it('names what Stop also stops: the delegated threads below, both levels, whose turn still runs', () => {
@@ -299,6 +321,28 @@ describe('the delegating and the delegated thread\'s panes', () => {
     expect(reads.fake.reads).toEqual([CHILD])
     fireEvent.click(within(by).getByRole('button', { name: 'Open Visual gate flake, the thread that delegated to this one' }))
     expect(live.command).toHaveBeenCalledWith({ type: 'select-thread', threadId: PARENT })
+  })
+
+  it('a delegated thread says nothing under its composer once done, and the pause only while the user\'s own turn runs', async () => {
+    owl(true)
+    const reads = bridge({}, { [CHILD]: [view({ outcome: 'answered', outcomeAt: at(2) })] })
+    vi.stubGlobal('sotto', { delegations: reads.fake })
+    const state = stateWith(CHILD)
+    const child = state.host.threads.find(thread => thread.id === CHILD)!
+    child.status = 'idle'
+    state.host.threads.find(thread => thread.id === GRANDCHILD)!.status = 'idle'
+    const live = mount(state)
+    await waitFor(() => expect(document.querySelector('.delegated-by .delegation-card__outcome')).toHaveTextContent('Answered'))
+    expect(document.querySelector('.delegation-note')).toBeNull()
+    // The user sends their own message there: while its turn runs, the thread that delegated waits it out.
+    const onChild = (patch: (thread: AgentThread) => Partial<AgentThread>): void => {
+      act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === CHILD ? { ...thread, ...patch(thread) } : thread) } }) })
+    }
+    onChild(thread => ({ status: 'running', messages: [...thread.messages, { id: 'gate-review-mine', role: 'user', text: 'Also check the light theme.', createdAt: at(1) }] }))
+    await waitFor(() => expect(document.querySelector('.delegation-note')).toHaveTextContent('Your turn is running. Visual gate flake sends nothing here until it ends.'))
+    // Its turn ends: nothing holds either thread back, and the line goes.
+    onChild(() => ({ status: 'idle' }))
+    await waitFor(() => expect(document.querySelector('.delegation-note')).toBeNull())
   })
 
   it('stable shows none of it and asks main nothing', () => {

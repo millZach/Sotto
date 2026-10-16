@@ -1,7 +1,6 @@
-import type { AgentThread } from '../../../shared/agents'
+import { lastUserMessageIdOf, type AgentThread } from '../../../shared/agents'
 import { delegatedThreadsBelow, DELEGATION_PROMPTS_PER_THREAD, type DelegatedView, type DelegationOutcome, type RefusedView } from '../../../shared/delegation'
 import { isThreadTurnRunning } from '../../../shared/threadActivity'
-import type { WatcherOutcome } from '../../../shared/watcher'
 import { clockLabel } from './threadFacts'
 
 /**
@@ -117,11 +116,22 @@ export const stopLabel = (working: number): string => working ? `Stop agent and 
 /** The line under the composer while a press of Stop would stop delegated threads too. */
 export const stopLine = (working: number): string => `Stop also stops ${threadsWord(working)}.`
 /**
- * The line under a delegated thread's composer: what the user's own turn there does to the thread that delegated, from
- * the outcome of the newest brief it sent here (decision 6).
+ * Whether the turn running in a delegated thread is the user's own: its newest user message is not a brief the thread
+ * that delegated sent, as main decides it (decision 6). Not known, so false, until the thread's briefs are read.
  */
-export function delegatedNote(parent: string, outcome: WatcherOutcome | undefined, running: boolean): string {
-  if (outcome === 'paused' && running) return `Your turn is running. ${parent} sends nothing here until it ends.`
-  return outcome === 'working' || outcome === 'background'
-    ? `If you send here, ${parent} sends nothing more until your turn ends.` : `${parent} cannot send here while you have a turn running.`
+export function userTurnRunning(thread: Pick<AgentThread, 'status' | 'lastTurn' | 'messages' | 'lastUserMessageId' | 'summary'>, received: readonly DelegatedView[]): boolean {
+  if (!isThreadTurnRunning(thread) || !received.length) return false
+  const head = lastUserMessageIdOf(thread) ?? thread.summary?.lastUser?.id
+  return head !== undefined && head !== null && !received.some(view => view.briefMessageId === head)
+}
+
+/**
+ * The line under a delegated thread's composer (decision 6), or none. While the user's own turn there runs, the thread
+ * that delegated sends nothing here until it ends; while that thread's newest brief is still being worked on, a send of
+ * the user's would hold it back. Otherwise nothing holds either thread back, so nothing is said.
+ */
+export function delegatedNote(parent: string, newest: Pick<DelegatedView, 'outcome'> | undefined, userTurn: boolean, running: boolean): string | undefined {
+  if (userTurn || newest?.outcome === 'paused' && running) return `Your turn is running. ${parent} sends nothing here until it ends.`
+  if (newest?.outcome === 'working' || newest?.outcome === 'background') return `If you send here, ${parent} sends nothing more until your turn ends.`
+  return undefined
 }
