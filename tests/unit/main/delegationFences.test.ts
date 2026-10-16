@@ -44,7 +44,7 @@ async function service(delegations: Record<string, unknown>[], threads: AgentThr
     useDelegation: given => { hooks = given; return () => { hooks = undefined } },
     commandFromDelegation: async (command, guard) => {
       if (command.type === 'interrupt') interrupted.push(command.threadId)
-      if (command.type === 'create-thread') snapshot.threads.push(thread(command.threadId))
+      if (command.type === 'create-thread' && command.threadId) snapshot.threads.push(thread(command.threadId))
       if (command.type === 'manual-send' && options.send) return options.send(command, guard, snapshot)
       return { host: snapshot } as never
     },
@@ -108,7 +108,7 @@ it('fences a brief already on its way when the delegating thread cancels it, and
       await writer.wait()
       // The provider's writer asks the guard last, as the coordinator's does.
       try { guard() } catch (error) { return { host: snapshot, error: (error as Error).message } as never }
-      written.push(command.draftId)
+      written.push(command.draftId ?? '')
       return { host: snapshot, deliveries: [{ threadId: command.threadId, draftId: command.draftId, status: 'accepted' }] } as never
     },
   })
