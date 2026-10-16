@@ -152,12 +152,14 @@ it('refuses Watcher on a Muse that cannot take session tool servers, in words th
   expect(await records(f, 'turn/start')).toHaveLength(0)
 }, 60_000)
 
-it('refuses Watcher on a Muse that cannot leave its approvals to the user', async () => {
-  for (const script of [{ permissionProfiles: false }, { reviewerAuthority: 'autoReview' }]) {
+it('refuses Watcher on a Muse that cannot leave its approvals to the user, or cannot show that it does', async () => {
+  for (const [script, said] of [[{ permissionProfiles: false }, /its own reviewer decide Watcher\u2019s approvals/u],
+    [{ reviewerAuthority: 'autoReview' }, /its own reviewer decide Watcher\u2019s approvals/u],
+    [{ permissionStateHidden: true }, /cannot show that Watcher\u2019s approvals stay with you/u]] as const) {
     const f = await fixture(script)
     const id = await openWatcher(f)
     const sent = await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic first message' })
-    expect(sent.error).toMatch(/its own reviewer decide Watcher’s approvals/u)
+    expect(sent.error).toMatch(said)
     expect(await records(f, 'turn/start')).toHaveLength(0)
   }
 }, 90_000)

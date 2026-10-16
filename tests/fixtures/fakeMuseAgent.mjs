@@ -16,7 +16,8 @@ import { join } from 'node:path'
 // `Sotto-Tool-Wait` the server was given, as Muse gives up after its own limit, and records `fixture/mcp-call`.
 // `session/start` takes a `permissionProfile` (Muse's `:ask-me` and `:auto-review`), refused when script.json says
 // `permissionProfiles: false`; a session started with one reports its reviewer in `permissionState`, or the one
-// script.json's `reviewerAuthority` names.
+// script.json's `reviewerAuthority` names, to a connection that asked for the experimental API and unless script.json
+// says `permissionStateHidden`. `session/read` serves a stored session without attaching it.
 const root = process.argv[2]
 const ephemeral = process.argv.includes('--no-session-log')
 const path = name => join(root, name)
@@ -66,7 +67,7 @@ const view = session => ({
   sessionId: session.sessionId, path: `fixture:///${session.sessionId}`, status: session.activeTurnId ? 'running' : 'idle', ephemeral,
   modelId: session.modelId, providerId: 'meta', workspaceRoot: session.cwd, cwd: session.cwd, approvalMode: { mode: session.mode, source: 'wire' },
   activeTurnId: session.activeTurnId ?? null, turnCount: session.turns ?? 0, createdAt: session.createdAt, updatedAt: session.createdAt,
-  ...(session.profileId ? { permissionState: { profileId: session.profileId, reviewerAttached: false,
+  ...(session.profileId && experimental && !read('script.json', {}).permissionStateHidden ? { permissionState: { profileId: session.profileId, reviewerAttached: false,
     reviewerAuthority: read('script.json', {}).reviewerAuthority ?? REVIEWERS[session.profileId] ?? 'autoReview' } } : {}),
 })
 const notify = (method, params) => send({ method, params })
@@ -186,6 +187,7 @@ setInterval(check, 20)
 record({ method: 'fixture/process', params: { pid: process.pid, version: startup.cliVersion ?? '1.1.1', args: process.argv.slice(3), environment: Object.fromEntries(Object.entries(process.env).filter(([key]) => ['META_API_KEY'].includes(key))) } })
 process.on('exit', () => { for (const sessionId of held) holding(sessionId, false); save() })
 let granted = []
+let experimental = false
 /** What this host built each session's runtime with: the servers' JSON, or null for none. */
 const loadedServers = new Map()
 /** The servers themselves, by session, for the model's tool calls. */
@@ -224,6 +226,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   const fail = (kind, message, reason) => send({ id: frame.id, error: { code: -32602, message, data: { kind, ...(reason ? { reason } : {}) } } })
   if (frame.method === 'initialize') {
     granted = script.sessionMcp !== false && startup.sessionMcp !== false && (p.capabilities?.requestedCapabilities ?? []).includes('sessionMcp') ? ['sessionMcp'] : []
+    experimental = p.capabilities?.experimentalApi === true
     result({ grantedCapabilities: granted, serverInfo: { name: 'muse-code-fixture', title: 'Muse fixture', version: startup.cliVersion ?? '1.1.1' }, schema: { family: 'msp', version: startup.schemaVersion ?? 1 }, sessionDurability: { state: 'durable' }, userAgent: 'fixture', museHome: root, workspaceTrust: { state: 'untrusted' }, subagentControl: { state: 'disabled' }, requests: {}, notifications: {} })
   } else if (frame.method === 'initialized') { /* A notification. */ }
   else if (frame.method === 'model/list') result({ models: MODELS, defaultModelId: MODELS.find(model => model.isDefault)?.modelId ?? null, source: script.models ? 'resolvedAuthContext' : startup.catalogSource ?? 'resolvedAuthContext' })
@@ -278,6 +281,10 @@ createInterface({ input: process.stdin }).on('line', line => {
       result(snapshot)
       notify('session/contextUsage', { sessionId: session.sessionId, usedTokens: 654 })
     } else result(snapshot)
+  } else if (frame.method === 'session/read') {
+    const session = sessions[p.sessionId] ?? (ephemeral ? undefined : current().sessions[p.sessionId])
+    if (!session) { fail('sessionNotFound', 'Unknown session'); return }
+    result({ session: view(session), history: { mode: 'inline', items: p.excludeItems === false ? session.items : null, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests: [], viewCursor: cursor(session) })
   } else if (frame.method === 'session/list') result({ sessions: Object.values(ephemeral ? sessions : current().sessions).map(view) })
   else if (frame.method === 'session/setModel') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }

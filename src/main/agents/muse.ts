@@ -92,6 +92,7 @@ const museSessionSchema = z.looseObject({
 })
 type MuseSession = z.infer<typeof museSessionSchema>
 const sessionStartSchema = z.looseObject({ session: museSessionSchema, viewCursor: z.string().default('') })
+const sessionReadSchema = z.looseObject({ session: museSessionSchema })
 const historySchema = z.looseObject({
   mode: z.string(), items: z.array(museItemSchema).nullable().default(null),
   snapshot: z.looseObject({ state: z.looseObject({ items: z.array(museItemSchema).default([]) }) }).nullable().default(null),
@@ -151,6 +152,7 @@ const MUSE_WATCHER_PROFILE = ':ask-me'
 const MUSE_PROFILE_REFUSALS: ReadonlySet<string> = new Set(['permission_profile_unknown', 'permission_profile_unavailable', 'permission_profile_ephemeral_fixed'])
 const MUSE_WATCHER_WITHOUT_TOOLS = 'This Muse cannot give Watcher its Sotto tools, so Watcher did not start. Nothing was sent. Update Muse to 1.4.7 or newer and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
 const MUSE_WATCHER_REVIEWED = 'This Muse would let its own reviewer decide Watcher’s approvals instead of you, so Watcher did not start. Nothing was sent. Update Muse and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
+const MUSE_WATCHER_UNPROVEN = 'This Muse cannot show that Watcher’s approvals stay with you, so Watcher did not start. Nothing was sent. Update Muse and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
 /**
  * Watcher's instructions on Muse. MSP takes no system prompt or instructions from a client, so they travel as a text part
  * ahead of each message Sotto sends Watcher, marked as Sotto's. The turn's `displayText` is the message alone, so Muse's
@@ -258,15 +260,21 @@ export class MuseMspHost implements AgentHost {
     return profile
   }
   /**
-   * Watcher's session must leave its approvals to the user. Muse says who reviews them where it reports the session's
-   * permission state; a session reviewed by anyone else has its host stopped before anything is sent to it (ADR-0079).
+   * Watcher's session must leave its approvals to the user, and Muse must show it: every session it reports for Watcher
+   * names the user as its reviewer, read back with `session/read` when the reply leaves its permission state out. A
+   * session reviewed by anyone else, or one Muse cannot show, has its host stopped before anything is sent (ADR-0079).
    * Watcher's tools stay admitted, so the same start, replayed by its command ID, is checked again after Muse is updated.
    */
-  private checkReviewer(id: string, session: MuseSession): void {
-    const authority = session.permissionState?.reviewerAuthority
-    if (authority === undefined || authority === 'human') return
-    this.revokeProfile(id, undefined, MUSE_WATCHER_REVIEWED)
-    throw new WatcherProfileRefusal(MUSE_WATCHER_REVIEWED)
+  private async proveReviewer(id: string, entry: ThreadProcess, session: MuseSession): Promise<void> {
+    let authority = session.permissionState?.reviewerAuthority
+    if (authority === undefined) {
+      try { authority = sessionReadSchema.parse(await entry.rpc.request('session/read', { sessionId: session.sessionId, excludeItems: true })).session.permissionState?.reviewerAuthority }
+      catch (error) { if (error instanceof MuseUncertain) throw error /* A refused or unreadable read proves nothing. */ }
+    }
+    if (authority === 'human') return
+    const reason = authority === undefined ? MUSE_WATCHER_UNPROVEN : MUSE_WATCHER_REVIEWED
+    this.revokeProfile(id, undefined, reason)
+    throw new WatcherProfileRefusal(reason)
   }
   /** A start Muse refused because it cannot leave Watcher's approvals to the user, said as the refusal it is. */
   private watcherStartRefusal(id: string, error: unknown): unknown {
@@ -486,9 +494,10 @@ export class MuseMspHost implements AgentHost {
    * Ask a host which client it is, and for session tool servers: a client that does not know the capability simply
    * leaves it out of its grant, so asking costs nothing at the floor. Whether Sotto will drive it is `clientRefusal`'s answer.
    */
-  private async identify(rpc: MuseRpc): Promise<MuseClient> {
+  private async identify(rpc: MuseRpc, watcher = false): Promise<MuseClient> {
+    // Watcher's host also asks for the experimental surface, where a session reports who reviews its approvals (ADR-0079).
     const client = initializeSchema.parse(await rpc.request('initialize', { clientInfo: { name: 'sotto', title: 'Sotto', version: appVersion },
-      capabilities: { requestedCapabilities: [SESSION_MCP] } }))
+      capabilities: { requestedCapabilities: [SESSION_MCP], ...(watcher ? { experimentalApi: true } : {}) } }))
     rpc.notify('initialized')
     return client
   }
@@ -530,7 +539,7 @@ export class MuseMspHost implements AgentHost {
     entry.rpc = this.spawn(executable, () => this.processLost(id, entry))
     entry.ready = (async () => {
       try {
-        const client = await this.identify(entry.rpc)
+        const client = await this.identify(entry.rpc, entry.watcher)
         const refusal = clientRefusal(client)
         if (refusal) throw refusal
         entry.sessionMcp = client.grantedCapabilities.includes(SESSION_MCP)
@@ -797,7 +806,7 @@ export class MuseMspHost implements AgentHost {
           try { reply = await start() } catch (retry) { throw entry.watcher ? this.watcherStartRefusal(id, retry) : retry }
         }
         const started = sessionStartSchema.parse(reply)
-        if (entry.watcher) this.checkReviewer(id, started.session)
+        if (entry.watcher) await this.proveReviewer(id, entry, started.session)
         this.builtWith(id, entry, tools.tools)
         alias.museSessionId = started.session.sessionId
         entry.sessionId = alias.museSessionId
@@ -812,7 +821,7 @@ export class MuseMspHost implements AgentHost {
       const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', {
         commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false, ...tools.params,
       }))
-      if (entry.watcher) this.checkReviewer(id, resumed.session)
+      if (entry.watcher) await this.proveReviewer(id, entry, resumed.session)
       this.builtWith(id, entry, tools.tools)
       if (this.processes.get(id) !== entry) return
       this.assertGeneration(generation)
@@ -1289,7 +1298,7 @@ export class MuseMspHost implements AgentHost {
           try { reply = await entry.rpc.request('session/start', startParams(alias, tools.params, entry.watcher)) }
           catch (error) { throw entry.watcher ? this.watcherStartRefusal(command.threadId, error) : error }
           const started = sessionStartSchema.parse(reply)
-          if (entry.watcher) this.checkReviewer(command.threadId, started.session)
+          if (entry.watcher) await this.proveReviewer(command.threadId, entry, started.session)
           this.builtWith(command.threadId, entry, tools.tools)
           alias.museSessionId = started.session.sessionId
           entry.sessionId = alias.museSessionId
@@ -1298,6 +1307,7 @@ export class MuseMspHost implements AgentHost {
           if (alias.nativeModelId !== alias.modelId) {
             await entry.rpc.request('session/setModel', { commandId: museCommandId(), sessionId: alias.museSessionId, model: { modelId: alias.modelId } })
             const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', { commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: true }))
+            if (entry.watcher) await this.proveReviewer(command.threadId, entry, resumed.session)
             this.confirmSession(command.threadId, alias, resumed.session)
             if (alias.nativeModelId !== alias.modelId) throw new MuseUnreadable('Muse did not confirm the requested model.')
             await this.persist()
@@ -1375,6 +1385,7 @@ export class MuseMspHost implements AgentHost {
               alias.settingsConfirmed = false; await this.persist()
               await entry.rpc.request('session/setModel', { commandId: museCommandId(), sessionId: alias.museSessionId, model: { modelId } })
               const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', { commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: true }))
+              if (entry.watcher) await this.proveReviewer(command.threadId, entry, resumed.session)
               if (resumed.session.modelId !== modelId) throw new MuseUnreadable('Muse did not confirm the requested model.')
               alias.modelId = modelId; alias.nativeModelId = modelId
               thread.modelId = modelId
@@ -1570,6 +1581,7 @@ export class MuseMspHost implements AgentHost {
       commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false,
     }))
     if (generation !== this.generation || this.processes.get(id) !== entry) return
+    if (entry.watcher) await this.proveReviewer(id, entry, resumed.session)
     const items = resumed.history.items ?? resumed.history.snapshot?.state.items
     if (!items) throw new MuseUnreadable('Muse did not serve this thread’s history.')
     for (const item of items) this.foldItem(id, item)
