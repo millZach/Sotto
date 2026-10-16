@@ -246,7 +246,7 @@ export class WatcherService implements WatcherControlHooks {
     const desired = paired ? pairedCeiling : configured
     // Which limit this is, for a receipt that says what held a role's permission back.
     const by: NonNullable<HeldPermission['by']> = paired ? 'paired-host' : 'new-thread-default'
-    return { ...resolveNewThreadPermission(model, desired), by }
+    return { ...resolveNewThreadPermission(model, desired), by, limit: desired }
   }
   private permission(model: AgentModel | undefined, explicit?: WatcherToolInput<'start_thread'>['permission'], pairedCeiling?: WatcherHostControl['ceiling']) {
     const ceiling = this.ceiling(model, pairedCeiling)
@@ -1302,7 +1302,8 @@ export class WatcherService implements WatcherControlHooks {
           const ceiling = this.ceiling(model, pairedCeiling)
           if (ceiling.providerMode === undefined && ceiling.runtimeMode) {
             const mode = capRuntimeMode(byRole.runtimeMode, ceiling.runtimeMode)
-            if (mode !== byRole.runtimeMode) held = { wanted: byRole.runtimeMode, startedOn: mode, by: ceiling.by }
+            // A limit the model does not offer starts on the nearest mode it does, and the receipt says that is why.
+            if (mode !== byRole.runtimeMode) held = { wanted: byRole.runtimeMode, startedOn: mode, by: ceiling.by, ...(ceiling.nearestFit ? { unoffered: ceiling.limit } : {}) }
             explicit = { kind: 'runtime', mode }
           }
         }

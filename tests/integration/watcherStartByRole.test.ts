@@ -16,14 +16,14 @@ const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 const ALL_MODES: AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
 
-async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode } = {}) {
+async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode; otherModes?: AgentRuntimeMode[] } = {}) {
   const workspace = await workspaceFixture(undefined, { history: true })
   cleanups.push(workspace.remove)
   // Codex offers every mode and a second model, so only the ceiling narrows a permission and a named model can differ.
   const codex = workspace.adapters.codex.state
   codex.models[0]!.runtimeModes = [...ALL_MODES]
   codex.models.push({ id: 'fake:other', provider: 'Fake', name: 'Synthetic other model', ready: true,
-    reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium', runtimeModes: [...ALL_MODES] })
+    reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium', runtimeModes: [...options.otherModes ?? ALL_MODES] })
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => true, watcherEnabled: true } })
   let choices: WorkerRoleChoices = {}, reads = 0
@@ -99,6 +99,15 @@ it('holds a role\'s wider permission to the new-thread default, and the receipt 
   const result = f.ok(await f.call(f.start({ role: 'computer-use' })))
   expect(f.created(result.target.threadId)).toMatchObject({ reasoningEffort: 'low', runtimeMode: 'approval-required' })
   expect(result.role!.note).toContain('Its permission, Full access, was held to the user\'s new-thread default, Ask for approval.')
+})
+
+it('says the model does not offer the default\'s mode when that, not the default itself, held a role\'s permission', async () => {
+  // The other model offers no Allow edits, so a new-thread default of Allow edits starts it on the nearest it offers below.
+  const f = await fixture({ newThread: 'auto-accept-edits', otherModes: ['approval-required', 'auto', 'full-access'] })
+  f.setChoices({ 'computer-use': { modelId: f.other.id, reasoningEffort: 'low', runtimeMode: 'full-access' } })
+  const result = f.ok(await f.call(f.start({ role: 'computer-use' })))
+  expect(f.created(result.target.threadId)).toMatchObject({ runtimeMode: 'approval-required' })
+  expect(result.role!.note).toContain('Its permission, Full access, was held to Ask for approval: the user\'s new-thread default is Allow edits, which this model does not offer, so it starts on the nearest mode the model does.')
 })
 
 it('lets a named model override the role for this start only, with effort and permission still from the role', async () => {

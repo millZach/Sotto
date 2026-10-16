@@ -279,6 +279,13 @@ export interface HeldPermission {
   readonly wanted: AgentRuntimeMode
   readonly startedOn: AgentRuntimeMode
   readonly by?: 'new-thread-default' | 'delegating-thread' | 'paired-host'
+  /** That limit's own mode when the model does not offer it, so the start took the nearest mode the model does. */
+  readonly unoffered?: AgentRuntimeMode | undefined
+}
+/** Each limit as a receipt names it. */
+const HELD_BY: Readonly<Record<NonNullable<HeldPermission['by']>, string>> = {
+  'new-thread-default': "the user's new-thread default", 'delegating-thread': "the delegating thread's own permission",
+  'paired-host': 'the most that host lets this computer give a thread there',
 }
 /**
  * What a start by role says in its receipt, for the agent that asked to pass on: the role, what the request named in
@@ -299,7 +306,8 @@ export function roleStartNote(start: RoleStart, models: readonly AgentModel[], h
   }
   if (held) {
     const wanted = RUNTIME_MODE_WORDS[held.wanted], startedOn = RUNTIME_MODE_WORDS[held.startedOn]
-    parts.push(held.by === 'delegating-thread' ? `Its permission, ${wanted}, was held to ${startedOn}, the delegating thread's own, since a delegated thread gets no more.`
+    parts.push(held.unoffered ? `Its permission, ${wanted}, was held to ${startedOn}: ${HELD_BY[held.by ?? 'new-thread-default']} is ${RUNTIME_MODE_WORDS[held.unoffered]}, which this model does not offer, so it starts on the nearest mode the model does.`
+      : held.by === 'delegating-thread' ? `Its permission, ${wanted}, was held to ${startedOn}, the delegating thread's own, since a delegated thread gets no more.`
       : held.by === 'paired-host' ? `Its permission, ${wanted}, was held to ${startedOn}, the most that host lets this computer give a thread it starts there.`
         : `Its permission, ${wanted}, was held to the user's new-thread default, ${startedOn}.`)
   }

@@ -16,11 +16,12 @@ const ALL_MODES: AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits',
 type Result = { status: 'ok'; delegation: { id: string; thread: string; outcome: string }; role?: { work: string; named: string[]; note: string } }
   | { status: 'refused'; code: string; message: string }
 
-async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode } = {}) {
+async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode; grokModes?: AgentRuntimeMode[] } = {}) {
   const workspace = await workspaceFixture(undefined, { history: true, watcherEnabled: false })
   cleanups.push(workspace.remove)
   // Every provider offers every mode, so only the ceiling narrows a permission.
   for (const adapter of Object.values(workspace.adapters)) adapter.state.models[0]!.runtimeModes = [...ALL_MODES]
+  if (options.grokModes) workspace.adapters.grok.state.models[0]!.runtimeModes = [...options.grokModes]
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => true, watcherEnabled: false } })
   let choices: WorkerRoleChoices = {}, reads = 0
@@ -80,6 +81,16 @@ it('holds a role\'s permission to the narrower of the calling thread\'s own and 
   expect(f.created(result.delegation.thread)).toMatchObject({ provider: 'codex', runtimeMode: 'approval-required' })
   // The calling thread's own Ask for approval is the narrower limit here, and the note names it rather than the default.
   expect(result.role!.note).toContain('Its permission, Allow edits, was held to Ask for approval, the delegating thread\'s own, since a delegated thread gets no more.')
+})
+
+it('says the model does not offer the limit\'s mode when that, not the limit itself, held a role\'s permission', async () => {
+  // Grok Build offers no Allow edits, so a new-thread default of Allow edits starts it on the nearest it offers below.
+  const f = await fixture({ newThread: 'auto-accept-edits', grokModes: ['approval-required', 'auto', 'full-access'] }), parent = await f.userThread('full-access')
+  f.setChoices({ 'computer-use': { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'full-access' } })
+  const result = f.ok(await f.delegate(parent, { work: 'computer-use' }))
+  expect(f.created(result.delegation.thread)).toMatchObject({ provider: 'grok', runtimeMode: 'approval-required' })
+  expect(result.role!.note).toContain('Its permission, Full access, was held to Ask for approval: the user\'s new-thread default is Allow edits, which this model does not offer, so it starts on the nearest mode the model does.')
+  expect(result.role!.note).not.toContain('held to the user\'s new-thread default, Ask for approval')
 })
 
 it('lets a named provider and model override the role, with effort and permission still from the role', async () => {
