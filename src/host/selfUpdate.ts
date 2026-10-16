@@ -1,0 +1,368 @@
+import { spawn as spawnProcess, type ChildProcess } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { access, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { z } from 'zod'
+import { HOST_NODE_RANGE, LAUNCH_SCRIPT_SOURCE } from '../main/hosts/launchScript'
+import { HOST_DOWNLOAD_TIMEOUT_MS, hostLaunchTimings } from '../shared/hostLaunchTimings'
+import { HOST_RELEASES_URL, HOST_UPDATE_STEPS, HOST_VERSION_PATTERN, hostArchiveName, type HostUpdateStep } from '../shared/hostUpdates'
+import { compareHostToTarget, HOST_UPDATE_ANSWER_WAIT_MS, HOST_UPDATE_ANSWERED_SUFFIX, HOST_UPDATE_RESTART_WAIT_MS, HOST_UPDATE_STATUS_FILE, HOST_UPDATE_STATUS_LIMIT_BYTES, hostUpdateErrorSchema, hostUpdateFetchedSchema, hostUpdateInstalledSchema, hostUpdateStatusSchema,
+  type HostUpdateAnswer, type HostUpdateStatus } from '../shared/hostSelfUpdate'
+import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
+import type { HostUpdateRequestAction } from '../shared/hostProtocol'
+import { processAlive } from './lock'
+
+/**
+ * A host that updates itself when a paired desktop asks over its socket (ADR-0087). It runs the launch script it ships for
+ * SSH against itself, on this machine, so there is one implementation of the download, the checksum, the unpack, the Node
+ * range, the version conflict, the restart, the rollback and the prune. The client names only a version, and for install
+ * the archive's name and checksum the host's own download answered. Everything else the script reads, the host builds
+ * itself: its installation folder from where its own entry sits, its data folder and port from its own command line, its
+ * Node, its host ID, the launch timings the desktop sends, and the fixed releases page. A version that is not newer than
+ * the one running is refused at every step, since `versions/` keeps the previous one and a client could otherwise roll the
+ * host back.
+ *
+ * The restart stops this host, so it runs in a process that outlives it: detached in its own session, or for a host its
+ * start at boot unit runs (ADR-0054), in a transient systemd unit of its own, since stopping `sotto-host` kills everything
+ * left in that unit's cgroup. The restart reports in a status file in the data folder, which the host waits on for up to
+ * ten seconds before it answers, and which the new host, or the old one started again, reads for `outcome`.
+ */
+
+/** Where a running host was installed, from its own entry. `version` is the version folder it runs from, or null for a flat install. */
+export interface HostInstallation { readonly installPath: string; readonly version: string | null }
+/**
+ * The installation folder of a host whose entry is `<install>/versions/<version>/host/index.js`, the layout updates make,
+ * or `<install>/host/index.js`, a flat install. Any other path, and a version folder that is not the version this host
+ * says it runs, is refused: the host updates only a folder it can be sure the launch script starts.
+ */
+export function hostInstallation(entry: string, sottoVersion: string): HostInstallation | null {
+  if (!entry || !isAbsolute(entry)) return null
+  const file = resolve(entry)
+  if (basename(file) !== 'index.js' || basename(dirname(file)) !== 'host') return null
+  const folder = dirname(dirname(file)), parent = dirname(folder)
+  if (basename(parent) === 'versions') {
+    const version = basename(folder)
+    return HOST_VERSION_PATTERN.test(version) && version === sottoVersion ? { installPath: dirname(parent), version } : null
+  }
+  return { installPath: folder, version: null }
+}
+
+/**
+ * Whether this host runs under its start at boot unit (ADR-0054), from its own cgroup: a restart in that cgroup would be
+ * killed with the host it stops. Only Linux has the unit.
+ */
+export async function runByBootUnit(platform: NodeJS.Platform = process.platform, read: (file: string) => Promise<string> = file => readFile(file, 'utf8')): Promise<boolean> {
+  if (platform !== 'linux') return false
+  try { return /\/sotto-host\.service(?:\/|$)/mu.test(await read('/proc/self/cgroup')) } catch { return false }
+}
+
+/** The variables a transient unit is given from this host's environment: what the launch script and the host it starts read. */
+const UNIT_ENVIRONMENT = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'XDG_RUNTIME_DIR', 'XDG_CONFIG_HOME', 'DBUS_SESSION_BUS_ADDRESS', 'SOTTO_HOST_KEY_FILE'] as const
+
+/**
+ * The command that runs a restart in a transient user unit of its own (ADR-0054, October 16 amendment): collected once it
+ * ends, with the environment the host it starts needs, and the launch script as a file, since a unit's stdin is not ours.
+ */
+export function transientRestartCommand(input: { readonly node: string; readonly script: string; readonly configuration: string; readonly env: NodeJS.ProcessEnv; readonly unit: string }): string[] {
+  const environment = UNIT_ENVIRONMENT.flatMap(name => {
+    const value = input.env[name]
+    return typeof value === 'string' && value && !/[\p{Cc}]/u.test(value) ? ['--setenv=' + name + '=' + value] : []
+  })
+  return ['--user', '--collect', '--quiet', '--unit=' + input.unit, ...environment, '--', input.node, input.script, input.configuration]
+}
+
+export interface HostSelfUpdateOptions {
+  /** The running host's entry, `process.argv[1]`: where it was installed is read from it. */
+  readonly entry: string
+  readonly dataDirectory: string
+  /** The port the host was started with, which the launch script and the boot unit's script pin. */
+  readonly port: number
+  readonly hostId: string
+  readonly sottoVersion: string
+  readonly startedBy?: HostStartedBy | undefined
+  /** Tests stand a local releases page in; a host always uses the published one. */
+  readonly releasesUrl?: string | undefined
+  readonly node?: string | undefined
+  readonly env?: NodeJS.ProcessEnv | undefined
+  readonly platform?: NodeJS.Platform | undefined
+  readonly arch?: string | undefined
+  readonly runByUnit?: (() => Promise<boolean>) | undefined
+  readonly restartWaitMs?: number | undefined
+  readonly spawn?: typeof spawnProcess | undefined
+  readonly log?: ((event: string) => void) | undefined
+}
+/** Why a host offers no self-update: Sotto did not start it, or it does not run from a release's own layout. */
+export type HostSelfUpdateRefusal = 'update-not-owned' | 'update-layout'
+export interface HostUpdateRequest {
+  readonly action: HostUpdateRequestAction
+  readonly version?: string | undefined
+  readonly file?: string | undefined
+  readonly sha256?: string | undefined
+}
+export interface HostUpdateContext {
+  /** The client that asked. Only it may cancel its own download. */
+  readonly owner: object
+  /** Aborted once that client's socket has closed, which ends its download and nothing else. */
+  readonly gone: AbortSignal
+  /** Told each step as the host reaches it. */
+  readonly onStep: (step: HostUpdateStep) => void
+}
+
+/** A host that may update itself, or why it may not. */
+export function createHostSelfUpdate(options: HostSelfUpdateOptions): { readonly ok: true; readonly update: HostSelfUpdate } | { readonly ok: false; readonly reason: HostSelfUpdateRefusal } {
+  // Only a host Sotto started is restarted by Sotto (ADR-0025, ADR-0040): the launch script or its start at boot unit.
+  if (!startedBySotto(options.startedBy)) return { ok: false, reason: 'update-not-owned' }
+  const installation = hostInstallation(options.entry, options.sottoVersion)
+  if (!installation) return { ok: false, reason: 'update-layout' }
+  return { ok: true, update: new HostSelfUpdate(options, installation) }
+}
+
+const pause = (ms: number): Promise<void> => new Promise(done => setTimeout(done, ms))
+const OUTPUT_LIMIT = 65_536
+const INSTALL_BUDGET_MS = 10 * 60_000
+const fetchResult = z.union([hostUpdateFetchedSchema, hostUpdateErrorSchema])
+const installResult = z.union([hostUpdateInstalledSchema, hostUpdateErrorSchema])
+const invalid = (): HostUpdateAnswer => ({ type: 'error', reason: 'update-invalid' })
+const busy = (): HostUpdateAnswer => ({ type: 'error', reason: 'update-busy' })
+
+export class HostSelfUpdate {
+  /** The one update action running here, whichever listener asked: two never run at once. */
+  private running: HostUpdateRequestAction | null = null
+  private download: { readonly owner: object; readonly abort: AbortController } | null = null
+  /** A restart that went ahead waits for this host to have answered its desktop: the file that says so, once it has. */
+  private answering: string | null = null
+  private readonly statusPath: string
+  private readonly node: string
+  private readonly env: NodeJS.ProcessEnv
+  private readonly spawn: typeof spawnProcess
+
+  constructor(private readonly options: HostSelfUpdateOptions, readonly installation: HostInstallation) {
+    this.statusPath = join(resolve(options.dataDirectory), HOST_UPDATE_STATUS_FILE)
+    this.node = options.node ?? process.execPath
+    this.env = options.env ?? process.env
+    this.spawn = options.spawn ?? spawnProcess
+  }
+
+  /** One step of an update, as `host-update` asks for it. Every answer is one the desktop reads (`hostUpdateAnswerSchema`). */
+  async run(request: HostUpdateRequest, context: HostUpdateContext): Promise<HostUpdateAnswer> {
+    switch (request.action) {
+      case 'fetch': return this.fetch(request, context)
+      case 'install': return this.install(request, context)
+      case 'restart': return this.restart(request, context)
+      case 'cancel': {
+        const download = this.download
+        if (!download || download.owner !== context.owner) return { type: 'update-cancelled', cancelled: false }
+        download.abort.abort()
+        return { type: 'update-cancelled', cancelled: true }
+      }
+      case 'outcome': {
+        const status = await this.readStatus()
+        return { type: 'update-outcome', running: this.options.sottoVersion,
+          restart: !status ? { state: 'none' } : status.state === 'restarting' ? { state: 'restarting', version: status.version } : { state: 'finished', version: status.version, result: status.result } }
+      }
+    }
+  }
+
+  /** A version this host may move to: a release number newer than its own, by the rule the desktop uses. */
+  private newer(version: string | undefined): string | null {
+    if (!version || !HOST_VERSION_PATTERN.test(version)) return null
+    return compareHostToTarget(this.options.sottoVersion, version) === -1 ? version : null
+  }
+  private configuration(operation: Record<string, unknown>): string {
+    return JSON.stringify({ ...operation, installPath: this.installation.installPath, dataDirectory: resolve(this.options.dataDirectory),
+      remotePort: this.options.port, hostId: this.options.hostId, nodeRange: HOST_NODE_RANGE,
+      releasesUrl: this.options.releasesUrl ?? HOST_RELEASES_URL, ...hostLaunchTimings() })
+  }
+  /** Whether another update holds the installation folder, as the launch script judges its update lock. */
+  private async lockHeld(): Promise<boolean> {
+    const lock = join(this.installation.installPath, 'versions', '.update-lock')
+    let age: number
+    try { age = Date.now() - (await stat(lock)).mtimeMs } catch { return false }
+    const pid = Number((await readFile(join(lock, 'pid'), 'utf8').catch(() => '')).trim())
+    return Number.isInteger(pid) && pid > 0 ? processAlive(pid) : age < 30_000
+  }
+  private take(action: HostUpdateRequestAction): boolean {
+    if (this.running) return false
+    this.running = action
+    return true
+  }
+
+  private async fetch(request: HostUpdateRequest, context: HostUpdateContext): Promise<HostUpdateAnswer> {
+    const version = this.newer(request.version)
+    if (!version) return invalid()
+    if (!this.take('fetch')) return busy()
+    const abort = new AbortController()
+    this.download = { owner: context.owner, abort }
+    const stop = (): void => abort.abort()
+    context.gone.addEventListener('abort', stop, { once: true })
+    try {
+      // An update another client runs over SSH holds the folder: this one waits its turn rather than racing it.
+      if (await this.lockHeld()) return busy()
+      if (context.gone.aborted) return { type: 'update-cancelled', cancelled: true }
+      context.onStep('download')
+      const result = await this.script(this.configuration({ op: 'update-fetch', version }), context.onStep, 2 * HOST_DOWNLOAD_TIMEOUT_MS + 10_000, abort.signal)
+      if (abort.signal.aborted) return { type: 'update-cancelled', cancelled: true }
+      return fetchResult.safeParse(result).data ?? { type: 'error', reason: 'update-failed' }
+    } finally {
+      context.gone.removeEventListener('abort', stop)
+      this.download = null
+      this.running = null
+    }
+  }
+
+  private async install(request: HostUpdateRequest, context: HostUpdateContext): Promise<HostUpdateAnswer> {
+    const version = this.newer(request.version)
+    // The archive is the one this host's own download names, for its own system: a client chooses no file.
+    if (!version || request.file !== hostArchiveName(version, this.options.platform ?? process.platform, this.options.arch ?? process.arch)
+      || typeof request.sha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(request.sha256)) return invalid()
+    if (!this.take('install')) return busy()
+    // Unpacking carries on when the client's socket closes, as it does over SSH: it is never stopped partway.
+    try {
+      const result = await this.script(this.configuration({ op: 'update-install', version, file: request.file, sha256: request.sha256 }), context.onStep, INSTALL_BUDGET_MS)
+      return installResult.safeParse(result).data ?? { type: 'error', reason: 'update-failed' }
+    } finally { this.running = null }
+  }
+
+  private async restart(request: HostUpdateRequest, context: HostUpdateContext): Promise<HostUpdateAnswer> {
+    const version = this.newer(request.version)
+    if (!version) return invalid()
+    try { await access(join(this.installation.installPath, 'versions', version, 'host', 'index.js')) } catch { return { type: 'error', reason: 'update-missing' } }
+    if (!this.take('restart')) return busy()
+    try {
+      context.onStep('restart')
+      // One status file for each update: what the last one said is gone before this one starts.
+      await rm(this.statusPath, { force: true })
+      await rm(this.statusPath + HOST_UPDATE_ANSWERED_SUFFIX, { force: true })
+      const configuration = this.configuration({ op: 'update-restart', version, resultFile: this.statusPath, answerWaitMs: HOST_UPDATE_ANSWER_WAIT_MS })
+      const unit = await (this.options.runByUnit ?? (() => runByBootUnit(this.options.platform)))()
+      const ended = unit ? (await this.restartInUnit(configuration)).ended : this.restartDetached(configuration)
+      const answer = await this.awaitRestart(version, ended)
+      if (answer.type === 'update-restarting') this.answering = this.statusPath + HOST_UPDATE_ANSWERED_SUFFIX
+      return answer
+    } finally { this.running = null }
+  }
+
+  /**
+   * Told once an answer to `host-update` has been handed to its client's socket. After `update-restarting`, this says so
+   * to the restart, which waits for it before it stops this host, so the answer is not cut off with the connection.
+   */
+  delivered(): void {
+    const file = this.answering
+    this.answering = null
+    if (file) void writeFile(file, '', { mode: 0o600 }).catch(() => undefined)
+  }
+
+  /** The restart in its own session, which outlives this host: setsid on Linux and macOS, its own process group on Windows. */
+  private restartDetached(configuration: string): Promise<void> {
+    const child = this.spawn(this.node, ['--input-type=commonjs', '-', configuration], { detached: true, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true, env: this.env })
+    const ended = new Promise<void>(done => { child.once('exit', () => done()); child.once('error', () => done()) })
+    child.stdin?.on('error', () => undefined)
+    child.stdin?.end(LAUNCH_SCRIPT_SOURCE)
+    child.unref()
+    this.options.log?.('host-update-restart-started')
+    return ended
+  }
+
+  /**
+   * The restart in a transient user unit of its own, for a host its start at boot unit runs: `systemctl stop sotto-host`
+   * kills everything in that unit's cgroup, a detached process included (`KillMode=mixed`). The script goes in the data
+   * folder, which is this account's own; it holds nothing secret.
+   */
+  private async restartInUnit(configuration: string): Promise<{ readonly ended: Promise<void> }> {
+    const script = join(resolve(this.options.dataDirectory), 'host-update-restart.cjs')
+    await writeFile(script, LAUNCH_SCRIPT_SOURCE, { mode: 0o600 })
+    const env = { ...this.env }
+    if (!env.XDG_RUNTIME_DIR && typeof process.getuid === 'function') env.XDG_RUNTIME_DIR = '/run/user/' + process.getuid()
+    const args = transientRestartCommand({ node: this.node, script, configuration, env, unit: 'sotto-host-update-' + randomUUID().slice(0, 8) })
+    const child: ChildProcess = this.spawn('systemd-run', args, { stdio: 'ignore', windowsHide: true, env })
+    const code = await new Promise<number | null>(done => {
+      const timer = setTimeout(() => { child.kill('SIGKILL'); done(null) }, 15_000)
+      child.once('exit', value => { clearTimeout(timer); done(value) })
+      child.once('error', () => { clearTimeout(timer); done(null) })
+    })
+    this.options.log?.(code === 0 ? 'host-update-restart-started' : 'host-update-restart-unit-refused')
+    // A unit the user manager would not start never claims the status file: the wait ends at once.
+    return { ended: code === 0 ? new Promise<void>(() => undefined) : Promise.resolve() }
+  }
+
+  /**
+   * Waits for the restart to claim the status file, once its checks pass, or to write why it stopped. When it has done
+   * neither in time, or ended without either, the host claims the file itself, and the restart, if it ever gets that far,
+   * then stops without touching anything: `restart-not-sent` stays true.
+   */
+  private async awaitRestart(version: string, ended: Promise<void>): Promise<HostUpdateAnswer> {
+    let over = false
+    void ended.then(() => { over = true })
+    const deadline = Date.now() + (this.options.restartWaitMs ?? HOST_UPDATE_RESTART_WAIT_MS)
+    while (Date.now() < deadline) {
+      const status = await this.readStatus()
+      if (status) return this.restartAnswer(status, version)
+      if (over) break
+      await pause(100)
+    }
+    const abandoned = { v: 1, version, state: 'finished', result: { type: 'error', reason: 'restart-not-sent' } }
+    try {
+      await writeFile(this.statusPath, JSON.stringify(abandoned) + '\n', { flag: 'wx', mode: 0o600 })
+      this.options.log?.('host-update-restart-abandoned')
+      return { type: 'error', reason: 'restart-not-sent' }
+    } catch {
+      // The restart claimed it a moment earlier; its few bytes are being written.
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const status = await this.readStatus()
+        if (status) return this.restartAnswer(status, version)
+        await pause(50)
+      }
+      return { type: 'error', reason: 'restart-not-sent' }
+    }
+  }
+  private restartAnswer(status: HostUpdateStatus, version: string): HostUpdateAnswer {
+    if (status.state === 'finished' && status.result.type === 'error') {
+      const { reason, restarted, cause } = status.result
+      return { type: 'error', reason, ...(restarted !== undefined ? { restarted } : {}), ...(cause !== undefined ? { cause } : {}) }
+    }
+    return { type: 'update-restarting', version }
+  }
+  /** The status file, when it is one a restart wrote: small, and in its shape. */
+  private async readStatus(): Promise<HostUpdateStatus | null> {
+    try {
+      if ((await stat(this.statusPath)).size > HOST_UPDATE_STATUS_LIMIT_BYTES) return null
+      return hostUpdateStatusSchema.safeParse(JSON.parse(await readFile(this.statusPath, 'utf8'))).data ?? null
+    } catch { return null }
+  }
+
+  /**
+   * Runs one launch script operation as a child of this host, the way the probe runs it over SSH: the source on stdin and
+   * the configuration as its last argument. Each `update-step` line is told as it comes; the answer is the last result.
+   */
+  private script(configuration: string, onStep: (step: HostUpdateStep) => void, budgetMs: number, signal?: AbortSignal): Promise<unknown> {
+    const child = this.spawn(this.node, ['--input-type=commonjs', '-', configuration], { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, env: this.env })
+    child.stdin?.on('error', () => undefined)
+    child.stdin?.end(LAUNCH_SCRIPT_SOURCE)
+    let buffer = '', size = 0, result: unknown
+    const read = (line: string): void => {
+      if (!line.startsWith('{')) return
+      let value: unknown
+      try { value = JSON.parse(line) } catch { return }
+      const step = z.object({ type: z.literal('update-step'), step: z.enum(HOST_UPDATE_STEPS) }).safeParse(value)
+      if (step.success) onStep(step.data.step)
+      else result = value
+    }
+    child.stdout?.setEncoding('utf8')
+    child.stdout?.on('data', (chunk: string) => {
+      size += chunk.length
+      if (size > OUTPUT_LIMIT) { child.kill(); return }
+      buffer += chunk
+      let at: number
+      while ((at = buffer.indexOf('\n')) >= 0) { read(buffer.slice(0, at).trim()); buffer = buffer.slice(at + 1) }
+    })
+    const stop = (): void => { child.kill() }
+    signal?.addEventListener('abort', stop, { once: true })
+    if (signal?.aborted) stop()
+    const timer = setTimeout(stop, budgetMs)
+    return new Promise(done => {
+      const end = (): void => { clearTimeout(timer); signal?.removeEventListener('abort', stop); read(buffer.trim()); done(result) }
+      child.once('close', end)
+      child.once('error', () => { clearTimeout(timer); signal?.removeEventListener('abort', stop); done(undefined) })
+    })
+  }
+}

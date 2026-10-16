@@ -78,6 +78,17 @@ export function remoteUsageRefusal(operation: typeof REMOTE_USAGE_OPERATIONS[num
   return operation === 'usage-clear' && !mayAnswer ? 'forbidden' : null
 }
 /**
+ * A host update the host runs on itself (ADR-0087). It installs and restarts into a newer published Sotto release, so it
+ * takes more than pairing: the client must be one the launch script recorded as a desktop over the owner's SSH session,
+ * and its `remote-answer` policy must let it answer, which `--deny-answers` on the host revokes. A phone never may. The
+ * client names only a version, and for install the archive name and checksum the host's own download answered; the host
+ * builds every path, URL and setting itself, and refuses any version that is not newer than its own.
+ */
+export const REMOTE_HOST_UPDATE_ACTIONS = ['fetch', 'install', 'restart', 'cancel', 'outcome'] as const
+export function remoteHostUpdateRefusal(client: { readonly desktop: boolean; readonly mayAnswer: boolean }): 'forbidden' | null {
+  return client.desktop && client.mayAnswer ? null : 'forbidden'
+}
+/**
  * The account and thread defaults a paired client may change. Keys stay on the host. The projects directory is only
  * where a new project goes, and `create-project` already takes a path from a paired client, so a desktop sets it from
  * its own Settings (ADR-0074). A new-thread permission default that lets threads act without asking is a grant, so it

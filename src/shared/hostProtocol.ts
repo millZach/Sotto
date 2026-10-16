@@ -16,6 +16,7 @@ import type { AgentActivity } from './agentActivity'
 import { phoneTerminalAnswerSchema, phoneTerminalListSchema, type PhoneTerminal } from './phoneTerminals'
 import { providerIdSchema, type ProviderClientUpdate } from './agents'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema } from './usageDashboard'
+import { HOST_UPDATE_STEPS, type HostUpdateStep } from './hostUpdates'
 
 /**
  * Protocol version 1 is frozen (ADR-0025; every message is listed in docs/host-protocol.md). A later host
@@ -169,14 +170,25 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * reference and, once answered, that turn's reply (ADR-0073). A desktop asks for them; one whose host does not list it reads unknown.
  * `host-facts`: the host answers `host-facts` with its machine's host facts and how many of its threads are running a turn
  * (#1031). Numbers and the system's own name only. Only a desktop is offered it; one whose host does not list it reads unknown.
+ * `host-update`: the host updates itself when a desktop asks (ADR-0087): `host-update` runs one step of a host update on
+ * the host, the way the launch script runs it over SSH, and `host-update-step` pushes say which step it is on to a client
+ * that accepts the feature. Offered only to a client the launch script recorded as a desktop whose `remote-answer` policy
+ * lets it answer, and only by a host Sotto started from a release's own layout.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'host-update'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'host-update']
+/**
+ * What a desktop may ask of a host that updates itself (ADR-0087): download and check a release's archive, install it
+ * beside the running version, restart into it, cancel its own download, or read how the last restart went. The client
+ * names a version, and for `install` the archive's name and checksum `fetch` answered; never a URL, a path or any code.
+ */
+export const HOST_UPDATE_REQUEST_ACTIONS = ['fetch', 'install', 'restart', 'cancel', 'outcome'] as const
+export type HostUpdateRequestAction = typeof HOST_UPDATE_REQUEST_ACTIONS[number]
 /**
  * A client update as a client that does not accept `client-updates` can read it: the mise channel, which such a client
  * does not know, reads as one it will not drive, and a client waiting in the update line reads as not started. Every
@@ -337,6 +349,9 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('subagent-assignments'), request: subagentAssignmentsRequestSchema }).strict(),
   /** The host's machine facts and running thread count, read on request and never pushed (#1031). */
   z.object({ ...base, op: z.literal('host-facts') }).strict(),
+  /** One step of a host update, run by the host on itself for a desktop that may answer (ADR-0087). */
+  z.object({ ...base, op: z.literal('host-update'), action: z.enum(HOST_UPDATE_REQUEST_ACTIONS), version: z.string().min(1).max(64).optional(),
+    file: z.string().min(1).max(128).optional(), sha256: z.string().regex(/^[0-9a-f]{64}$/u).optional() }).strict(),
   z.object({ ...base, op: z.literal('usage-read'), query: usageLocalQuerySchema }).strict(),
   z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(4).optional() }).strict(),
   z.object({ ...base, op: z.literal('usage-clear'), request: usageLocalClearRequestSchema }).strict(),
@@ -369,6 +384,8 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?:
   | { v: 1; event: 'detail-delta'; threadId: string; delta: AgentThreadDetailDelta }
   | { v: 1; event: 'answer-receipt'; acceptedAnswer: HostAnswerTarget & { decisionId: string } }
   | { v: 1; event: 'error'; threadId?: string | undefined; error: HostProtocolError }
+  /** Which step a host update this client asked for is on (ADR-0087); only to a client that accepts `host-update`. */
+  | { v: 1; event: 'host-update-step'; step: HostUpdateStep }
 export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number; hasMore: boolean }
 /**
  * What a headless host says about itself in health and hello (ADR-0053, ADR-0054). `tailnetAddress` is the address
@@ -445,6 +462,7 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('detail-delta'), threadId: id, delta: agentThreadDetailDeltaSchema }),
   z.object({ v: z.literal(1), event: z.literal('answer-receipt'), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }) }),
   z.object({ v: z.literal(1), event: z.literal('error'), threadId: id.optional(), error: hostProtocolErrorSchema }),
+  z.object({ v: z.literal(1), event: z.literal('host-update-step'), step: z.enum(HOST_UPDATE_STEPS) }),
 ])
 export const hostReceiptSchema = z.object({ status: z.enum(['pending', 'completed', 'unknown']), error: hostProtocolErrorSchema.optional(),
   answerDelivered: z.boolean().optional(), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }).optional(),

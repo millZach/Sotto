@@ -15,7 +15,8 @@ import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
 import { REMOTE_PERMISSION_DENIED } from '../main/agents/authority'
 import { commandFromProtocolV1, managementCommandRefusal } from '../shared/hostProtocol'
-import { REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal, remoteUsageRefusal } from './remoteCommands'
+import { REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from './remoteCommands'
+import type { HostSelfUpdate } from './selfUpdate'
 import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageReadBeforeHistory, type UsageLocalHostRead } from '../shared/usageDashboard'
 import { hostMachineReportSchema } from '../shared/hostFacts'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
@@ -76,8 +77,11 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  *
  * `desktop` is whether the launch script recorded this client as a desktop (ADR-0053), read when its socket opened and
  * again at its hello. On a listener that tells desktops apart, only a desktop is offered the desktop-only features.
+ *
+ * `hostUpdate` is whether its hello accepted `host-update`, so it is sent the steps of an update it asked for (ADR-0087);
+ * `gone` is aborted once its socket has closed, which ends a download it asked for.
  */
-interface Peer { usageHistory: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>; terminals: boolean; terminalPreviews: Map<string, string> }
+interface Peer { hostUpdate: boolean; gone: AbortController; usageHistory: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>; terminals: boolean; terminalPreviews: Map<string, string> }
 /** A desktop from before history import is sent only the Usage read its strict schemas know (ADR-0083). */
 const usageForPeer = (peer: Peer, read: UsageLocalHostRead): UsageLocalHostRead => peer.usageHistory ? read : usageReadBeforeHistory(read)
 /** A shell ready to write to one peer, and the catalog revision it carries whole, if any, to record once it is written. */
@@ -140,6 +144,11 @@ export interface SocketServerOptions {
    * reaches this host over SSH. Absent on the desktop's phone listener, whose administrative routes are off anyway.
    */
   phones?: HostPhonesAdministration
+  /**
+   * The headless host updating itself for a desktop that asks (ADR-0087). Offered on either listener, to a client in
+   * `watcherDesktops` whose `remote-answer` policy lets it answer, and only when the host can update itself at all.
+   */
+  hostUpdate?: Pick<HostSelfUpdate, 'run' | 'delivered'>
 }
 /**
  * Which paired clients a tailnet listener admits, and as what. `desktops` is read again before a session and a hello,
@@ -209,10 +218,19 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true)
     // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
     // and the desktop's own phone listener, which serves no desktop, never does.
-    && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined)))
+    && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    // A host that can update itself offers it on both listeners, to SSH-recorded desktops only (ADR-0087).
+    && (feature !== 'host-update' || options.hostUpdate !== undefined && options.watcherDesktops !== undefined))
+  /**
+   * Whether a client may have its host update itself: one the launch script recorded as a desktop, on either listener, whose
+   * `remote-answer` policy lets it answer (ADR-0087). Read afresh each time, so `--deny-answers` takes it away at once.
+   */
+  const mayUpdate = (peer: Peer): boolean => remoteHostUpdateRefusal({ desktop: options.watcherDesktops?.has(peer.client.clientId) ?? false,
+    mayAnswer: options.mayAnswer?.(peer.client) ?? false }) === null
   /** What this listener offers a client: every feature to a desktop, and to a phone all but the desktop-only ones (ADR-0053). */
   const featuresFor = (peer: Peer): string[] => (peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature)))
     .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
+    .filter(feature => feature !== 'host-update' || mayUpdate(peer))
   const watcherScopes = new WeakMap<Peer, WatcherHostRead>()
   const watcherRevisions = new WeakMap<Peer, string>()
   const offers = (peer: Peer, feature: (typeof HOST_FEATURES)[number]): boolean => featuresFor(peer).includes(feature)
@@ -717,6 +735,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.watcherReads = (request.accepts?.includes('watcher-reads') ?? false) && offers(peer, 'watcher-reads'); peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
         peer.terminals = (request.accepts?.includes('terminals') ?? false) && offers(peer, 'terminals')
         peer.usageHistory = (request.accepts?.includes('usage-history') ?? false) && offers(peer, 'usage-history')
+        peer.hostUpdate = (request.accepts?.includes('host-update') ?? false) && offers(peer, 'host-update')
         if (!peer.terminals) { peer.terminalPreviews.clear(); options.terminals?.withdrawVisibility(peer) }
         if (peer.watcherPhone) await observe()
         const phoneAccess = peer.desktop ? options.phoneAccess?.() : undefined
@@ -828,6 +847,18 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'host-facts':
         if (!offers(peer, 'host-facts') || !service.hostFacts) throw new Refusal('invalid_request')
         try { return hostMachineReportSchema.parse(await service.hostFacts()) } catch { throw new Refusal('unavailable') }
+      case 'host-update': {
+        // A host update the host runs on itself (ADR-0087): a recorded desktop that may answer, after its hello, and only
+        // on a host that can. Failures are answers in the launch script's own words, never a refusal.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        const { hostUpdate } = options
+        if (!hostUpdate || !features.includes('host-update') || !peer.ready) throw new Refusal('invalid_request')
+        if (!mayUpdate(peer)) throw new Refusal('forbidden')
+        try {
+          return await hostUpdate.run({ action: request.action, version: request.version, file: request.file, sha256: request.sha256 }, { owner: peer, gone: peer.gone.signal,
+            onStep: next => { if (peer.hostUpdate && !peer.frames.isClosed && authenticated(peer)) push(peer, { v: 1, event: 'host-update-step', step: next }) } })
+        } catch { throw new Refusal('unavailable') }
+      }
       case 'usage-read':
         if (!offers(peer, 'usage-dashboard') || !service.usageRead) throw new Refusal('invalid_request')
         try { return usageForPeer(peer, usageLocalHostReadSchema.parse(await service.usageRead(request.query))) } catch { throw new Refusal('unavailable') }
@@ -932,6 +963,8 @@ export async function startSocketServer(options: SocketServerOptions) {
           peer.afterSeq = peer.afterSeq === Number.MAX_SAFE_INTEGER ? latestSeq : Math.max(peer.afterSeq, latestSeq)
         }
       }
+      // A restart waits for its answer to be on the way before it stops this host (ADR-0087), whether or not it could go.
+      if (request.op === 'host-update') await peer.frames.drained().finally(() => options.hostUpdate?.delivered())
     })().finally(() => { peer.inFlight-- }))
   }
   const bearer = (request: IncomingMessage): string => /^Bearer ([A-Za-z0-9_.-]{1,2048})$/.exec(request.headers.authorization ?? '')?.[1] ?? ''
@@ -1041,10 +1074,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text))
-    const peer: Peer = { usageHistory: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null, answerReceipts: false, answerWatches: new Map(), terminals: false, terminalPreviews: new Map() }
+    const peer: Peer = { hostUpdate: false, gone: new AbortController(), usageHistory: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null, answerReceipts: false, answerWatches: new Map(), terminals: false, terminalPreviews: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { peer.answerWatches.clear(); peer.terminalPreviews.clear(); options.terminals?.withdrawVisibility(peer); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peer.terminalPreviews.clear(); options.terminals?.withdrawVisibility(peer); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }

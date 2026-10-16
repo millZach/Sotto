@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createServer } from 'node:http'
 import { describe, afterEach, expect, it, vi } from 'vitest'
-import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_STOP_DRAIN_MS, NODE_CHECK_SOURCE, NODE_PROBE_SOURCE, RECEIVE_SCRIPT_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
+import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_STOP_DRAIN_MS, LAUNCH_SCRIPT_SOURCE, NODE_CHECK_SOURCE, NODE_PROBE_SOURCE, RECEIVE_SCRIPT_SOURCE, type LaunchOperation } from '../../src/main/hosts/launchScript'
 import { hostRelease, localArchiveName, releasesPage, sha256, sidecar, tarGz } from '../fixtures/hostArchive'
 
 /**
@@ -184,6 +184,75 @@ it('starts the old version again, and points back at it, when the new one does n
   expect(running.entry).toBe(join(configuration.installPath, 'host', 'index.js'))
   // A flat install has no pointer, and none is left pointing at the version that failed.
   expect(await pointer(configuration)).toBeNull()
+})
+
+describe('a restart a host asked for over its own socket (ADR-0087)', () => {
+  const statusOf = (configuration: Configuration): Promise<unknown> =>
+    readFile(join(configuration.dataDirectory, 'host-update-status.json'), 'utf8').then(text => JSON.parse(text) as unknown, () => null)
+  const resultFileOf = (configuration: Configuration): string => join(configuration.dataDirectory, 'host-update-status.json')
+  async function installNew(configuration: Configuration, entry: string): Promise<void> {
+    const archive = tarGz(hostRelease(NEW, entry))
+    expect(last(await receive(configuration, FILE, archive))).toMatchObject({ type: 'update-received' })
+    expect(last(await run(configuration, { op: 'update-install', version: NEW, file: FILE, sha256: sha256(archive) }))).toMatchObject({ type: 'update-installed' })
+  }
+
+  it('writes why it stopped before touching anything, and how a restart that went ahead ended', async () => {
+    const configuration = await fixture()
+    const old = await launch(configuration)
+    const resultFile = resultFileOf(configuration)
+    // Not installed yet: refused before anything was touched, and the file says so.
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile }))).toEqual({ type: 'error', reason: 'update-missing' })
+    expect(await statusOf(configuration)).toEqual({ v: 1, version: NEW, state: 'finished', result: { type: 'error', reason: 'update-missing' } })
+    await rm(resultFile)
+    await installNew(configuration, await fakeHost())
+    // The host that asked has already answered its desktop, so the restart goes ahead without waiting, and tidies the mark away.
+    await writeFile(resultFile + '.answered', '')
+    const ready = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, answerWaitMs: 60_000 }))
+    hosts.push(ready.pid as number)
+    expect(ready).toMatchObject({ type: 'ready', owned: true, hostId: HOST_ID })
+    // Only what the desktop reads of the result is kept.
+    expect(await statusOf(configuration)).toEqual({ v: 1, version: NEW, state: 'finished', result: { type: 'ready', hostId: HOST_ID, pid: ready.pid } })
+    expect(alive(old.pid as number)).toBe(false)
+    expect(await pointer(configuration)).toBe(`${NEW}\n`)
+    await expect(readFile(resultFile + '.answered')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('stops without touching anything once the host that asked has given up and claimed the file', async () => {
+    const configuration = await fixture()
+    const old = await launch(configuration)
+    await installNew(configuration, await fakeHost())
+    const resultFile = resultFileOf(configuration)
+    const abandoned = JSON.stringify({ v: 1, version: NEW, state: 'finished', result: { type: 'error', reason: 'restart-not-sent' } }) + '\n'
+    await writeFile(resultFile, abandoned)
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile }))).toEqual({ type: 'error', reason: 'restart-not-sent' })
+    expect(await readFile(resultFile, 'utf8')).toBe(abandoned)
+    expect(alive(old.pid as number)).toBe(true)
+    expect(await pointer(configuration)).toBeNull()
+    expect(await readdir(join(configuration.installPath, 'versions'))).toEqual(expect.not.arrayContaining(['.update-lock']))
+  })
+
+  it('records a rollback, and writes nothing to a file outside the data folder', async () => {
+    const configuration = await fixture()
+    await launch(configuration)
+    await installNew(configuration, 'process.exit(1)\n')
+    const outside = join(configuration.directory, 'status.json')
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: '9.9.10', resultFile: outside }))).toEqual({ type: 'error', reason: 'update-missing' })
+    await expect(readFile(outside)).rejects.toMatchObject({ code: 'ENOENT' })
+    // No host says it answered: the restart waits its short while, then goes ahead anyway.
+    const restarted = last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile: resultFileOf(configuration), answerWaitMs: 200 }))
+    hosts.push((await descriptor(configuration)).pid)
+    expect(restarted).toEqual({ type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' })
+    expect(await statusOf(configuration)).toEqual({ v: 1, version: NEW, state: 'finished', result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } })
+  })
+
+  it('reads its configuration as its last argument when it runs as a file, as it does in a transient unit', async () => {
+    const configuration = await fixture()
+    const script = join(configuration.directory, 'host-update-restart.cjs')
+    await writeFile(script, LAUNCH_SCRIPT_SOURCE)
+    const child = spawn(process.execPath, [script, JSON.stringify({ ...configuration, op: 'update-install', version: NEW, file: FILE, sha256: 'a'.repeat(64) })], { shell: false, windowsHide: true })
+    children.push(child)
+    expect(last(await collect(child))).toEqual({ type: 'error', reason: 'update-missing' })
+  })
 })
 
 it('restarts from one installed version to the next and keeps only the running one and the one before it', async () => {
