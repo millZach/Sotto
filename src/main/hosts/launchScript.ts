@@ -543,21 +543,43 @@ const stopHost = async () => {
   if (stopped && legacy && legacy.pid === pid) await fs.rm(legacyLauncherPath, { force: true }).catch(() => undefined);
   return finish({ type: 'host-stopped', stopped, hostId: current.hostId });
 };
-// One update at a time in a folder, whichever client runs it. A lock whose process has gone, or that never named one, is taken over.
+// One update at a time in a folder, whichever client runs it: over SSH, or a host updating itself (ADR-0087), which runs
+// this same script. The lock is a folder naming its process, put in place whole by renaming a folder this process made, so
+// nobody sees it half made. A lock whose process has gone, or that never named one, is taken over: it is moved aside under
+// a name only this process uses, and only when what moved is still the lock that was judged stale is it removed. A lock
+// another process put in place between the look and the move goes back where it was, and this one waits its turn.
+const lockOwner = async folder => {
+  let pid = 0, age = Infinity;
+  try { pid = Number(await fs.readFile(path.join(folder, 'pid'), 'utf8')); } catch {}
+  try { age = Date.now() - (await fs.stat(folder)).mtimeMs; } catch {}
+  return { pid: Number.isInteger(pid) && pid > 0 ? pid : 0, age };
+};
+const lockHeld = owner => owner.pid ? alive(owner.pid) : owner.age < ${HOST_UPDATE_LOCK_UNNAMED_MS};
 const takeUpdateLock = async () => {
   await fs.mkdir(versionsPath, { recursive: true });
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try { await fs.mkdir(updateLockPath); await fs.writeFile(path.join(updateLockPath, 'pid'), String(process.pid)); return; }
-    catch (error) { if (error.code !== 'EEXIST') throw error; }
-    let pid = 0, age = Infinity;
-    try { pid = Number(await fs.readFile(path.join(updateLockPath, 'pid'), 'utf8')); } catch {}
-    try { age = Date.now() - (await fs.stat(updateLockPath)).mtimeMs; } catch {}
-    if (Number.isInteger(pid) && pid > 0 ? alive(pid) : age < ${HOST_UPDATE_LOCK_UNNAMED_MS}) throw new Error('update-busy');
-    await fs.rm(updateLockPath, { recursive: true, force: true });
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const mine = updateLockPath + '.' + process.pid + '.' + crypto.randomUUID() + '.taking';
+    await fs.mkdir(mine);
+    await fs.writeFile(path.join(mine, 'pid'), String(process.pid));
+    try { await fs.rename(mine, updateLockPath); return; }
+    catch { await fs.rm(mine, { recursive: true, force: true }).catch(() => undefined); }
+    if (!(await exists(updateLockPath))) continue;
+    const judged = await lockOwner(updateLockPath);
+    if (lockHeld(judged)) throw new Error('update-busy');
+    const aside = updateLockPath + '.' + crypto.randomUUID() + '.stale';
+    try { await fs.rename(updateLockPath, aside); } catch { continue; }
+    const moved = await lockOwner(aside);
+    if (moved.pid === judged.pid && !lockHeld(moved)) { await fs.rm(aside, { recursive: true, force: true }).catch(() => undefined); continue; }
+    await fs.rename(aside, updateLockPath).catch(() => undefined);
+    throw new Error('update-busy');
   }
   throw new Error('update-busy');
 };
-const releaseUpdateLock = () => fs.rm(updateLockPath, { recursive: true, force: true }).catch(() => undefined);
+// Only the lock this process holds is removed: one taken over after this process was judged gone is not its to remove.
+const releaseUpdateLock = async () => {
+  if ((await lockOwner(updateLockPath)).pid !== process.pid) return;
+  await fs.rm(updateLockPath, { recursive: true, force: true }).catch(() => undefined);
+};
 const updateVersion = () => { if (typeof cfg.version !== 'string' || !RELEASE.test(cfg.version)) throw new Error('update-invalid'); return cfg.version; };
 const archiveName = version => 'Sotto-host-' + version + '-' + process.platform + '-' + process.arch + '.tar.gz';
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');

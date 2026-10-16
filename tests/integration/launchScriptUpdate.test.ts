@@ -368,6 +368,39 @@ it('installs and restarts one update at a time in a folder, and takes over a loc
   expect(last(await run(configuration, install))).toEqual({ type: 'error', reason: 'update-missing' })
 })
 
+it('leaves exactly one owner when several updates take over the same stale lock at once', async () => {
+  const configuration = await fixture()
+  // A releases page that never answers: whichever update owns the lock waits in its download, holding it.
+  let requests = 0
+  const silent = createServer(() => { requests++ })
+  await new Promise<void>(done => silent.listen(0, '127.0.0.1', done))
+  pages.push({ close: () => new Promise(done => { silent.closeAllConnections(); silent.close(() => done()) }) })
+  const releasesUrl = `http://127.0.0.1:${(silent.address() as { port: number }).port}`
+  const lock = join(configuration.installPath, 'versions', '.update-lock')
+  // The lock of an update whose process has gone.
+  const gone = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore', windowsHide: true })
+  await new Promise(resolve => gone.once('exit', resolve))
+  await mkdir(lock, { recursive: true }); await writeFile(join(lock, 'pid'), String(gone.pid))
+  for (let round = 0; round < 4; round++) {
+    requests = 0
+    const contenders = Array.from({ length: 4 }, () => launchScriptChild({ ...configuration, op: 'update-fetch', version: NEW, releasesUrl }, undefined, child => children.push(child)))
+    const outcomes = contenders.map(child => collect(child))
+    // All but one find the lock held; the one that owns it waits in its download.
+    const refused: number[] = []
+    await vi.waitFor(async () => {
+      refused.splice(0, refused.length, ...await Promise.all(contenders.map(async (child, index) => child.exitCode === null ? -1 : last(await outcomes[index]!).reason === 'update-busy' ? index : -2)))
+      expect(refused.filter(index => index >= 0)).toHaveLength(3)
+      expect(requests).toBe(1)
+    }, { timeout: 30_000, interval: 50 })
+    const owner = contenders.find(child => child.exitCode === null)!
+    expect(Number(await readFile(join(lock, 'pid'), 'utf8'))).toBe(owner.pid)
+    // The owner is killed, as a stopped download is: its lock is stale for the next round.
+    owner.kill()
+    await outcomes[contenders.indexOf(owner)]
+  }
+  expect((await readdir(join(configuration.installPath, 'versions'))).filter(name => name.startsWith('.update-lock.'))).toEqual([])
+})
+
 it('downloads under the lock, which a download that was stopped gives up to the next update', async () => {
   const configuration = await fixture()
   // A releases page that never answers: the download waits, as one does after Cancel update until it notices.
