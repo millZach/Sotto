@@ -1,15 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
-import { isThreadProviderConnected, lastUserMessageIdOf, threadTakesSottoTools,
+import { isThreadProviderConnected, lastUserMessageIdOf, providerIdSchema, threadTakesSottoTools,
   type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
-import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationWorkSchema, readDelegationInputSchema, DELEGATION_LEVELS_MAX,
-  DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES,
-  type DelegateInput, type DelegationNews, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegationView } from '../../shared/delegation'
+import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
+  DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
+  type DelegateInput, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegationView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { WATCHER_FINAL_OUTCOMES, watcherTurnOutcome } from './watcherOutcomes'
 import type { AgentState } from '../../shared/agents'
@@ -65,6 +65,9 @@ const now = (): string => new Date().toISOString()
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const nativeHead = (thread: AgentThread): string | null => lastUserMessageIdOf(thread) ?? thread.summary?.lastUser?.id ?? null
 const id = z.string().min(1).max(512)
+const REFUSAL_MESSAGE_MAX = 4_000
+/** The newest refused delegations kept, across every thread, so a thread that keeps asking cannot grow the record. */
+const REFUSALS_MAX = 500
 /** Why a delegation ended before its brief was delivered: the outcome each of these reads as. */
 const failureSchema = z.enum(['target-changed', 'paused', 'stopped', 'provider', 'restarted'])
 type Failure = z.infer<typeof failureSchema>
@@ -97,9 +100,27 @@ const linkSchema = z.object({ threadId: id, delegatingThreadId: id, createdAt: z
   seenHead: id.nullable() }).strict()
 type DelegationLink = z.infer<typeof linkSchema>
 const RECORDS_MAX = 2_000
+/**
+ * A delegation main refused under ADR-0081's rules when it was asked for: outcome `refused`, with the rule and its plain
+ * words. Nothing was started or sent, so it names no started thread, holds no start slot, charges no budget and is never
+ * news: the call that asked for it was told.
+ */
+const refusedSchema = z.object({ id: z.uuid(), delegatingThreadId: id, action: z.enum(['start', 'send']), work: delegationWorkSchema,
+  /** The thread a refused send named, when it is one this thread delegated to. A refused start names none. */
+  delegatedThreadId: id.optional(),
+  /** The provider a refused start named. */
+  provider: providerIdSchema.optional(),
+  code: delegationRefusalCodeSchema, message: z.string().min(1).max(REFUSAL_MESSAGE_MAX),
+  /** The user's message to the delegating thread the call answered, when Sotto can find one (decision 3). */
+  rootUserMessageId: id.optional(),
+  /** The delegating thread's newest message when it called, a wake-up's included: the turn the call was made in. */
+  callerMessageId: id.optional(),
+  createdAt: z.iso.datetime() }).strict()
+type RefusedDelegation = z.infer<typeof refusedSchema>
 /** How a new delegated thread is created, as admission chose it. */
 interface DelegatedStart {
-  readonly projectId: string; readonly title: string; readonly modelId: string; readonly reasoningEffort?: string
+  /** A title the delegating thread gave is a deliberate name, kept as a user's is; without one, Sotto's naming applies. */
+  readonly projectId: string; readonly title: string; readonly titleSource: 'user' | 'default'; readonly modelId: string; readonly reasoningEffort?: string
   readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string; readonly workingCopy: 'shared' | 'independent'
 }
 /** How many times news of a thread's delegations is offered to its queue before it is left untold. */
@@ -107,7 +128,7 @@ const NEWS_ATTEMPTS_MAX = 5
 /** The most ready models of one provider an answer lists. */
 const MODELS_LISTED = 20
 const fileSchema = z.object({ version: z.literal(1), delegations: z.array(recordSchema).max(RECORDS_MAX * 2), links: z.array(linkSchema).max(RECORDS_MAX),
-  roots: z.array(z.object({ threadId: id, rootUserMessageId: id }).strict()).max(RECORDS_MAX) }).strict()
+  roots: z.array(z.object({ threadId: id, rootUserMessageId: id }).strict()).max(RECORDS_MAX), refusals: z.array(refusedSchema).max(REFUSALS_MAX).optional() }).strict()
 type DelegationFile = z.infer<typeof fileSchema>
 
 class Refusal extends Error {
@@ -125,6 +146,7 @@ const NOTES: Record<WatcherOutcome, string> = {
   paused: 'The user\'s own turn in the delegated thread holds it, or the user sent there since you last looked. Nothing more was sent. Read it again before sending.',
   unknown: 'Sotto cannot prove what happened to it, as after a restart mid-turn. Do not assume it answered, and do not send it again without reading it.',
 }
+const REFUSED_CANCEL = 'This delegation was refused when it was asked for, so nothing was started or sent, and there is nothing to stop.'
 const GONE = 'The delegated thread is gone from Sotto, so nothing more will come of this, and Sotto cannot tell how its turn ended. Start a new delegation if the work is still needed.'
 export const NOT_ADMITTED = 'This thread cannot delegate with Sotto\'s tools. Only Claude Code, Codex, Grok Build and Muse threads on this computer can, outside Watcher, host setup and provider jobs. Threads on another machine get none of Sotto\'s tools yet. Nothing was started.'
 const LEVEL_LIMIT = 'This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. Nothing was started.'
@@ -148,6 +170,7 @@ function cutUtf8(text: string, bytes: number): string {
 export class DelegationService {
   private readonly store: AtomicJsonStore<DelegationFile>
   private records: DelegationRecord[] = []
+  private refusals: RefusedDelegation[] = []
   private readonly links = new Map<string, DelegationLink>()
   private readonly roots = new Map<string, string>()
   /** Briefs waiting for a busy delegated thread, held in memory only. */
@@ -180,7 +203,7 @@ export class DelegationService {
 
   constructor(private readonly options: DelegationServiceOptions) {
     this.store = new AtomicJsonStore(join(options.directory, 'delegations.json'), input => fileSchema.parse(input),
-      () => ({ version: 1, delegations: [], links: [], roots: [] }))
+      (): DelegationFile => ({ version: 1, delegations: [], links: [], roots: [] }))
   }
 
   /**
@@ -188,7 +211,7 @@ export class DelegationService {
    * stopped is `unknown` from now on and is never sent again (decision 7); a brief that was waiting is dropped unsent.
    */
   async recover(): Promise<void> {
-    const file = await this.store.read().catch(() => ({ version: 1 as const, delegations: [], links: [], roots: [] }))
+    const file = await this.store.read().catch((): DelegationFile => ({ version: 1, delegations: [], links: [], roots: [] }))
     const time = now()
     this.records = file.delegations.map(record => {
       if (!this.open(record)) return record
@@ -198,6 +221,7 @@ export class DelegationService {
       delete unknown.turnMessageId; delete unknown.nativeTurnId; delete unknown.replyMessageId
       return unknown
     })
+    this.refusals = file.refusals ?? []
     for (const link of file.links) this.links.set(link.threadId, link)
     for (const root of file.roots) this.roots.set(root.threadId, root.rootUserMessageId)
     // A link whose thread record lost it, as when Sotto stopped between the two writes, is put back.
@@ -240,11 +264,17 @@ export class DelegationService {
 
   async delegate(threadId: string, args: unknown, context: { readonly waitMs?: number } = {}): Promise<unknown> {
     const parsed = delegateInputSchema.safeParse(args)
-    if (!parsed.success) return delegationRefusal('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema. Nothing was started.')
+    if (!parsed.success) {
+      return this.admits(threadId) ? delegationRefusal('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema. Nothing was started.')
+        : delegationRefusal('NOT_ADMITTED', NOT_ADMITTED)
+    }
     const input = parsed.data
     let admitted: { record: DelegationRecord; retry: boolean; start?: DelegatedStart }
     try { admitted = await this.transaction(() => this.admit(threadId, input)) }
-    catch (error) { return error instanceof Refusal ? error.result : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.') }
+    catch (error) {
+      return error instanceof Refusal ? await this.refused(threadId, input, error.result)
+        : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.')
+    }
     const record = admitted.record
     if (admitted.retry) return this.result(record)
     this.calling.add(record.id)
@@ -326,6 +356,8 @@ export class DelegationService {
     try {
       const snapshot = this.snapshot(), caller = this.caller(threadId, snapshot)
       if (parsed.data.delegation === undefined) return this.listing(caller, snapshot)
+      const refused = this.refusedOf(caller.id, parsed.data.delegation)
+      if (refused) return this.refusedResult(refused)
       const record = this.owned(caller.id, parsed.data.delegation)
       return await this.result(record, true)
     } catch (error) { return error instanceof Refusal ? error.result : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read this delegation just now. Nothing was changed.') }
@@ -336,6 +368,8 @@ export class DelegationService {
     if (!parsed.success) return delegationRefusal('INVALID_INPUT', 'Name the delegation to cancel by its ID. Nothing was stopped.')
     try {
       const caller = this.caller(threadId, this.snapshot())
+      const refused = this.refusedOf(caller.id, parsed.data.delegation)
+      if (refused) return { ...this.refusedResult(refused), note: REFUSED_CANCEL }
       const record = this.owned(caller.id, parsed.data.delegation)
       if (!this.open(record)) return { ...(await this.result(record)), note: 'This delegation had already ended. Nothing was stopped.' }
       // A stop it asked for is not news to it, however it lands.
@@ -359,6 +393,37 @@ export class DelegationService {
   }
 
   private snapshot(): AgentHostSnapshot { return this.options.control.watcherSnapshot() }
+  /**
+   * Records a delegation main refused under its rules, when a thread Sotto holds asked for it, and answers with the
+   * refusal and that delegation's ID. Nothing is started, sent, reserved or charged, and no wake-up goes for it.
+   */
+  private async refused(threadId: string, input: DelegateInput, refusal: DelegationRefusal): Promise<DelegationRefusal> {
+    if (this.closed || !RECORDED_REFUSALS.has(refusal.code)) return refusal
+    const caller = this.snapshot().threads.find(thread => thread.id === threadId)
+    if (!caller) return refusal
+    let root: string | undefined
+    try { root = this.rootOf(caller) } catch { root = undefined }
+    const head = nativeHead(caller), target = input.thread
+    const record = refusedSchema.parse({ id: randomUUID(), delegatingThreadId: caller.id, action: target === undefined ? 'start' : 'send', work: input.work,
+      ...(target !== undefined && this.links.get(target)?.delegatingThreadId === caller.id ? { delegatedThreadId: target } : {}),
+      ...(target === undefined && input.provider ? { provider: input.provider } : {}),
+      code: refusal.code, message: refusal.message.slice(0, REFUSAL_MESSAGE_MAX), ...(root ? { rootUserMessageId: root } : {}), ...(head ? { callerMessageId: head } : {}),
+      createdAt: now() })
+    this.refusals.push(record)
+    if (this.refusals.length > REFUSALS_MAX) this.refusals.splice(0, this.refusals.length - REFUSALS_MAX)
+    await this.persist()
+    return { ...refusal, delegation: record.id }
+  }
+  private refusedOf(callerId: string, delegationId: string): RefusedDelegation | undefined {
+    return this.refusals.find(item => item.id === delegationId && item.delegatingThreadId === callerId)
+  }
+  /** A refused delegation as a call reads it: its rule and plain words, and no thread, reply or budget of its own. */
+  private refusedResult(refused: RefusedDelegation) {
+    const read: DelegationRead = { id: refused.id, ...(refused.delegatedThreadId ? { thread: refused.delegatedThreadId } : {}),
+      ...(refused.provider ? { provider: refused.provider } : {}), work: refused.work, action: refused.action, outcome: 'refused', note: refused.message,
+      createdAt: refused.createdAt, refusal: refused.code }
+    return { status: 'ok' as const, delegation: read, limits: this.limits() }
+  }
   private record(delegationId: string): DelegationRecord | undefined { return this.records.find(record => record.id === delegationId) }
   private owned(callerId: string, delegationId: string): DelegationRecord {
     const record = this.record(delegationId)
@@ -527,7 +592,7 @@ export class DelegationService {
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
     await this.saveAdmission(record)
     this.touched(record)
-    const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], modelId: model.id,
+    const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], titleSource: input.title ? 'user' : 'default', modelId: model.id,
       ...(input.effort ? { reasoningEffort: input.effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared' }
     return { record, retry: false, start }
   }
@@ -551,7 +616,7 @@ export class DelegationService {
     if (record.action === 'start' && start) {
       try {
         const created = await this.options.control.commandFromDelegation({ type: 'create-thread', threadId: record.delegatedThreadId, projectId: start.projectId,
-          title: start.title, modelId: start.modelId, workingCopy: start.workingCopy,
+          title: start.title, titleSource: start.titleSource, modelId: start.modelId, workingCopy: start.workingCopy,
           ...(start.reasoningEffort ? { reasoningEffort: start.reasoningEffort } : {}),
           ...(start.runtimeMode ? { runtimeMode: start.runtimeMode } : {}), ...(start.providerMode ? { providerMode: start.providerMode } : {}) },
         () => { this.guardLive(record.id); this.guardCeiling(record, start) })
@@ -868,11 +933,17 @@ export class DelegationService {
     return { status: 'ok' as const, delegation: read, limits: this.limits(record) }
   }
   private listing(caller: AgentThread, snapshot: AgentHostSnapshot) {
-    const own = this.records.filter(record => record.delegatingThreadId === caller.id).slice(-20)
+    // The newest twenty, refused ones among them, oldest first.
+    const own = [...this.records.filter(record => record.delegatingThreadId === caller.id).slice(-20).map(record => ({ id: record.id,
+      thread: record.delegatedThreadId as string | undefined, work: record.work, action: record.action, outcome: this.outcomeOf(record) as DelegationOutcome,
+      refusal: undefined as DelegationRefusalCode | undefined, createdAt: record.createdAt })),
+    ...this.refusals.filter(refused => refused.delegatingThreadId === caller.id).slice(-20).map(refused => ({ id: refused.id, thread: refused.delegatedThreadId,
+      work: refused.work, action: refused.action, outcome: 'refused' as DelegationOutcome, refusal: refused.code as DelegationRefusalCode | undefined, createdAt: refused.createdAt }))]
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-20)
+      .map(({ thread, refusal, ...item }) => ({ ...item, ...(thread ? { thread } : {}), ...(refusal ? { refusal } : {}) }))
     const ready = this.ready(snapshot).map(model => ({ provider: model.providerId!, model: model.id, name: model.name,
       efforts: model.reasoningEfforts ?? [], permissions: model.runtimeModes ?? [] }))
-    return { status: 'ok' as const, delegations: own.map(record => ({ id: record.id, thread: record.delegatedThreadId, work: record.work, action: record.action,
-      outcome: this.outcomeOf(record), createdAt: record.createdAt })), models: ready, limits: this.limits() }
+    return { status: 'ok' as const, delegations: own, models: ready, limits: this.limits() }
   }
   /** Whether the thread's running turn is this brief's own. */
   private answering(record: DelegationRecord, thread: AgentThread): boolean {
@@ -896,7 +967,7 @@ export class DelegationService {
   /** Writes the record as it is now; rejects when it could not be saved. */
   private save(): Promise<void> {
     return this.store.writeLatest(() => ({ version: 1, delegations: this.records.slice(-RECORDS_MAX * 2), links: [...this.links.values()].slice(-RECORDS_MAX),
-      roots: [...this.roots].slice(-RECORDS_MAX).map(([threadId, rootUserMessageId]) => ({ threadId, rootUserMessageId })) }))
+      roots: [...this.roots].slice(-RECORDS_MAX).map(([threadId, rootUserMessageId]) => ({ threadId, rootUserMessageId })), refusals: this.refusals.slice(-REFUSALS_MAX) }))
   }
   /** Writes the record where a failed write changes nothing already decided: the next write carries it. */
   private persist(): Promise<void> { return this.save().catch(() => undefined) }

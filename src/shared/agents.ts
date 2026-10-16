@@ -1129,8 +1129,10 @@ export function publicProviderEntityId(provider: ProviderId, kind: 'model' | 'pr
 /** The provider, kind and native value a public ID names, or null for any other ID or one whose value will not decode. */
 export function parsePublicProviderEntityId(id: string): { readonly provider: ProviderId; readonly kind: 'model' | 'project'; readonly value: string } | null {
   const match = /^native:([a-z]+):(model|project):(.*)$/u.exec(id)
-  const provider = providerIdSchema.safeParse(match?.[1])
-  if (!match || !provider.success) return null
+  // Most IDs that pass through here are not public ones; asking the schema about them builds a ZodError each time.
+  if (!match) return null
+  const provider = providerIdSchema.safeParse(match[1])
+  if (!provider.success) return null
   try { return { provider: provider.data, kind: match[2] as 'model' | 'project', value: decodeURIComponent(match[3]!) } } catch { return null }
 }
 /**
