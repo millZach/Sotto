@@ -20,6 +20,11 @@ export function listedHosts(state: Pick<AgentState, 'connections'>): readonly Li
   return connections.some(item => item.kind === 'remote') ? connections.map(item => ({ hostId: item.hostId, name: listedHostName(item), kind: item.kind })) : []
 }
 
+/** Where a thread runs, named as the host list names it, so a remote host alone is still called by its name. */
+export function threadHostName(state: Pick<AgentState, 'connections'>, thread: { readonly hostId?: string | undefined; readonly remoteHost?: boolean | undefined; readonly hostLabel?: string | undefined }): string {
+  return listedHosts(state).find(item => item.hostId === thread.hostId)?.name ?? (thread.remoteHost ? thread.hostLabel ?? 'Remote host' : 'This computer')
+}
+
 /** The host a project or thread lives on, from its client-scoped ID when it carries no host ID of its own. */
 export const hostIdOf = (entity: { readonly id: string; readonly hostId?: string | undefined } | undefined): string | undefined =>
   entity === undefined ? undefined : entity.hostId ?? parseHostEntityKey(entity.id)?.hostId

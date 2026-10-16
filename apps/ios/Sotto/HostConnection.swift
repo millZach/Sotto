@@ -15,6 +15,9 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     var onPush: ((IncomingFrame, Int) -> Void)?
     var onDisconnect: (() -> Void)?
     var onLiveness: (() -> Void)?
+    /// The address the last connect reached, which can be phone access's other port rather than the saved one. A
+    /// question's pages open there (ADR-0085).
+    private(set) var reached: HostEndpoint?
     private var answeredPing: UUID?
     private var liveness = LivenessProgress()
     private let redirects = NoRedirects()
@@ -89,6 +92,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             return health
         }.endpoint
         guard current == generation else { throw CancellationError() }
+        reached = endpoint
         let result = try await post(endpoint: endpoint, route: "/v1/session", token: pairing.token)
         guard current == generation else { throw CancellationError() }
         let access = try result.decode(HostSession.self); try access.validate(pairing: pairing)

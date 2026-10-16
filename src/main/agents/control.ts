@@ -49,6 +49,7 @@ import { resolveFilesBinding } from '../files/binding'
 import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
 import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './sottoRequests'
+import { QuestionPages, type QuestionPageTarget } from './questionPages'
 import { watcherRepliesAsShown } from './watcherOwnChanges'
 import { watcherMessageRequests, watcherMessagesAsTyped } from './watcherRequestNote'
 import { watcherHandoversShown } from './watcherHandover'
@@ -332,7 +333,10 @@ export class AgentControl {
   }
   hasWatcherQueue(operationIds: ReadonlySet<string>): boolean { return this.followupStore.peek().items.some(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)) }
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
-    await this.followupStore.cancelWatcher(operationIds); this.syncFollowups(); this.observe(); await this.persist(); this.publish()
+    const failed = await this.followupStore.cancelWatcher(operationIds)
+    // Watcher reads a queued send's failure from its item, which is gone now, so it hears the failure here instead.
+    if (failed.length) this.watcherHooks?.queueFailed?.(new Set(failed))
+    this.syncFollowups(); this.observe(); await this.persist(); this.publish()
   }
   private readonly dormantThreadIds = new Set<string>()
   private readonly dormantWatcherIds = new Set<string>()
@@ -390,6 +394,12 @@ export class AgentControl {
   private disposed = false
   /** Requests Sotto owns, merged into their threads (ADR-0035); absent until main gives the coordinator some. */
   private sottoRequests: SottoThreadRequests | undefined
+  /** The pages found for each question, which every client offers to open and the host's page route serves (ADR-0085). */
+  private readonly questionPages = new QuestionPages({
+    messages: threadId => this.dependencies.host.threadMessages?.(threadId),
+    // Found pages are taken like a new snapshot, so the question carries them at once.
+    changed: () => this.acceptSnapshot(this.state.host),
+  })
   private unsubscribeSottoRequests: (() => void) | undefined
   private visibleCommandError: unknown
   private setCommandError(error: unknown, message: string | null): void {
@@ -653,7 +663,8 @@ export class AgentControl {
   }
   /**
    * A host's snapshot as everything in Sotto shows it: Watcher's threads only where the gate allows them (ADR-0072), its
-   * user messages as typed (ADR-0073), and Sotto's own requests among the provider's (ADR-0035).
+   * user messages as typed (ADR-0073), Sotto's own requests among the provider's (ADR-0035), and the pages found for
+   * each question on it (ADR-0085).
    */
   private shownSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
     if (this.dependencies.watcherEnabled !== true) {
@@ -671,8 +682,11 @@ export class AgentControl {
     // Sotto put after them or a handover it put before them, and Watcher's replies without the reason line their
     // own-change line already shows.
     snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(watcherHandoversShown(snapshot, this.watcher.requests), watcherMessageRequests(this.watcher.requests)))
-    return this.sottoRequests ? withSottoRequests(snapshot, this.sottoRequests.requests()) : snapshot
+    if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
+    return this.questionPages.decorate(snapshot)
   }
+  /** What a question page's token opens, for the host's page route and this computer's window (ADR-0085). */
+  questionPage(token: string): QuestionPageTarget | undefined { return this.questionPages.target(token) }
   /**
    * The threads some client shows now (ADR-0046). The host service says which: every client's observed threads, the
    * desktop window's only while it has the focus. Showing a thread is what reads its finish, on every client at once,

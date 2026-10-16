@@ -360,12 +360,57 @@ public struct Delivery: Decodable, Equatable, Sendable { public let threadId: St
 public struct AgentRequest: Decodable, Equatable, Identifiable, Sendable {
     public let id: String; public let kind: String; public let text: String; public let options: [RequestOption]
     public let questions: [Question]?; public let permissionChoices: [PermissionChoice]?; public let context: RequestContext?; public let delivery: String?
+    /// The pages the computer found for a question (ADR-0085), each one the sheet offers to open. An older computer sends
+    /// none, and a page this build cannot read is left out rather than losing the request.
+    public var pages: [RequestPage] = []
+    /// Whether this asks what `other` asks, leaving the pages out: the computer adds those beside the provider's request a
+    /// moment after it arrives, so a request read before they came is still the same request to answer. Equality keeps
+    /// them, so the pages arriving is a change the sheet shows.
+    public func asksTheSame(as other: AgentRequest) -> Bool {
+        id == other.id && kind == other.kind && text == other.text && options == other.options && questions == other.questions
+            && permissionChoices == other.permissionChoices && context == other.context && delivery == other.delivery
+    }
     public var supported: Bool {
         guard delivery != "uncertain" else { return false }
         if kind == "question" { return true }
         if kind == "permission" && permissionChoices == nil { return true }
         return kind == "permission" && !(permissionChoices ?? []).isEmpty &&
             (permissionChoices ?? []).allSatisfy { ["allow-once", "allow-session", "allow-always", "deny", "cancel"].contains($0.kind) }
+    }
+}
+extension AgentRequest {
+    private enum Keys: String, CodingKey { case id, kind, text, options, questions, permissionChoices, context, delivery, pages }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        id = try c.decode(String.self, forKey: .id)
+        kind = try c.decode(String.self, forKey: .kind)
+        text = try c.decode(String.self, forKey: .text)
+        options = try c.decode([RequestOption].self, forKey: .options)
+        questions = try c.decodeIfPresent([Question].self, forKey: .questions)
+        permissionChoices = try c.decodeIfPresent([PermissionChoice].self, forKey: .permissionChoices)
+        context = try c.decodeIfPresent(RequestContext.self, forKey: .context)
+        delivery = try c.decodeIfPresent(String.self, forKey: .delivery)
+        pages = (c.tolerant([Lossy<RequestPage>].self, .pages) ?? []).compactMap(\.value)
+    }
+}
+/// One element of a list read on its own: nil when it cannot be read, so the rest of the list still is.
+private struct Lossy<Value: Decodable>: Decodable {
+    let value: Value?
+    init(from decoder: Decoder) throws { value = try? Value(from: decoder) }
+}
+/// A page the computer found for a question, in its words or the agent's message before it (ADR-0085): an HTML file in
+/// the thread's folder, or a page the agent serves on that computer. The computer that runs the thread serves it at
+/// `/page/<token>/<start>`; `name` is what its row shows. `kind` stays a string, as `file` or `server`.
+public struct RequestPage: Decodable, Equatable, Identifiable, Sendable {
+    public let token: String; public let kind: String; public let name: String; public let start: String
+    public var id: String { token }
+    /// Where the page opens on the computer's own tailnet address, or nil when its token or start could not make one.
+    public func url(on endpoint: HostEndpoint) -> URL? {
+        guard token.range(of: #"^[A-Za-z0-9_-]{32}$"#, options: .regularExpression) != nil,
+              // The endpoint is an origin with no path, so the page's path follows it directly.
+              let url = URL(string: "\(endpoint.url.absoluteString)/page/\(token)/\(start)"),
+              url.host == endpoint.host, url.path.hasPrefix("/page/\(token)/") else { return nil }
+        return url
     }
 }
 public struct RequestOption: Decodable, Equatable, Identifiable, Sendable { public let id: String; public let label: String; public let description: String? }

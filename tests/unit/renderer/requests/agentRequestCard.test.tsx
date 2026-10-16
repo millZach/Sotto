@@ -592,6 +592,50 @@ describe('links from the message before a question', () => {
   })
 })
 
+describe('a question’s pages', () => {
+  const file = { token: 'f'.repeat(32), kind: 'file' as const, name: 'greeting-prototype.html', start: 'greeting-prototype.html' }
+  const served = { token: 's'.repeat(32), kind: 'server' as const, name: 'localhost:8075', start: '' }
+  const withPages = (request: AgentRequest): AgentRequest => ({ ...request, pages: [file, served] })
+
+  it('shows each page as an Open the prototype row before the message’s links, and gives a served page’s address no row of its own', () => {
+    render(<AgentRequestCard placement="composer" ownerId="thread-a" ownerTitle="Workshop" request={withPages(structured([single]))} blocked={null}
+      onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} messageLinks={['http://localhost:8075/', 'https://github.com/o/r/pull/1']} />)
+    const rows = within(screen.getByRole('group', { name: 'Pages and links for this question' })).getAllByRole('link')
+    expect(rows.map(row => row.getAttribute('aria-label'))).toEqual(['Open the prototype, greeting-prototype.html', 'Open the prototype, localhost:8075', 'Open the link, github.com/o/r/pull/1'])
+  })
+
+  it('opens a page through main by its request and token, even while the choices are unavailable, and picks nothing', async () => {
+    const openQuestionPage = vi.fn(async () => ({ ok: true as const }))
+    window.sotto = { openQuestionPage } as unknown as NonNullable<typeof window.sotto>
+    try {
+      render(<AgentRequestCard placement="composer" ownerId="thread-a" ownerTitle="Workshop" request={withPages(structured([single]))} blocked="Waiting for the provider to reconnect."
+        onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} />)
+      const row = screen.getByRole('link', { name: 'Open the prototype, greeting-prototype.html' })
+      expect(row).toHaveAttribute('tabindex', '0')
+      fireEvent.click(row)
+      expect(openQuestionPage).toHaveBeenLastCalledWith({ threadId: 'thread-a', requestId: 'req-1', token: file.token })
+      fireEvent.keyDown(screen.getByRole('link', { name: 'Open the prototype, localhost:8075' }), { key: 'Enter' })
+      expect(openQuestionPage).toHaveBeenLastCalledWith({ threadId: 'thread-a', requestId: 'req-1', token: served.token })
+      expect(screen.getByRole('radio', { name: /Postgres/u })).not.toBeChecked()
+      await waitFor(() => expect(openQuestionPage).toHaveBeenCalledTimes(2))
+      expect(screen.queryByText(/That page is no longer there|Sotto could not open that page/u)).toBeNull()
+    } finally { delete window.sotto }
+  })
+
+  it('says so in plain words when a page is gone or could not open', async () => {
+    const openQuestionPage = vi.fn().mockResolvedValueOnce({ ok: false, reason: 'gone' }).mockResolvedValueOnce({ ok: false, reason: 'unavailable' })
+    window.sotto = { openQuestionPage } as unknown as NonNullable<typeof window.sotto>
+    try {
+      render(<AgentRequestCard ownerId="thread-a" ownerTitle="Workshop" request={withPages({ id: 'req-plain', kind: 'question', text: 'Which greeting?', options: [] })} blocked={null}
+        onSubmit={vi.fn(async () => ({ error: null }))} store={new RequestAnswerStore()} />)
+      fireEvent.click(screen.getByRole('link', { name: 'Open the prototype, greeting-prototype.html' }))
+      expect(await screen.findByText(/That page is no longer there\. The file was moved or deleted, or the question was answered\. Nothing else changed\. Ask the agent where the page is now\./u)).toBeVisible()
+      fireEvent.click(screen.getByRole('link', { name: 'Open the prototype, greeting-prototype.html' }))
+      expect(await screen.findByText('Sotto could not open that page. Nothing else changed. Try again.')).toBeVisible()
+    } finally { delete window.sotto }
+  })
+})
+
 describe('composer question choices', () => {
   it('keeps a dedicated custom answer through choice changes and collapse, and sends only the explicit choice', async () => {
     const user = userEvent.setup()

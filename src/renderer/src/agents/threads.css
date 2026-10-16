@@ -223,6 +223,24 @@
 .thread-workspace__transcript .thread-workspace__empty { min-height: 0; padding: 40px 0; gap: 6px; }
 .thread-workspace__transcript .thread-workspace__empty h3 { font-size: 16px; }
 
+/* A new thread greets above its composer, and the two stand together in the middle of the pane, the composer a little
+   narrower, until the first send (Zach, October 14: docs/prototypes/new-thread-greeting-prototype.html, variant a). The
+   empty transcript above and the balance below share the room equally. */
+.thread-pane__balance { display: none; }
+.thread-pane:has(> .thread-greeting-slot > .thread-greeting) > .thread-transcript { flex: 1 1 0; min-height: 0; }
+.thread-pane:has(> .thread-greeting-slot > .thread-greeting) > .thread-pane__balance { display: block; flex: 1 1 0; }
+.thread-pane:has(> .thread-greeting-slot > .thread-greeting) > .thread-workspace__compose { flex: none; padding-inline: max(16px, calc((100% - 720px) / 2)); }
+.thread-greeting { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 24px 18px; text-align: center; }
+.thread-greeting h3 { margin: 0; color: var(--tt-text); font-size: 28px; font-weight: 500; letter-spacing: -.5px; line-height: 1.2; text-wrap: balance; }
+.thread-greeting__where { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; max-width: 100%; margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.thread-greeting__where > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.thread-greeting__where svg { flex: none; }
+@container thread-pane (max-width: 720px) { .thread-greeting h3 { font-size: 23px; } }
+@container thread-pane (max-height: 600px) {
+  .thread-greeting { gap: 4px; padding-bottom: 10px; }
+  .thread-greeting h3 { font-size: 21px; }
+}
+
 .thread-draft-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; font-size: 13px; color: var(--tt-text-muted); }
 .thread-draft-notice p { margin: 0; }
 .thread-draft-notice strong { color: var(--tt-text); font-weight: 500; }
