@@ -563,10 +563,11 @@ export class HostUpdates {
       if (!older) { this.entries.delete(candidate.id); this.notNow.delete(candidate.id); continue }
       this.refresh(entry, candidate)
       // Waiting, or asking, for threads that have all finished: the user has already pressed Update. A client update line
-      // still running keeps it waiting (begin).
-      if (idleNow(entry.phase, this.working(entry).length) && !this.workingNow(entry).length) {
-        if (!this.clientsUpdating(entry)) { this.begin(entry); return }
-        entry.phase = 'waiting'
+      // still running keeps it waiting. That is read first: it is read in place, where the threads as they are this moment
+      // build every host's shell, and this runs on every change while a host waits for its clients.
+      if (idleNow(entry.phase, this.working(entry).length)) {
+        if (this.clientsUpdating(entry)) entry.phase = 'waiting'
+        else if (!this.workingNow(entry).length) { this.begin(entry); return }
       }
     }
     for (const [id, entry] of this.entries) {
