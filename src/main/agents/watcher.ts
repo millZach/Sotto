@@ -9,7 +9,8 @@ import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadAct
 import { watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
-  type WatcherToolInput, type WatcherToolName, type WatcherToolOutput } from '../../shared/watcher'
+  type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX } from '../../shared/watcher'
+import type { HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
   type WatcherPrepareStopAllResult, type WatcherStopAllResult } from '../../shared/watcherRoom'
@@ -29,6 +30,9 @@ import { WATCHER_FINAL_OUTCOMES, watcherLatestTurnMessageId, watcherTurnOutcome 
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts } from '../../shared/watcherHost'
 
 const now = () => new Date().toISOString()
+const MACHINE_FACTS_OLDER = 'This machine’s host does not report what kind of machine it is. Update Sotto on it to see.'
+const MACHINE_FACTS_UNREAD = 'This machine’s facts could not be read just now. Nothing was changed. Ask again.'
+const MACHINE_NOT_CONNECTED = 'This machine is not connected. Connect it from the Threads page to see its facts.'
 const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const nativeHead = (thread: AgentThread) => lastUserMessageIdOf(thread) ?? thread.summary?.lastUser?.id ?? null
@@ -115,7 +119,9 @@ export class WatcherService implements WatcherControlHooks {
   private readonly overtakenHandovers = new Set<string>()
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
-    limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void }) {
+    limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void
+    /** This computer's host facts and running threads, read as a host reads its own (#1031). Without it they read unknown. */
+    machineFacts?: () => Promise<HostMachineReport> }) {
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), record: () => this.record(),
       progress: target => this.remoteProgress.get(key(target))?.fingerprint,
       reportsWork: hostId => hostId === options.control.hostId() || this.remote?.hosts().some(host => host.hostId === hostId && host.workSettled === true) === true,
@@ -244,7 +250,8 @@ export class WatcherService implements WatcherControlHooks {
     if (thread.status === 'running') refuse('THREAD_BUSY', 'Wait for this thread to finish before settling it.')
     if (thread.backgroundWork?.length || thread.monitoring?.length) refuse('BACKGROUND_WORK_RUNNING', 'This thread still has background work. Stop it explicitly before settling.')
   }
-  private inFlight(record = this.record()): number { return new Set(record.reservations.filter(item => record.operations.some(operation => operation.id === item.operationId && operation.action === 'start')).map(item => key(item.target))).size }
+  /** Watcher's starts in flight, on every machine or on the one `hostId` names. */
+  private inFlight(record = this.record(), hostId?: string): number { return new Set(record.reservations.filter(item => (hostId === undefined || item.target.hostId === hostId) && record.operations.some(operation => operation.id === item.operationId && operation.action === 'start')).map(item => key(item.target))).size }
   private limits(operation: WatcherOperation) {
     const record = this.record()
     return { inFlight: this.inFlight(record), inFlightLimit: this.options.limit(), promptCount: Math.min(WATCHER_PROMPTS_PER_THREAD,
@@ -1120,6 +1127,7 @@ export class WatcherService implements WatcherControlHooks {
         const result = await this.unwatchThread(parsed.data as WatcherToolInput<'unwatch_thread'>)
         return result.status === 'refused' ? result : { status: 'ok', target: (parsed.data as WatcherToolInput<'unwatch_thread'>).target, watched: false }
       }
+      if (name === 'list_machines') return await this.listMachines()
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }
       const hostId = input.hostId ?? input.target?.hostId ?? input.project?.hostId
       const requestId = 'requestId' in parsed.data ? parsed.data.requestId : undefined
@@ -1662,6 +1670,10 @@ export class WatcherService implements WatcherControlHooks {
             const thread = this.owningSnapshot(host.hostId)?.threads.find(item => item.id === reservation.target.threadId)
             if (!thread) return !operations.every(item => item.deliveryState === 'failed')
             if (!this.connected(thread)) return true
+            // The owning host can accept a start before this desktop's copy of the thread shows its first turn. A thread
+            // with an accepted start and no turn or message yet is still starting, not finished.
+            if (!thread.lastTurn && (thread.summary?.messageCount ?? thread.messages.length) === 0
+              && operations.some(item => item.action === 'start' && item.deliveryState === 'accepted')) return true
             return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
           })
         }
@@ -1952,6 +1964,35 @@ export class WatcherService implements WatcherControlHooks {
       readOnlyProfileAvailable: true, freshness: snapshot.connected ? 'fresh' : 'stale' })))
     const page = this.page('projects', rows, input.cursor, input.limit)
     return { status: 'ok', projects: page.rows, nextCursor: page.nextCursor, observedAt: now(), staleHosts: [] }
+  }
+  /**
+   * This computer and every host the desktop holds a connection to, each with its host facts when it reports them (#1031).
+   * A host that does not list host-facts, or whose read fails, reads unknown; one not connected now reads not connected.
+   * The in-flight limit is the one computer-wide limit, shown against each machine's own starts.
+   */
+  private async listMachines() {
+    const record = this.record(), inFlightLimit = this.options.limit()
+    const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null })
+    const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string) => {
+      try {
+        const report = await facts()
+        return report ? { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads } : unknown(older)
+      } catch { return unknown(MACHINE_FACTS_UNREAD) }
+    }
+    const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,
+      ...(this.options.machineFacts ? await read(this.options.machineFacts, MACHINE_FACTS_UNREAD) : unknown(MACHINE_FACTS_UNREAD)),
+      inFlight: this.inFlight(record, this.hostId()), inFlightLimit }
+    const notConnected = { factsState: 'not-connected' as const, facts: null, note: MACHINE_NOT_CONNECTED, runningThreads: null }
+    const stillConnected = (hostId: string) => this.remote?.hosts().some(item => item.hostId === hostId && item.connected) === true
+    const remotes = await Promise.all((this.remote?.hosts() ?? []).filter(host => host.hostId !== this.hostId()).slice(0, WATCHER_MACHINES_MAX - 1).map(async host => {
+      const facts = !host.connected ? notConnected
+        : host.facts && this.remote?.machineFacts ? await read(() => this.remote!.machineFacts!(host.hostId), MACHINE_FACTS_OLDER) : unknown(MACHINE_FACTS_OLDER)
+      // A connection that dropped while its facts were read is not connected, whatever the read came back with.
+      const connected = host.connected && stillConnected(host.hostId)
+      return { hostId: host.hostId, name: host.name?.trim().slice(0, 200) || 'Paired machine', thisComputer: false, connected,
+        ...connected ? facts : notConnected, inFlight: this.inFlight(record, host.hostId), inFlightLimit }
+    }))
+    return { status: 'ok', machines: [local, ...remotes], observedAt: now() }
   }
   private async listWorkingCopies(input: WatcherToolInput<'list_working_copies'>) {
     if (input.project.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Remote Watcher working-copy choices are not available yet.')

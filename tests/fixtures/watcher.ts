@@ -38,6 +38,12 @@ export const watcherToolFixtures: Record<WatcherToolName, { input: unknown; outp
   list_projects: { input: {}, output: { status: 'ok', projects: [{ target: centerProject, title: 'Project', displayRoot: 'D:/Project',
     workers: [{ provider: 'devin', modelId: 'model', reasoningEfforts: [], defaultPermission: null, permissionComparable: false }],
     controlAvailable: false, readsAvailable: true, readOnlyProfileAvailable: false, freshness: 'fresh' }], ...page } },
+  list_machines: { input: {}, output: { status: 'ok', machines: [
+    { hostId: centerHostId, name: 'This computer', thisComputer: true, connected: true, factsState: 'reported', runningThreads: 1, inFlight: 1, inFlightLimit: 4,
+      facts: { observedAt: centerTime, os: { family: 'windows', name: 'Windows 11', version: '10.0.26200' }, architecture: 'x64',
+        totalMemoryBytes: 34_359_738_368, freeMemoryBytes: 12_884_901_888, logicalCpuCount: 24 } },
+    { hostId: '22222222-2222-4222-8222-222222222222', name: 'Older host', thisComputer: false, connected: true, factsState: 'unknown', facts: null,
+      note: 'This machine’s host does not report what kind of machine it is.', runningThreads: null, inFlight: 0, inFlightLimit: 4 }], observedAt: centerTime } },
   list_working_copies: { input: { project: centerProject }, output: { status: 'ok', project: centerProject, revision: 'choices-1',
     choices: [{ choiceId: 'shared-1', kind: 'shared', branch: 'main', occupied: false, locked: false, limitations: [] }], baseRefs: [{ choiceId: 'base-1', name: 'main' }], ...page } },
   read_operation: { input: { operationId: centerOperationId }, output: { status: 'ok', receipt, limits, action: 'send', state } },
