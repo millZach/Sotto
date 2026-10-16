@@ -368,17 +368,21 @@ it('installs and restarts one update at a time in a folder, and takes over a loc
   expect(last(await run(configuration, install))).toEqual({ type: 'error', reason: 'update-missing' })
 })
 
-it('downloads without the lock, so a cancelled download still finishing never holds up the next update', async () => {
+it('downloads under the lock, which a download that was stopped gives up to the next update', async () => {
   const configuration = await fixture()
   // A releases page that never answers: the download waits, as one does after Cancel update until it notices.
   const silent = createServer(() => undefined)
   await new Promise<void>(done => silent.listen(0, '127.0.0.1', done))
   pages.push({ close: () => new Promise(done => { silent.closeAllConnections(); silent.close(() => done()) }) })
   const pending = run(configuration, { op: 'update-fetch', version: NEW, releasesUrl: `http://127.0.0.1:${(silent.address() as { port: number }).port}` })
-  await new Promise(resolve => setTimeout(resolve, 300))
-  expect(last(await run(configuration, { op: 'update-install', version: NEW, file: FILE, sha256: 'a'.repeat(64) }))).toEqual({ type: 'error', reason: 'update-missing' })
+  await vi.waitFor(async () => expect(await readFile(join(configuration.installPath, 'versions', '.update-lock', 'pid'), 'utf8')).toMatch(/^\d+$/u))
+  // An update over SSH, or one a host runs on itself over its socket, waits its turn while the download runs.
+  expect(last(await run(configuration, { op: 'update-install', version: NEW, file: FILE, sha256: 'a'.repeat(64) }))).toEqual({ type: 'error', reason: 'update-busy' })
+  expect(last(await run(configuration, { op: 'update-fetch', version: NEW, releasesUrl: 'http://127.0.0.1:1' }))).toEqual({ type: 'error', reason: 'update-busy' })
   for (const child of children) if (child.exitCode === null) child.kill()
   await pending
+  // The stopped download's lock names a process that has gone, so the next update takes it over.
+  expect(last(await run(configuration, { op: 'update-install', version: NEW, file: FILE, sha256: 'a'.repeat(64) }))).toEqual({ type: 'error', reason: 'update-missing' })
 })
 
 it('says another program has the host\'s port when a host with a gone process left its record and cannot start', async () => {

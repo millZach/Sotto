@@ -201,7 +201,8 @@ it('ends a download when the desktop that asked for it goes, and refuses a secon
   await vi.waitFor(() => expect(host.page.requests).toContain(`/v${NEW}/${FILE}`))
   expect(leaving.steps()).toEqual(['download'])
   expect(await staying.update({ action: 'fetch', version: NEW })).toEqual({ type: 'error', reason: 'update-busy' })
-  // The download holds the installation folder's update lock, so an install over SSH waits its turn too.
+  // The download holds the installation folder's update lock, so a download or an install over SSH waits its turn too.
+  expect(await host.script({ op: 'update-fetch', version: NEW, releasesUrl: host.page.url })).toEqual({ type: 'error', reason: 'update-busy' })
   expect(await host.script({ op: 'update-install', version: NEW, file: FILE, sha256: 'a'.repeat(64) })).toEqual({ type: 'error', reason: 'update-busy' })
   // Only the desktop that asked may cancel it.
   expect(await staying.update({ action: 'cancel' })).toEqual({ type: 'update-cancelled', cancelled: false })

@@ -196,13 +196,12 @@ describe('one update at a time', () => {
     expect(await installing).toEqual({ type: 'update-installed', version: '1.2.4' })
   })
 
-  it('refuses while an update over SSH holds the installation folder’s lock', async () => {
+  it('leaves the folder’s update lock to the launch script, and answers its refusal while another update holds it', async () => {
     const place = await installed()
-    await mkdir(join(place.install, 'versions', '.update-lock'), { recursive: true })
-    await writeFile(join(place.install, 'versions', '.update-lock', 'pid'), String(process.pid))
-    const { spawn, calls } = fakeSpawn(() => undefined)
+    const { spawn, calls } = fakeSpawn((_call, child) => answer(child, { type: 'error', reason: 'update-busy' }))
     expect(await hostWith(place, spawn).run({ action: 'fetch', version: '1.2.4' }, context())).toEqual({ type: 'error', reason: 'update-busy' })
-    expect(calls).toEqual([])
+    expect(calls).toHaveLength(1)
+    await expect(readFile(join(place.install, 'versions', '.update-lock', 'pid'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })
 

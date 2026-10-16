@@ -774,10 +774,12 @@ const runBoot = async () => {
   finally { await releaseUpdateLock(); }
 };
 const runUpdate = async () => {
-  // A download writes only its own file, so it runs without the lock: a cancelled one still finishing never holds up the next.
-  if (cfg.op === 'update-fetch') return fetchUpdate();
+  // Every step holds the folder's lock, the download too, so an update over SSH and one a host runs on itself over its
+  // socket (ADR-0087) refuse each other. A cancelled download gives the lock up once it notices it is orphaned, and one that
+  // was killed leaves a lock whose process has gone, which the next update takes over.
   await takeUpdateLock();
   try {
+    if (cfg.op === 'update-fetch') return await fetchUpdate();
     if (cfg.op === 'update-install') return await installUpdate();
     if (cfg.op === 'update-restart') return await restartForUpdate();
     return { type: 'failed' };

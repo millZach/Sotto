@@ -1,16 +1,15 @@
 import { spawn as spawnProcess, type ChildProcess } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { access, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { access, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { HOST_NODE_RANGE, LAUNCH_SCRIPT_SOURCE } from '../main/hosts/launchScript'
-import { HOST_DOWNLOAD_TIMEOUT_MS, HOST_UPDATE_LOCK_UNNAMED_MS, hostLaunchTimings } from '../shared/hostLaunchTimings'
+import { HOST_DOWNLOAD_TIMEOUT_MS, hostLaunchTimings } from '../shared/hostLaunchTimings'
 import { HOST_RELEASES_URL, HOST_UPDATE_STEPS, HOST_VERSION_PATTERN, hostArchiveName, type HostUpdateStep } from '../shared/hostUpdates'
 import { compareHostToTarget, HOST_UPDATE_ANSWER_WAIT_MS, hostUpdateAttemptFile, HOST_UPDATE_RESTART_WAIT_MS, HOST_UPDATE_STATUS_FILE, HOST_UPDATE_STATUS_LIMIT_BYTES, hostUpdateErrorSchema, hostUpdateFetchedSchema, hostUpdateInstalledSchema, hostUpdateStatusSchema,
   type HostUpdateAnswer, type HostUpdateStatus } from '../shared/hostSelfUpdate'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import type { HostUpdateRequestAction } from '../shared/hostProtocol'
-import { processAlive } from './lock'
 
 /**
  * A host that updates itself when a paired desktop asks over its socket (ADR-0087). It runs the launch script it ships for
@@ -175,34 +174,6 @@ export class HostSelfUpdate {
       remotePort: this.options.port, hostId: this.options.hostId, nodeRange: HOST_NODE_RANGE,
       releasesUrl: this.options.releasesUrl ?? HOST_RELEASES_URL, ...hostLaunchTimings() })
   }
-  /** Whether another update holds the installation folder, as the launch script judges its update lock. */
-  private async lockHeld(): Promise<boolean> {
-    const lock = join(this.installation.installPath, 'versions', '.update-lock')
-    let age: number
-    try { age = Date.now() - (await stat(lock)).mtimeMs } catch { return false }
-    const pid = Number((await readFile(join(lock, 'pid'), 'utf8').catch(() => '')).trim())
-    return Number.isInteger(pid) && pid > 0 ? processAlive(pid) : age < HOST_UPDATE_LOCK_UNNAMED_MS
-  }
-  /**
-   * Takes the installation folder's update lock for this host's own download, the way the launch script takes it, so an
-   * install or restart over SSH refuses while it runs. A lock whose process has gone is taken over; one held is `busy`.
-   */
-  private async holdLock(): Promise<{ readonly release: () => Promise<void> } | 'busy' | 'failed'> {
-    const versions = join(this.installation.installPath, 'versions'), lock = join(versions, '.update-lock'), owner = join(lock, 'pid')
-    try { await mkdir(versions, { recursive: true }) } catch { return 'failed' }
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        await mkdir(lock)
-        await writeFile(owner, String(process.pid))
-        return { release: async () => {
-          if ((await readFile(owner, 'utf8').catch(() => '')).trim() === String(process.pid)) await rm(lock, { recursive: true, force: true }).catch(() => undefined)
-        } }
-      } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return 'failed' }
-      if (await this.lockHeld()) return 'busy'
-      await rm(lock, { recursive: true, force: true }).catch(() => undefined)
-    }
-    return 'busy'
-  }
   private take(action: HostUpdateRequestAction): boolean {
     if (this.running) return false
     this.running = action
@@ -218,17 +189,12 @@ export class HostSelfUpdate {
     const stop = (): void => abort.abort()
     context.gone.addEventListener('abort', stop, { once: true })
     try {
-      // The download holds the folder's update lock, so it and an update another client runs over SSH refuse each other.
-      const lock = await this.holdLock()
-      if (lock === 'busy') return busy()
-      if (lock === 'failed') return { type: 'error', reason: 'update-failed' }
-      try {
-        if (context.gone.aborted) return { type: 'update-cancelled', cancelled: true }
-        context.onStep('download')
-        const result = await this.script(this.configuration({ op: 'update-fetch', version }), context.onStep, 2 * HOST_DOWNLOAD_TIMEOUT_MS + 10_000, abort.signal)
-        if (abort.signal.aborted) return { type: 'update-cancelled', cancelled: true }
-        return fetchResult.safeParse(result).data ?? { type: 'error', reason: 'update-failed' }
-      } finally { await lock.release() }
+      // The launch script's download holds the folder's update lock, as it does over SSH, so the two refuse each other.
+      if (context.gone.aborted) return { type: 'update-cancelled', cancelled: true }
+      context.onStep('download')
+      const result = await this.script(this.configuration({ op: 'update-fetch', version }), context.onStep, 2 * HOST_DOWNLOAD_TIMEOUT_MS + 10_000, abort.signal)
+      if (abort.signal.aborted) return { type: 'update-cancelled', cancelled: true }
+      return fetchResult.safeParse(result).data ?? { type: 'error', reason: 'update-failed' }
     } finally {
       context.gone.removeEventListener('abort', stop)
       this.download = null
