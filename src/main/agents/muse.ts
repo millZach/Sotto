@@ -83,6 +83,12 @@ const modelEntrySchema = z.looseObject({
   isDefault: z.boolean().default(false),
 })
 const modelListSchema = z.looseObject({ models: z.array(modelEntrySchema), source: z.string().default('') })
+/**
+ * Whether an empty catalog means no sign-in. A signed-out client answers with its bundled catalog, which ships empty; a
+ * signed-in one answers with its provider's catalog, even offline (checked against 1.4.8 and 1.4.9). MSP 1 requires the
+ * source, so any other empty catalog, a missing source included, is the client's setup, which signing in would not change.
+ */
+const signedOutCatalog = (catalog: z.infer<typeof modelListSchema>): boolean => !catalog.models.length && catalog.source === 'bundledCatalog'
 const museSessionSchema = z.looseObject({
   sessionId: z.string().min(1), status: z.string().default('idle'), modelId: z.string().nullable().default(null),
   providerId: z.string().nullable().default(null), activeTurnId: z.string().nullable().default(null),
@@ -662,7 +668,8 @@ export class MuseMspHost implements AgentHost {
       if (refusal) throw refusal
       const catalog = modelListSchema.parse(await probe.request('model/list', {}))
       // A client with no sign-in resolves no catalog: that is the refusal a host's tile offers the sign-in command for.
-      if (!catalog.models.length) throw new ProviderUnavailable('signed-out', 'Sign in to Muse on this machine with muse login, then connect it again.', client.serverInfo.version)
+      if (signedOutCatalog(catalog)) throw new ProviderUnavailable('signed-out', 'Sign in to Muse on this machine with muse login, then connect it again.', client.serverInfo.version)
+      if (!catalog.models.length) throw new ProviderUnavailable('cannot-start', 'Muse is set up but listed no models, so there is nothing to start a thread with. Your threads and drafts are kept. Run muse in a terminal on this machine to see why, then connect it again.', client.serverInfo.version)
       await this.probeModes(probe)
       const nativeVersion = await museVersionForExecutable(executable, client.serverInfo.version)
       if (generation !== this.generation) throw new Error('Muse connection was cancelled.')
@@ -701,7 +708,8 @@ export class MuseMspHost implements AgentHost {
       const refusal = clientRefusal(client)
       if (refusal) throw new Error(`Muse was updated, but Sotto cannot run the new version. ${refusal.message} Threads that are working carry on and nothing was lost. Install a Muse version Sotto supports, then connect Muse again.`, { cause: refusal })
       catalog = modelListSchema.parse(await probe.request('model/list', {}))
-      if (!catalog.models.length) throw new Error('Muse was updated, but its new client is not signed in. Working threads carry on and nothing was lost. Run muse login, then connect Muse again.')
+      if (signedOutCatalog(catalog)) throw new Error('Muse was updated, but its new client is not signed in. Working threads carry on and nothing was lost. Run muse login, then connect Muse again.')
+      if (!catalog.models.length) throw new Error('Muse was updated, but its new client listed no models. Working threads carry on and nothing was lost. Run muse in a terminal to see why, then connect Muse again.')
       await this.probeModes(probe)
     } catch (error) {
       if (generation !== this.generation || !this.state.connected) return

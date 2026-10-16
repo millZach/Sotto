@@ -5,7 +5,7 @@ import { parsePublicProviderEntityId } from '../../shared/agents'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts } from '../../shared/watcherHost'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
-import { agentCommandSchema, defaultNewThreadModelId, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { agentCommandSchema, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
@@ -59,6 +59,8 @@ export type QuestionPageOpening = { readonly kind: 'file'; readonly file: string
 
 /** Creation opens its result unless the window selected something else while it ran. */
 const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['create-thread', 'create-project'])
+/** The commands that may name the machine they act on, which the router reads and never sends on. */
+const HOST_NAMED_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['connect', 'disconnect', 'refresh', 'check-client-updates', 'update-client', 'queue-client-updates'])
 
 /** A state without its client updates, which belong to the machine that runs those clients. */
 function withoutClientUpdates(state: AgentState): AgentState {
@@ -475,13 +477,16 @@ export class DesktopHostRouter {
         clientHosts: entries.map(({ connection, original, state }) => ({ hostId: connection.hostId,
           connected: connection.available?.() !== false && original.host.connected,
           models: state.host.models, capabilities: original.host.capabilities,
-          ...(original.host.providers ? { providers: original.host.providers } : {}),
+          ...(original.host.providers ? { providers: this.namedProviders(connection, original.host.providers) } : {}),
           ...((connection.kind === 'local' || connection.offersClientUpdates?.()) && original.clientUpdates ? { clientUpdates: original.clientUpdates } : {}),
           ...((connection.kind === 'local' || connection.offersClientUpdates?.()) && original.clientUpdateRun ? { clientUpdateRun: original.clientUpdateRun } : {}),
           ...(connection.offersBabysitting?.() ? { pullRequestBabysit: true as const } : {}),
           projectsDirectory: original.configuration.projectsDirectory,
           // This computer may always answer its own host; a remote one says so in the shell it sends this client.
           mayAnswer: connection.kind === 'local' || (original as HostClientShell).clientCapabilities?.mayAnswer === true,
+          // Settings > Providers is this computer's own page, whichever host is selected for new work.
+          ...(connection.kind === 'local' ? { enabledProviders: enabledThreadProviders(original.configuration), checkClientUpdates: original.configuration.checkClientUpdates,
+            agentModelId: defaultThreadModelId(original.configuration, original.host.models, original.reasoningAccounts) } : {}),
         })),
       },
       threadDrafts: entries.flatMap(item => item.state.threadDrafts ?? []),
@@ -756,7 +761,7 @@ export class DesktopHostRouter {
       }))
       return this.shell()
     }
-    const { connection, command } = this.route(input)
+    const { connection, command, hostNamed } = this.route(input)
     if (this.requiresManagementUpdate(connection.hostId) && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
       return { ...this.shell(), error: LEGACY_MANAGEMENT_UPDATE }
     }
@@ -841,12 +846,12 @@ export class DesktopHostRouter {
     }
     if (!repeatedUnsupportedCompose) this.emit()
     const shell = agentShell(this.shell())
-    // A settings save may go to a host other than the selected one, so it answers with its own outcome, never with the
-    // selected host's last error, which belongs to some other command (ADR-0074).
-    return command.type === 'configure' ? { ...shell, error: refused ? this.notice?.message ?? null : null } : shell
+    // A settings save, or a command that named its host, may go to a host other than the selected one, so it answers with
+    // its own outcome, never with the selected host's last error, which belongs to some other command (ADR-0074).
+    return command.type === 'configure' || hostNamed ? { ...shell, error: refused ? this.notice?.message ?? null : null } : shell
   }
   /** The host a command's references name, or the selected host, and the command in that host's own IDs. */
-  private route(input: unknown): { connection: DesktopHostConnection; command: AgentCommand } {
+  private route(input: unknown): { connection: DesktopHostConnection; command: AgentCommand; hostNamed?: true } {
     const references = new Set<string>()
     mapHostReferences(input, value => { const key = parseHostEntityKey(value); if (key) references.add(key.hostId); return value })
     if (references.size > 1) throw new Error('This action includes items from different hosts. Select items from one host.')
@@ -858,14 +863,15 @@ export class DesktopHostRouter {
         || clientUpdateEnumerationUsesMuse(routed.command, routed.connection.service.shell().host))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
       return routed
     }
-    // Update all names the machine whose clients it updates, which need not be the selected one (ADR-0077).
-    if (command.type === 'queue-client-updates' && command.hostId !== undefined) {
+    // Update all names the machine whose clients it updates, which need not be the selected one (ADR-0077), and
+    // Settings > Providers names this computer for its own clients.
+    if (HOST_NAMED_COMMANDS.has(command.type) && 'hostId' in command && command.hostId !== undefined) {
       const { hostId, ...forwarded } = command
       const named = this.hosts.get(hostId)?.connection
       if (!named) throw new Error('This host is not connected. Connect it in Settings > Hosts, then try again. Nothing was changed.')
       if (this.options.museEnabled !== true && (commandUsesMuse(forwarded, named.service.shell().host)
         || clientUpdateEnumerationUsesMuse(forwarded, named.service.shell().host))) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
-      return { connection: named, command: forwarded }
+      return { connection: named, command: forwarded, hostNamed: true }
     }
     const hostId = [...references][0] ?? this.selectedHostId
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
@@ -953,7 +959,14 @@ export class DesktopHostRouter {
     return connection.kind === 'remote' ? nameHostInRefusal(message, connection.name) : message
   }
   private named(connection: DesktopHostConnection, state: AgentState): AgentState {
-    return state.error ? { ...state, error: this.refusal(connection, state.error) } : state
+    const providers = this.namedProviders(connection, state.host.providers)
+    const withProviders = providers === state.host.providers ? state : { ...state, host: { ...state.host, providers } }
+    return withProviders.error ? { ...withProviders, error: this.refusal(connection, withProviders.error) } : withProviders
+  }
+  /** A remote host's provider errors with the host named, the way its refusals are (#459). */
+  private namedProviders<T extends AgentState['host']['providers']>(connection: DesktopHostConnection, providers: T): T {
+    if (connection.kind !== 'remote' || !providers?.some(provider => provider.error)) return providers
+    return providers.map(provider => provider.error ? { ...provider, error: this.refusal(connection, provider.error) } : provider) as T
   }
   /**
    * Built when it changed, so what a listener holds is the state of that moment, even if the window takes it later. Only

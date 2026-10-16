@@ -234,7 +234,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     experimental = p.capabilities?.experimentalApi === true
     result({ grantedCapabilities: granted, serverInfo: { name: 'muse-code-fixture', title: 'Muse fixture', version: startup.cliVersion ?? '1.1.1' }, schema: { family: 'msp', version: startup.schemaVersion ?? 1 }, sessionDurability: { state: 'durable' }, userAgent: 'fixture', museHome: root, workspaceTrust: { state: 'untrusted' }, subagentControl: { state: 'disabled' }, requests: {}, notifications: {} })
   } else if (frame.method === 'initialized') { /* A notification. */ }
-  else if (frame.method === 'model/list') result({ models: MODELS, defaultModelId: MODELS.find(model => model.isDefault)?.modelId ?? null, source: script.models ? 'resolvedAuthContext' : startup.catalogSource ?? 'resolvedAuthContext' })
+  else if (frame.method === 'model/list') result({ models: MODELS, defaultModelId: MODELS.find(model => model.isDefault)?.modelId ?? null, source: script.catalogSource ?? startup.catalogSource ?? (MODELS.length ? 'providerCatalog' : 'bundledCatalog') })
   else if (frame.method === 'session/start') {
     if (p.config?.mcpServers && !granted.includes('sessionMcp')) { capabilityRequired(frame.id); return }
     if (script.ceiling && ['allowAll', 'onRequest'].includes(p.approvalMode)) { fail('commandRejected', 'Refused by the fixture ceiling', 'approval_mode_ceiling'); return }
