@@ -202,19 +202,8 @@ export class WatcherService implements WatcherControlHooks {
   }
   wakeDueAll(events: readonly WatcherEvent[]): boolean[] { return this.wakes.dueAll(events) }
   wakeReady(): boolean { return this.wakes.ready() }
-  /**
-   * Watcher's hidden wake-up left its queue. News it held that did not reach Watcher is untold again in the saved record
-   * too, so a restart before it goes again observes it afresh rather than losing it.
-   */
-  wakeUpSettled(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void {
-    if (this.closed) return
-    if (outcome !== 'told' && events.length) {
-      const ids = new Set(events.map(event => event.id))
-      void this.options.control.updateWatcher(record => { record.wakeEventIds = (record.wakeEventIds ?? []).filter(id => !ids.has(id)) })
-        .catch(() => { this.recoveryNotice = 'Watcher news could not be saved. Reconnect or refresh its threads to retry. Nothing was approved.' })
-    }
-    this.wakes.settled(events, outcome)
-  }
+  /** Watcher's hidden wake-up left its queue; the coordinator has already saved any of its news as untold again. */
+  wakeUpSettled(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void { if (!this.closed) this.wakes.settled(events, outcome) }
   pullRequestObserved(read: PullRequestObservation): void { this.wakes.pullRequest(read) }
   restoreCheckpoint(read: CheckpointObservation): void { this.wakes.restoreCheckpoint(read) }
   checkpointObserved(read: CheckpointObservation): void { this.wakes.checkpoint(read) }

@@ -19,6 +19,7 @@ import { deferred } from '../fixtures/deferred'
 import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { initializeGitRepository } from '../fixtures/gitRepository'
 import { followupStoreOf, storedFollowups } from '../fixtures/followupQueue'
+import { FollowupStore } from '../../src/main/agents/followups'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -772,6 +773,27 @@ it('lets a Stop of Watcher hold its wake-up no one is shown without pausing it, 
   await vi.waitFor(() => expect(sends('Open this thread to answer')).toHaveLength(1), { timeout: 15_000 })
 }, 40_000)
 
+/** The wake-up IDs the coordinator's saved state remembers as told, read from disk as a restart would read them. */
+async function savedTold(root: string): Promise<string[]> {
+  const saved = JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')) as { watcher?: { wakeEventIds?: string[] } }
+  return saved.watcher?.wakeEventIds ?? []
+}
+
+it('saves a refused wake-up’s news as untold before the wake-up leaves the queue, so a crash between loses nothing (review P1)', async () => {
+  const f = await fixture(), { master, hidden } = await heldQuestion(f)
+  const events = hidden()[0]!.news!.flatMap(news => 'events' in news ? news.events.map(event => event.id) : [])
+  await vi.waitFor(async () => expect(await savedTold(f.root)).toEqual(expect.arrayContaining(events)))
+  // Were Sotto to stop at the moment the wake-up leaves, what would the next start read?
+  const store = followupStoreOf(f.control), remove = store.removeWakeUp.bind(store), atRemoval: string[][] = []
+  vi.spyOn(store, 'removeWakeUp').mockImplementation(async (...ids) => { atRemoval.push(await savedTold(f.root)); return remove(...ids) })
+  const refused = refuseWakeUps(f, master, 1)
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(refused.count).toBe(1), { timeout: 15_000 })
+  await vi.waitFor(() => expect(hidden()).toEqual([]))
+  expect(atRemoval).toHaveLength(1)
+  for (const id of events) expect(atRemoval[0]).not.toContain(id)
+}, 40_000)
+
 it('asks a provider that refused a wake-up no one is shown again only with news that needs Watcher, and sends both then', async () => {
   const f = await fixture(), { worker, master, sends, hidden } = await heldQuestion(f)
   const refused = refuseWakeUps(f, master, 1)
@@ -973,7 +995,12 @@ it('starts Watcher’s news afresh after a restart: wake-ups an earlier build sa
   const restored = f.create(), service = new WatcherService({ directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true, limit: () => 4 })
   f.workspace.host.useWatcherTools(new WatcherToolServer(service))
   cleanups.push(async () => { service.close(); restored.dispose(); await restored.closed() })
+  // They leave the queue only once their news is saved as untold, so a crash in between leaves them to be observed afresh.
+  const drop = vi.spyOn(FollowupStore.prototype, 'dropWatcherNews'), beforeDrop: string[][] = []
+  drop.mockImplementation(async function (this: FollowupStore, word) { beforeDrop.push(await savedTold(f.root)); drop.mockRestore(); return this.dropWatcherNews(word) })
   await restored.start(); await restored.commandShell({ type: 'connect', provider: 'codex' }); await service.recover()
+  expect(beforeDrop).toHaveLength(1)
+  expect(beforeDrop[0]).not.toContain(question[0]!.id)
   // Both are gone, and so is the record that their news was told.
   expect(storedFollowups(restored).filter(item => item.threadId === f.id)).toEqual([])
   expect(restored.watcherRecord().wakeEventIds ?? []).not.toEqual(expect.arrayContaining([question[0]!.id]))

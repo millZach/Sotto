@@ -600,9 +600,9 @@ export class AgentControl {
     // Upgrade the native singleton in place, never from the currently selected thread.
     this.syncLegacyDraft()
     await this.followupStore.load(this.stageInline, handle => this.attachments.has(handle.digest), id => this.threadAvailable(id))
-    // A restart starts Watcher's news afresh (ADR-0073): its hidden wake-up goes from the queue, and what it held is untold
-    // again, so it is observed and told anew while it is still true.
-    const untold = new Set((await this.followupStore.dropWatcherNews(news => queuedWakeUpText(news, { tool: false }))).map(event => event.id))
+    // A restart starts Watcher's news afresh (ADR-0073): what its hidden wake-up holds is untold again here, and the wake-up
+    // leaves the queue only once that is saved, below, so a crash at any point leaves the news to be observed anew.
+    const untold = new Set(this.followupStore.heldWatcherEvents().map(event => event.id))
     if (untold.size && this.watcher.wakeEventIds?.some(id => untold.has(id))) this.mutateWatcher(record => { record.wakeEventIds = record.wakeEventIds!.filter(id => !untold.has(id)) })
     this.syncFollowups()
     await this.dependencies.host.initialize?.()
@@ -638,11 +638,15 @@ export class AgentControl {
       this.state.configuration.enabledProviders = this.availableProviders().filter(provider => !off.has(provider))
     }
     // Redaction also reaches disk when control is disabled and no reconnect will run.
+    let written = true
     await this.persist().catch(() => {
+      written = false
       this.migrationSaveFailure = 'Thread management has ended, but the saved state could not be updated. Your drafts are readable. Restore access to local storage and restart to save the upgrade.'
       this.state.error = this.migrationSaveFailure
       console.warn('management-removal-save-failed')
     })
+    // Watcher's news is untold on disk now, so its hidden wake-up may go. Unsaved, it stays, and is read as news waiting.
+    if (written && untold.size) { await this.followupStore.dropWatcherNews(news => queuedWakeUpText(news, { tool: false })); this.syncFollowups() }
     await this.attachments.sweep(() => this.ownedAttachments())
     this.maintenanceTimer = setInterval(() => {
       const pendingPrivacy = this.privacyCleanupPending
@@ -1740,9 +1744,15 @@ export class AgentControl {
   }
   /** Takes Watcher's hidden wake-ups out of the queue in one change and tells Watcher's news how they ended (hiddenWakeUp.ts). */
   private async settleWatcherWakeUp(item: Pick<QueuedFollowup, 'id' | 'news'> | readonly Pick<QueuedFollowup, 'id' | 'news'>[], outcome: HiddenWakeUpOutcome): Promise<void> {
-    const items = Array.isArray(item) ? item : [item]
+    const items = Array.isArray(item) ? item : [item], events = items.flatMap(entry => hiddenEvents(entry.news))
+    // News that did not reach Watcher is untold, and saved so, before its wake-up leaves the queue: a crash between the two
+    // saves then leaves the wake-up, which a restart drops and observes afresh, never told news that is nowhere.
+    if (outcome !== 'told') {
+      const ids = new Set(events.map(event => event.id))
+      if (this.watcher.wakeEventIds?.some(id => ids.has(id))) await this.updateWatcher(record => { record.wakeEventIds = record.wakeEventIds!.filter(id => !ids.has(id)) })
+    }
     await this.followupStore.removeWakeUp(...items.map(entry => entry.id))
-    this.watcherHooks?.wakeUpSettled?.(items.flatMap(entry => hiddenEvents(entry.news)), outcome)
+    this.watcherHooks?.wakeUpSettled?.(events, outcome)
   }
   async pruneWatcherWakeUps(): Promise<void> {
     if (this.dependencies.watcherEnabled !== true || this.disposed || !this.watcherHooks?.wakeReady?.()) return

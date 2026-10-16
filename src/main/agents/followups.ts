@@ -314,7 +314,7 @@ export class FollowupStore {
   dropWatcherNews(word: WordWakeUp): Promise<WatcherEvent[]> {
     let dropped: WatcherEvent[] = []
     return this.change(state => {
-      const held = state.items.filter(item => item.wakeUp && item.news?.some(isWatcherNews) && this.active(item.threadId) && !this.dormant.has(item.id))
+      const held = this.watcherNewsHeld(state.items)
       if (!held.length) return false
       dropped = held.flatMap(item => hiddenEvents(item.news))
       state.items = state.items.flatMap(item => {
@@ -323,6 +323,11 @@ export class FollowupStore {
         return [{ ...item, news: kept, text: word(kept), updatedAt: new Date().toISOString() }]
       })
     }).then(() => dropped)
+  }
+  /** The events `dropWatcherNews` would take out, read without changing anything, so they can be untold first. */
+  heldWatcherEvents(): WatcherEvent[] { return this.watcherNewsHeld(this.state.items).flatMap(item => hiddenEvents(item.news)) }
+  private watcherNewsHeld(items: readonly QueuedFollowup[]): QueuedFollowup[] {
+    return items.filter(item => item.wakeUp && item.news?.some(isWatcherNews) && this.active(item.threadId) && !this.dormant.has(item.id))
   }
   /** Takes these hidden wake-ups out of the queue whole, in one change, in whatever state each is (hiddenWakeUp.ts). */
   removeWakeUp(...ids: string[]): Promise<void> {
