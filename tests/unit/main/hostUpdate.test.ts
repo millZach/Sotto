@@ -424,7 +424,7 @@ describe('a host whose client update line is running (ADR-0077 decision 2)', () 
     expect(hosts.operations).toEqual([])
     updates.dispose()
   })
-  it('never interrupts an update already under way when a client joins the line', async () => {
+  it('never interrupts an update already under way when a client joins the line, and holds only its restart', async () => {
     const { hosts, clients, updates, one } = setup()
     let unpack!: () => void
     hosts.steps['update-install'] = (_operation, options) => { const pending = deferred<SshHostUpdateResult>(); options.onStep?.('install'); unpack = () => pending.resolve({ type: 'update-installed', version: DESKTOP }); return pending.promise }
@@ -433,6 +433,31 @@ describe('a host whose client update line is running (ADR-0077 decision 2)', () 
     clients.set(true)
     expect(one()).toMatchObject({ phase: 'updating', step: 'install', clientsUpdating: true })
     unpack()
+    // The install finishes and stays; the restart waits for the line, and cannot be cancelled.
+    await vi.waitFor(() => expect(one()).toMatchObject({ phase: 'updating', step: 'restart', clientsUpdating: true }))
+    expect(hosts.operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install'])
+    await expect(updates.command(ID, 'cancel')).rejects.toThrow(`forge is already installing ${DESKTOP}, which cannot be stopped partway. Nothing was changed.`)
+    clients.set(false)
+    await vi.waitFor(() => expect(one().phase).toBe('done'))
+    expect(hosts.operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install', 'update-restart'])
+  })
+  // Sol's review of #1084: a client queued during the download was cut off by the restart.
+  it('holds the restart for a client put in the line during the download, without downloading again', async () => {
+    const { hosts, clients, updates, one } = setup()
+    let fetched!: () => void
+    hosts.steps['update-fetch'] = (_operation, options) => {
+      const pending = deferred<SshHostUpdateResult>()
+      fetched = () => { options.onStep?.('check'); pending.resolve({ type: 'update-fetched', file: FILE, sha256: SUM }) }
+      return pending.promise
+    }
+    await updates.command(ID, 'update')
+    expect(one()).toMatchObject({ phase: 'updating', step: 'download' })
+    clients.set(true)
+    fetched()
+    await vi.waitFor(() => expect(one()).toMatchObject({ phase: 'updating', step: 'restart', clientsUpdating: true }))
+    expect(hosts.operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install'])
+    expect(updates.restartHold()).toContain('forge')
+    clients.set(false)
     await vi.waitFor(() => expect(one().phase).toBe('done'))
     expect(hosts.operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install', 'update-restart'])
   })

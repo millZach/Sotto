@@ -18,7 +18,7 @@ ADR-0053, accepted the same day, takes the separate decision the third consequen
 
 ## October 16, 2026 amendment: an update waits for the host's client updates
 
-An update waits for the host's client update line ([ADR-0042](0042-provider-clients-update-in-place.md)) as it waits for the host's threads, so its restart cuts no client update off. Update, Try again, Update when they finish and Stop N threads and update all move a host whose line is running to waiting, and it starts by itself once the line is empty. The pill reads "forge waits for its clients", and the panel "forge updates once its client updates finish." with **Cancel update**, and **Stop N threads** while some still work. An update already under way is never interrupted. [ADR-0077](0077-update-all-updates-sotto-its-clients-and-hosts-together.md) decision 2 has the incident that led here.
+An update waits for the host's client update line ([ADR-0042](0042-provider-clients-update-in-place.md)) as it waits for the host's threads, so its restart cuts no client update off. Update, Try again, Update when they finish and Stop N threads and update all move a host whose line is running to waiting, and it starts by itself once the line is empty. The pill reads "forge waits for its clients", and the panel "forge updates once its client updates finish." with **Cancel update**, and **Stop N threads** while some still work. An update already under way is never interrupted, but its restart waits for the line too: the panel reads "forge restarts once its client updates finish.", and Cancel update stays refused once the host has begun to install. [ADR-0077](0077-update-all-updates-sotto-its-clients-and-hosts-together.md) decision 2 has the incident that led here.
 
 ## Context
 

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { routerBusyThreads } from '../../../src/main/hosts/busyHost'
 import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import { HostUpdates } from '../../../src/main/hosts/hostUpdate'
@@ -70,5 +70,43 @@ it('does not hold a host update for the stale line of a host that is not connect
     expect(updates.state()).toMatchObject([{ phase: 'updating', step: 'download' }])
     expect(updates.state()[0]!.clientsUpdating).toBeUndefined()
     expect(operations.map(operation => operation.op)).toEqual(['update-fetch'])
+  } finally { updates.dispose(); router.dispose() }
+})
+
+it('holds an installed update\'s restart until the router publishes the line empty', async () => {
+  const state = emptyDesktopState(HOST)
+  state.host.connected = true; state.connection = 'connected'
+  let push: ((state: AgentState) => void) | undefined
+  const connection: DesktopHostConnection = { hostId: HOST, name: 'forge', kind: 'local', detail: () => null, preview: () => null,
+    service: { shell: () => state, subscribe: listener => { push = listener; return () => undefined }, command: async () => state } }
+  const router = new DesktopHostRouter(emptyDesktopState)
+  router.add(connection)
+  router.subscribe(() => undefined)
+  const operations: SshHostUpdateOperation[] = []
+  let fetched!: () => void
+  const updates = new HostUpdates({ version: '0.1.24', releasesUrl: 'https://releases.example/download', threads: routerBusyThreads(router),
+    clients: { updating: hostId => router.clientLineRunning(hostId) },
+    hosts: { candidates: () => [{ id: SAVED, name: 'forge', hostId: HOST, version: '0.1.22', owned: true, installPath: '/opt/sotto', dataDirectory: '/var/sotto' }],
+      run: async (_id, operation) => {
+        operations.push(operation)
+        if (operation.op === 'update-fetch') {
+          return new Promise<SshHostUpdateResult>(resolve => { fetched = () => resolve({ type: 'update-fetched', file: 'Sotto-host-0.1.24-linux-x64.tar.gz', sha256: 'a'.repeat(64) }) })
+        }
+        if (operation.op === 'update-install') return { type: 'update-installed', version: '0.1.24' }
+        return new Promise<SshHostUpdateResult>(() => undefined)
+      },
+      restart: async (_id, version) => { operations.push({ op: 'update-restart', version }); return new Promise<SshHostUpdateResult>(() => undefined) },
+      subscribe: () => () => undefined } })
+  try {
+    push!(state)
+    await updates.command(SAVED, 'update')
+    // Codex joins forge's line while the download runs.
+    push!({ ...state, clientUpdates: [codex('queued')], clientUpdateRun: { total: 1, done: 0 } })
+    fetched()
+    await vi.waitFor(() => expect(updates.state()).toMatchObject([{ phase: 'updating', step: 'restart', clientsUpdating: true }]))
+    expect(operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install'])
+    // Nothing but the router's change wakes the held restart.
+    push!({ ...state, clientUpdates: [codex('updated')] })
+    await vi.waitFor(() => expect(operations.map(operation => operation.op)).toEqual(['update-fetch', 'update-install', 'update-restart']))
   } finally { updates.dispose(); router.dispose() }
 })

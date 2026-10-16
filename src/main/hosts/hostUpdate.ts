@@ -184,6 +184,8 @@ export class HostUpdates {
   /** Each saved host's system as the archive name its download asked for says, `linux-x64`, when its launch did not say. */
   private readonly systems = new Map<string, string>()
   private readonly probing = new AbortController()
+  /** Installed updates holding their restart for the host's client update line, each told on every change to look again. */
+  private readonly restarts = new Set<() => void>()
   constructor(private readonly options: HostUpdatesOptions) {
     this.releasesUrl = options.releasesUrl ?? HOST_RELEASES_URL
     this.off = [options.hosts.subscribe(() => this.sync()), options.threads.subscribe(() => this.sync())]
@@ -256,6 +258,7 @@ export class HostUpdates {
     for (const off of this.off) off()
     for (const entry of this.entries.values()) if (!entry.installing) entry.run?.abort()
     this.probing.abort()
+    this.restarts.clear()
     this.listeners.clear()
   }
 
@@ -344,6 +347,10 @@ export class HostUpdates {
       if (installed.type === 'error') throw new UpdateStopped(installed.reason, installed.reason === 'checksum-mismatch' ? 'check' : 'install', installed)
       if (installed.type !== 'update-installed') throw new UpdateStopped('update-failed', 'install')
       step('restart')
+      // A client put in the host's line after the download began would be cut off by the restart (ADR-0077 decision 2).
+      // The install is done and stays: the restart waits for the line to empty, and Cancel update still refuses.
+      await this.lineEmpty(entry, current)
+      if (!current()) return
       let restarted: SshHostUpdateResult | undefined
       try { restarted = await this.options.hosts.restart(entry.id, to) }
       catch (error) {
@@ -365,6 +372,14 @@ export class HostUpdates {
       const stopped = error instanceof UpdateStopped ? error : new UpdateStopped('update-lost', entry.step ?? 'download')
       Object.assign(entry, { phase: 'failed', failure: this.describe(entry, stopped), reason: stopped.reason, step: undefined })
     } finally { this.sync(true) }
+  }
+  /** Resolves once the host's client update line is empty, or the update is no longer the one running. */
+  private lineEmpty(entry: Entry, current: () => boolean): Promise<void> {
+    if (!this.clientsUpdating(entry)) return Promise.resolve()
+    return new Promise(resolve => {
+      const look = (): void => { if (current() && this.clientsUpdating(entry)) return; this.restarts.delete(look); resolve() }
+      this.restarts.add(look)
+    })
   }
   /** Download and check: on the host, or on this computer and copied over SSH when the host cannot reach the releases page. */
   private async fetch(entry: Entry, signal: AbortSignal, onStep: (step: HostUpdateStep) => void): Promise<{ file: string; sha256: string }> {
@@ -538,6 +553,8 @@ export class HostUpdates {
    * its threads starts once none is working and its client update line is empty.
    */
   private sync(changed = false): void {
+    // An installed update holding its restart for the client update line looks again: the router's changes arrive here.
+    for (const look of [...this.restarts]) look()
     const candidates = this.options.hosts.candidates()
     const seen = new Set<string>()
     for (const candidate of candidates) {

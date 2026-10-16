@@ -26,6 +26,8 @@ describe('the pill', () => {
     expect(hostUpdatePillText([forge()]).text).toBe('Update for forge')
     expect(hostUpdatePillText([forge({ phase: 'waiting' })]).text).toBe('forge waits to update')
     expect(hostUpdatePillText([forge({ phase: 'waiting', clientsUpdating: true })]).text).toBe('forge waits for its clients')
+    expect(hostUpdatePillText([forge({ phase: 'updating', step: 'restart', clientsUpdating: true })]).text).toBe('Updating forge · waits for its clients')
+    expect(hostUpdatePillText([forge({ phase: 'updating', step: 'install', clientsUpdating: true })]).text).toBe('Updating forge · 3 of 4')
     expect(hostUpdatePillText([forge({ phase: 'updating', step: 'check' })]).text).toBe('Updating forge · 2 of 4')
     expect(hostUpdatePillText([forge({ phase: 'done' })]).text).toBe('forge updated')
     expect(hostUpdatePillText([forge({ phase: 'failed' })]).text).toBe('forge not updated')
@@ -117,6 +119,11 @@ describe('the panel', () => {
     expect(screen.getByRole('button', { name: /Cancel update, and leave/u })).toBeInTheDocument()
     publish([forge({ phase: 'updating', step: 'install' })])
     expect(screen.getByText('The checksum matches.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Cancel update, and leave/u })).toBeNull()
+    expect(screen.queryByText('forge restarts once its client updates finish.')).toBeNull()
+    // A client update on forge holds the restart, and the panel says so.
+    publish([forge({ phase: 'updating', step: 'restart', clientsUpdating: true })])
+    expect(screen.getByText('forge restarts once its client updates finish.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Cancel update, and leave/u })).toBeNull()
   })
   it('says what happened when an update fails, that the old version still runs, and offers the commands to do it by hand', async () => {

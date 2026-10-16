@@ -59,10 +59,13 @@ Only the card's first press kept it before, and on October 16 Try again on forge
 installing there. A host whose client update line is running, a client waiting in it or updating, moves to waiting
 and begins by itself once the line is empty: Update all's press and Try again, the host update pill's Update and Try
 again (ADR-0040), Update when they finish and Stop N threads and update alike. Cancel update takes it back to needing
-an update, and an update already under way is never interrupted: a client put in the line after the download has
-begun can still be cut off by that update's restart. The line is read from what the router last
-published for that host, in place, because the question is asked on every change. The card words that wait as its own,
-"Updates once forge's clients have.", and the pill as "forge waits for its clients".
+an update, and an update already under way is never interrupted. Its restart still waits: a client put in the line
+after the download began holds the installed update at its restart step until the line is empty, and Cancel update
+stays refused there, as it is once the host has begun to install. The line is read from what the router last
+published for that host, in place, because the question is asked on every change, and a host that is not connected
+has no line running. The card words the wait as its own, "Updates once forge's clients have.", and the pill as "forge
+waits for its clients". A held restart reads "Restart forge's host once its clients have" on the card, "Updating forge
+· waits for its clients" on the pill, and "forge restarts once its client updates finish." in the panel.
 
 The same day: a client step on a host that was seen waiting or updating in the host's line since the press, or since
 its Try again, and is later out of the line with no result of its own, lost its line. A host keeps its results in

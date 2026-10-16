@@ -125,6 +125,10 @@ describe('a press of Update all', () => {
     const waiting = updateAllView(sources({ hostUpdates: [hostUpdate({ phase: 'waiting', clientsUpdating: true })] }), pass([hostKey(FORGE)]))
     expect(waiting.items[0]).toMatchObject({ state: 'running', detail: 'Updates once forge’s clients have.', cancellable: true })
     expect(waiting.phase).toBe('running')
+    // Once under way, the update runs on and only its restart waits for the clients.
+    const at = (step: HostUpdateState['step']) => updateAllView(sources({ hostUpdates: [hostUpdate({ phase: 'updating', step, clientsUpdating: true })] }), pass([hostKey(FORGE)])).items[0]!.detail
+    expect(at('download')).toBe('Step 1 of 4 · Download 0.1.37 · Restarts once forge’s clients have.')
+    expect(at('restart')).toBe('Step 4 of 4 · Restart forge’s host once its clients have')
     const busy = updateAllView(sources({ hostUpdates: [hostUpdate({ phase: 'waiting', clientsUpdating: true, working: 2 })] }), pass([hostKey(FORGE)]))
     expect(busy.items[0]).toMatchObject({ state: 'waiting', detail: 'Updates once its 2 threads finish and its clients have.', cancellable: true })
   })

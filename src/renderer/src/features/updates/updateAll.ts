@@ -208,7 +208,9 @@ function hostItem(update: HostUpdateState, pass: UpdateAllPass | null): UpdateAl
   if (update.phase === 'done') return touched ? { ...base, versions: { from: update.to }, state: 'done', detail: update.error ?? `${name} runs Sotto host ${update.to}.` } : undefined
   if (update.phase === 'updating') {
     const step = update.step ?? 'download'
-    return { ...base, state: 'running', detail: `Step ${HOST_UPDATE_STEPS.indexOf(step) + 1} of 4 · ${stepTitle(update, step)}`, cancellable: step === 'download' || step === 'check' }
+    // A client update running on the host holds the restart, however far the update has come (ADR-0077 decision 2).
+    const held = !update.clientsUpdating ? '' : step === 'restart' ? ' once its clients have' : ` · Restarts once ${name}’s clients have.`
+    return { ...base, state: 'running', detail: `Step ${HOST_UPDATE_STEPS.indexOf(step) + 1} of 4 · ${stepTitle(update, step)}${held}`, cancellable: step === 'download' || step === 'check' }
   }
   // Waiting for the host's client update line and nothing else reads as the press's own wait for its clients.
   if (update.phase === 'waiting' && update.clientsUpdating && !working) return { ...base, state: 'running', detail: `Updates once ${name}’s clients have.`, cancellable: true }
