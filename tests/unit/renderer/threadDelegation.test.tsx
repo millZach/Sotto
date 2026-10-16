@@ -97,6 +97,7 @@ describe('delegation words', () => {
     expect(delegationWaitLine(view({ outcome: 'paused', outcomeAt: started }), now)).toMatch(/^You sent to it at .+\. This thread sends it nothing more until your turn there ends\.$/u)
     expect(delegationWaitLine(view({ outcome: 'unknown', unknownWhy: 'restarted' }), now)).toBe('Sotto restarted while it worked. Nothing was resent. Open it to see where it got to.')
     expect(delegationWaitLine(view({ outcome: 'unknown', unknownWhy: 'unconfirmed' }), now)).toBe('Its provider did not confirm the brief arrived. Sotto has not sent it again. Open it to see whether it is working on it.')
+    expect(delegationWaitLine(view({ outcome: 'unknown', unknownWhy: 'gone' }), now)).toBe('Its thread is gone from Sotto, so nothing more will come of it.')
   })
 
   it('names what Stop also stops: the delegated threads below, both levels, whose turn still runs', () => {

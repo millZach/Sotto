@@ -119,8 +119,8 @@ export const delegationViewSchema = z.object({
   /** The brief's own message in the delegated thread, which that thread shows as the delegating thread's, not the user's. */
   briefMessageId: id,
   outcome: watcherOutcomeSchema,
-  /** Why an outcome is unknown: Sotto restarted while it was open, or the provider never confirmed the brief. */
-  unknownWhy: z.enum(['restarted', 'unconfirmed']).optional(),
+  /** Why an outcome is unknown: Sotto restarted while it was open, the provider never confirmed the brief, or the thread is gone. */
+  unknownWhy: z.enum(['restarted', 'unconfirmed', 'gone']).optional(),
   /** The delegating thread has been told this outcome, by the call's result, a read or a wake-up. */
   told: z.boolean(),
   createdAt: z.iso.datetime(),

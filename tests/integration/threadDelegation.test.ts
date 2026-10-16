@@ -184,6 +184,8 @@ it('leaves a brief unknown after a restart and sends nothing again', async () =>
   const before = sends()
   await f.restart()
   expect(f.ok(await f.read(parent, first.delegation.id)).delegation.outcome).toBe('unknown')
+  // The window's card says it was the restart.
+  expect(f.service.views(parent).made).toMatchObject([{ id: first.delegation.id, outcome: 'unknown', unknownWhy: 'restarted' }])
   await f.endTurn(child, 'Synthetic reply after restart')
   const read = f.ok(await f.read(parent, first.delegation.id))
   expect(read.delegation.outcome).toBe('unknown')

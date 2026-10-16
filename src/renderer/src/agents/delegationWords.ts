@@ -68,6 +68,7 @@ export function delegationWaitLine(view: DelegationView, now: number): string {
       return `You sent to it${at(view.outcomeAt)}. This thread sends it nothing more until your turn there ends.`
     case 'unknown':
       if (view.notSent === 'restarted') return 'Sotto restarted before the brief was sent. Nothing was sent.'
+      if (view.unknownWhy === 'gone') return 'Its thread is gone from Sotto, so nothing more will come of it.'
       return view.unknownWhy === 'unconfirmed' ? 'Its provider did not confirm the brief arrived. Sotto has not sent it again. Open it to see whether it is working on it.'
         : 'Sotto restarted while it worked. Nothing was resent. Open it to see where it got to.'
   }

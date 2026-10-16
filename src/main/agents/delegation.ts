@@ -87,6 +87,8 @@ const recordSchema = z.object({
   wentOnAt: z.iso.datetime().optional(),
   /** The delegating thread's newest message when it called, a wake-up's included: the turn the window's card goes in. */
   callerMessageId: id.optional(),
+  /** Why the outcome became unknown, which the window's card says: a restart, a brief never confirmed, or a thread gone. */
+  unknownBecause: z.enum(['restarted', 'unconfirmed', 'gone']).optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type DelegationRecord = z.infer<typeof recordSchema>
@@ -190,7 +192,7 @@ export class DelegationService {
     const time = now()
     this.records = file.delegations.map(record => {
       if (!this.open(record)) return record
-      const unknown: DelegationRecord = { ...record, outcome: 'unknown', outcomeAt: time, told: 'unknown', updatedAt: time }
+      const unknown: DelegationRecord = { ...record, outcome: 'unknown', unknownBecause: 'restarted', outcomeAt: time, told: 'unknown', updatedAt: time }
       if (record.deliveryState === 'queued') { unknown.deliveryState = 'failed'; unknown.failure = 'restarted' }
       if (record.deliveryState === 'dispatching') unknown.deliveryState = 'uncertain'
       delete unknown.turnMessageId; delete unknown.nativeTurnId; delete unknown.replyMessageId
@@ -291,7 +293,8 @@ export class DelegationService {
     const outcome = this.outcomeOf(record)
     const outcomeAt = record.outcomeAt ?? (record.deliveryState === 'failed' ? record.updatedAt : undefined)
     // Recovery marks what was open when Sotto stopped `unknown`; a brief the provider never confirmed reads unknown without it.
-    const unknownWhy = outcome !== 'unknown' ? undefined : record.outcome === 'unknown' || record.failure === 'restarted' ? 'restarted' as const : 'unconfirmed' as const
+    // A record saved before the reason was kept went unknown at a restart; an unconfirmed brief reads unknown before it is ended.
+    const unknownWhy = outcome !== 'unknown' ? undefined : record.unknownBecause ?? (record.outcome === 'unknown' || record.failure === 'restarted' ? 'restarted' : 'unconfirmed')
     return { id: record.id, thread: record.delegatedThreadId, action: record.action, work: record.work, rootUserMessageId: record.rootUserMessageId,
       anchorMessageId: record.callerMessageId ?? record.rootUserMessageId, briefMessageId: record.messageId, outcome,
       ...(unknownWhy ? { unknownWhy } : {}), told: record.told === outcome, createdAt: record.createdAt, ...(outcomeAt ? { outcomeAt } : {}),
@@ -717,7 +720,7 @@ export class DelegationService {
     if (record.deliveryState === 'queued') { this.fail(record.id, 'provider', true); return true }
     this.update(record.id, saved => {
       if (saved.deliveryState === 'dispatching') saved.deliveryState = 'uncertain'
-      saved.outcome = 'unknown'; saved.outcomeAt = now()
+      saved.outcome = 'unknown'; saved.unknownBecause = 'gone'; saved.outcomeAt = now()
     })
     this.changed(record.id)
     return true
@@ -761,7 +764,7 @@ export class DelegationService {
       }
       if (record.deliveryState !== 'accepted') {
         if (this.unproved(record, thread)) {
-          this.update(record.id, saved => { saved.deliveryState = 'uncertain'; saved.outcome = 'unknown'; saved.outcomeAt = now() })
+          this.update(record.id, saved => { saved.deliveryState = 'uncertain'; saved.outcome = 'unknown'; saved.unknownBecause = 'unconfirmed'; saved.outcomeAt = now() })
           changed = true
           this.changed(record.id)
         }
