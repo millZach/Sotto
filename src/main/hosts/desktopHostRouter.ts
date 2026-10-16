@@ -171,7 +171,9 @@ export class DesktopHostRouter {
     }
   }
   private watcherChanged(hostId?: string, force = true): void { for (const listener of this.watcherListeners) listener(hostId, force) }
-  private readonly hosts = new Map<string, { connection: DesktopHostConnection; off: (() => void)[] }>()
+  /** `run` numbers each connection a host was added with, so a rename, which replaces the connection object, keeps it. */
+  private readonly hosts = new Map<string, { connection: DesktopHostConnection; off: (() => void)[]; run: number }>()
+  private runs = 0
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly changeListeners = new Set<() => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
@@ -180,8 +182,9 @@ export class DesktopHostRouter {
    * it restarts they start again from one, and a window that held the thread at a higher revision threw every newer
    * history away until the count caught up (#1098). A connection's first whole detail of a thread moves that
    * connection's revisions past the last one the window was given; within a connection they all move by that amount.
+   * Only numbers are kept, so a host's old connections and their histories are not held here.
    */
-  private readonly detailLines = new Map<string, { connection: DesktopHostConnection; offset: number; last: number }>()
+  private readonly windowRevisions = new Map<string, { run: number; offset: number; last: number }>()
   private selectedHostId: string | undefined
   private selectedThreadId: string | null | undefined
   private selectedProjectId: string | null = null
@@ -360,7 +363,7 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote' && connection.service.subscribeWatcher) off.push(connection.service.subscribeWatcher(() => this.watcherChanged(connection.hostId, false)))
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
       if (!this.watcherAvailable(connection, detail.threadId)) return
-      const scoped = this.onDetailLine(connection, mapHostReferences(detail, id => hostEntityKey(connection.hostId, id)))
+      const scoped = this.toWindowRevisions(connection, mapHostReferences(detail, id => hostEntityKey(connection.hostId, id)))
       for (const listener of this.detailListeners) listener(scoped)
     }))
     return off
@@ -368,7 +371,7 @@ export class DesktopHostRouter {
   add(connection: DesktopHostConnection): void {
     if (this.hosts.has(connection.hostId)) throw new Error('This host is already connected.')
     const off = this.watch(connection)
-    this.hosts.set(connection.hostId, { connection, off })
+    this.hosts.set(connection.hostId, { connection, off, run: ++this.runs })
     this.watcherChanged(connection.hostId)
     this.selectedHostId ??= connection.hostId
     this.emit()
@@ -382,7 +385,7 @@ export class DesktopHostRouter {
     if (!entry) { this.add(connection); return }
     entry.off.forEach(off => off())
     const off = this.watch(connection)
-    this.hosts.set(connection.hostId, { connection, off })
+    this.hosts.set(connection.hostId, { connection, off, run: ++this.runs })
     this.reconnecting.delete(connection.hostId)
     this.watcherChanged(connection.hostId)
     this.emit()
@@ -515,21 +518,22 @@ export class DesktopHostRouter {
   async threadDetail(threadId: string): Promise<AgentThreadDetail | null> {
     const { connection, id } = this.target(threadId)
     const detail = await connection.detail(id!)
-    return detail ? this.onDetailLine(connection, mapHostReferences(detail, value => hostEntityKey(connection.hostId, value))) : null
+    return detail ? this.toWindowRevisions(connection, mapHostReferences(detail, value => hostEntityKey(connection.hostId, value))) : null
   }
-  /** A remote thread's detail or delta with its revisions on the thread's line for the window; this computer's go as they are. */
-  private onDetailLine<T extends AgentThreadDetailUpdate>(connection: DesktopHostConnection, update: T): T {
-    if (connection.kind !== 'remote') return update
-    let line = this.detailLines.get(update.threadId)
+  /** A remote thread's detail or delta with its revisions as the window is given them; this computer's go as they are. */
+  private toWindowRevisions<T extends AgentThreadDetailUpdate>(connection: DesktopHostConnection, update: T): T {
+    const run = this.hosts.get(connection.hostId)?.run
+    if (connection.kind !== 'remote' || run === undefined) return update
+    let line = this.windowRevisions.get(update.threadId)
     if (isAgentThreadDetailDelta(update)) {
       // A delta follows a whole detail on its own connection; one that arrives first applies to nothing the window holds.
-      if (!line || line.connection !== connection) return update
+      if (!line || line.run !== run) return update
       line.last = Math.max(line.last, update.revision + line.offset)
       return line.offset === 0 ? update : { ...update, baseRevision: update.baseRevision + line.offset, revision: update.revision + line.offset }
     }
-    if (!line) this.detailLines.set(update.threadId, line = { connection, offset: 0, last: update.revision })
-    else if (line.connection !== connection) {
-      line.connection = connection
+    if (!line) this.windowRevisions.set(update.threadId, line = { run, offset: 0, last: update.revision })
+    else if (line.run !== run) {
+      line.run = run
       if (update.revision + line.offset <= line.last) line.offset = line.last + 1 - update.revision
     }
     line.last = Math.max(line.last, update.revision + line.offset)

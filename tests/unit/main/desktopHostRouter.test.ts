@@ -943,11 +943,11 @@ describe('a question’s pages (ADR-0085)', () => {
 describe('a remote thread after its host restarts (#1098)', () => {
   function remoteDetails() {
     const router = new DesktopHostRouter(emptyDesktopState)
-    const connect = () => {
+    const connect = (inPlace = false) => {
       const host = fixture(REMOTE, 'remote')
       let push: ((detail: AgentThreadDetailUpdate) => void) | undefined
       host.connection.subscribeDetail = listener => { push = listener; return () => { push = undefined } }
-      router.add(host.connection)
+      if (inPlace) router.replace(host.connection); else router.add(host.connection)
       return { host, push: (detail: AgentThreadDetailUpdate) => push!(detail) }
     }
     const forwarded: AgentThreadDetailUpdate[] = []
@@ -970,6 +970,21 @@ describe('a remote thread after its host restarts (#1098)', () => {
     // A read the window asks for is on the same line.
     after.host.detail.mockResolvedValueOnce(whole(3))
     expect((await router.threadDetail(hostEntityKey(REMOTE, 'thread')))?.revision).toBe(43)
+    router.dispose()
+  })
+
+  it('moves revisions the same way when a reconnect takes the old connection’s place, and keeps them through a rename', async () => {
+    const { router, connect, forwarded } = remoteDetails()
+    connect().push(whole(40))
+    const after = connect(true)
+    after.push(whole(2))
+    // A rename replaces the connection object; a read through it and the pushes that follow stay on one line.
+    router.rename(REMOTE, 'Forge at home')
+    after.host.detail.mockResolvedValueOnce(whole(2))
+    expect((await router.threadDetail(hostEntityKey(REMOTE, 'thread')))?.revision).toBe(41)
+    after.push(delta(2, 3)); after.push(delta(3, 4))
+    expect(forwarded.map(item => item.revision)).toEqual([40, 41, 42, 43])
+    expect(forwarded.at(-1)).toMatchObject({ baseRevision: 42, revision: 43 })
     router.dispose()
   })
 
