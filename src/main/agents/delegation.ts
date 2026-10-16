@@ -85,6 +85,8 @@ const recordSchema = z.object({
   waitSeconds: z.number().int().min(0).max(DELEGATION_WAIT_MAX_SECONDS).optional(), waitStartedAt: z.iso.datetime().optional(),
   /** When the call returned with the brief still working, so its outcome reaches the delegating thread as a wake-up. */
   wentOnAt: z.iso.datetime().optional(),
+  /** The delegating thread's newest message when it called, a wake-up's included: the turn the window's card goes in. */
+  callerMessageId: id.optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type DelegationRecord = z.infer<typeof recordSchema>
@@ -250,20 +252,26 @@ export class DelegationService {
         if (this.open(this.record(record.id)!)) this.update(record.id, saved => { saved.wentOnAt = now() })
       }
       return await this.result(this.record(record.id)!)
-    } finally { this.calling.delete(record.id); this.touched(record.delegatingThreadId) }
+    } finally { this.calling.delete(record.id); this.touched(record) }
   }
 
   /**
-   * The delegations this thread made, newest last, as the window's cards show them (#1029): identities, outcome and
-   * timing from this service's own record, never a brief or a reply. Reads no snapshot, so the window may ask whenever a
-   * delegating thread's pane opens or main names it as changed.
+   * What the window shows of a thread's delegations (#1029), oldest first: the ones it made, every open one and the
+   * newest finished ones, and the briefs it was sent. Identities, outcome and timing from this service's own record,
+   * never a brief or a reply. Reads no snapshot, so the window may ask whenever a pane opens or main names the thread.
    */
-  views(threadId: string): DelegationView[] {
-    const own: DelegationRecord[] = []
-    for (let index = this.records.length - 1; index >= 0 && own.length < DELEGATION_VIEWS_MAX; index--) {
-      if (this.records[index]!.delegatingThreadId === threadId) own.push(this.records[index]!)
+  views(threadId: string): { readonly made: DelegationView[]; readonly received: DelegationView[] } {
+    const made: DelegationRecord[] = [], received: DelegationRecord[] = []
+    let finished = 0
+    for (let index = this.records.length - 1; index >= 0; index--) {
+      const record = this.records[index]!
+      if (record.delegatingThreadId === threadId && (finished < DELEGATION_VIEWS_MAX || this.open(record)) && made.length < DELEGATION_VIEWS_MAX * 2) {
+        made.push(record)
+        if (!this.open(record)) finished++
+      }
+      if (record.delegatedThreadId === threadId && received.length < DELEGATION_VIEWS_MAX) received.push(record)
     }
-    return own.reverse().map(record => this.view(record))
+    return { made: made.reverse().map(record => this.view(record)), received: received.reverse().map(record => this.view(record)) }
   }
   /**
    * Hears which delegating threads' delegations changed, batched so a pass that moves many outcomes, for many threads,
@@ -277,16 +285,22 @@ export class DelegationService {
   private view(record: DelegationRecord): DelegationView {
     const outcome = this.outcomeOf(record)
     const outcomeAt = record.outcomeAt ?? (record.deliveryState === 'failed' ? record.updatedAt : undefined)
+    // Recovery marks what was open when Sotto stopped `unknown`; a brief the provider never confirmed reads unknown without it.
+    const unknownWhy = outcome !== 'unknown' ? undefined : record.outcome === 'unknown' || record.failure === 'restarted' ? 'restarted' as const : 'unconfirmed' as const
     return { id: record.id, thread: record.delegatedThreadId, action: record.action, work: record.work, rootUserMessageId: record.rootUserMessageId,
-      briefMessageId: record.messageId, outcome, createdAt: record.createdAt, ...(outcomeAt ? { outcomeAt } : {}),
+      anchorMessageId: record.callerMessageId ?? record.rootUserMessageId, briefMessageId: record.messageId, outcome,
+      ...(unknownWhy ? { unknownWhy } : {}), told: record.told === outcome, createdAt: record.createdAt, ...(outcomeAt ? { outcomeAt } : {}),
       ...(record.deliveryState === 'failed' ? { notSent: record.failure ?? 'provider' } : {}),
       ...(record.waitSeconds !== undefined && record.waitStartedAt ? { wait: { seconds: record.waitSeconds, startedAt: record.waitStartedAt, ...(record.wentOnAt ? { wentOnAt: record.wentOnAt } : {}) } } : {}),
       waiting: this.calling.has(record.id) && record.wentOnAt === undefined && this.open(record) }
   }
-  /** A delegating thread's delegations changed: the window hears it once the current pass is over. */
-  private touched(threadId: string): void {
+  /**
+   * A delegation changed: the window hears, once the current pass is over, that the thread that made it and the thread
+   * it went to have something new to show.
+   */
+  private touched(record: Pick<DelegationRecord, 'delegatingThreadId' | 'delegatedThreadId'>): void {
     if (this.closed || !this.viewListeners.size) return
-    this.viewsChanged.add(threadId)
+    this.viewsChanged.add(record.delegatingThreadId).add(record.delegatedThreadId)
     if (this.viewsScheduled) return
     this.viewsScheduled = true
     queueMicrotask(() => {
@@ -454,7 +468,9 @@ export class DelegationService {
       }
     }
     const root = this.rootOf(caller), time = now()
-    const base = { id: randomUUID(), delegatingThreadId: caller.id, work: input.work, rootUserMessageId: root, ...(input.retry_key ? { retryKey: input.retry_key } : {}),
+    const callerHead = nativeHead(caller)
+    const base = { id: randomUUID(), delegatingThreadId: caller.id, work: input.work, rootUserMessageId: root, ...(callerHead ? { callerMessageId: callerHead } : {}),
+      ...(input.retry_key ? { retryKey: input.retry_key } : {}),
       inputDigest, draftId: randomUUID(), messageId: randomUUID(), deliveryState: 'queued' as const, charged: true, createdAt: time, updatedAt: time }
     if (input.thread !== undefined) {
       const link = this.links.get(input.thread)
@@ -473,7 +489,7 @@ export class DelegationService {
       const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId: thread.id, action: 'send', expectedLastUserMessageId: link.seenHead })
       this.records.push(record)
       await this.saveAdmission(record)
-      this.touched(caller.id)
+      this.touched(record)
       return { record, retry: false }
     }
     if (!input.provider || !input.model) refuse('INVALID_INPUT', `Name the provider and model for a new thread. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
@@ -492,7 +508,7 @@ export class DelegationService {
     this.records.push(record)
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
     await this.saveAdmission(record)
-    this.touched(caller.id)
+    this.touched(record)
     const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], modelId: model.id,
       ...(input.effort ? { reasoningEffort: input.effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared' }
     return { record, retry: false, start }
@@ -612,7 +628,7 @@ export class DelegationService {
     const record = this.record(delegationId)
     if (!record) return
     change(record); record.updatedAt = now()
-    this.touched(record.delegatingThreadId)
+    this.touched(record)
   }
 
   /**

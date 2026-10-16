@@ -7,7 +7,7 @@ import type { AgentConnection } from './AgentContext'
 import { threadHostName } from './HostBadge'
 import { ProviderMark } from './ProviderMark'
 import { DELEGATION_OUTCOME_WORDS, delegatedNote, delegationWaitLine, stopLine, workingDelegatedThreads } from './delegationWords'
-import { useDelegations, useDelegationsEnabled } from './delegations'
+import { useDelegationsEnabled, useNewestBrief } from './delegations'
 import './delegation.css'
 
 /** What a card needs of the window besides its delegation: the threads it names, where they run, and a way to open one. */
@@ -94,9 +94,9 @@ export function DelegationCards({ views }: { readonly views: readonly Delegation
 }
 
 /**
- * Which turn each card belongs to: the user's message the delegation answers (decision 3). A delegation whose message is
- * not among the messages shown goes last, unless it was made before the first of them, when it belongs to history the
- * reader has not opened yet.
+ * Which turn each card belongs to: the one the call was made in, opened by the user's message or a wake-up. A delegation
+ * whose message is not among the messages shown goes last, unless it was made before the first of them, when it belongs
+ * to history the reader has not opened yet.
  */
 export function delegationsByTurn(views: readonly DelegationView[], messages: readonly { readonly id: string; readonly createdAt: string }[]): ReadonlyMap<string, readonly DelegationView[]> {
   const byTurn = new Map<string, DelegationView[]>()
@@ -104,7 +104,7 @@ export function delegationsByTurn(views: readonly DelegationView[], messages: re
   const shown = new Set(messages.map(message => message.id))
   const first = messages.length ? Date.parse(messages[0]!.createdAt) : Number.NaN
   for (const view of views) {
-    const key = shown.has(view.rootUserMessageId) ? view.rootUserMessageId
+    const key = shown.has(view.anchorMessageId) ? view.anchorMessageId
       : Number.isFinite(first) && Date.parse(view.createdAt) < first ? undefined : ''
     if (key !== undefined) byTurn.set(key, [...byTurn.get(key) ?? [], view])
   }
@@ -117,11 +117,10 @@ export function delegationsByTurn(views: readonly DelegationView[], messages: re
  */
 export function DelegatedBy({ thread, state, command }: { readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command'] }): ReactNode {
   const enabled = useDelegationsEnabled()
+  const newest = useNewestBrief(thread)
   const parentId = enabled ? thread.delegatedBy : undefined
-  const views = useDelegations(parentId, true)
   if (parentId === undefined) return null
   const parent = state.host.threads.find(item => item.id === parentId)
-  const newest = views.findLast(view => view.thread === thread.id)
   return <div className="delegated-by">
     <GitFork size={14} aria-hidden="true" />
     <span>Delegated by {parent
@@ -139,15 +138,14 @@ export function DelegatedBy({ thread, state, command }: { readonly thread: Agent
  */
 export function DelegationComposerNote({ thread, state }: { readonly thread: AgentThread; readonly state: AgentState }): ReactNode {
   const enabled = useDelegationsEnabled()
+  const newest = useNewestBrief(thread)
   const parentId = enabled ? thread.delegatedBy : undefined
-  const views = useDelegations(parentId, true)
   // Stop shows while the thread works, as the composer decides it; what it also stops is main's rule, a turn still running.
   const working = enabled && thread.status === 'running' && !isThreadClosed(thread) ? workingDelegatedThreads(state.host.threads, thread.id) : 0
   if (!enabled) return null
   if (working) return <p className="delegation-note"><GitFork size={13} aria-hidden="true" /><span>{stopLine(working)}</span></p>
   if (parentId === undefined) return null
   const parent = state.host.threads.find(item => item.id === parentId)
-  const newest = views.findLast(view => view.thread === thread.id)
   return <p className="delegation-note"><GitFork size={13} aria-hidden="true" />
     <span>{delegatedNote(parent?.title ?? 'The thread that delegated', newest?.outcome, isThreadTurnRunning(thread))}</span></p>
 }

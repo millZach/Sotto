@@ -5,7 +5,7 @@ import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } fro
 
 /** What the window's read asks of delegation in main: its own record, never a snapshot (#1029). */
 export interface DelegationViews {
-  views(threadId: string): readonly DelegationView[]
+  views(threadId: string): { readonly made: readonly DelegationView[]; readonly received: readonly DelegationView[] }
   onViewsChanged(listener: (threadIds: readonly string[]) => void): () => void
 }
 
@@ -23,9 +23,10 @@ export function registerDelegationIpc(ipc: IpcMainAdapter, delegation: Delegatio
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Open delegations in the main Sotto window.')
     const [request] = z.tuple([delegationsRequestSchema]).parse(args)
     const key = parseHostEntityKey(request.threadId)
-    if (key && key.hostId !== localHostId()) return delegationsReadSchema.parse({ threadId: request.threadId, delegations: [] })
-    const views = delegation.views(key?.id ?? request.threadId)
-    return delegationsReadSchema.parse({ threadId: request.threadId, delegations: views.map(view => ({ ...view, thread: key ? windowId(view.thread) : view.thread })) })
+    if (key && key.hostId !== localHostId()) return delegationsReadSchema.parse({ threadId: request.threadId, delegations: [], received: [] })
+    const { made, received } = delegation.views(key?.id ?? request.threadId)
+    const named = (view: DelegationView): DelegationView => ({ ...view, thread: key ? windowId(view.thread) : view.thread })
+    return delegationsReadSchema.parse({ threadId: request.threadId, delegations: made.map(named), received: received.map(named) })
   })
   const stop = delegation.onViewsChanged(threadIds => { send(DELEGATIONS_CHANGED, delegationsChangedSchema.parse({ threadIds: threadIds.map(windowId) })) })
   return () => { stop(); ipc.removeHandler(DELEGATIONS_READ) }

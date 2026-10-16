@@ -229,21 +229,24 @@ it('gives the window each delegation\'s outcome and wait, by the user\'s message
   const root = lastUserMessageIdOf(shell) ?? shell.summary?.lastUser?.id
   expect(root).toBeDefined()
   const call = f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 60 })
-  await vi.waitFor(() => expect(f.service.views(parent)[0]).toMatchObject({ outcome: 'working', waiting: true, wait: { seconds: 60 } }))
-  const waiting = f.service.views(parent)[0]!
-  expect(waiting).toMatchObject({ action: 'start', work: 'code-review', rootUserMessageId: root })
+  await vi.waitFor(() => expect(f.service.views(parent).made[0]).toMatchObject({ outcome: 'working', waiting: true, wait: { seconds: 60 } }))
+  const waiting = f.service.views(parent).made[0]!
+  // The card goes in the turn the call was made in, here the user's own message.
+  expect(waiting).toMatchObject({ action: 'start', work: 'code-review', rootUserMessageId: root, anchorMessageId: root })
+  // The delegated thread reads the same brief as one it was sent, by the brief's message.
+  expect(f.service.views(waiting.thread)).toMatchObject({ made: [], received: [{ id: waiting.id, briefMessageId: waiting.briefMessageId }] })
   expect(waiting.wait?.wentOnAt).toBeUndefined()
   expect(told.flat()).toContain(parent)
   await f.endTurn(waiting.thread, 'Synthetic review reply')
   f.ok(await call)
-  const answered = f.service.views(parent)[0]!
-  expect(answered).toMatchObject({ outcome: 'answered', waiting: false, wait: { seconds: 60 } })
+  const answered = f.service.views(parent).made[0]!
+  expect(answered).toMatchObject({ outcome: 'answered', waiting: false, told: true, wait: { seconds: 60 } })
   expect(answered.wait?.wentOnAt).toBeUndefined()
   expect(answered.outcomeAt).toBeDefined()
   // A call that waits for nothing goes on at once; the card says the answer comes later.
   f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0, work: 'research' }))
-  expect(f.service.views(parent)[1]).toMatchObject({ outcome: 'working', waiting: false, wait: { seconds: 0, wentOnAt: expect.any(String) } })
+  expect(f.service.views(parent).made[1]).toMatchObject({ outcome: 'working', waiting: false, wait: { seconds: 0, wentOnAt: expect.any(String) } })
   expect(JSON.stringify(f.service.views(parent))).not.toMatch(/Synthetic (brief|review reply)/u)
-  expect(f.service.views('another-thread')).toEqual([])
+  expect(f.service.views('another-thread')).toEqual({ made: [], received: [] })
   stop()
 })

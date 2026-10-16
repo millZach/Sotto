@@ -96,7 +96,10 @@ export const DELEGATIONS_READ = 'sotto:delegations:read'
 export const DELEGATIONS_CHANGED = 'sotto:delegations:changed'
 /** Passed to the main window's preload only while the Owl list turns delegation on; without it there is no bridge. */
 export const DELEGATION_RENDERER_ARGUMENT = '--sotto-delegation-enabled'
-/** The newest delegations a read returns for one thread: enough for every card a busy thread's history shows. */
+/**
+ * The newest finished delegations a read returns of what one thread delegated, beside every one still open, and the
+ * newest briefs it was sent: enough for every card and brief a busy thread's history shows.
+ */
 export const DELEGATION_VIEWS_MAX = 200
 /** Why a brief ended before it was delivered: the user's newer message or their turn there, a Stop, a failure, a restart. */
 export const delegationNotSentSchema = z.enum(['target-changed', 'paused', 'stopped', 'provider', 'restarted'])
@@ -106,11 +109,20 @@ export const delegationViewSchema = z.object({
   thread: id,
   action: z.enum(['start', 'send']),
   work: delegationWorkSchema,
-  /** The user's message to the delegating thread this delegation answers: the turn its card belongs to (decision 3). */
+  /** The user's message to the delegating thread this delegation answers, which its budget counts against (decision 3). */
   rootUserMessageId: id,
+  /**
+   * The delegating thread's newest message when it called, the user's or a wake-up's: the turn the call was made in,
+   * where its card goes.
+   */
+  anchorMessageId: id,
   /** The brief's own message in the delegated thread, which that thread shows as the delegating thread's, not the user's. */
   briefMessageId: id,
   outcome: watcherOutcomeSchema,
+  /** Why an outcome is unknown: Sotto restarted while it was open, or the provider never confirmed the brief. */
+  unknownWhy: z.enum(['restarted', 'unconfirmed']).optional(),
+  /** The delegating thread has been told this outcome, by the call's result, a read or a wake-up. */
+  told: z.boolean(),
   createdAt: z.iso.datetime(),
   /** When the outcome last moved, once it has. */
   outcomeAt: z.iso.datetime().optional(),
@@ -123,7 +135,12 @@ export const delegationViewSchema = z.object({
 export type DelegationView = z.infer<typeof delegationViewSchema>
 export const delegationsRequestSchema = z.object({ threadId: id }).strict()
 export type DelegationsRequest = z.infer<typeof delegationsRequestSchema>
-export const delegationsReadSchema = z.object({ threadId: id, delegations: z.array(delegationViewSchema).max(DELEGATION_VIEWS_MAX) }).strict()
+export const delegationsReadSchema = z.object({ threadId: id,
+  /** What the thread delegated, oldest first. */
+  delegations: z.array(delegationViewSchema).max(DELEGATION_VIEWS_MAX * 2),
+  /** The briefs the thread was sent by the thread that delegated to it, oldest first. */
+  received: z.array(delegationViewSchema).max(DELEGATION_VIEWS_MAX),
+}).strict()
 export type DelegationsRead = z.infer<typeof delegationsReadSchema>
 export const delegationsChangedSchema = z.object({ threadIds: z.array(id).max(10_000) }).strict()
 export type DelegationsChanged = z.infer<typeof delegationsChangedSchema>

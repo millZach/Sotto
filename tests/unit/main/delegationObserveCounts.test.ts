@@ -83,7 +83,7 @@ async function counts(size: number, parents = 1) {
   expect(answered).toBe(size)
   const observed = await measure(() => { expect(hooks!.observedThreadIds()).toHaveLength(size) })
   // The window reading every delegating thread's cards reads its own record, never the snapshot.
-  const views = await measure(() => { for (const parent of parentIds) expect(live.views(parent)).toHaveLength(size * 2 / parents) })
+  const views = await measure(() => { for (const parent of parentIds) expect(live.views(parent).made).toHaveLength(size * 2 / parents) })
   live.close()
   return { observe, observed, views }
 }
@@ -92,17 +92,21 @@ it('reads the snapshot\'s threads once per pass and asks nothing per delegated t
   const small = await counts(2), large = await counts(24)
   // The pass reads the thread list once; the news it found goes as one wake-up to the delegating thread, which reads the
   // snapshot once more to see the thread is still there, however many delegations it names.
-  expect({ ...large.observe, items: 0 }).toEqual({ ...small.observe, items: 0 })
-  expect(small.observe).toEqual({ threadLists: 2, snapshots: 1, pendingWork: 0, wakeUps: 1, items: 2, changes: 1, changed: 1 })
+  expect({ ...large.observe, items: 0, changed: 0 }).toEqual({ ...small.observe, items: 0, changed: 0 })
+  // The window hears once, naming the delegating thread and each delegated thread whose record moved: on this first pass
+  // every one, answered or its turn first seen.
+  expect(small.observe).toEqual({ threadLists: 2, snapshots: 1, pendingWork: 0, wakeUps: 1, items: 2, changes: 1, changed: 1 + 4 })
+  expect(large.observe.changed).toBe(1 + 48)
   expect(large.observe.items).toBe(24)
   expect(small.observed).toEqual({ threadLists: 0, snapshots: 0, pendingWork: 0, wakeUps: 0, items: 0, changes: 0, changed: 0 })
 }, 60_000)
 
 it('tells the window once per pass however many delegating threads changed, and its read takes no snapshot', async () => {
   const few = await counts(4, 2), many = await counts(48, 24)
-  // One word to the window per pass, naming each delegating thread whose cards moved; the snapshot is read as often
-  // for 24 delegating threads as for 2. Each delegating thread hears its news as its own wake-up, as before.
-  expect(few.observe).toMatchObject({ threadLists: 2, snapshots: 1, pendingWork: 0, changes: 1, changed: 2, wakeUps: 2 })
-  expect(many.observe).toMatchObject({ threadLists: 2, snapshots: 1, pendingWork: 0, changes: 1, changed: 24, wakeUps: 24 })
+  // One word to the window per pass, naming each delegating thread whose cards moved and each delegated thread whose
+  // brief did; the snapshot is read as often for 24 delegating threads as for 2. Each delegating thread hears its news
+  // as its own wake-up, as before.
+  expect(few.observe).toMatchObject({ threadLists: 2, snapshots: 1, pendingWork: 0, changes: 1, changed: 2 + 8, wakeUps: 2 })
+  expect(many.observe).toMatchObject({ threadLists: 2, snapshots: 1, pendingWork: 0, changes: 1, changed: 24 + 96, wakeUps: 24 })
   for (const read of [few.views, many.views]) expect(read).toEqual({ threadLists: 0, snapshots: 0, pendingWork: 0, wakeUps: 0, items: 0, changes: 0, changed: 0 })
 }, 60_000)

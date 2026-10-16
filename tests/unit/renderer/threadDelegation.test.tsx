@@ -29,8 +29,8 @@ const at = (minutes: number): string => new Date(NOW - minutes * 60_000).toISOSt
 const PARENT = 'visual-gate', CHILD = 'gate-review', GRANDCHILD = 'gate-check'
 
 function view(patch: Partial<DelegationView> = {}): DelegationView {
-  return { id: crypto.randomUUID(), thread: CHILD, action: 'start', work: 'code-review', rootUserMessageId: 'visual-gate-1', briefMessageId: 'gate-review-1',
-    outcome: 'working', createdAt: at(5), waiting: false, ...patch }
+  return { id: crypto.randomUUID(), thread: CHILD, action: 'start', work: 'code-review', rootUserMessageId: 'visual-gate-1', anchorMessageId: 'visual-gate-1',
+    briefMessageId: 'gate-review-1', outcome: 'working', told: false, createdAt: at(5), waiting: false, ...patch }
 }
 
 /** Visual gate flake (Claude, running) delegated a review to Codex, which delegated a check in turn; both still work. */
@@ -44,12 +44,12 @@ function delegatingState(): AgentState {
   return state
 }
 
-/** A stand-in for main's read: what each thread delegated, and main's word that some changed. */
-function bridge(views: Record<string, DelegationView[]>) {
+/** A stand-in for main's read: what each thread delegated and was sent, and main's word that some changed. */
+function bridge(views: Record<string, DelegationView[]>, received: Record<string, DelegationView[]> = {}) {
   const listeners = new Set<(change: DelegationsChanged) => void>()
   const fake: DelegationsBridge & { readonly reads: string[] } = {
     reads: [],
-    read: vi.fn(async ({ threadId }: { threadId: string }) => { fake.reads.push(threadId); return { threadId, delegations: views[threadId] ?? [] } }),
+    read: vi.fn(async ({ threadId }: { threadId: string }) => { fake.reads.push(threadId); return { threadId, delegations: views[threadId] ?? [], received: received[threadId] ?? [] } }),
     onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
   return { fake, views, change: (threadIds: string[]) => { for (const listener of [...listeners]) listener({ threadIds }) }, listening: () => listeners.size }
@@ -83,15 +83,20 @@ describe('delegation words', () => {
     expect(delegationWaitLine(view({ wait: { seconds: 0, startedAt: started, wentOnAt: started } }), now)).toBe('This thread did not wait for it. The answer comes back as a wake-up.')
     expect(delegationWaitLine(view({ outcome: 'answered', outcomeAt: new Date(Date.parse(started) + 100_000).toISOString(), wait: { seconds: 300, startedAt: started } }), now))
       .toBe('Answered in 1 min 40 s, while this thread waited for it.')
+    expect(delegationWaitLine(view({ outcome: 'answered', outcomeAt: new Date(Date.parse(started) + 420_000).toISOString(), told: true, wait: { seconds: 300, startedAt: started, wentOnAt: at(0) } }), now))
+      .toBe('Answered in 7 min, after this thread went on. This thread has been told.')
+    // A wake-up can wait in the queue, or not be taken: until the thread is told, the card says so.
     expect(delegationWaitLine(view({ outcome: 'answered', outcomeAt: new Date(Date.parse(started) + 420_000).toISOString(), wait: { seconds: 300, startedAt: started, wentOnAt: at(0) } }), now))
-      .toBe('Answered in 7 min, after this thread went on. It was told by wake-up.')
+      .toBe('Answered in 7 min, after this thread went on. This thread has not been told yet.')
     expect(delegationWaitLine(view({ outcome: 'background' }), now)).toBe('Its turn ended with background work still running. This thread hears when it settles.')
-    expect(delegationWaitLine(view({ outcome: 'failed', wait: { seconds: 0, startedAt: started, wentOnAt: started } }), now)).toBe('Its last turn failed. This thread was told by wake-up. Open it to see why.')
+    expect(delegationWaitLine(view({ outcome: 'failed', told: true, wait: { seconds: 0, startedAt: started, wentOnAt: started } }), now)).toBe('Its last turn failed. Open it to see why.')
+    expect(delegationWaitLine(view({ outcome: 'failed', wait: { seconds: 0, startedAt: started, wentOnAt: started } }), now)).toBe('Its last turn failed. This thread has not been told yet. Open it to see why.')
     expect(delegationWaitLine(view({ outcome: 'failed', notSent: 'provider' }), now)).toBe('Sotto could not start it or send it the brief. Nothing was sent.')
     expect(delegationWaitLine(view({ outcome: 'stopped', outcomeAt: started }), now)).toMatch(/^Stopped at \d{1,2}:\d{2}\s?[ap]m\. Nothing more will come of it\.$/u)
     expect(delegationWaitLine(view({ outcome: 'paused', notSent: 'target-changed', outcomeAt: started }), now)).toMatch(/^You sent to it at .+, so Sotto did not send this brief\.$/u)
     expect(delegationWaitLine(view({ outcome: 'paused', outcomeAt: started }), now)).toMatch(/^You sent to it at .+\. This thread sends it nothing more until your turn there ends\.$/u)
-    expect(delegationWaitLine(view({ outcome: 'unknown' }), now)).toBe('Sotto restarted while it worked. Nothing was resent. Open it to see where it got to.')
+    expect(delegationWaitLine(view({ outcome: 'unknown', unknownWhy: 'restarted' }), now)).toBe('Sotto restarted while it worked. Nothing was resent. Open it to see where it got to.')
+    expect(delegationWaitLine(view({ outcome: 'unknown', unknownWhy: 'unconfirmed' }), now)).toBe('Its provider did not confirm the brief arrived. Sotto has not sent it again. Open it to see whether it is working on it.')
   })
 
   it('names what Stop also stops: the delegated threads below, both levels, whose turn still runs', () => {
@@ -154,9 +159,9 @@ describe('delegation cards in the delegating thread', () => {
     hostName: () => 'This computer', open, liveClock: false, now: NOW,
   })
 
-  it('sits under the reply of the turn whose message it answers, with the thread as a link, its provider, machine, outcome and wait', () => {
+  it('sits under the reply of the turn the call was made in, with the thread as a link, its provider, machine, outcome and wait', () => {
     const open = vi.fn()
-    const cards = delegationsByTurn([view({ rootUserMessageId: 'ask', outcome: 'answered', outcomeAt: at(8), wait: { seconds: 300, startedAt: at(9) } })], messages)
+    const cards = delegationsByTurn([view({ anchorMessageId: 'ask', outcome: 'answered', outcomeAt: at(8), wait: { seconds: 300, startedAt: at(9) } })], messages)
     render(<DelegationCardProvider world={world(open)}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={cards} /></DelegationCardProvider>)
     const card = screen.getByRole('group', { name: 'Delegated to Review the gate fix' })
     expect(card).toHaveTextContent('Delegated to')
@@ -173,24 +178,27 @@ describe('delegation cards in the delegating thread', () => {
     expect(open).toHaveBeenCalledWith(CHILD)
   })
 
-  it('goes last when its message is not shown, unless it was made before the first message shown', () => {
-    const missing = view({ rootUserMessageId: 'elsewhere', createdAt: at(5) })
-    const older = view({ rootUserMessageId: 'elsewhere', createdAt: at(60) })
-    const byTurn = delegationsByTurn([view({ rootUserMessageId: 'ask' }), missing, older], messages)
-    expect([...byTurn.keys()]).toEqual(['ask', ''])
+  it('goes in a wake-up\'s turn when the call was made there, and last when its turn is not shown unless it is older than what is', () => {
+    // A call in a wake-up's turn keeps the user's message as its budget's root, and its card goes in the wake-up's turn.
+    const woken = view({ rootUserMessageId: 'ask', anchorMessageId: 'later' })
+    const missing = view({ anchorMessageId: 'elsewhere', createdAt: at(5) })
+    const older = view({ anchorMessageId: 'elsewhere', createdAt: at(60) })
+    const byTurn = delegationsByTurn([view({ anchorMessageId: 'ask' }), woken, missing, older], messages)
+    expect(byTurn.get('later')).toEqual([woken])
+    expect([...byTurn.keys()]).toEqual(['ask', 'later', ''])
     expect(byTurn.get('')).toEqual([missing])
   })
 })
 
 describe('the window\'s read of delegations', () => {
-  it('asks main only for a shown thread that delegated, and again only when main names it', async () => {
+  it('asks main once for a shown thread, and again only when main names it', async () => {
     const { fake, change } = bridge({ [PARENT]: [view()] })
     const store = new DelegationStore(() => fake)
     const heard = vi.fn()
     const stop = store.subscribe(PARENT, heard)
     expect(fake.reads).toEqual([])
     store.want(PARENT); store.want(PARENT)
-    await waitFor(() => expect(store.views(PARENT)).toHaveLength(1))
+    await waitFor(() => expect(store.delegations(PARENT).made).toHaveLength(1))
     expect(fake.reads).toEqual([PARENT])
     change(['another-thread'])
     expect(fake.reads).toEqual([PARENT])
@@ -200,7 +208,7 @@ describe('the window\'s read of delegations', () => {
     stop()
     change([PARENT])
     expect(fake.reads).toHaveLength(3)
-    expect(store.views(PARENT)).toEqual([])
+    expect(store.delegations(PARENT)).toEqual({ made: [], received: [] })
   })
 })
 
@@ -229,7 +237,9 @@ describe('the delegating and the delegated thread\'s panes', () => {
 
   it('a delegated thread says Delegated by its parent, a link back, and shows the brief as the parent\'s', async () => {
     owl(true)
-    vi.stubGlobal('sotto', { delegations: bridge({ [PARENT]: [view({ outcome: 'working' })] }).fake })
+    // The delegated thread reads the briefs it was sent with its own delegations, not its parent's list.
+    const reads = bridge({}, { [CHILD]: [view({ outcome: 'working' })] })
+    vi.stubGlobal('sotto', { delegations: reads.fake })
     const state = stateWith(CHILD)
     // The check it delegated in turn has finished, so its own Stop stops it alone.
     state.host.threads.find(thread => thread.id === GRANDCHILD)!.status = 'idle'
@@ -240,6 +250,7 @@ describe('the delegating and the delegated thread\'s panes', () => {
     await waitFor(() => expect(document.querySelector('.thread-message[data-from="delegation"] header')).toHaveTextContent('Visual gate flakedelegated'))
     expect(screen.getByText('If you send here, Visual gate flake sends nothing more until your turn ends.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Stop agent' })).toBeInTheDocument()
+    expect(reads.fake.reads).toEqual([CHILD])
     fireEvent.click(within(by).getByRole('button', { name: 'Open Visual gate flake, the thread that delegated to this one' }))
     expect(live.command).toHaveBeenCalledWith({ type: 'select-thread', threadId: PARENT })
   })

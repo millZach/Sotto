@@ -495,20 +495,18 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const placement = useShared(useMemo(() => placeActivities(thread.messages, messages, thread.activities, thread.historyStatus === 'loading', thread.earlierAvailable === true),
     [thread.messages, messages, thread.activities, thread.historyStatus, thread.earlierAvailable]))
   const liveTurn = liveTurnId(thread)
-  // Delegation cards (ADR-0081; Owl only): read once this thread has delegated, and again when main says they changed.
+  // Delegation (ADR-0081; Owl only): this thread's own delegations, read once as its pane opens and again when main
+  // names it. What it delegated are cards in the turn each call was made in; the briefs it was sent are the words of
+  // the thread that delegated to it, not the user's.
   const delegationsOn = useDelegationsEnabled()
-  const delegating = delegationsOn && !watcher && state.host.threads.some(item => item.delegatedBy === thread.id)
-  const delegationViews = useDelegations(delegationsOn && !watcher ? thread.id : undefined, delegating)
-  const delegationCards = useShared(useMemo(() => delegationsByTurn(delegationViews, messages), [delegationViews, messages]))
+  const delegations = useDelegations(delegationsOn && !watcher ? thread.id : undefined)
+  const delegationCards = useShared(useMemo(() => delegationsByTurn(delegations.made, messages), [delegations.made, messages]))
   const cardWorld = useDelegationCardWorld(state, command)
-  // In a delegated thread, the briefs are the delegating thread's, read from its delegations by their message IDs.
-  const delegatingId = delegationsOn && !watcher ? thread.delegatedBy : undefined
-  const delegatingViews = useDelegations(delegatingId, true)
-  const delegatingTitle = delegatingId === undefined ? undefined : state.host.threads.find(item => item.id === delegatingId)?.title ?? 'The thread that delegated'
+  const delegatingTitle = thread.delegatedBy === undefined ? undefined : state.host.threads.find(item => item.id === thread.delegatedBy)?.title ?? 'The thread that delegated'
   const briefs = useMemo<DelegatedBriefs | undefined>(() => {
-    const ids = new Set(delegatingViews.filter(view => view.thread === thread.id).map(view => view.briefMessageId))
+    const ids = new Set(delegations.received.map(view => view.briefMessageId))
     return ids.size && delegatingTitle !== undefined ? { ids, from: delegatingTitle } : undefined
-  }, [delegatingViews, thread.id, delegatingTitle])
+  }, [delegations.received, delegatingTitle])
   const pendingKey = [...pending.map(item => `${item.item.draftId}:${item.status}`), ...queuedEchoes.map(item => `${item.id}:${item.status}`),
     ...recovery.map(item => `${item.draftId}:${item.status}`)].join(',')
 

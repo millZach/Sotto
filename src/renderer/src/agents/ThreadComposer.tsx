@@ -188,7 +188,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const canStop = working && capabilities.interrupt === true && row.connected && !isThreadBusy(state, threadId)
   // Stop names the delegated threads below this one that a press also stops (ADR-0081 decision 6).
   const delegationsOn = useDelegationsEnabled()
-  const stopName = stopLabel(delegationsOn && working ? workingDelegatedThreads(state.host.threads, threadId) : 0)
+  // Counted once per state, not on every keystroke the composer redraws for.
+  const threads = state.host.threads
+  const stopName = useMemo(() => stopLabel(delegationsOn && working ? workingDelegatedThreads(threads, threadId) : 0), [delegationsOn, working, threads, threadId])
   const [menuOpen, setMenuOpen] = useState(false)
   const leavePickers = useRef<() => void>(() => undefined)
   const statusId = `${composerId}-status`

@@ -1,23 +1,30 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
+import type { AgentThread } from '../../../shared/agents'
 import type { DelegationsBridge, DelegationView } from '../../../shared/delegation'
 import { useOwlFeature } from '../state/owlFeature'
 
-const NONE: readonly DelegationView[] = []
+/** What the window holds of one thread's delegations: the ones it made and the briefs it was sent, oldest first. */
+export interface ThreadDelegations {
+  readonly made: readonly DelegationView[]
+  readonly received: readonly DelegationView[]
+}
+const NONE: ThreadDelegations = { made: [], received: [] }
 
 interface Entry {
-  views: readonly DelegationView[]
+  delegations: ThreadDelegations
   readonly listeners: Set<() => void>
   /** A read is on its way; `again` asks for one more once it lands, because main named the thread since. */
   reading: boolean
   again: boolean
-  /** The window has asked main for this thread: its pane shows a thread that delegated, or main named it. */
+  /** The window has asked main for this thread since a pane began showing it. */
   asked: boolean
 }
 
 /**
- * The window's copy of the delegations each shown thread made (#1029). It asks main only for a thread a pane shows,
- * once when that pane opens on a thread that delegated, and again when main names the thread as changed; never on a
- * publish, and never for a thread nothing shows. What it holds goes when the last pane showing the thread closes.
+ * The window's copy of the delegations of each thread a pane shows (#1029). It asks main once when a pane opens on a
+ * thread, and again only when main names the thread as changed; never on a publish, and never for a thread no pane
+ * shows. Main answers from its own record without reading the snapshot. What it holds goes when the last pane showing
+ * the thread closes.
  */
 export class DelegationStore {
   private readonly entries = new Map<string, Entry>()
@@ -26,7 +33,7 @@ export class DelegationStore {
   constructor(private readonly bridge: () => DelegationsBridge | undefined) {}
 
   readonly subscribe = (threadId: string, listener: () => void): (() => void) => {
-    const entry = this.entries.get(threadId) ?? { views: NONE, listeners: new Set<() => void>(), reading: false, again: false, asked: false }
+    const entry = this.entries.get(threadId) ?? { delegations: NONE, listeners: new Set<() => void>(), reading: false, again: false, asked: false }
     this.entries.set(threadId, entry)
     entry.listeners.add(listener)
     this.listen()
@@ -37,8 +44,8 @@ export class DelegationStore {
       if (!this.entries.size) { this.stopChanges?.(); this.stopChanges = undefined }
     }
   }
-  views(threadId: string): readonly DelegationView[] { return this.entries.get(threadId)?.views ?? NONE }
-  /** Asks main once for a shown thread that delegated; later reads come only from main naming it as changed. */
+  delegations(threadId: string): ThreadDelegations { return this.entries.get(threadId)?.delegations ?? NONE }
+  /** Asks main once for a shown thread; later reads come only from main naming it as changed. */
   want(threadId: string): void {
     const entry = this.entries.get(threadId)
     if (!entry || entry.asked) return
@@ -65,7 +72,7 @@ export class DelegationStore {
     entry.reading = true
     void bridge.read({ threadId }).then(answer => {
       if (this.entries.get(threadId) !== entry) return
-      entry.views = answer.delegations
+      entry.delegations = { made: answer.delegations, received: answer.received }
       for (const listener of [...entry.listeners]) listener()
     }, () => undefined).finally(() => {
       entry.reading = false
@@ -82,15 +89,19 @@ export function useDelegationsEnabled(): boolean {
 }
 
 /**
- * The delegations `threadId` made, as main last answered, while the window shows delegation. `delegating` says the
- * snapshot links a thread to this one, so the first read waits until there is something to read; main naming the thread
- * reads it whatever `delegating` says. `store` is the window's, or a test's.
+ * What `threadId` delegated and was sent, as main last answered, while the window shows delegation; nothing for no
+ * thread. `store` is the window's, or a test's.
  */
-export function useDelegations(threadId: string | undefined, delegating: boolean, store: DelegationStore = windowStore): readonly DelegationView[] {
+export function useDelegations(threadId: string | undefined, store: DelegationStore = windowStore): ThreadDelegations {
   const enabled = useDelegationsEnabled()
   const id = enabled ? threadId : undefined
   const subscribe = useCallback((listener: () => void) => id === undefined ? () => undefined : store.subscribe(id, listener), [id, store])
-  const views = useSyncExternalStore(subscribe, () => id === undefined ? NONE : store.views(id), () => NONE)
-  useEffect(() => { if (id !== undefined && delegating) store.want(id) }, [id, delegating, store])
-  return views
+  const delegations = useSyncExternalStore(subscribe, () => id === undefined ? NONE : store.delegations(id), () => NONE)
+  useEffect(() => { if (id !== undefined) store.want(id) }, [id, store])
+  return delegations
+}
+
+/** The newest brief a delegated thread was sent, read with the thread's own delegations; none for a thread no thread started. */
+export function useNewestBrief(thread: Pick<AgentThread, 'id' | 'delegatedBy'>): DelegationView | undefined {
+  return useDelegations(thread.delegatedBy === undefined ? undefined : thread.id).received.at(-1)
 }

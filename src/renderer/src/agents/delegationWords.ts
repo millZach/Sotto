@@ -22,6 +22,8 @@ export function delegationDuration(ms: number): string {
   return left ? `${hours} h ${left} min` : `${hours} h`
 }
 
+/** Whether the thread that delegated knows the outcome yet: a wake-up can wait in its queue, or not be taken at all. */
+const toldWords = (view: DelegationView): string => view.told ? 'This thread has been told.' : 'This thread has not been told yet.'
 const at = (iso: string | undefined): string => {
   const time = iso === undefined ? Number.NaN : Date.parse(iso)
   return Number.isFinite(time) ? ` at ${clockLabel(time)}` : ''
@@ -53,11 +55,11 @@ export function delegationWaitLine(view: DelegationView, now: number): string {
     case 'answered': {
       const took = between(wait?.startedAt ?? view.createdAt, view.outcomeAt)
       const answered = took === undefined ? 'Answered' : `Answered in ${delegationDuration(took)}`
-      return wentOn ? `${answered}, after this thread went on. It was told by wake-up.` : `${answered}, while this thread waited for it.`
+      return wentOn ? `${answered}, after this thread went on. ${toldWords(view)}` : `${answered}, while this thread waited for it.`
     }
     case 'failed':
       if (view.notSent === 'provider') return 'Sotto could not start it or send it the brief. Nothing was sent.'
-      return `Its last turn failed.${wentOn ? ' This thread was told by wake-up.' : ''} Open it to see why.`
+      return `Its last turn failed.${view.told ? '' : ' This thread has not been told yet.'} Open it to see why.`
     case 'stopped':
       return view.notSent === 'stopped' ? `Stopped${at(view.outcomeAt)}, before the brief was sent.` : `Stopped${at(view.outcomeAt)}. Nothing more will come of it.`
     case 'paused':
@@ -65,7 +67,9 @@ export function delegationWaitLine(view: DelegationView, now: number): string {
       if (view.notSent === 'paused') return `You were working in it${at(view.outcomeAt)}, so Sotto did not send this brief.`
       return `You sent to it${at(view.outcomeAt)}. This thread sends it nothing more until your turn there ends.`
     case 'unknown':
-      return view.notSent === 'restarted' ? 'Sotto restarted before the brief was sent. Nothing was sent.' : 'Sotto restarted while it worked. Nothing was resent. Open it to see where it got to.'
+      if (view.notSent === 'restarted') return 'Sotto restarted before the brief was sent. Nothing was sent.'
+      return view.unknownWhy === 'unconfirmed' ? 'Its provider did not confirm the brief arrived. Sotto has not sent it again. Open it to see whether it is working on it.'
+        : 'Sotto restarted while it worked. Nothing was resent. Open it to see where it got to.'
   }
 }
 
