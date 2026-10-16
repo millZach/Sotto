@@ -27,6 +27,9 @@ export class WatcherMessageDisplay {
   private index = new Map<string, Proofs>()
   private retained = new Set<string>()
   private readonly cache = new Map<string, Map<string, { wire: string; proof: WatcherDisplayPrompt; text: string }>>()
+  private changes = 0
+  /** Changes exactly when what the display shows can change: when the proofs it reads do. */
+  get revision(): number { return this.changes }
 
   /** Text belongs only to the windows still held; closing one keeps its text-free presentation evidence. */
   /** Returns whether any thread stopped being held, whose text a caller keeping it must let go of too. */
@@ -64,6 +67,7 @@ export class WatcherMessageDisplay {
     if (unchanged) return
     this.index = next
     this.cache.clear()
+    this.changes++
   }
 
   /** Held windows share exact verification; an offscreen read never retains its text. */
