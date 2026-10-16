@@ -161,6 +161,8 @@ for the feature.
 
 ## October 13, 2026: the desktop omits unchanged thread bodies (#991)
 
+Withdrawn October 15, 2026; see below.
+
 The existing `streaming-publish-cost` Owl answer, read once at startup, also governs the desktop's thread encoding. With that answer false, the broadcaster executes its prior path and sends the whole ordered thread array. No second switch, setting or host feature is introduced. Command receipts still carry their own whole thread array and outcome, configuration and draft-persistence evidence. Encoding a receipt neither names nor confirms delivery of thread bodies.
 
 With the answer true, only `host.threads` on the desktop state broadcast changes shape. It becomes an envelope with `revision`, `baseRevision`, `roster` and `changed`. The roster names every current Sotto thread ID and its content revision, in current order. Changed entries carry a content revision and the whole thread body. The roster governs additions, deletions and reordering; host-qualified Sotto IDs keep different computers' threads distinct. All other shell fields stay whole, including selection, drafts, pending work, attention and busy state.
@@ -176,3 +178,11 @@ The page reconstructs the ordered whole array after contextBridge, never in prel
 This amendment changes only the desktop window transport. The socket protocol and its catalog negotiation are unchanged: a paired phone follows its connection's negotiated host features, and the desktop's remote-host reader still obtains whole remote shells. The dictation widget continues to receive no thread state. Measurements distinguish the pre-edit wire baseline, paired legacy/optimized coordinator runs with earlier optimizations held constant, and the actual Electron IPC/contextBridge plus page reconstruction and reconciliation costs.
 
 A command can settle without replacing the subscription's state: rejection supplies no receipt, and a successful worktree preview supplies facts its caller deliberately does not apply as a shell. Every command settlement notifies only unresolved optimized subscriptions to request one fresh complete read, after an already held read finishes if necessary. The caller receives its own outcome before a fresh recovery shell is delivered. Recovery never reassembles the old envelope, even if a receipt has since filled its catalog, and never assigns that envelope's catalog revision to the fresh read. A queued broadcast is replayed only while no later command or broadcast has overtaken its observation. A newer assembled state clears unresolved work; unsubscribe disposes it. A read begun after a command started can deliver current facts while that command remains pending, and valid broadcasts never wait for commands. Read failure alone never starts an automatic retry loop.
+
+## October 15, 2026: the thread envelope is withdrawn
+
+The desktop now sends the whole ordered thread array on every broadcast again, whatever the `streaming-publish-cost` answer says. The October 13 envelope above is history, not current behaviour.
+
+Measured with the switch on and with it off, the envelope cost main more than the smaller payload saved. The broadcaster's send step rose from about 4–5 ms to 6.5–7 ms per send, and main's total busy time while threads streamed was 5–8% higher with the envelope on (30–45 ms more per second), within noise otherwise. `docs/perf/2026-10-13-window-thread-shell.md` already said its full-pipeline runs did not establish a consistent win, and the deeper comparison and the extra copies the envelope needed were the reason: main paid for a comparison on every thread on every publish to save a payload that was not the bottleneck.
+
+Unchanged-thread sharing in the snapshot and ingestion layers remains #925's; this amendment only withdraws the broadcast transport layered on top of it.
