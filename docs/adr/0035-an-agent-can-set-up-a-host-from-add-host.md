@@ -2,7 +2,7 @@
 
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The voice gate, managed assignments and supervision references below are historical. Host setup and provider jobs remain ordinary user-started threads; only the user answers their request cards.
 
-October 16, 2026 amendment (#1040): "its pinned client ignores supplied MCP servers" below was imprecise. Devin CLI 3000.10.31 starts and initializes the servers a client passes, but never attaches them to the session. From 3000.11.1 it attaches them, Devin's floor is now 3000.11.92 (ADR-0017's amendment of this date), and a Devin thread gets the browser server. Host setup is still not offered on Devin: how long its client waits on one tool call has not been checked, and in the asking mode a setup starts in, Devin would ask before every check as well.
+October 16, 2026 amendment (#1040): "its pinned client ignores supplied MCP servers" below was imprecise. Devin CLI 3000.10.31 starts and initializes the servers a client passes, but never attaches them to the session. From 3000.11.1 it attaches them, Devin's floor is now 3000.11.92 (ADR-0017's amendment of this date), and a Devin thread gets the browser server. Host setup is still not offered on Devin: how long its client waits on one tool call has not been checked, and the host setup server is not among the servers Devin's profile lets through, so in the asking mode a setup starts in, Devin would ask before every check as well.
 
 ## Status
 

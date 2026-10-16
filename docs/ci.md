@@ -214,7 +214,7 @@ npx vitest run tests/integration/devinLive.test.ts --maxWorkers=1
 SOTTO_DEVIN_LIVE=1 npx vitest run tests/integration/devinLive.test.ts --maxWorkers=1
 ```
 
-The same file has the check that Devin threads get Sotto's tools (#1040). It spends two turns on the account's first ready model: one calls Sotto's `visualize` tool in the session it was made in, and one calls it again after Sotto restarts and loads that session. Each call is asked about first, because the asking profile asks about every MCP tool, and the test answers it as the user would. It passes when the request reads "Use Sotto's visualize tool" with the call's input, and the visual server hears the call from the Sotto thread both times. `SOTTO_DEVIN_EXECUTABLE` points it at a Devin CLI unpacked from its zip instead of the installed one. To run only that check:
+The same file has the check that Devin threads get Sotto's tools (#1040). It spends two turns on the account's first ready model. The first, in the session the thread was made in, calls Sotto's `visualize`, which must run with no request because the owned profile (version 3) lets Sotto's own servers through, and `ping` on a decoy server named `sotto-visual`, which Devin must still ask about; the test denies it, as the user would. The second calls `visualize` again after Sotto restarts with a new visual server and loads the session. `SOTTO_DEVIN_EXECUTABLE` points it at a Devin CLI unpacked from its zip instead of the installed one. It passed once on October 16, 2026, against 3000.11.92 (ADR-0017). To run only that check:
 
 ```powershell
 $env:SOTTO_DEVIN_LIVE = '1'

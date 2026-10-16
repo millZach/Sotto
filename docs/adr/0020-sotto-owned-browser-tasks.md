@@ -2,7 +2,7 @@
 
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. Supervision described below has been removed and cannot answer browser requests. The browser grant and user-answer rules, as amended by ADR-0029, remain.
 
-October 16, 2026 amendment (#1040): Devin CLI 3000.11.1 attaches the servers a client passes on `session/new` and `session/load`, and Devin's floor is now 3000.11.92 (ADR-0017's amendment of this date), so a Devin thread gets the browser server. Devin's own question before each call is shown to the user rather than answered. Discovery was checked without a turn; the actual call verification this decision asks for is the live check that amendment names, and the change waits for it.
+October 16, 2026 amendment (#1040): Devin CLI 3000.11.1 attaches the servers a client passes on `session/new` and `session/load`, and Devin's floor is now 3000.11.92 (ADR-0017's amendment of this date), so a Devin thread gets the browser server. The owned profile (version 3) lets the thread's own Sotto servers through without Devin's question, as the other providers' are; any other MCP tool still asks. Discovery was checked without a turn, and the actual call verification this decision asks for passed in the live check that amendment records, in a new session and in a loaded one.
 
 Accepted for implementation September 21, 2026, following Zach's approval of the shared browser workflow and corner-preview variant A. Browser pages remain in the Tools pane; a task's corner preview shows the same page and opens it there without changing the user's conversation. Sotto owns page and browser-task identity across providers, using Sotto thread IDs and the thread's current working copy.
 

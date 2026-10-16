@@ -334,8 +334,8 @@ export class DevinAcpHost implements AgentHost {
    * server that answers for the thread (ADR-0056), as Claude Code, Codex, Grok Build and Muse get them. Devin attaches
    * servers passed on `session/new` and `session/load` from 3000.11.1 (ADR-0035), so every open passes them again, as
    * Grok Build's does. The catalog session and a history read never prompt, so they get none. A process that did not
-   * say it takes HTTP servers gets none either, and its thread says so. Devin's own prompt before a call to one is shown
-   * to the user like any other: the asking profiles ask about `mcp__*`, and nothing here answers it (ADR-0004). A connection
+   * say it takes HTTP servers gets none either, and its thread says so. The owned profiles let these through by name
+   * (`DEVIN_SOTTO_SERVERS`); a prompt for one that arrives anyway is shown to the user, never answered here. A connection
    * that changed while the servers were read is not the one they were for, so that refuses as uncertain.
    */
   private async toolServers(id: string, connection: Connection, generation: number): Promise<ThreadMcpServer[]> {

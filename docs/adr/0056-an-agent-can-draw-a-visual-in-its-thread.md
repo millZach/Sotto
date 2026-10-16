@@ -2,7 +2,7 @@
 
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The supervision exception cited below has ended. Drawing a visual remains confined to the thread and grants no authority; the browser grant and user-answer rules remain.
 
-October 16, 2026 amendment (#1040): Devin threads get the visual tool too, and every other scoped server, from Devin CLI 3000.11.92. 3000.10.31 started and initialized the servers it was given but never attached them to the session (ADR-0017's amendment of this date). Devin's asking permission settings ask before every MCP call, so on Devin drawing a visual is asked about first unless the thread is on Bypass Permissions; the user answers, and Sotto answers nothing for them. A Devin turn's reply is one message in Sotto, so a visual it draws goes after that reply rather than between the words before and after the call, as **Delivered as a message** below says for the other providers. Splitting Devin's reply at a tool call is left for later.
+October 16, 2026 amendment (#1040): Devin threads get the visual tool too, and every other scoped server, from Devin CLI 3000.11.92. 3000.10.31 started and initialized the servers it was given but never attached them to the session (ADR-0017's amendment of this date). Sotto's owned Devin profiles let the thread's own Sotto servers through by name (version 3, ADR-0017's amendment of that date), so on Devin, too, drawing a visual asks nothing. A Devin turn's reply is one message in Sotto, so a visual it draws goes after that reply rather than between the words before and after the call, as **Delivered as a message** below says for the other providers. Splitting Devin's reply at a tool call is left for later.
 
 ## Status
 

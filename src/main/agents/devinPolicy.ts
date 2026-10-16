@@ -5,6 +5,10 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { withCliPath } from './cliLookup'
 import { DEVIN_CLI_VERSION, DevinRefusal } from './devinRpc'
+import { BROWSER_MCP_SERVER } from './browserAgentServer'
+import { PULL_REQUEST_MCP_SERVER } from './pullRequestTools'
+import { VISUAL_MCP_SERVER } from './visualTools'
+import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 
 // This is Sotto's approval policy, not Devin's similarly named Ask mode. The profile is what decides:
 // the pinned compatibility experiment shows an ask standing whatever conversation mode Devin is in, with
@@ -22,15 +26,26 @@ export type DevinAllowance = 'nothing' | 'edits' | 'everything'
  */
 export interface DevinProfile { readonly path: string; readonly allows: DevinAllowance }
 
+/**
+ * Sotto's own tool servers a Devin thread can be given, by the exact names Sotto passes them under. Their tools run without
+ * Devin's question on every profile, as Claude Code's, Codex's, Grok Build's and Muse's do: Zach's call on October 16, 2026,
+ * as decision 16 was for Muse (ADR-0017's amendment of that date). The tools still ask the user wherever they always do.
+ * Every other MCP tool keeps the `mcp__*` ask; a more specific allow wins over it in Devin's own precedence. A server that
+ * is not on this list, such as the host setup tools, which Devin is not offered, is asked about as before.
+ */
+export const DEVIN_SOTTO_SERVERS: readonly string[] = [BROWSER_MCP_SERVER, VISUAL_MCP_SERVER, PULL_REQUEST_MCP_SERVER, DELEGATE_MCP_SERVER]
+const SOTTO_TOOLS = DEVIN_SOTTO_SERVERS.map(server => `mcp__${server}__*`)
+
 const permissionsFor = (allows: DevinAllowance): { allow: string[]; deny: string[]; ask: string[] } => ({
-  allow: allows === 'everything' ? [...EDITS, ...ACTIONS] : allows === 'edits' ? [...EDITS] : [],
+  allow: allows === 'everything' ? [...EDITS, ...ACTIONS] : allows === 'edits' ? [...EDITS, ...SOTTO_TOOLS] : [...SOTTO_TOOLS],
   deny: [],
   ask: allows === 'everything' ? [] : allows === 'edits' ? [...ACTIONS] : [...EDITS, ...ACTIONS],
 })
 
-// The profile's own version, in its file name. Version 2 adds `otel`: an owned profile is never rewritten (a changed
-// one is refused), so changing what it says means a new file. Version 1 files are left where they are, unused.
-const PROFILE_VERSION = 2
+// The profile's own version, in its file name. Version 2 added `otel`, and version 3 lets Sotto's own tools through: an
+// owned profile is never rewritten (a changed one is refused), so changing what it says means a new file. Earlier files
+// are left where they are, unused.
+const PROFILE_VERSION = 3
 // `version` below is Devin's own config schema version, not the profile's.
 const policyFor = (allows: DevinAllowance): Record<string, unknown> => ({
   version: 1,
@@ -153,7 +168,7 @@ export function devinPolicyPath(userDataDirectory: string, allows: DevinAllowanc
 
 /**
  * A versioned, Sotto-owned profile; existing native user/project files are never changed. What the
- * thread allows picks the file: `nothing` gets the plain versioned name (`approval-policy-v2.json`) and
+ * thread allows picks the file: `nothing` gets the plain versioned name (`approval-policy-v3.json`) and
  * the others add their allowance to it. The allowance has no default: a caller that forgot it would
  * otherwise check every profile as the asking one.
  */

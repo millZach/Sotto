@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { assertDevinWorkingDirectory, devinPolicyPath, prepareDevinPolicy, verifyDevinMcpList, verifyDevinPluginList, verifyDevinPolicy } from '../../../src/main/agents/devinPolicy'
+import { assertDevinWorkingDirectory, DEVIN_SOTTO_SERVERS, devinPolicyPath, prepareDevinPolicy, verifyDevinMcpList, verifyDevinPluginList, verifyDevinPolicy } from '../../../src/main/agents/devinPolicy'
 import { DEVIN_CLI_VERSION, DevinRefusal } from '../../../src/main/agents/devinRpc'
 import { devinOtelDefaults as otelDefaults } from '../../fixtures/devinOtel.mjs'
 import { setup } from '../../fixtures/devinPolicyFixture'
@@ -15,7 +15,7 @@ it('writes only its owned profile and confirms the native normalized readback', 
   const profile = profiles[0]!
   const config = JSON.parse(await readFile(profile.path, 'utf8'))
   expect(() => verifyDevinPolicy({ config: { ...config, version: 1, proxy: { mode: 'system', url: null, no_proxy: null, gzip: true } }, configPath: profile.path }, profile)).not.toThrow()
-  expect(config.permissions.allow).toEqual([])
+  expect(config.permissions.allow).toEqual(DEVIN_SOTTO_SERVERS.map(server => `mcp__${server}__*`))
   expect(config.permissions.ask).toContain('exec')
   expect(Object.values(config.read_config_from).every(value => value === false)).toBe(true)
 })
@@ -27,16 +27,35 @@ it('writes one profile per allowance and asks about everything the allowance doe
   const nothing = await read('nothing')
   const edits = await read('edits')
   const everything = await read('everything')
-  expect(nothing.permissions.allow).toEqual([])
-  expect(nothing.permissions.ask).toEqual(expect.arrayContaining(['edit', 'write', 'exec', 'Fetch(*)']))
-  expect(edits.permissions.allow).toEqual(expect.arrayContaining(['edit', 'write']))
+  // Sotto's own tools run without Devin's question on every profile (version 3); every other MCP tool still asks.
+  const sotto = ['mcp__sotto_browser__*', 'mcp__sotto_visual__*', 'mcp__sotto_pull_requests__*', 'mcp__sotto_delegate__*']
+  expect(nothing.permissions.allow).toEqual(sotto)
+  expect(nothing.permissions.ask).toEqual(['edit', 'write', 'Write(**)', 'Write(/**)', 'exec', 'Fetch(*)', 'mcp__*'])
+  expect(edits.permissions.allow).toEqual(['edit', 'write', 'Write(**)', 'Write(/**)', ...sotto])
   expect(edits.permissions.ask).toEqual(['exec', 'Fetch(*)', 'mcp__*'])
   expect(everything.permissions.ask).toEqual([])
   expect(everything.permissions.allow).toEqual(expect.arrayContaining(['edit', 'exec', 'Fetch(*)']))
   // Each allowance gets a file of its own, and the asking one keeps the name a profile had before allowances.
   expect((await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)).path).toBe(devinPolicyPath(userData, 'nothing'))
-  expect(devinPolicyPath(userData, 'nothing')).toMatch(/approval-policy-v2\.json$/u)
+  expect(devinPolicyPath(userData, 'nothing')).toMatch(/approval-policy-v3\.json$/u)
   expect(new Set([devinPolicyPath(userData, 'nothing'), devinPolicyPath(userData, 'edits'), devinPolicyPath(userData, 'everything')]).size).toBe(3)
+})
+
+it('lets through only Sotto’s own servers by their exact names, and nothing a user server with a similar or folded name could match', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  for (const allows of ['nothing', 'edits'] as const) {
+    const { permissions } = JSON.parse(await readFile((await prepareDevinPolicy(userData, allows, cwd, nativeConfig)).path, 'utf8'))
+    const mcp = (permissions.allow as string[]).filter(rule => rule.startsWith('mcp__'))
+    expect(mcp).toEqual(DEVIN_SOTTO_SERVERS.map(server => `mcp__${server}__*`))
+    // Each rule names one whole server: no wildcard in the server name, nothing broader than one server's tools.
+    for (const rule of mcp) expect(rule).toMatch(/^mcp__sotto_[a-z_]+__\*$/u)
+    expect(permissions.allow).not.toContain('mcp__*')
+    const allowed = (name: string) => mcp.some(rule => rule === `mcp__${name}__*`)
+    for (const name of ['Sotto_Browser', 'SOTTO_BROWSER', 'sotto-browser', 'sottobrowser', 'sotto_browser_', 'sotto_browser2', 'my_sotto_browser', 'sotto_brows', 'sotto_visual__x', 'ѕotto_browser']) {
+      expect(allowed(name), name).toBe(false)
+    }
+    expect(permissions.ask).toContain('mcp__*')
+  }
 })
 
 it('confirms a readback only against the allowance its own profile was written for', async () => {

@@ -7,8 +7,8 @@ import { browserToolDefinitions } from '../../src/main/tools/browserAgentTools'
 import { devinFixture } from '../fixtures/devinFixture'
 
 // Devin CLI 3000.11.1 and later attach the MCP servers a session is opened with (#1040), so a Devin thread is given
-// Sotto's own servers as Claude Code, Codex, Grok Build and Muse threads are (ADR-0056). Its asking profiles ask before
-// every call to one (`mcp__*`), and that prompt is the user's to answer, like any other (ADR-0004).
+// Sotto's own servers as Claude Code, Codex, Grok Build and Muse threads are (ADR-0056). Its owned profiles let those
+// servers through by name; a prompt for one that arrives anyway is the user's to answer, like any other (ADR-0004).
 type Fixture = Awaited<ReturnType<typeof devinFixture>>
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
