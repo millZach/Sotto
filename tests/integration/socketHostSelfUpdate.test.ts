@@ -12,7 +12,7 @@ import type { HostUpdateAnswer } from '../../src/shared/hostSelfUpdate'
 import { rawPeer } from '../fixtures/rawHostPeer'
 
 /**
- * Who a host that updates itself offers it to (ADR-0087): a desktop the launch script recorded, whose remote-answer policy
+ * Who a host that updates itself offers it to (ADR-0088): a desktop the launch script recorded, whose remote-answer policy
  * lets it answer, on either listener. A phone, a desktop the host does not know as one, and a desktop without the grant are
  * offered nothing and refused, and only a client whose hello accepts the feature is sent its steps.
  */

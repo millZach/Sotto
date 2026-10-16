@@ -13,7 +13,7 @@ import type { HostUpdateRequestAction } from '../shared/hostProtocol'
 import { processAlive } from './lock'
 
 /**
- * A host that updates itself when a paired desktop asks over its socket (ADR-0087). It runs the launch script it ships for
+ * A host that updates itself when a paired desktop asks over its socket (ADR-0088). It runs the launch script it ships for
  * SSH against itself, on this machine, so there is one implementation of the download, the checksum, the unpack, the Node
  * range, the version conflict, the restart, the rollback and the prune. The client names only a version, and for install
  * the archive's name and checksum the host's own download answered. Everything else the script reads, the host builds

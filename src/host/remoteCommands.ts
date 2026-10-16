@@ -78,7 +78,7 @@ export function remoteUsageRefusal(operation: typeof REMOTE_USAGE_OPERATIONS[num
   return operation === 'usage-clear' && !mayAnswer ? 'forbidden' : null
 }
 /**
- * A host update the host runs on itself (ADR-0087). It installs and restarts into a newer published Sotto release, so it
+ * A host update the host runs on itself (ADR-0088). It installs and restarts into a newer published Sotto release, so it
  * takes more than pairing: the client must be one the launch script recorded as a desktop over the owner's SSH session,
  * and its `remote-answer` policy must let it answer, which `--deny-answers` on the host revokes. A phone never may. The
  * client names only a version, and for install the archive name and checksum the host's own download answered; the host

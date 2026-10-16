@@ -1,6 +1,6 @@
 /**
  * The launch script's timings (ADR-0040). The desktop sends them with every operation it runs over SSH, and a host that
- * updates itself when a paired desktop asks over its socket (ADR-0087) sends the same ones to the same script, so the two
+ * updates itself when a paired desktop asks over its socket (ADR-0088) sends the same ones to the same script, so the two
  * routes cannot drift apart.
  */
 

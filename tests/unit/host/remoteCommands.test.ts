@@ -92,12 +92,12 @@ describe('remote command allow-list', () => {
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
       // The machine's host facts: numbers and the system's own name, read only by a desktop that lists host-facts (#1031).
       'host-facts',
-      // A host update the host runs on itself: a recorded desktop whose remote-answer policy lets it answer (ADR-0087).
+      // A host update the host runs on itself: a recorded desktop whose remote-answer policy lets it answer (ADR-0088).
       'host-update']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })
-  it('lets only a recorded desktop that may answer have its host update itself, naming a version and never a URL or path (ADR-0087)', () => {
+  it('lets only a recorded desktop that may answer have its host update itself, naming a version and never a URL or path (ADR-0088)', () => {
     expect([...REMOTE_HOST_UPDATE_ACTIONS]).toEqual([...HOST_UPDATE_REQUEST_ACTIONS])
     expect(remoteHostUpdateRefusal({ desktop: true, mayAnswer: true })).toBeNull()
     // A phone, a desktop the launch script never recorded, and a desktop whose grant was revoked with --deny-answers.

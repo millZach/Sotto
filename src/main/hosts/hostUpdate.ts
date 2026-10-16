@@ -149,7 +149,7 @@ async function probeHere(url: string, signal: AbortSignal): Promise<boolean | un
     return publishedAnswer(response.status, response.headers.get('location'))
   } catch { return undefined }
 }
-/** The rule a host that updates itself checks a version against too (ADR-0087). */
+/** The rule a host that updates itself checks a version against too (ADR-0088). */
 const compareToTarget = compareHostToTarget
 const behind = (version: string, target: string): boolean => compareToTarget(version, target) === -1
 

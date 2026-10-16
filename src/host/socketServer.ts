@@ -78,7 +78,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `desktop` is whether the launch script recorded this client as a desktop (ADR-0053), read when its socket opened and
  * again at its hello. On a listener that tells desktops apart, only a desktop is offered the desktop-only features.
  *
- * `hostUpdate` is whether its hello accepted `host-update`, so it is sent the steps of an update it asked for (ADR-0087);
+ * `hostUpdate` is whether its hello accepted `host-update`, so it is sent the steps of an update it asked for (ADR-0088);
  * `gone` is aborted once its socket has closed, which ends a download it asked for.
  */
 interface Peer { hostUpdate: boolean; gone: AbortController; usageHistory: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>; terminals: boolean; terminalPreviews: Map<string, string> }
@@ -145,7 +145,7 @@ export interface SocketServerOptions {
    */
   phones?: HostPhonesAdministration
   /**
-   * The headless host updating itself for a desktop that asks (ADR-0087). Offered on either listener, to a client in
+   * The headless host updating itself for a desktop that asks (ADR-0088). Offered on either listener, to a client in
    * `watcherDesktops` whose `remote-answer` policy lets it answer, and only when the host can update itself at all.
    */
   hostUpdate?: Pick<HostSelfUpdate, 'run' | 'delivered'>
@@ -219,11 +219,11 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
     // and the desktop's own phone listener, which serves no desktop, never does.
     && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined))
-    // A host that can update itself offers it on both listeners, to SSH-recorded desktops only (ADR-0087).
+    // A host that can update itself offers it on both listeners, to SSH-recorded desktops only (ADR-0088).
     && (feature !== 'host-update' || options.hostUpdate !== undefined && options.watcherDesktops !== undefined))
   /**
    * Whether a client may have its host update itself: one the launch script recorded as a desktop, on either listener, whose
-   * `remote-answer` policy lets it answer (ADR-0087). Read afresh each time, so `--deny-answers` takes it away at once.
+   * `remote-answer` policy lets it answer (ADR-0088). Read afresh each time, so `--deny-answers` takes it away at once.
    */
   const mayUpdate = (peer: Peer): boolean => remoteHostUpdateRefusal({ desktop: options.watcherDesktops?.has(peer.client.clientId) ?? false,
     mayAnswer: options.mayAnswer?.(peer.client) ?? false }) === null
@@ -848,7 +848,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!offers(peer, 'host-facts') || !service.hostFacts) throw new Refusal('invalid_request')
         try { return hostMachineReportSchema.parse(await service.hostFacts()) } catch { throw new Refusal('unavailable') }
       case 'host-update': {
-        // A host update the host runs on itself (ADR-0087): a recorded desktop that may answer, after its hello, and only
+        // A host update the host runs on itself (ADR-0088): a recorded desktop that may answer, after its hello, and only
         // on a host that can. Failures are answers in the launch script's own words, never a refusal.
         await options.watcherDesktops?.refresh().catch(() => undefined)
         const { hostUpdate } = options
@@ -963,7 +963,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           peer.afterSeq = peer.afterSeq === Number.MAX_SAFE_INTEGER ? latestSeq : Math.max(peer.afterSeq, latestSeq)
         }
       }
-      // A restart that went ahead waits for its own answer to be on the way before it stops this host (ADR-0087), whether or
+      // A restart that went ahead waits for its own answer to be on the way before it stops this host (ADR-0088), whether or
       // not the answer could go. Only one restart runs at a time, so its answer is the only update-restarting there is.
       if (request.op === 'host-update' && request.action === 'restart' && response.ok && (response.result as { type?: unknown }).type === 'update-restarting') {
         await peer.frames.drained().finally(() => options.hostUpdate?.delivered())

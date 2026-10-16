@@ -5,7 +5,7 @@ import { compareOwlHostTarget, HOST_ARCHIVE_PATTERN } from './hostUpdates'
 import { getReleaseTrack } from './releaseTrack'
 
 /**
- * A host that updates itself (ADR-0087): a paired desktop asks the host over its socket, on either listener, and the host
+ * A host that updates itself (ADR-0088): a paired desktop asks the host over its socket, on either listener, and the host
  * runs the launch script's own update operations against itself, as the desktop would run them over SSH. These are the
  * shapes both sides read. The request is `host-update` on the host protocol's closed list (`hostRequestSchema`), and only
  * a desktop the launch script recorded as one, whose `remote-answer` policy lets it answer, is offered the feature.

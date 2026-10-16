@@ -53,7 +53,7 @@ export interface HeadlessHostOptions {
   tailscale?: PhoneAccessTailscale
   /**
    * The host's own entry, `host/index.js` in its installation folder, which the command line passes. With it, a host Sotto
-   * started can update itself when a paired desktop asks over its socket (ADR-0087); without it, it offers no such thing.
+   * started can update itself when a paired desktop asks over its socket (ADR-0088); without it, it offers no such thing.
    */
   entryPath?: string
   /** Tests stand a local releases page in for a host that updates itself; a host always uses the published one. */
@@ -184,7 +184,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // listener, which carries desktops the launch script recorded as well as phones (ADR-0053). This one, with the
         // administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
         const desktops = new DesktopClients(directory, options.log)
-        // One for both listeners, so an update one desktop runs over either is the only one running (ADR-0087).
+        // One for both listeners, so an update one desktop runs over either is the only one running (ADR-0088).
         const selfUpdate = options.entryPath ? createHostSelfUpdate({ entry: options.entryPath, dataDirectory: directory, port: options.port,
           hostId, sottoVersion: options.sottoVersion ?? packageVersion, startedBy: options.startedBy,
           ...(options.releasesUrl ? { releasesUrl: options.releasesUrl } : {}), ...(options.log ? { log: options.log } : {}) }) : undefined
@@ -310,7 +310,7 @@ export async function runHeadlessCommandLine(): Promise<void> {
     const options = parseHostArguments(process.argv.slice(2))
     // Read once: the provider processes this host starts must not inherit the mark.
     delete process.env.SOTTO_HOST_STARTED_BY
-    // The entry this process runs is where the host was installed, which a host that updates itself reads (ADR-0087).
+    // The entry this process runs is where the host was installed, which a host that updates itself reads (ADR-0088).
     host = await startHeadlessHost({ ...options, ...(process.argv[1] ? { entryPath: process.argv[1] } : {}), log: event => console.error('[Sotto] ' + event) })
     if (stopping) stop()
     else { console.error('[Sotto] host-ready'); if (host.descriptor) process.stdout.write(JSON.stringify({ ...host.descriptor, event: 'ready' }) + '\n') }

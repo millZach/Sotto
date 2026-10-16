@@ -186,7 +186,7 @@ it('starts the old version again, and points back at it, when the new one does n
   expect(await pointer(configuration)).toBeNull()
 })
 
-describe('a restart a host asked for over its own socket (ADR-0087)', () => {
+describe('a restart a host asked for over its own socket (ADR-0088)', () => {
   const statusOf = (configuration: Configuration): Promise<unknown> =>
     readFile(join(configuration.dataDirectory, 'host-update-status.json'), 'utf8').then(text => JSON.parse(text) as unknown, () => null)
   const resultFileOf = (configuration: Configuration): string => join(configuration.dataDirectory, 'host-update-status.json')

@@ -1,6 +1,6 @@
 // Stands in for an installed host/index.js in tests/integration/hostSelfUpdate.test.ts: the real headless host, with
 // scripted providers in place of real ones and no Tailscale, built into a host installation the test lays out the way a
-// release does. It runs from that installation, so it updates itself when a paired desktop asks over its socket (ADR-0087),
+// release does. It runs from that installation, so it updates itself when a paired desktop asks over its socket (ADR-0088),
 // from the stand-in releases page SOTTO_TEST_HOST_RELEASES_URL names, which only this test entry reads.
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

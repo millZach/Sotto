@@ -14,7 +14,7 @@ import { HOST_NODE_RANGE, LAUNCH_SCRIPT_SOURCE } from '../../../src/main/hosts/l
 import { HOST_UPDATE_RESTART_BUDGET_MS, HOST_UPDATE_RESTART_WAIT_MS } from '../../../src/shared/hostSelfUpdate'
 
 /**
- * A host that updates itself (ADR-0087), without running anything: the child processes it would start are stand-ins that
+ * A host that updates itself (ADR-0088), without running anything: the child processes it would start are stand-ins that
  * say what the launch script would, so these check what the host builds, refuses and waits for.
  */
 const HOST_ID = '11111111-1111-4111-8111-111111111111'

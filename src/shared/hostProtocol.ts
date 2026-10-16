@@ -170,7 +170,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * reference and, once answered, that turn's reply (ADR-0073). A desktop asks for them; one whose host does not list it reads unknown.
  * `host-facts`: the host answers `host-facts` with its machine's host facts and how many of its threads are running a turn
  * (#1031). Numbers and the system's own name only. Only a desktop is offered it; one whose host does not list it reads unknown.
- * `host-update`: the host updates itself when a desktop asks (ADR-0087): `host-update` runs one step of a host update on
+ * `host-update`: the host updates itself when a desktop asks (ADR-0088): `host-update` runs one step of a host update on
  * the host, the way the launch script runs it over SSH, and `host-update-step` pushes say which step it is on to a client
  * that accepts the feature. Offered only to a client the launch script recorded as a desktop whose `remote-answer` policy
  * lets it answer, and only by a host Sotto started from a release's own layout.
@@ -183,7 +183,7 @@ export type HostFeature = typeof HOST_FEATURES[number]
  */
 export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'host-update']
 /**
- * What a desktop may ask of a host that updates itself (ADR-0087): download and check a release's archive, install it
+ * What a desktop may ask of a host that updates itself (ADR-0088): download and check a release's archive, install it
  * beside the running version, restart into it, cancel its own download, or read how the last restart went. The client
  * names a version, and for `install` the archive's name and checksum `fetch` answered; never a URL, a path or any code.
  */
@@ -349,7 +349,7 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('subagent-assignments'), request: subagentAssignmentsRequestSchema }).strict(),
   /** The host's machine facts and running thread count, read on request and never pushed (#1031). */
   z.object({ ...base, op: z.literal('host-facts') }).strict(),
-  /** One step of a host update, run by the host on itself for a desktop that may answer (ADR-0087). */
+  /** One step of a host update, run by the host on itself for a desktop that may answer (ADR-0088). */
   z.object({ ...base, op: z.literal('host-update'), action: z.enum(HOST_UPDATE_REQUEST_ACTIONS), version: z.string().min(1).max(64).optional(),
     file: z.string().min(1).max(128).optional(), sha256: z.string().regex(/^[0-9a-f]{64}$/u).optional() }).strict(),
   z.object({ ...base, op: z.literal('usage-read'), query: usageLocalQuerySchema }).strict(),
@@ -384,7 +384,7 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?:
   | { v: 1; event: 'detail-delta'; threadId: string; delta: AgentThreadDetailDelta }
   | { v: 1; event: 'answer-receipt'; acceptedAnswer: HostAnswerTarget & { decisionId: string } }
   | { v: 1; event: 'error'; threadId?: string | undefined; error: HostProtocolError }
-  /** Which step a host update this client asked for is on (ADR-0087); only to a client that accepts `host-update`. */
+  /** Which step a host update this client asked for is on (ADR-0088); only to a client that accepts `host-update`. */
   | { v: 1; event: 'host-update-step'; step: HostUpdateStep }
 export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number; hasMore: boolean }
 /**

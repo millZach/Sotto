@@ -49,7 +49,7 @@ const net = require('node:net');
 const crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 // The configuration is the last argument however Node was given the script: on stdin, with -e, or as a file, which
-// is how a host that updates itself runs its restart under a transient systemd unit (ADR-0087).
+// is how a host that updates itself runs its restart under a transient systemd unit (ADR-0088).
 const cfg = JSON.parse(process.argv[process.argv.length - 1]);
 const resolvePath = value => path.resolve(value.startsWith('~/') ? path.join(os.homedir(), value.slice(2)) : value);
 const data = resolvePath(cfg.dataDirectory);
@@ -76,7 +76,7 @@ const finishesAlone = cfg.op === 'update-install' || cfg.op === 'update-restart'
 process.stdout.on('error', () => { if (!finishesAlone) process.exit(0); });
 if (finishesAlone) process.on('SIGHUP', () => undefined);
 const say = event => new Promise(resolve => { if (process.stdout.destroyed) { resolve(); return; } process.stdout.write(JSON.stringify(event) + '\n', () => resolve()); });
-// A restart a host asked for over its own socket (ADR-0087) also reports in a file in its data folder, since the host that
+// A restart a host asked for over its own socket (ADR-0088) also reports in a file in its data folder, since the host that
 // asked is the one it stops. Each such restart is one attempt, named by the host. Whoever first makes the attempt's claim
 // file decides it: the restart once its checks pass, or the host when it stops waiting. A restart that finds its attempt
 // claimed touches nothing, and no later attempt can take the claim from it, since each has its own.
@@ -544,7 +544,7 @@ const stopHost = async () => {
   if (stopped && legacy && legacy.pid === pid) await fs.rm(legacyLauncherPath, { force: true }).catch(() => undefined);
   return finish({ type: 'host-stopped', stopped, hostId: current.hostId });
 };
-// One update at a time in a folder, whichever client runs it: over SSH, or a host updating itself (ADR-0087), which runs
+// One update at a time in a folder, whichever client runs it: over SSH, or a host updating itself (ADR-0088), which runs
 // this same script. The lock is a folder naming its process, put in place whole by renaming a folder this process made, so
 // nobody sees it half made. A lock whose process has gone, or that never named one, is taken over: it is moved aside under
 // a name only this process uses, and only when what moved is still the lock that was judged stale is it removed. A lock
@@ -706,7 +706,7 @@ const restartForUpdate = async () => {
   if (!current || current.hostId !== cfg.hostId || !(await sottoStarted(current))) return { type: 'error', reason: 'update-not-owned' };
   const previous = await currentVersion();
   // The checks have passed. A host that asked over its socket stops waiting here: from now on the restart goes ahead, unless
-  // that host gave up first, when nothing has been touched (ADR-0087).
+  // that host gave up first, when nothing has been touched (ADR-0088).
   if (!(await claim({ state: 'restarting', pid: process.pid }))) return { type: 'error', reason: 'restart-not-sent' };
   await answered();
   await say({ type: 'update-step', step: 'restart' });
@@ -798,7 +798,7 @@ const runBoot = async () => {
 };
 const runUpdate = async () => {
   // Every step holds the folder's lock, the download too, so an update over SSH and one a host runs on itself over its
-  // socket (ADR-0087) refuse each other. A cancelled download gives the lock up once it notices it is orphaned, and one that
+  // socket (ADR-0088) refuse each other. A cancelled download gives the lock up once it notices it is orphaned, and one that
   // was killed leaves a lock whose process has gone, which the next update takes over.
   await takeUpdateLock();
   try {
@@ -952,7 +952,7 @@ export type LaunchOperation =
   | { readonly op: 'update-install'; readonly version: string; readonly file: string; readonly sha256: string }
   /**
    * Start `version` in place of the running host, or start the running one again when it does not start. `resultFile`, a
-   * file in the data folder, and `attempt` are only for a host that updates itself over its socket (ADR-0087): the restart
+   * file in the data folder, and `attempt` are only for a host that updates itself over its socket (ADR-0088): the restart
    * claims the attempt once its checks pass and writes how it stands in `resultFile`, since the host that asked is the one it
    * stops. It then waits up to `answerWaitMs` for the host to say it has answered its desktop, before it stops the host.
    */

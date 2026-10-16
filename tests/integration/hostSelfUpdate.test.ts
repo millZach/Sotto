@@ -14,7 +14,7 @@ import { hostLaunchTimings, HOST_STOP_DRAIN_MS, HOST_READY_TIMEOUT_MS } from '..
 import type { SocketFrames } from '../../src/host/socketFrames'
 
 /**
- * A host that updates itself when a paired desktop asks over its socket (ADR-0087), end to end: the real headless host,
+ * A host that updates itself when a paired desktop asks over its socket (ADR-0088), end to end: the real headless host,
  * built from this checkout into a release's layout and started the way the launch script starts it, paired and recorded as
  * a desktop the way an SSH connect does, then updated over its socket from a stand-in releases page, with no ssh at all.
  */
