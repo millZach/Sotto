@@ -864,6 +864,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // stops a turn the way the composer's Stop does.
   const busyThreads: BusyHostThreads = {
     working: hostId => hostRouter.publishedThreads(hostId).filter(threadKeepsHostBusy).map(thread => thread.id),
+    workingNow: hostId => hostRouter.shell().host.threads.filter(thread => thread.hostId === hostId && threadKeepsHostBusy(thread)).map(thread => thread.id),
     interrupt: async threadId => { await hostRouter.command({ type: 'interrupt', threadId }, desktopWindowClient()) },
     subscribe: listener => hostRouter.subscribeChanges(listener),
   }
