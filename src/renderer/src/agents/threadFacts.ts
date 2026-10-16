@@ -1,5 +1,6 @@
 import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentModel, type AgentProject, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
+import { DELEGATION_LEVELS_MAX } from '../../../shared/delegation'
 import { babysittingWord } from './babysitting'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 
@@ -273,6 +274,11 @@ export interface ProjectFolder {
   /** The whole project was settled; its folder sits in Settled with every thread. */
   readonly settled: boolean
   readonly rows: readonly ThreadRow[]
+  /**
+   * Delegated threads listed under the thread that delegated to them (ADR-0081, design A): each one's level below it,
+   * 1 or 2, with the title of the thread above. Absent while the Owl list keeps delegation off or nothing here delegated.
+   */
+  readonly delegation?: ReadonlyMap<string, { readonly level: number; readonly parent: string }>
   readonly working: number
   readonly needs: number
   readonly activityAt: number
@@ -291,10 +297,38 @@ const byActivity = (first: { readonly activityAt: number; readonly id: string },
   return (secondAt - firstAt) || first.id.localeCompare(second.id)
 }
 
-function folder(id: string, project: AgentProject | undefined, rows: readonly ThreadRow[], settled: boolean): ProjectFolder {
-  const sorted = [...rows].sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
+/**
+ * Rows in activity order, each delegated thread moved under the thread that delegated to it when that thread is listed
+ * here too, its own delegated threads under it in turn (ADR-0081 decision 2). Siblings keep their activity order. A
+ * delegated thread whose delegating thread is not listed, settled or filtered away, stands on its own.
+ */
+export function nestDelegated(rows: readonly ThreadRow[]): { readonly rows: readonly ThreadRow[]; readonly delegation?: ReadonlyMap<string, { readonly level: number; readonly parent: string }> } {
+  const listed = new Map(rows.map(row => [row.thread.id, row]))
+  const children = new Map<string, ThreadRow[]>()
+  for (const row of rows) {
+    const parent = row.thread.delegatedBy
+    if (parent !== undefined && parent !== row.thread.id && listed.has(parent)) children.set(parent, [...children.get(parent) ?? [], row])
+  }
+  if (!children.size) return { rows }
+  const ordered: ThreadRow[] = [], delegation = new Map<string, { level: number; parent: string }>(), placed = new Set<string>()
+  const place = (row: ThreadRow, level: number): void => {
+    if (placed.has(row.thread.id)) return
+    placed.add(row.thread.id); ordered.push(row)
+    const parent = level > 0 && row.thread.delegatedBy !== undefined ? listed.get(row.thread.delegatedBy) : undefined
+    if (parent) delegation.set(row.thread.id, { level, parent: parent.thread.title })
+    for (const child of children.get(row.thread.id) ?? []) place(child, Math.min(level + 1, DELEGATION_LEVELS_MAX))
+  }
+  for (const row of rows) if (row.thread.delegatedBy === undefined || !listed.has(row.thread.delegatedBy)) place(row, 0)
+  // A loop of links is no family: whatever no top-level row reached stands on its own, in activity order.
+  for (const row of rows) place(row, 0)
+  return { rows: ordered, delegation }
+}
+
+function folder(id: string, project: AgentProject | undefined, rows: readonly ThreadRow[], settled: boolean, nest = false): ProjectFolder {
+  const byTime = [...rows].sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
+  const { rows: sorted, delegation } = nest ? nestDelegated(byTime) : { rows: byTime, delegation: undefined }
   return {
-    id, project, title: project?.title ?? rows[0]?.provider ?? 'Project', settled, rows: sorted,
+    id, project, title: project?.title ?? rows[0]?.provider ?? 'Project', settled, rows: sorted, ...(delegation ? { delegation } : {}),
     working: rows.filter(row => row.state === 'working').length,
     needs: rows.filter(row => row.state === 'needs').length,
     activityAt: rows.reduce((latest, row) => Number.isFinite(row.activityAt) && (!Number.isFinite(latest) || row.activityAt > latest) ? row.activityAt : latest, Number.NaN),
@@ -307,7 +341,7 @@ function folder(id: string, project: AgentProject | undefined, rows: readonly Th
  * A search keeps attention rows and projects whose name matches; without a search an open project
  * with no threads yet (or the selected project) still shows so a thread can be started there.
  */
-export function organizeWorkspace(state: AgentState, rows: readonly ThreadRow[], query: string, activeProjectId: string | null = null): WorkspaceOrganization {
+export function organizeWorkspace(state: AgentState, rows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, nestDelegatedThreads = false): WorkspaceOrganization {
   const { matching, listed } = listThreads(rows, query)
   const needle = query.trim().toLocaleLowerCase()
   const projectMatches = (project: AgentProject): boolean => needle !== '' && `${project.title} ${project.path}`.toLocaleLowerCase().includes(needle)
@@ -323,14 +357,14 @@ export function organizeWorkspace(state: AgentState, rows: readonly ThreadRow[],
     const nameMatch = project !== undefined && projectMatches(project)
     const shown = nameMatch ? all : all.filter(row => listed.includes(row))
     if (isWorkspaceThreadSettled({ workspaceSettledAt: null }, project)) {
-      if (shown.length || nameMatch || (needle === '' && all.length === 0)) settled.push(folder(id, project, shown, true))
+      if (shown.length || nameMatch || (needle === '' && all.length === 0)) settled.push(folder(id, project, shown, true, nestDelegatedThreads))
       continue
     }
     const openRows = shown.filter(row => row.settledBy === null)
     const settledRows = shown.filter(row => row.settledBy !== null)
     const emptyOpen = needle === '' && (all.length === 0 || id === activeProjectId) && openRows.length === 0
-    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length)) open.push(folder(id, project, openRows, false))
-    if (settledRows.length) settled.push(folder(id, project, settledRows, false))
+    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length)) open.push(folder(id, project, openRows, false, nestDelegatedThreads))
+    if (settledRows.length) settled.push(folder(id, project, settledRows, false, nestDelegatedThreads))
   }
   const ordered = (folders: ProjectFolder[]): ProjectFolder[] => folders.sort((first, second) => byActivity(first, second))
   return { open: ordered(open), settled: ordered(settled), matching: matching.length }

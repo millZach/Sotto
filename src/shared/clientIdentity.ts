@@ -57,5 +57,7 @@ export function clientAgentState(state: AgentState): AgentState {
   return { ...mapped, hostId,
     host: { ...mapped.host, models,
       projects: mapped.host.projects.map(project => ({ ...project, id: hostEntityKey(project.hostId ?? hostId, project.id) })),
-      threads: threads.map(thread => ({ ...thread, id: hostEntityKey(thread.hostId ?? hostId, thread.id), projectId: hostEntityKey(thread.hostId ?? hostId, thread.projectId) })) } }
+      // The thread that delegated to this one (ADR-0081) is named as the window names threads, so its link finds it.
+      threads: threads.map(thread => ({ ...thread, id: hostEntityKey(thread.hostId ?? hostId, thread.id), projectId: hostEntityKey(thread.hostId ?? hostId, thread.projectId),
+        ...(thread.delegatedBy ? { delegatedBy: hostEntityKey(thread.hostId ?? hostId, thread.delegatedBy) } : {}) })) } }
 }
