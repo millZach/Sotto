@@ -133,4 +133,33 @@ describe('saving busy threads\' activity', () => {
     expect(store.readActivities('one').at(-1)?.output).toBe('Grown')
     expect(store.readActivities('two')).toEqual(two)
   })
+
+  it('rolls back only the thread whose write fails partway, commits the others, and saves it on the retry', async () => {
+    const store = await fixture()
+    const lists = ['one', 'two', 'three'].map(id => ({ threadId: id, activities: records(id, 10) }))
+    store.syncActivitiesMany(lists)
+    // The middle thread drops a record (a delete) and grows another (an insert); the insert fails after the delete ran.
+    const next = lists.map(entry => ({ ...entry, activities: entry.threadId === 'two'
+      ? immutableActivities([...withLastGrown(entry.activities, 'Grown').slice(1)]) : withLastGrown(entry.activities, 'Grown') }))
+    const run = StatementSync.prototype.run
+    let middle = 0
+    const failing = vi.spyOn(StatementSync.prototype, 'run').mockImplementation(function (this: StatementSync, ...args: Parameters<StatementSync['run']>) {
+      if (args[0] === 'two' && ++middle === 2) throw new Error('disk full')
+      return run.apply(this, args)
+    })
+    expect(() => store.syncActivitiesMany(next)).toThrow('disk full')
+    expect(middle).toBe(2)
+    failing.mockRestore()
+    expect(store.readActivities('one').at(-1)?.output).toBe('Grown')
+    expect(store.readActivities('three').at(-1)?.output).toBe('Grown')
+    expect(store.readActivities('two')).toEqual(lists[1]!.activities)
+    // What is committed, read beside the store rather than from its memory: the middle thread's delete was undone.
+    const committed = (threadId: string) => inspect().prepare('SELECT activity_id FROM activities WHERE thread_id = ? ORDER BY position').all(threadId).map(row => String(row.activity_id))
+    expect(committed('two')).toEqual(lists[1]!.activities.map(record => record.id))
+    expect(committed('one')).toEqual(next[0]!.activities.map(record => record.id))
+    // The same frozen list again is written, not taken as already saved.
+    store.syncActivitiesMany(next)
+    expect(store.readActivities('two')).toEqual(next[1]!.activities)
+    expect(committed('two')).toEqual(next[1]!.activities.map(record => record.id))
+  })
 })
