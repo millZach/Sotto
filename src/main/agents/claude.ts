@@ -841,7 +841,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
     this.aliases[request.threadId] = alias
     try { await this.persist() } catch (error) { delete this.aliases[request.threadId]; throw error }
-    this.ensureThread(request.threadId, alias); await this.readLog(request.threadId); this.emit()
+    this.ensureThread(request.threadId, alias)
+    // The copy is made and bound; a history that can't be read yet is said on the thread, and a refresh reads it.
+    try { await this.readLog(request.threadId) }
+    catch {
+      const thread = this.threads.get(request.threadId)
+      if (thread) { thread.historyStatus = 'error'; thread.historyError = 'Claude Code made the copy, but its history could not be read yet. Refresh this thread to read it.' }
+    }
+    this.emit()
     return { accepted: true }
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }

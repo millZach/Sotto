@@ -3285,45 +3285,32 @@ export class AgentControl {
         this.say(`Opened ${command.title}.`)
         return
       }
-      case 'continue-agent': {
+      case 'continue-agent':
+      case 'fork-thread': {
         // An Owl feature (#1028): stable starts none of it, and a host that predates it never gets this far.
-        if (this.dependencies.threadStartsEnabled !== true || !this.dependencies.host.continueAgent) throw new Error('Continuing an agent as a thread is available in Sotto Owl. Nothing was made.')
+        const host = this.dependencies.host
+        if (this.dependencies.threadStartsEnabled !== true || (command.type === 'continue-agent' ? !host.continueAgent : !host.forkAtReply)) {
+          throw new Error(`${command.type === 'continue-agent' ? 'Continuing an agent as a thread' : 'Fork from here'} is available in Sotto Owl. Nothing was made.`)
+        }
         const source = this.thread(command.threadId)
-        const model = resolveModel(this.state.host.models, command.modelId ?? source.modelId)
+        // A fork at a reply stays on its thread's provider: on a model of the user's choosing where the provider copies
+        // the conversation itself, and on the thread's own where it starts from a handover.
+        const fork = command.type === 'fork-thread'
+        const chosen = fork && !(source.providerId !== undefined && NATIVE_FORKS.has(source.providerId)) ? undefined : command.modelId
+        const model = resolveModel(this.state.host.models, chosen ?? source.modelId)
         this.canCreate(model?.providerId)
-        if (!model?.ready) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account. Nothing was made.')
+        if (!model?.ready || fork && model.providerId !== source.providerId) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account. Nothing was made.')
         if (this.state.host.threads.some(thread => thread.id === command.newThreadId)) throw new Error('This thread already exists. Select it instead of creating it again.')
         // The new thread starts on the new-thread defaults, as any new thread does, so it is never wider than the user chose.
         const defaults = this.newThreadOptionDefaults({ type: 'create-thread', projectId: source.projectId, title: source.title, modelId: model.id }, model)
         validateThreadOptions(this.state.host, { modelId: model.id, ...defaults })
         if (!origin?.operationId) this.guardThreadPermission(client, defaults, model)
         if (turn) { turn.threadId = command.newThreadId; turn.projectId = source.projectId }
-        await this.dependencies.host.continueAgent({ threadId: command.newThreadId, sourceThreadId: source.id, agentId: command.agentId, modelId: model.id, ...defaults,
-          ...(command.handover ? { handover: true } : {}), ...(command.workingCopy ? { workingCopy: command.workingCopy } : {}),
-          ...(command.baseBranch ? { baseBranch: command.baseBranch } : {}), ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}) })
-        if (!origin && selectionRevision === this.selectionRevision) { this.state.activeThreadId = command.newThreadId; this.state.activeProjectId = source.projectId }
-        this.observe(); this.acceptSnapshot(await this.readThread(command.newThreadId))
-        this.say(`Opened ${this.thread(command.newThreadId).title}.`)
-        return
-      }
-      case 'fork-thread': {
-        // An Owl feature (#1028, E5b): stable starts none of it, and a host that predates it never gets this far.
-        if (this.dependencies.threadStartsEnabled !== true || !this.dependencies.host.forkAtReply) throw new Error('Fork from here is available in Sotto Owl. Nothing was made.')
-        const source = this.thread(command.threadId)
-        // A fork stays on its thread's provider: on a model of the user's choosing where the provider copies the
-        // conversation itself, and on the thread's own where it starts from a handover.
-        const native = source.providerId !== undefined && NATIVE_FORKS.has(source.providerId)
-        const model = resolveModel(this.state.host.models, (native ? command.modelId : undefined) ?? source.modelId)
-        this.canCreate(model?.providerId)
-        if (!model?.ready || model.providerId !== source.providerId) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account. Nothing was made.')
-        if (this.state.host.threads.some(thread => thread.id === command.newThreadId)) throw new Error('This thread already exists. Select it instead of creating it again.')
-        const defaults = this.newThreadOptionDefaults({ type: 'create-thread', projectId: source.projectId, title: source.title, modelId: model.id }, model)
-        validateThreadOptions(this.state.host, { modelId: model.id, ...defaults })
-        if (!origin?.operationId) this.guardThreadPermission(client, defaults, model)
-        if (turn) { turn.threadId = command.newThreadId; turn.projectId = source.projectId }
-        await this.dependencies.host.forkAtReply({ threadId: command.newThreadId, sourceThreadId: source.id, messageId: command.messageId, modelId: model.id, ...defaults,
+        const request = { threadId: command.newThreadId, sourceThreadId: source.id, modelId: model.id, ...defaults,
           ...(command.workingCopy ? { workingCopy: command.workingCopy } : {}), ...(command.baseBranch ? { baseBranch: command.baseBranch } : {}),
-          ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}) })
+          ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}) }
+        if (command.type === 'continue-agent') await host.continueAgent!({ ...request, agentId: command.agentId, ...(command.handover ? { handover: true } : {}) })
+        else await host.forkAtReply!({ ...request, messageId: command.messageId })
         if (!origin && selectionRevision === this.selectionRevision) { this.state.activeThreadId = command.newThreadId; this.state.activeProjectId = source.projectId }
         this.observe(); this.acceptSnapshot(await this.readThread(command.newThreadId))
         this.say(`Opened ${this.thread(command.newThreadId).title}.`)

@@ -26,8 +26,7 @@ import { confirmedSettingsSnapshot, type AgentContinuation, type AgentHost, type
 import { agentHandover, type AgentHandover } from './agentHandover'
 import { AGENT_HANDOVER_UNAVAILABLE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, FORK_REPLY_GONE, FORK_TURN_RUNNING, NATIVE_FORKS } from '../../shared/threadStarts'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual } from './threadStore'
-import { buildHandover, readHandover, type Handover, type HandoverStore } from './handover'
-import { withoutStartHandover } from './startHandover'
+import { readHandover, type Handover, type HandoverStore } from './handover'
 import { handoverCounts } from './watcherHandover'
 import { placeVisuals } from './visualPlacement'
 import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
@@ -93,8 +92,6 @@ function historyTextChunks(text: string): string[] {
 const WORKTREE_REFRESH_DELAY_MS = 1_500
 /** How often the Git status timer looks at whether a remote read is due. */
 /** Two spellings of one folder: trailing separators, slashes and case are not a difference on the platforms Sotto ships on. */
-/** How many of a thread's newest messages up to a reply a handover of it reads; the rest are named by count. */
-const REPLY_HANDOVER_READ = 200
 const sameFolder = (left: string, right: string): boolean => left.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase() === right.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase()
 const GIT_STATUS_TICK_MS = 5_000
 const GIT_ACTION_SAVE_ERROR = 'The Git action finished, but its record could not be saved. Check the folder; the notice may not show it.'
@@ -412,9 +409,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return this.startThread({ ...request, title, startedFrom: { threadId: source.id, from: 'turn', route: 'handover', at, messageId: request.messageId, handover: { thin: false, counts: handover.counts } } })
   }
   /**
-   * A handover of a thread's conversation up to one of its replies, read from Sotto's own record (#1028, E5b): the
-   * newest messages up to the reply and the thread's first request, the way Watcher's handover reads a thread, with a
-   * handover that thread itself began from left out.
+   * A handover of a thread's conversation up to one of its replies, read from Sotto's own record the way Watcher's
+   * handover reads a whole thread (#1028, E5b): its first request, its latest request up to the reply and the reply, and
+   * the newest messages that fit. The store is read as if the thread ended at the reply, so nothing after it is carried.
+   * Each message is carried as the provider heard it, a handover the thread itself began from included.
    */
   private replyHandover(source: AgentThread, messageId: string): AgentHandover | undefined {
     if (!source.providerId || this.storeUnavailable) return undefined
@@ -423,13 +421,25 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const identities = store.messageIdentities(source.id)
     const end = identities.findIndex(identity => identity.id === messageId)
     if (end < 0 || identities[end]!.role !== 'assistant') return undefined
-    const wakeUps = store.wakeUps(source.id), sent = source.startedFrom?.handover?.sent
-    const ordinals = new Set([identities.findIndex(identity => identity.role === 'user'), ...Array.from({ length: Math.min(end + 1, REPLY_HANDOVER_READ) }, (_, index) => end - index)])
-    const messages = [...ordinals].filter(ordinal => ordinal >= 0).flatMap(ordinal => {
-      const found = store.message(source.id, identities[ordinal]!.id)
-      return found ? [{ ordinal, message: withoutStartHandover(wakeUps.has(found.id) ? { ...found, wakeUp: true } : found, sent) }] : []
-    })
-    const built = buildHandover({ messages, total: end + 1 }, { source: { threadId: source.id, title: source.title, provider: source.providerId }, historyKept: !store.ephemeral })
+    const upToReply: HandoverStore = {
+      ephemeral: store.ephemeral,
+      readMessages: (id, options = {}) => {
+        if (options.beforePosition !== undefined) return store.readMessages(id, options)
+        // The newest page is the one that holds the reply, cut after it; the pages after it are read past.
+        for (let beforePosition: number | undefined; ;) {
+          const window = store.readMessages(id, { ...options, ...(beforePosition === undefined ? {} : { beforePosition }) })
+          const at = window.messages.findIndex(message => message.id === messageId)
+          if (at >= 0) return { ...window, messages: window.messages.slice(0, at + 1) }
+          if (!window.earlierAvailable || !window.messages.length) return { ...window, messages: [] }
+          beforePosition = window.firstPosition
+        }
+      },
+      messageIdentities: () => identities.slice(0, end + 1),
+      message: (id, wanted) => store.message(id, wanted),
+      wakeUps: id => store.wakeUps(id),
+      activityCount: id => store.activityCount(id),
+    }
+    const built = readHandover(upToReply, { source: { threadId: source.id, title: source.title, provider: source.providerId } })
     return { text: built.text, counts: handoverCounts(built.summary) }
   }
   /**

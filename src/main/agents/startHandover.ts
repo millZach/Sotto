@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { AgentHostSnapshot, AgentMessage, AgentThread } from '../../shared/agents'
+import type { AgentHostSnapshot, AgentThread } from '../../shared/agents'
 import { startHandoverPrefix } from '../../shared/threadStarts'
 import type { StartHandoverSent } from './host'
 import { recordedPrefix } from './watcherHandover'
@@ -17,13 +17,6 @@ const sha256 = (text: string): string => createHash('sha256').update(text).diges
 export function startHandoverSend(text: string, messageId: string): { prefix: string; sent: StartHandoverSent } {
   const prefix = startHandoverPrefix(text)
   return { prefix, sent: { messageId, prefixLength: prefix.length, prefixDigest: sha256(prefix) } }
-}
-
-/** A message without the handover it went with, when its words still match the record: a handover of a handover only repeats it. */
-export function withoutStartHandover(message: AgentMessage, sent: StartHandoverSent | undefined): AgentMessage {
-  if (!sent || message.id !== sent.messageId) return message
-  const prefix = recordedPrefix(message.text, sent)
-  return prefix === undefined ? message : { ...message, text: message.text.slice(prefix.length) }
 }
 
 /**

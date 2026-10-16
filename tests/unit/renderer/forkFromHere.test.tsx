@@ -20,10 +20,10 @@ const models: AgentModel[] = [
 const AT = '2026-10-16T12:05:00.000Z'
 const answer = (error: string | null): AgentState => ({ error } as AgentState)
 
-function Transcript({ provider, command, busy = false, sourceBranch }: { readonly provider: ProviderId; readonly command: (command: AgentCommand) => Promise<AgentState | null>; readonly busy?: boolean
-  readonly sourceBranch?: { readonly currentBranch: string | null } }) {
+function Transcript({ provider, command, busy = false, sourceBranch, ready = models }: { readonly provider: ProviderId; readonly command: (command: AgentCommand) => Promise<AgentState | null>; readonly busy?: boolean
+  readonly sourceBranch?: { readonly currentBranch: string | null }; readonly ready?: readonly AgentModel[] }) {
   const [openAt, open] = useState<string | null>(null)
-  const options: ForkOptions = { threadId: 'wav', threadTitle: 'WAV preview stall', provider, projectId: 'workshop', where: 'This computer', remote: false, models,
+  const options: ForkOptions = { threadId: 'wav', threadTitle: 'WAV preview stall', provider, projectId: 'workshop', where: 'This computer', remote: false, models: ready,
     modelId: provider === 'claude' ? 'native:claude:model:sonnet' : provider === 'grok' ? 'native:grok:model:grok-5' : 'native:codex:model:gpt-5.5', command,
     ...(sourceBranch ? { sourceBranch } : {}), openAt, open, after: new Set(openAt ? ['later'] : []), busy }
   return <ForkContext.Provider value={options}>
@@ -88,6 +88,31 @@ describe('Fork from here', () => {
     expect(press).toHaveAttribute('aria-disabled', 'true')
     await userEvent.setup().click(press)
     expect(screen.queryByRole('region', { name: 'Fork from here' })).toBeNull()
+  })
+
+  it('answers Escape with nothing to press, and returns focus to its own transcript’s press', async () => {
+    const user = userEvent.setup()
+    // The source and its fork side by side show the same reply under the same ID.
+    render(<><div className="thread-transcript" data-testid="source"><Transcript provider="codex" command={vi.fn()} /></div>
+      <div className="thread-transcript" data-testid="fork"><Transcript provider="codex" command={vi.fn()} ready={[]} /></div></>)
+    const press = screen.getAllByRole('button', { name: /^Fork from here/u })[1]!
+    press.focus()
+    await user.keyboard('{Enter}')
+    const card = screen.getByRole('region', { name: 'Fork from here' })
+    expect(screen.getByRole('button', { name: 'Fork' })).toBeDisabled()
+    expect(card).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('region', { name: 'Fork from here' })).toBeNull()
+    await vi.waitFor(() => expect(screen.getByTestId('fork').querySelector('[data-fork-at]')).toHaveFocus())
+  })
+
+  it('offers the new worktree once the thread’s Git status arrives with the card open', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<Transcript provider="codex" command={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: /^Fork from here/u }))
+    expect(screen.queryByRole('option', { name: /New worktree/u })).toBeNull()
+    rerender(<Transcript provider="codex" command={vi.fn()} sourceBranch={{ currentBranch: 'sotto/wav' }} />)
+    expect(screen.getByRole('option', { name: 'New worktree from sotto/wav' })).toBeTruthy()
   })
 
   it('starts on the thread’s own model where its provider has it ready', () => {

@@ -212,6 +212,28 @@ describe('forking a thread at a reply', () => {
     expect(f.workspace.adapters.claude.commands.filter(command => command.type === 'create-thread')).toHaveLength(0)
   })
 
+  it('carries nothing that came after the reply, even where the thread began with a reply', async () => {
+    const f = await fixture()
+    await f.control.commandShell({ type: 'connect', provider: 'grok' })
+    const thread = f.workspace.adapters.grok.state.threads.find(item => item.id === 'session-workshop')!
+    thread.messages = [
+      { id: 'reply-0', role: 'assistant', text: 'Picked up from the handover: the stall is in the WAV header.', createdAt: at(1) },
+      { id: 'ask-1', role: 'user', text: 'Paste the full test output.', createdAt: at(2) },
+      { id: 'reply-1', role: 'assistant', text: 'Here is the full test output.', createdAt: at(3) },
+    ]
+    f.workspace.adapters.grok.emit()
+    await f.control.commandShell({ type: 'refresh', provider: 'grok' })
+    await f.control.commandShell({ type: 'observe-threads', threadIds: [f.sotto('grok')] })
+    await expect.poll(() => f.workspace.host.threadMessage(f.sotto('grok'), 'reply-1')?.text).toBe('Here is the full test output.')
+    const newThreadId = randomUUID()
+    expect((await f.control.commandShell({ type: 'fork-thread', threadId: f.sotto('grok'), messageId: 'reply-0', newThreadId })).error).toBeNull()
+    expect(f.thread(newThreadId)!.startedFrom?.handover?.counts).toMatchObject({ total: 1, carried: 1 })
+    const handover = f.workspace.host.startHandover(newThreadId)!.text
+    expect(handover).toContain('the stall is in the WAV header')
+    expect(handover).not.toContain('Paste the full test output')
+    expect(handover).not.toContain('Here is the full test output')
+  })
+
   it('refuses a thread that is working, a reply Sotto no longer has, and makes nothing on stable', async () => {
     const f = await fixture()
     await conversation(f, 'claude')

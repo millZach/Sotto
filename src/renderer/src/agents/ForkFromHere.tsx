@@ -50,7 +50,9 @@ export function ForkPress({ messageId, at }: { readonly messageId: string; reado
     : `Fork from here: a new thread with this conversation up to this reply, ${clockLabel(Date.parse(at))}`
   return <button type="button" className="thread-message__fork tt-focusable" aria-label={label} title={options.busy ? 'Wait for this turn to finish before forking' : 'Fork from here'}
     aria-expanded={open} aria-disabled={options.busy || undefined} data-fork-at={messageId}
-    onClick={() => { if (!options.busy) options.open(open ? null : messageId) }}><GitFork size={14} aria-hidden="true" /><span>Fork from here</span></button>
+    onClick={() => { if (!options.busy) options.open(open ? null : messageId) }}
+    onKeyDown={event => { if (open && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); options.open(null) } }}>
+    <GitFork size={14} aria-hidden="true" /><span>Fork from here</span></button>
 }
 
 /** The card under the reply it forks at, and the line that says what stays behind. */
@@ -67,8 +69,13 @@ function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; r
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const start = useRef<HTMLButtonElement>(null)
+  const card = useRef<HTMLElement>(null)
   const { workingCopyOptions: read, remote, projectId, sourceBranch } = options
-  useEffect(() => { start.current?.focus() }, [])
+  // Focus goes to Fork, or to the card itself while there is nothing to press, so Escape always reaches it.
+  useEffect(() => { (start.current?.disabled ? card.current : start.current)?.focus() }, [])
+  // The thread's Git status may arrive while the card is open: its worktree is offered then.
+  const sourceRepository = sourceBranch !== undefined, sourceCurrent = sourceBranch?.currentBranch ?? null
+  useEffect(() => { if (sourceRepository) setGit({ currentBranch: sourceCurrent }) }, [sourceRepository, sourceCurrent])
   useEffect(() => {
     if (sourceBranch || remote || !read) return
     let current = true
@@ -77,8 +84,10 @@ function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; r
   }, [read, remote, projectId, sourceBranch])
   const name = PROVIDER_LABELS[options.provider]
   const close = (): void => {
+    // Back to this transcript's own press: a fork and its source show the same reply under the same ID.
+    const transcript = card.current?.closest('.thread-transcript') ?? card.current?.parentElement
     options.open(null)
-    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-fork-at="${CSS.escape(messageId)}"]`)?.focus())
+    requestAnimationFrame(() => transcript?.querySelector<HTMLButtonElement>(`[data-fork-at="${CSS.escape(messageId)}"]`)?.focus())
   }
   const fork = async (): Promise<void> => {
     if (busy || !modelId) return
@@ -95,7 +104,7 @@ function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; r
   // A Claude Code fork lives where its source's session does, so it starts in the thread's own folder.
   const worktree = git && !sameFolderForks(options.provider)
   return <>
-    <section className="fork-card" aria-label="Fork from here" onKeyDown={event => {
+    <section ref={card} tabIndex={-1} className="fork-card" aria-label="Fork from here" onKeyDown={event => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       event.preventDefault(); event.stopPropagation(); close()
     }}>
