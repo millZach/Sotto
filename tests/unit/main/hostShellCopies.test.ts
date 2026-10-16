@@ -69,6 +69,10 @@ describe('questions asked on every change read what was published', () => {
       push!({ ...state, clientUpdates: [{ ...update, state: 'updated' }] })
       shell.mockClear()
       expect(router.clientLineRunning(LOCAL)).toBe(false)
+      // A host that is not connected keeps what it last said, stale: its line is not counted as running.
+      push!({ ...state, host: { ...state.host, connected: false }, clientUpdates: [{ ...update, state: 'queued' }], clientUpdateRun: { total: 1, done: 0 } })
+      shell.mockClear()
+      expect(router.clientLineRunning(LOCAL)).toBe(false)
       expect(shell).not.toHaveBeenCalled()
     } finally { router.dispose() }
   })

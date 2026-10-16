@@ -44,3 +44,31 @@ it('begins a host update that waited for its client update line once the router 
     expect(operations.map(operation => operation.op)).toEqual(['update-fetch'])
   } finally { updates.dispose(); router.dispose() }
 })
+
+it('does not hold a host update for the stale line of a host that is not connected', () => {
+  const state = emptyDesktopState(HOST)
+  state.host.connected = true; state.connection = 'connected'
+  let push: ((state: AgentState) => void) | undefined
+  let available = true
+  const connection: DesktopHostConnection = { hostId: HOST, name: 'forge', kind: 'local', detail: () => null, preview: () => null, available: () => available,
+    service: { shell: () => state, subscribe: listener => { push = listener; return () => undefined }, command: async () => state } }
+  const router = new DesktopHostRouter(emptyDesktopState)
+  router.add(connection)
+  router.subscribe(() => undefined)
+  const operations: SshHostUpdateOperation[] = []
+  const updates = new HostUpdates({ version: '0.1.24', releasesUrl: 'https://releases.example/download', threads: routerBusyThreads(router),
+    clients: { updating: hostId => router.clientLineRunning(hostId) },
+    hosts: { candidates: () => [{ id: SAVED, name: 'forge', hostId: HOST, version: '0.1.22', owned: true, installPath: '/opt/sotto', dataDirectory: '/var/sotto' }],
+      run: async (_id, operation) => { operations.push(operation); return new Promise<SshHostUpdateResult>(() => undefined) },
+      restart: async () => new Promise<SshHostUpdateResult>(() => undefined), subscribe: () => () => undefined } })
+  try {
+    // forge drops with Codex still queued; what it last said stays, stale.
+    available = false
+    push!({ ...state, clientUpdates: [codex('queued')], clientUpdateRun: { total: 1, done: 0 } })
+    expect(router.clientLineRunning(HOST)).toBe(false)
+    void updates.command(SAVED, 'update')
+    expect(updates.state()).toMatchObject([{ phase: 'updating', step: 'download' }])
+    expect(updates.state()[0]!.clientsUpdating).toBeUndefined()
+    expect(operations.map(operation => operation.op)).toEqual(['update-fetch'])
+  } finally { updates.dispose(); router.dispose() }
+})

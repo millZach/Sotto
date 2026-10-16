@@ -433,9 +433,11 @@ export class DesktopHostRouter {
   /**
    * Whether a host's client update line is running, as the router last published it: a client waits in it or is
    * updating. A host update asks this on every change, and holds its restart until the line is empty (ADR-0077 decision 2).
+   * A host that is not connected has no line running: what it last said is stale, and the window reads it so too.
    */
   clientLineRunning(hostId: string): boolean {
     const entry = this.lastPublished().host.clientHosts?.find(item => item.hostId === hostId)
+    if (!entry?.connected) return false
     return entry?.clientUpdateRun !== undefined || entry?.clientUpdates?.some(update => update.state === 'queued' || update.state === 'updating') === true
   }
   /** What the router last published, read in place; afresh before anything is published. */
