@@ -5,7 +5,7 @@ import { parsePublicProviderEntityId } from '../../shared/agents'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts } from '../../shared/watcherHost'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
-import { agentCommandSchema, defaultNewThreadModelId, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { agentCommandSchema, defaultNewThreadModelId, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientAgentState, hostEntityKey, mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
@@ -175,6 +175,8 @@ export class DesktopHostRouter {
   private notice: RouterNotice | undefined
   /** The visible notice, updated only when a snapshot actually reaches subscribers. */
   private publishedNotice: RouterNotice | undefined
+  /** The state last handed to subscribers, for a question asked on every change rather than at a command. */
+  private published: AgentState | undefined
   /** Hosts whose threads read Reconnecting: kept on the page while their host restarts for an update (ADR-0040). */
   private readonly reconnecting = new Set<string>()
   /** Provider identity is immutable for a thread; classify its gated details when its shell arrives. */
@@ -415,6 +417,14 @@ export class DesktopHostRouter {
   }
   /** Every host's shell read afresh, for a command's reply and any caller that must see the state as it is now. */
   shell(): AgentState { return this.build(connection => connection.service.shell()) }
+  /**
+   * One host's threads as the router last published them. The host-update and start-at-boot questions ask this on every
+   * change; reading every host's shell afresh for it copied the whole state twice per waiting host per update. Before
+   * anything is published it reads afresh.
+   */
+  publishedThreads(hostId: string): readonly AgentThread[] {
+    return (this.published ?? this.shell()).host.threads.filter(thread => thread.hostId === hostId)
+  }
   private build(read: (connection: DesktopHostConnection) => AgentState): AgentState {
     this.settleAnswerNotice()
     const entries = [...this.hosts.values()].map(({ connection }) => {
@@ -935,6 +945,7 @@ export class DesktopHostRouter {
   private emit(broadcast?: { hostId: string; state: AgentState }): void {
     if (this.listeners.size) {
       const state = this.build(connection => connection.hostId === broadcast?.hostId ? broadcast.state : connection.service.shell())
+      this.published = state
       for (const listener of this.listeners) listener(state)
     } else this.settleAnswerNotice()
     this.publishedNotice = this.notice
