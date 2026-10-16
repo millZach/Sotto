@@ -934,7 +934,7 @@ export class AgentControl {
     }
     return this.watcherMessageDisplay?.project(this.state.host.hostId, thread.id, thread.messages) ?? thread.messages
   }
-  /** How a continued thread's first message is shown (ADR-0088); set only while the Owl list turns continuing on. */
+  /** How a continued thread's first message is shown (ADR-0089); set only while the Owl list turns continuing on. */
   private continuationDisplay: ((thread: AgentThread) => readonly AgentMessage[]) | undefined
   /** Shows a continued thread's handover beside the user's words in every detail read from now on. Returns the unhook. */
   useContinuationDisplay(display: (thread: AgentThread) => readonly AgentMessage[]): () => void {

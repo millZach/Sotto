@@ -57,7 +57,7 @@ export function clientAgentState(state: AgentState): AgentState {
   return { ...mapped, hostId,
     host: { ...mapped.host, models,
       projects: mapped.host.projects.map(project => ({ ...project, id: hostEntityKey(project.hostId ?? hostId, project.id) })),
-      // The thread that delegated to this one (ADR-0081), and the threads a continuation links (ADR-0088), are named as the
+      // The thread that delegated to this one (ADR-0081), and the threads a continuation links (ADR-0089), are named as the
       // window names threads, so their links find them.
       threads: threads.map(thread => {
         const own = thread.hostId ?? hostId
@@ -69,7 +69,7 @@ export function clientAgentState(state: AgentState): AgentState {
 }
 
 /**
- * A continuation's links (ADR-0088) as the window names threads. Each record's links are keyed once and the copy reused
+ * A continuation's links (ADR-0089) as the window names threads. Each record's links are keyed once and the copy reused
  * while the record holds the same links, so a broadcast copies none of them and the window's memoised notes stay put.
  */
 const keyedLinkCopies = new WeakMap<object, { readonly hostId: string; readonly keyed: unknown }>()

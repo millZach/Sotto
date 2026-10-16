@@ -17,7 +17,7 @@ import { continueChoiceFor, continuedSince, continueModels, continueStore, lastL
 import './continueThread.css'
 
 /**
- * Continuing a thread on another provider (ADR-0088, Zach's pick B of the continue prototype, in place). Nothing here
+ * Continuing a thread on another provider (ADR-0089, Zach's pick B of the continue prototype, in place). Nothing here
  * opens a dialog: the error offers the providers, the composer becomes "Continue on Codex" under a strip that says
  * where the new thread works and what the handover carries, and each thread links to the other in its own history.
  */

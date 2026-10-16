@@ -9,7 +9,7 @@ import type { Handover } from './handover'
 import { handoverCounts, handoverPrefix, handoverPrefixProof, splitHandover, type HandoverSplitProof } from './watcherHandover'
 
 /**
- * Continuing a thread on another provider (ADR-0088, #1027). Sotto never moves a started thread between providers
+ * Continuing a thread on another provider (ADR-0089, #1027). Sotto never moves a started thread between providers
  * (ADR-0002); it makes a new **continued thread** with its own Sotto thread ID, in the same project and, by default, the
  * same folder, on the provider and model the user chose, and keeps the source's title. Its first message is the
  * handover of the source (E3's, `handover.ts`) ahead of the user's own words, as one message, so no turn is spent on an

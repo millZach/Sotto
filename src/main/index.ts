@@ -847,7 +847,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   quitHandles.pullRequestTools = pullRequestTools
   // Let a thread delegate work to threads it starts (ADR-0081): an Owl feature, so stable offers no server and keeps its records.
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
-  // Continue a thread on another provider (ADR-0088): an Owl feature, so stable builds no service and registers no bridge.
+  // Continue a thread on another provider (ADR-0089): an Owl feature, so stable builds no service and registers no bridge.
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
   const delegationTools = delegationService ? new DelegationToolServer(delegationService) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools

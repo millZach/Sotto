@@ -7,7 +7,7 @@ import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from './newThreadDefau
 import { isThreadArchived, isThreadTurnRunning } from './threadActivity'
 
 /**
- * Continuing a thread on another provider (ADR-0088, #1027): a new **continued thread** with its own Sotto thread ID, in
+ * Continuing a thread on another provider (ADR-0089, #1027): a new **continued thread** with its own Sotto thread ID, in
  * the same project and folder, whose first message carries a handover of the thread it continues ahead of the user's own
  * words, so no turn is spent on an acknowledgement. Each thread links to the other. Only this computer's threads continue
  * for now; another machine arrives with work moving between machines (ADR-0082).

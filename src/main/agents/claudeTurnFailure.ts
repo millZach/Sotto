@@ -19,7 +19,7 @@ const SENTENCES: ReadonlyMap<Exclude<Reason, 'usage-limit'>, string> = new Map([
   ['model', 'Claude Code could not use this thread’s model, so this turn stopped. Nothing in the thread was lost. Choose another model from the model chip, then send again.'],
   ['too-long', 'This thread’s conversation is too long for its model, so this turn stopped. Nothing in the thread was lost. Compact the thread or choose a model with more context, then send again.'],
   ['step-limit', 'Claude stopped this turn after the most steps it takes in one turn. What it did so far is kept. Send a message to let it carry on.'],
-  // Sotto's own sentence, which the window reads to offer continuing on another provider (ADR-0088).
+  // Sotto's own sentence, which the window reads to offer continuing on another provider (ADR-0089).
   ['spending-limit', CLAUDE_SPENDING_LIMIT_SENTENCE],
 ])
 

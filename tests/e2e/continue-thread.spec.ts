@@ -13,7 +13,7 @@ import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './supp
 import { resizeContentWindow } from './support/sottoWindow'
 
 /**
- * Continuing a thread on another provider on the built app (ADR-0088, #1027; Zach's pick B, in place), over the fake
+ * Continuing a thread on another provider on the built app (ADR-0089, #1027; Zach's pick B, in place), over the fake
  * Claude Code and Codex clients the integration tests use: a Claude Code thread stops at its plan's usage limit, its
  * error offers Codex, the composer becomes "Continue on Codex" under a strip, and the first message starts a Codex thread
  * whose first message is the handover ahead of the user's words. Each thread links to the other; the source stays

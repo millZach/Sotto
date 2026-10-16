@@ -58,7 +58,7 @@ export interface AgentRuntimeOptions {
   streamingPublishCost?: boolean
   /** The Owl list's answer for delegation between threads (ADR-0081), read once by the process owner. Absent fails closed. */
   delegationEnabled?: boolean
-  /** The Owl list's answer for continuing a thread on another provider (ADR-0088), read once by the process owner. Absent fails closed. */
+  /** The Owl list's answer for continuing a thread on another provider (ADR-0089), read once by the process owner. Absent fails closed. */
   continueEnabled?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
@@ -207,7 +207,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       limit: () => options.settings().watcherInFlightLimit, otherStartsInFlight: () => watcher?.startsInFlight() ?? 0,
       tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId) })
   }
-  // Continuing a thread on another provider (ADR-0088): the desktop's own threads only, so a headless host builds none.
+  // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
   const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
     ? new ContinueService({ control: agentControl, host: agentHost }) : undefined
   if (watcher) {

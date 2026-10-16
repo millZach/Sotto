@@ -5,7 +5,7 @@ import type { AgentModel } from '../../../src/shared/agents'
 import { HANDOVER_LEAD } from '../../../src/shared/handover'
 import { CLAUDE_SPENDING_LIMIT_SENTENCE, claudeUsageLimitSentence, limitStopOf } from '../../../src/shared/limitStops'
 
-/** What the window and main both say about continuing a thread on another provider (ADR-0088). */
+/** What the window and main both say about continuing a thread on another provider (ADR-0089). */
 const thread = (patch: Partial<AgentThread> = {}): AgentThread => ({ id: 'source', projectId: 'project', title: 'WAV preview stall', modelId: 'claude:opus',
   providerId: 'claude', status: 'idle', requests: [], messages: [{ id: 'one', role: 'user', text: 'Fix it.', createdAt: '2026-10-16T10:00:00.000Z' }], ...patch })
 const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true }

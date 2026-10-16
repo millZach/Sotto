@@ -9,7 +9,7 @@ export interface ContinueCalls {
 }
 
 /**
- * The main window's bridge for continuing a thread on another provider (ADR-0088). The Owl list's startup answer
+ * The main window's bridge for continuing a thread on another provider (ADR-0089). The Owl list's startup answer
  * decides whether the handlers exist: stable registers nothing, and no renderer can turn it on. Each answer is checked
  * against its schema on the way out, as every bridge's is.
  */

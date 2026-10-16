@@ -331,7 +331,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return this.handoverOf(threadId, shown)
   }
   /**
-   * A handover of an ordinary thread for a thread that continues it on another provider (ADR-0088), read from Sotto's own
+   * A handover of an ordinary thread for a thread that continues it on another provider (ADR-0089), read from Sotto's own
    * record (ADR-0016). A thread that itself continued another carries its first message's words without the handover it
    * began with. Undefined when the record cannot be read; with Keep local history off it says what it holds.
    */
@@ -372,7 +372,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.dirty = true; await this.flush(); this.publish()
   }
   /**
-   * Records the thread this one continues on another provider (ADR-0088), on its own record, before its first message
+   * Records the thread this one continues on another provider (ADR-0089), on its own record, before its first message
    * goes, so the handover that message carries is told apart from the user's words from its first echo. The continued
    * thread keeps the source's title: one the user typed stays theirs, and any other is kept as Sotto's, so naming from
    * the first message, which begins with the handover, never renames it. Set again only by a retry of the same continuation.
@@ -387,7 +387,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     try { await this.flush() } catch (error) { Object.assign(thread, previous); if (previous.titledFromFirstMessage === undefined) delete thread.titledFromFirstMessage; throw error }
     this.publish()
   }
-  /** Records which message carried a continued thread's handover, once its send named it (ADR-0088). */
+  /** Records which message carried a continued thread's handover, once its send named it (ADR-0089). */
   async noteContinuedMessage(threadId: string, messageId: string): Promise<void> {
     await this.initialize(); const thread = this.thread(threadId)
     const handover = thread.continuedFrom?.handover
@@ -398,7 +398,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     try { await this.flush() } catch (error) { thread.continuedFrom = previous; throw error }
     this.publish()
   }
-  /** Records a thread that continues this one (ADR-0088), newest last, on this thread's own record. */
+  /** Records a thread that continues this one (ADR-0089), newest last, on this thread's own record. */
   async addContinuedIn(threadId: string, link: ThreadContinuedIn): Promise<void> {
     await this.initialize(); const thread = this.thread(threadId)
     const previous = thread.continuedIn
@@ -2592,7 +2592,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         // The Git action and the linked pull requests are Sotto's record, not the provider's: a provider update keeps them.
         ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
         ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
-        // The thread that delegated to this one is Sotto's record too (ADR-0081), and so are a continuation's links (ADR-0088).
+        // The thread that delegated to this one is Sotto's record too (ADR-0081), and so are a continuation's links (ADR-0089).
         ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
         ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
         ...(old?.continuedIn ? { continuedIn: old.continuedIn } : {}),
@@ -3451,7 +3451,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (command.type === 'send') markSendStage(command.commandId, 'prepared')
       watcherGuard?.()
       const result = await (watcherGuard && this.inner.executeFromWatcher ? this.inner.executeFromWatcher(dispatched, watcherGuard) : this.inner.execute(dispatched))
-      // A continued thread's first message begins with its handover; its branch is named from the user's words (ADR-0088).
+      // A continued thread's first message begins with its handover; its branch is named from the user's words (ADR-0089).
       if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, continuedPromptWords(thread, command.text))
       if (command.type === 'configure-thread') {
         const [confirmed, snapshot] = confirmedSettingsSnapshot(result)

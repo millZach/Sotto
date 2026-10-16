@@ -14,7 +14,7 @@ import type { WatcherHandoverCalls, WatcherRoom } from './watcherRoom'
  * the user's words in the same message; the conversation then shows it as Sotto's handover, context rather than a request.
  */
 
-/** What a handover carried and left out, in words; shared with a continued thread's handover (ADR-0088). */
+/** What a handover carried and left out, in words; shared with a continued thread's handover (ADR-0089). */
 export { handoverLedger }
 
 const HISTORY_OFF = 'Keep local history is off, so it holds only what Sotto kept since it last started.'
@@ -115,7 +115,7 @@ export function WatcherHandoverOffer({ room, offer, composerId }: {
 }
 
 /**
- * The thread a continued thread's handover came from (ADR-0088), which its card names; absent in Watcher's conversation,
+ * The thread a continued thread's handover came from (ADR-0089), which its card names; absent in Watcher's conversation,
  * whose handover is always of the last Watcher.
  */
 export const HandoverFromContext = createContext<{ readonly title: string } | null>(null)

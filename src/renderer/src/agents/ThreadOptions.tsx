@@ -230,7 +230,7 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
 }
 
 /**
- * Continuing this started thread on another provider (ADR-0088): the models a new thread may start on, the providers that
+ * Continuing this started thread on another provider (ADR-0089): the models a new thread may start on, the providers that
  * cannot take one now, why the thread itself cannot be continued now if it cannot, and what picking one does.
  */
 export interface ThreadContinueOffer {
@@ -293,7 +293,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const settle = room?.settle
   const others = open === null ? [] : state.host.models.filter(model => model.ready && canCreateWith(state, model)
     && watcherProviderOf(model) !== null && watcherProviderOf(model) !== thread.providerId)
-  // A started thread keeps its provider; another provider's model is a new thread that continues this one (ADR-0088).
+  // A started thread keeps its provider; another provider's model is a new thread that continues this one (ADR-0089).
   const continuing = !watcher && locked && continueOffer !== undefined ? continueOffer : undefined
   const continuations = continuing?.refusal === null ? continuing.models : []
   const continueUnavailable: readonly UnavailablePickerProvider[] = continuing === undefined ? []

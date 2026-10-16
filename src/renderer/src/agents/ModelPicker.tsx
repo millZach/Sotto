@@ -39,7 +39,7 @@ export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
 /** A provider the menu lists without models, and why: one the user turned on that cannot take the choice now. */
 export interface UnavailablePickerProvider { readonly name: string; readonly providerId?: ProviderId | undefined; readonly reason: string }
 /**
- * Providers whose models start a new thread rather than change this one (ADR-0088): the heading over their models and
+ * Providers whose models start a new thread rather than change this one (ADR-0089): the heading over their models and
  * the note under them, in place of the menu's own.
  */
 export interface PickerContinuation { readonly providers: ReadonlySet<string>; readonly heading: (provider: string) => string; readonly note: string }

@@ -17,7 +17,7 @@ import { ipcRegistry } from '../../fixtures/ipcHarness'
 import { testCredentials } from '../../fixtures/testCredentials'
 
 /**
- * A continued thread's first message as every copy shows it (ADR-0088): the handover split from the user's words by the
+ * A continued thread's first message as every copy shows it (ADR-0089): the handover split from the user's words by the
  * length and digest the thread's record keeps, and only then. Plus the bridge and the runtime, which stable builds none of.
  */
 const counts: HandoverCounts = { total: 4, carried: 3, tooLong: 1, notCarried: 0, images: 0, files: 0, visuals: 0, toolRecords: 2, historyKept: true, answered: false }
@@ -67,7 +67,7 @@ describe('a continued thread’s first message, as shown', () => {
   })
 })
 
-describe('the window’s bridge for continuing (ADR-0088)', () => {
+describe('the window’s bridge for continuing (ADR-0089)', () => {
   it('registers nothing where stable built no service', () => {
     const { ipc, handlers, main } = ipcRegistry()
     registerContinueIpc(ipc, undefined, () => [main])()

@@ -232,7 +232,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     ? [{ id: 'settle', label: 'Settle', icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void settleThread(thread, row.project) }]
     : row.settledBy === 'thread'
       ? [{ id: 'restore', label: 'Restore', icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'restore-thread', threadId: thread.id }) }] : []
-  // Continue on another provider (ADR-0088; Owl only): the composer begins it, with the model picker open on the other providers.
+  // Continue on another provider (ADR-0089; Owl only): the composer begins it, with the model picker open on the other providers.
   const continueOn = useContinueEnabled() && !ownPane && thread.nativeSessionStarted !== false && thread.remoteHost !== true && !isThreadArchived(thread)
     && thread.kind !== 'watcher' && thread.kind !== 'watcher-history'
   const continueTargets = continueOn ? providerDefaults(state, continueModels(state, thread)) : []
@@ -281,7 +281,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} blocked={threadBusy ? 'Waiting for Sotto…' : !rowConnected ? `Reconnect ${row.provider} to answer.` : null}
         onAnswer={focusAnswerComposer} />
-      {/* A turn stopped at its limit offers the other providers to continue on (ADR-0088; Owl only). */}
+      {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
       {ownPane ? null : <ContinueNow thread={thread} state={state} onStart={focusAnswerComposer} />}
       {!isThreadClosed(thread) && !thread.remoteHost && !ownPane ? <CloudIphoneRequest threadId={thread.id} threadTitle={thread.title} onAnswer={focusAnswerComposer} /> : null}
       {/* Answers saved for questions no live card shows, such as ones the provider closed while Sotto was shut. */}
@@ -310,7 +310,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {ownPane ? null : <WatchedNote threadId={thread.id} title={thread.title} />}
         {/* What Stop also stops, or what a turn here does to the thread that delegated (ADR-0081; Owl only). */}
         {ownPane ? null : <DelegationComposerNote thread={thread} state={state} />}
-        {/* Just continued elsewhere: this thread can still be sent to (ADR-0088; Owl only). */}
+        {/* Just continued elsewhere: this thread can still be sent to (ADR-0089; Owl only). */}
         {ownPane ? null : <ContinueComposerNote thread={thread} />}
         <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
           connected={rowConnected && !closed} blocked={threadBusy} command={command} />

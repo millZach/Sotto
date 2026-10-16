@@ -26,7 +26,7 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
 /**
- * Continuing a thread on another provider in the window (ADR-0088, #1027; Zach's pick B, in place): the chips under a
+ * Continuing a thread on another provider in the window (ADR-0089, #1027; Zach's pick B, in place): the chips under a
  * usage-limit stop and the model chip begin it, the composer becomes "Continue on Codex" under a strip, and the first
  * message goes to main's bridge, which makes the new thread. Each thread links to the other. Stable shows none of it.
  */

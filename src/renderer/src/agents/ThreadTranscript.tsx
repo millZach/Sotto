@@ -267,7 +267,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   /** The delegations this turn's message rooted (ADR-0081), as cards under its reply, never folded with the work. */
   readonly delegations?: readonly DelegationView[] | undefined
   readonly briefs?: DelegatedBriefs | undefined
-  /** The threads that continue this one, made while this turn was the newest (ADR-0088), as notes under it. */
+  /** The threads that continue this one, made while this turn was the newest (ADR-0089), as notes under it. */
   readonly continuedIn?: readonly ThreadContinuedIn[] | undefined
 }): ReactNode {
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
@@ -338,7 +338,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   readonly delegations?: ReadonlyMap<string, readonly DelegationView[]> | undefined
   /** In a delegated thread, the briefs that are the delegating thread's words rather than the user's. */
   readonly briefs?: DelegatedBriefs | undefined
-  /** Links to the threads that continue this one, by the user message that began the turn each follows (ADR-0088). */
+  /** Links to the threads that continue this one, by the user message that began the turn each follows (ADR-0089). */
   readonly continuedIn?: ReadonlyMap<string, readonly ThreadContinuedIn[]> | undefined
 }): ReactNode {
   const last = messages.findLast(drawn)
@@ -515,7 +515,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const ids = new Set(delegations.received.map(view => view.briefMessageId))
     return ids.size && delegatingTitle !== undefined ? { ids, from: delegatingTitle } : undefined
   }, [delegations.received, delegatingTitle])
-  // Continuing on another provider (ADR-0088; Owl only): where this thread came from, where it went, and its handover's source.
+  // Continuing on another provider (ADR-0089; Owl only): where this thread came from, where it went, and its handover's source.
   const continueOn = useContinueEnabled() && !watcher
   const continuedIn = useShared(useMemo(() => continueOn ? continuedInByTurn(thread.continuedIn, messages) : undefined, [continueOn, thread.continuedIn, messages]))
   const threads = state.host.threads
@@ -645,7 +645,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
           : thread.earlierAvailable
             ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={loadEarlier}>Show earlier messages</Button></div>
             : null}
-        {/* Where this thread continues from, above its first message (ADR-0088; Owl only). */}
+        {/* Where this thread continues from, above its first message (ADR-0089; Owl only). */}
         {hidden === 0 && !thread.earlierAvailable ? <ContinuedFromNote thread={thread} state={state} command={command} /> : null}
         {thread.messages.length || showsActivity ? <DelegationCardProvider world={cardWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
           <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}

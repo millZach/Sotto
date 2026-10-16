@@ -1,5 +1,5 @@
 // @vitest-environment node
-// ADR-0088's proof over fake providers: a thread continues on another provider as a new thread linked to it, whose first
+// ADR-0089's proof over fake providers: a thread continues on another provider as a new thread linked to it, whose first
 // message carries the handover of the source ahead of the user's words, as one message.
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'

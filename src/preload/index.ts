@@ -339,7 +339,7 @@ export function createSottoBridge(
       read: request => invokeParsed(renderer, DELEGATIONS_READ, delegationsReadSchema, delegationsRequestSchema.parse(request)),
       onChanged: listener => subscribe(renderer, DELEGATIONS_CHANGED, delegationsChangedSchema, listener),
     }) } : {}),
-    // Continue a thread on another provider (ADR-0088): only while the Owl list turns it on, so stable's window has no such bridge.
+    // Continue a thread on another provider (ADR-0089): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(continueEnabled ? { continueThread: Object.freeze<ContinueBridge>({
       read: request => invokeParsed(renderer, CONTINUE_READ, continueReadSchema, continueReadRequestSchema.parse(request)),
       start: request => invokeParsed(renderer, CONTINUE_START, continueStartSchema, continueStartRequestSchema.parse(request)),

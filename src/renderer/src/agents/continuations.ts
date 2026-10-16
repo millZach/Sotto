@@ -8,7 +8,7 @@ import { useOwlFeature } from '../state/owlFeature'
 import { newestModelsFirst } from './ModelPicker'
 
 /**
- * Continuing a thread on another provider in the window (ADR-0088, Zach's pick B of the continue prototype, in place):
+ * Continuing a thread on another provider in the window (ADR-0089, Zach's pick B of the continue prototype, in place):
  * the usage-limit error's provider chips, or "Continue in a new thread on" in the model chip, turn the composer into
  * "Continue on Codex" with a strip above it; the first message sent from there starts the continued thread with the
  * handover ahead of it. This module holds which thread is being continued where, and the facts every part reads.

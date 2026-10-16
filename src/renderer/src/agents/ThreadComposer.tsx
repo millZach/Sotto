@@ -173,7 +173,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // one behind a direct send main is still delivering. A direct send or steer still unconfirmed holds
   // everything: retyped, it could reach the provider twice.
   const queueBlocked = threadSendInFlight(state, threadId, localUnconfirmed, true)
-  // A continuation begun here (ADR-0088): the composer writes the new thread's first message, which goes after the handover.
+  // A continuation begun here (ADR-0089): the composer writes the new thread's first message, which goes after the handover.
   const continueEnabled = useContinueEnabled()
   const begun = useContinueChoice(threadId)
   const continuing = begun !== undefined && !watcher && !answering ? begun : undefined
@@ -295,7 +295,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         // queueing and a working agent get no caption, and how a sent prompt went is told where it is shown.
         : reason !== null ? reason === placeholder ? null : <span className="thread-prompt__status">{reason}</span> : null
   const primaryLabel = answering ? 'Send answer' : queueing ? 'Queue prompt' : 'Send prompt'
-  // "Continue in a new thread on" in the model chip, for a started thread on this computer (ADR-0088; Owl only).
+  // "Continue in a new thread on" in the model chip, for a started thread on this computer (ADR-0089; Owl only).
   const continueOffer = continueEnabled && !watcher && continuing === undefined && row.thread.nativeSessionStarted !== false && row.thread.remoteHost !== true
     && !isThreadArchived(row.thread) && row.thread.kind !== 'watcher' && row.thread.kind !== 'watcher-history' ? {
       models: continueModels(state, row.thread), unavailable: unavailableProviders(state, row.thread), refusal: continueThreadRefusal(row.thread),

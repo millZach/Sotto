@@ -120,7 +120,7 @@ export function workingLabel(since: number, now: number): string {
 }
 
 /**
- * A continued thread's first message begins with the handover of the thread it continues (ADR-0088), which no row
+ * A continued thread's first message begins with the handover of the thread it continues (ADR-0089), which no row
  * shows: its excerpt is the user's words after it, or, where the excerpt was cut before they began, none at all.
  */
 function continuedExcerpt<T extends { readonly id: string; readonly text: string }>(thread: AgentThread, excerpt: T | undefined): T | undefined {
@@ -235,7 +235,7 @@ export function rowStatus(row: Pick<ThreadRow, 'thread' | 'state' | 'stateLabel'
 
 /**
  * Every thread Sotto knows, described from its own state. `continued` is the Owl answer for continuing on another provider
- * (ADR-0088): with it, a continued thread's excerpt is the user's words rather than the handover ahead of them.
+ * (ADR-0089): with it, a continued thread's excerpt is the user's words rather than the handover ahead of them.
  */
 export function describeThreads(state: AgentState, now: number, options: { readonly continued?: boolean } = {}): ThreadRow[] {
   return state.host.threads.map(thread => describe(state, thread, now, options.continued === true))

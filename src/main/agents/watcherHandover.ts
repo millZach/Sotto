@@ -18,7 +18,7 @@ export const HANDOVER_CLOSE = '[End of the handover. The user’s message to Wat
 
 /**
  * What goes ahead of the user's words: the handover, then the line that closes it. Watcher's says the user's message to
- * Watcher follows; a continued thread's says the user's message does (ADR-0088).
+ * Watcher follows; a continued thread's says the user's message does (ADR-0089).
  */
 export function handoverPrefix(text: string, close: string = HANDOVER_CLOSE): string {
   return `${text}\n\n${close}\n\n`
