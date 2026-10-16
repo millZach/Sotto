@@ -37,7 +37,7 @@
 .worker-role__field .thread-chip > span:not(.provider-mark):not(.thread-chip__pending) { flex: 1; text-align: left; }
 .worker-role__field[data-away='true'] .thread-chip { border-style: dashed; }
 .worker-role__field .thread-chip-menu__list:not(.thread-chip-menu__list--foot) { min-width: 100%; width: max-content; max-width: min(320px, calc(100vw - 24px)); }
-.worker-role__field .thread-options__caption { display: none; }
+.worker-role__field .thread-options__caption:not(:empty) { margin-top: 2px; }
 .worker-role__none { display: flex; align-items: center; min-height: 34px; padding: 0 11px; border: 1px dashed var(--tt-hairline); border-radius: 8px; color: var(--tt-text-muted); font-size: 13px; }
 p.worker-role__none { margin: 0; }
 

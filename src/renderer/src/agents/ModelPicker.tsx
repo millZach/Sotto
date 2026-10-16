@@ -36,11 +36,13 @@ export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
  * has no rail. Escape, a click outside or a choice closes the menu and returns focus to the chip; a choice
  * shows on the chip at once while the owner saves it.
  */
-export function ModelPicker({ models, modelId, disabled, onChange, note, label = OPTION_CHIP_NAMES.model }: {
+export function ModelPicker({ models, modelId, disabled, onChange, note, label = OPTION_CHIP_NAMES.model, unavailable }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
   readonly note?: string | undefined
   /** The chip's name, where a page shows more than one model control and each must say whose model a press changes. */
   readonly label?: string | undefined
+  /** Why a listed model cannot be chosen here, as Orchestrating lists Muse's: shown on its row, which is not pressable. */
+  readonly unavailable?: ((model: AgentModel) => string | undefined) | undefined
 }): ReactNode {
   // A long-context variant the catalog does not list (`opus[1m]`) shows as its base model's entry, by that name.
   const current = resolveModel(models, modelId)
@@ -116,8 +118,11 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, label =
           <button type="button" aria-label="Close model picker" title="Close model picker" onClick={() => setOpen(false)}><X size={15} aria-hidden="true" /></button>
         </header>
         <div ref={list} role="listbox" aria-label={`${selectedProvider?.name ?? ''} models`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
-          {filtered.map(model => <button type="button" role="option" key={model.id} aria-selected={model.id === currentEntryId} disabled={disabled || !model.ready}
-            onClick={() => { onChange(model.id); setOpen(false) }}><span>{model.name}{!model.ready && <small>Unavailable</small>}</span>{model.id === currentEntryId && <Check size={14} aria-hidden="true" />}</button>)}
+          {filtered.map(model => {
+            const reason = model.ready ? unavailable?.(model) : 'Unavailable'
+            return <button type="button" role="option" key={model.id} aria-selected={model.id === currentEntryId} disabled={disabled || reason !== undefined}
+              onClick={() => { onChange(model.id); setOpen(false) }}><span>{model.name}{reason !== undefined && <small>{reason}</small>}</span>{model.id === currentEntryId && <Check size={14} aria-hidden="true" />}</button>
+          })}
           {!filtered.length && <p className="model-picker__empty">No matching models.</p>}
         </div>
         {note ? <p className="model-picker__note">{note}</p> : null}

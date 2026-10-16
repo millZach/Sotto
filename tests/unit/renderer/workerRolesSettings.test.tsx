@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '../../..
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { WorkerRolesSettings } from '../../../src/renderer/src/features/settings/WorkerRolesSettings'
 import { agentContextFixture } from '../../fixtures/agentContext'
+import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn() }))
 
@@ -17,18 +18,19 @@ const model = (provider: 'claude' | 'codex', native: string, name: string, effor
   id: publicProviderEntityId(provider, 'model', native), name, provider: provider === 'claude' ? 'Claude Code' : 'Codex', providerId: provider, ready,
   reasoningEfforts: efforts, ...(efforts.length ? { defaultReasoningEffort: 'medium' } : {}), runtimeModes: [...MODES] })
 
-function state(claudeReady = true): AgentState {
+function state(claudeReady = true, muse = false): AgentState {
   return threadsStateFixture({ cloneOverrides: false,
     configuration: { ...defaultAgentConfiguration(), enabledProviders: ['claude', 'codex'] },
     host: { connected: true, name: 'Agents', version: '', capabilities: caps, projects: [], threads: [],
       providers: [{ id: 'claude', connection: claudeReady ? 'connected' : 'disconnected', name: 'Claude Code', version: '', capabilities: caps },
         { id: 'codex', connection: 'connected', name: 'Codex', version: '', capabilities: caps }],
       models: [model('claude', 'opus', 'Opus 5.5', FIVE, claudeReady), model('claude', 'sonnet', 'Sonnet 5.5', FIVE, claudeReady), model('claude', 'haiku', 'Haiku 5.5', [], claudeReady),
-        model('codex', 'gpt-6.1-sol', 'GPT-6.1 Sol', FIVE), model('codex', 'gpt-6-astra', 'GPT-6 Astra', FIVE), model('codex', 'gpt-6-luna', 'GPT-6 Luna', ['low', 'medium', 'high'])] },
+        model('codex', 'gpt-6.1-sol', 'GPT-6.1 Sol', FIVE), model('codex', 'gpt-6-astra', 'GPT-6 Astra', FIVE), model('codex', 'gpt-6-luna', 'GPT-6 Luna', ['low', 'medium', 'high']),
+        ...muse ? [{ ...model('codex', 'muse-wonder-full-1.0', 'Muse Wonder Full', FIVE), id: publicProviderEntityId('muse', 'model', 'muse-wonder-full-1.0'), provider: 'Muse', providerId: 'muse' as const }] : []] },
     topLevel: { activeThreadId: null, activeProjectId: null } })
 }
-function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true) {
-  const agents = state(claudeReady)
+function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true, muse = false) {
+  const agents = state(claudeReady, muse)
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(agents, vi.fn(async () => agents)))
   const update = vi.fn<(patch: SettingsPatch) => Promise<boolean>>(async () => true)
   const open = vi.fn()
@@ -36,7 +38,7 @@ function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true) 
   return { update, open }
 }
 const card = (name: string) => screen.getByRole('article', { name })
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); firstMessage.clear() })
 
 describe('Settings, under Watcher: worker roles (#1041)', () => {
   it('shows each role on its default with its defaults in order', () => {
@@ -89,12 +91,29 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
     expect(open).toHaveBeenCalledWith('settings-agents')
   })
 
-  it('offers Orchestrating only the providers Watcher runs on, beside a drawing of its composer', () => {
-    show()
+  it('lists every model for Orchestrating, those Watcher cannot run on yet not choosable, beside a drawing of its composer', () => {
+    show({}, true, true)
     const orchestrating = card('Orchestrating')
+    fireEvent.click(within(orchestrating).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Codex' }))
+    expect(screen.getByRole('option', { name: 'GPT-6.1 Sol' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('tab', { name: 'Muse' }))
+    expect(screen.getByRole('option', { name: /^Muse Wonder Full/u })).toBeDisabled()
+    expect(screen.getByRole('option', { name: /^Muse Wonder Full/u })).toHaveTextContent('Watcher can’t run on Muse yet')
+    fireEvent.click(screen.getByRole('button', { name: 'Close model picker' }))
     expect(within(orchestrating).getByRole('combobox', { name: /^Choose Watcher’s model\. Now Opus 5\.5/u })).toBeInTheDocument()
     expect(within(orchestrating).getByText('Permissions, Watcher’s own')).toBeInTheDocument()
     expect(orchestrating.querySelector('.worker-role__composer')).toHaveAttribute('aria-hidden', 'true')
     expect(within(orchestrating).getByText(/Watcher’s composer shows these three\. A change in either place changes both\./u)).toBeInTheDocument()
+  })
+
+  it('lets a change to Orchestrating replace the first message’s own pick before Watcher exists', () => {
+    firstMessage.update({ modelId: publicProviderEntityId('codex', 'model', 'gpt-6-astra'), effort: 'xhigh' })
+    const { update } = show()
+    fireEvent.click(within(card('Orchestrating')).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Codex' }))
+    fireEvent.click(screen.getByRole('option', { name: 'GPT-6.1 Sol' }))
+    expect(update).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: publicProviderEntityId('codex', 'model', 'gpt-6.1-sol'), reasoningEffort: 'medium' } } })
+    expect(firstMessage.get()).toMatchObject({ modelId: '', effort: null })
   })
 })

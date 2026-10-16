@@ -30,11 +30,11 @@ const model = (provider: 'claude' | 'codex', native: string, name: string): Agen
 const OPUS = publicProviderEntityId('claude', 'model', 'opus'), SONNET = publicProviderEntityId('claude', 'model', 'sonnet'), SOL = publicProviderEntityId('codex', 'model', 'gpt-6.1-sol')
 const identity: WatcherIdentity = { target: { hostId: HOST, threadId: 'watcher' }, projectId: 'workshop', provider: 'claude', creationOperationId: '7a4c2e1f-0b3d-4e5f-8a9b-1c2d3e4f5a6b', createdAt: at }
 
-function agentState(): AgentState {
+function agentState(watcherModel = OPUS): AgentState {
   const state = threadsStateFixture({ cloneOverrides: false, configuration: { ...defaultAgentConfiguration(), enabledProviders: ['claude', 'codex'] },
     host: { connected: true, name: 'Agents', version: '', capabilities: caps, projects: [],
       models: [model('claude', 'opus', 'Opus 5.5'), model('claude', 'sonnet', 'Sonnet 5.5'), model('codex', 'gpt-6.1-sol', 'GPT-6.1 Sol')],
-      threads: [{ id: 'watcher', kind: 'watcher', title: 'Watcher', projectId: 'workshop', modelId: OPUS, reasoningEffort: 'high', runtimeMode: 'approval-required', providerId: 'claude', status: 'idle', requests: [], messages: [] }] },
+      threads: [{ id: 'watcher', kind: 'watcher', title: 'Watcher', projectId: 'workshop', modelId: watcherModel, reasoningEffort: 'high', runtimeMode: 'approval-required', providerId: 'claude', status: 'idle', requests: [], messages: [] }] },
     topLevel: { activeThreadId: null, activeProjectId: null } })
   state.hostId = HOST
   return state
@@ -42,8 +42,8 @@ function agentState(): AgentState {
 const room: WatcherRoomState = { current: identity, currentOptions: { modelId: OPUS, reasoningEffort: 'high', runtimeMode: 'approval-required', status: 'idle', connected: true },
   history: [], runtimeMode: 'approval-required', requests: [], watchedThreads: [], inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at }
 
-function show() {
-  const state = agentState()
+function show(watcherModel = OPUS) {
+  const state = agentState(watcherModel)
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, command))
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'settings', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
@@ -69,7 +69,8 @@ describe('Orchestrating while Watcher runs: one choice in two places (#1041)', (
     expect(within(orchestrating()).getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveTextContent('Ask for approval')
     fireEvent.click(chip)
     fireEvent.click(screen.getByRole('option', { name: 'Sonnet 5.5' }))
-    await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'configure-thread', threadId: 'watcher', modelId: SONNET })))
+    // The model and the effort go to Watcher in one change, as the role saves them.
+    await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'configure-thread', threadId: 'watcher', modelId: SONNET, reasoningEffort: 'medium' })))
     // Saved for the next Watcher too.
     expect(update).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: SONNET, reasoningEffort: 'medium' } } })
   })
@@ -82,5 +83,15 @@ describe('Orchestrating while Watcher runs: one choice in two places (#1041)', (
     await waitFor(() => expect(bridge.open).toHaveBeenCalledWith({ provider: 'codex', modelId: SOL, reasoningEffort: 'medium' }))
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'configure-thread' }))
     expect(update).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: SOL, reasoningEffort: 'medium' } } })
+  })
+
+  it('puts a running Watcher back on Orchestrating’s default with Reset all', async () => {
+    const { command, update } = show(SONNET)
+    const resetAll = await screen.findByRole('button', { name: 'Reset all roles to their defaults. 1 role is your choice' })
+    expect(within(orchestrating()).getByText('Your choice')).toBeInTheDocument()
+    fireEvent.click(resetAll)
+    expect(update).toHaveBeenLastCalledWith({ workerRoles: {} })
+    await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'configure-thread', threadId: 'watcher', modelId: OPUS, reasoningEffort: 'high' })))
+    expect(screen.getByText('The role you chose is back on its default.')).toBeInTheDocument()
   })
 })

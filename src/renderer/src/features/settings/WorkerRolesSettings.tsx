@@ -1,11 +1,11 @@
 import React, { useId, useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { ArrowLeftRight, BookOpen, FileSearch, Hammer, MousePointer2, Palette, RotateCcw } from 'lucide-react'
 import { enabledThreadProviders, hostForThread, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread, type ProviderId } from '../../../../shared/agents'
-import { resolveModel } from '../../../../shared/modelCatalog'
+import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { RUNTIME_MODE_ORDER } from '../../../../shared/newThreadDefaults'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
-import { capRuntimeMode, defaultModel, fitEffort, fitRuntimeMode, isRoleDefault, roleInForce, WORKER_ROLES,
+import { capRuntimeMode, defaultModel, fitEffort, fitRuntimeMode, roleInForce, withRoleRow, WORKER_ROLES,
   type RoleInForce, type WorkerRoleChoice, type WorkerRoleChoices, type WorkerRoleId } from '../../../../shared/workerRoles'
 import { useOptionalAgents, type AgentConnection } from '../../agents/AgentContext'
 import { EffortPicker, effortLabel } from '../../agents/EffortPicker'
@@ -19,6 +19,7 @@ import { WatcherOwl } from '../../watcher/WatcherOwl'
 import { WatcherPermissionChip } from '../../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../../watcher/watcherRoom'
 import { watcherProviderOf } from '../../watcher/watcherProviders'
+import { firstMessage } from '../../watcher/watcherFirstMessage'
 import './workerRoles.css'
 
 type RoleIcon = ComponentType<{ size?: number; strokeWidth?: number; 'aria-hidden'?: 'true' }>
@@ -32,6 +33,11 @@ type Section = 'settings-agents' | 'settings-providers'
 /** What a row shows: the user's choice when they made one, the default in force otherwise. */
 interface Shown { readonly modelId: string; readonly model: AgentModel | undefined; readonly reasoningEffort: string | null; readonly runtimeMode: AgentRuntimeMode | undefined }
 type RowStatus = 'chosen' | 'away' | 'moved' | 'default' | 'none'
+/** A model and effort, as Watcher runs on them and as Orchestrating saves them. */
+interface WatcherChoice { readonly modelId: string; readonly reasoningEffort: string | null }
+/** What a line under the heading says was done, and what Undo puts back: the saved rows, and Watcher as it was. */
+interface Said { readonly text: string; readonly undo: WorkerRoleChoices; readonly watcher: WatcherChoice | null }
+const WATCHER_NOT_STARTED = 'Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.'
 
 const possessive = (name: string): string => `${name}’s`
 const list = (items: readonly string[]): string => new Intl.ListFormat('en', { type: 'conjunction' }).format(items)
@@ -81,9 +87,35 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
   const headingId = useId()
   // This computer's catalog: the roles, like the new-thread defaults, are this computer's own (ADR-0074).
   const catalog = useMemo(() => newThreadDefaultsCatalog(state), [state])
-  const watcherModels = useMemo(() => catalog.filter(model => watcherProviderOf(model) !== null), [catalog])
   const choices = settings.workerRoles
-  const [said, setSaid] = useState<{ readonly text: string; readonly undo: WorkerRoleChoices } | null>(null)
+  const [said, setSaid] = useState<Said | null>(null)
+  const room = useWatcherRoom()
+  const watcher: AgentThread | undefined = room?.currentThreadId ? state.host.threads.find(thread => thread.id === room.currentThreadId) : undefined
+  const [watcherRefusal, setWatcherRefusal] = useState<string | null>(null)
+  const watcherDrawn = watcher ? settingValues(state, watcher) : null
+  // What the running Watcher is on now, as its thread reports it.
+  const watcherNow: WatcherChoice | null = watcherDrawn ? { modelId: watcherDrawn.model, reasoningEffort: watcherDrawn.effort || null } : null
+  /**
+   * Orchestrating is Watcher's own model and effort, so a change to it changes the running Watcher the way its
+   * composer's chips do: on its provider, a settings change Watcher's provider confirms; on another, a new Watcher, which
+   * offers the last one's handover (ADR-0073). Before Watcher exists, the first message's own pick gives way to the role.
+   */
+  const applyToWatcher = async (next: WatcherChoice): Promise<void> => {
+    setWatcherRefusal(null)
+    if (!watcher) { if (firstMessage.get().phase === 'writing') firstMessage.update({ modelId: '', effort: null }); return }
+    const picked = resolveModel(catalog, next.modelId)
+    const provider = picked ? watcherProviderOf(picked) : null
+    if (provider !== null && provider !== watcher.providerId) {
+      if (!room?.open) return
+      try { setWatcherRefusal(room.settle(await room.open({ provider, modelId: next.modelId, ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}) }))) }
+      catch { setWatcherRefusal(WATCHER_NOT_STARTED) }
+      return
+    }
+    const now = settingValues(state, watcher)
+    // A model on Watcher's provider takes the effort in the same change, so Reset brings back the role's effort too.
+    if (next.modelId !== now.model) pendingSettingsStore.press(watcher.id, 'model', next.modelId, { modelId: next.modelId, ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}) }, command, now, now.model)
+    else if (next.reasoningEffort && next.reasoningEffort !== now.effort) pendingSettingsStore.press(watcher.id, 'effort', next.reasoningEffort, { reasoningEffort: next.reasoningEffort }, command, now, now.effort)
+  }
   const local = state.connections?.find(connection => connection.kind === 'local')?.hostId
   const host = local === undefined ? state.host : hostForThread(state.host, { hostId: local })
   // Set up: turned on, or turned off by the user since (it is still installed and signed in), or trying to connect.
@@ -94,7 +126,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
   const ceiling = state.configuration.newThreadRuntimeMode ?? 'approval-required'
   const reads = WORKER_ROLES.map(role => roleInForce(role.id, choices, catalog))
   const save = (next: WorkerRoleChoices, words?: string): void => {
-    setSaid(words === undefined ? null : { text: words, undo: choices })
+    setSaid(words === undefined ? null : { text: words, undo: choices, watcher: watcherNow })
     void onUpdateSettings({ workerRoles: next })
   }
   const setRow = (read: RoleInForce, patch: { readonly modelId?: string; readonly reasoningEffort?: string | null; readonly runtimeMode?: AgentRuntimeMode }): void => {
@@ -105,18 +137,32 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
     const reasoningEffort = patch.reasoningEffort !== undefined ? patch.reasoningEffort : patch.modelId ? fitEffort(shown.reasoningEffort, model) : shown.reasoningEffort
     const runtimeMode = patch.runtimeMode ?? (patch.modelId ? fitRuntimeMode(shown.runtimeMode ?? read.role.permission, model) ?? shown.runtimeMode : shown.runtimeMode)
     const row: WorkerRoleChoice = read.role.id === 'orchestrating' || runtimeMode === undefined ? { modelId, reasoningEffort } : { modelId, reasoningEffort, runtimeMode }
-    const next: WorkerRoleChoices = { ...choices }
-    if (isRoleDefault(read.role.id, row, catalog)) delete next[read.role.id]
-    else next[read.role.id] = row
-    save(next)
+    save(withRoleRow(choices, read.role.id, row, catalog))
+    if (read.role.id === 'orchestrating') void applyToWatcher({ modelId, reasoningEffort })
   }
   const reset = (read: RoleInForce): void => {
     const next: WorkerRoleChoices = { ...choices }
     delete next[read.role.id]
     const fallback = read.fallback
     save(next, fallback ? `${read.role.name} is back on its default, ${fallback.model.name}${fallback.reasoningEffort ? ` at ${effortLabel(fallback.reasoningEffort)}` : ''}.` : `${read.role.name} is back on its defaults.`)
+    if (read.role.id === 'orchestrating' && fallback) void applyToWatcher({ modelId: fallback.model.id, reasoningEffort: fallback.reasoningEffort })
   }
-  const chosen = reads.filter(read => read.choice !== undefined).length
+  const orchestratingDefault = reads[0]?.fallback
+  // A running Watcher off Orchestrating's default is the user's choice, whether it was made here or in its composer.
+  const watcherChosen = watcherNow !== null && (!orchestratingDefault || watcherNow.modelId !== orchestratingDefault.model.id
+    || watcherNow.reasoningEffort !== orchestratingDefault.reasoningEffort)
+  const chosen = reads.filter(read => read.choice !== undefined || read.role.id === 'orchestrating' && watcherChosen).length
+  const resetAll = (): void => {
+    save({}, chosen === 1 ? 'The role you chose is back on its default.' : `The ${chosen} roles you chose are back on their defaults.`)
+    if (orchestratingDefault && (watcherChosen || !watcher)) void applyToWatcher({ modelId: orchestratingDefault.model.id, reasoningEffort: orchestratingDefault.reasoningEffort })
+  }
+  const undo = (was: Said): void => {
+    setSaid(null)
+    void onUpdateSettings({ workerRoles: was.undo })
+    // Watcher goes back to what it ran on before; a change it already has sends nothing.
+    const before = was.watcher ?? was.undo.orchestrating
+    if (before) void applyToWatcher(before)
+  }
   const anyConnected = catalog.some(model => model.ready)
   const away = [...new Set(reads.flatMap(read => statusOf(read, providerOf) === 'moved' ? awayBefore(read, providerOf)
     : statusOf(read, providerOf) === 'away' && read.choice ? [resolveModel(catalog, read.choice.modelId)?.providerId].filter((id): id is ProviderId => id !== undefined && providerOf(id) === 'off') : []))]
@@ -127,19 +173,19 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
       <h3 id={headingId}>Worker roles</h3>
       <button type="button" className="worker-roles__reset-all tt-focusable" disabled={chosen === 0}
         aria-label={chosen === 0 ? 'Reset all roles to their defaults. Every role is on its defaults' : `Reset all roles to their defaults. ${chosen} ${chosen === 1 ? 'role is' : 'roles are'} your choice`}
-        onClick={() => save({}, chosen === 1 ? 'The role you chose is back on its default.' : `The ${chosen} roles you chose are back on their defaults.`)}>
+        onClick={resetAll}>
         <RotateCcw size={14} aria-hidden="true" />Reset all to defaults</button>
     </div>
     <p className="worker-roles__lead">Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it.</p>
     {said ? <p className="worker-roles__said" role="status"><span>{said.text}</span>
-      <button type="button" className="tt-focusable" onClick={() => { setSaid(null); void onUpdateSettings({ workerRoles: said.undo }) }}>Undo</button></p> : null}
+      <button type="button" className="tt-focusable" onClick={() => undo(said)}>Undo</button></p> : null}
     {!anyConnected ? <div className="worker-roles__empty">
       <p>No provider is connected, so no role has a model yet. Connect Codex, Claude Code, Grok Build or Muse, and each role takes its first default from what you connect. Nothing you chose is lost.</p>
       <button type="button" className="worker-roles__open tt-focusable" onClick={() => onOpenSection('settings-providers')}>Open Providers</button>
     </div> : <>
       {away.length ? <p className="worker-roles__summary">{list(away.map(id => PROVIDER_LABELS[id]))} {away.length === 1 ? 'is' : 'are'} not connected, so {movedCount} {movedCount === 1 ? 'role starts' : 'roles start'} new work on {movedCount === 1 ? 'its' : 'their'} next default until {away.length === 1 ? 'it connects' : 'they connect'}. Nothing you chose has changed.</p> : null}
       <div className="worker-roles__grid">
-        {orchestrating ? <OrchestratingCard read={orchestrating} state={state} command={command} catalog={catalog} models={watcherModels} providerOf={providerOf}
+        {orchestrating ? <OrchestratingCard read={orchestrating} state={state} watcher={watcher} chosen={watcherChosen} refusal={watcherRefusal} catalog={catalog} providerOf={providerOf}
           onRow={patch => setRow(orchestrating, patch)} onReset={() => reset(orchestrating)} /> : null}
         {workers.map(read => <RoleCard key={read.role.id} read={read} catalog={catalog} providerOf={providerOf} ceiling={ceiling} platform={platform}
           onRow={patch => setRow(read, patch)} onReset={() => reset(read)} onOpenAgents={() => onOpenSection('settings-agents')} />)}
@@ -238,7 +284,7 @@ function RoleCard({ read, catalog, providerOf, ceiling, platform, onRow, onReset
       <div className="worker-role__field worker-role__field--full" data-away={status === 'away' || undefined}><span aria-hidden="true">Model</span>
         <ModelPicker models={[...catalog]} modelId={shown.modelId} disabled={false} label={`Choose ${possessive(role.name)} model. Now ${name}${status === 'away' ? ', not available' : ''}`}
           note={read.fallback ? `${read.fallback.model.name}${read.fallback.reasoningEffort ? ` at ${effortLabel(read.fallback.reasoningEffort)}` : ''} is ${possessive(role.name)} default.` : undefined}
-          onChange={id => onRow({ modelId: id })} /></div>
+          onChange={id => onRow({ modelId: chosenModelId(catalog, id, shown.modelId) })} /></div>
       <div className="worker-role__field"><span aria-hidden="true">Effort</span>
         {efforts.length > 0 && model ? <EffortPicker key={shown.modelId} value={shown.reasoningEffort ?? model.defaultReasoningEffort ?? ''} options={efforts} disabled={false}
           label={`Choose ${possessive(role.name)} reasoning effort. Now ${shown.reasoningEffort ? effortLabel(shown.reasoningEffort) : 'the model’s default'}`}
@@ -276,53 +322,41 @@ const MODE_LINES: Record<AgentRuntimeMode, string> = {
  * offers the last one's handover, ADR-0073), and either place saves the role for the next Watcher. Its permissions are
  * Watcher's own mode, chosen in either place too, and Reset leaves them as they are.
  */
-function OrchestratingCard({ read, state, command, catalog, models, providerOf, onRow, onReset }: {
-  readonly read: RoleInForce; readonly state: AgentState; readonly command: AgentConnection['command']
-  readonly catalog: readonly AgentModel[]; readonly models: readonly AgentModel[]; readonly providerOf: (id: ProviderId) => ProviderState
+function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, providerOf, onRow, onReset }: {
+  readonly read: RoleInForce; readonly state: AgentState
+  /** The running Watcher's thread, once there is one. */
+  readonly watcher: AgentThread | undefined
+  /** The running Watcher is off Orchestrating's default. */
+  readonly chosen: boolean
+  /** Why the last change could not start a new Watcher, in main's words. */
+  readonly refusal: string | null
+  readonly catalog: readonly AgentModel[]; readonly providerOf: (id: ProviderId) => ProviderState
   readonly onRow: (patch: { readonly modelId?: string; readonly reasoningEffort?: string | null }) => void; readonly onReset: () => void
 }): ReactNode {
   const headId = useId()
   const room = useWatcherRoom()
   const app = useOptionalApp()
-  const watcher: AgentThread | undefined = room?.currentThreadId ? state.host.threads.find(thread => thread.id === room.currentThreadId) : undefined
   const pending = usePendingSettings(watcher?.id ?? '')
-  const [refusal, setRefusal] = useState<string | null>(null)
   const role = read.role
   // While Watcher runs, the card shows what it is on; before it exists, what it will start on.
   const drawn = watcher ? settingValues(state, watcher) : null
   const liveId = watcher ? pending.pending.model?.value ?? watcher.modelId : null
-  const liveModel = liveId ? resolveModel(models, liveId) ?? resolveModel(catalog, liveId) : undefined
+  const liveModel = liveId ? resolveModel(catalog, liveId) : undefined
   const liveEffort = watcher ? pending.pending.effort?.value ?? drawn?.effort ?? liveModel?.defaultReasoningEffort ?? null : null
   const shown = watcher && liveId ? { modelId: liveId, model: liveModel, reasoningEffort: liveEffort || null } : shownOf(read, catalog)
   const model = shown?.model
   const fallback = read.fallback
-  const differs = watcher ? !fallback || shown?.modelId !== fallback.model.id || (shown?.reasoningEffort ?? null) !== fallback.reasoningEffort : read.choice !== undefined
+  const differs = watcher ? chosen : read.choice !== undefined
   const status: RowStatus = watcher ? differs ? 'chosen' : 'default' : statusOf(read, providerOf)
   const fixedReason = watcher ? watcherPermissionFixedReason(state, watcher) : undefined
   const efforts = model ? effortChoices(model, shown?.reasoningEffort ?? model.defaultReasoningEffort ?? '') : []
   const providerName = model?.providerId ? PROVIDER_LABELS[model.providerId] : model?.provider ?? 'The provider'
   const notes = watcher ? [] : rowNotes(read, status, catalog, providerOf, 'a new Watcher starts')
-  const apply = async (modelId: string, reasoningEffort: string | null): Promise<void> => {
-    setRefusal(null)
-    if (!watcher) return
-    const picked = resolveModel(models, modelId)
-    const provider = picked ? watcherProviderOf(picked) : null
-    if (provider !== null && provider !== watcher.providerId) {
-      if (!room?.open) return
-      try { setRefusal(room.settle(await room.open({ provider, modelId, ...(reasoningEffort ? { reasoningEffort } : {}) }))) }
-      catch { setRefusal('Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.') }
-      return
-    }
-    const now = settingValues(state, watcher)
-    if (modelId !== now.model) pendingSettingsStore.press(watcher.id, 'model', modelId, { modelId }, command, now, now.model)
-    else if (reasoningEffort && reasoningEffort !== now.effort) pendingSettingsStore.press(watcher.id, 'effort', reasoningEffort, { reasoningEffort }, command, now, now.effort)
-  }
   const choose = (modelId: string | undefined, reasoningEffort: string | null | undefined): void => {
     const nextModel = modelId ?? shown?.modelId
     if (!nextModel) return
     const effort = reasoningEffort !== undefined ? reasoningEffort : modelId ? resolveModel(catalog, modelId)?.defaultReasoningEffort ?? null : shown?.reasoningEffort ?? null
     onRow({ modelId: nextModel, reasoningEffort: effort })
-    void apply(nextModel, effort)
   }
   const name = model?.name ?? shown?.modelId ?? ''
   const mirrorMode = room?.state?.runtimeMode ?? room?.state?.currentOptions?.runtimeMode ?? 'approval-required'
@@ -332,10 +366,11 @@ function OrchestratingCard({ read, state, command, catalog, models, providerOf, 
       <p className="worker-role__what">{role.what}</p>
       {shown ? <div className="worker-role__fields">
         <div className="worker-role__field worker-role__field--full" data-away={status === 'away' || undefined}><span aria-hidden="true">Model</span>
-          <ModelPicker models={[...models]} modelId={shown.modelId} disabled={fixedReason !== undefined} label={`Choose Watcher’s model. Now ${name}`}
+          <ModelPicker models={[...catalog]} modelId={shown.modelId} disabled={fixedReason !== undefined} label={`Choose Watcher’s model. Now ${name}`}
+            unavailable={item => watcherProviderOf(item) === null ? `Watcher can’t run on ${item.providerId ? PROVIDER_LABELS[item.providerId] : item.provider} yet` : undefined}
             note={watcher ? 'Watcher’s model: the same choice as the model chip under its composer. Another provider’s model starts a new Watcher, and this conversation stays in Watcher history.'
               : 'Watcher’s model: the same choice as the model chip under its composer. Watcher runs on Codex, Claude Code or Grok Build.'}
-            onChange={id => choose(id, undefined)} /></div>
+            onChange={id => choose(chosenModelId(catalog, id, shown.modelId), undefined)} /></div>
         <div className="worker-role__field"><span aria-hidden="true">Effort</span>
           {efforts.length > 0 && model ? <EffortPicker key={shown.modelId} value={shown.reasoningEffort ?? model.defaultReasoningEffort ?? ''} options={efforts} disabled={fixedReason !== undefined}
             label={`Choose Watcher’s reasoning effort. Now ${shown.reasoningEffort ? effortLabel(shown.reasoningEffort) : 'the model’s default'}`}
@@ -351,7 +386,7 @@ function OrchestratingCard({ read, state, command, catalog, models, providerOf, 
       <Defaults read={read} catalog={catalog} providerOf={providerOf} />
       {differs ? <footer className="worker-role__foot"><button type="button" className="worker-role__link tt-focusable" disabled={fixedReason !== undefined}
         aria-label={fallback ? `Reset Orchestrating to its default, ${fallback.model.name}${fallback.reasoningEffort ? ` at ${effortLabel(fallback.reasoningEffort)}` : ''}. Watcher’s permissions stay as they are` : 'Reset Orchestrating to its defaults'}
-        onClick={() => { onReset(); if (fallback) void apply(fallback.model.id, fallback.reasoningEffort) }}>Reset to default</button></footer> : null}
+        onClick={onReset}>Reset to default</button></footer> : null}
     </div>
     <div className="worker-role__mirror">
       <div className="worker-role__composer" aria-hidden="true">

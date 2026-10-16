@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, parsePublicProviderEntityId, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
+import { agentRuntimeModeSchema, parsePublicProviderEntityId, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
 import { resolveModel } from './modelCatalog'
 import { nearestRuntimeMode, RUNTIME_MODE_ORDER } from './newThreadDefaults'
 import { effortKey, effortRank } from './reasoningEfforts'
@@ -220,6 +220,17 @@ export function isRoleDefault(id: WorkerRoleId, row: WorkerRoleChoice, models: r
   return id === 'orchestrating' || (row.runtimeMode ?? workerRole(id).permission) === (fallback.runtimeMode ?? workerRole(id).permission)
 }
 
+/**
+ * The saved rows with one role's row as it would be saved: kept as the user's choice, or left out once it is exactly
+ * the role's default in force, so the role follows its defaults again. Settings and Watcher's composer both save so.
+ */
+export function withRoleRow(choices: WorkerRoleChoices, id: WorkerRoleId, row: WorkerRoleChoice, models: readonly AgentModel[]): WorkerRoleChoices {
+  const next: WorkerRoleChoices = { ...choices }
+  if (isRoleDefault(id, row, models)) delete next[id]
+  else next[id] = row
+  return next
+}
+
 /** What a start asked for in its own words: anything named overrides the role for that start only. */
 export interface RoleStartRequest {
   readonly modelId?: string | undefined
@@ -257,10 +268,19 @@ export function startFromRole(role: WorkerKind, choices: WorkerRoleChoices, mode
 }
 
 /**
- * What a start by role says in its receipt, for the agent that asked to pass on: the role, what the request named in
- * the role's place, and a permission the new-thread default held back. Plain words, no IDs the user would not know.
+ * A role's permission the ceiling held back: what the role wanted, what the start got, and which limit held it, the
+ * user's new-thread default or, for a delegation, the delegating thread's own permission when that is the narrower.
  */
-export function roleStartNote(start: RoleStart, models: readonly AgentModel[], held?: { readonly wanted: AgentRuntimeMode; readonly startedOn: AgentRuntimeMode }): string {
+export interface HeldPermission {
+  readonly wanted: AgentRuntimeMode
+  readonly startedOn: AgentRuntimeMode
+  readonly by?: 'new-thread-default' | 'delegating-thread'
+}
+/**
+ * What a start by role says in its receipt, for the agent that asked to pass on: the role, what the request named in
+ * the role's place, and a permission a ceiling held back. Plain words, no IDs the user would not know.
+ */
+export function roleStartNote(start: RoleStart, models: readonly AgentModel[], held?: HeldPermission): string {
   const role = workerRole(start.role)
   const name = (id: string | undefined) => id ? resolveModel(models, id)?.name ?? id : 'no model'
   const words: Record<RoleField, string> = { model: 'model', effort: 'effort', permission: 'permission' }
@@ -273,11 +293,11 @@ export function roleStartNote(start: RoleStart, models: readonly AgentModel[], h
     parts.push(`This request named its ${list(start.named.map(field => words[field]))}${model}, which overrides ${role.name} for this start only.`)
     if (rest.length) parts.push(`Its ${list(rest)} came from the role.`)
   }
-  if (held) parts.push(`Its permission, ${RUNTIME_MODE_WORDS[held.wanted]}, was held to the user's new-thread default, ${RUNTIME_MODE_WORDS[held.startedOn]}.`)
+  if (held) parts.push(held.by === 'delegating-thread'
+    ? `Its permission, ${RUNTIME_MODE_WORDS[held.wanted]}, was held to ${RUNTIME_MODE_WORDS[held.startedOn]}, the delegating thread's own, since a delegated thread gets no more.`
+    : `Its permission, ${RUNTIME_MODE_WORDS[held.wanted]}, was held to the user's new-thread default, ${RUNTIME_MODE_WORDS[held.startedOn]}.`)
   return parts.join(' ')
 }
 
 /** The roles in a line, for instructions that name them. */
 export const WORKER_KIND_LIST = WORKER_KINDS.join(', ')
-/** A provider's name as Settings says it. */
-export const providerName = (provider: ProviderId): string => PROVIDER_LABELS[provider]

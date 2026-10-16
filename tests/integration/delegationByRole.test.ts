@@ -78,7 +78,8 @@ it('holds a role\'s permission to the narrower of the calling thread\'s own and 
   f.setChoices({ building: { modelId: f.model('codex').id, reasoningEffort: 'low' } })
   const result = f.ok(await f.delegate(parent, { work: 'building' }))
   expect(f.created(result.delegation.thread)).toMatchObject({ provider: 'codex', runtimeMode: 'approval-required' })
-  expect(result.role!.note).toContain('Its permission, Allow edits, was held to the user\'s new-thread default, Ask for approval.')
+  // The calling thread's own Ask for approval is the narrower limit here, and the note names it rather than the default.
+  expect(result.role!.note).toContain('Its permission, Allow edits, was held to Ask for approval, the delegating thread\'s own, since a delegated thread gets no more.')
 })
 
 it('lets a named provider and model override the role, with effort and permission still from the role', async () => {

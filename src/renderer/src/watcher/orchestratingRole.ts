@@ -1,5 +1,5 @@
 import type { AgentModel } from '../../../shared/agents'
-import { isRoleDefault, roleInForce, type WorkerRoleChoices } from '../../../shared/workerRoles'
+import { roleInForce, withRoleRow } from '../../../shared/workerRoles'
 import { useOptionalApp } from '../state/AppContext'
 import { useOwlFeature } from '../state/owlFeature'
 
@@ -17,9 +17,7 @@ export function useSaveOrchestrating(): ((modelId: string, reasoningEffort: stri
     const row = { modelId, reasoningEffort }
     const now = saved.orchestrating
     if (now && now.modelId === row.modelId && now.reasoningEffort === row.reasoningEffort) return
-    const next: WorkerRoleChoices = { ...saved }
-    if (isRoleDefault('orchestrating', row, models)) delete next.orchestrating
-    else next.orchestrating = row
+    const next = withRoleRow(saved, 'orchestrating', row, models)
     if (next.orchestrating === undefined && now === undefined) return
     void actions.updateSettings({ workerRoles: next })
   }

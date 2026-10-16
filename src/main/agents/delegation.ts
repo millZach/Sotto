@@ -5,7 +5,7 @@ import { isThreadProviderConnected, lastUserMessageIdOf, providerIdSchema, threa
   type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
-import { capRuntimeMode, roleInForce, roleStartNote, startFromRole, WORKER_KINDS, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { capRuntimeMode, roleInForce, roleStartNote, startFromRole, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
@@ -550,12 +550,19 @@ export class DelegationService {
     const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
     return resolveNewThreadPermission(model, index(own) < index(configured) ? own : configured)
   }
-  /** A role's permission held to the ceiling: what it starts on, and what it wanted when that was wider. */
-  private heldToCeiling(wanted: AgentRuntimeMode, model: AgentModel, caller: AgentThread, models: readonly AgentModel[]): { mode: AgentRuntimeMode; held?: { wanted: AgentRuntimeMode; startedOn: AgentRuntimeMode } } | undefined {
+  /**
+   * A role's permission held to the ceiling: what it starts on, and, when that was narrower than the role wanted, which
+   * limit held it: the calling thread's own permission when it is the narrower, the new-thread default otherwise.
+   */
+  private heldToCeiling(wanted: AgentRuntimeMode, model: AgentModel, caller: AgentThread, models: readonly AgentModel[]): { mode: AgentRuntimeMode; held?: HeldPermission } | undefined {
     const ceiling = this.ceiling(model, caller, models)
     if (ceiling.providerMode !== undefined || !ceiling.runtimeMode) return undefined
     const mode = capRuntimeMode(wanted, ceiling.runtimeMode)
-    return mode === wanted ? { mode } : { mode, held: { wanted, startedOn: mode } }
+    if (mode === wanted) return { mode }
+    const index = (value: AgentRuntimeMode) => RUNTIME_MODE_ORDER.indexOf(value)
+    const own = caller.providerMode ? 'approval-required' : caller.runtimeMode ?? 'approval-required'
+    const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
+    return { mode, held: { wanted, startedOn: mode, by: index(own) < index(configured) ? 'delegating-thread' : 'new-thread-default' } }
   }
   private humanTurnRunning(thread: AgentThread): boolean {
     if (!isThreadTurnRunning(thread)) return false

@@ -163,7 +163,8 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const app = useOptionalApp()
   const models = useMemo(() => state.host.models.filter(model => model.ready !== false && watcherProviderOf(model) !== null), [state.host.models])
   const { text, modelId, effort, phase, error } = useFirstMessage()
-  // Unchosen here, Watcher starts on the Orchestrating role's model and effort where worker roles are on (#1041).
+  // Unchosen here, Watcher starts on the Orchestrating role's model and effort where worker roles are on (#1041). A pick
+  // here saves the role too, and a change to the role in Settings clears the pick, so the two never disagree.
   const roleStart = useOrchestratingStart(models)
   const saveOrchestrating = useSaveOrchestrating()
   const roleModel = roleStart === null ? undefined : resolveModel(models, roleStart.modelId)

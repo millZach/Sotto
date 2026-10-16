@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { publicProviderEntityId, type AgentModel, type AgentRuntimeMode, type ProviderId } from '../../../src/shared/agents'
-import { capRuntimeMode, fitEffort, isRoleDefault, parseWorkerRoleChoices, roleInForce, roleStartNote, startFromRole, WORKER_ROLE_IDS,
+import { capRuntimeMode, fitEffort, isRoleDefault, parseWorkerRoleChoices, roleInForce, roleStartNote, startFromRole, withRoleRow, WORKER_ROLE_IDS,
   type WorkerRoleChoices, type WorkerRoleId } from '../../../src/shared/workerRoles'
 
 const ALL: readonly AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
@@ -105,6 +105,10 @@ describe('worker roles', () => {
     expect(isRoleDefault('ui', { modelId: id('claude', 'opus'), reasoningEffort: 'high', runtimeMode: 'auto-accept-edits' }, models)).toBe(false)
     expect(isRoleDefault('ui', { modelId: id('claude', 'opus'), reasoningEffort: 'xhigh', runtimeMode: 'approval-required' }, models)).toBe(false)
     expect(isRoleDefault('orchestrating', { modelId: id('claude', 'opus'), reasoningEffort: 'high' }, models)).toBe(true)
+    // Saving a row keeps it as a choice, and saving it back on its default leaves it out.
+    const chosen = withRoleRow({}, 'ui', { modelId: id('codex', 'gpt-6.1-sol'), reasoningEffort: 'high', runtimeMode: 'approval-required' }, models)
+    expect(chosen).toEqual({ ui: { modelId: id('codex', 'gpt-6.1-sol'), reasoningEffort: 'high', runtimeMode: 'approval-required' } })
+    expect(withRoleRow(chosen, 'ui', { modelId: id('claude', 'opus'), reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' }, models)).toEqual({})
   })
 
   it('reads saved rows one at a time, and never keeps a permission for Orchestrating', () => {
@@ -137,6 +141,7 @@ describe('worker roles', () => {
     const held = startFromRole('computer-use', {}, models)
     expect(held.runtimeMode).toBe('full-access')
     expect(roleStartNote(held, models, { wanted: 'full-access', startedOn: 'approval-required' })).toContain('Its permission, Full access, was held to the user\'s new-thread default, Ask for approval.')
+    expect(roleStartNote(held, models, { wanted: 'full-access', startedOn: 'auto', by: 'delegating-thread' })).toContain('Its permission, Full access, was held to Auto, the delegating thread\'s own, since a delegated thread gets no more.')
     expect(startFromRole('research', {}, models, { reasoningEffort: 'low', runtimeMode: 'auto' })).toMatchObject({ modelId: id('claude', 'haiku'), reasoningEffort: 'low', runtimeMode: 'auto', named: ['effort', 'permission'] })
     expect(startFromRole('building', {}, [])).toMatchObject({ modelId: undefined, roleModelId: undefined })
   })
