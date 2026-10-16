@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DelegationService } from '../../src/main/agents/delegation'
 import { DelegationToolServer } from '../../src/main/agents/delegationTools'
-import type { AgentThread, ProviderId } from '../../src/shared/agents'
+import { lastUserMessageIdOf, type AgentThread, type ProviderId } from '../../src/shared/agents'
 import { DELEGATE_MCP_SERVER } from '../../src/shared/delegation'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -219,4 +219,31 @@ it('gives each delegated thread four briefs per turn of the delegating thread, r
   // A retry with the same key returns the first delegation and charges nothing.
   const key = randomUUID()
   expect(await f.delegate(parent, { thread: child, brief: 'Synthetic brief 5', retry_key: key })).toMatchObject({ status: 'refused', code: 'PROMPT_LIMIT' })
+})
+
+it('gives the window each delegation\'s outcome and wait, by the user\'s message it answers, and never its words (#1029)', async () => {
+  const f = await fixture(), parent = await f.userThread('claude')
+  const told: string[][] = []
+  const stop = f.service.onViewsChanged(threadIds => { told.push([...threadIds]) })
+  const shell = f.control.shell().host.threads.find(thread => thread.id === parent)!
+  const root = lastUserMessageIdOf(shell) ?? shell.summary?.lastUser?.id
+  expect(root).toBeDefined()
+  const call = f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 60 })
+  await vi.waitFor(() => expect(f.service.views(parent)[0]).toMatchObject({ outcome: 'working', waiting: true, wait: { seconds: 60 } }))
+  const waiting = f.service.views(parent)[0]!
+  expect(waiting).toMatchObject({ action: 'start', work: 'code-review', rootUserMessageId: root })
+  expect(waiting.wait?.wentOnAt).toBeUndefined()
+  expect(told.flat()).toContain(parent)
+  await f.endTurn(waiting.thread, 'Synthetic review reply')
+  f.ok(await call)
+  const answered = f.service.views(parent)[0]!
+  expect(answered).toMatchObject({ outcome: 'answered', waiting: false, wait: { seconds: 60 } })
+  expect(answered.wait?.wentOnAt).toBeUndefined()
+  expect(answered.outcomeAt).toBeDefined()
+  // A call that waits for nothing goes on at once; the card says the answer comes later.
+  f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0, work: 'research' }))
+  expect(f.service.views(parent)[1]).toMatchObject({ outcome: 'working', waiting: false, wait: { seconds: 0, wentOnAt: expect.any(String) } })
+  expect(JSON.stringify(f.service.views(parent))).not.toMatch(/Synthetic (brief|review reply)/u)
+  expect(f.service.views('another-thread')).toEqual([])
+  stop()
 })

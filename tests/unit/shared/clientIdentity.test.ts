@@ -32,3 +32,16 @@ it('keys a host state as walking all of it did, keeping its catalog and walking 
   expect(projected.busyThreadIds).toEqual([hostEntityKey(HOST, thread.id)])
   expect(projected.host.threads[0]!.id).toBe(hostEntityKey(HOST, thread.id))
 })
+
+it('names the thread that delegated to a thread as the window names threads, so its link finds it (ADR-0081)', () => {
+  const state = threadsStateFixture()
+  state.hostId = HOST
+  const [parent, child] = state.host.threads
+  child!.delegatedBy = parent!.id
+  const projected = clientAgentState(state)
+  const keyed = projected.host.threads.find(thread => thread.id === hostEntityKey(HOST, child!.id))!
+  expect(keyed.delegatedBy).toBe(hostEntityKey(HOST, parent!.id))
+  expect(projected.host.threads.some(thread => thread.id === keyed.delegatedBy)).toBe(true)
+  // A thread no other thread started gains no link.
+  expect(projected.host.threads.find(thread => thread.id === hostEntityKey(HOST, parent!.id))).not.toHaveProperty('delegatedBy')
+})

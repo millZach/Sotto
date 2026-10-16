@@ -26,6 +26,7 @@ import { useWatchedThread } from '../watcher/watcherRoom'
 import { WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchedNote, WatchHeaderToggle, WatchToast } from '../watcher/WatchControls'
 import { prefersReducedMotion } from '../state/reducedMotion'
+import { DelegatedBy, DelegationComposerNote } from './DelegationCards'
 
 type Command = AgentConnection['command']
 
@@ -256,6 +257,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       </div>
       {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={`Close ${thread.title} pane`} title="Close pane" onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>}
+    {/* Delegated by the thread that started this one, a link back (ADR-0081; Owl only). */}
+    {ownPane ? null : <DelegatedBy thread={thread} state={state} command={command} />}
     {settleDialog}
     {thread.historySaveNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.historySaveNotice}</p> : null}
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
@@ -292,6 +295,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       <div className="thread-pane__meta">
         {/* Said before a send, not after: what watching means here, and Stop watching. */}
         {ownPane ? null : <WatchedNote threadId={thread.id} title={thread.title} />}
+        {/* What Stop also stops, or what a turn here does to the thread that delegated (ADR-0081; Owl only). */}
+        {ownPane ? null : <DelegationComposerNote thread={thread} state={state} />}
         <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
           connected={rowConnected && !closed} blocked={threadBusy} command={command} />
       </div>

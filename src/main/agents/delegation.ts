@@ -8,8 +8,8 @@ import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/new
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationWorkSchema, readDelegationInputSchema, DELEGATION_LEVELS_MAX,
-  DELEGATION_PROMPTS_PER_THREAD, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES,
-  type DelegateInput, type DelegationNews, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode } from '../../shared/delegation'
+  DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES,
+  type DelegateInput, type DelegationNews, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegationView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { WATCHER_FINAL_OUTCOMES, watcherTurnOutcome } from './watcherOutcomes'
 import type { AgentState } from '../../shared/agents'
@@ -81,6 +81,10 @@ const recordSchema = z.object({
   told: watcherOutcomeSchema.optional(),
   /** Counts against the prompt budget. A brief refused before anything was sent does not. */
   charged: z.boolean(),
+  /** How long the `delegate` call waited for the outcome and when it began; the window's card says it (decision 8). */
+  waitSeconds: z.number().int().min(0).max(DELEGATION_WAIT_MAX_SECONDS).optional(), waitStartedAt: z.iso.datetime().optional(),
+  /** When the call returned with the brief still working, so its outcome reaches the delegating thread as a wake-up. */
+  wentOnAt: z.iso.datetime().optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type DelegationRecord = z.infer<typeof recordSchema>
@@ -157,6 +161,10 @@ export class DelegationService {
   private readonly untold = new Map<string, { readonly ids: Set<string>; attempts: number }>()
   private readonly telling = new Set<string>()
   private newsScheduled = false
+  /** Delegating threads whose delegations changed since the window was last told, and who listens (#1029). */
+  private readonly viewsChanged = new Set<string>()
+  private readonly viewListeners = new Set<(threadIds: readonly string[]) => void>()
+  private viewsScheduled = false
   private tail: Promise<unknown> = Promise.resolve()
   private closed = false
   private unhook: (() => void) | undefined
@@ -204,6 +212,7 @@ export class DelegationService {
   }
   close(): void {
     this.closed = true
+    this.viewListeners.clear()
     this.unhook?.(); this.unhook = undefined
     for (const waiting of this.waiters.values()) for (const wake of waiting) wake()
     this.waiters.clear()
@@ -234,9 +243,59 @@ export class DelegationService {
       await this.execute(record, input.brief, admitted.start)
       const waitMs = Math.max(0, Math.min((input.wait_seconds ?? DELEGATION_WAIT_MAX_SECONDS) * 1000,
         context.waitMs === undefined ? Infinity : context.waitMs - 2_000))
-      if (this.open(this.record(record.id)!) && waitMs > 0) await this.wait(record.id, waitMs)
+      if (this.open(this.record(record.id)!)) {
+        // The window's card says how long this call waits, and that it went on when the wait ends first.
+        this.update(record.id, saved => { saved.waitSeconds = Math.round(waitMs / 1000); saved.waitStartedAt = now() })
+        if (waitMs > 0) await this.wait(record.id, waitMs)
+        if (this.open(this.record(record.id)!)) this.update(record.id, saved => { saved.wentOnAt = now() })
+      }
       return await this.result(this.record(record.id)!)
-    } finally { this.calling.delete(record.id) }
+    } finally { this.calling.delete(record.id); this.touched(record.delegatingThreadId) }
+  }
+
+  /**
+   * The delegations this thread made, newest last, as the window's cards show them (#1029): identities, outcome and
+   * timing from this service's own record, never a brief or a reply. Reads no snapshot, so the window may ask whenever a
+   * delegating thread's pane opens or main names it as changed.
+   */
+  views(threadId: string): DelegationView[] {
+    const own: DelegationRecord[] = []
+    for (let index = this.records.length - 1; index >= 0 && own.length < DELEGATION_VIEWS_MAX; index--) {
+      if (this.records[index]!.delegatingThreadId === threadId) own.push(this.records[index]!)
+    }
+    return own.reverse().map(record => this.view(record))
+  }
+  /**
+   * Hears which delegating threads' delegations changed, batched so a pass that moves many outcomes, for many threads,
+   * tells the window once. Returns the way to stop listening.
+   */
+  onViewsChanged(listener: (threadIds: readonly string[]) => void): () => void {
+    if (this.closed) return () => undefined
+    this.viewListeners.add(listener)
+    return () => { this.viewListeners.delete(listener) }
+  }
+  private view(record: DelegationRecord): DelegationView {
+    const outcome = this.outcomeOf(record)
+    const outcomeAt = record.outcomeAt ?? (record.deliveryState === 'failed' ? record.updatedAt : undefined)
+    return { id: record.id, thread: record.delegatedThreadId, action: record.action, work: record.work, rootUserMessageId: record.rootUserMessageId,
+      briefMessageId: record.messageId, outcome, createdAt: record.createdAt, ...(outcomeAt ? { outcomeAt } : {}),
+      ...(record.deliveryState === 'failed' ? { notSent: record.failure ?? 'provider' } : {}),
+      ...(record.waitSeconds !== undefined && record.waitStartedAt ? { wait: { seconds: record.waitSeconds, startedAt: record.waitStartedAt, ...(record.wentOnAt ? { wentOnAt: record.wentOnAt } : {}) } } : {}),
+      waiting: this.calling.has(record.id) && record.wentOnAt === undefined && this.open(record) }
+  }
+  /** A delegating thread's delegations changed: the window hears it once the current pass is over. */
+  private touched(threadId: string): void {
+    if (this.closed || !this.viewListeners.size) return
+    this.viewsChanged.add(threadId)
+    if (this.viewsScheduled) return
+    this.viewsScheduled = true
+    queueMicrotask(() => {
+      this.viewsScheduled = false
+      const threadIds = [...this.viewsChanged]
+      this.viewsChanged.clear()
+      if (!threadIds.length || this.closed) return
+      for (const listener of [...this.viewListeners]) { try { listener(threadIds) } catch { /* A listener's failure is its own. */ } }
+    })
   }
 
   async read(threadId: string, args: unknown): Promise<unknown> {
@@ -414,6 +473,7 @@ export class DelegationService {
       const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId: thread.id, action: 'send', expectedLastUserMessageId: link.seenHead })
       this.records.push(record)
       await this.saveAdmission(record)
+      this.touched(caller.id)
       return { record, retry: false }
     }
     if (!input.provider || !input.model) refuse('INVALID_INPUT', `Name the provider and model for a new thread. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
@@ -432,6 +492,7 @@ export class DelegationService {
     this.records.push(record)
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
     await this.saveAdmission(record)
+    this.touched(caller.id)
     const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], modelId: model.id,
       ...(input.effort ? { reasoningEffort: input.effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared' }
     return { record, retry: false, start }
@@ -551,6 +612,7 @@ export class DelegationService {
     const record = this.record(delegationId)
     if (!record) return
     change(record); record.updatedAt = now()
+    this.touched(record.delegatingThreadId)
   }
 
   /**
