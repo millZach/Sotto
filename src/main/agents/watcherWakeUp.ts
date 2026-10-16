@@ -163,7 +163,7 @@ export class WatcherWakeUp {
   private project(snapshot: AgentHostSnapshot, thread: AgentThread) {
     return snapshot.projects.find(project => project.id === thread.projectId && (project.hostId ?? snapshot.hostId) === (thread.hostId ?? snapshot.hostId))
   }
-  news(): WatcherEvent[] { return this.recent.filter(event => this.due(event)) }
+  news(): WatcherEvent[] { return this.once(() => this.recent.filter(event => this.due(event))) }
   /**
    * The events still due. Work-settled news whose work started again before delivery is not sent; its turn is owed it
    * again, so it comes once the work truly reaches zero.
@@ -241,7 +241,7 @@ export class WatcherWakeUp {
     this.cancelBatch = this.schedule(() => { this.cancelBatch = undefined; this.flush() }, Math.max(0, delay))
   }
   private flush(): void {
-    const events = this.canDeliver() ? this.stillDue(this.pending) : [], watcher = this.record().current?.target
+    const { events, watcher } = this.once(() => ({ events: this.canDeliver() ? this.stillDue(this.pending) : [], watcher: this.record().current?.target }))
     if (events.length) this.pending = []
     if (this.closed || !events.length && !this.rememberPending.size) return
     const news = watcher && events.length ? foldWatcherNews(undefined, { source: 'watcher', watcher, events, omitted: 0 }) : undefined
