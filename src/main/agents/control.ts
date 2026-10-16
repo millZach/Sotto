@@ -52,6 +52,7 @@ import { isSottoRequest, withSottoRequests, type SottoThreadRequests } from './s
 import { QuestionPages, type QuestionPageTarget } from './questionPages'
 import { watcherRepliesAsShown } from './watcherOwnChanges'
 import { watcherMessageRequests, watcherMessagesAsTyped } from './watcherRequestNote'
+import { watcherHandoversShown } from './watcherHandover'
 import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
@@ -332,7 +333,10 @@ export class AgentControl {
   }
   hasWatcherQueue(operationIds: ReadonlySet<string>): boolean { return this.followupStore.peek().items.some(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)) }
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
-    await this.followupStore.cancelWatcher(operationIds); this.syncFollowups(); this.observe(); await this.persist(); this.publish()
+    const failed = await this.followupStore.cancelWatcher(operationIds)
+    // Watcher reads a queued send's failure from its item, which is gone now, so it hears the failure here instead.
+    if (failed.length) this.watcherHooks?.queueFailed?.(new Set(failed))
+    this.syncFollowups(); this.observe(); await this.persist(); this.publish()
   }
   private readonly dormantThreadIds = new Set<string>()
   private readonly dormantWatcherIds = new Set<string>()
@@ -675,8 +679,9 @@ export class AgentControl {
         ...(snapshot.providers ? { providers: snapshot.providers.filter(provider => provider.id !== 'muse') } : {}) }
     }
     // One display path for Watcher's own threads, in its pane, Copy and the phone alike: the user's messages without a line
-    // Sotto put after them, and Watcher's replies without the reason line their own-change line already shows.
-    snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(snapshot, watcherMessageRequests(this.watcher.requests)))
+    // Sotto put after them or a handover it put before them, and Watcher's replies without the reason line their
+    // own-change line already shows.
+    snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(watcherHandoversShown(snapshot, this.watcher.requests), watcherMessageRequests(this.watcher.requests)))
     if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
     return this.questionPages.decorate(snapshot)
   }

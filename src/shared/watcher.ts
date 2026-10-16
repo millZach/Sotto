@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, providerIdSchema } from './agents'
+import { agentRuntimeModeSchema, handoverCountsSchema, providerIdSchema } from './agents'
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
 import { hostFactsSchema, hostOsSchema } from './hostFacts'
 export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
@@ -222,9 +222,18 @@ export const watcherParticipantSchema = participation.extend({ target: watcherTh
 export const watcherDisplayPromptSchema = z.object({ originalLength: counter,
   wireDigest: z.string().regex(/^[a-f0-9]{64}$/u) }).strict()
 export type WatcherDisplayPrompt = z.infer<typeof watcherDisplayPromptSchema>
+/**
+ * Text-free proof that a request's root message began with a handover of an earlier Watcher (ADR-0073): how many
+ * characters of the sent message it took and their digest, which conversation it came from, and what it carried and
+ * left out, in counts. The user's words follow it in the same message.
+ */
+export const watcherHandoverProvenanceSchema = z.object({ prefixLength: counter, prefixDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+  source: watcherThreadTargetSchema, provider: watcherProviderSchema, counts: handoverCountsSchema }).strict()
+export type WatcherHandoverProvenance = z.infer<typeof watcherHandoverProvenanceSchema>
 export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, rootUserMessageId: id,
   standingWatchId: z.uuid().optional(),
   displayPrompt: watcherDisplayPromptSchema.optional(),
+  handover: watcherHandoverProvenanceSchema.optional(),
   phoneOrigin: watcherPhoneOriginSchema.optional(),
   pairedPermissionCeiling: agentRuntimeModeSchema.optional(),
   remoteOrigin: z.object({ clientId: id, master: watcherIdentitySchema, creationOperationId: z.uuid(), ceiling: agentRuntimeModeSchema }).strict().optional(),

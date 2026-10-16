@@ -294,3 +294,33 @@
 .watcher-own__files > li > svg { flex: none; }
 .watcher-own__files code { min-width: 0; overflow: hidden; padding: 1px 6px; border: 1px solid var(--tt-code-border); border-radius: 5px; background: var(--tt-code-bg); color: var(--tt-code-text);
   font-family: var(--tt-font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- The handover after a provider change (ADR-0073) ---------- */
+/* Zach's pick B of the continue prototype, in place: a strip over the new Watcher's composer, edged in the accent, says
+   that sending starts it with a handover of the last one, what that carries and leaves out, and offers it to read. The
+   send button says Continue while it stands. The first message then shows the handover as Sotto's, beside the user's. */
+.watcher-handover { margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text); font-size: 13.5px; line-height: 1.45; }
+.watcher-handover__lead { display: flex; align-items: flex-start; gap: 8px; }
+.watcher-handover__lead > svg { flex: none; margin-top: 2px; color: var(--tt-accent-text); }
+.watcher-handover__lead > p { flex: 1 1 auto; min-width: 0; margin: 0; }
+.watcher-handover__lead strong { font-weight: 600; }
+.watcher-handover__dismiss { display: grid; flex: none; place-items: center; width: 26px; height: 26px; margin: -4px -5px -4px 0; padding: 0; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); cursor: pointer; }
+.watcher-handover__dismiss:hover { background: var(--tt-hover); color: var(--tt-text); }
+.watcher-handover__ledger { margin: 6px 0 0 23px; color: var(--tt-text-2); }
+.watcher-handover__read { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.watcher-handover__read:disabled { color: var(--tt-text-muted); cursor: progress; }
+.watcher-handover__error { margin: 6px 0 0 23px; color: var(--tt-error-text); }
+/* The words themselves, as the new Watcher receives them: a short scrolling block, so the composer keeps its room. */
+.watcher-handover__text { max-height: min(200px, 28vh); margin-top: 8px; padding: 10px 12px; overflow: auto; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken);
+  color: var(--tt-text); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.watcher-handover .watcher-handover__text { margin-left: 23px; }
+/* The send button says what a press does while the handover is offered. */
+.thread-prompt__actions > .thread-prompt__send[data-wide] { gap: 5px; width: auto; padding: 0 9px 0 12px; border-radius: var(--tt-radius-pill); font-size: 13px; font-weight: 600; white-space: nowrap; }
+/* In the conversation: Sotto's, on the user's side and edged in the accent, as a wake-up is; then the user's own words. */
+.watcher-handover-message { margin-bottom: 10px; }
+.watcher-handover-message__lead { margin: 0; color: var(--tt-text); font-size: 15px; line-height: 1.55; }
+.watcher-handover-message__ledger { margin: 4px 0 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.watcher-handover__disclose { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 2px 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; font-size: 13px; cursor: pointer; }
+.watcher-handover__disclose > svg { transition: transform 150ms ease; }
+.watcher-handover__disclose[aria-expanded='true'] > svg { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .watcher-handover__disclose > svg { transition: none; } }
