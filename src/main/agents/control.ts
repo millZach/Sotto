@@ -286,6 +286,8 @@ export class AgentControl {
   /** Delegation between threads (ADR-0081), given only while the Owl feature is on. */
   private delegationHooks: DelegationControlHooks | undefined
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
+  /** Delegation's own commands, among the machine commands above: they never reach delegation as the user's or Watcher's. */
+  private readonly delegationOrigins = new WeakSet<object>()
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
     const identities = [...this.watcher.current ? [this.watcher.current] : [], ...this.watcher.history,
       ...this.watcher.creation ? [this.watcher.creation.identity] : []]
@@ -328,7 +330,7 @@ export class AgentControl {
    */
   commandFromDelegation(command: DelegationCommand, guard: () => void): Promise<AgentState> {
     if (!this.delegationHooks || !['create-thread', 'manual-send', 'interrupt'].includes(command.type)) throw new Error('Delegation cannot answer requests or change permissions.')
-    const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard })
+    const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard }); this.delegationOrigins.add(parsed)
     return this.admitCommandShell(parsed)
   }
   /** Whether the user has words or images waiting in this thread's composer: typing there pauses delegated sends (ADR-0081). */
@@ -1658,7 +1660,8 @@ export class AgentControl {
     }
     // News arriving while the thread rests follows the turn it rests on; a request waiting on the user still holds it.
     const reviewed = !isThreadTurnRunning(thread) ? thread.lastTurn?.id ?? UNKNOWN_TURN : undefined
-    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed)
+    // While delegation is off, a delegation's waiting news is kept apart, so it holds back none of this (ADR-0081).
+    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed, this.delegationHooks ? undefined : isDelegationNews)
     this.syncFollowups(); this.publish(); this.pumpFollowups()
   }
   /**
@@ -2394,8 +2397,9 @@ export class AgentControl {
       if (!this.watcherOrigins.has(command)) this.watcherHooks?.userCommand(command, explicitThreadId ?? implicitThreadId ?? undefined, answersQuestion)
     } catch (error) { return Promise.resolve({ ...this.shell(), error: error instanceof Error ? error.message : 'Watcher could not accept this instruction. Nothing was sent.' }) }
     // The user's own send pauses delegated sends to the thread, and their Stop stops the threads it delegated to (ADR-0081).
-    // Delegation only takes note here: it never refuses the user's command.
-    if (!this.watcherOrigins.has(command)) {
+    // Watcher's Stop of a thread stops them too, as the user's does; its sends pause nothing. Delegation only takes note
+    // here: it never refuses the command.
+    if (!this.watcherOrigins.has(command) || command.type === 'interrupt' && !this.delegationOrigins.has(command)) {
       try { this.delegationHooks?.userCommand(command, explicitThreadId ?? implicitThreadId ?? undefined, answersQuestion) } catch { /* The next snapshot reconciles it. */ }
     }
     // Reserve before the command waits for its lane. This token is distinct from the native dispatch token.
@@ -2682,12 +2686,23 @@ export class AgentControl {
       // A queued follow-up waits on a prompt of its own thread, as before, not on the thread's other work.
       if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) continue
       const thread = this.state.host.threads.find(t => t.id === threadId)
+      // A delegation's news waits whole while delegation is off, as on a stable run after an Owl one (ADR-0072), and
+      // holds nothing back: news folded with it is set apart from it first, and the queue goes on past it (ADR-0081).
+      const held = (item: Readonly<QueuedFollowup>): boolean => !this.delegationHooks && (item.news ?? []).some(isDelegationNews)
+      if (!this.delegationHooks && items.some(item => item.threadId === threadId && isWaitingWakeUp(item) && held(item) && item.news!.some(news => !isDelegationNews(news)))) {
+        this.pumping.add(threadId)
+        let separated = false
+        const word = (kept: readonly WakeUpNews[]) => queuedWakeUpText(kept, { tool: this.wakeUpGuard?.tool(threadId) ?? false })
+        void this.followupStore.separateWakeUps(threadId, isDelegationNews, word).then(() => { separated = true })
+          .catch(() => { this.state.error = 'Could not save the follow-up queue.' })
+          .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (separated) this.pumpFollowups() })
+        continue
+      }
       // A steer may have selected any queue item. Reconcile its late echo before the queue head.
       const first = items.find(item => item.threadId === threadId && item.messageId && thread?.messages.some(message => message.role === 'user' && message.id === item.messageId))
-        ?? items.find(item => item.threadId === threadId)!
+        ?? items.find(item => item.threadId === threadId && !held(item))
+      if (!first) continue
       if (first.news?.some(isWatcherNews) && !this.watcherHooks?.wakeReady?.()) continue
-      // A delegation's news waits whole while delegation is off, as on a stable run after an Owl one (ADR-0072).
-      if (first.news?.some(isDelegationNews) && !this.delegationHooks) continue
       // Native idle status can precede turn/completed. A still-running outcome is
       // neither permission to dispatch nor a terminal failure requiring review.
       const terminalBlocked = thread && !isThreadTurnRunning(thread)
@@ -2726,7 +2741,7 @@ export class AgentControl {
         try {
           this.canAct(threadId)
           if (first.watcherOperationId) this.watcherHooks?.guardOperation(first.watcherOperationId)
-          await this.followupStore.claim(first.id); claimed = true
+          await this.followupStore.claim(first.id, 'send', held); claimed = true
           this.syncFollowups(); this.publish()
           const item = this.followupStore.get().items.find(item => item.id === first.id)!
           // Read immediately before dispatch, as every other send does: the send and its checkpoint go from this history,
@@ -2782,7 +2797,7 @@ export class AgentControl {
           }
         } finally { await this.finishTurn(turn, failure) }
       })().catch(() => { this.state.error = 'Could not save follow-up delivery state. Refresh before making changes.' })
-        .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (requeued || this.followupStore.peek().items.find(i => i.threadId === threadId)?.id !== first.id) this.pumpFollowups() })
+        .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (requeued || this.followupStore.peek().items.find(i => i.threadId === threadId && !held(i))?.id !== first.id) this.pumpFollowups() })
     }
   }
   private async interruptThread(command: Extract<AgentCommand, { type: 'interrupt' }>): Promise<AgentState> {

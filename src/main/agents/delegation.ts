@@ -123,6 +123,7 @@ const NOTES: Record<WatcherOutcome, string> = {
   paused: 'The user\'s own turn in the delegated thread holds it, or the user sent there since you last looked. Nothing more was sent. Read it again before sending.',
   unknown: 'Sotto cannot prove what happened to it, as after a restart mid-turn. Do not assume it answered, and do not send it again without reading it.',
 }
+const GONE = 'The delegated thread is gone from Sotto, so nothing more will come of this, and Sotto cannot tell how its turn ended. Start a new delegation if the work is still needed.'
 export const NOT_ADMITTED = 'This thread cannot delegate with Sotto\'s tools. Only Claude Code, Codex, Grok Build and Muse threads on this computer can, outside Watcher, host setup and provider jobs. Threads on another machine get none of Sotto\'s tools yet. Nothing was started.'
 const LEVEL_LIMIT = 'This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. Nothing was started.'
 
@@ -155,6 +156,10 @@ export class DelegationService {
   private readonly calling = new Set<string>()
   private readonly waiters = new Map<string, Set<() => void>>()
   private readonly sending = new Set<string>()
+  /** Briefs being sent now, by delegation, until the send settles. */
+  private readonly dispatches = new Map<string, Promise<void>>()
+  /** Starts admitted whose delegated thread is still being created, which a snapshot without it does not end. */
+  private readonly creating = new Set<string>()
   private readonly answeredThisRun = new Set<string>()
   private readonly dispatchRefusals = new Map<string, Failure>()
   /** Briefs a Stop fenced while they were on their way: their guard refuses them at the writer. */
@@ -330,14 +335,23 @@ export class DelegationService {
       const caller = this.caller(threadId, this.snapshot())
       const record = this.owned(caller.id, parsed.data.delegation)
       if (!this.open(record)) return { ...(await this.result(record)), note: 'This delegation had already ended. Nothing was stopped.' }
+      // A stop it asked for is not news to it, however it lands.
       this.update(record.id, saved => { saved.told = 'stopped' })
+      // A brief on its way is fenced as a Stop fences it: the writer refuses it, or it landed and its turn is stopped below.
+      if (record.deliveryState === 'queued' || record.deliveryState === 'dispatching') this.fenced.add(record.id)
       if (record.deliveryState === 'queued') this.fail(record.id, 'stopped')
-      else {
-        const thread = this.snapshot().threads.find(item => item.id === record.delegatedThreadId)
-        if (thread && isThreadTurnRunning(thread) && this.answering(record, thread)) await this.stopThreads([record.delegatedThreadId], new Set([caller.id]))
+      else await this.dispatches.get(record.id)
+      let stopping = false
+      const current = this.record(record.id)!
+      if (this.open(current)) {
+        const thread = this.snapshot().threads.find(item => item.id === current.delegatedThreadId)
+        if (thread && isThreadTurnRunning(thread) && this.answering(current, thread)) { await this.stopThreads([current.delegatedThreadId], new Set([caller.id])); stopping = true }
       }
+      const answer = await this.result(this.record(record.id)!)
+      if (!stopping || !this.open(current)) return answer
+      this.update(current.id, saved => { saved.told = 'stopped' })
       await this.persist()
-      return await this.result(this.record(record.id)!)
+      return { ...answer, note: 'Sotto asked the delegated thread to stop. Nothing more will be sent to it for this delegation; read it again for how its turn ended.' }
     } catch (error) { return error instanceof Refusal ? error.result : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not cancel this delegation. Call read_delegation to see where it stands.') }
   }
 
@@ -506,6 +520,7 @@ export class DelegationService {
     const delegatedThreadId = randomUUID()
     const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null })
     this.records.push(record)
+    this.creating.add(record.id)
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
     await this.saveAdmission(record)
     this.touched(record)
@@ -522,6 +537,7 @@ export class DelegationService {
     try { await this.save() }
     catch {
       this.records = this.records.filter(item => item.id !== record.id)
+      this.creating.delete(record.id)
       if (record.action === 'start') this.links.delete(record.delegatedThreadId)
       refuse('PROVIDER_UNAVAILABLE', 'Sotto could not save this delegation, so nothing was started or sent. Try again.')
     }
@@ -540,7 +556,10 @@ export class DelegationService {
         // Linked on the thread's own record before its first send, so its first launch already knows its level.
         await this.options.host.setDelegatedBy(record.delegatedThreadId, record.delegatingThreadId)
       } catch { this.fail(record.id, 'provider', true); await this.persist(); return }
+      finally { this.creating.delete(record.id) }
     }
+    // A Stop while the thread was created or linked ended the brief: it is not held for a send that will never come.
+    if (this.record(record.id)?.deliveryState !== 'queued') return
     this.queuedBriefs.set(record.id, brief)
     const snapshot = this.snapshot(), thread = snapshot.threads.find(item => item.id === record.delegatedThreadId)
     if (thread && this.free(thread, snapshot)) await this.dispatch(record.id)
@@ -579,7 +598,13 @@ export class DelegationService {
     if (this.pausedThread(thread)) { this.dispatchRefusals.set(delegationId, 'paused'); throw new Error('The user is working in this thread. Nothing was sent.') }
     if (nativeHead(thread) !== record.expectedLastUserMessageId) { this.dispatchRefusals.set(delegationId, 'target-changed'); throw new Error('This thread received another instruction. Nothing was sent.') }
   }
+  /** Sends a waiting brief, known while it is on its way so that a cancel can wait for where it landed. */
   private async dispatch(delegationId: string): Promise<void> {
+    const running = this.dispatchOnce(delegationId)
+    this.dispatches.set(delegationId, running)
+    try { await running } finally { if (this.dispatches.get(delegationId) === running) this.dispatches.delete(delegationId) }
+  }
+  private async dispatchOnce(delegationId: string): Promise<void> {
     const record = this.record(delegationId), brief = this.queuedBriefs.get(delegationId)
     if (!record || brief === undefined || record.deliveryState !== 'queued' || this.sending.has(record.delegatedThreadId)) return
     this.sending.add(record.delegatedThreadId)
@@ -599,7 +624,11 @@ export class DelegationService {
           : result.error ? 'failed' : 'accepted'
       } catch { state = 'failed' }
       if (state === 'failed') this.fail(delegationId, this.dispatchRefusals.get(delegationId) ?? 'provider', true)
-      else this.accept(delegationId, state)
+      else {
+        this.accept(delegationId, state)
+        // An unconfirmed brief reads `unknown` until a snapshot proves it either way, and the delegating thread is told so.
+        if (this.record(delegationId)?.deliveryState === 'uncertain') this.changed(delegationId)
+      }
     } finally {
       this.dispatchRefusals.delete(delegationId)
       this.sending.delete(record.delegatedThreadId)
@@ -608,6 +637,8 @@ export class DelegationService {
     }
   }
   private accept(delegationId: string, state: 'accepted' | 'uncertain'): void {
+    // Past the writer, a fence has nothing left to refuse.
+    this.fenced.delete(delegationId)
     this.update(delegationId, saved => {
       if (saved.deliveryState !== 'accepted') saved.deliveryState = state
       const link = this.links.get(saved.delegatedThreadId)
@@ -616,7 +647,7 @@ export class DelegationService {
   }
   /** Ends a brief that was never delivered. One refused before anything was sent costs its thread no prompt. */
   private fail(delegationId: string, failure: Failure, refund = false): void {
-    this.queuedBriefs.delete(delegationId)
+    this.queuedBriefs.delete(delegationId); this.fenced.delete(delegationId)
     this.update(delegationId, saved => {
       if (saved.deliveryState === 'accepted' || saved.deliveryState === 'failed') return
       saved.deliveryState = 'failed'; saved.failure = failure
@@ -670,6 +701,31 @@ export class DelegationService {
       .map(threadId => this.options.control.commandFromDelegation({ type: 'interrupt', threadId }, () => { if (this.closed) throw new Error('Sotto is stopping.') })))
   }
 
+  /**
+   * Whether a brief whose delivery was not confirmed can no longer be proved delivered (ADR-0058, ADR-0073): no send of
+   * it is on its way, the coordinator holds nothing unresolved for its thread, the thread is not working, and its own
+   * message never showed there. Until then it holds its start's slot, as Watcher's uncertain start holds its
+   * reservation while its delivery is unresolved; after, it reads `unknown`, is never sent again, and holds nothing.
+   */
+  /**
+   * Ends a brief whose delegated thread is gone from Sotto, deleted or never created, unless that thread is still being
+   * created or the brief is on its way: one still waiting is refused unsent, and any other reads `unknown`, since Sotto
+   * cannot tell how its turn ended. Either way it holds nothing after, and the delegating thread is told.
+   */
+  private gone(record: DelegationRecord): boolean {
+    if (this.creating.has(record.id) || this.sending.has(record.delegatedThreadId)) return false
+    if (record.deliveryState === 'queued') { this.fail(record.id, 'provider', true); return true }
+    this.update(record.id, saved => {
+      if (saved.deliveryState === 'dispatching') saved.deliveryState = 'uncertain'
+      saved.outcome = 'unknown'; saved.outcomeAt = now()
+    })
+    this.changed(record.id)
+    return true
+  }
+  private unproved(record: DelegationRecord, thread: AgentThread): boolean {
+    return (record.deliveryState === 'dispatching' || record.deliveryState === 'uncertain') && !this.sending.has(record.delegatedThreadId)
+      && !isThreadTurnRunning(thread) && !this.options.control.hasPendingThreadWork(thread.id)
+  }
   private observedThreadIds(): string[] {
     return [...new Set([...this.records.filter(record => this.open(record)).map(record => record.delegatedThreadId), ...this.paused])]
   }
@@ -691,7 +747,11 @@ export class DelegationService {
     }
     for (const record of open) {
       const thread = threads.get(record.delegatedThreadId)
-      if (!thread || !isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) continue
+      if (!thread) {
+        if (this.gone(record)) changed = true
+        continue
+      }
+      if (!isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) continue
       if (record.deliveryState === 'queued') {
         if (this.queuedBriefs.has(record.id) && this.free(thread, snapshot)) void this.dispatch(record.id).catch(() => undefined)
         continue
@@ -699,7 +759,14 @@ export class DelegationService {
       if ((record.deliveryState === 'dispatching' || record.deliveryState === 'uncertain') && thread.messages.some(message => message.role === 'user' && message.id === record.messageId)) {
         this.accept(record.id, 'accepted'); changed = true
       }
-      if (record.deliveryState !== 'accepted') continue
+      if (record.deliveryState !== 'accepted') {
+        if (this.unproved(record, thread)) {
+          this.update(record.id, saved => { saved.deliveryState = 'uncertain'; saved.outcome = 'unknown'; saved.outcomeAt = now() })
+          changed = true
+          this.changed(record.id)
+        }
+        continue
+      }
       const seen = watcherTurnOutcome({ messageId: record.messageId, delivery: 'now', ...(record.outcome ? { outcome: record.outcome } : {}) }, thread, messageId => briefs.has(messageId))
       if (!seen || seen.outcome === record.outcome && seen.turnMessageId === record.turnMessageId && seen.replyMessageId === record.replyMessageId) continue
       this.update(record.id, saved => {
@@ -779,7 +846,7 @@ export class DelegationService {
     const latest = this.records.findLast(item => item.delegatedThreadId === record.delegatedThreadId && item.deliveryState === 'accepted')
     const head = thread ? nativeHead(thread) : null
     const read: { -readonly [K in keyof DelegationRead]: DelegationRead[K] } = { id: record.id, thread: record.delegatedThreadId, work: record.work, action: record.action,
-      outcome, note: NOTES[outcome], createdAt: record.createdAt, ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
+      outcome, note: !thread && (outcome === 'unknown' || outcome === 'failed') ? GONE : NOTES[outcome], createdAt: record.createdAt, ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
       ...(latest && head !== null && head !== latest.messageId ? { userSentSince: true } : {}),
       ...(record.failure === 'target-changed' ? { refusal: 'TARGET_CHANGED' as const } : record.failure === 'paused' ? { refusal: 'PAUSED' as const } : {}) }
     if (outcome === 'answered' && record.replyMessageId) {
