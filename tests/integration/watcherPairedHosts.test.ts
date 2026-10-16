@@ -105,6 +105,29 @@ it('negotiates host-v1 features only for recorded desktops and never for stable 
   await expect(stable.socket.watcherRead({ master: { target: { hostId: randomUUID(), threadId: 'master' }, projectId: 'master', provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() } })).rejects.toMatchObject({ code: 'invalid_request' })
 })
 
+it('reads and directs a paired host for a Watcher on Muse only when the host lists watcher-muse, and says to update one that does not', async () => {
+  const f = await master()
+  // Watcher on Muse: its identity names muse as its provider (ADR-0079); this host is new enough to take it.
+  await f.control.updateWatcher(record => { record.current!.provider = 'muse' })
+  expect(f.socket.supportsWatcherMuse).toBe(true)
+  expect(f.hello.features).toContain('watcher-muse')
+  const project = { hostId: f.pairing.hostId, projectId: f.project.id }
+  expect(await f.call('list_threads', { project })).toMatchObject({ status: 'ok' })
+  // An older host does not know a Watcher on Muse, so it is asked nothing and Watcher is told to update it.
+  vi.spyOn(f.socket, 'supportsWatcherMuse', 'get').mockReturnValue(false)
+  const reads = vi.spyOn(f.socket, 'watcherRead'), controls = vi.spyOn(f.socket, 'watcherControl')
+  for (const [name, input] of [['list_threads', { project }], ['start_thread', f.start()]] as const) {
+    expect(await f.call(name, input)).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE', message: expect.stringMatching(/Update Sotto on this host before Watcher on Muse/u) })
+  }
+  expect(reads).not.toHaveBeenCalled(); expect(controls).not.toHaveBeenCalled()
+  // Its projects say so too, rather than offering control Watcher would be refused.
+  const listed = await f.call('list_projects', {})
+  if (listed.status !== 'ok') throw new Error('projects-refused')
+  const remoteRows = listed.projects.filter(item => item.target.hostId === f.pairing.hostId)
+  expect(remoteRows.length).toBeGreaterThan(0)
+  expect(remoteRows.every(item => !item.controlAvailable && !item.readsAvailable)).toBe(true)
+})
+
 it('lists This computer and each paired machine with its facts, running threads and starts in flight; an older host reads unknown, a disconnected one not connected (#1031)', async () => {
   const f = await master()
   const family = ({ win32: 'windows', darwin: 'macos', linux: 'linux' } as Record<string, string>)[process.platform] ?? null
