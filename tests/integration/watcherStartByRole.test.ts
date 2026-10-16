@@ -150,6 +150,37 @@ it('returns the original receipt for a retry after the role\'s setting changed, 
   expect(JSON.stringify(saved)).not.toContain('building')
 })
 
+/** A paired host that takes every start and answers with its receipt, holding new threads to `permissionCeiling`. */
+function acceptingHost(f: Awaited<ReturnType<typeof fixture>>, permissionCeiling: AgentRuntimeMode) {
+  const hostId = randomUUID()
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId, control: true, reads: true, connected: true, permissionCeiling }],
+    read: async () => { throw new Error('Synthetic host has no reads') },
+    control: async (_hostId, request) => {
+      const { operation, call } = request
+      if (call.name !== 'start_thread') throw new Error('Synthetic host takes starts only')
+      return { status: 'ok', receipt: { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'accepted',
+        receiptId: operation.receiptId, cardId: operation.cardId }, limits: { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }, target: operation.target,
+        effectiveChoices: { modelId: call.input.modelId!, reasoningEffort: call.input.reasoningEffort ?? null, permission: call.input.permission!, workingCopy: call.input.workingCopy },
+        creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId! }
+    },
+    snapshot: id => id === hostId ? { ...f.control.watcherSnapshot(), hostId, threads: [] } : undefined,
+    subscribe: () => () => undefined,
+  }
+  f.service.useRemoteHosts(remote)
+  return hostId
+}
+
+it('names the paired host, not the new-thread default, when the host\'s limit held a role\'s permission', async () => {
+  const f = await fixture({ newThread: 'full-access' })
+  f.setChoices({ 'computer-use': { modelId: f.base.id, reasoningEffort: 'low' } })
+  const hostId = acceptingHost(f, 'approval-required')
+  const result = f.ok(await f.call(f.start({ role: 'computer-use', project: { hostId, projectId: f.project.id } })))
+  expect(result.effectiveChoices.permission).toEqual({ kind: 'runtime', mode: 'approval-required' })
+  expect(result.role!.note).toContain('Its permission, Full access, was held to Ask for approval, the most that host lets this computer give a thread it starts there.')
+  expect(result.role!.note).not.toContain('new-thread default')
+})
+
 it('sends a paired host the concrete start, with no role key an older host would refuse', async () => {
   const f = await fixture({ newThread: 'full-access' })
   f.setChoices({ research: { modelId: f.other.id, reasoningEffort: 'medium', runtimeMode: 'approval-required' } })

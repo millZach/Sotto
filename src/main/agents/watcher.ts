@@ -2,9 +2,9 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf,
-  type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread, type HandoverCounts } from '../../shared/agents'
+  type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentThread, type HandoverCounts } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
-import { capRuntimeMode, roleStartNote, startFromRole, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { capRuntimeMode, roleStartNote, startFromRole, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
@@ -242,8 +242,11 @@ export class WatcherService implements WatcherControlHooks {
   /** The widest a new worker may start on: the new-thread default, narrowed by a paired master's ceiling, as the model offers it. */
   private ceiling(model: AgentModel | undefined, pairedCeiling?: WatcherHostControl['ceiling']) {
     const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
-    const desired = pairedCeiling && RUNTIME_MODE_ORDER.indexOf(pairedCeiling) < RUNTIME_MODE_ORDER.indexOf(configured) ? pairedCeiling : configured
-    return resolveNewThreadPermission(model, desired)
+    const paired = pairedCeiling !== undefined && RUNTIME_MODE_ORDER.indexOf(pairedCeiling) < RUNTIME_MODE_ORDER.indexOf(configured)
+    const desired = paired ? pairedCeiling : configured
+    // Which limit this is, for a receipt that says what held a role's permission back.
+    const by: NonNullable<HeldPermission['by']> = paired ? 'paired-host' : 'new-thread-default'
+    return { ...resolveNewThreadPermission(model, desired), by }
   }
   private permission(model: AgentModel | undefined, explicit?: WatcherToolInput<'start_thread'>['permission'], pairedCeiling?: WatcherHostControl['ceiling']) {
     const ceiling = this.ceiling(model, pairedCeiling)
@@ -1294,12 +1297,12 @@ export class WatcherService implements WatcherControlHooks {
         if (create.reasoningEffort && !model.reasoningEfforts?.includes(create.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this worker model offers.')
         const roleEffort = byRole?.reasoningEffort && !byRole.named.includes('effort') && model.reasoningEfforts?.includes(byRole.reasoningEffort) ? byRole.reasoningEffort : undefined
         // A permission the request named keeps its refusal. One the role gave is held to the ceiling instead.
-        let explicit = create.permission, held: { wanted: AgentRuntimeMode; startedOn: AgentRuntimeMode } | undefined
+        let explicit = create.permission, held: HeldPermission | undefined
         if (byRole?.runtimeMode && !explicit) {
           const ceiling = this.ceiling(model, pairedCeiling)
           if (ceiling.providerMode === undefined && ceiling.runtimeMode) {
             const mode = capRuntimeMode(byRole.runtimeMode, ceiling.runtimeMode)
-            if (mode !== byRole.runtimeMode) held = { wanted: byRole.runtimeMode, startedOn: mode }
+            if (mode !== byRole.runtimeMode) held = { wanted: byRole.runtimeMode, startedOn: mode, by: ceiling.by }
             explicit = { kind: 'runtime', mode }
           }
         }

@@ -271,13 +271,14 @@ export function startFromRole(role: WorkerKind, choices: WorkerRoleChoices, mode
 }
 
 /**
- * A role's permission the ceiling held back: what the role wanted, what the start got, and which limit held it, the
- * user's new-thread default or, for a delegation, the delegating thread's own permission when that is the narrower.
+ * A role's permission a ceiling held back: what the role wanted, what the start got, and which limit held it: the
+ * user's new-thread default; for a delegation, the delegating thread's own permission when that is the narrower; for a
+ * start on a paired host, what that host lets this computer give a thread there when that is the narrower.
  */
 export interface HeldPermission {
   readonly wanted: AgentRuntimeMode
   readonly startedOn: AgentRuntimeMode
-  readonly by?: 'new-thread-default' | 'delegating-thread'
+  readonly by?: 'new-thread-default' | 'delegating-thread' | 'paired-host'
 }
 /**
  * What a start by role says in its receipt, for the agent that asked to pass on: the role, what the request named in
@@ -296,9 +297,12 @@ export function roleStartNote(start: RoleStart, models: readonly AgentModel[], h
     parts.push(`This request named its ${list(start.named.map(field => words[field]))}${model}, which overrides ${role.name} for this start only.`)
     if (rest.length) parts.push(`Its ${list(rest)} came from the role.`)
   }
-  if (held) parts.push(held.by === 'delegating-thread'
-    ? `Its permission, ${RUNTIME_MODE_WORDS[held.wanted]}, was held to ${RUNTIME_MODE_WORDS[held.startedOn]}, the delegating thread's own, since a delegated thread gets no more.`
-    : `Its permission, ${RUNTIME_MODE_WORDS[held.wanted]}, was held to the user's new-thread default, ${RUNTIME_MODE_WORDS[held.startedOn]}.`)
+  if (held) {
+    const wanted = RUNTIME_MODE_WORDS[held.wanted], startedOn = RUNTIME_MODE_WORDS[held.startedOn]
+    parts.push(held.by === 'delegating-thread' ? `Its permission, ${wanted}, was held to ${startedOn}, the delegating thread's own, since a delegated thread gets no more.`
+      : held.by === 'paired-host' ? `Its permission, ${wanted}, was held to ${startedOn}, the most that host lets this computer give a thread it starts there.`
+        : `Its permission, ${wanted}, was held to the user's new-thread default, ${startedOn}.`)
+  }
   return parts.join(' ')
 }
 
