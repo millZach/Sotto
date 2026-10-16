@@ -37,4 +37,25 @@ SOTTO_PERF_BENCH=1 npm run build && npx playwright test tests/e2e/main-freeze.sp
 
 ## Results
 
-Recorded per change, alongside the commit or branch measured. None yet; this note adds the benchmark.
+Recorded per change, alongside the commit or branch measured.
+
+**October 15, 2026: main before and after the copy fixes (#1065–#1068), every Owl feature on.** Two runs each, in
+the order main, fixed, fixed, main, with `SOTTO_OWL_FEATURES` setting all six features to 1:
+
+| Case | Main: longest stall, stalls of 100 ms or more | Fixed: longest stall, stalls of 100 ms or more | Keystrokes, p95, both |
+| --- | --- | --- | --- |
+| Nothing streaming | 27–31 ms, 0 | 29–31 ms, 0 | 16–19 ms |
+| One thread streaming | 155–232 ms, 5–9 | 176–251 ms, 9–11 | 21–32 ms |
+| Three threads streaming | 70–271 ms, 1 | 308–340 ms, 3–4 | 21–25 ms |
+
+The two builds are not told apart, and the benchmark does not yet show the owner's lag, for two reasons that the next
+change to it should fix:
+
+- The keystroke timer starts in the renderer, at the key's arrival. In Electron, the main process runs on the thread
+  that receives the operating system's input and forwards it to the window, so a key that waits behind a long task in
+  main has already waited before the timer starts. Main's stalls are the measure of that wait here; a keystroke timer
+  that includes it has to start outside the app.
+- The 230 padding threads are drafts with no provider session, so the coordinator, the workspace and Watcher never walk
+  them, Watcher is not open, and no saved host waits for an update. The copies the fixes remove happen only when those
+  are true. `tests/perf/streamingCopyBudget.perf.test.ts` builds that state and does tell the builds apart: 95.5 rising
+  to 635.5 copies per update before, 20.5 after.
