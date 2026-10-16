@@ -947,7 +947,11 @@ export class DesktopHostRouter {
       const state = this.build(connection => connection.hostId === broadcast?.hostId ? broadcast.state : connection.service.shell())
       this.published = state
       for (const listener of this.listeners) listener(state)
-    } else this.settleAnswerNotice()
+    } else {
+      // Nothing was built for this change, so what was last published no longer answers for it.
+      this.published = undefined
+      this.settleAnswerNotice()
+    }
     this.publishedNotice = this.notice
     for (const listener of this.changeListeners) listener()
   }
