@@ -191,6 +191,19 @@ describe('the Update all card', () => {
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['claude'], hostId: LOCAL }))
   })
 
+  // Sol, review of #1084: the press stops the threads and the update still waits for the clients, so it does not say "now".
+  it('names Stop N threads for what it does while the host also waits for its clients', async () => {
+    provideApp({ ...available, phase: { phase: 'unsupported' } })
+    provideAgents(agentState())
+    const hosts = hostsBridge({ hosts: [forge], localHostEnabled: true, localHostRunning: true, updates: [hostUpdate({ phase: 'waiting', working: 2, clientsUpdating: true })] })
+    render(<UpdateAllCard hosts={hosts.asBridge} />)
+    const stop = await screen.findByRole('button', { name: 'Stop 2 threads on forge. Its host still updates once its clients have.' })
+    expect(stop).toHaveTextContent(/^Stop 2 threads$/u)
+    expect(screen.queryByRole('button', { name: /update its host now/u })).toBeNull()
+    fireEvent.click(stop)
+    await waitFor(() => expect(hosts.bridge.command).toHaveBeenCalledWith({ type: 'host-update', id: FORGE, action: 'stop-threads' }))
+  })
+
   it('cancels a host’s waiting update, keeping focus in the card', async () => {
     provideApp({ ...available, phase: { phase: 'unsupported' } })
     provideAgents(agentState())

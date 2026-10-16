@@ -39,6 +39,8 @@ export interface UpdateAllItem {
   readonly provider?: ProviderId | undefined
   /** A host's working threads, while its update waits for them. */
   readonly working?: number | undefined
+  /** A host's update that, once its threads finish, still waits for the host's client updates: stopping them does not start it. */
+  readonly clientsUpdating?: boolean | undefined
   /** A host's update that Cancel update can still stop: waiting for its threads, or downloading and checking (ADR-0040). */
   readonly cancellable?: boolean | undefined
   /** The version a host's own update installs. */
@@ -219,8 +221,9 @@ function hostItem(update: HostUpdateState, pass: UpdateAllPass | null): UpdateAl
   // Waiting for the host's client update line and nothing else reads as the press's own wait for its clients.
   if (update.phase === 'waiting' && update.clientsUpdating && !working) return { ...base, state: 'running', detail: `Updates once ${name}’s clients have.`, cancellable: true }
   if (update.phase === 'waiting' || update.phase === 'confirm' && !touched) {
-    const clients = update.phase === 'waiting' && update.clientsUpdating ? ' and its clients have' : ''
-    return { ...base, state: 'waiting', detail: `Updates once its ${threads} ${working === 1 ? 'finishes' : 'finish'}${clients}.`, cancellable: true }
+    const clientsUpdating = update.phase === 'waiting' && update.clientsUpdating === true
+    return { ...base, state: 'waiting', detail: `Updates once its ${threads} ${working === 1 ? 'finishes' : 'finish'}${clientsUpdating ? ' and its clients have' : ''}.`, cancellable: true,
+      ...clientsUpdating ? { clientsUpdating } : {} }
   }
   if (refused) return { ...base, state: 'failed', detail: refused }
   if (update.phase === 'failed') {

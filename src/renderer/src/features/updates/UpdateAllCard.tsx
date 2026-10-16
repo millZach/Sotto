@@ -78,7 +78,10 @@ function StepRow({ step, busy, onRetry, onStopThreads, onCancel }: {
   const threads = `${item?.working ?? 0} ${item?.working === 1 ? 'thread' : 'threads'}`
   const actions = item ? [
     item.state === 'failed' ? <Button key="retry" variant="secondary" disabled={busy} aria-label={`Try again to update ${item.name}${where}`} onClick={() => onRetry(item)}>Try again</Button> : null,
-    item.state === 'waiting' ? <Button key="stop" variant="secondary" disabled={busy} aria-label={`Stop ${threads}${where} and update its host now`} onClick={() => onStopThreads(item)}>Stop {threads} and update</Button> : null,
+    // While the host's clients also update, stopping the threads does not start its update, and the press says so.
+    item.state === 'waiting' ? <Button key="stop" variant="secondary" disabled={busy}
+      aria-label={item.clientsUpdating ? `Stop ${threads}${where}. Its host still updates once its clients have.` : `Stop ${threads}${where} and update its host now`}
+      onClick={() => onStopThreads(item)}>{item.clientsUpdating ? `Stop ${threads}` : `Stop ${threads} and update`}</Button> : null,
     item.cancellable ? <Button key="cancel" variant="ghost" disabled={busy} aria-label={`Cancel update, and leave ${item.machine.kind === 'host' ? item.machine.name : item.name} on ${item.versions.from}`} onClick={() => onCancel(item)}>Cancel update</Button> : null,
     item.commands ? <Button key="copy" variant="ghost" aria-label={`Copy the commands that update ${item.name}${where}`} onClick={copy}><Copy size={13} aria-hidden="true" />{copied ?? 'Copy commands'}</Button> : null,
   ].filter(Boolean) : []
