@@ -28,12 +28,16 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
   const unansweredNew = useRef(new Set<string>())
   const onAdded = useRef(options.onAdded)
   onAdded.current = options.onAdded
-  // The project added or opened, held until a render's `state` lists it.
-  const [added, setAdded] = useState<string | null>(null)
+  // The project added or opened, held until a render's `state` lists it. The reply listed it, so the first state
+  // newer than the one held at the reply either lists it or has lost it, as when the host drops; lost, nothing opens
+  // later on its own.
+  const [added, setAdded] = useState<{ readonly projectId: string; readonly before: AgentState } | null>(null)
   useEffect(() => {
-    if (added === null || !state.host.projects.some(project => project.id === added)) return
+    if (added === null) return
+    const listed = state.host.projects.some(project => project.id === added.projectId)
+    if (!listed && state === added.before) return
     setAdded(null)
-    onAdded.current?.(added)
+    if (listed) onAdded.current?.(added.projectId)
   }, [added, state])
   const add = async (): Promise<void> => {
     if (adding) return
@@ -56,7 +60,7 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
       if (existing) {
         const result = await command({ type: 'select-project', projectId: existing.id })
         if (result === null || result.error !== null) { setDialogError(result?.error ?? 'Could not open the project. Nothing was changed. Try again.'); return }
-        setOpen(false); setAdded(existing.id); return
+        setOpen(false); setAdded({ projectId: existing.id, before: latest.current }); return
       }
       const host = hostForThread(current.host, { hostId: choice.hostId })
       const defaultModelId = defaultThreadModelId(current.configuration, host.models, current.reasoningAccounts)
@@ -76,7 +80,7 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
       if (result === null || result.error !== null) { setDialogError(result?.error ?? 'Could not confirm the new project. Choose the folder again to check; it will not be added twice.'); return }
       setOpen(false)
       const project = projectAtFolder(result.host.projects, choice.hostId, choice.path)
-      if (project) setAdded(project.id)
+      if (project) setAdded({ projectId: project.id, before: latest.current })
     } catch { setDialogError('Could not add the project. Nothing was changed. Try again.') }
     finally { setAdding(false) }
   }
