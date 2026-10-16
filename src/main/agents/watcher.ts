@@ -1151,16 +1151,23 @@ export class WatcherService implements WatcherControlHooks {
    * One sotto_threads call. A client that declares how long it waits for a call (`waitMs`) is answered before that, and the
    * call carries on: a start or send still under way answers with its receipt, which read_operation reads (ADR-0079).
    */
-  async invoke(threadId: string, name: WatcherToolName, args: unknown, context: { readonly waitMs?: number } = {}): Promise<unknown> {
+  invoke(threadId: string, name: WatcherToolName, args: unknown, context: { readonly waitMs?: number } = {}): Promise<unknown> {
+    return this.startCall(threadId, name, args, context).answer
+  }
+  /**
+   * The same call, with when its work truly ends: `answer` may come first, inside the client's wait, while `settled` waits
+   * for the work itself. The tool server holds the call's place in its in-flight count until then.
+   */
+  startCall(threadId: string, name: WatcherToolName, args: unknown, context: { readonly waitMs?: number } = {}): { readonly answer: Promise<unknown>; readonly settled: Promise<void> } {
     const progress: CallProgress = {}
     const work = this.invokeNow(threadId, name, args, progress)
-    if (context.waitMs === undefined) return await work
+    const settled = work.then(() => undefined, () => undefined)
+    if (context.waitMs === undefined) return { answer: work, settled }
     let timer: ReturnType<typeof setTimeout> | undefined
     const late = new Promise<typeof LATE>(resolve => { timer = setTimeout(() => resolve(LATE), Math.max(context.waitMs! - CLIENT_WAIT_MARGIN_MS, context.waitMs! / 2)) })
-    try {
-      const result = await Promise.race([work, late])
-      return result === LATE ? this.stillWorking(name, progress) : result
-    } finally { clearTimeout(timer) }
+    const answer = Promise.race([work, late]).then(result => result === LATE ? this.stillWorking(name, progress) : result)
+      .finally(() => { clearTimeout(timer) })
+    return { answer, settled }
   }
   /** The answer to a call its client would otherwise give up on: where it stands, and how to read how it ends. */
   private stillWorking(name: WatcherToolName, progress: CallProgress): unknown {

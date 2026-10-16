@@ -39,10 +39,11 @@ describe('requires SOTTO_MUSE_LIVE=1', () => {
     })
     const control = runtime.agentControl, service = runtime.watcher!
     const calls: { name: string; status: string }[] = []
-    const invoke = service.invoke.bind(service)
-    vi.spyOn(service, 'invoke').mockImplementation(async (id, name, args, context) => {
-      const result = await invoke(id, name, args, context) as { status: string }
-      calls.push({ name, status: result.status }); return result
+    // The tool server starts each call through startCall, which answers and later settles.
+    const startCall = service.startCall.bind(service)
+    vi.spyOn(service, 'startCall').mockImplementation((id, name, args, context) => {
+      const call = startCall(id, name, args, context)
+      return { ...call, answer: call.answer.then(answer => { calls.push({ name, status: (answer as { status: string }).status }); return answer }) }
     })
     let watcherId = ''
     try {

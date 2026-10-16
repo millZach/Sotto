@@ -50,13 +50,15 @@ export class WatcherToolServer implements WatcherProfileTools {
     else if (!Object.hasOwn(watcherToolSchemas, name)) result = watcherRefusal('INVALID_INPUT', 'That tool is unavailable. Watcher cannot answer requests or change permissions.')
     else if (this.running >= 8) result = watcherRefusal('IN_FLIGHT_LIMIT', 'Watcher already has eight tool calls in progress. Wait for one to finish.', true)
     else {
+      // A call answered inside its client's wait keeps its place until its work ends, so calls answered early cannot pile up.
       this.running++
       try {
-        result = await this.service.invoke(threadId, name as WatcherToolName, args, context)
+        const call = this.service.startCall(threadId, name as WatcherToolName, args, context)
+        void call.settled.finally(() => { this.running-- })
+        result = await call.answer
         // Validate what main exposes, as well as what the caller supplied.
         result = watcherToolSchemas[name as WatcherToolName].output.parse(result)
       } catch { result = watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher result could not be read safely. Check its receipt before trying again.', true) }
-      finally { this.running-- }
     }
     return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result as Record<string, unknown>,
       ...((result as { status: string }).status === 'refused' ? { isError: true } : {}) }

@@ -65,10 +65,14 @@ it.skipIf(!enabled)('starts and reads a real Codex worker without confirmation a
       writingSettings: async () => settings, historyEnabled: () => false, openExternal: async () => undefined, reasoner: {},
       providers: { codex: adapter, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
     const control = runtime.agentControl, service = runtime.watcher!, tools = runtime.watcherTools!
-    const invoke = service.invoke.bind(service)
-    vi.spyOn(service, 'invoke').mockImplementation(async (id, name, args) => {
-      const result = await invoke(id, name, args) as { status: string; code?: string }
-      evidence.toolCalls.push({ name, status: result.status, ...(result.code ? { code: result.code } : {}) }); await save(); return result
+    // The tool server starts each call through startCall, which answers and later settles.
+    const startCall = service.startCall.bind(service)
+    vi.spyOn(service, 'startCall').mockImplementation((id, name, args, context) => {
+      const call = startCall(id, name, args, context)
+      return { ...call, answer: call.answer.then(async answer => {
+        const result = answer as { status: string; code?: string }
+        evidence.toolCalls.push({ name, status: result.status, ...(result.code ? { code: result.code } : {}) }); await save(); return answer
+      }) }
     })
     await control.commandShell({ type: 'connect', provider: 'codex' })
     const model = control.shell().host.models.find(item => item.providerId === 'codex' && item.ready)
