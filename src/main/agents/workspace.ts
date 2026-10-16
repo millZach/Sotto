@@ -1599,9 +1599,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private saveActivities(): void {
     if (!this.historyWritable() || this.activityStoreUnavailable) return
-    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
-      if (thread.activities !== undefined) this.threadStore.syncActivities(thread.id, retainedActivities(thread.activities), thread.historyEpoch)
-    }
+    // Every thread's records in one transaction: a save with several busy threads pays one disk flush, not one each.
+    this.threadStore.syncActivitiesMany(this.state.snapshot.threads.filter(thread => this.visible(thread) && thread.activities !== undefined)
+      .map(thread => ({ threadId: thread.id, activities: retainedActivities(thread.activities!), epoch: thread.historyEpoch })))
   }
   /** Once the records a start read whole are saved back without their words, later starts need not read them (#918). */
   private noteSubagentWordsMoved(): void {

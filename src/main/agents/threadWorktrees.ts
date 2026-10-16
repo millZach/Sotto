@@ -259,6 +259,18 @@ export interface WorktreeReclaimOptions {
 const DEPENDENCY_FOLDER = /(^|\/)node_modules\/$/u
 
 /**
+ * A long walk (dependency folders included) otherwise awaits one fs promise after another with
+ * nothing in between, and Electron's main thread also forwards keyboard input to the window: a walk
+ * of thousands of entries can leave typing stuck for its whole run. Call the returned function once
+ * per entry visited; every `YIELD_INTERVAL`th call gives the event loop a turn.
+ */
+export const YIELD_INTERVAL = 256
+export function periodicYield(): () => Promise<void> {
+  let visited = 0
+  return async () => { if (++visited % YIELD_INTERVAL === 0) await new Promise(resolve => setImmediate(resolve)) }
+}
+
+/**
  * Creates and inspects checkouts, and reclaims a folder only when asked (ADR-0041): the branch and
  * the thread are never removed, and `restore` puts the folder back. Allocation is persisted by
  * WorkspaceHost before ensure.
@@ -596,6 +608,15 @@ export class ThreadWorktrees {
       this.git(path, ['ls-files', '--others', '--exclude-standard', '-z']),
     ])
     const ignored = listing.split('\0').filter(entry => entry && !DEPENDENCY_FOLDER.test(entry)).sort()
+    // `ignored` keeps its returned order and contents; this set is only a membership index kept in
+    // step with every push, so a walk of many entries does not rescan the whole array for each one.
+    const ignoredSet = new Set(ignored)
+    /** Adds a path to both, and says whether it was new. */
+    const addIgnored = (entry: string): boolean => {
+      if (ignoredSet.has(entry)) return false
+      ignored.push(entry); ignoredSet.add(entry)
+      return true
+    }
 
     const items: Array<{ path: string; bytes: number; fileCount: number }> = []
     const repositories: Array<{ path: string; changeCount: number; unpushedCommitCount?: number | undefined; kind: 'worktree' | 'repository' }> = []
@@ -604,9 +625,11 @@ export class ThreadWorktrees {
     const nestedWorktrees: { path: string; commonDirectory: string }[] = []
     const canonicalRoot = await realpath(path)
     let outsideLink: string | undefined
+    const yieldPeriodically = periodicYield()
     const visit = async (directory: string, row?: { path: string; bytes: number; fileCount: number }, gitMetadata = false, indexRoot = path): Promise<void> => {
       const handle = await opendir(directory)
       for await (const entry of handle) {
+        await yieldPeriodically()
         if (directory === path && entry.name === '.git') continue
         const full = join(directory, entry.name)
         const local = relative(path, full).split(sep).join('/')
@@ -617,7 +640,7 @@ export class ThreadWorktrees {
           const delta = relative(canonicalRoot, canonical)
           if (isAbsolute(delta) || delta === '..' || delta.startsWith(`..${sep}`)) outsideLink ??= local
         }
-        const ignoredPath = ignored.find(item => item === local || item === local + '/')
+        const ignoredPath = ignoredSet.has(local) ? local : ignoredSet.has(local + '/') ? local + '/' : undefined
         const summary = ignoredPath ? { path: ignoredPath, bytes: 0, fileCount: 0 } : row
         if (ignoredPath) items.push(summary!)
         if (info.isDirectory() && !info.isSymbolicLink()) {
@@ -655,7 +678,7 @@ export class ThreadWorktrees {
               for (let i = 0; i < records.length; i++) { changeCount++; if (/^[RC]|^.[RC]/u.test(records[i]!)) i++ }
               const repositoryPath = local + '/'
               repositories.push({ path: repositoryPath, changeCount, ...history, kind })
-              if (!ignored.includes(repositoryPath)) { ignored.push(repositoryPath); items.push({ path: repositoryPath, bytes: 0, fileCount: 0 }) }
+              if (addIgnored(repositoryPath)) items.push({ path: repositoryPath, bytes: 0, fileCount: 0 })
             }
           }
           await visit(full, entry.name === 'node_modules' ? undefined : summary, gitMetadata || entry.name === '.git' || bare, gitMarker && !gitMetadata && entry.name !== '.git' ? full : indexRoot)
@@ -713,7 +736,7 @@ export class ThreadWorktrees {
               const existingRow = items.find(item => item.path === repositoryPath)
               const row = existingRow ?? { path: repositoryPath, bytes: 0, fileCount: 0 }
               repositories.push({ path: repositoryPath, changeCount: 0, unpushedCommitCount, kind: 'repository' })
-              if (!ignored.includes(repositoryPath)) ignored.push(repositoryPath)
+              addIgnored(repositoryPath)
               if (!existingRow) items.push(row)
               await visit(directory, row, true)
             }
