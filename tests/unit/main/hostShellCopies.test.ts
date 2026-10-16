@@ -40,6 +40,24 @@ describe('questions asked on every change read what was published', () => {
       expect(shell).not.toHaveBeenCalled()
     } finally { router.dispose() }
   })
+
+  it('reads afresh once a change arrives that nothing was published for', () => {
+    const state = hostState()
+    let push: ((state: AgentState) => void) | undefined
+    const connection: DesktopHostConnection = { hostId: LOCAL, name: 'This computer', kind: 'local', detail: () => null, preview: () => null,
+      service: { shell: () => state, subscribe: listener => { push = listener; return () => undefined }, command: async () => state } }
+    const router = new DesktopHostRouter(emptyDesktopState)
+    router.add(connection)
+    try {
+      const off = router.subscribe(() => undefined)
+      push!(state)
+      off()
+      // The window stopped listening; the busy question still hears changes and must not answer from the old publication.
+      state.host.threads = state.host.threads.map(thread => ({ ...thread, status: 'running' as const }))
+      push!(state)
+      expect(router.publishedThreads(LOCAL).map(thread => thread.status)).toEqual(['running', 'running'])
+    } finally { router.dispose() }
+  })
 })
 
 describe('a Watcher change beside a coordinator broadcast', () => {
@@ -63,6 +81,14 @@ describe('a Watcher change beside a coordinator broadcast', () => {
     await settle()
     expect(f.received).toHaveLength(1)
     expect(f.control.shell).not.toHaveBeenCalled()
+  })
+
+  it('hands on a Watcher change that comes after the broadcast in the same turn', async () => {
+    const f = local()
+    f.watcherChanged(); f.broadcast(); f.watcherChanged()
+    await settle()
+    expect(f.received).toHaveLength(2)
+    expect(f.control.shell).toHaveBeenCalledTimes(1)
   })
 
   it('still hands on a Watcher change that comes without a broadcast, once per turn', async () => {

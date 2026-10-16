@@ -254,14 +254,15 @@ export class LocalHostService implements HostService {
   subscribe(listener: (state: AgentState) => void): () => void {
     // Watcher publishes on every coordinator broadcast, just before this service hears that same broadcast. Handing on a
     // fresh shell for it copied the whole state a second time per update, so a Watcher change is handed on a microtask
-    // later, and only when no broadcast has carried the state in between. A Watcher change on its own still reaches clients.
-    let broadcasts = 0, waiting = false, closed = false
-    const off = this.control.subscribe(state => { broadcasts++; listener(state) })
+    // later, and only when no broadcast has come since the latest Watcher change. A Watcher change on its own, or one after
+    // the broadcast, still reaches clients.
+    let sequence = 0, broadcastAt = 0, changedAt = 0, waiting = false, closed = false
+    const off = this.control.subscribe(state => { broadcastAt = ++sequence; listener(state) })
     const forward = (): void => {
+      changedAt = ++sequence
       if (waiting) return
       waiting = true
-      const seen = broadcasts
-      queueMicrotask(() => { waiting = false; if (!closed && broadcasts === seen) listener(this.shell()) })
+      queueMicrotask(() => { waiting = false; if (!closed && changedAt > broadcastAt) listener(this.shell()) })
     }
     const watcherOff = this.options.watcher?.subscribe(forward)
     const phoneOff = this.watcherPhone?.subscribe(forward)
