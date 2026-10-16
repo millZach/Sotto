@@ -37,6 +37,7 @@ import { RestartResume } from './restartResume'
 import type { AgentHost } from './host'
 import { UsageService } from './usageService'
 import { mayGrantLocally } from './authority'
+import { HostFactsSource, hostMachineReport } from './hostFacts'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
 type NativeHost = AgentHost & { closed?: () => Promise<void> }
@@ -104,6 +105,9 @@ export interface AgentRuntimeOptions {
 /** The provider stack both Electron main and a plain Node host own. No client transport lives here. */
 export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const { directory, credentials } = options
+  // This machine's host facts: its operating system is read now, once; memory only when facts are asked for (#1031).
+  const facts = new HostFactsSource()
+  void facts.read().catch(() => undefined)
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
     codex: options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true }),
@@ -188,7 +192,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   let watcherTools: WatcherToolServer | undefined
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
-      limit: () => options.settings().watcherInFlightLimit, workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id) }) : undefined
+      limit: () => options.settings().watcherInFlightLimit, workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads) }) : undefined
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
     if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher); agentHost.useWatcherTools(watcherTools) }
@@ -312,7 +316,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     throw error
   }
   if (watcher) await watcher.recover()
-  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined,
+  const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
     ...(usage ? { usage, mayClearUsage: client => (options.authority?.mayGrant(client) ?? mayGrantLocally(client)).allowed } : {}),
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),
     ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher) } : {}) })

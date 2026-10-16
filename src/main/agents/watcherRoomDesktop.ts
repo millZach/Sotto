@@ -2,7 +2,8 @@ import type { WatcherBridge, WatcherRoomState } from '../../shared/watcherRoom'
 import type { WatcherService } from './watcher'
 import { coalesceAgentStatePublishes, type PublishScheduler } from './control'
 
-type RoomService = Pick<WatcherService, 'subscribe' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'>
+type RoomService = Pick<WatcherService, 'subscribe' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'
+  | 'readHandover' | 'continueWithHandover' | 'dismissHandover'>
 type RoomBridge = Required<Omit<WatcherBridge, 'onChanged'>>
 
 /** Owns only the desktop room delivery. Observation, authority and other subscribers stay with Watcher. */
@@ -27,6 +28,9 @@ export function createWatcherRoomDesktop(options: {
     setPermission: request => watcher?.setPermission(request) ?? Promise.resolve(unavailable()),
     watchThread: request => watcher?.watchThread(request) ?? Promise.resolve(unavailable()),
     unwatchThread: request => watcher?.unwatchThread(request) ?? Promise.resolve(unavailable()),
+    readHandover: async () => watcher?.readHandover() ?? unavailable(),
+    continueWithHandover: async request => watcher?.continueWithHandover(request) ?? unavailable(),
+    dismissHandover: async () => watcher?.dismissHandover() ?? unavailable(),
   }
   // Keep the legacy callback/replies, without captures or a publisher, when either owner is absent.
   if (!options.streamingPublishCost || !watcher) {
@@ -49,6 +53,9 @@ export function createWatcherRoomDesktop(options: {
       setPermission: request => reply(() => bridge.setPermission(request)),
       watchThread: request => reply(() => bridge.watchThread(request)),
       unwatchThread: request => reply(() => bridge.unwatchThread(request)),
+      readHandover: () => bridge.readHandover(),
+      continueWithHandover: request => reply(() => bridge.continueWithHandover(request)),
+      dismissHandover: () => reply(() => bridge.dismissHandover()),
     },
     dispose: () => { unsubscribe(); publisher.dispose() },
   }

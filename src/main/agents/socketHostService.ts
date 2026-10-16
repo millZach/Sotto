@@ -29,6 +29,7 @@ import { requestQuestionsDigest } from './requestDrafts'
 import { version as sourceVersion } from '../../../package.json'
 import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 import { clientUpdateEnumerationUsesMuse, commandUsesMuse, museWatcherRefusal, threadUsesMuse, watcherRequestUsesMuse } from './museGate'
+import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
@@ -1042,6 +1043,12 @@ export class SocketHostService implements HostService {
   async subagentPage(request: SubagentPageRequest): Promise<SubagentPage> {
     this.offers('subagents')
     return this.read(subagentPageSchema, await this.call({ op: 'subagent-page', request }))
+  }
+  /** The host lists `host-facts`: it reports its machine's facts and running thread count (#1031). An older host's read unknown. */
+  get supportsHostFacts(): boolean { return this.features.includes('host-facts') }
+  async hostFacts(): Promise<HostMachineReport> {
+    this.offers('host-facts')
+    return this.read(hostMachineReportSchema, await this.call({ op: 'host-facts' }, undefined, undefined, 10000))
   }
   get supportsUsage(): boolean { return this.features.includes('usage-dashboard') }
   async usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
