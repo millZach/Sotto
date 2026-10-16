@@ -156,7 +156,8 @@ it('erases old activity on privacy changes and never revives it when history is 
 
 it('keeps legacy activity recoverable when migration fails, then imports it on the next start', async () => {
   const f = await fixture(() => true, true)
-  const sync = vi.spyOn(ThreadStore.prototype, 'syncActivities').mockImplementation(() => { throw new Error('disk unavailable') })
+  // One thread's sync and a save of every thread both go through the batch.
+  const sync = vi.spyOn(ThreadStore.prototype, 'syncActivitiesMany').mockImplementation(() => { throw new Error('disk unavailable') })
   const host = await f.open()
   expect(host.workspaceSnapshot().threads[0]!.activities?.[0]?.output).toBe('Retained tool output')
   expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).toContain('Retained tool output')
@@ -172,7 +173,7 @@ it('retries a failed activity save without treating the failed data as committed
   const host = await f.open()
   await host.connect()
   f.provider.state.threads[0]!.activities = [activity('old', 'Recovered output')]
-  vi.spyOn(ThreadStore.prototype, 'syncActivities').mockImplementationOnce(() => { throw new Error('disk unavailable') })
+  vi.spyOn(ThreadStore.prototype, 'syncActivitiesMany').mockImplementationOnce(() => { throw new Error('disk unavailable') })
   await expect(host.snapshot()).rejects.toThrow('disk unavailable')
   await host.snapshot()
   await f.close(host)
@@ -206,7 +207,8 @@ it('still erases durable history when activity synchronization would fail during
   const host = await f.open()
   f.provider.state.threads[0]!.messages = [{ id: 'secret', role: 'user', text: 'DURABLE_MESSAGE_MARKER', createdAt: '2026-09-20T10:00:00.000Z' }]
   await host.connect()
-  const sync = vi.spyOn(ThreadStore.prototype, 'syncActivities').mockImplementation(() => { throw new Error('invalid activity') })
+  // One thread's sync and a save of every thread both go through the batch.
+  const sync = vi.spyOn(ThreadStore.prototype, 'syncActivitiesMany').mockImplementation(() => { throw new Error('invalid activity') })
   history = false
   await host.privacyChanged().catch(() => undefined)
   sync.mockRestore()
@@ -355,7 +357,8 @@ it('never falls back to JSON containing private activity when enabling history f
   const f = await fixture(() => history)
   const host = await f.open()
   await host.connect()
-  const sync = vi.spyOn(ThreadStore.prototype, 'syncActivities').mockImplementation(() => { throw new Error('storage unavailable') })
+  // One thread's sync and a save of every thread both go through the batch.
+  const sync = vi.spyOn(ThreadStore.prototype, 'syncActivitiesMany').mockImplementation(() => { throw new Error('storage unavailable') })
   history = true
   await host.privacyChanged().catch(() => undefined)
   sync.mockRestore()
@@ -450,9 +453,10 @@ it.each(['none', 'before-activity', 'after-activity'])('keeps legacy messages an
   const activities = structuredClone(thread.activities!)
   await writeFile(join(f.directory, 'workspace.json'), JSON.stringify({ snapshot: f.provider.state, creations: [], projectAliases: [] }))
   if (interrupted !== 'none') {
-    const sync = ThreadStore.prototype.syncActivities
+    // One thread's sync and a save of every thread both go through the batch, once each.
+    const sync = ThreadStore.prototype.syncActivitiesMany
     let calls = 0
-    const failure = vi.spyOn(ThreadStore.prototype, 'syncActivities').mockImplementation(function (this: ThreadStore, ...args) {
+    const failure = vi.spyOn(ThreadStore.prototype, 'syncActivitiesMany').mockImplementation(function (this: ThreadStore, ...args) {
       if (++calls > (interrupted === 'before-activity' ? 0 : 1)) throw new Error('Fixture interrupted activity migration')
       return sync.apply(this, args)
     })
