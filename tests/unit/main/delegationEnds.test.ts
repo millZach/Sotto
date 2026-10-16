@@ -85,3 +85,20 @@ it('reconciles an unconfirmed brief as delivered when its own message shows in t
   expect(f.delegation.startsInFlight()).toBe(1)
   expect(await f.delegation.read('parent', { delegation: lost.id })).toMatchObject({ delegation: { outcome: 'working' } })
 })
+
+it('ends the briefs of a delegated thread that is gone, frees what they held and tells the delegating thread', async () => {
+  const working = brief({})
+  const waiting = brief({ delegatedThreadId: 'other', action: 'send', deliveryState: 'queued', outcome: undefined, told: undefined })
+  const f = await service([working, waiting], [thread('parent', { status: 'running' })])
+  f.internals.queuedBriefs.set(waiting.id, 'Synthetic brief')
+  expect(f.delegation.startsInFlight()).toBe(1)
+  f.hooks.observe(f.snapshot)
+  await settle()
+  expect(f.delegation.startsInFlight()).toBe(0)
+  expect(f.hooks.observedThreadIds()).toEqual([])
+  expect(f.internals.queuedBriefs.size).toBe(0)
+  expect(f.told).toEqual([{ source: 'delegation', items: [
+    { delegationId: working.id, threadId: 'child', outcome: 'unknown' }, { delegationId: waiting.id, threadId: 'other', outcome: 'failed' }] }])
+  const read = await f.delegation.read('parent', { delegation: working.id }) as { delegation: { outcome: string; note: string } }
+  expect(read.delegation).toMatchObject({ outcome: 'unknown', note: expect.stringMatching(/gone from Sotto/u) })
+})

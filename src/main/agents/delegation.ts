@@ -117,6 +117,7 @@ const NOTES: Record<WatcherOutcome, string> = {
   paused: 'The user\'s own turn in the delegated thread holds it, or the user sent there since you last looked. Nothing more was sent. Read it again before sending.',
   unknown: 'Sotto cannot prove what happened to it, as after a restart mid-turn. Do not assume it answered, and do not send it again without reading it.',
 }
+const GONE = 'The delegated thread is gone from Sotto, so nothing more will come of this, and Sotto cannot tell how its turn ended. Start a new delegation if the work is still needed.'
 export const NOT_ADMITTED = 'This thread cannot delegate with Sotto\'s tools. Only Claude Code, Codex, Grok Build and Muse threads on this computer can, outside Watcher, host setup and provider jobs. Threads on another machine get none of Sotto\'s tools yet. Nothing was started.'
 const LEVEL_LIMIT = 'This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. Nothing was started.'
 
@@ -149,6 +150,8 @@ export class DelegationService {
   private readonly calling = new Set<string>()
   private readonly waiters = new Map<string, Set<() => void>>()
   private readonly sending = new Set<string>()
+  /** Starts admitted whose delegated thread is still being created, which a snapshot without it does not end. */
+  private readonly creating = new Set<string>()
   private readonly answeredThisRun = new Set<string>()
   private readonly dispatchRefusals = new Map<string, Failure>()
   /** Briefs a Stop fenced while they were on their way: their guard refuses them at the writer. */
@@ -430,6 +433,7 @@ export class DelegationService {
     const delegatedThreadId = randomUUID()
     const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null })
     this.records.push(record)
+    this.creating.add(record.id)
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
     await this.saveAdmission(record)
     const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], modelId: model.id,
@@ -445,6 +449,7 @@ export class DelegationService {
     try { await this.save() }
     catch {
       this.records = this.records.filter(item => item.id !== record.id)
+      this.creating.delete(record.id)
       if (record.action === 'start') this.links.delete(record.delegatedThreadId)
       refuse('PROVIDER_UNAVAILABLE', 'Sotto could not save this delegation, so nothing was started or sent. Try again.')
     }
@@ -463,6 +468,7 @@ export class DelegationService {
         // Linked on the thread's own record before its first send, so its first launch already knows its level.
         await this.options.host.setDelegatedBy(record.delegatedThreadId, record.delegatingThreadId)
       } catch { this.fail(record.id, 'provider', true); await this.persist(); return }
+      finally { this.creating.delete(record.id) }
     }
     this.queuedBriefs.set(record.id, brief)
     const snapshot = this.snapshot(), thread = snapshot.threads.find(item => item.id === record.delegatedThreadId)
@@ -602,6 +608,21 @@ export class DelegationService {
    * message never showed there. Until then it holds its start's slot, as Watcher's uncertain start holds its
    * reservation while its delivery is unresolved; after, it reads `unknown`, is never sent again, and holds nothing.
    */
+  /**
+   * Ends a brief whose delegated thread is gone from Sotto, deleted or never created, unless that thread is still being
+   * created or the brief is on its way: one still waiting is refused unsent, and any other reads `unknown`, since Sotto
+   * cannot tell how its turn ended. Either way it holds nothing after, and the delegating thread is told.
+   */
+  private gone(record: DelegationRecord): boolean {
+    if (this.creating.has(record.id) || this.sending.has(record.delegatedThreadId)) return false
+    if (record.deliveryState === 'queued') { this.fail(record.id, 'provider', true); return true }
+    this.update(record.id, saved => {
+      if (saved.deliveryState === 'dispatching') saved.deliveryState = 'uncertain'
+      saved.outcome = 'unknown'; saved.outcomeAt = now()
+    })
+    this.changed(record.id)
+    return true
+  }
   private unproved(record: DelegationRecord, thread: AgentThread): boolean {
     return (record.deliveryState === 'dispatching' || record.deliveryState === 'uncertain') && !this.sending.has(record.delegatedThreadId)
       && !isThreadTurnRunning(thread) && !this.options.control.hasPendingThreadWork(thread.id)
@@ -627,7 +648,11 @@ export class DelegationService {
     }
     for (const record of open) {
       const thread = threads.get(record.delegatedThreadId)
-      if (!thread || !isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) continue
+      if (!thread) {
+        if (this.gone(record)) changed = true
+        continue
+      }
+      if (!isThreadProviderConnected(snapshot, thread) || thread.clientConnected === false) continue
       if (record.deliveryState === 'queued') {
         if (this.queuedBriefs.has(record.id) && this.free(thread, snapshot)) void this.dispatch(record.id).catch(() => undefined)
         continue
@@ -722,7 +747,7 @@ export class DelegationService {
     const latest = this.records.findLast(item => item.delegatedThreadId === record.delegatedThreadId && item.deliveryState === 'accepted')
     const head = thread ? nativeHead(thread) : null
     const read: { -readonly [K in keyof DelegationRead]: DelegationRead[K] } = { id: record.id, thread: record.delegatedThreadId, work: record.work, action: record.action,
-      outcome, note: NOTES[outcome], createdAt: record.createdAt, ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
+      outcome, note: !thread && (outcome === 'unknown' || outcome === 'failed') ? GONE : NOTES[outcome], createdAt: record.createdAt, ...(record.turnMessageId ? { turnMessageId: record.turnMessageId } : {}),
       ...(latest && head !== null && head !== latest.messageId ? { userSentSince: true } : {}),
       ...(record.failure === 'target-changed' ? { refusal: 'TARGET_CHANGED' as const } : record.failure === 'paused' ? { refusal: 'PAUSED' as const } : {}) }
     if (outcome === 'answered' && record.replyMessageId) {
