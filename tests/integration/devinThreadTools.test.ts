@@ -22,7 +22,9 @@ const visuals = (): VisualToolServer => {
 const withTools = (f: Fixture): Fixture => { f.host.useBrowserTools(browser()); f.host.useThreadTools([visuals()]); return f }
 
 async function setUp(script?: Record<string, unknown>) {
-  const f = withTools(await devinFixture(undefined, 5000, 60_000))
+  // The adapter's own read pace: a send that finds no sign of its prompt reads the replay again every second and a half
+  // until its deadline. A configured pace replaces that cadence, and a long one left a send a single read (#1086).
+  const f = withTools(await devinFixture(undefined, 5000, undefined, {}, new Map(), { productionPace: true }))
   cleanup.push(() => f.cleanup())
   if (script) await f.script(script)
   expect((await f.host.connect()).connected).toBe(true)
@@ -59,6 +61,13 @@ describe('Devin thread tools', () => {
     await restarted.host.startThreadSession(id)
     expect((await given(restarted, 'session/load')).slice(before)).toEqual([['sotto_browser', VISUAL_MCP_SERVER]])
     expect((await restarted.driver.requests()).filter(record => record.method === 'session/prompt')).toHaveLength(1)
+  })
+
+  it('accepts a send whose prompt the first replay read does not show yet, by reading it again', async () => {
+    const { f, id } = await setUp()
+    // A busy Devin saves the prompt after the first read has replayed the session, as a loaded runner can.
+    await f.script({ delayPrompt: 1_000 })
+    expect(await send(f, id)).toEqual({ accepted: true })
   })
 
   it('gives no servers to a Devin that does not take HTTP servers, and says so on the thread', async () => {
