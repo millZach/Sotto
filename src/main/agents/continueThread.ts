@@ -150,12 +150,13 @@ export class ContinueService {
     const parsed = continueStartRequestSchema.safeParse(input)
     if (!parsed.success) return refused(UNREAD_REQUEST)
     const request = parsed.data
-    let sourceId: string | undefined
+    /** The source this call is continuing, set only once this call holds it, so a refused call never releases another's. */
+    let held: string | undefined
     try {
       const source = this.source(request.threadId)
-      sourceId = source.id
       if (this.continuing.has(source.id)) refuse('This thread is already being continued. Wait for the new thread to start.')
       this.continuing.add(source.id)
+      held = source.id
       const refusal = continueThreadRefusal(source)
       if (refusal !== null) refuse(refusal)
       const snapshot = this.options.control.watcherSnapshot()
@@ -168,7 +169,11 @@ export class ContinueService {
       // started by a first send whose message the provider then refused.
       const existing = snapshot.threads.find(thread => thread.id === request.newThreadId)
       const phase = existing === undefined ? undefined : this.options.host.watcherCreationPhase(existing.id)
-      if (existing && (existing.continuedFrom?.threadId !== source.id || hasMessages(existing) || this.options.control.hasPendingThreadWork(existing.id))) {
+      // A thread made for this continuation whose link was never saved (the save failed after it was made) is taken up too:
+      // the same project and title, nothing in it and nothing on its way to it.
+      const unlinked = existing !== undefined && existing.continuedFrom === undefined && existing.projectId === source.projectId && existing.title === source.title
+        && phase !== undefined && phase !== 'started'
+      if (existing && ((existing.continuedFrom?.threadId !== source.id && !unlinked) || hasMessages(existing) || this.options.control.hasPendingThreadWork(existing.id))) {
         refuse('That continued thread has started already, so nothing more was sent. Open it to carry on there.')
       }
       const copy = workingCopyOf(source, request.workingCopy)
@@ -221,7 +226,7 @@ export class ContinueService {
     } catch (error) {
       return refused(error instanceof Refusal ? error.message : UNEXPECTED)
     } finally {
-      if (sourceId !== undefined) this.continuing.delete(sourceId)
+      if (held !== undefined) this.continuing.delete(held)
     }
   }
 

@@ -3,7 +3,7 @@
 // message carries the handover of the source ahead of the user's words, as one message.
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { ContinueService } from '../../src/main/agents/continueThread'
 import { registerContinueIpc } from '../../src/main/agents/continueThreadIpc'
 import type { AgentHostCommand } from '../../src/main/agents/host'
@@ -212,6 +212,55 @@ it('starts the new thread on the source’s permission, capped by the new-thread
   const chosen = f.request(await f.source('Chosen', 'claude', 'full-access'), { runtimeMode: 'full-access' })
   expect(await f.start(chosen)).toMatchObject({ status: 'ok' })
   expect(created(chosen.newThreadId)).toBe('full-access')
+})
+
+it('continues one source once at a time: a refused second start never frees the first one\u2019s hold', async () => {
+  const f = await fixture()
+  const sourceId = await f.source()
+  const codex = f.workspace.adapters.codex
+  const execute = codex.execute.bind(codex)
+  let release: () => void = () => undefined
+  const held = new Promise<void>(done => { release = done })
+  let reached = false
+  codex.execute = async command => {
+    if (command.type === 'create-thread') { reached = true; await held }
+    return execute(command)
+  }
+  // The first start waits inside Codex's creation of its thread.
+  const first = f.start(f.request(sourceId))
+  await vi.waitFor(() => expect(reached).toBe(true))
+  const busy = 'This thread is already being continued. Wait for the new thread to start.'
+  expect(await f.start(f.request(sourceId))).toEqual({ status: 'refused', message: busy })
+  // The refused call left the first one's hold in place, so a third is refused too while the first still runs.
+  const third = f.start(f.request(sourceId))
+  release()
+  expect(await third).toEqual({ status: 'refused', message: busy })
+  expect(await first).toMatchObject({ status: 'ok' })
+  expect(f.sends('codex')).toHaveLength(1)
+})
+
+it('takes up the thread it made when saving the link failed, rather than refusing every retry', async () => {
+  const f = await fixture()
+  const sourceId = await f.source()
+  const host = f.workspace.host
+  const save = host.setContinuedFrom.bind(host)
+  let failNext = true
+  host.setContinuedFrom = async (threadId, from) => {
+    if (failNext) { failNext = false; throw new Error('Synthetic save failure') }
+    return save(threadId, from)
+  }
+  const input = f.request(sourceId)
+  const refused = await f.start(input)
+  expect(refused).toEqual({ status: 'refused', message: 'Sotto could not start the new thread, so your message was not sent. Try again; nothing is sent twice.' })
+  expect(f.thread(input.newThreadId)?.continuedFrom).toBeUndefined()
+  expect(await f.start({ ...input, draftId: randomUUID() })).toEqual({ status: 'ok', threadId: expect.any(String) })
+  expect(f.thread(input.newThreadId)?.continuedFrom?.threadId).toBe(sourceId)
+  expect(f.sends('codex')).toHaveLength(1)
+  // An unrelated thread nothing was sent to is never taken up by a start that names it.
+  const project = f.control.shell().host.projects.find(item => item.providerId === 'codex')!
+  const other = randomUUID()
+  await f.control.commandShell({ type: 'create-thread', threadId: other, projectId: project.id, title: 'Something else', modelId: f.model('codex').id, workingCopy: 'shared' })
+  expect(await f.start(f.request(sourceId, { newThreadId: other }))).toMatchObject({ status: 'refused' })
 })
 
 it('leaves the source readable and sendable', async () => {
