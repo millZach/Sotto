@@ -1,0 +1,683 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: OpenCode is one client that carries models from many services the user has signed into (OpenCode
+  Zen's free models, Anthropic, OpenAI, OpenRouter, ...), with ids like anthropic/claude-sonnet-5. In the model
+  menu it is one more rail tile. How should its many-service model list read inside that menu?
+
+  Three variants on ?variant=a|b|c, and the bar at the top (Left and Right arrows too, unless the focus is in a
+  field or inside the menu):
+   a  Service headings.  OpenCode's list is grouped under small service headings (OpenCode Zen, Anthropic,
+                         OpenAI, OpenRouter) that stay pinned while their group scrolls. Rows carry only the
+                         model name. Search crosses every service and keeps the headings of what matched.
+   b  Service on the row. One flat list, newest first (the app's newestModelsFirst rule: recommended first,
+                         then by version number), each row the model name with the service as a faint suffix on
+                         the right. No headings.
+   c  Service first.     The OpenCode panel opens on the services signed in to OpenCode: name, model count, and
+                         "Free with OpenCode Zen" where it applies. Choosing one shows its models under a header
+                         with a Services back control. Typing in search skips the step and searches every
+                         service at once, grouped as in a.
+
+  The composer chip after a pick (the OpenCode mark, never Claude's, plus the model):
+   a  Names the service after the model: "Claude Sonnet 5 · Anthropic". The menu's headings carry the service,
+      so the chip must carry it once the menu closes. The model name gives way first in a narrow composer.
+   b  The same as a, because it is then the row exactly as it was pressed.
+   c  Names the service before the model, the way it was reached: "Anthropic / Claude Sonnet 5". Here the
+      service gives way first, so a narrow composer keeps the model's name whole.
+  In all three the chip's tooltip and accessible name say the lot: "Claude Sonnet 5 from Anthropic, in
+  OpenCode". The service is on the chip in every variant because the same model can sit on two services (Claude
+  Opus 5.5 on Anthropic and on OpenRouter; a free Zen model and its paid twin), and that is who bills the turn.
+
+  Keyboard: the rail is one tab stop and Up, Down, Home and End move along it; the tile the focus lands on
+  becomes the list. Down from search enters the list, Up from its first row returns to search, and the list is
+  one tab stop too. Escape closes the menu in a and b. In c, Escape undoes one step at a time: it clears a
+  search, then leaves a service for the services list, then closes the menu. The Services control does the
+  middle step.
+
+  Provider colour, a graphic so 3:1 against what it sits on (measured in a headless Chromium, mark at the rail's
+  resting .75 opacity and at full on the chosen tile):
+   --provider-opencode, dark   #ece3d0   a warm off-white, so it is not mistaken for Codex's cool grey.
+                                         7.95:1 at rest on the rail, 8.84:1 on the chosen tile, 12.23:1 on the chip
+   --provider-opencode, light  #625843   the same warm neutral taken down for paper.
+                                         3.61:1 at rest on the rail, 4.99:1 on the chosen tile, 6.83:1 on the chip
+  The inner square of the mark is drawn at 35% of the same colour; it is decoration and is not counted.
+
+  One change the app would need whatever wins: its chips stop at 220px (threadChips.css), and a model with its
+  service needs about 320px before the name gives way, so the OpenCode chip asks for 320px here. The options row
+  wraps as it does in the app, so on a narrow composer the chips after it drop to a second line.
+
+  Data: the rail's Codex, Claude Code, Grok Build and Devin names are the ones the app's tests and price table
+  use; the OpenCode Zen list is real (`opencode models` on OpenCode 1.19.3 on forge). The OpenRouter list is a
+  SAMPLE of forty plausible names, there only to show what a long list does; the bar's Long list switch takes it
+  away. Note what newestModelsFirst does across vendors in b: it compares bare version numbers, so Codestral
+  26.08 outranks GPT-6 and names with no number (Big Pickle, Space Bunny Free) sink to the bottom.
+
+  Extras in the bar: Light flips the palette, Long list adds or removes OpenRouter. Escape closes the menu; the
+  chip opens it again. URL switches for captures: theme=light, long=0, q=<search>, service=<id> (variant c),
+  chosen=<model id>. Open the file in a browser.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto - OpenCode in the model menu, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+
+/* The Sotto palette, dark half (src/shared/themes/palettes.ts, SOTTO_DARK_THEME_COLORS), through the same
+   roles tokens.css derives from. Names here follow the --tt-* tokens the real stylesheet would use. */
+:root {
+  color-scheme: dark;
+  --canvas: oklch(0.235 0.018 280);
+  --surface: oklch(0.26 0.019 280);
+  --surface-raised: oklch(0.305 0.021 280);
+  --surface-overlay: oklch(0.33 0.022 280);
+  --sidebar: oklch(0.205 0.016 282);
+  --text: oklch(0.985 0.005 280);
+  --text-2: oklch(0.86 0.01 272);
+  --text-muted: oklch(0.72 0.014 265);
+  --text-faint: oklch(0.675 0.012 270);
+  --border: oklch(0.42 0.03 270);
+  --field-border: oklch(0.40 0.03 272);
+  --hairline: color-mix(in srgb, var(--border) 60%, transparent);
+  --accent: oklch(0.79 0.13 220);
+  --accent-text: oklch(0.86 0.09 215);
+  --on-accent: oklch(0.2 0.02 280);
+  --accent-surface: oklch(0.4 0.06 230);
+  --hover: color-mix(in srgb, var(--accent-surface) 70%, transparent);
+  --hover-strong: var(--accent-surface);
+  --selected: oklch(0.35 0.04 262);
+  --rail: color-mix(in srgb, var(--sidebar) 60%, var(--surface));
+  --provider-claude: #e3b58e;
+  --provider-codex: #d7dbe1;
+  --provider-grok: #c9baff;
+  --provider-devin: #a5d8f5;
+  /* New: OpenCode. A warm off-white, so it does not read as Codex's cool grey beside it. */
+  --provider-opencode: #ece3d0;
+  --shadow: 0 16px 48px rgb(0 0 0 / 73%);
+  --font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: oklch(0.978 0.004 85);
+  --surface: oklch(0.99 0.003 85);
+  --surface-raised: oklch(0.955 0.006 85);
+  --surface-overlay: oklch(0.945 0.007 85);
+  --sidebar: oklch(0.955 0.008 85);
+  --text: oklch(0.235 0.014 75);
+  --text-2: oklch(0.36 0.014 75);
+  --text-muted: oklch(0.5 0.014 75);
+  --text-faint: oklch(0.535 0.015 78);
+  --border: oklch(0.86 0.012 80);
+  --field-border: oklch(0.82 0.016 80);
+  --accent: oklch(0.52 0.13 235);
+  --accent-text: oklch(0.42 0.1 235);
+  --on-accent: oklch(0.99 0.003 85);
+  --accent-surface: oklch(0.9 0.03 230);
+  --selected: oklch(0.885 0.03 235);
+  --provider-claude: color-mix(in srgb, #e3b58e 55%, var(--text));
+  --provider-codex: color-mix(in srgb, #d7dbe1 30%, var(--text));
+  --provider-grok: color-mix(in srgb, #c9baff 55%, var(--text));
+  --provider-devin: color-mix(in srgb, #a5d8f5 45%, var(--text));
+  --provider-opencode: #625843;
+  --shadow: 0 16px 48px rgb(20 24 22 / 18%);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { overflow: hidden; background: var(--canvas); color: var(--text); font: 14px/1.45 var(--font-ui); -webkit-font-smoothing: antialiased; }
+button, input, textarea { font: inherit; color: inherit; }
+button { padding: 0; border: 0; background: none; cursor: pointer; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 14px; height: 14px; }
+svg.i.xs { width: 12px; height: 12px; }
+svg.mark { flex: none; fill: currentColor; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* The Threads page around the composer: enough of it to judge density, no more. */
+.window { display: grid; grid-template-columns: 264px minmax(0, 1fr); height: 100%; }
+.sidebar { display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; background: var(--sidebar); border-right: 1px solid var(--hairline); color: var(--text-muted); font-size: 13px; }
+.sidebar__top { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 6px; margin-bottom: 8px; color: var(--text); font-weight: 500; }
+.sidebar__top i { width: 14px; height: 14px; border-radius: 4px; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 50%, var(--text))); }
+.sidebar__group { padding: 10px 8px 4px; font-size: 12px; color: var(--text-faint); }
+.row { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px; border-radius: 8px; color: var(--text-2); white-space: nowrap; overflow: hidden; }
+.row > span { overflow: hidden; text-overflow: ellipsis; }
+.row[aria-current] { background: var(--selected); color: var(--text); }
+.row i { flex: none; width: 8px; height: 8px; border: 1.5px solid currentColor; border-radius: 50%; }
+.row i[data-on] { background: var(--accent); border-color: var(--accent); }
+
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pane__head { display: flex; align-items: center; gap: 10px; flex: none; height: 44px; padding: 0 12px 0 18px; }
+.pane__head h2 { margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pane__head .mark { color: var(--provider-opencode); }
+.pane__crumb { display: flex; align-items: center; gap: 7px; margin-right: auto; color: var(--text-muted); font-size: 12.5px; white-space: nowrap; }
+.pane__crumb::before { content: '/'; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 30px; height: 30px; border-radius: 7px; color: var(--text-muted); }
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+.transcript { flex: 1; min-height: 0; overflow-y: auto; padding: 20px max(24px, calc((100% - 760px) / 2)) 8px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.turn { max-width: 760px; margin: 0 auto 22px; font-size: 15px; line-height: 1.55; }
+.turn--user { width: fit-content; max-width: 78%; margin-right: 0; padding: 10px 14px; border-radius: 14px 14px 4px 14px; background: var(--surface-raised); }
+.turn p { margin: 0 0 10px; }
+.turn p:last-child { margin: 0; }
+.turn .who { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--text-muted); font-size: 12.5px; }
+.turn .who .mark { color: var(--provider-opencode); }
+
+/* Compose area: the field, then the usage line, as the app draws them. */
+.compose { flex: none; padding: 6px max(24px, calc((100% - 760px) / 2)) 14px; }
+.composer { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid var(--field-border); border-radius: 16px; background: var(--surface); }
+.composer:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, var(--field-border)); }
+.composer textarea { grid-column: 1 / -1; display: block; width: 100%; min-height: 74px; max-height: 220px; resize: vertical; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 15px; line-height: 1.5; }
+.composer textarea::placeholder { color: var(--text-muted); }
+.composer__clip { grid-column: 1; align-self: center; margin: 6px 4px 0 -6px; width: 26px; height: 26px; color: var(--text-muted); border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; }
+.composer__clip:hover { background: var(--hover); color: var(--text); }
+.composer__foot { grid-column: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; min-width: 0; }
+.composer__meta { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+.composer__actions { display: flex; flex: none; align-items: center; gap: 6px; }
+.disc { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid transparent; border-radius: 50%; background: var(--accent-text); color: var(--on-accent); }
+.disc:hover:not(:disabled) { filter: brightness(1.08); }
+.usage { display: flex; justify-content: flex-end; gap: 14px; margin: 6px 4px 0; color: var(--text-muted); font-size: 12px; }
+.usage b { font-weight: 500; color: var(--text-2); }
+
+/* The composer's model chip. For an OpenCode thread it carries the OpenCode mark, the model and its service. */
+/* The options row wraps, as .thread-options does in the app. The app caps a chip at 220px; a model and its
+   service need about 320px before the name has to give way, so the OpenCode chip asks for that. */
+.selectors { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; max-width: 100%; }
+.sel { display: inline-flex; align-items: center; gap: 6px; min-width: 0; height: 28px; padding: 0 10px 0 9px; border: 1px solid var(--field-border); border-radius: 999px; white-space: nowrap; color: var(--text-2); font-size: 13px; max-width: 320px; }
+.sel:hover, .sel[aria-expanded='true'] { background: var(--hover); border-color: var(--border); color: var(--text); }
+.sel .mark { width: 13px; height: 13px; flex: none; color: var(--provider); }
+.sel__name, .sel__svc { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sel__svc { flex: none; color: var(--text-muted); }
+.sel:hover .sel__svc, .sel[aria-expanded='true'] .sel__svc { color: var(--text-2); }
+.sel__sep { flex: none; margin: 0 -2px; color: var(--text-muted); }
+/* c: the service leads, the way it was reached, and gives way before the model's name does. */
+.sel--path .sel__svc { flex: 0 1000 auto; min-width: 4.5em; }
+.sel--path .sel__name { flex: 0 1 auto; }
+.sel--plain { flex: none; border-color: transparent; color: var(--text-muted); }
+.sel--plain:hover { border-color: var(--field-border); }
+
+/* The menu. Two columns in every variant: the provider rail, then the models. It rises over the chip. */
+.pop { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 4; display: flex; align-items: stretch; width: 352px; max-width: calc(100vw - 300px); max-height: min(420px, calc(100vh - 236px)); overflow: hidden; border: 1px solid var(--field-border); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); color: var(--text); }
+.pop--b { width: 412px; }
+.pop--c { width: 360px; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .pop { animation: pop-rise 140ms cubic-bezier(.2, .8, .2, 1); } }
+@keyframes pop-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* The rail: logos only, one tab stop. The chosen tile is filled and keeps a 2px accent edge. */
+.rail { display: flex; flex: none; flex-direction: column; gap: 4px; width: 52px; padding: 8px 6px; border-right: 1px solid var(--hairline); background: var(--rail); overflow-y: auto; scrollbar-width: none; }
+.rail__tile { position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 10px; color: var(--text-muted); }
+.rail__tile .mark { width: 18px; height: 18px; color: var(--provider); opacity: .75; }
+.rail__tile:hover { background: var(--hover); }
+.rail__tile:hover .mark, .rail__tile[aria-selected='true'] .mark { opacity: 1; }
+.rail__tile[aria-selected='true'] { background: var(--selected); }
+.rail__tile[aria-selected='true']::before { content: ''; position: absolute; left: -6px; top: 10px; bottom: 10px; width: 2px; border-radius: 0 2px 2px 0; background: var(--accent); }
+
+.list { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.search { display: flex; align-items: center; gap: 8px; flex: none; height: 40px; padding: 0 8px 0 12px; color: var(--text-muted); border-bottom: 1px solid var(--hairline); }
+.search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 13.5px; }
+.search input::placeholder { color: var(--text-faint); }
+.search .count { flex: none; color: var(--text-muted); font-size: 11.5px; }
+.search__x { display: grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 6px; color: var(--text-muted); }
+.search__x:hover { background: var(--hover); color: var(--text); }
+.opts { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.opts--grouped { padding-top: 0; }
+.opt { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border-radius: 8px; color: var(--text-2); font-size: 13.5px; text-align: left; scroll-margin: 34px 0 6px; }
+.opt:hover:not(:disabled), .opt:focus-visible { background: var(--hover); color: var(--text); outline: 0; }
+.opt:focus-visible { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.opt[aria-selected='true'] { color: var(--accent-text); }
+.opt__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.opt__svc { flex: none; color: var(--text-muted); font-size: 12px; }
+.opt:hover .opt__svc, .opt:focus-visible .opt__svc { color: var(--text-2); }
+.opt > svg.i { flex: none; color: var(--accent-text); }
+.opt:not([aria-selected='true']) > .tick { visibility: hidden; }
+.pop__note { flex: none; margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--hairline); color: var(--text-muted); font-size: 12px; line-height: 1.4; }
+.pop__empty { margin: 0; padding: 14px 12px; color: var(--text-muted); font-size: 13px; }
+
+/* a, and c while searching: small service headings that stay put while their group scrolls under them. */
+.group__head { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; margin: 0 -6px; padding: 10px 16px 4px; background: var(--surface); color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.group__head span { margin-left: auto; font-weight: 500; font-size: 11.5px; }
+.group + .group { margin-top: 2px; }
+
+/* c - the services step. */
+.svc { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 7px 8px 7px 10px; border-radius: 8px; color: var(--text-2); text-align: left; }
+.svc:hover, .svc:focus-visible { background: var(--hover); color: var(--text); outline: 0; }
+.svc:focus-visible { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.svc__text { display: grid; flex: 1; min-width: 0; gap: 1px; }
+.svc__text b { font-weight: 500; font-size: 13.5px; }
+.svc__text em { font-style: normal; color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.svc:hover .svc__text em, .svc:focus-visible .svc__text em { color: var(--text-2); }
+.svc[aria-current='true'] .svc__text b { color: var(--accent-text); }
+.svc > svg.i { color: var(--text-muted); }
+.step { display: flex; align-items: center; gap: 6px; flex: none; height: 36px; padding: 0 12px 0 4px; border-bottom: 1px solid var(--hairline); }
+.step__back { display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 8px 0 4px; border-radius: 7px; color: var(--text-muted); font-size: 12.5px; }
+.step__back:hover { background: var(--hover); color: var(--text); }
+.step b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.step span { margin-left: auto; flex: none; color: var(--text-muted); font-size: 11.5px; }
+
+/* The prototype's own bar: not part of the design. */
+.switcher { position: fixed; top: 8px; left: 50%; z-index: 99; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; background: #f4f4f4; color: #111; font: 12.5px/1 var(--font-ui); box-shadow: 0 8px 30px rgb(0 0 0 / 40%); transform: translateX(-50%); white-space: nowrap; }
+.switcher button { height: 24px; padding: 0 9px; border-radius: 999px; color: #111; }
+.switcher button:hover { background: #ddd; }
+.switcher button[aria-pressed='true'] { background: #dcdcdc; }
+.switcher .label { padding: 0 6px; }
+.switcher .label b { font-weight: 600; }
+.switcher .sep { width: 1px; height: 16px; background: #ccc; margin: 0 2px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="19" cy="12" r="1.2" fill="currentColor"/></symbol>
+  <!-- Provider marks, copied from src/renderer/src/agents/ProviderMark.tsx. -->
+  <symbol id="m-claude" viewBox="0 0 256 257"><path d="m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"/></symbol>
+  <symbol id="m-codex" viewBox="0 0 256 260"><path d="M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z"/></symbol>
+  <symbol id="m-grok" viewBox="0 0 24 24"><path d="M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257"/></symbol>
+  <symbol id="m-devin" viewBox="48 48 330 330"><path d="M70 159.333V91.3471C70 88.3592 71.594 85.5983 74.1816 84.1044L133.043 50.1205C135.631 48.6265 138.819 48.6265 141.407 50.1205L200.269 84.1044C202.856 85.5983 204.45 88.3592 204.45 91.3471V126.068C204.708 137.606 210.806 148.734 221.531 154.926C232.256 161.117 244.942 160.834 255.063 155.289L285.132 137.929C287.719 136.435 290.907 136.435 293.495 137.929L352.357 171.913C354.944 173.406 356.538 176.167 356.538 179.155V247.123C356.538 250.111 354.944 252.872 352.357 254.366L293.495 288.35C290.907 289.844 287.719 289.844 285.132 288.35L255.306 271.13C245.146 265.456 232.344 265.117 221.534 271.358C210.809 277.55 204.711 288.678 204.453 300.215V334.926C204.453 337.914 202.859 340.675 200.271 342.169L141.41 376.153C138.822 377.647 135.634 377.647 133.046 376.153L74.1845 342.169C71.5969 340.675 70.0028 337.914 70.0028 334.926V266.959C70.0029 263.971 71.5969 261.21 74.1845 259.716L133.046 225.732C135.634 224.238 138.822 224.238 141.41 225.732L171.547 243.132C181.656 248.638 194.306 248.906 205.005 242.729C215.815 236.488 221.922 225.231 222.088 213.595C221.83 202.057 215.732 189.737 205.008 183.545C194.283 177.353 181.597 177.636 171.476 183.181L141.269 200.72C138.67 202.229 135.461 202.228 132.864 200.716L74.1576 166.562C71.5835 165.065 70 162.311 70 159.333Z"/></symbol>
+  <!-- OpenCode, adapted from T3 Code (MIT): the frame in the provider colour, the inner square at 35% of it. -->
+  <symbol id="m-opencode" viewBox="0 0 32 40"><path d="M24 32H8V16H24V32Z" fill-opacity=".35"/><path fill-rule="evenodd" d="M24 8H8V32H24V8ZM32 40H0V0H32V40Z"/></symbol>
+</svg>
+<div class="window">
+  <aside class="sidebar" aria-hidden="true">
+    <div class="sidebar__top"><i></i>Sotto</div>
+    <div class="sidebar__group">sotto</div>
+    <div class="row" aria-current="page"><i data-on></i><span>Pack the release notes</span></div>
+    <div class="row"><i></i><span>OpenCode as a provider</span></div>
+    <div class="row"><i></i><span>Model menu, two columns</span></div>
+    <div class="sidebar__group">plant-net</div>
+    <div class="row"><i></i><span>Rack 4 loop check</span></div>
+  </aside>
+  <section class="pane">
+    <header class="pane__head">
+      <svg class="mark" width="16" height="16" aria-hidden="true"><use href="#m-opencode"/></svg>
+      <h2>Pack the release notes</h2>
+      <span class="pane__crumb">sotto</span>
+      <button class="icon-btn" type="button" aria-label="Open Tools"><svg class="i"><use href="#i-columns"/></svg></button>
+      <button class="icon-btn" type="button" aria-label="More thread actions"><svg class="i"><use href="#i-more"/></svg></button>
+    </header>
+    <div class="transcript">
+      <div class="turn turn--user"><p>Gather what merged since 0.48 into the release notes, one line each.</p></div>
+      <div class="turn">
+        <div class="who"><svg class="mark" width="13" height="13" aria-hidden="true"><use href="#m-opencode"/></svg>OpenCode</div>
+        <p>Fourteen pull requests merged since the 0.48 tag. Eleven change something a user sees; the other three are CI and test fixtures, so I left them out.</p>
+        <p>The notes are in docs/release/notes-0.49.md for you to read before the release.</p>
+      </div>
+    </div>
+    <div class="compose">
+      <form class="composer" onsubmit="return false">
+        <label class="vh" for="prompt">Prompt</label>
+        <textarea id="prompt" rows="3" placeholder="What would you like to do next?"></textarea>
+        <button class="composer__clip" type="button" aria-label="Attach a screenshot"><svg class="i"><use href="#i-clip"/></svg></button>
+        <div class="composer__foot">
+          <div class="composer__meta"><div class="selectors" data-selectors></div></div>
+          <div class="composer__actions">
+            <button class="disc" type="button" aria-label="Send"><svg class="i"><use href="#i-up"/></svg></button>
+          </div>
+        </div>
+        <div data-pop></div>
+      </form>
+      <div class="usage"><span title="41,000 of 200,000 tokens in the context window"><b>21%</b> context</span><span title="Estimated at standard API text-token rates">$1.84</span></div>
+    </div>
+  </section>
+</div>
+
+<div class="switcher" role="group" aria-label="Prototype controls">
+  <button type="button" data-prev aria-label="Show the previous variant">&#8592;</button>
+  <span class="label"><b data-key></b> &#8212; <span data-name></span></span>
+  <button type="button" data-next aria-label="Show the next variant">&#8594;</button>
+  <span class="sep"></span>
+  <button type="button" data-theme-toggle aria-label="Switch to the light palette">Light</button>
+  <button type="button" data-long-toggle aria-pressed="true" aria-label="Include the OpenRouter sample list">Long list</button>
+</div>
+
+<script>
+/* PROTOTYPE - throwaway. Everything below exists to draw three menus, nothing more. */
+const slug = name => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+const named = (prefix, names) => names.map(name => typeof name === 'string' ? { id: prefix + slug(name), name } : { ...name, id: prefix + name.id })
+const service = (id, name, names, extra) => ({ id, name, ...extra, models: names.map(model => ({ id: id + '/' + slug(model), name: model, service: id })) })
+
+const OPENCODE = { services: [
+  /* Real: `opencode models` on OpenCode 1.19.3, Zach's forge install. */
+  service('opencode', 'OpenCode Zen', ['Beam Free', 'Big Pickle', 'DeepSeek V4.1 Flash Free', 'GLM 5.3 Flash Free', 'LL Alpha Free', 'LongCat 2.5 Preview Free', 'MiMo V2.6 Flash Free', 'Muse Spark 1.3 Contributor Free', 'Nemotron 3 Ultra Free', 'Nemotron 3.5 Lightning Free', 'Nemotron 3.5 Super VL Free', 'Space Bunny Free'], { free: true }),
+  service('anthropic', 'Anthropic', ['Claude Opus 5.5', 'Claude Fable 5.1', 'Claude Sonnet 5', 'Claude Sonnet 4.6', 'Claude Haiku 4.5']),
+  service('openai', 'OpenAI', ['GPT-6-Astra', 'GPT-6-Sol', 'GPT-6-Luna', 'GPT-5.6-Sol', 'GPT-5.6-Terra', 'GPT-5.5']),
+  /* SAMPLE: forty plausible names, only to show what a long list does. */
+  service('openrouter', 'OpenRouter', ['Claude Opus 5.5', 'Claude Sonnet 5', 'Claude Haiku 4.5', 'GPT-6-Sol', 'GPT-6-Luna', 'GPT-5.5', 'Gemini 3.5 Pro', 'Gemini 3.5 Flash', 'Gemini 3 Flash Lite', 'Grok 4.7', 'Grok 4.6 Fast', 'DeepSeek V4.1', 'DeepSeek V4.1 Flash', 'DeepSeek R3', 'Qwen 4 Coder 480B', 'Qwen 4 Max', 'Qwen 4 30B A3B', 'Kimi K3', 'Kimi K3 Thinking', 'GLM 5.3', 'GLM 5.3 Air', 'MiniMax M3', 'Llama 5 Maverick', 'Llama 5 Scout', 'Mistral Large 3', 'Devstral 3', 'Codestral 26.08', 'Magistral Medium 2', 'Command A 2', 'Nemotron 3.5 Super', 'Nemotron 3 Ultra', 'Gemma 4 27B', 'Phi 5', 'Hermes 5 405B', 'Jamba 2 Large', 'Sonar Pro 2', 'ERNIE 5', 'Doubao Seed 2 Pro', 'Step 3', 'MiMo V2.6'], { sample: true })
+] }
+const PROVIDERS = [
+  { id: 'codex', name: 'Codex', mark: '#m-codex', models: named('codex:', ['GPT-6-Astra', 'GPT-6-Sol', 'GPT-6-Luna', 'GPT-5.6-Sol', 'GPT-5.6-Terra', 'GPT-5.5']) },
+  { id: 'claude', name: 'Claude Code', mark: '#m-claude', models: named('claude:', [{ id: 'default', name: 'Default (recommended)', recommended: true }, 'Opus 5.5', 'Fable 5.1', 'Sonnet 5', 'Sonnet 4.6', 'Haiku 4.5']) },
+  { id: 'grok', name: 'Grok Build', mark: '#m-grok', models: named('grok:', ['Grok 4.7', 'Grok 4.6', 'Grok 4.5']) },
+  { id: 'devin', name: 'Devin', mark: '#m-devin', models: named('devin:', ['SWE-1.6', 'SWE-1.6 Fast', 'Claude Opus 5.5', 'GPT-6-Sol']) },
+  { id: 'opencode', name: 'OpenCode', mark: '#m-opencode', opencode: true }
+]
+const VARIANTS = { a: { name: 'Service headings' }, b: { name: 'Service on the row' }, c: { name: 'Service first' } }
+const NOTE = 'Any provider until your first message.'
+const state = { variant: 'a', open: true, provider: 'opencode', service: null, query: '', chosen: 'anthropic/claude-sonnet-5', long: true }
+
+/* The app's newestModelsFirst (ModelPicker.tsx): recommended first, then by the first version number in the name. */
+function newestFirst(models) {
+  const version = model => ((model.name.match(/\d+(?:\.\d+)*/) || model.id.match(/\d+(?:\.\d+)*/) || [''])[0]).split('.').map(Number)
+  return [...models].sort((left, right) => {
+    if (Boolean(left.recommended) !== Boolean(right.recommended)) return left.recommended ? -1 : 1
+    const a = version(left), b = version(right)
+    for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+      const difference = (b[index] || 0) - (a[index] || 0)
+      if (difference) return difference
+    }
+    return 0
+  })
+}
+
+const el = (tag, attrs, kids) => {
+  const node = document.createElement(tag)
+  for (const key of Object.keys(attrs || {})) {
+    const value = attrs[key]
+    if (value === undefined || value === false || value === null) continue
+    if (key === 'text') node.textContent = value
+    else node.setAttribute(key, value === true ? '' : String(value))
+  }
+  for (const kid of [].concat(kids || [])) if (kid) node.append(kid)
+  return node
+}
+const svgOf = (href, cls) => {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('class', cls); svg.setAttribute('aria-hidden', 'true')
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use')
+  use.setAttribute('href', href); svg.append(use)
+  return svg
+}
+const mark = provider => svgOf(provider.mark, 'mark')
+const icon = (id, cls) => svgOf('#' + id, cls || 'i')
+const tint = provider => '--provider: var(--provider-' + provider.id + ')'
+const shownServices = () => OPENCODE.services.filter(item => state.long || !item.sample)
+const everyOpenCodeModel = () => OPENCODE.services.flatMap(item => item.models)
+const modelsOf = provider => provider.opencode ? everyOpenCodeModel() : provider.models
+const serviceOf = model => OPENCODE.services.find(item => item.id === model.service)
+const providerOf = id => PROVIDERS.find(provider => modelsOf(provider).some(model => model.id === id))
+const modelOf = id => PROVIDERS.flatMap(modelsOf).find(model => model.id === id)
+const matches = model => {
+  const query = state.query.trim().toLowerCase()
+  if (!query) return true
+  const where = model.service ? serviceOf(model).name : ''
+  return (model.name + ' ' + model.id + ' ' + where).toLowerCase().includes(query)
+}
+const plural = (count, word) => count + ' ' + word + (count === 1 ? '' : 's')
+const spoken = model => model.service ? model.name + ' from ' + serviceOf(model).name + ', in OpenCode' : model.name
+
+function drawChip() {
+  const host = document.querySelector('[data-selectors]')
+  host.replaceChildren()
+  const current = modelOf(state.chosen)
+  const provider = providerOf(state.chosen)
+  const path = current.service && state.variant === 'c'
+  const chip = el('button', { type: 'button', class: 'sel' + (path ? ' sel--path' : ''), 'data-k': 'chip', 'aria-haspopup': 'dialog', 'aria-expanded': String(state.open),
+    'aria-label': 'Change thread model: ' + spoken(current), title: spoken(current), style: tint(provider) })
+  chip.append(mark(provider))
+  if (!current.service) chip.append(el('span', { class: 'sel__name', text: current.name }))
+  else if (path) chip.append(el('span', { class: 'sel__svc', text: serviceOf(current).name }), el('span', { class: 'sel__sep', text: '/' }), el('span', { class: 'sel__name', text: current.name }))
+  else chip.append(el('span', { class: 'sel__name', text: current.name }), el('span', { class: 'sel__svc', text: '· ' + serviceOf(current).name }))
+  chip.append(icon('i-chev', 'i xs'))
+  chip.addEventListener('click', () => {
+    if (state.open) return close()
+    state.open = true; state.query = ''; state.service = null; state.provider = provider.id
+    draw('search')
+  })
+  host.append(chip)
+  host.append(el('button', { type: 'button', class: 'sel sel--plain', text: 'High', 'aria-label': 'Thread reasoning: High' }))
+  host.append(el('button', { type: 'button', class: 'sel sel--plain', text: 'Ask for approval', 'aria-label': 'Thread permissions: Ask for approval' }))
+}
+
+function drawRail() {
+  const rail = el('div', { class: 'rail', role: 'tablist', 'aria-label': 'Model providers', 'aria-orientation': 'vertical' })
+  for (const provider of PROVIDERS) {
+    const selected = state.provider === provider.id
+    const tile = el('button', { type: 'button', role: 'tab', class: 'rail__tile', 'data-k': 'rail:' + provider.id, 'aria-selected': String(selected), tabindex: selected ? '0' : '-1',
+      'aria-label': provider.name + ' models', title: provider.name, style: tint(provider) })
+    tile.append(mark(provider))
+    const pick = () => { if (state.provider !== provider.id) { state.provider = provider.id; state.service = null; draw() } }
+    tile.addEventListener('focus', pick)
+    tile.addEventListener('click', () => { pick(); draw('search') })
+    rail.append(tile)
+  }
+  rail.addEventListener('keydown', event => {
+    const tiles = [...rail.querySelectorAll('.rail__tile')]
+    const at = tiles.indexOf(document.activeElement)
+    const next = event.key === 'ArrowDown' ? (at + 1) % tiles.length : event.key === 'ArrowUp' ? (at - 1 + tiles.length) % tiles.length
+      : event.key === 'Home' ? 0 : event.key === 'End' ? tiles.length - 1 : -1
+    if (next >= 0) { event.preventDefault(); tiles[next].focus() }
+  })
+  return rail
+}
+
+function searchLine(placeholder, count) {
+  const line = el('div', { class: 'search' })
+  line.append(icon('i-search', 'i sm'))
+  const input = el('input', { 'data-k': 'search', 'aria-label': 'Search models', placeholder, value: state.query, autocomplete: 'off', spellcheck: 'false' })
+  input.addEventListener('input', () => { state.query = input.value; draw() })
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') event.preventDefault()
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      const first = document.querySelector('.pop .opts .opt:not(:disabled), .pop .opts .svc')
+      if (first) focusItem(first)
+    }
+  })
+  line.append(input)
+  if (count !== undefined) line.append(el('span', { class: 'count', text: plural(count, 'model') }))
+  const shut = el('button', { type: 'button', class: 'search__x', 'data-k': 'close', 'aria-label': 'Close model menu', title: 'Close model menu' })
+  shut.append(icon('i-x', 'i sm'))
+  shut.addEventListener('click', close)
+  line.append(shut)
+  return line
+}
+
+function option(model, withService) {
+  const chosen = model.id === state.chosen
+  const label = withService ? model.name + ', ' + serviceOf(model).name : model.name
+  const button = el('button', { type: 'button', class: 'opt', role: 'option', 'data-k': 'opt:' + model.id, 'aria-selected': String(chosen), 'aria-label': label, tabindex: '-1' })
+  button.append(el('span', { class: 'opt__name', text: model.name }))
+  if (withService) button.append(el('span', { class: 'opt__svc', text: serviceOf(model).name }))
+  button.append(icon('i-check', 'i sm tick'))
+  button.addEventListener('click', () => { state.chosen = model.id; close() })
+  return button
+}
+
+function grouped(list, services, label) {
+  const box = el('div', { class: 'opts opts--grouped', role: 'listbox', 'aria-label': label })
+  let any = false
+  for (const item of services) {
+    const found = newestFirst(item.models.filter(matches))
+    if (!found.length) continue
+    any = true
+    const headId = 'group-' + item.id
+    const group = el('div', { class: 'group', role: 'group', 'aria-labelledby': headId })
+    group.append(el('div', { class: 'group__head', id: headId }, [document.createTextNode(item.name), el('span', { 'aria-hidden': 'true', text: String(found.length) })]))
+    for (const model of found) group.append(option(model, false))
+    box.append(group)
+  }
+  if (!any) box.append(el('p', { class: 'pop__empty', text: 'No matching models.' }))
+  return box
+}
+
+function servicesStep() {
+  const box = el('div', { class: 'opts', role: 'group', 'aria-label': 'Services signed in to OpenCode' })
+  const holding = modelOf(state.chosen).service
+  for (const item of shownServices()) {
+    const about = plural(item.models.length, 'model') + (item.free ? ' · Free with OpenCode Zen' : '')
+    const row = el('button', { type: 'button', class: 'svc', 'data-k': 'svc:' + item.id, tabindex: '-1', 'aria-current': item.id === holding ? 'true' : undefined,
+      'aria-label': 'Show ' + item.name + ' models, ' + about.replace(' · ', ', ') })
+    row.append(el('span', { class: 'svc__text' }, [el('b', { text: item.name }), el('em', { text: about })]), icon('i-right', 'i sm'))
+    row.addEventListener('click', () => { state.service = item.id; draw('first') })
+    box.append(row)
+  }
+  return box
+}
+
+function stepBack() {
+  const from = state.service
+  state.service = null
+  draw(from ? 'svc:' + from : 'search')
+}
+
+function drawMenu() {
+  const host = document.querySelector('[data-pop]')
+  host.replaceChildren()
+  if (!state.open) return
+  const variant = state.variant
+  const pop = el('div', { class: 'pop pop--' + variant, role: 'dialog', 'aria-label': 'Choose model' })
+  pop.append(drawRail())
+  const list = el('div', { class: 'list' })
+  const provider = PROVIDERS.find(p => p.id === state.provider)
+  let box
+
+  if (!provider.opencode) {
+    const found = newestFirst(provider.models.filter(matches))
+    list.append(searchLine('Search ' + provider.name + ' models'))
+    box = el('div', { class: 'opts', role: 'listbox', 'aria-label': provider.name + ' models' })
+    for (const model of found) box.append(option(model, false))
+    if (!found.length) box.append(el('p', { class: 'pop__empty', text: 'No matching models.' }))
+  } else {
+    const services = shownServices()
+    const all = services.flatMap(item => item.models)
+    const found = all.filter(matches)
+    if (variant === 'a') {
+      list.append(searchLine('Search OpenCode models', found.length))
+      box = grouped(list, services, 'OpenCode models')
+    } else if (variant === 'b') {
+      list.append(searchLine('Search OpenCode models', found.length))
+      box = el('div', { class: 'opts', role: 'listbox', 'aria-label': 'OpenCode models' })
+      for (const model of newestFirst(found)) box.append(option(model, true))
+      if (!found.length) box.append(el('p', { class: 'pop__empty', text: 'No matching models.' }))
+    } else {
+      const inside = services.find(item => item.id === state.service)
+      list.append(searchLine('Search every OpenCode service', state.query.trim() ? found.length : undefined))
+      if (state.query.trim()) box = grouped(list, services, 'OpenCode models')
+      else if (inside) {
+        const step = el('div', { class: 'step' })
+        const back = el('button', { type: 'button', class: 'step__back', 'data-k': 'back', 'aria-label': 'Back to services', title: 'Back to services (Escape)' })
+        back.append(icon('i-left', 'i sm'), document.createTextNode('Services'))
+        back.addEventListener('click', stepBack)
+        step.append(back, el('b', { text: inside.name }), el('span', { text: plural(inside.models.length, 'model') }))
+        list.append(step)
+        box = el('div', { class: 'opts', role: 'listbox', 'aria-label': inside.name + ' models' })
+        for (const model of newestFirst(inside.models)) box.append(option(model, false))
+      } else box = servicesStep()
+    }
+  }
+  /* The list is one tab stop: the chosen row, or the first, holds it. */
+  const items = [...box.querySelectorAll('.opt:not(:disabled), .svc')]
+  const holder = items.find(item => item.getAttribute('aria-selected') === 'true' || item.getAttribute('aria-current') === 'true') || items[0]
+  if (holder) holder.tabIndex = 0
+  box.addEventListener('keydown', listKeys)
+  list.append(box)
+  list.append(el('p', { class: 'pop__note', text: NOTE }))
+  pop.append(list)
+  host.append(pop)
+}
+
+function focusItem(item) {
+  const box = item.closest('.opts')
+  for (const other of box.querySelectorAll('[tabindex="0"]')) other.tabIndex = -1
+  item.tabIndex = 0
+  item.focus()
+}
+function listKeys(event) {
+  const items = [...event.currentTarget.querySelectorAll('.opt:not(:disabled), .svc')]
+  if (!items.length) return
+  const at = items.indexOf(document.activeElement)
+  let next = -1
+  if (event.key === 'ArrowDown') next = Math.min(at + 1, items.length - 1)
+  else if (event.key === 'ArrowUp') {
+    if (at <= 0) { event.preventDefault(); document.querySelector('[data-k="search"]').focus(); return }
+    next = at - 1
+  } else if (event.key === 'Home') next = 0
+  else if (event.key === 'End') next = items.length - 1
+  if (next >= 0) { event.preventDefault(); focusItem(items[next]) }
+}
+
+function close() { state.open = false; state.query = ''; state.service = null; draw('chip') }
+
+function draw(focusKey) {
+  const active = document.activeElement
+  const key = focusKey || (active && active.dataset ? active.dataset.k : undefined)
+  const caret = active && active.tagName === 'INPUT' ? active.selectionStart : null
+  document.documentElement.dataset.variant = state.variant
+  drawChip(); drawMenu()
+  document.querySelector('[data-key]').textContent = state.variant
+  document.querySelector('[data-name]').textContent = VARIANTS[state.variant].name
+  let target = null
+  if (key === 'first') target = document.querySelector('.pop .opts .opt:not(:disabled)')
+  else if (key) target = document.querySelector('[data-k="' + CSS.escape(key) + '"]')
+  if (target && target !== document.activeElement) {
+    if (target.closest('.opts')) focusItem(target)
+    else target.focus()
+    if (caret !== null && target.tagName === 'INPUT') target.setSelectionRange(caret, caret)
+  }
+}
+
+const keys = Object.keys(VARIANTS)
+function go(step) {
+  state.variant = keys[(keys.indexOf(state.variant) + step + keys.length) % keys.length]
+  const url = new URL(location.href); url.searchParams.set('variant', state.variant); history.replaceState(null, '', url)
+  state.open = true; state.service = null; state.query = ''
+  draw()
+}
+function setTheme(light) {
+  document.documentElement.dataset.theme = light ? 'light' : 'dark'
+  const button = document.querySelector('[data-theme-toggle]')
+  button.textContent = light ? 'Dark' : 'Light'
+  button.setAttribute('aria-label', light ? 'Switch to the dark palette' : 'Switch to the light palette')
+}
+function setLong(on) {
+  state.long = on
+  const button = document.querySelector('[data-long-toggle]')
+  button.setAttribute('aria-pressed', String(on))
+  button.setAttribute('aria-label', on ? 'Remove the OpenRouter sample list' : 'Add the OpenRouter sample list')
+  if (state.service === 'openrouter' && !on) state.service = null
+}
+document.querySelector('[data-prev]').addEventListener('click', () => go(-1))
+document.querySelector('[data-next]').addEventListener('click', () => go(1))
+document.querySelector('[data-theme-toggle]').addEventListener('click', () => setTheme(document.documentElement.dataset.theme !== 'light'))
+document.querySelector('[data-long-toggle]').addEventListener('click', () => { setLong(!state.long); draw() })
+addEventListener('keydown', event => {
+  const tag = document.activeElement ? document.activeElement.tagName : ''
+  const typing = tag === 'INPUT' || tag === 'TEXTAREA'
+  if (event.key === 'Escape' && state.open) {
+    event.preventDefault()
+    const provider = PROVIDERS.find(p => p.id === state.provider)
+    if (state.variant === 'c' && provider.opencode && state.query.trim()) { state.query = ''; draw('search'); return }
+    if (state.variant === 'c' && provider.opencode && state.service) { stepBack(); return }
+    close(); return
+  }
+  if (typing || (document.activeElement && document.activeElement.closest('.pop'))) return
+  if (event.key === 'ArrowLeft') go(-1)
+  if (event.key === 'ArrowRight') go(1)
+})
+document.addEventListener('pointerdown', event => {
+  if (state.open && !event.target.closest('.pop, .sel, .switcher')) close()
+})
+
+const params = new URL(location.href).searchParams
+state.variant = keys.indexOf(params.get('variant')) >= 0 ? params.get('variant') : 'a'
+setTheme(params.get('theme') === 'light')
+setLong(params.get('long') !== '0')
+if (params.get('chosen') && modelOf(params.get('chosen'))) state.chosen = params.get('chosen')
+if (params.get('q')) state.query = params.get('q')
+if (params.get('service') && state.variant === 'c') state.service = params.get('service')
+if (params.get('closed') === '1') state.open = false
+draw()
+</script>
+</body>
+</html>
