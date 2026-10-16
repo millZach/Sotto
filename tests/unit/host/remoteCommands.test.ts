@@ -127,6 +127,11 @@ describe('remote command allow-list', () => {
     expect(remoteCommandRefusal(command, { mayAnswer: true })).toBe('forbidden')
     expect(remoteCommandRefusal(command, { mayAnswer: false, threadStarts: true })).toBeNull()
     expect(remoteCommandRefusal({ ...command, approved: true } as unknown as AgentCommand, { mayAnswer: true, threadStarts: true })).toBe('forbidden')
+    // Fork from here goes the same way (E5b).
+    const fork = { type: 'fork-thread', threadId: 'thread', messageId: 'reply', newThreadId: '7a4c2e1f-0b3d-4e5f-8a9b-1c2d3e4f5a6b', modelId: 'codex:model', workingCopy: 'independent', baseBranch: 'main' } as AgentCommand
+    expect(remoteCommandRefusal(fork, { mayAnswer: true })).toBe('forbidden')
+    expect(remoteCommandRefusal(fork, { mayAnswer: false, threadStarts: true })).toBeNull()
+    expect(remoteCommandRefusal({ ...fork, agentId: 'codex-agent-1' } as unknown as AgentCommand, { mayAnswer: true, threadStarts: true })).toBe('forbidden')
     const base = { v: 1, id: 'read', session: 'session' }
     expect(hostRequestSchema.safeParse({ ...base, op: 'start-handover', threadId: 'thread' }).success).toBe(true)
     expect(hostRequestSchema.safeParse({ ...base, op: 'start-handover', threadId: 'thread', text: 'words' }).success).toBe(false)

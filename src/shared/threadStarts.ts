@@ -1,3 +1,4 @@
+import type { AgentCommand, ProviderId } from './agents'
 /**
  * The plain sentences of continuing an agent as its own thread and forking a thread at a reply (#1028). Main answers with
  * these exact sentences and the window reads them, as it reads `RESTORE_BRANCH_NEEDS_CONFIRMATION`: the agent's row offers
@@ -20,8 +21,21 @@ export const FORKED_THREAD_SOURCE_MISSING = 'Codex no longer has the conversatio
 export const AGENT_HANDOVER_UNAVAILABLE = 'Sotto no longer holds this agent’s task and result, so there is no handover to start from, and nothing was made.'
 /** Sent with the first message when its handover can no longer be built: the message goes back to the composer. */
 export const START_HANDOVER_UNREADABLE = 'Sotto could not read what this thread’s handover carries, so nothing was sent. Your message is back in the composer; send it again to start without the handover.'
-/** A host whose Sotto predates continuing agents. */
-export const THREAD_STARTS_UNSUPPORTED = 'This host can’t continue an agent as a thread yet, and nothing was made. Update Sotto on the host, then try again.'
+/** A host whose Sotto predates continuing agents and Fork from here. */
+export const THREAD_STARTS_UNSUPPORTED = 'This host can’t start a thread from another yet, and nothing was made. Update Sotto on the host, then try again.'
+/** A fork carries finished turns, so a thread that is working is not forked. */
+export const FORK_TURN_RUNNING = 'Wait for this turn to finish, or stop it, before forking. A fork carries finished turns, and nothing was made.'
+/** Sotto's record no longer has the reply a fork was asked at. */
+export const FORK_REPLY_GONE = 'Sotto no longer has that reply in this thread, so nothing was made. Refresh the thread and try again.'
+/** The providers that copy a conversation themselves; every other starts a fork from a handover (#1028, E5b). */
+export const NATIVE_FORKS: ReadonlySet<ProviderId> = new Set(['codex', 'claude'])
+/** A Claude Code fork lives where its source's session does, so it can't start in a new worktree. */
+export const sameFolderForks = (provider: ProviderId): boolean => provider === 'claude'
+/** The commands that make a thread from another (#1028): each names the thread to make, and is answered where it was asked. */
+export type ThreadStartCommand = Extract<AgentCommand, { type: 'continue-agent' | 'fork-thread' }>
+export function startsThread(command: Pick<AgentCommand, 'type'>): command is ThreadStartCommand {
+  return command.type === 'continue-agent' || command.type === 'fork-thread'
+}
 
 /** The line after a handover that says where the user's own words begin. */
 export const START_HANDOVER_CLOSE = '[End of the handover. The user’s message follows.]'

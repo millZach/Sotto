@@ -170,6 +170,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `host-facts`: the host answers `host-facts` with its machine's host facts and how many of its threads are running a turn
  * (#1031). Numbers and the system's own name only. Only a desktop is offered it; one whose host does not list it reads unknown.
  * `thread-starts`: the host takes `continue-agent`, which continues one of a thread's agents as a thread of its own, and
+ * `fork-thread`, which forks a thread at one of its replies (Fork from here), and
  * answers `start-handover` with the handover a thread that began from another goes with on its first message (#1028). Only
  * a host whose Owl answer turns them on lists it; a desktop refuses both for a host that does not.
  */

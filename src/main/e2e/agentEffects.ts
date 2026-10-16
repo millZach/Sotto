@@ -104,10 +104,13 @@ export class E2EAgentHost implements AgentHost {
     const source = this.state.threads.find(thread => thread.id === request.source.threadId)
     if (!source) throw new Error('E2E_FORK_SOURCE_UNAVAILABLE')
     const agent = source.activities?.flatMap(activity => activity.agents ?? []).find(item => item.id === request.source.agentId)
+    const at = request.source.messageId === undefined ? -1 : source.messages.findIndex(message => message.id === request.source.messageId)
+    if (request.source.messageId !== undefined && at < 0) throw new Error('E2E_FORK_REPLY_UNAVAILABLE')
     this.state.threads.push({ id: request.threadId, title: request.title, projectId: source.projectId, modelId: request.modelId,
       ...(source.providerId ? { providerId: source.providerId } : {}), ...(request.workingDirectory ? { workingDirectory: request.workingDirectory } : {}),
       runtimeMode: request.runtimeMode ?? 'approval-required', reasoningEffort: request.reasoningEffort ?? 'low', status: 'idle', requests: [],
-      messages: agent?.message ? [{ id: randomUUID(), role: 'assistant', text: agent.message, createdAt: new Date().toISOString() }] : [] })
+      messages: at >= 0 ? structuredClone(source.messages.slice(0, at + 1))
+        : agent?.message ? [{ id: randomUUID(), role: 'assistant', text: agent.message, createdAt: new Date().toISOString() }] : [] })
     this.emit()
     return { accepted: true }
   }

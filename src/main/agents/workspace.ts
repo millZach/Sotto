@@ -22,11 +22,13 @@ import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink, type UsageRe
 import type { UserMessageInstantSource } from './usageHistory/sottoPrompts'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { confirmedSettingsSnapshot, type AgentContinuation, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
+import { confirmedSettingsSnapshot, type AgentContinuation, type AgentHost, type ReplyFork, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { agentHandover, type AgentHandover } from './agentHandover'
-import { AGENT_HANDOVER_UNAVAILABLE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING } from '../../shared/threadStarts'
+import { AGENT_HANDOVER_UNAVAILABLE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, FORK_REPLY_GONE, FORK_TURN_RUNNING, NATIVE_FORKS } from '../../shared/threadStarts'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual } from './threadStore'
-import { readHandover, type Handover, type HandoverStore } from './handover'
+import { buildHandover, readHandover, type Handover, type HandoverStore } from './handover'
+import { withoutStartHandover } from './startHandover'
+import { handoverCounts } from './watcherHandover'
 import { placeVisuals } from './visualPlacement'
 import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
@@ -91,6 +93,8 @@ function historyTextChunks(text: string): string[] {
 const WORKTREE_REFRESH_DELAY_MS = 1_500
 /** How often the Git status timer looks at whether a remote read is due. */
 /** Two spellings of one folder: trailing separators, slashes and case are not a difference on the platforms Sotto ships on. */
+/** How many of a thread's newest messages up to a reply a handover of it reads; the rest are named by count. */
+const REPLY_HANDOVER_READ = 200
 const sameFolder = (left: string, right: string): boolean => left.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase() === right.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase()
 const GIT_STATUS_TICK_MS = 5_000
 const GIT_ACTION_SAVE_ERROR = 'The Git action finished, but its record could not be saved. Check the folder; the notice may not show it.'
@@ -387,6 +391,48 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return this.startThread({ ...request, title, startedFrom, ...(fork ? { fork: { agentId: row.id } } : {}) })
   }
   /**
+   * Fork from here (#1028, E5b): a new thread with a thread's conversation up to one of its replies, by Sotto IDs alone.
+   * Codex and Claude Code copy it themselves, bound to the new thread now; every other provider starts the new thread
+   * from a handover of the conversation up to the reply, which goes with its first message. The model is asked nothing.
+   */
+  async forkAtReply(request: ReplyFork): Promise<AgentHostResult> {
+    if (!this.threadStarts) throw new Error('Fork from here is available in Sotto Owl. Nothing was made.')
+    await this.initialize()
+    const source = this.thread(request.sourceThreadId)
+    if (!this.visible(source) || source.kind === 'watcher' || source.kind === 'watcher-history' || !source.providerId) throw new Error('This thread can’t be forked. Nothing was made.')
+    if (source.status === 'running') throw new Error(FORK_TURN_RUNNING)
+    if (this.threadMessage(source.id, request.messageId)?.role !== 'assistant') throw new Error(FORK_REPLY_GONE)
+    const title = `Fork of ${source.title}`.slice(0, 240)
+    const at = new Date().toISOString()
+    if (NATIVE_FORKS.has(source.providerId)) {
+      return this.startThread({ ...request, title, startedFrom: { threadId: source.id, from: 'turn', route: 'fork', at, messageId: request.messageId }, fork: { messageId: request.messageId } })
+    }
+    const handover = this.replyHandover(source, request.messageId)
+    if (!handover) throw new Error(FORK_REPLY_GONE)
+    return this.startThread({ ...request, title, startedFrom: { threadId: source.id, from: 'turn', route: 'handover', at, messageId: request.messageId, handover: { thin: false, counts: handover.counts } } })
+  }
+  /**
+   * A handover of a thread's conversation up to one of its replies, read from Sotto's own record (#1028, E5b): the
+   * newest messages up to the reply and the thread's first request, the way Watcher's handover reads a thread, with a
+   * handover that thread itself began from left out.
+   */
+  private replyHandover(source: AgentThread, messageId: string): AgentHandover | undefined {
+    if (!source.providerId || this.storeUnavailable) return undefined
+    this.applyEvents()
+    const store = this.threadStore
+    const identities = store.messageIdentities(source.id)
+    const end = identities.findIndex(identity => identity.id === messageId)
+    if (end < 0 || identities[end]!.role !== 'assistant') return undefined
+    const wakeUps = store.wakeUps(source.id), sent = source.startedFrom?.handover?.sent
+    const ordinals = new Set([identities.findIndex(identity => identity.role === 'user'), ...Array.from({ length: Math.min(end + 1, REPLY_HANDOVER_READ) }, (_, index) => end - index)])
+    const messages = [...ordinals].filter(ordinal => ordinal >= 0).flatMap(ordinal => {
+      const found = store.message(source.id, identities[ordinal]!.id)
+      return found ? [{ ordinal, message: withoutStartHandover(wakeUps.has(found.id) ? { ...found, wakeUp: true } : found, sent) }] : []
+    })
+    const built = buildHandover({ messages, total: end + 1 }, { source: { threadId: source.id, title: source.title, provider: source.providerId }, historyKept: !store.ephemeral })
+    return { text: built.text, counts: handoverCounts(built.summary) }
+  }
+  /**
    * Makes a thread that begins from another (#1028): an ordinary new thread in the source's project, then, for a fork, the
    * provider's copy bound to it before anything is published as made. A refused or unconfirmed copy leaves nothing behind.
    */
@@ -471,6 +517,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const start = thread?.startedFrom
     if (!start || start.route !== 'handover' || !start.handover || start.handover.sent) return undefined
     const source = this.state.snapshot.threads.find(item => item.id === start.threadId)
+    if (source && start.from === 'turn' && start.messageId) return this.replyHandover(source, start.messageId)
     if (!source || start.from !== 'agent' || !start.agentId || !start.assignmentId || this.subagentUnavailable) return undefined
     const row = this.subagentStore.row(source.id, start.agentId)
     return row ? this.agentStartHandover(source, row, start.assignmentId) : undefined
