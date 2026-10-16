@@ -357,7 +357,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   // details that follow the shell wait with it, the newest standing for any skipped; detail-delta pushes
   // and responses are never held, so no delta loses the revision it applies to.
   const owedShell = new WeakSet<Peer>()
-  const sendShell = (peer: Peer, original?: AgentState): void => {
+  const sendShell = (peer: Peer, read?: () => AgentState): void => {
     if (!authenticated(peer)) { peer.frames.close(); return }
     const scope = watcherScopes.get(peer)
     if (scope && offers(peer, 'watcher-reads') && service.watcherProjection) {
@@ -370,18 +370,20 @@ export async function startSocketServer(options: SocketServerOptions) {
       void track(peer.frames.drained().then(() => { owedShell.delete(peer); if (!closing && !peer.frames.isClosed) sendShell(peer) }))
       return
     }
-    const wire = wireShell(peer, shell(peer, original)), state = wire.state, eventPage = events(peer, peer.afterSeq)
+    const wire = wireShell(peer, shell(peer, read?.())), state = wire.state, eventPage = events(peer, peer.afterSeq)
     const full = JSON.stringify({ v: 1, event: 'shell', state, eventPage })
     if (fits(full)) { peer.frames.sendText(full); peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
     else if (push(peer, { v: 1, event: 'shell', state, eventPage: { events: [], latestSeq: peer.afterSeq, hasMore: true } })) { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
     if (detailsFollowShell) for (const threadId of peer.observed) detail(peer, threadId)
   }
-  // One read of the service's shell per publish, for every phone: each read copies the whole coordinator state.
+  // One read of the service's shell per publish, for every phone: each read copies the whole coordinator state. It is
+  // read when the first phone sends, so a publish to phones that are all backed up reads nothing.
   const shellPublisher = coalesceAgentStatePublishes(() => {
     let original: AgentState | undefined
+    const read = () => original ??= service.shell()
     for (const peer of peers) {
       if (!authenticated(peer)) { peer.frames.close(); continue }
-      if (peer.ready) sendShell(peer, original ??= service.shell())
+      if (peer.ready) sendShell(peer, read)
     }
   })
   // Each observed thread's update goes out as the service published it: a whole detail as one, and a delta

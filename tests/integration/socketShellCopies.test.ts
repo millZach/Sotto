@@ -28,4 +28,23 @@ describe('what a publish costs with several paired phones', () => {
     expect(shellFrames).toBeGreaterThanOrEqual(phones.length)
     expect(reads * phones.length).toBeLessThanOrEqual(shellFrames)
   })
+
+  // A phone whose socket is backed up is owed the shell and reads it afresh when it drains, so a publish to phones that
+  // are all backed up has nothing to send and reads nothing.
+  it('reads nothing for a publish when every phone is backed up', async () => {
+    const phones = await Promise.all(['One', 'Two'].map(name => fixture.pair(name)))
+    for (const { client } of phones) await expect.poll(() => client.shell().host.threads.length).toBeGreaterThan(0)
+    let drain!: () => void
+    const draining = new Promise<void>(resolve => { drain = resolve })
+    const backlogged = vi.spyOn(SocketFrames.prototype, 'backlogged', 'get').mockReturnValue(true)
+    const drained = vi.spyOn(SocketFrames.prototype, 'drained').mockReturnValue(draining)
+    const shells = vi.spyOn(LocalHostService.prototype, 'shell')
+    try {
+      fixture.native.event({ type: 'background-work', threadId: 'workshop', text: '', status: 'idle',
+        backgroundWork: [{ id: randomUUID(), label: 'Synthetic background work', type: 'command' }] })
+      // Each backed-up phone waits for its socket to drain once, and the publish is over.
+      await expect.poll(() => drained.mock.calls.length).toBe(phones.length)
+      expect(shells.mock.calls.length).toBe(0)
+    } finally { backlogged.mockRestore(); drained.mockRestore(); shells.mockRestore(); drain() }
+  })
 })
