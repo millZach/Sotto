@@ -20,6 +20,7 @@ import { agentClientHostSchema, agentCommandSchema, agentConfigurationSchema, ag
 import { agentSkillCatalogSchema } from '../../../src/shared/agentSkills'
 import { hostClientUpdateRequestSchema } from '../../../src/shared/hostProviders'
 import { hostRequestSchema } from '../../../src/shared/hostProtocol'
+import { USAGE_PROVIDERS } from '../../../src/renderer/src/features/usage/usagePresentation'
 
 const SIX = SEVEN.slice(0, 6)
 const update = (id: string) => ({ id, installed: '1.0.0', behind: false, channel: 'npm', canInstall: true, checkedAt: '2026-10-16T00:00:00.000Z' })
@@ -35,6 +36,10 @@ const providerLists: ReadonlyArray<readonly [string, (ids: readonly string[]) =>
 ]
 
 describe('provider lists', () => {
+  it('offer every usage provider on the Usage page', () => {
+    expect(USAGE_PROVIDERS).toEqual(USAGE_SIX)
+  })
+
   it('derive their cap from the provider list', () => {
     expect(providerIdSchema.options).toEqual(SEVEN)
     expect(PROVIDER_COUNT).toBe(7)
