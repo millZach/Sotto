@@ -24,6 +24,7 @@ import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type 
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual } from './threadStore'
+import { readHandover, type Handover, type HandoverStore } from './handover'
 import { placeVisuals } from './visualPlacement'
 import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
@@ -318,6 +319,27 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return { historyEpoch: epoch?.epoch ?? String(epoch?.sequence ?? 0), ...this.threadStore.readForwardMessages(threadId, afterPosition, limit),
       activities: this.threadStore.readActivities(threadId, { keep: false }).slice(-100).map(({ id, kind, status, title, startedAt, completedAt }) => ({
         id, kind, status, title: title.slice(0, 2_000), ...(startedAt ? { startedAt } : {}), ...(completedAt ? { completedAt } : {}) })) }
+  }
+  /**
+   * A handover of an earlier Watcher conversation (ADR-0073), read from Sotto's own record of it (ADR-0016) with each
+   * message as `shown` makes it. Undefined when the record cannot be read; with Keep local history off it is what this
+   * run kept in memory, and says so.
+   */
+  watcherHandover(threadId: string, shown: (message: AgentMessage) => AgentMessage): Handover | undefined {
+    if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (!thread?.providerId || this.storeUnavailable) return undefined
+    this.applyEvents()
+    const store = this.threadStore
+    const view: HandoverStore = {
+      ephemeral: store.ephemeral,
+      readMessages: (id, options) => { const window = store.readMessages(id, options); return { ...window, messages: window.messages.map(shown) } },
+      messageIdentities: id => store.messageIdentities(id),
+      message: (id, messageId) => { const found = store.message(id, messageId); return found === undefined ? undefined : shown(found) },
+      wakeUps: id => store.wakeUps(id),
+      activityCount: id => store.activityCount(id),
+    }
+    return readHandover(view, { source: { threadId, title: thread.title, provider: thread.providerId } })
   }
   async setWatcherKind(threadId: string, kind: 'watcher' | 'watcher-history'): Promise<void> {
     if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
@@ -1577,9 +1599,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private saveActivities(): void {
     if (!this.historyWritable() || this.activityStoreUnavailable) return
-    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
-      if (thread.activities !== undefined) this.threadStore.syncActivities(thread.id, retainedActivities(thread.activities), thread.historyEpoch)
-    }
+    // Every thread's records in one transaction: a save with several busy threads pays one disk flush, not one each.
+    this.threadStore.syncActivitiesMany(this.state.snapshot.threads.filter(thread => this.visible(thread) && thread.activities !== undefined)
+      .map(thread => ({ threadId: thread.id, activities: retainedActivities(thread.activities!), epoch: thread.historyEpoch })))
   }
   /** Once the records a start read whole are saved back without their words, later starts need not read them (#918). */
   private noteSubagentWordsMoved(): void {

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema, watcherRefusalSchema,
   watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema } from './watcher'
 import { watcherEventSchema } from './watcherNews'
-import { agentRuntimeModeSchema } from './agents'
+import { agentRuntimeModeSchema, handoverCountsSchema } from './agents'
 import { watcherOwnChangeSchema, watcherStandingWatchSchema } from './watcher'
 
 /** Private desktop channels. A host may project the same state later without acquiring command authority. */
@@ -15,6 +15,9 @@ export const WATCHER_SET_LIMIT = 'sotto:watcher:set-limit'
 export const WATCHER_SET_PERMISSION = 'sotto:watcher:set-permission'
 export const WATCHER_WATCH_THREAD = 'sotto:watcher:watch-thread'
 export const WATCHER_UNWATCH_THREAD = 'sotto:watcher:unwatch-thread'
+export const WATCHER_READ_HANDOVER = 'sotto:watcher:read-handover'
+export const WATCHER_CONTINUE_HANDOVER = 'sotto:watcher:continue-handover'
+export const WATCHER_DISMISS_HANDOVER = 'sotto:watcher:dismiss-handover'
 export const WATCHER_RENDERER_ARGUMENT = '--sotto-watcher-enabled'
 /** Retained previews per desktop room or authenticated paired phone, never a shared capacity. */
 export const WATCHER_STOP_ALL_PREVIEW_LIMIT = 16
@@ -41,6 +44,11 @@ export const watcherRoomStateSchema = z.object({
   inFlight: z.number().int().nonnegative(), inFlightLimit: z.number().int().min(1).max(8),
   receipts: z.array(watcherOperationSchema), news: z.array(watcherEventSchema).max(400).optional(),
   recoveryNotice: z.string().nullable(), observedAt: timestamp,
+  /**
+   * The handover of the last Watcher offered to the current one after a provider change, until its first message goes
+   * or the user puts the offer away (ADR-0073): where it comes from and what it carries, in counts. Never its words.
+   */
+  handover: z.object({ source: watcherThreadTargetSchema, provider: watcherProviderSchema, counts: handoverCountsSchema }).strict().nullable().optional(),
 }).strict()
 export const watcherOpenRequestSchema = z.object({ provider: watcherProviderSchema,
   modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).optional() }).strict()
@@ -60,6 +68,14 @@ export const watcherSetLimitRequestSchema = z.object({ limit: z.number().int().m
 export const watcherSetPermissionRequestSchema = z.object({ runtimeMode: agentRuntimeModeSchema }).strict()
 export const watcherWatchThreadRequestSchema = z.object({ target: watcherThreadTargetSchema }).strict()
 export type WatcherSetPermissionRequest = z.infer<typeof watcherSetPermissionRequestSchema>
+/** Continue with the handover: the draft whose send carries it ahead of the user's words. */
+export const watcherContinueHandoverRequestSchema = z.object({ draftId: z.uuid() }).strict()
+export type WatcherContinueHandoverRequest = z.infer<typeof watcherContinueHandoverRequestSchema>
+/** The offered handover's words, as the new Watcher would receive them, read only when the user asks to read it. */
+export const watcherHandoverReadSchema = z.union([
+  z.object({ status: z.literal('ok'), text: z.string(), counts: handoverCountsSchema }).strict(), watcherRefusalSchema,
+])
+export type WatcherHandoverRead = z.infer<typeof watcherHandoverReadSchema>
 export type WatcherWatchThreadRequest = z.infer<typeof watcherWatchThreadRequestSchema>
 
 export type WatcherRoomState = z.infer<typeof watcherRoomStateSchema>
@@ -99,5 +115,9 @@ export interface WatcherBridge {
   setPermission?(request: WatcherSetPermissionRequest): Promise<WatcherRoomResult>
   watchThread?(request: WatcherWatchThreadRequest): Promise<WatcherRoomResult>
   unwatchThread?(request: WatcherWatchThreadRequest): Promise<WatcherRoomResult>
+  /** The handover after a provider change (ADR-0073). Older stand-ins omit them; the real Owl preload supplies all three. */
+  readHandover?(): Promise<WatcherHandoverRead>
+  continueWithHandover?(request: WatcherContinueHandoverRequest): Promise<WatcherRoomResult>
+  dismissHandover?(): Promise<WatcherRoomResult>
   onChanged(listener: (state: WatcherRoomState) => void): () => void
 }

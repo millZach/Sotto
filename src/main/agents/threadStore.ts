@@ -7,7 +7,7 @@ import { DatabaseSync, type SQLOutputValue, type StatementSync } from 'node:sqli
 import { summarizeThread, type AgentMessage, type AgentThreadSummary } from '../../shared/agents'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
 import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
-import { isImmutableActivities } from './activitySnapshots'
+import { isImmutableActivities, isImmutableActivity } from './activitySnapshots'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
 import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
@@ -116,12 +116,31 @@ export interface StoredVisual {
   readonly anchorUserMessageId: string | null
 }
 
+/** A stored record, and the frozen record it was last taken from or matched, when it was one. */
+interface StoredActivityRecord { position: number; activity: AgentActivity; input?: AgentActivity }
+
 interface ActivityState {
   known: boolean
   epoch: string | undefined
   resetSequence: number | undefined
-  records: Map<string, { position: number; activity: AgentActivity }>
+  records: Map<string, StoredActivityRecord>
   input?: { activities: readonly AgentActivity[]; redactionRevision: number } | undefined
+}
+
+/** What one thread's activity list changes in the store: worked out before the transaction, written inside it. */
+interface ActivitySyncPlan {
+  threadId: string
+  epoch: string | undefined
+  resetSequence: number
+  reset: boolean
+  previousKnown: boolean
+  previousResetSequence: number | undefined
+  next: ActivityState
+  changed: { position: number; activity: AgentActivity }[]
+  moved: { id: string; position: number }[]
+  removed: string[]
+  immutable: boolean
+  activities: readonly AgentActivity[]
 }
 
 /** What is known of a thread's stored activity without its records: its marker and how many records it holds (#918). */
@@ -451,60 +470,128 @@ export class ThreadStore {
 
   /** Persists the bounded authoritative list, encoding only records whose values changed. */
   syncActivities(threadId: string, activities: readonly AgentActivity[], epoch?: string): void {
+    this.syncActivitiesMany([{ threadId, activities, epoch }])
+  }
+
+  /**
+   * Several threads' lists in one transaction, so a save with several busy threads pays one disk flush rather than one
+   * per thread. A savepoint per thread keeps one thread's failure from undoing the others: they commit, and the first
+   * failure is thrown after them. A thread whose write failed keeps its earlier state, so the next save retries it.
+   */
+  syncActivitiesMany(entries: readonly { threadId: string; activities: readonly AgentActivity[]; epoch?: string | undefined }[]): void {
     const db = this.requireOpen()
+    let failure: unknown
+    const plans: ActivitySyncPlan[] = []
+    for (const entry of entries) {
+      try {
+        const plan = this.planActivitySync(entry.threadId, entry.activities, entry.epoch)
+        if (plan) plans.push(plan)
+      } catch (error) { failure ??= error }
+    }
+    if (plans.length) {
+      const written: ActivitySyncPlan[] = []
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        for (const plan of plans) {
+          db.exec('SAVEPOINT activity_sync')
+          try {
+            this.writeActivityPlan(plan)
+            db.exec('RELEASE SAVEPOINT activity_sync')
+            written.push(plan)
+          } catch (error) {
+            db.exec('ROLLBACK TO SAVEPOINT activity_sync')
+            db.exec('RELEASE SAVEPOINT activity_sync')
+            failure ??= error
+          }
+        }
+        db.exec('COMMIT')
+      } catch (error) {
+        try { db.exec('ROLLBACK') } catch { /* The commit's own failure is the one to report. */ }
+        throw error
+      }
+      // Only a committed revision can suppress the next save. A failed transaction keeps its retry.
+      for (const plan of written) {
+        if (plan.immutable) plan.next.input = { activities: plan.activities, redactionRevision: this.redactionRevision }
+        this.activityStates.set(plan.threadId, plan.next)
+        this.activityMetas.delete(plan.threadId)
+      }
+    }
+    if (failure !== undefined) throw failure
+  }
+
+  /** What one thread's list changes in the store, worked out without writing; undefined when nothing does. */
+  private planActivitySync(threadId: string, activities: readonly AgentActivity[], epoch: string | undefined): ActivitySyncPlan | undefined {
     if (activities.length > MAX_AGENT_ACTIVITIES) throw new Error('Too many thread activities')
     const previous = this.activityState(threadId)
     const resetSequence = this.readMessageEpoch(threadId)?.sequence ?? 0
     const reset = previous.epoch !== epoch || (previous.resetSequence !== undefined && previous.resetSequence !== resetSequence)
     const immutable = isImmutableActivities(activities)
     if (immutable && previous.known && !reset && previous.resetSequence === resetSequence
-      && previous.input?.activities === activities && previous.input.redactionRevision === this.redactionRevision) return
+      && previous.input?.activities === activities && previous.input.redactionRevision === this.redactionRevision) return undefined
     const next: ActivityState = { known: true, epoch, resetSequence, records: new Map() }
     const changed: { position: number; activity: AgentActivity }[] = []
     const moved: { id: string; position: number }[] = []
     const seen = new Set<string>()
+    const kept: { activity: AgentActivity; prior: StoredActivityRecord | undefined; same: boolean; input: AgentActivity | undefined }[] = []
     for (const activity of activities) {
       if (seen.has(activity.id)) throw new Error('Duplicate thread activity identity')
       seen.add(activity.id)
       if (this.activityWasRedacted(threadId, activity.id)) continue
-      const position = next.records.size
       const prior = reset ? undefined : previous.records.get(activity.id)
-      if (prior !== undefined && isDeepStrictEqual(prior.activity, activity)) {
-        next.records.set(activity.id, { position, activity: prior.activity })
-        if (prior.position !== position) moved.push({ id: activity.id, position })
+      // A frozen record is only ever replaced, never edited: the same one as last time is unchanged without comparing.
+      // Comparing every record of a busy thread on every save was most of the save's time.
+      const input = isImmutableActivity(activity) ? activity : undefined
+      kept.push({ activity, prior, input, same: prior !== undefined && ((input !== undefined && prior.input === input) || isDeepStrictEqual(prior.activity, activity)) })
+    }
+    // Positions only order the records. A list that drops from its front and adds at its end, as a thread at the record
+    // limit does with every new record, keeps the positions it has, and new records go after them; renumbering every
+    // record of such a thread on each save rewrote two thousand rows at a time.
+    let last = -1, appended = false, stable = !reset
+    for (const { prior } of kept) {
+      if (!stable) break
+      if (prior === undefined) appended = true
+      else if (appended || prior.position <= last) stable = false
+      else last = prior.position
+    }
+    let nextFree = stable ? Math.max(-1, ...[...previous.records.values()].map(record => record.position)) + 1 : 0
+    for (const [index, { activity, prior, input, same }] of kept.entries()) {
+      const position = stable ? prior?.position ?? nextFree++ : index
+      if (same) {
+        next.records.set(activity.id, { position, activity: prior!.activity, ...(input ? { input } : {}) })
+        if (prior!.position !== position) moved.push({ id: activity.id, position })
       } else {
-        const record = { position, activity: agentActivitySchema.parse(activity) }
+        const record = { position, activity: agentActivitySchema.parse(activity), ...(input ? { input } : {}) }
         next.records.set(activity.id, record)
         changed.push(record)
       }
     }
     const removed = [...previous.records.keys()].filter(id => !next.records.has(id))
     if (previous.known && previous.resetSequence === resetSequence && !reset && changed.length === 0 && moved.length === 0 && removed.length === 0) {
+      // Keep what the records were compared from, so the next save of the same records skips the comparison too.
+      for (const [id, record] of next.records) { const held = previous.records.get(id); if (held && record.input) held.input = record.input }
       previous.input = immutable ? { activities, redactionRevision: this.redactionRevision } : undefined
-      return
+      return undefined
     }
     if (this.memory) this.redactActivityIdentities(threadId, changed.map(({ activity }) => activity.id))
-    db.exec('BEGIN IMMEDIATE')
-    try {
-      if (reset) {
-        this.statement('DELETE FROM activities WHERE thread_id = ?').run(threadId)
-      } else {
-        for (const id of removed) this.statement('DELETE FROM activities WHERE thread_id = ? AND activity_id = ?').run(threadId, id)
-      }
-      if (!previous.known || reset || previous.resetSequence !== resetSequence) {
-        this.statement('INSERT INTO activity_epochs (thread_id, epoch, message_reset_seq) VALUES (?, ?, ?) ON CONFLICT(thread_id) DO UPDATE SET epoch = excluded.epoch, message_reset_seq = excluded.message_reset_seq').run(threadId, epoch ?? null, resetSequence)
-      }
-      for (const { position, activity } of changed) {
-        this.statement('INSERT INTO activities (thread_id, activity_id, position, payload) VALUES (?, ?, ?, ?) ON CONFLICT(thread_id, activity_id) DO UPDATE SET position = excluded.position, payload = excluded.payload')
-          .run(threadId, activity.id, position, JSON.stringify(activity))
-      }
-      for (const { id, position } of moved) this.statement('UPDATE activities SET position = ? WHERE thread_id = ? AND activity_id = ?').run(position, threadId, id)
-      db.exec('COMMIT')
-    } catch (error) { db.exec('ROLLBACK'); throw error }
-    // Only a committed revision can suppress the next save. A failed transaction keeps its retry.
-    if (immutable) next.input = { activities, redactionRevision: this.redactionRevision }
-    this.activityStates.set(threadId, next)
-    this.activityMetas.delete(threadId)
+    return { threadId, epoch, resetSequence, reset, previousKnown: previous.known, previousResetSequence: previous.resetSequence, next, changed, moved, removed, immutable, activities }
+  }
+
+  /** One thread's planned changes, inside the caller's transaction. */
+  private writeActivityPlan(plan: ActivitySyncPlan): void {
+    const { threadId, epoch, resetSequence, reset } = plan
+    if (reset) {
+      this.statement('DELETE FROM activities WHERE thread_id = ?').run(threadId)
+    } else {
+      for (const id of plan.removed) this.statement('DELETE FROM activities WHERE thread_id = ? AND activity_id = ?').run(threadId, id)
+    }
+    if (!plan.previousKnown || reset || plan.previousResetSequence !== resetSequence) {
+      this.statement('INSERT INTO activity_epochs (thread_id, epoch, message_reset_seq) VALUES (?, ?, ?) ON CONFLICT(thread_id) DO UPDATE SET epoch = excluded.epoch, message_reset_seq = excluded.message_reset_seq').run(threadId, epoch ?? null, resetSequence)
+    }
+    for (const { position, activity } of plan.changed) {
+      this.statement('INSERT INTO activities (thread_id, activity_id, position, payload) VALUES (?, ?, ?, ?) ON CONFLICT(thread_id, activity_id) DO UPDATE SET position = excluded.position, payload = excluded.payload')
+        .run(threadId, activity.id, position, JSON.stringify(activity))
+    }
+    for (const { id, position } of plan.moved) this.statement('UPDATE activities SET position = ? WHERE thread_id = ? AND activity_id = ?').run(position, threadId, id)
   }
 
   /** Writes one event and applies it to the projection in a single transaction. */
