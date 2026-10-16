@@ -3,9 +3,10 @@
  * and Codex adapters over the fake CLIs in `tests/fixtures/` (`SOTTO_E2E_NATIVE_FIXTURE_ROOT` in `src/main/index.ts`).
  * A Claude Code thread delegates a review to a Codex thread through `sotto_delegate`, called as the thread's agent would
  * call it (`sottoE2E.delegationTool`): the card appears in the Claude thread with the thread as a link, Codex, This
- * computer and the wait, and its outcome moves to Answered when Codex answers; the Codex thread keeps the name it was
- * given, sits under the Claude thread in the sidebar with its machine badge, and says "Delegated by" with a link back;
- * Stop on the Claude thread names the delegated thread still working, and a press stops both. Stable offers neither the bridge nor the tool.
+ * computer and the wait, and its outcome moves to Answered when Codex answers; a delegation wider than the Claude
+ * thread's own permission is refused, and its card says so with no link; the Codex thread keeps the name it was given,
+ * sits under the Claude thread in the sidebar with its machine badge, and says "Delegated by" with a link back; Stop on
+ * the Claude thread names the delegated thread still working, and a press stops both. Stable offers neither the bridge nor the tool.
  *
  *   npm run build && npx playwright test tests/e2e/thread-delegation.spec.ts
  */
@@ -132,7 +133,7 @@ async function readable(page: Page, where: string): Promise<void> {
       }
       return hex(getComputedStyle(document.body).backgroundColor)
     }
-    const selectors = ['.delegation-card__lead', '.delegation-card__link', '.delegation-card__outcome', '.delegation-card__meta', '.delegation-card__wait', '.delegated-by > span',
+    const selectors = ['.delegation-card__lead', '.delegation-card__link', '.delegation-card__name', '.delegation-card__outcome', '.delegation-card__meta', '.delegation-card__wait', '.delegated-by > span',
       '.delegated-by .delegation-card__outcome', '.delegation-note', '.thread-message[data-from="delegation"] .thread-message__who', '.thread-nav__row[data-delegation-level] .host-badge']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0)
       .map((element, index) => ({ name: `${selector} ${index}`, ink: hex(getComputedStyle(element).color), on: background(element) })))
@@ -214,6 +215,22 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
       await expect(journeys.locator('.delegation-card__wait')).toHaveText('This thread did not wait for it. The answer comes back as a wake-up.', { timeout: 30_000 })
       await expect.poll(() => codexPrompts(codex), { timeout: 30_000 }).toBe(2)
 
+      // A delegation wider than this thread's own permission is refused: its card says what and why, and links nowhere.
+      expect(model!.permissions).toContain('full-access')
+      const wider = await tool(page, parentId, 'delegate', { work: 'research', brief: 'Draft the release notes for the reconnect fix.', provider: 'codex', model: model!.model,
+        ...model!.efforts.length ? { effort: model!.efforts[0] } : {}, permission: 'full-access', wait_seconds: 0 })
+      expect(wider, JSON.stringify(wider)).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE' })
+      const refused = parent.getByRole('note', { name: 'Not delegated: Research' })
+      await expect(refused).toBeVisible({ timeout: 30_000 })
+      await expect(refused).toHaveAttribute('data-outcome', 'refused')
+      await expect(refused.locator('.delegation-card__meta')).toContainText('Codex')
+      await expect(refused.locator('.delegation-card__meta')).toContainText('This computer')
+      await expect(refused.locator('.delegation-card__wait')).toHaveText('It asked for more permission than this thread has, or than your new-thread default allows. '
+        + 'A delegated thread gets no more than either. Nothing was started. To give it more, raise the lower of the two first.')
+      await expect(refused.getByRole('button')).toHaveCount(0)
+      // Nothing was started for it.
+      expect(await page.evaluate(async parentId => (await window.sotto!.agents!.get()).host.threads.filter(thread => thread.delegatedBy === parentId).length, parentId)).toBe(2)
+
       // Stop names the delegated thread still working, by its name and by the line under the composer.
       const stop = parent.getByRole('button', { name: 'Stop agent and the thread it delegated that is working' })
       await expect(stop).toBeVisible({ timeout: 30_000 })
@@ -228,6 +245,10 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
           await fits(page, `parent ${appearance} ${width}x${height}`)
           await readable(page, `parent ${appearance} ${width}x${height}`)
           await capture(launched, `parent-${appearance}-${width}x${height}`)
+          await refused.scrollIntoViewIfNeeded()
+          await fits(page, `refused ${appearance} ${width}x${height}`)
+          await readable(page, `refused ${appearance} ${width}x${height}`)
+          await capture(launched, `refused-${appearance}-${width}x${height}`)
         }
       }
       await resizeWindow(launched, 1280, 800)

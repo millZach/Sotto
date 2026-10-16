@@ -19,6 +19,9 @@
 .delegation-card__machine > svg { flex: none; }
 .delegation-card__machine[data-kind='remote'] > svg { color: var(--tt-accent-text, var(--tt-text-muted)); }
 .delegation-card__wait { margin: 0; padding-left: 23px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+/* A delegation Sotto refused: an error's edge and mark, and the kind of work or the thread in the text's own colour. */
+.delegation-card[data-outcome='refused'] { border-color: color-mix(in srgb, var(--tt-error) 45%, var(--tt-hairline)); }
+.delegation-card[data-outcome='refused'] .delegation-card__glyph { color: var(--tt-error-text); }
 
 /* An outcome's word and its ring, coloured by what it means for the thread that delegated. */
 .delegation-card__outcome:is([data-outcome='working'], [data-outcome='background']) { color: var(--tt-activity); }

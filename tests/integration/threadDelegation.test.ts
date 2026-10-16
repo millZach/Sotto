@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { DelegationService } from '../../src/main/agents/delegation'
 import { DelegationToolServer } from '../../src/main/agents/delegationTools'
 import { lastUserMessageIdOf, type AgentThread, type ProviderId } from '../../src/shared/agents'
-import { DELEGATE_MCP_SERVER } from '../../src/shared/delegation'
+import { DELEGATE_MCP_SERVER, type DelegatedView, type DelegationView } from '../../src/shared/delegation'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { firstMessageTitleWriter } from '../../src/main/llm/threadTitle'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -16,6 +16,11 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 
 type Read = { status: 'ok'; delegation: { id: string; thread: string; outcome: string; reply?: { from: string; text: string }; refusal?: string; userSentSince?: boolean }; limits: { inFlight: number; prompts?: number } }
 type Refused = { status: 'refused'; code: string; message: string }
+/** A card the window reads for a delegation main accepted, not one it refused. */
+function accepted(view: DelegationView | undefined): DelegatedView {
+  if (view === undefined || view.outcome === 'refused') throw new Error('Expected a delegation main accepted.')
+  return view
+}
 
 async function fixture(options: { limit?: number; otherStarts?: number; history?: boolean; titles?: boolean } = {}) {
   const history = options.history ?? true
@@ -250,7 +255,7 @@ it('gives the window each delegation\'s outcome and wait, by the user\'s message
   expect(root).toBeDefined()
   const call = f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 60 })
   await vi.waitFor(() => expect(f.service.views(parent).made[0]).toMatchObject({ outcome: 'working', waiting: true, wait: { seconds: 60 } }))
-  const waiting = f.service.views(parent).made[0]!
+  const waiting = accepted(f.service.views(parent).made[0])
   // The card goes in the turn the call was made in, here the user's own message.
   expect(waiting).toMatchObject({ action: 'start', work: 'code-review', rootUserMessageId: root, anchorMessageId: root })
   // The delegated thread reads the same brief as one it was sent, by the brief's message.
@@ -259,7 +264,7 @@ it('gives the window each delegation\'s outcome and wait, by the user\'s message
   expect(told.flat()).toContain(parent)
   await f.endTurn(waiting.thread, 'Synthetic review reply')
   f.ok(await call)
-  const answered = f.service.views(parent).made[0]!
+  const answered = accepted(f.service.views(parent).made[0])
   expect(answered).toMatchObject({ outcome: 'answered', waiting: false, told: true, wait: { seconds: 60 } })
   expect(answered.wait?.wentOnAt).toBeUndefined()
   expect(answered.outcomeAt).toBeDefined()
@@ -315,4 +320,35 @@ it('records the refusal of a thread that may not delegate, with its rule, throug
   const saved = JSON.parse(await import('node:fs/promises').then(fs => fs.readFile(`${f.root}/delegations.json`, 'utf8'))) as { refusals?: { delegatingThreadId: string; code: string; provider?: string }[] }
   expect(saved.refusals).toEqual([expect.objectContaining({ delegatingThreadId: grandchild, code: 'LEVEL_LIMIT', provider: 'codex' })])
   expect(JSON.stringify(saved)).not.toContain('Synthetic brief')
+})
+
+it('gives the window each refused delegation by its rule, in the turn it was asked in, and never its words (#1029)', async () => {
+  const f = await fixture({ limit: 2, otherStarts: 1 }), parent = await f.userThread('claude')
+  const shell = f.control.shell().host.threads.find(thread => thread.id === parent)!
+  const root = lastUserMessageIdOf(shell) ?? shell.summary?.lastUser?.id
+  const first = f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0 }))
+  const told: string[][] = []
+  const stop = f.service.onViewsChanged(threadIds => { told.push([...threadIds]) })
+  const refused = await f.delegate(parent, { provider: 'grok', model: f.model('grok').id, wait_seconds: 0 }) as Refused & { delegation?: string }
+  expect(refused).toMatchObject({ code: 'IN_FLIGHT_LIMIT' })
+  // The window hears that the thread that asked has a new card, and nothing about any other thread.
+  await vi.waitFor(() => expect(told).toEqual([[parent]]))
+  const made = f.service.views(parent).made
+  expect(made.map(view => [view.id, view.outcome])).toEqual([[first.delegation.id, 'working'], [refused.delegation, 'refused']])
+  // A refused start names the provider it asked for and no thread, since nothing was started.
+  expect(made[1]).toEqual({ id: refused.delegation, provider: 'grok', action: 'start', work: 'code-review', outcome: 'refused', refusal: 'IN_FLIGHT_LIMIT',
+    rootUserMessageId: root, anchorMessageId: root, createdAt: expect.any(String) })
+  // A refused send names the thread it would have gone to, which was sent nothing and so shows no brief for it.
+  await f.control.commandShell({ type: 'save-thread-draft', threadId: first.delegation.thread, draftId: randomUUID(), text: 'The user is typing', requestId: null })
+  const send = await f.delegate(parent, { thread: first.delegation.thread, brief: 'Synthetic second brief', wait_seconds: 0 }) as Refused & { delegation?: string }
+  expect(send).toMatchObject({ code: 'PAUSED' })
+  expect(f.service.views(parent).made.at(-1)).toMatchObject({ id: send.delegation, thread: first.delegation.thread, action: 'send', outcome: 'refused', refusal: 'PAUSED' })
+  expect(f.service.views(first.delegation.thread).received.map(view => view.id)).toEqual([first.delegation.id])
+  // Main's words to the agent stay with the agent; the window words the rule itself.
+  const views = JSON.stringify(f.service.views(parent))
+  for (const words of [refused.message, send.message, 'Synthetic second brief']) expect(views).not.toContain(words)
+  stop()
+  // They are kept across a restart, in the order they were asked for.
+  await f.restart()
+  expect(f.service.views(parent).made.filter(view => view.outcome === 'refused').map(view => view.id)).toEqual([refused.delegation, send.delegation])
 })

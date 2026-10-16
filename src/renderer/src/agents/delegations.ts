@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import type { AgentThread } from '../../../shared/agents'
-import type { DelegationsBridge, DelegationView } from '../../../shared/delegation'
+import type { DelegatedView, DelegationsBridge, DelegationView } from '../../../shared/delegation'
 import { useOwlFeature } from '../state/owlFeature'
 
 /** What the window holds of one thread's delegations: the ones it made and the briefs it was sent, oldest first. */
 export interface ThreadDelegations {
   readonly made: readonly DelegationView[]
-  readonly received: readonly DelegationView[]
+  readonly received: readonly DelegatedView[]
 }
 const NONE: ThreadDelegations = { made: [], received: [] }
 
@@ -102,6 +102,6 @@ export function useDelegations(threadId: string | undefined, store: DelegationSt
 }
 
 /** The newest brief a delegated thread was sent, read with the thread's own delegations; none for a thread no thread started. */
-export function useNewestBrief(thread: Pick<AgentThread, 'id' | 'delegatedBy'>): DelegationView | undefined {
+export function useNewestBrief(thread: Pick<AgentThread, 'id' | 'delegatedBy'>): DelegatedView | undefined {
   return useDelegations(thread.delegatedBy === undefined ? undefined : thread.id).received.at(-1)
 }

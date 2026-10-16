@@ -1,11 +1,11 @@
 import { z } from 'zod'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
-import { DELEGATIONS_CHANGED, DELEGATIONS_READ, delegationsChangedSchema, delegationsReadSchema, delegationsRequestSchema, type DelegationView } from '../../shared/delegation'
+import { DELEGATIONS_CHANGED, DELEGATIONS_READ, delegationsChangedSchema, delegationsReadSchema, delegationsRequestSchema, type DelegatedView, type DelegationView } from '../../shared/delegation'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
 /** What the window's read asks of delegation in main: its own record, never a snapshot (#1029). */
 export interface DelegationViews {
-  views(threadId: string): { readonly made: readonly DelegationView[]; readonly received: readonly DelegationView[] }
+  views(threadId: string): { readonly made: readonly DelegationView[]; readonly received: readonly DelegatedView[] }
   onViewsChanged(listener: (threadIds: readonly string[]) => void): () => void
 }
 
@@ -25,7 +25,8 @@ export function registerDelegationIpc(ipc: IpcMainAdapter, delegation: Delegatio
     const key = parseHostEntityKey(request.threadId)
     if (key && key.hostId !== localHostId()) return delegationsReadSchema.parse({ threadId: request.threadId, delegations: [], received: [] })
     const { made, received } = delegation.views(key?.id ?? request.threadId)
-    const named = (view: DelegationView): DelegationView => ({ ...view, thread: key ? windowId(view.thread) : view.thread })
+    // A refused start names no thread: nothing was started.
+    const named = <View extends DelegationView>(view: View): View => view.thread === undefined || !key ? view : { ...view, thread: windowId(view.thread) }
     return delegationsReadSchema.parse({ threadId: request.threadId, delegations: made.map(named), received: received.map(named) })
   })
   const stop = delegation.onViewsChanged(threadIds => { send(DELEGATIONS_CHANGED, delegationsChangedSchema.parse({ threadIds: threadIds.map(windowId) })) })

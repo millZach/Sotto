@@ -2,12 +2,12 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentMessage, AgentState, AgentThread } from '../../../src/shared/agents'
-import type { DelegationsBridge, DelegationsChanged, DelegationView } from '../../../src/shared/delegation'
+import type { DelegatedView, DelegationsBridge, DelegationsChanged, DelegationView, RefusedView } from '../../../src/shared/delegation'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { DelegationCardProvider, delegationsByTurn, type DelegationCardWorld } from '../../../src/renderer/src/agents/DelegationCards'
 import { DelegationStore } from '../../../src/renderer/src/agents/delegations'
-import { delegationDuration, delegationWaitLine, stopLabel, stopLine, workingDelegatedThreads } from '../../../src/renderer/src/agents/delegationWords'
+import { delegationDuration, delegationRefusalLine, delegationWaitLine, stopLabel, stopLine, workingDelegatedThreads } from '../../../src/renderer/src/agents/delegationWords'
 import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
@@ -28,9 +28,14 @@ const NOW = E2E_THREADS_NOW
 const at = (minutes: number): string => new Date(NOW - minutes * 60_000).toISOString()
 const PARENT = 'visual-gate', CHILD = 'gate-review', GRANDCHILD = 'gate-check'
 
-function view(patch: Partial<DelegationView> = {}): DelegationView {
+function view(patch: Partial<DelegatedView> = {}): DelegatedView {
   return { id: crypto.randomUUID(), thread: CHILD, action: 'start', work: 'code-review', rootUserMessageId: 'visual-gate-1', anchorMessageId: 'visual-gate-1',
     briefMessageId: 'gate-review-1', outcome: 'working', told: false, createdAt: at(5), waiting: false, ...patch }
+}
+/** A delegation Sotto refused: a start names a provider and no thread; a send names the thread it would have gone to. */
+function refusedView(patch: Partial<RefusedView> = {}): RefusedView {
+  return { id: crypto.randomUUID(), provider: 'codex', action: 'start', work: 'research', outcome: 'refused', refusal: 'PERMISSION_TOO_WIDE',
+    rootUserMessageId: 'visual-gate-1', anchorMessageId: 'visual-gate-1', createdAt: at(4), ...patch }
 }
 
 /** Visual gate flake (Claude, running) delegated a review to Codex, which delegated a check in turn; both still work. */
@@ -45,7 +50,7 @@ function delegatingState(): AgentState {
 }
 
 /** A stand-in for main's read: what each thread delegated and was sent, and main's word that some changed. */
-function bridge(views: Record<string, DelegationView[]>, received: Record<string, DelegationView[]> = {}) {
+function bridge(views: Record<string, DelegationView[]>, received: Record<string, DelegatedView[]> = {}) {
   const listeners = new Set<(change: DelegationsChanged) => void>()
   const fake: DelegationsBridge & { readonly reads: string[] } = {
     reads: [],
@@ -98,6 +103,23 @@ describe('delegation words', () => {
     expect(delegationWaitLine(view({ outcome: 'unknown', unknownWhy: 'restarted' }), now)).toBe('Sotto restarted while it worked. Nothing was resent. Open it to see where it got to.')
     expect(delegationWaitLine(view({ outcome: 'unknown', unknownWhy: 'unconfirmed' }), now)).toBe('Its provider did not confirm the brief arrived. Sotto has not sent it again. Open it to see whether it is working on it.')
     expect(delegationWaitLine(view({ outcome: 'unknown', unknownWhy: 'gone' }), now)).toBe('Its thread is gone from Sotto, so nothing more will come of it.')
+  })
+
+  it('says why Sotto refused a delegation, that nothing was started or sent, and what would let it through', () => {
+    expect(delegationRefusalLine({ action: 'start', refusal: 'PERMISSION_TOO_WIDE' })).toBe('It asked for more permission than this thread has, or than your new-thread default allows. '
+      + 'A delegated thread gets no more than either. Nothing was started. To give it more, raise the lower of the two first.')
+    expect(delegationRefusalLine({ action: 'start', refusal: 'LEVEL_LIMIT' })).toBe('This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. Nothing was started.')
+    expect(delegationRefusalLine({ action: 'start', refusal: 'IN_FLIGHT_LIMIT' })).toMatch(/Threads in flight allows, delegated and Watcher's together\. Nothing was started\. It can ask again once one finishes\.$/u)
+    expect(delegationRefusalLine({ action: 'send', refusal: 'PAUSED' })).toBe('You were working in that thread, so it takes no brief until your turn there ends. Nothing was sent.')
+    expect(delegationRefusalLine({ action: 'send', refusal: 'PROMPT_LIMIT' })).toBe('That thread already had 4 briefs from this thread in this turn. Your next message to this thread renews the limit. Nothing was sent.')
+    expect(delegationRefusalLine({ action: 'send', refusal: 'PROVIDER_UNAVAILABLE' })).toMatch(/^That thread's provider or model was not available/u)
+    expect(delegationRefusalLine({ action: 'start', refusal: 'PROVIDER_UNAVAILABLE' })).toMatch(/^The model it asked for was not ready on this computer/u)
+    // Every rule main records has its own words, and none is an error code.
+    for (const refusal of ['NOT_ADMITTED', 'NO_USER_MESSAGE', 'PERMISSION_NOT_COMPARABLE', 'TARGET_CHANGED', 'PENDING_USER_REQUEST', 'UNKNOWN_THREAD'] as const) {
+      const line = delegationRefusalLine({ action: 'send', refusal })
+      expect(line, refusal).not.toMatch(/Sotto turned it down|[A-Z]{2,}_[A-Z]/u)
+      expect(line, refusal).toMatch(/Nothing was sent\.$/u)
+    }
   })
 
   it('names what Stop also stops: the delegated threads below, both levels, whose turn still runs', () => {
@@ -177,6 +199,29 @@ describe('delegation cards in the delegating thread', () => {
     link.focus()
     fireEvent.click(link)
     expect(open).toHaveBeenCalledWith(CHILD)
+  })
+
+  it('shows a refused delegation in the turn it was asked in: what was refused and why, with no link, since nothing started', () => {
+    // Sotto found no message of the user's for this one, so it has no turn.
+    const { anchorMessageId: _anchor, rootUserMessageId: _root, ...turnless } = refusedView({ refusal: 'NO_USER_MESSAGE', createdAt: at(1) })
+    void _anchor; void _root
+    const cards = delegationsByTurn([view({ anchorMessageId: 'ask', outcome: 'answered', outcomeAt: at(8) }), refusedView({ anchorMessageId: 'ask', createdAt: at(8) }),
+      refusedView({ anchorMessageId: 'ask', action: 'send', thread: CHILD, refusal: 'PAUSED', createdAt: at(7) }), turnless], messages)
+    render(<DelegationCardProvider world={world()}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={cards} /></DelegationCardProvider>)
+    const start = screen.getAllByRole('note', { name: 'Not delegated: Research' })[0]!
+    expect(start).toHaveAttribute('data-outcome', 'refused')
+    expect(start).toHaveTextContent('Not delegated:Research')
+    expect(start.querySelector('.delegation-card__meta')).toHaveTextContent('Codex·This computer')
+    expect(start).toHaveTextContent('It asked for more permission than this thread has, or than your new-thread default allows. A delegated thread gets no more than either. Nothing was started.')
+    expect(within(start).queryByRole('button')).toBeNull()
+    // A refused send names the thread it would have gone to, its provider and machine, and links nowhere: nothing was sent.
+    const send = screen.getByRole('note', { name: 'Not sent to Review the gate fix' })
+    expect(send).toHaveTextContent('You were working in that thread, so it takes no brief until your turn there ends. Nothing was sent.')
+    expect(send.querySelector('.delegation-card__meta')).toHaveTextContent('Codex·This computer')
+    expect(within(send).queryByRole('button')).toBeNull()
+    // In the turn it was asked in, beside the delegation that started; one with no turn Sotto could find goes last.
+    const order = [...document.querySelectorAll('[data-message-id], .delegation-card')].map(element => element.getAttribute('data-message-id') ?? element.getAttribute('aria-label'))
+    expect(order).toEqual(['ask', 'reply', 'Delegated to Review the gate fix', 'Not delegated: Research', 'Not sent to Review the gate fix', 'later', 'Not delegated: Research'])
   })
 
   it('goes in a wake-up\'s turn when the call was made there, and last when its turn is not shown unless it is older than what is', () => {

@@ -1,12 +1,12 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { GitFork, Laptop, Server } from 'lucide-react'
-import { PROVIDER_LABELS, type AgentState, type AgentThread } from '../../../shared/agents'
-import { DELEGATION_WORK_TITLES, type DelegationView } from '../../../shared/delegation'
+import { CircleAlert, GitFork, Laptop, Server } from 'lucide-react'
+import { PROVIDER_LABELS, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { DELEGATION_WORK_TITLES, type DelegatedView, type DelegationView, type RefusedView } from '../../../shared/delegation'
 import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActivity'
 import type { AgentConnection } from './AgentContext'
 import { threadHostName } from './HostBadge'
 import { ProviderMark } from './ProviderMark'
-import { DELEGATION_OUTCOME_WORDS, delegatedNote, delegationWaitLine, stopLine, workingDelegatedThreads } from './delegationWords'
+import { DELEGATION_OUTCOME_WORDS, delegatedNote, delegationRefusalLine, delegationWaitLine, stopLine, workingDelegatedThreads } from './delegationWords'
 import { useDelegationsEnabled, useNewestBrief } from './delegations'
 import './delegation.css'
 
@@ -36,14 +36,14 @@ export function DelegationCardProvider({ world, children }: { readonly world: De
 }
 
 /** The outcome's ring and word, coloured by the outcome. */
-function Outcome({ view }: { readonly view: DelegationView }): ReactNode {
+function Outcome({ view }: { readonly view: DelegatedView }): ReactNode {
   return <span className="delegation-card__outcome" data-outcome={view.outcome}>
     <span className="delegation-ring" data-outcome={view.outcome} aria-hidden="true" />{DELEGATION_OUTCOME_WORDS[view.outcome]}
   </span>
 }
 
 /** The wait line, counting the seconds while the delegating thread waits in the call. */
-function WaitLine({ view, id, world }: { readonly view: DelegationView; readonly id: string; readonly world: DelegationCardWorld }): ReactNode {
+function WaitLine({ view, id, world }: { readonly view: DelegatedView; readonly id: string; readonly world: DelegationCardWorld }): ReactNode {
   const ticking = view.waiting && world.liveClock
   const [now, setNow] = useState(() => world.now ?? Date.now())
   useEffect(() => {
@@ -55,18 +55,49 @@ function WaitLine({ view, id, world }: { readonly view: DelegationView; readonly
   return <p id={id} className="delegation-card__wait">{delegationWaitLine(view, world.now ?? now)}</p>
 }
 
+/** The provider's mark and name, then the machine, under a card's first line. */
+function Where({ id, provider, thread, world, children }: { readonly id: string; readonly provider: ProviderId | undefined; readonly thread: AgentThread | undefined
+  readonly world: DelegationCardWorld; readonly children?: ReactNode }): ReactNode {
+  const machine = thread ? world.hostName(thread) : 'This computer'
+  const Machine = thread?.remoteHost ? Server : Laptop
+  return <p id={id} className="delegation-card__meta">
+    {provider ? <><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={12} /><span>{PROVIDER_LABELS[provider]}</span><span aria-hidden="true">·</span></> : null}
+    <span className="delegation-card__machine" data-kind={thread?.remoteHost ? 'remote' : 'local'}><Machine size={12} aria-hidden="true" />{machine}</span>
+    {children}
+  </p>
+}
+
+/**
+ * A delegation Sotto refused as it was asked for (decision 7), as the placement prototype's variant A draws the
+ * permission ceiling's: "Not delegated" and the kind of work, or "Not sent to" the thread a send named, the provider
+ * and machine it would have used, and why, in plain words. No link: nothing was started, and nothing was sent.
+ */
+function RefusedDelegationCard({ view, world }: { readonly view: RefusedView; readonly world: DelegationCardWorld }): ReactNode {
+  const thread = view.thread === undefined ? undefined : world.thread(view.thread)
+  const send = view.action === 'send'
+  const title = send && thread ? thread.title : DELEGATION_WORK_TITLES[view.work]
+  const lead = send && thread ? 'Not sent to' : 'Not delegated:'
+  return <div className="delegation-card" role="note" aria-label={`${lead} ${title}`} data-outcome="refused">
+    <div className="delegation-card__top">
+      <CircleAlert size={15} aria-hidden="true" className="delegation-card__glyph" />
+      <span className="delegation-card__lead">{lead}</span>
+      <span className="delegation-card__name" title={title}>{title}</span>
+    </div>
+    <Where id={`delegation-${view.id}-details`} provider={view.provider ?? thread?.providerId} thread={thread} world={world} />
+    <p className="delegation-card__wait">{delegationRefusalLine(view)}</p>
+  </div>
+}
+
 /**
  * One delegation in the delegating thread's transcript (#1029, design A): "Delegated to" the thread as a link, its
- * provider and machine, its outcome, and how the wait went.
+ * provider and machine, its outcome, and how the wait went; or why Sotto refused it.
  */
 export function DelegationCard({ view }: { readonly view: DelegationView }): ReactNode {
   const world = useContext(DelegationCardContext)
   if (world === null) return null
+  if (view.outcome === 'refused') return <RefusedDelegationCard view={view} world={world} />
   const thread = world.thread(view.thread)
   const title = thread?.title ?? DELEGATION_WORK_TITLES[view.work]
-  const provider = thread?.providerId
-  const machine = thread ? world.hostName(thread) : 'This computer'
-  const Machine = thread?.remoteHost ? Server : Laptop
   const detailsId = `delegation-${view.id}-details`, waitId = `delegation-${view.id}-wait`
   return <div className="delegation-card" role="group" aria-label={`Delegated to ${title}`} data-outcome={view.outcome}>
     <div className="delegation-card__top">
@@ -78,11 +109,9 @@ export function DelegationCard({ view }: { readonly view: DelegationView }): Rea
         : <span className="delegation-card__name">{title}</span>}
       <Outcome view={view} />
     </div>
-    <p id={detailsId} className="delegation-card__meta">
-      {provider ? <><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={12} /><span>{PROVIDER_LABELS[provider]}</span><span aria-hidden="true">·</span></> : null}
-      <span className="delegation-card__machine" data-kind={thread?.remoteHost ? 'remote' : 'local'}><Machine size={12} aria-hidden="true" />{machine}</span>
+    <Where id={detailsId} provider={thread?.providerId} thread={thread} world={world}>
       <span className="tt-visually-hidden">, {DELEGATION_OUTCOME_WORDS[view.outcome]}.</span>
-    </p>
+    </Where>
     <WaitLine view={view} id={waitId} world={world} />
   </div>
 }
@@ -104,7 +133,7 @@ export function delegationsByTurn(views: readonly DelegationView[], messages: re
   const shown = new Set(messages.map(message => message.id))
   const first = messages.length ? Date.parse(messages[0]!.createdAt) : Number.NaN
   for (const view of views) {
-    const key = shown.has(view.anchorMessageId) ? view.anchorMessageId
+    const key = view.anchorMessageId !== undefined && shown.has(view.anchorMessageId) ? view.anchorMessageId
       : Number.isFinite(first) && Date.parse(view.createdAt) < first ? undefined : ''
     if (key !== undefined) byTurn.set(key, [...byTurn.get(key) ?? [], view])
   }
