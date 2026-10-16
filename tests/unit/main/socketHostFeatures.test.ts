@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { SocketHostService } from '../../../src/main/agents/socketHostService'
+import type { AgentThreadDetail } from '../../../src/shared/agents'
 import type { HostOperation } from '../../../src/shared/hostProtocol'
 import { hostIsNewer, hostVersionMismatch } from '../../../src/shared/hostProtocol'
 import { hostReleaseVersion } from '../../../src/main/hosts/hostReleaseVersion'
@@ -222,5 +223,94 @@ describe('socket Watcher gate', () => {
       expect(listener).not.toHaveBeenCalled()
       await expect(client.command({ type: 'start-thread-session', threadId: 'watcher' })).rejects.toThrow('Sotto Owl')
     }
+  })
+})
+
+describe('a remote thread behind a backlog', () => {
+  const thread = { title: 'Thread', projectId: 'project', modelId: '', status: 'idle' as const, messages: [], requests: [] }
+  type Transport = { cacheDetail(threadId: string, detail: AgentThreadDetail): void; receive(text: string): void }
+
+  it('reads a thread whole after a command only when the host’s pushes do not already keep it current', async () => {
+    const state = emptyDesktopState(hostId)
+    state.host.threads = [{ ...thread, id: 'followed' }, { ...thread, id: 'unheld' }]
+    const call = vi.fn(async (operation: HostOperation) => operation.op === 'detail' ? { threadId: operation.threadId, revision: 1, messages: [] } : operation.op === 'command' ? state : null)
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    Object.assign(client, { features: [], cached: state, call })
+    await client.observe(['followed', 'unheld'])
+    ;(client as unknown as Transport).cacheDetail('followed', { threadId: 'followed', revision: 4, messages: [] })
+    call.mockClear()
+    await client.command({ type: 'select-thread', threadId: 'followed' })
+    expect(call.mock.calls.map(([operation]) => operation.op)).toEqual(['command'])
+    await client.command({ type: 'select-thread', threadId: 'unheld' })
+    expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'unheld' })
+    // An observation the host never confirmed keeps nothing current, so the thread is read whole again.
+    call.mockImplementationOnce(async () => { throw new Error('Wait for the pending host request to finish.') })
+    await expect(client.observe(['followed'])).rejects.toThrow('Wait for the pending host request')
+    await client.command({ type: 'select-thread', threadId: 'followed' })
+    expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'followed' })
+  })
+
+  it('reads a thread whole after a command when a delta missed it and the read that followed failed', async () => {
+    const state = emptyDesktopState(hostId)
+    state.host.threads = [{ ...thread, id: 'followed' }]
+    const call = vi.fn(async (operation: HostOperation) => operation.op === 'detail' ? { threadId: operation.threadId, revision: 9, messages: [] } : operation.op === 'command' ? state : null)
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    Object.assign(client, { features: [], cached: state, call })
+    await client.observe(['followed'])
+    const transport = client as unknown as Transport & { applyDelta(threadId: string, delta: { threadId: string; baseRevision: number; revision: number; messageDeltas: []; activityDeltas: [] }): void }
+    transport.cacheDetail('followed', { threadId: 'followed', revision: 4, messages: [] })
+    call.mockImplementationOnce(async () => { throw new Error('Wait for the pending host request to finish.') })
+    transport.applyDelta('followed', { threadId: 'followed', baseRevision: 2, revision: 6, messageDeltas: [], activityDeltas: [] })
+    await vi.waitFor(() => expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'followed' }))
+    await Promise.resolve()
+    call.mockClear()
+    await client.command({ type: 'select-thread', threadId: 'followed' })
+    expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'followed' })
+    expect(client.threadDetail('followed')?.revision).toBe(9)
+    // Current again, the next command reads nothing more.
+    call.mockClear()
+    await client.command({ type: 'select-thread', threadId: 'followed' })
+    expect(call.mock.calls.map(([operation]) => operation.op)).toEqual(['command'])
+  })
+
+  it('keeps a thread read the host answers after the read timed out, so the deltas after it still apply', async () => {
+    vi.useFakeTimers()
+    try {
+      const state = emptyDesktopState(hostId)
+      state.host.threads = [{ ...thread, id: 'thread' }]
+      const sent: { id: string; op: string }[] = []
+      const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+      const close = vi.fn()
+      Object.assign(client, { cached: state, session: { v: 1, hostId, clientId: 'client', session: 'session', expiresAt: new Date().toISOString() },
+        frames: { send: (frame: { id: string; op: string }) => { sent.push(frame); return true }, close } })
+      const listener = vi.fn()
+      client.subscribeThreadDetail(listener)
+      const read = expect(client.readThreadDetail('thread')).rejects.toMatchObject({ code: 'disconnected' })
+      await vi.advanceTimersByTimeAsync(120000)
+      await read
+      const detail: AgentThreadDetail = { threadId: 'thread', revision: 7, messages: [] }
+      const transport = client as unknown as Transport
+      transport.receive(JSON.stringify({ v: 1, id: sent[0]!.id, ok: true, result: detail }))
+      expect(client.threadDetail('thread')).toEqual(detail)
+      expect(listener).toHaveBeenCalledWith(detail)
+      // Answered once, it is not kept twice, and an answer nothing asked for is still ignored.
+      transport.receive(JSON.stringify({ v: 1, id: sent[0]!.id, ok: true, result: { ...detail, revision: 9 } }))
+      transport.receive(JSON.stringify({ v: 1, id: 'unknown', ok: true, result: { ...detail, revision: 9 } }))
+      expect(client.threadDetail('thread')?.revision).toBe(7)
+      expect(close).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('closes the connection for a shell naming a catalog it was never sent, so the next hello carries it', () => {
+    const state = emptyDesktopState(hostId)
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+    const close = vi.fn(), listener = vi.fn()
+    Object.assign(client, { cached: state, frames: { send: () => true, close } })
+    client.subscribe(listener)
+    const { models, ...host } = state.host
+    void models
+    ;(client as unknown as Transport).receive(JSON.stringify({ v: 1, event: 'shell', state: { ...state, host: { ...host, modelsRevision: 5 } } }))
+    expect(close).toHaveBeenCalledOnce()
+    expect(listener).not.toHaveBeenCalled()
   })
 })
