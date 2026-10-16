@@ -318,12 +318,20 @@ describe('model catalog revisions (#699)', () => {
     } finally { phone.frames.close(); await server.close() }
   })
 
-  it('keeps sending the desktop’s own client the whole catalog from a host that offers revisions', async () => {
-    const models = syntheticModelCatalog(4)
+  it('sends the desktop’s own client the catalog once per revision, and puts it back in every shell it reads', async () => {
+    let models = syntheticModelCatalog(4)
     const { service, publish } = catalogHost(() => models)
     const server = await startSocketServer({ service, pairing: fixture.host.pairing })
     const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
     const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+    const transport = client as unknown as { receive(text: string): void }
+    const receive = transport.receive.bind(client), wire: Record<string, unknown>[] = []
+    transport.receive = text => { wire.push(JSON.parse(text) as Record<string, unknown>); receive(text) }
+    const wireHosts = () => wire.flatMap(frame => {
+      const result = frame.result as { host?: Record<string, unknown>; shell?: { host: Record<string, unknown> } } | undefined
+      const host = frame.event === 'shell' ? (frame.state as { host: Record<string, unknown> }).host : result?.shell?.host ?? result?.host
+      return host ? [host] : []
+    })
     try {
       await client.connect()
       expect(client.shell().host.models).toEqual(models)
@@ -334,6 +342,17 @@ describe('model catalog revisions (#699)', () => {
       expect(client.shell().host.models).toEqual(models)
       expect((await client.readShell()).host.models).toEqual(models)
       expect((await client.command({ type: 'select-project', projectId: 'project' })).host.models).toEqual(models)
+      // On the wire only hello carried the catalog; every later shell named its revision and left it out.
+      const [hello, ...later] = wireHosts()
+      expect(hello).toHaveProperty('models'); expect(later.length).toBeGreaterThanOrEqual(3)
+      for (const host of later) expect(host).not.toHaveProperty('models')
+      expect(client.shell().host).not.toHaveProperty('modelsRevision')
+      // A changed catalog arrives whole once and is what every shell reads from then on.
+      models = syntheticModelCatalog(5)
+      publish()
+      await expect.poll(() => client.shell().host.models).toEqual(models)
+      expect((await client.readShell()).host.models).toEqual(models)
+      expect(wireHosts().at(-1)).not.toHaveProperty('models')
     } finally { await client.close(); await server.close() }
   })
 })
