@@ -335,7 +335,10 @@ export class AgentControl {
   }
   hasWatcherQueue(operationIds: ReadonlySet<string>): boolean { return this.followupStore.peek().items.some(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)) }
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
-    await this.followupStore.cancelWatcher(operationIds); this.syncFollowups(); this.observe(); await this.persist(); this.publish()
+    const failed = await this.followupStore.cancelWatcher(operationIds)
+    // Watcher reads a queued send's failure from its item, which is gone now, so it hears the failure here instead.
+    if (failed.length) this.watcherHooks?.queueFailed?.(new Set(failed))
+    this.syncFollowups(); this.observe(); await this.persist(); this.publish()
   }
   private readonly dormantThreadIds = new Set<string>()
   private readonly dormantWatcherIds = new Set<string>()
