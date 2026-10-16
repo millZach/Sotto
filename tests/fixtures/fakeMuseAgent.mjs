@@ -105,7 +105,12 @@ const stamp = () => new Date(Date.UTC(2026, 9, 12, 12, 0, clock++)).toISOString(
 function openTurn(session, commandId, text, steered = false, displayText = undefined) {
   const turnId = session.activeTurnId ?? `turn-${randomUUID()}`
   if (!session.activeTurnId) { session.activeTurnId = turnId; session.turns = (session.turns ?? 0) + 1; notify('turn/started', { sessionId: session.sessionId, turnId, ...(commandId ? { commandId } : {}), viewCursor: cursor(session) }) }
-  addItem(session, { itemId: `item-${randomUUID()}`, kind: 'userMessage', status: 'completed', revision: 1, turnId, recordedAt: stamp(), text, ...(displayText !== undefined ? { displayText } : {}), ...(commandId ? { commandId } : {}), ...(steered ? { steered: true } : {}) }, !read('script.json', {}).suppressUserMessage)
+  // script.json may have Muse keep no display text (`dropDisplayText`), or cut the message to `truncateUserText` characters.
+  const script = read('script.json', {})
+  if (script.dropDisplayText) displayText = undefined
+  const cut = script.truncateUserText !== undefined && text.length > script.truncateUserText
+  if (cut) { text = text.slice(0, script.truncateUserText); if (displayText !== undefined) displayText = displayText.slice(0, script.truncateUserText) }
+  addItem(session, { itemId: `item-${randomUUID()}`, kind: 'userMessage', status: 'completed', revision: 1, turnId, recordedAt: stamp(), text, ...(displayText !== undefined ? { displayText } : {}), ...(cut ? { truncated: true } : {}), ...(commandId ? { commandId } : {}), ...(steered ? { steered: true } : {}) }, !script.suppressUserMessage)
   return turnId
 }
 function endTurn(session, terminal = 'completed') {

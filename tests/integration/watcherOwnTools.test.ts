@@ -355,6 +355,21 @@ it('gives a Muse Watcher its instructions ahead of each message and its request 
   expect(starts[1]!.params).not.toHaveProperty('permissionProfile')
 })
 
+it.each([
+  ['keeps no display text', { dropDisplayText: true }, (typed: string) => typed],
+  ['cuts the message short', { truncateUserText: MUSE_WATCHER_INSTRUCTIONS.length + 12 }, (typed: string) => typed.slice(0, 12)],
+])('shows a Muse Watcher message without Sotto’s instructions or note when Muse %s', async (_case, script, shown) => {
+  const f = await museFixture(undefined, 10_000); cleanups.push(f.cleanup)
+  const { id } = await watcherBesideOrdinary(f, 'muse')
+  await writeFile(join(f.root, 'script.json'), JSON.stringify(script))
+  const typed = 'Synthetic instruction to Watcher on Muse', note = watcherRequestNote(randomUUID(), randomUUID())
+  expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: typed, watcherRequestNote: note })).accepted).toBe(true)
+  await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.messages.find(message => message.role === 'user')?.text).toBe(shown(typed))
+  // A cold read of Muse's history, as a handover reads it, shows the same.
+  f.host.disconnect(); await f.adapter.closed(); await f.host.connect(); await f.host.startThreadSession!(id)
+  await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.messages.find(message => message.role === 'user')?.text).toBe(shown(typed))
+})
+
 it('admits only Watcher’s own suffixed Muse tool names and shows a folded lookalike as an ordinary card', async () => {
   const f = await museFixture(undefined, 10_000); cleanups.push(f.cleanup)
   const id = randomUUID(), tools = await attach(f.host, f.root, id, f.projectId, 'muse')

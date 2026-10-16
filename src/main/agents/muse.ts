@@ -159,6 +159,23 @@ const MUSE_WATCHER_UNPROVEN = 'This Muse cannot show that Watcher’s approvals 
  * transcript and Sotto's show only what was sent; the model reads both (ADR-0073).
  */
 export const MUSE_WATCHER_INSTRUCTIONS = `[Sotto: Watcher's instructions. Muse takes no instructions from Sotto any other way, so they come ahead of each message Sotto sends you. They are not the user's words.]\n${WATCHER_SYSTEM_PROMPT}\n[End of Watcher's instructions. The message follows.]\n\n`
+/** The request note's line as `watcherRequestLine` writes it, at the end of a message Sotto sent Watcher. */
+const MUSE_WATCHER_NOTE = /\n\n\[Sotto Watcher request: [^\]\n]{1,500}\]$/u
+/**
+ * A message Sotto sent Watcher on Muse, as it was typed, from the wire text when Muse kept no whole display text: the
+ * instructions Sotto put ahead of it and the note after it come off (ADR-0079). Only a message beginning with the exact
+ * instructions is touched. The words are proved by the digest Sotto kept when it sent them; when Muse cut the message
+ * short there is nothing to prove them by, and only Sotto's own parts come off.
+ */
+function museWatcherTyped(text: string, typedDigest: string): string | undefined {
+  const marker = MUSE_WATCHER_INSTRUCTIONS.trimEnd()
+  if (!text.startsWith(marker)) return undefined
+  // MSP joins a turn's text parts in order; the separator it puts between them is Muse's.
+  const body = text.slice(marker.length).replace(/^\n{1,2}/u, '')
+  const note = MUSE_WATCHER_NOTE.exec(body)
+  const candidates = [body, ...(note ? [body.slice(0, note.index)] : []), text.slice(MUSE_WATCHER_INSTRUCTIONS.length)]
+  return candidates.find(candidate => digest(candidate) === typedDigest) ?? (note ? body.slice(0, note.index) : body)
+}
 
 /**
  * The one `session/start` a thread makes, the same on every try: its replay after a lost acknowledgement must match the
@@ -969,7 +986,9 @@ export class MuseMspHost implements AgentHost {
         if (active?.turnId === merged.turnId) active.messageId = messageId
       }
       // A message Sotto sent with a display text is shown as that: Watcher's instructions and note are the model's alone.
-      const text = origin && merged.displayText !== undefined && !merged.truncated ? merged.displayText : merged.text
+      // When Muse kept none whole, the words come from the wire text with Sotto's own parts off.
+      const text = !origin ? merged.text : merged.displayText !== undefined && !merged.truncated ? merged.displayText
+        : museWatcherTyped(merged.text ?? '', origin.digest) ?? merged.text
       const message: AgentMessage = {
         id: messageId, role: 'user', text: text ?? '',
         createdAt: origin?.createdAt ?? (merged.recordedAt ?? new Date().toISOString()),
