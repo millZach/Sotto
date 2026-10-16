@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import type { AgentModel, AgentRuntimeMode } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
-import { capRuntimeMode, subagentName, type SubagentRole, type WorkerKind } from '../../shared/workerRoles'
+import { capRuntimeMode, roleWork, subagentName, type SubagentRole, type WorkerKind } from '../../shared/workerRoles'
+import { compareClientVersions } from './clientVersions'
 import type { WorkerRoleSource } from './host'
 
 /**
@@ -38,10 +39,9 @@ export function narrowerMode(mode: AgentRuntimeMode, than: AgentRuntimeMode): bo
 export function subagentMode(role: SubagentRole, threadMode: AgentRuntimeMode): AgentRuntimeMode {
   return capRuntimeMode(role.runtimeMode ?? threadMode, threadMode)
 }
-const roleKind = (role: SubagentRole): string => `${role.what.charAt(0).toLowerCase()}${role.what.slice(1).replace(/\.$/u, '')}`
 /** What a role's sub-agent is told about itself: its kind of work and that it reports back. Never the user's words. */
 function roleBrief(role: SubagentRole): string {
-  return `You are the ${role.name} worker a Sotto thread started for one part of its work: ${roleKind(role)}. Do the task you were given, then report plainly what you did and what you found.`
+  return `You are the ${role.name} worker a Sotto thread started for one part of its work: ${roleWork(role)}. Do the task you were given, then report plainly what you did and what you found.`
 }
 /** The adapter's own catalog entry for a role's model, when it is ready; a long-context variant is its base model's. */
 const ready = (models: readonly AgentModel[], role: SubagentRole): AgentModel | undefined => {
@@ -76,13 +76,23 @@ export function claudeSubagents(table: readonly SubagentRole[], threadMode: Agen
     if (!model || effort === undefined || effort !== null && !CLAUDE_EFFORTS.has(effort)) continue
     const mode = subagentMode(role, threadMode)
     if (narrowerMode(widest, mode)) widest = mode
-    agents[subagentName(role.kind)] = { description: `${role.name} work: ${roleKind(role)}. Use this agent for that kind of work.`, prompt: roleBrief(role),
+    agents[subagentName(role.kind)] = { description: `${role.name} work: ${roleWork(role)}. Use this agent for that kind of work.`, prompt: roleBrief(role),
       model: role.model, ...(effort ? { effort } : {}), permissionMode: modes[mode] }
     kinds.add(role.kind)
   }
   return kinds.size ? { agents, kinds, widest } : undefined
 }
 
+/** The Codex the per-thread agent roles were checked on (codex-roles check, October 14, 2026). */
+export const CODEX_ROLES_SINCE = '0.162.1'
+/**
+ * Whether this Codex takes Sotto's role files. One older than the checked version, or one whose version cannot be read,
+ * gets none: its threads are told to name the model and effort in `spawn_agent` instead.
+ */
+export function codexTakesRoles(version: string | undefined): boolean {
+  const found = /\d+\.\d+\.\d+/u.exec(version ?? '')?.[0]
+  return found !== undefined && compareClientVersions(found, CODEX_ROLES_SINCE) >= 0
+}
 /** Codex's sandbox and approval settings for one of Sotto's modes, as the adapter starts a thread on them. */
 export interface CodexPolicy { readonly approvalPolicy: string; readonly approvalsReviewer: string; readonly sandbox: string }
 /** One `agents.<name>` entry: Codex reads the role's settings from its `config_file`, never inline. */
@@ -134,7 +144,7 @@ export class CodexRoleFiles {
       try { await this.place(folder, file, codexRoleFile(role, effort, this.policy(mode))) }
       catch { this.log?.('codex-role-file-failed'); continue }
       if (narrowerMode(widest, mode)) widest = mode
-      agents[name] = { description: `${role.name} work: ${roleKind(role)}.`, config_file: file }
+      agents[name] = { description: `${role.name} work: ${roleWork(role)}.`, config_file: file }
       kinds.add(role.kind)
     }
     this.modes.add(threadMode)

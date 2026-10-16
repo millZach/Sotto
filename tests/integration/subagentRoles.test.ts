@@ -99,10 +99,10 @@ describe('Claude Code threads', () => {
 describe('Codex threads', () => {
   const TABLE = [role('computer-use', 'codex', 'fixture-model', 'high', 'full-access'), role('code-review', 'codex', 'fixture-second-model', 'low', 'approval-required'),
     role('research', 'codex', 'retired-model', 'low', 'approval-required'), role('building', 'claude', 'opus', 'xhigh', 'auto-accept-edits')]
-  async function codex(roles: readonly SubagentRole[] | undefined, runtimeMode: AgentRuntimeMode = 'auto') {
+  async function codex(roles: readonly SubagentRole[] | undefined, runtimeMode: AgentRuntimeMode = 'auto', options: { version?: string; requestTimeoutMs?: number } = {}) {
     const log = vi.fn()
-    const f = await codexFixture(undefined, false, 10_000, { logEvent: log }); cleanups.push(f.cleanup)
-    await f.script({ developerInstructions: 'Synthetic project developer instructions',
+    const f = await codexFixture(undefined, false, options.requestTimeoutMs ?? 10_000, { logEvent: log }); cleanups.push(f.cleanup)
+    await f.script({ version: options.version ?? 'codex/0.162.1', developerInstructions: 'Synthetic project developer instructions',
       models: ['fixture-model', 'fixture-second-model'].map(model => ({ id: model, model, displayName: model, isDefault: model === 'fixture-model', defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] })) })
     let table = roles
     const source = roles ? new WorkerRoles(() => table!) : undefined
@@ -132,7 +132,7 @@ describe('Codex threads', () => {
     expect(instructions).toContain('- Code review (synthetic work): call spawn_agent with agent_type "sotto_code_review" (Synthetic fixture-second-model at low effort).')
     expect(instructions).toContain('- Building (synthetic work): Synthetic opus at xhigh effort on Claude Code, another provider: call delegate with work "building".')
     // A model Codex does not list as ready gets no role file; the thread is told the model to ask for instead.
-    expect(instructions).toContain('- Research (synthetic work): start your sub-agent on retired-model at low effort when you can choose its model.')
+    expect(instructions).toContain('- Research (synthetic work): call spawn_agent with model "retired-model" and reasoning_effort "low".')
     expect(log).not.toHaveBeenCalled()
   })
 
@@ -156,9 +156,28 @@ describe('Codex threads', () => {
     }
   })
 
+  it('lets the app-server go when a narrowing is confirmed after its command gave up', async () => {
+    const { f, id, loads, agents } = await codex(TABLE, 'full-access', { requestTimeoutMs: 2000 })
+    expect(agents((await loads('thread/start'))[0]!)).toBeDefined()
+    expect(await f.sessions.stopped(id)).toBe(false)
+    // Codex confirms the narrower permission after Sotto stopped waiting for it.
+    await f.script({ version: 'codex/0.162.1', settingsNotificationDelay: 3000 })
+    expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'approval-required' })).accepted).toBe(false)
+    await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.runtimeMode, { timeout: 10_000 }).toBe('approval-required')
+    await expect.poll(() => f.sessions.stopped(id)).toBe(true)
+  })
+
+  it('tells a thread on a Codex too old for roles to name the model and effort instead', async () => {
+    const { loads, agents } = await codex(TABLE, 'auto', { version: 'codex/0.161.0' })
+    const [start] = await loads('thread/start')
+    expect(agents(start!)).toBeUndefined()
+    expect(start!.params!.developerInstructions).toContain('- Computer use (synthetic work): call spawn_agent with model "fixture-model" and reasoning_effort "high".')
+    expect(start!.params!.developerInstructions).not.toContain('agent_type')
+  })
+
   it('treats Codex dropping one of Sotto\'s roles as Sotto\'s fault, logged by name only', async () => {
     const { f, log } = await codex(TABLE)
-    await f.script({ malformedRole: 'sotto_code_review', models: [{ id: 'fixture-model', model: 'fixture-model', displayName: 'fixture-model', isDefault: true, defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] },
+    await f.script({ version: 'codex/0.162.1', malformedRole: 'sotto_code_review', models: [{ id: 'fixture-model', model: 'fixture-model', displayName: 'fixture-model', isDefault: true, defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] },
       { id: 'fixture-second-model', model: 'fixture-second-model', displayName: 'fixture-second-model', isDefault: false, defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }] }] })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: randomUUID(), projectId: f.projectId, title: 'Second', modelId: f.modelId, runtimeMode: 'auto' })
     await expect.poll(() => log.mock.calls).toContainEqual(['codex-role-malformed'])

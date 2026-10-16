@@ -4,7 +4,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { claudeSubagents, CodexRoleFiles, codexRoleFile, malformedCodexRole, narrowerMode, WorkerRoles, type CodexPolicy } from '../../../src/main/agents/subagentRoles'
+import { claudeSubagents, CodexRoleFiles, codexRoleFile, codexTakesRoles, malformedCodexRole, narrowerMode, WorkerRoles, type CodexPolicy } from '../../../src/main/agents/subagentRoles'
 import type { AgentModel, AgentRuntimeMode, ProviderId } from '../../../src/shared/agents'
 import type { SubagentRole, WorkerKind } from '../../../src/shared/workerRoles'
 
@@ -120,6 +120,14 @@ describe('the rest of the plumbing', () => {
     expect(malformedCodexRole('configWarning', { summary: 'Ignoring malformed agent role definition: sotto_ui' })).toBe(false)
     expect(malformedCodexRole('warning', { message: 'Something else about sotto_ui' })).toBe(false)
     expect(malformedCodexRole('warning', null)).toBe(false)
+  })
+
+  it('gives role files only to a Codex at or after the version they were checked on', () => {
+    expect(codexTakesRoles('codex/0.162.1')).toBe(true)
+    expect(codexTakesRoles('sotto/0.170.0 (Windows 10.0.26200; x86_64)')).toBe(true)
+    expect(codexTakesRoles('codex/0.154.0')).toBe(false)
+    expect(codexTakesRoles('')).toBe(false)
+    expect(codexTakesRoles(undefined)).toBe(false)
   })
 
   it('orders permissions from narrowest to widest', () => {

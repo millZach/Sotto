@@ -43,7 +43,7 @@ import { CodexProcess, Uncertain, type RpcApply, type RpcFrame, type RpcRejected
 import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentity, messageOrigin, reconcileMessageIdentities, type CodexTurnIdentity, type IdentityItem } from './codexMessageIdentity'
 import { markSendStage } from './sendStages'
 import type { WatcherLaunchProfile, ThreadLaunchProfiles, WorkerRoleSource } from './host'
-import { CodexRoleFiles, malformedCodexRole, narrowerMode, type CodexRoleFilesEvent } from './subagentRoles'
+import { CodexRoleFiles, codexTakesRoles, malformedCodexRole, narrowerMode, type CodexRoleFilesEvent } from './subagentRoles'
 import { capRuntimeMode, subagentRoleInstructions } from '../../shared/workerRoles'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
@@ -257,10 +257,18 @@ export class CodexAppServerHost implements AgentHost {
     this.roleModes.delete(id)
     if (!this.workerRoles || this.watcherProfiles.has(id)) return undefined
     const table = this.workerRoles.table()
-    const written = await this.roleFiles.write(table, mode, this.state.models)
+    const written = codexTakesRoles(this.state.version) ? await this.roleFiles.write(table, mode, this.state.models) : undefined
     if (written) { config.agents = written.agents; this.roleModes.set(id, written.widest) }
     const canDelegate = DELEGATE_MCP_SERVER in ((config.mcp_servers as Record<string, unknown> | undefined) ?? {})
     return subagentRoleInstructions(table, { provider: 'codex', agents: written?.kinds ?? new Set(), agentTool: 'codex', canDelegate })
+  }
+  /**
+   * Role files keep the permission a thread was loaded with, so a thread whose confirmed permission is narrower lets its
+   * app-server go: its next action loads it again with role files held to the new one (#1042).
+   */
+  private releaseNarrowedRoles(id: string): void {
+    const loaded = this.roleModes.get(id), mode = this.aliases[id]?.runtimeMode
+    if (loaded && mode && narrowerMode(mode, loaded)) { this.roleModes.delete(id); this.stopSession(id) }
   }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
@@ -1326,6 +1334,9 @@ export class CodexAppServerHost implements AgentHost {
     this.live.add(id); this.log.pin(id); await this.persist(); this.emit()
     const confirmation = this.settingsConfirmations.get(id)
     if (confirmation?.desired === desired) confirmation.settle(true)
+    // A change confirmed after its command gave up, or found on a later read, narrows the roles here; the command that is
+    // still waiting for this one does it once it has its answer.
+    else this.releaseNarrowedRoles(id)
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
   executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> { return this.executeNative(command, guard) }
@@ -1508,10 +1519,7 @@ export class CodexAppServerHost implements AgentHost {
             confirmation.settle(false)
             if (this.settingsConfirmations.get(id) === confirmation) this.settingsConfirmations.delete(id)
           }
-          // Role files keep the permission they were loaded with, so a thread narrowing below it lets its app-server go:
-          // the next action loads the thread again with role files held to its new permission (#1042).
-          const roleMode = this.roleModes.get(id)
-          if (roleMode && narrowerMode(mode, roleMode)) this.stopSession(id)
+          this.releaseNarrowedRoles(id)
           // Codex's own notification confirmed the effective values and applySettings emitted them: that snapshot
           // is the reconciliation, so the coordinator does not read the whole transcript again.
           return { accepted: true, snapshot: this.current(command.historyFromEvents) }

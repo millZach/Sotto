@@ -346,7 +346,8 @@ export interface SubagentReach {
   /** Whether this launch was offered `delegate` (ADR-0081): a second-level delegated thread is not. */
   readonly canDelegate: boolean
 }
-const workWords = (what: string): string => `${what.charAt(0).toLowerCase()}${what.slice(1).replace(/\.$/u, '')}`
+/** A role's kind of work as words inside a sentence: "writing and changing code". */
+export const roleWork = (role: Pick<WorkerRole, 'what'>): string => `${role.what.charAt(0).toLowerCase()}${role.what.slice(1).replace(/\.$/u, '')}`
 const atEffort = (effort: string | null): string => effort ? ` at ${effort} effort` : ''
 /** One role's line: which agent, which model on this provider, or the delegation that reaches another provider. */
 function reachLine(role: SubagentRole, reach: SubagentReach): string {
@@ -354,7 +355,9 @@ function reachLine(role: SubagentRole, reach: SubagentReach): string {
   if (reach.agents.has(role.kind)) return reach.agentTool === 'codex'
     ? `call spawn_agent with agent_type "${name}" (${on}).`
     : `use the Agent tool with subagent_type "${name}" (${on}).`
-  if (role.provider === reach.provider) return `start your sub-agent on ${role.model}${atEffort(role.reasoningEffort)} when you can choose its model.`
+  if (role.provider === reach.provider) return reach.agentTool === 'codex'
+    ? `call spawn_agent with model "${role.model}"${role.reasoningEffort ? ` and reasoning_effort "${role.reasoningEffort}"` : ''}.`
+    : `start your sub-agent on ${role.model}${atEffort(role.reasoningEffort)} when you can choose its model.`
   return reach.canDelegate
     ? `${on} on ${PROVIDER_LABELS[role.provider]}, another provider: call delegate with work "${role.kind}".`
     : `${on} on ${PROVIDER_LABELS[role.provider]}, which this thread cannot start: do that work yourself.`
@@ -368,7 +371,7 @@ export function subagentRoleInstructions(table: readonly SubagentRole[], reach: 
   if (!table.length) return undefined
   return [
     'The user\'s Settings give each kind of work a worker role and the model it runs on. When you hand part of your work to a sub-agent or another thread, follow them:',
-    ...table.map(role => `- ${role.name} (${workWords(role.what)}): ${reachLine(role, reach)}`),
+    ...table.map(role => `- ${role.name} (${roleWork(role)}): ${reachLine(role, reach)}`),
     'A model, effort or permission the user names for a request wins over the role. Work you do yourself needs no role.',
   ].join('\n')
 }
