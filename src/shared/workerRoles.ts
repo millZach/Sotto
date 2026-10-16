@@ -209,7 +209,10 @@ export function roleInForce(id: WorkerRoleId, choices: WorkerRoleChoices, models
   const choiceReady = usable(id, chosen)
   const start: RoleStartChoice | undefined = choice && choiceReady
     ? { model: chosen!, modelId: choice.modelId, reasoningEffort: fitEffort(choice.reasoningEffort, chosen), runtimeMode: fitRuntimeMode(choice.runtimeMode ?? role.permission, chosen), from: 'choice' }
-    : fallback ? { model: fallback.model, modelId: fallback.model.id, reasoningEffort: fallback.reasoningEffort, runtimeMode: fallback.runtimeMode, from: 'default' } : undefined
+    // While a chosen model's provider is away, the default in force starts on the permission the user chose, as near as
+    // its model offers at or below it, never on the role's own wider one.
+    : fallback ? { model: fallback.model, modelId: fallback.model.id, reasoningEffort: fallback.reasoningEffort,
+      runtimeMode: choice ? fitRuntimeMode(choice.runtimeMode ?? role.permission, fallback.model) : fallback.runtimeMode, from: 'default' } : undefined
   return { role, choice, choiceReady, fallback, start }
 }
 

@@ -94,6 +94,19 @@ describe('worker roles', () => {
     expect(roleInForce('building', choices, [...CLAUDE, ...CODEX]).start?.modelId).toBe(id('claude', 'sonnet'))
   })
 
+  it('starts on the next default no wider than the permission the user chose while the chosen provider is away', () => {
+    // Computer use's own default is Full access; the user chose Opus with Ask for approval, and Claude Code is away.
+    const choices: WorkerRoleChoices = { 'computer-use': { modelId: id('claude', 'opus'), reasoningEffort: 'high', runtimeMode: 'approval-required' } }
+    const off = [...away(CLAUDE), ...CODEX]
+    expect(roleInForce('computer-use', choices, off).start).toMatchObject({ modelId: id('codex', 'gpt-6-astra'), runtimeMode: 'approval-required', from: 'default' })
+    expect(startFromRole('computer-use', choices, off)).toMatchObject({ modelId: id('codex', 'gpt-6-astra'), runtimeMode: 'approval-required' })
+    // A chosen mode the next default's model does not offer starts on the nearest it offers below it.
+    const grok = { building: { modelId: id('claude', 'opus'), reasoningEffort: 'high', runtimeMode: 'auto-accept-edits' as const } }
+    expect(roleInForce('building', grok, [...away(CLAUDE), ...GROK]).start).toMatchObject({ modelId: id('grok', 'grok-4.7-build'), runtimeMode: 'approval-required' })
+    // With no choice, the next default keeps the role's own permission.
+    expect(roleInForce('computer-use', {}, off).start?.runtimeMode).toBe('full-access')
+  })
+
   it('puts the defaults back on Reset, and treats a row set back to its default as no choice', () => {
     const models = [...CLAUDE, ...CODEX]
     const choices: WorkerRoleChoices = { ui: { modelId: id('codex', 'gpt-6.1-sol'), reasoningEffort: 'high', runtimeMode: 'approval-required' } }
