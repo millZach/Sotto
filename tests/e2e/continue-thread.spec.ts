@@ -130,7 +130,7 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 }
 
 /** Each size and appearance: nothing outside the window, every reading on or above 4.5:1, and a capture. */
-async function everyWindow(launched: LaunchedSotto, name: string, inView: () => Locator[]): Promise<void> {
+async function everyWindow(launched: LaunchedSotto, name: string, inView: () => Locator[], whole: () => Locator[] = () => []): Promise<void> {
   const { page } = launched
   for (const appearance of APPEARANCES) {
     await page.evaluate(async value => { await window.sotto!.updateSettings({ appearance: value }) }, appearance)
@@ -139,6 +139,7 @@ async function everyWindow(launched: LaunchedSotto, name: string, inView: () => 
       await settle(page)
       expect(await pageBoundProblems(page), `${name} at ${width}x${height}, ${appearance}`).toEqual([])
       for (const locator of inView()) await expect(locator, `${name} at ${width}x${height}, ${appearance}`).toBeInViewport()
+      for (const locator of whole()) await expect(locator, `${name} whole at ${width}x${height}, ${appearance}`).toBeInViewport({ ratio: 1 })
       await contrastHolds(page, `${name}-${appearance}-${width}x${height}`)
       await captureWindow(launched.app, resolve(evidence, `${name}-${appearance}-${width}x${height}.png`))
     }
@@ -177,7 +178,7 @@ test.describe('continuing a thread on another provider', () => {
       await source.getByRole('log', { name: 'Thread transcript' }).focus()
       for (let step = 0; step < 40 && !(await codex.evaluate(element => element === document.activeElement)); step++) await page.keyboard.press('Tab')
       await expect(codex).toBeFocused()
-      await everyWindow(launched, 'stopped', () => [codex])
+      await everyWindow(launched, 'stopped', () => [codex], () => [codex, source.locator('.thread-prompt')])
 
       await page.keyboard.press('Enter')
       const strip = source.getByRole('region', { name: 'Continue on Codex', exact: true })
@@ -196,7 +197,7 @@ test.describe('continuing a thread on another provider', () => {
       const words = strip.getByRole('region', { name: 'The handover, word for word' })
       await expect(words).toContainText('The history below is context, not a new request.')
       await expect(words).toContainText('The WAV preview stalls after two seconds.')
-      await everyWindow(launched, 'strip', () => [strip, send])
+      await everyWindow(launched, 'strip', () => [strip], () => [send, prompt, source.locator('.thread-prompt'), strip.getByRole('button', { name: 'Hide it' })])
       await words.focus()
       await page.keyboard.press('Escape')
       await expect(words).toHaveCount(0)
@@ -233,7 +234,7 @@ test.describe('continuing a thread on another provider', () => {
       await expect(continued.getByRole('note').filter({ hasText: 'Continued from' })).toContainText('Continued from WAV preview stall on Claude Code. It stays readable there.')
       await card.getByRole('button', { name: 'Read the handover, word for word' }).click()
       await expect(card.getByRole('region', { name: 'The handover, word for word' })).toContainText('The WAV preview stalls after two seconds.')
-      await everyWindow(launched, 'continued', () => [card])
+      await everyWindow(launched, 'continued', () => [card], () => [continued.locator('.thread-prompt')])
 
       // The source afterwards: readable, linked to the new thread, and still sendable once Claude's limit resets.
       await continued.getByRole('button', { name: 'Open WAV preview stall, the thread this one continues' }).click()
@@ -244,7 +245,7 @@ test.describe('continuing a thread on another provider', () => {
       await expect(link).toContainText(/Continued in WAV preview stall on Codex, .+, with a handover of this thread\./u)
       await expect(back.getByText('Continued in a Codex thread. You can still send here once Claude’s limit resets at 6pm.')).toBeVisible()
       await expect(back.getByRole('textbox', { name: 'Prompt' })).toBeEditable()
-      await everyWindow(launched, 'source-after', () => [link])
+      await everyWindow(launched, 'source-after', () => [link], () => [back.locator('.thread-prompt'), back.getByText('Continued in a Codex thread. You can still send here once Claude’s limit resets at 6pm.')])
     })
   })
 

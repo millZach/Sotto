@@ -354,8 +354,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {/* With nothing to send, Stop holds the send button's place; typed text brings the send back to the end, so Enter's button is never Stop. */}
           {/* One disc: an arrow sends, a list-plus queues. The full name stays in the label and title, so Queue prompt is never called Send. */}
           {continuing !== undefined
-            ? <Button className="thread-prompt__send" data-wide title={reason ?? `Start a new ${continueTarget} thread with a handover of this one and your message`} disabled={!canSend} type="submit">
-              Continue on {continueTarget}<ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" /></Button>
+            // A narrow pane shows Continue alone; the name keeps the provider, and the strip above says it too.
+            ? <Button className="thread-prompt__send" data-wide aria-label={`Continue on ${continueTarget}`} title={reason ?? `Start a new ${continueTarget} thread with a handover of this one and your message`} disabled={!canSend} type="submit">
+              Continue<span className="thread-prompt__send-target"> on {continueTarget}</span><ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" /></Button>
             : handover !== null && !working
             ? <Button className="thread-prompt__send" data-wide aria-label={handover.label} title={reason ?? handover.label} disabled={!canSend} type="submit">
               Continue<ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" /></Button>

@@ -59,3 +59,12 @@
 /* The line under the composer of the thread that was continued. */
 .continue-composer-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 6px 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
 .continue-composer-note > svg { flex: none; }
+
+/* A narrow pane: the send says Continue alone, so the chips and the button keep one row. */
+@container thread-pane (max-width: 720px) { .thread-prompt__send-target { display: none; } }
+/* A short pane: the strip and the words it shows take less room, so the composer stays whole on screen. */
+@container thread-pane (max-height: 600px) {
+  .continue-strip { margin-bottom: 6px; padding: 8px 10px; }
+  .continue-strip__chips, .continue-strip__ledger { margin-top: 6px; }
+  .continue-strip__text { max-height: 92px; margin-top: 6px; padding: 8px 10px; }
+}
