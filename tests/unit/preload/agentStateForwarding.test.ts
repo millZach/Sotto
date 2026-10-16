@@ -26,20 +26,6 @@ describe('agent state broadcast forwarding', () => {
     // Reassembly now happens in the page; see src/renderer/src/agents/agentStateCatalogs.ts.
     expect(listener).toHaveBeenCalledWith(broadcast)
   })
-
-  it('forwards the desktop thread envelope unchanged and keeps get complete', async () => {
-    const complete = { ...state, clientScoped: true }
-    const ipc = { ...preloadElectron().ipcRenderer, invoke: vi.fn(async () => complete) }
-    const bridge = createSottoBridge(ipc, 'win32').agents!
-    const listener = vi.fn()
-    bridge.onState(listener)
-    const handler = ipc.on.mock.calls.find(([channel]) => channel === AGENT_STATE)![1] as (event: unknown, ...args: unknown[]) => void
-    const threads = { revision: 2, baseRevision: 1, roster: [{ id: 'thread', revision: 1 }], changed: [] }
-    const broadcast = { ...complete, host: { ...complete.host, threads, models: { revision: 3, omitted: true } } }
-    handler({}, broadcast)
-    expect(listener).toHaveBeenCalledWith(broadcast)
-    await expect(bridge.get()).resolves.toEqual(complete)
-  })
 })
 
 describe('agent command receipt parsing', () => {

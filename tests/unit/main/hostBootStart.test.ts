@@ -34,8 +34,11 @@ class Threads implements BusyHostThreads {
   busy: string[] = []
   readonly interrupted: string[] = []
   readonly listeners = new Set<() => void>()
+  /** Turns that began after the last publish: `working` does not show them yet. */
+  begun: string[] = []
   working(hostId: string): readonly string[] { return hostId === HOST_ID ? this.busy : [] }
-  async interrupt(threadId: string): Promise<void> { this.interrupted.push(threadId); this.busy = this.busy.filter(id => id !== threadId) }
+  workingNow(hostId: string): readonly string[] { return [...this.working(hostId), ...hostId === HOST_ID ? this.begun : []] }
+  async interrupt(threadId: string): Promise<void> { this.interrupted.push(threadId); this.busy = this.busy.filter(id => id !== threadId); this.begun = this.begun.filter(id => id !== threadId) }
   subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   set(ids: string[]): void { this.busy = ids; for (const listener of this.listeners) listener() }
 }
@@ -71,6 +74,23 @@ describe('start at boot changes (ADR-0054)', () => {
     threads.set([])
     expect(hosts.changes).toEqual(['install'])
     expect(await settled()).toMatchObject({ phase: 'done', restarted: true })
+  })
+
+  // What was published trails a turn that began in the last few milliseconds; a restart then would end it unasked.
+  it('asks first, and stops, for a turn that began after the last publish', async () => {
+    const { boot, hosts, threads, view, settled } = setup()
+    threads.begun = ['new']
+    await boot.command(ID, 'install')
+    expect(view()).toMatchObject({ phase: 'confirm', restarts: true })
+    threads.set([])
+    expect(view()).toMatchObject({ phase: 'confirm' })
+    await boot.command(ID, 'when-idle')
+    expect(view()).toMatchObject({ phase: 'waiting' })
+    expect(hosts.changes).toEqual([])
+    await boot.command(ID, 'stop-threads')
+    expect(threads.interrupted).toEqual(['new'])
+    expect(hosts.changes).toEqual(['install'])
+    expect(await settled()).toMatchObject({ phase: 'done' })
   })
 
   it('stops the working threads the way their Stop does, then changes start at boot at once', async () => {

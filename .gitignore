@@ -605,9 +605,6 @@ artifacts/linux-release-command/*
 !artifacts/linux-release-command/stable-rejection.txt
 
 artifacts/certified-detail/*
-artifacts/window-thread-shell/*
-!artifacts/window-thread-shell/owl-dark-1280.png
-!artifacts/window-thread-shell/owl-light-820.png
 !artifacts/certified-detail/owl-dark-1280.png
 !artifacts/certified-detail/stable-light-820.png
 
@@ -618,3 +615,14 @@ artifacts/stable-from-main/*
 !artifacts/stable-from-main/SHA256SUMS.txt
 
 artifacts/watcher-room-state/*
+artifacts/starting-screen/*
+!artifacts/starting-screen/connecting-1280x800-dark.png
+!artifacts/starting-screen/connecting-1280x800-light.png
+!artifacts/starting-screen/connecting-820x560-dark.png
+!artifacts/starting-screen/connecting-820x560-light.png
+!artifacts/starting-screen/late-1280x800-dark.png
+!artifacts/starting-screen/late-1280x800-light.png
+!artifacts/starting-screen/late-820x560-dark.png
+!artifacts/starting-screen/late-820x560-light.png
+!artifacts/starting-screen/late-long-name-820x560-dark.png
+!artifacts/starting-screen/providers-1280x800-dark.png
