@@ -9,7 +9,7 @@ import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from 
 import { ModelCatalogRevisions } from '../main/agents/agentStateBroadcast'
 import { RefusedImage } from '../main/agents/attachmentStore'
 import { shellForProtocolV1, clientUpdateForOlderClient, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
-import { hostCatalogKey, type AgentCommand, type AgentThreadDetail, type AgentThreadDetailDelta } from '../shared/agents'
+import { hostCatalogKey, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from '../shared/agents'
 import { isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
@@ -247,8 +247,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   const identity = (clientId: string): ClientIdentity => ({ clientId, user: pairing.list().find(client => client.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' })
   const isPhonePeer = (peer: Peer): boolean => !peer.desktop || options.admin === false && options.watcherDesktops === undefined
   const hiddenThread = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? ''))
-  const shell = (peer: Peer) => {
-    const original = service.shell()
+  /** One phone's view of `original`, which is never edited here, so one read can serve every phone in a publish. */
+  const shell = (peer: Peer, original: AgentState = service.shell()) => {
     const visible = isPhonePeer(peer) ? visibleWatcherState(original, false) : original
     const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenThread(peer, thread.id)).map(thread => thread.projectId),
       ...service.watcherPhoneExclusions?.().projectIds ?? []]) : new Set<string>()
@@ -357,7 +357,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   // details that follow the shell wait with it, the newest standing for any skipped; detail-delta pushes
   // and responses are never held, so no delta loses the revision it applies to.
   const owedShell = new WeakSet<Peer>()
-  const sendShell = (peer: Peer): void => {
+  const sendShell = (peer: Peer, read?: () => AgentState): void => {
     if (!authenticated(peer)) { peer.frames.close(); return }
     const scope = watcherScopes.get(peer)
     if (scope && offers(peer, 'watcher-reads') && service.watcherProjection) {
@@ -370,16 +370,20 @@ export async function startSocketServer(options: SocketServerOptions) {
       void track(peer.frames.drained().then(() => { owedShell.delete(peer); if (!closing && !peer.frames.isClosed) sendShell(peer) }))
       return
     }
-    const wire = wireShell(peer, shell(peer)), state = wire.state, eventPage = events(peer, peer.afterSeq)
+    const wire = wireShell(peer, shell(peer, read?.())), state = wire.state, eventPage = events(peer, peer.afterSeq)
     const full = JSON.stringify({ v: 1, event: 'shell', state, eventPage })
     if (fits(full)) { peer.frames.sendText(full); peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
     else if (push(peer, { v: 1, event: 'shell', state, eventPage: { events: [], latestSeq: peer.afterSeq, hasMore: true } })) { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
     if (detailsFollowShell) for (const threadId of peer.observed) detail(peer, threadId)
   }
+  // One read of the service's shell per publish, for every phone: each read copies the whole coordinator state. It is
+  // read when the first phone sends, so a publish to phones that are all backed up reads nothing.
   const shellPublisher = coalesceAgentStatePublishes(() => {
+    let original: AgentState | undefined
+    const read = () => original ??= service.shell()
     for (const peer of peers) {
       if (!authenticated(peer)) { peer.frames.close(); continue }
-      if (peer.ready) sendShell(peer)
+      if (peer.ready) sendShell(peer, read)
     }
   })
   // Each observed thread's update goes out as the service published it: a whole detail as one, and a delta
