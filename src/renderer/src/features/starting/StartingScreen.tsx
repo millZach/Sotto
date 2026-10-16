@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 
 import type { HostsBridge, HostsState } from '../../../../shared/hosts'
 import { useOptionalAgents } from '../../agents/AgentContext'
@@ -61,6 +61,35 @@ function useElapsed(delay: number): boolean {
   return fired
 }
 
+/** A modal dialog over the window, such as a saved host's SSH question: what the Dictate room checks for too. */
+const MODAL_DIALOG = '[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"], dialog[open]'
+
+/**
+ * Gives `target` focus now, unless a modal dialog is open. Then focus stays where the dialog has it, so a key meant for
+ * the dialog never presses `target`, and once no dialog is left `target` takes focus only if the dialog left it
+ * nowhere. Returns what stops the wait.
+ */
+function focusUnlessDialog(target: RefObject<HTMLElement | null>): () => void {
+  if (document.querySelector(MODAL_DIALOG) === null) {
+    target.current?.focus()
+    return () => undefined
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const observer = new MutationObserver(() => {
+    // After the dialog's own focus return, which runs once its removal has been committed.
+    timer ??= setTimeout(() => {
+      timer = undefined
+      if (document.querySelector(MODAL_DIALOG) !== null) return
+      const active = document.activeElement
+      if (active === null || active === document.body) target.current?.focus()
+      stop()
+    }, 0)
+  })
+  const stop = (): void => { observer.disconnect(); clearTimeout(timer) }
+  observer.observe(document.body, { childList: true, subtree: true })
+  return stop
+}
+
 interface StartingScreenProps {
   readonly leaving: boolean
   readonly hosts: HostsBridge | undefined
@@ -107,8 +136,9 @@ function StartingScreen({ leaving, hosts, onOpen }: StartingScreenProps): ReactN
     if (!leaving && view.settled) onOpen(revealed)
   }, [leaving, view.settled, revealed, onOpen])
 
-  // The button takes focus once, when it appears: nothing on the screen is focusable before it.
-  useEffect(() => { if (hasLateNote) buttonRef.current?.focus() }, [hasLateNote])
+  // The button takes focus once, when it appears: nothing on the screen is focusable before it. An SSH question asked
+  // over the screen keeps focus; when it closes and leaves focus nowhere, the button takes it.
+  useEffect(() => hasLateNote ? focusUnlessDialog(buttonRef) : undefined, [hasLateNote])
 
   return (
     <div className={leaving ? 'starting-screen starting-screen--leaving' : 'starting-screen'}>

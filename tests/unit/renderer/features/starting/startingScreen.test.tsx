@@ -7,6 +7,7 @@ import type { AgentProviderStatus, AgentState, ProviderId } from '../../../../..
 import type { HostsState } from '../../../../../src/shared/hosts'
 import type { SottoE2EBridge } from '../../../../../src/shared/e2e'
 import { AgentProvider } from '../../../../../src/renderer/src/agents/AgentContext'
+import { HostQuestionDialog } from '../../../../../src/renderer/src/features/settings/HostQuestionDialog'
 import { writeShellCache } from '../../../../../src/renderer/src/agents/shellCache'
 import { STARTING_SCREEN_DONE_KEY, StartingScreenGate } from '../../../../../src/renderer/src/features/starting/StartingScreen'
 import { LATE_AFTER_MS, LEAVE_MS, REVEAL_AFTER_MS } from '../../../../../src/renderer/src/features/starting/startingView'
@@ -32,12 +33,14 @@ function bridges(initial: AgentState, hosts: HostsState = hostsState(), get?: ()
   }
 }
 
+/** The window as the app seats the gate, with the saved hosts' SSH question asked over whichever view shows. */
 function Window({ settingsSettled = true, eligible = true }: { readonly settingsSettled?: boolean; readonly eligible?: boolean }): React.ReactNode {
   return (
     <AgentProvider settings={null}>
       <StartingScreenGate settingsSettled={settingsSettled} eligible={eligible} frame={starting => <main aria-label="Window">{starting}</main>}>
         <p>The app</p>
       </StartingScreenGate>
+      <HostQuestionDialog />
     </AgentProvider>
   )
 }
@@ -114,6 +117,31 @@ describe('the starting screen gate', () => {
     expect(screen.getByText('The app')).toBeVisible()
     // forge is still connecting; the app opened without waiting for it.
     expect(wire.hosts.state().hosts[0]!.phase).toBe('connecting')
+  })
+
+  it('leaves focus in an SSH question open at ten seconds, so Enter answers it, and gives the button focus once it closes', async () => {
+    const asking = hostStatus({ id: FORGE, name: 'forge', phase: 'connecting', prompt: { id: 'password', kind: 'password', text: 'zach@forge’s password:' } })
+    const wire = bridges(agent({ devin: 'connecting' }), hostsState({ hosts: [asking] }))
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<Window />)
+    await settle()
+    const field = screen.getByLabelText('SSH password')
+    expect(field).toHaveFocus()
+    await user.keyboard('hunter')
+
+    await settle(LATE_AFTER_MS)
+    expect(screen.getByRole('button', { name: 'Open Sotto without Devin' })).toBeInTheDocument()
+    expect(field).toHaveFocus()
+    await user.keyboard('2{Enter}')
+    expect(wire.hosts.command).toHaveBeenCalledWith({ type: 'ssh-answer', id: FORGE, promptId: 'password', answer: 'hunter2' })
+    expect(screen.queryByText('The app')).not.toBeInTheDocument()
+
+    // Main clears the question once SSH has the answer, and forge goes on connecting: nothing else has focus, so the button takes it.
+    act(() => wire.hosts.publish({ hosts: [hostStatus({ id: FORGE, name: 'forge', phase: 'connecting' })] }))
+    await settle()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Sotto without Devin and forge' })).toHaveFocus()
   })
 
   it('says nothing and opens the app when there is nothing to connect', async () => {
