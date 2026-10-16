@@ -1793,7 +1793,10 @@ export class AgentControl {
     // saves then leaves the wake-up, which a restart drops and observes afresh, never told news that is nowhere.
     if (outcome !== 'told') {
       const ids = new Set(events.map(event => event.id))
+      // Saved whatever memory says: an earlier settle that failed to save may have left them untold in memory alone. A
+      // state the last write already holds writes nothing.
       if (this.watcher.wakeEventIds?.some(id => ids.has(id))) await this.updateWatcher(record => { record.wakeEventIds = record.wakeEventIds!.filter(id => !ids.has(id)) })
+      else await this.persist()
     }
     await this.followupStore.removeWakeUp(...items.map(entry => entry.id))
     this.watcherHooks?.wakeUpSettled?.(events, outcome)

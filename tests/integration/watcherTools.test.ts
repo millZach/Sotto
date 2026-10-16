@@ -819,6 +819,24 @@ it('settles a hidden wake-up once when two settles overlap, so a crash while the
   for (const id of events) expect(await savedTold(f.root)).not.toContain(id)
 }, 40_000)
 
+it('saves the news of a hidden wake-up as untold again on the next settle when the first save failed, so a crash after loses nothing (review P1)', async () => {
+  const f = await fixture(), { hidden } = await heldQuestion(f)
+  const item = hidden()[0]!, events = item.news!.flatMap(news => 'events' in news ? news.events.map(event => event.id) : [])
+  await vi.waitFor(async () => expect(await savedTold(f.root)).toEqual(expect.arrayContaining(events)))
+  // The save of agents.json that forgets the wake-up's news fails once; memory has forgotten it, the disk has not.
+  const inner = (f.control as unknown as { store: { write: (...args: unknown[]) => Promise<void> } }).store, write = inner.write.bind(inner)
+  let failNext = true
+  vi.spyOn(inner, 'write').mockImplementation(async (...args) => { if (failNext) { failNext = false; throw new Error('Synthetic disk failure') } return write(...args) })
+  const settle = (f.control as unknown as { settleWatcherWakeUp: (item: unknown, outcome: string) => Promise<void> }).settleWatcherWakeUp.bind(f.control)
+  await expect(settle(item, 'withdrawn')).rejects.toThrow('Synthetic disk failure')
+  expect(hidden().map(entry => entry.id)).toEqual([item.id])
+  // A later settle takes it out. Sotto then stops: the next start reads its news as untold, or the wake-up still queued.
+  await settle(item, 'withdrawn')
+  const saved = JSON.parse(await readFile(join(f.root, 'followups.json'), 'utf8')) as { items: { id: string }[] }
+  expect(saved.items.map(entry => entry.id)).not.toContain(item.id)
+  for (const id of events) expect(await savedTold(f.root)).not.toContain(id)
+}, 40_000)
+
 it('asks a provider that refused a wake-up no one is shown again only with news that needs Watcher, and sends both then', async () => {
   const f = await fixture(), { worker, master, sends, hidden } = await heldQuestion(f)
   const refused = refuseWakeUps(f, master, 1)

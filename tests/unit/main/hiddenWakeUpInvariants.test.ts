@@ -17,7 +17,8 @@ import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/w
  * Drives Watcher's news (WatcherWakeUp) and its hidden wake-up in the real queue (FollowupStore) through table-driven and
  * seeded random sequences, with the coordinator's own step for the item (hiddenWakeUpStep): a worker's turns, questions,
  * pull request checks and working copy; sends that land, fail or go unknown, with news arriving mid-send and late echoes;
- * failed saves; withdrawals; two settles of one wake-up overlapping with a crash between; Watcher's own turns; restarts
+ * failed saves, of the queue and of news as untold; withdrawals; two settles of one wake-up overlapping with a crash
+ * between; Watcher's own turns; restarts
  * mid-dispatch; and queues earlier builds saved. After every step:
  * (a) at most one hidden wake-up; (b) no send without new news that needs Watcher, and automatic tries bounded; (c) a
  * thread's own facts never wake Watcher by themselves; (d) every event told at most once unless forgotten and observed
@@ -46,6 +47,10 @@ interface World {
   holdRemember?: { entered: () => void; release: Promise<void> } | undefined
   /** Holds the next save of news as untold open until released, which a crash can come in the middle of. */
   holdUntell?: { entered: () => void; release: Promise<void> } | undefined
+  /** Fails the next save of news as untold once. */
+  failNextUntell: boolean
+  /** The told IDs on disk while a save of the record failed or is still on its way; unset when the disk holds what memory does. */
+  disk?: string[] | undefined
   /** The coordinator's settles, one per wake-up at a time; a restart makes new ones. */
   settlements: HiddenWakeUpSettlements
   violations: string[]
@@ -66,7 +71,7 @@ async function world(): Promise<World> {
     status: 'idle', lastTurn: { id: 'w-0', status: 'completed' }, messages: [], requests: [] }
   const snapshot: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), connected: true, hostId: centerTarget.hostId,
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, observe: true }, threads: [worker, watcher], projects: [{ id: 'project', title: 'Project', path: 'synthetic' }] }
-  const w = { directory, record, snapshot, worker, watcher, clock: Date.parse('2026-10-11T10:00:00Z'), timers: new Set(), writes: 0, failNextWrite: false,
+  const w = { directory, record, snapshot, worker, watcher, clock: Date.parse('2026-10-11T10:00:00Z'), timers: new Set(), writes: 0, failNextWrite: false, failNextUntell: false,
     turn: 0, checks: 'passed', sends: [], told: new Set(), forgotten: new Set(), uncertain: new Map(), reconciling: new Set(), violations: [], echoes: new Set(), attentionSince: false,
     automatic: 0, tolds: 0 } as unknown as World
   await load(w)
@@ -75,6 +80,8 @@ async function world(): Promise<World> {
 /** Sotto starting: the queue loads and Watcher's saved news goes from it, untold again, and Watcher's news starts afresh. */
 async function load(w: World): Promise<void> {
   w.wakes?.close()
+  // What memory held and the disk did not is gone.
+  if (w.disk) { w.record.wakeEventIds = w.disk; w.disk = undefined }
   w.store = new FollowupStore(w.directory); await w.store.load()
   const inner = (w.store as unknown as { store: { write: (value: unknown) => Promise<void> } }).store, write = inner.write.bind(inner)
   inner.write = async value => { if (w.failNextWrite) { w.failNextWrite = false; throw new Error('Synthetic disk failure') } w.writes++; await write(value) }
@@ -90,6 +97,7 @@ async function load(w: World): Promise<void> {
       w.record.wakeEventIds = [...new Set([...w.record.wakeEventIds ?? [], ...ids])].slice(-1_000)
       const hold = w.holdRemember; w.holdRemember = undefined
       if (hold) { hold.entered(); await hold.release }
+      w.disk = undefined // The whole record is saved.
     },
     deliver: async (news: WatcherNews) => {
       // (c) Every wake-up made holds news that needs Watcher. Recorded here, since the batcher catches what deliver throws.
@@ -119,12 +127,15 @@ function settleItem(w: World, item: QueuedFollowup, outcome: HiddenWakeUpOutcome
 }
 async function settleOnce(w: World, item: QueuedFollowup, outcome: HiddenWakeUpOutcome): Promise<void> {
   const events = hiddenEvents(item.news)
-  // As the coordinator does: news that did not reach Watcher is saved as untold before its wake-up leaves the queue, and
-  // news already untold in memory is not saved again.
-  if (outcome !== 'told' && events.some(event => w.record.wakeEventIds?.includes(event.id))) {
+  // As the coordinator does: news that did not reach Watcher is saved as untold before its wake-up leaves the queue, whatever
+  // memory says, since an earlier settle may have untold it in memory and failed to save that.
+  if (outcome !== 'told') {
+    const before = [...w.record.wakeEventIds ?? []]
     untell(w, events)
+    if (w.failNextUntell) { w.failNextUntell = false; w.disk ??= before; throw new Error('Synthetic disk failure') }
     const hold = w.holdUntell; w.holdUntell = undefined
-    if (hold) { hold.entered(); await hold.release }
+    if (hold) { w.disk ??= before; hold.entered(); await hold.release }
+    w.disk = undefined
   }
   await w.store.removeWakeUp(item.id)
   outcomes[outcome]++
@@ -180,7 +191,7 @@ async function quiesce(w: World, mode: Mode): Promise<void> {
 }
 
 type Step = 'finish' | 'start' | 'question' | 'answer' | 'checks' | 'local' | 'pump-ack' | 'pump-fail' | 'pump-unknown' | 'echo' | 'restart'
-  | 'watcher-turn' | 'save-fail' | 'legacy' | 'mid-send' | 'lose-echo' | 'crash-between-saves' | 'mid-save' | 'lane-delay' | 'overlap-settle'
+  | 'watcher-turn' | 'save-fail' | 'legacy' | 'mid-send' | 'lose-echo' | 'crash-between-saves' | 'mid-save' | 'lane-delay' | 'overlap-settle' | 'untell-save-fails'
 async function apply(w: World, step: Step): Promise<void> {
   const worker = w.worker
   switch (step) {
@@ -244,12 +255,22 @@ async function apply(w: World, step: Step): Promise<void> {
       const item = hidden(w)[0]
       if (!item || !hiddenEvents(item.news).some(event => w.record.wakeEventIds?.includes(event.id))) break
       let entered!: () => void
-      const inside = new Promise<void>(resolve => { entered = resolve }), saved = [...w.record.wakeEventIds ?? []]
+      const inside = new Promise<void>(resolve => { entered = resolve })
       w.holdUntell = { entered, release: new Promise<void>(() => undefined) }
       void settleItem(w, item, 'withdrawn')
       await inside
       await Promise.race([settleItem(w, item, 'withdrawn'), new Promise(resolve => setTimeout(resolve, 100))])
-      w.record.wakeEventIds = saved
+      await load(w)
+      break
+    }
+    case 'untell-save-fails': {
+      // Saving a wake-up's news as untold fails once and the wake-up stays; a later settle takes it out, and Sotto stops.
+      const item = hidden(w)[0]
+      if (!item || !hiddenEvents(item.news).some(event => w.record.wakeEventIds?.includes(event.id))) break
+      w.failNextUntell = true
+      await expect(settleItem(w, item, 'withdrawn')).rejects.toThrow('Synthetic disk failure')
+      expect(hidden(w).map(other => other.id)).toEqual([item.id])
+      await settleItem(w, item, 'withdrawn')
       await load(w)
       break
     }
@@ -342,6 +363,7 @@ it.each([
   ['news that comes while a wake-up is being saved, after a miss', ['question', 'pump-fail', 'mid-save', 'pump-fail', 'pump-ack']],
   ['a turn end going stale while its batch waits its turn', ['start', 'lane-delay', 'pump-ack', 'finish', 'pump-ack']],
   ['a crash between the two saves of a wake-up leaving', ['question', 'crash-between-saves', 'pump-ack', 'question', 'pump-fail', 'crash-between-saves', 'watcher-turn', 'pump-ack']],
+  ['a failed save of news as untold, a later settle, and a crash', ['question', 'untell-save-fails', 'pump-ack', 'question', 'pump-fail', 'untell-save-fails', 'watcher-turn', 'pump-ack']],
   ['two settles of one wake-up overlapping, and a crash while the first saves', ['question', 'overlap-settle', 'pump-ack', 'question', 'pump-fail', 'overlap-settle', 'watcher-turn', 'pump-ack']],
   ['queues earlier builds saved', ['question', 'legacy', 'pump-ack', 'pump-fail', 'watcher-turn', 'pump-ack']],
   ['refusals past the bound', ['question', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn']],
@@ -359,7 +381,7 @@ it('never wakes Watcher for a thread’s own facts alone', async () => {
 
 it('keeps the hidden wake-up’s rules through seeded random sequences', async () => {
   const steps: Step[] = ['finish', 'start', 'question', 'answer', 'checks', 'local', 'local', 'pump-ack', 'pump-fail', 'pump-unknown', 'echo', 'lose-echo', 'restart',
-    'watcher-turn', 'save-fail', 'mid-send', 'legacy', 'crash-between-saves', 'mid-save', 'lane-delay', 'overlap-settle']
+    'watcher-turn', 'save-fail', 'mid-send', 'legacy', 'crash-between-saves', 'mid-save', 'lane-delay', 'overlap-settle', 'untell-save-fails']
   for (let seed = 1; seed <= 30; seed++) {
     const next = random(seed), w = await world()
     for (let step = 0; step < 16; step++) { await apply(w, steps[Math.floor(next() * steps.length)]!); await check(w) }

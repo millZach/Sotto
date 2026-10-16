@@ -21,7 +21,7 @@ export const hiddenEvents = (news: readonly WakeUpNews[] | undefined): WatcherEv
  * first saves the wake-up's news as untold before the wake-up leaves the queue, and a second running beside it would
  * find that news untold in memory, skip the save, and take the wake-up out while the save is still on its way. A crash
  * then would leave the news saved as told with nothing queued. The first's outcome stands; a failed one leaves the
- * wake-up for the next settle to try afresh.
+ * wake-up for the next settle to try afresh, which saves again before the wake-up leaves.
  */
 export class HiddenWakeUpSettlements {
   private readonly settling = new Map<string, Promise<void>>()
