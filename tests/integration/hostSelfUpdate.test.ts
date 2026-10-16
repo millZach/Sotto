@@ -96,8 +96,12 @@ async function connect(data: string, token: string) {
   const hello = await peer.call('hello', { op: 'hello', accepts: ['host-update'] })
   const steps = (): unknown[] => peer.messages.filter(message => message.event === 'host-update-step').map(message => message.step)
   let calls = 0
+  // A download, an unpack or a restart's checks can take a while on a busy machine; the answer is waited for generously.
   const update = async (request: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    const reply = await peer.call(`update-${++calls}`, { op: 'host-update', ...request })
+    const id = `update-${++calls}`
+    peer.frames.send({ v: 1, id, session, op: 'host-update', ...request })
+    await vi.waitFor(() => expect(peer.messages.some(message => message.id === id)).toBe(true), { timeout: HOST_STOP_DRAIN_MS + 2 * HOST_READY_TIMEOUT_MS, interval: 50 })
+    const reply = peer.messages.find(message => message.id === id)!
     expect(reply, JSON.stringify(reply)).toMatchObject({ ok: true })
     return reply.result as Record<string, unknown>
   }

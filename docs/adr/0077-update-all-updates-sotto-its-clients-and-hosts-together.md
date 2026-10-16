@@ -54,6 +54,42 @@ line (on this computer and on each connected host that offers client updates), a
 A host's own update waits until the clients it was asked to update have finished, so its restart does not cut one
 off. Everything else runs side by side, each in the updater that already owned it.
 
+October 16, 2026 amendment: the wait is now kept by the host update itself (`HostUpdates` in main), whatever starts it.
+Only the card's first press kept it before, and on October 16 Try again on forge's host restarted it while Codex was
+installing there. A host whose client update line is running, a client waiting in it or updating, moves to waiting
+and begins by itself once the line is empty: Update all's press and Try again, the host update pill's Update and Try
+again (ADR-0040), Update when they finish and Stop N threads and update alike. Cancel update takes it back to needing
+an update, and an update already under way is never interrupted. Its restart still waits: a client put in the line
+after the download began holds the installed update at its restart step until the line is empty, and Cancel update
+stays refused there, as it is once the host has begun to install. The line is read from what the router last
+published for that host, in place, because the question is asked on every change, and a host that is not connected
+has no line running. The card words the wait as its own, "Updates once forge's clients have.", and the pill as "forge
+waits for its clients". A held restart reads "Restart forge's host once its clients have" on the card, "Updating forge
+· waits for its clients" on the pill, and "forge restarts once its client updates finish." in the panel.
+
+The same day: a client step on a host that was seen waiting or updating in the host's line since the press, or since
+its Try again, and is later out of the line with no result of its own, lost its line. A host keeps its results in
+memory, so one that restarted reports none, and that counts as no result. While the host is out of reach, the step
+stays listed as "Waiting to hear from forge…", so the press is not read as over. A connected host says what it still
+has in its first shell, so one that leaves the client out, as a restarted host with client checks off does, lost the
+line too. The step counts as done only when the host runs another version than it did when the step was seen; whether
+the client reads as behind cannot say, because one whose registry did not answer reads as not behind.
+A step whose host was out of reach meanwhile reads "forge restarted before Codex updated. Nothing was changed. Try
+again."; one taken out of the line some other way, as by Cancel update on the host's tile, reads "The Codex update on
+forge stopped before it finished. Nothing was changed. Try again." Both offer Try again, which puts it back in the
+line, where before the step read "Starting…" for good. The moment between
+the line's reply and the host's next shell, which the host holds back up to 16 ms, is never read as a loss, because
+the step is marked as seen only once the host says it is in the line. This computer's own line cannot be lost without
+the card going too, so only a host's steps are read this way.
+
+The same day, by the owner's choice: a run that ends with everything updated goes by itself. Once the card reads
+"Updated", with no step failed and none waiting for a host's threads or clients, it goes 5 seconds later, as Dismiss
+does, and comes back only when something new is published. A step left for the user to do by hand does not hold it.
+The count does not run while the pointer is over the card or its pill or focus is inside either, and starts again
+from the beginning once both have left, so the card never goes while someone reads it or is about to press. Nothing
+announces it: no countdown and no message. "Not everything updated" stays, with its Try again, until it is dismissed,
+and "Restart to finish" is never put away by itself.
+
 **3. What Sotto cannot do is listed, not pressed.** A client installed with something Sotto does not drive shows the
 command to run. A host Sotto did not start shows that it cannot be restarted from here and offers its commands to
 copy. Neither counts toward the press.

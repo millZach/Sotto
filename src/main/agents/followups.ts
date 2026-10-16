@@ -227,10 +227,12 @@ export class FollowupStore {
    * once when the thread is ready and otherwise when it would send the next one. A thread holds one waiting wake-up,
    * and later news folds into it until it goes. Resolves once it is saved.
    */
-  queueWakeUp(threadId: string, news: WakeUpNews, word: WordWakeUp, resumeAfterTurnId?: string): Promise<void> {
+  queueWakeUp(threadId: string, news: WakeUpNews, word: WordWakeUp, resumeAfterTurnId?: string, apart?: (news: WakeUpNews) => boolean): Promise<void> {
     return this.change(state => {
       const now = new Date().toISOString()
-      const waiting = state.items.find(item => waitingWakeUp(item, threadId))
+      // News `apart` picks out may not go yet, so it never shares a wake-up with news that may: neither holds the other.
+      const side = apart?.(news) ?? false
+      const waiting = state.items.find(item => waitingWakeUp(item, threadId) && (!apart || (item.news ?? []).every(held => apart(held) === side)))
       if (waiting) {
         const folded = foldWakeUpNews(waiting.news ?? [], wakeUpNewsSchema.parse(news))
         // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
@@ -261,12 +263,33 @@ export class FollowupStore {
     // Looked for inside the lane, never in the snapshot before it: a wake-up whose save is still pending is in the lane
     // ahead of this, and is taken back once it lands rather than left to send.
     return this.change(state => {
-      const waiting = state.items.find(item => waitingWakeUp(item, threadId))
-      if (!waiting) return false
-      const kept = (waiting.news ?? []).filter(item => !isBabysitNews(item) || key !== undefined && pullRequestKey(item.pullRequest.url) !== key)
-      if (kept.length === (waiting.news ?? []).length) return false
-      if (kept.length) Object.assign(waiting, { news: kept, text: word(kept), updatedAt: new Date().toISOString() })
-      else state.items = state.items.filter(item => item !== waiting)
+      // A thread may hold a second waiting wake-up, of news set apart (`separateWakeUps`): each is looked through.
+      let changed = false
+      for (const waiting of state.items.filter(item => waitingWakeUp(item, threadId))) {
+        const kept = (waiting.news ?? []).filter(item => !isBabysitNews(item) || key !== undefined && pullRequestKey(item.pullRequest.url) !== key)
+        if (kept.length === (waiting.news ?? []).length) continue
+        changed = true
+        if (kept.length) Object.assign(waiting, { news: kept, text: word(kept), updatedAt: new Date().toISOString() })
+        else state.items = state.items.filter(item => item !== waiting)
+      }
+      if (!changed) return false
+    })
+  }
+  /**
+   * Sets the news `apart` picks out of this thread's waiting wake-ups into a wake-up of its own at the end of the thread's
+   * queue, whole, so a wake-up that may not go yet holds none of the news that may, nor the user's follow-ups behind it.
+   */
+  separateWakeUps(threadId: string, apart: (news: WakeUpNews) => boolean, word: WordWakeUp): Promise<void> {
+    return this.change(state => {
+      const mixed = state.items.filter(item => waitingWakeUp(item, threadId) && (item.news ?? []).some(apart) && (item.news ?? []).some(news => !apart(news)))
+      if (!mixed.length) return false
+      const now = new Date().toISOString()
+      for (const item of mixed) {
+        const kept = item.news!.filter(news => !apart(news)), held = item.news!.filter(apart)
+        Object.assign(item, { news: kept, text: word(kept), updatedAt: now })
+        state.items.push(queuedSchema.parse({ id: randomUUID(), threadId, draftId: randomUUID(), text: word(held), attachments: [], status: 'queued', wakeUp: true,
+          news: held, createdAt: now, updatedAt: now, ...(item.resumeAfterTurnId ? { resumeAfterTurnId: item.resumeAfterTurnId } : {}) }))
+      }
     })
   }
   /**
@@ -319,10 +342,11 @@ export class FollowupStore {
       Object.assign(item, { resumeAfterTurnId: turnId, updatedAt: new Date().toISOString() })
     })
   }
-  claim(id: string, mode: 'send' | 'steer' = 'send'): Promise<void> {
+  /** Takes an item to send. A send takes only the head of its thread's queue, not counting items `waits` says wait. */
+  claim(id: string, mode: 'send' | 'steer' = 'send', waits: (item: QueuedFollowup) => boolean = () => false): Promise<void> {
     return this.change(state => {
       const item = state.items.find(item => item.id === id)
-      if (!item || item.status !== 'queued' || mode === 'send' && state.items.find(candidate => candidate.threadId === item.threadId)?.id !== id) throw new Error(item?.wakeUp ? 'This wake-up is no longer ready to send.' : 'This follow-up is no longer ready to send.')
+      if (!item || item.status !== 'queued' || mode === 'send' && state.items.find(candidate => candidate.threadId === item.threadId && !waits(candidate))?.id !== id) throw new Error(item?.wakeUp ? 'This wake-up is no longer ready to send.' : 'This follow-up is no longer ready to send.')
       Object.assign(item, { status: 'dispatching', commandId: randomUUID(), messageId: item.watcherOperationId && item.messageId ? item.messageId : randomUUID(), updatedAt: new Date().toISOString() })
     })
   }

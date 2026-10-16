@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal, flushSync } from 'react-dom'
-import { ArrowDown, Check, ChevronRight, Copy, MessageSquare } from 'lucide-react'
+import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
 import { isThreadBusy, isVisualMessage, type AgentFollowup, type AgentMessage, type AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
@@ -25,6 +25,9 @@ import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
 import { HandoverMessage } from '../watcher/WatcherHandover'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { ThreadGreeting } from './ThreadGreeting'
+import type { DelegationView } from '../../../shared/delegation'
+import { DelegationCardProvider, DelegationCards, delegationsByTurn, useDelegationCardWorld } from './DelegationCards'
+import { useDelegations, useDelegationsEnabled } from './delegations'
 import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
@@ -217,21 +220,26 @@ function WakeUpWho({ text }: { readonly text: string }): ReactNode {
  * structure of the one before it, so a message the update did not touch is the same object and is not redrawn
  * while the agent streams into the message below it. `threadId` is how a submitted attachment finds its preview.
  */
-const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker }: {
+const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy }: {
   readonly message: AgentMessage; readonly provider: string; readonly writing: boolean; readonly streamText: boolean
   readonly threadId: string | undefined
   /** Watcher's conversation names its replies Watcher, with the owl, whatever provider it runs on. */
   readonly speaker?: 'watcher' | undefined
+  /** A brief the delegating thread sent: that thread's name, shown in the user's place (ADR-0081). */
+  readonly delegatedBy?: string | undefined
 }): ReactNode {
   const article = useRef<HTMLElement>(null)
   // A wake-up babysitting sent is Sotto's, told by the host's mark and never by its text, and shows every word the
   // provider received, as it received it (ADR-0061 decision 8).
   const wakeUp = isWakeUpMessage(message)
   const markdown = useMemo(() => wakeUp ? wakeUpMarkdown(message.text) : message.text, [wakeUp, message.text])
+  // A brief the delegating thread sent here is that thread's, never the user's (ADR-0081).
+  const brief = delegatedBy !== undefined && message.role === 'user' && !wakeUp
   // The handover Watcher's first message carried goes ahead of the user's words, as Sotto's (ADR-0073).
   return <>{message.handover && message.role === 'user' ? <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
-  <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : undefined} data-message-id={message.id} ref={article}>
+  <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={article}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
+      : brief ? <><span className="thread-message__who"><GitFork size={13} aria-hidden="true" />{delegatedBy}</span><span>delegated</span></>
       : <span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : 'System'}</span>}
       <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
     {writing && !streamText
@@ -248,16 +256,20 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
  * being written leaves every earlier turn in the transcript untouched. `last` is what the running turn needs
  * to know about its place; everything else it reads is shared across updates.
  */
-const TurnView = memo(function TurnView({ turn, provider, running, last, writing, placement, context, streamText, threadId, speaker }: {
+const TurnView = memo(function TurnView({ turn, provider, running, last, writing, placement, context, streamText, threadId, speaker, delegations, briefs }: {
   readonly turn: TranscriptTurn; readonly provider: string; readonly running: boolean; readonly last: boolean
   readonly writing: string | undefined
   readonly speaker?: 'watcher' | undefined
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText: boolean
   readonly threadId: string | undefined
+  /** The delegations this turn's message rooted (ADR-0081), as cards under its reply, never folded with the work. */
+  readonly delegations?: readonly DelegationView[] | undefined
+  readonly briefs?: DelegatedBriefs | undefined
 }): ReactNode {
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
   const article = (message: AgentMessage): ReactNode => isDrawableVisual(message) ? <VisualCard visual={message.visual} threadId={threadId} />
-    : drawn(message) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} speaker={speaker} />
+    : drawn(message) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} speaker={speaker}
+      delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
     {article(message)}
     <ActivityGroups groups={placement.after.get(message.id)} context={context} />
@@ -279,7 +291,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const boundaries = groups.filter(group => compactionOf(group))
   const work = final ? written.filter(message => message !== final && drawn(message)) : []
   // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
-  if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>{everything.map(plain)}</>
+  if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>{everything.map(plain)}<DelegationCards views={delegations} /></>
   const finalAt = turn.replies.indexOf(final)
   const unfolded = new Set(visuals.map(visual => visual.message))
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
@@ -301,17 +313,25 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     {shown(-1, finalAt)}
     <ActivityGroups groups={boundaries} context={context} />
     {article(final)}
+    <DelegationCards views={delegations} />
     {shown(finalAt, Number.POSITIVE_INFINITY)}
   </>
 })
 
-export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true, threadId, speaker }: {
+/** The briefs a delegating thread sent to this thread, by their message IDs, and that thread's name (ADR-0081). */
+export interface DelegatedBriefs { readonly ids: ReadonlySet<string>; readonly from: string }
+
+export const MessageList = memo(function MessageList({ messages, provider, running, placement, context, streamText = true, threadId, speaker, delegations, briefs }: {
   readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText?: boolean
   /** The thread these messages belong to, which is how a submitted attachment finds its preview. */
   readonly threadId?: string
   /** Who the replies are from when it is not the provider: Watcher's own conversation. */
   readonly speaker?: 'watcher' | undefined
+  /** Delegation cards by the user's message each answers; under '' those whose message is not shown (ADR-0081). */
+  readonly delegations?: ReadonlyMap<string, readonly DelegationView[]> | undefined
+  /** In a delegated thread, the briefs that are the delegating thread's words rather than the user's. */
+  readonly briefs?: DelegatedBriefs | undefined
 }): ReactNode {
   const last = messages.findLast(drawn)
   // A visual after the reply means the reply is no longer being written.
@@ -321,8 +341,10 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   const turns = useShared(useMemo(() => splitTurns(messages), [messages]))
   return <><ActivityGroups groups={placement.leading} context={context} />
   {turns.map((turn, index) => <TurnView key={turn.key} turn={turn} provider={provider} running={running}
-    last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker} />)}
+    last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
+    delegations={turn.user ? delegations?.get(turn.user.id) : undefined} briefs={briefs} />)}
   <ActivityGroups groups={placement.trailing} context={context} />
+  <DelegationCards views={delegations?.get('')} />
   </>
 })
 
@@ -473,6 +495,18 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const placement = useShared(useMemo(() => placeActivities(thread.messages, messages, thread.activities, thread.historyStatus === 'loading', thread.earlierAvailable === true),
     [thread.messages, messages, thread.activities, thread.historyStatus, thread.earlierAvailable]))
   const liveTurn = liveTurnId(thread)
+  // Delegation (ADR-0081; Owl only): this thread's own delegations, read once as its pane opens and again when main
+  // names it. What it delegated are cards in the turn each call was made in; the briefs it was sent are the words of
+  // the thread that delegated to it, not the user's.
+  const delegationsOn = useDelegationsEnabled()
+  const delegations = useDelegations(delegationsOn && !watcher ? thread.id : undefined)
+  const delegationCards = useShared(useMemo(() => delegationsByTurn(delegations.made, messages), [delegations.made, messages]))
+  const cardWorld = useDelegationCardWorld(state, command)
+  const delegatingTitle = thread.delegatedBy === undefined ? undefined : state.host.threads.find(item => item.id === thread.delegatedBy)?.title ?? 'The thread that delegated'
+  const briefs = useMemo<DelegatedBriefs | undefined>(() => {
+    const ids = new Set(delegations.received.map(view => view.briefMessageId))
+    return ids.size && delegatingTitle !== undefined ? { ids, from: delegatingTitle } : undefined
+  }, [delegations.received, delegatingTitle])
   const pendingKey = [...pending.map(item => `${item.item.draftId}:${item.status}`), ...queuedEchoes.map(item => `${item.id}:${item.status}`),
     ...recovery.map(item => `${item.draftId}:${item.status}`)].join(',')
 
@@ -596,7 +630,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
           : thread.earlierAvailable
             ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={loadEarlier}>Show earlier messages</Button></div>
             : null}
-        {thread.messages.length || showsActivity ? <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined} />
+        {thread.messages.length || showsActivity ? <DelegationCardProvider world={cardWorld}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
+          delegations={delegationCards.size ? delegationCards : undefined} briefs={briefs} /></DelegationCardProvider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.compaction?.status === 'running' ? 'Compacting the context.' : thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
