@@ -522,7 +522,11 @@ export class DelegationService {
           : result.error ? 'failed' : 'accepted'
       } catch { state = 'failed' }
       if (state === 'failed') this.fail(delegationId, this.dispatchRefusals.get(delegationId) ?? 'provider', true)
-      else this.accept(delegationId, state)
+      else {
+        this.accept(delegationId, state)
+        // An unconfirmed brief reads `unknown` until a snapshot proves it either way, and the delegating thread is told so.
+        if (this.record(delegationId)?.deliveryState === 'uncertain') this.changed(delegationId)
+      }
     } finally {
       this.dispatchRefusals.delete(delegationId)
       this.sending.delete(record.delegatedThreadId)
@@ -592,6 +596,16 @@ export class DelegationService {
       .map(threadId => this.options.control.commandFromDelegation({ type: 'interrupt', threadId }, () => { if (this.closed) throw new Error('Sotto is stopping.') })))
   }
 
+  /**
+   * Whether a brief whose delivery was not confirmed can no longer be proved delivered (ADR-0058, ADR-0073): no send of
+   * it is on its way, the coordinator holds nothing unresolved for its thread, the thread is not working, and its own
+   * message never showed there. Until then it holds its start's slot, as Watcher's uncertain start holds its
+   * reservation while its delivery is unresolved; after, it reads `unknown`, is never sent again, and holds nothing.
+   */
+  private unproved(record: DelegationRecord, thread: AgentThread): boolean {
+    return (record.deliveryState === 'dispatching' || record.deliveryState === 'uncertain') && !this.sending.has(record.delegatedThreadId)
+      && !isThreadTurnRunning(thread) && !this.options.control.hasPendingThreadWork(thread.id)
+  }
   private observedThreadIds(): string[] {
     return [...new Set([...this.records.filter(record => this.open(record)).map(record => record.delegatedThreadId), ...this.paused])]
   }
@@ -621,7 +635,14 @@ export class DelegationService {
       if ((record.deliveryState === 'dispatching' || record.deliveryState === 'uncertain') && thread.messages.some(message => message.role === 'user' && message.id === record.messageId)) {
         this.accept(record.id, 'accepted'); changed = true
       }
-      if (record.deliveryState !== 'accepted') continue
+      if (record.deliveryState !== 'accepted') {
+        if (this.unproved(record, thread)) {
+          this.update(record.id, saved => { saved.deliveryState = 'uncertain'; saved.outcome = 'unknown'; saved.outcomeAt = now() })
+          changed = true
+          this.changed(record.id)
+        }
+        continue
+      }
       const seen = watcherTurnOutcome({ messageId: record.messageId, delivery: 'now', ...(record.outcome ? { outcome: record.outcome } : {}) }, thread, messageId => briefs.has(messageId))
       if (!seen || seen.outcome === record.outcome && seen.turnMessageId === record.turnMessageId && seen.replyMessageId === record.replyMessageId) continue
       this.update(record.id, saved => {
