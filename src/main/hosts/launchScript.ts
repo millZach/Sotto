@@ -86,15 +86,16 @@ let claimed = false;
 const resultText = value => JSON.stringify({ v: 1, attempt, version: typeof cfg.version === 'string' && RELEASE.test(cfg.version) ? cfg.version : null, ...value }) + '\n';
 const writeResult = async value => {
   const temporary = resultFile + '.' + process.pid + '.tmp';
-  try { await fs.writeFile(temporary, resultText(value), { mode: 0o600 }); await fs.rename(temporary, resultFile); }
-  catch { await fs.rm(temporary, { force: true }).catch(() => undefined); }
+  try { await fs.writeFile(temporary, resultText(value), { mode: 0o600 }); await fs.rename(temporary, resultFile); return true; }
+  catch { await fs.rm(temporary, { force: true }).catch(() => undefined); return false; }
 };
+// True only when this process claimed the attempt and the host can read what it claimed with: a restart whose status could
+// not be written does not go ahead, since the host would stop with no answer given and no outcome to read after.
 const claim = async value => {
   if (!resultFile) return true;
   try { await fs.writeFile(resultFile + '.' + attempt + '.claim', String(process.pid), { flag: 'wx', mode: 0o600 }); } catch { return false; }
   claimed = true;
-  await writeResult(value);
-  return true;
+  return writeResult(value);
 };
 // Only what the desktop reads of a result goes in the file, so it stays small whatever the result carried.
 const briefly = event => { const kept = {}; for (const key of ['type', 'reason', 'restarted', 'cause', 'hostId', 'pid']) if (event && event[key] !== undefined) kept[key] = event[key]; return kept; };

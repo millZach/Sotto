@@ -238,6 +238,19 @@ describe('a restart a host asked for over its own socket (ADR-0087)', () => {
     expect(await readdir(join(configuration.installPath, 'versions'))).toEqual(expect.not.arrayContaining(['.update-lock']))
   })
 
+  it('does not go ahead when it cannot write that it has passed its checks', async () => {
+    const configuration = await fixture()
+    const old = await launch(configuration)
+    await installNew(configuration, await fakeHost())
+    const resultFile = resultFileOf(configuration)
+    // A folder where the status file goes: the status cannot be written there.
+    await mkdir(resultFile, { recursive: true })
+    expect(last(await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW, resultFile, attempt: ATTEMPT }))).toEqual({ type: 'error', reason: 'restart-not-sent' })
+    expect(alive(old.pid as number)).toBe(true)
+    expect(await pointer(configuration)).toBeNull()
+    expect(await readdir(join(configuration.installPath, 'versions'))).toEqual(expect.not.arrayContaining(['.update-lock']))
+  })
+
   it('records a rollback, and writes nothing to a file outside the data folder or without an attempt', async () => {
     const configuration = await fixture()
     await launch(configuration)
