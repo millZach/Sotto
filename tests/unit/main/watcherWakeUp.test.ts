@@ -1124,3 +1124,17 @@ it('lets a Git read hold only its own thread’s turn end, never a question besi
     else await f.advance(4_000)
   }
 })
+
+it('never wakes Watcher mid-turn when a Git read only sees a pull request’s link again', async () => {
+  const f = fixture(), { move } = gitFixture(f)
+  f.wakes.observe(); await f.advance(2_000)
+  // GitHub's read of the linked pull request's checks wakes Watcher, once.
+  f.checks('failed'); await f.advance(2_000)
+  f.wakes.observe(); await f.advance(5_000)
+  const told = f.delivered.length
+  expect(told).toBeGreaterThan(0)
+  // The worker's tool calls move the working copy; each Git read sees the same link, which is no news.
+  for (const change of [{ changedFiles: 3 }, { insertions: 9 }, { deletions: 1 }, { ahead: 1 }]) { move(change); await f.advance(30_000) }
+  expect(f.delivered).toHaveLength(told)
+  expect(f.wakes.evidence.read(centerTarget).find(fact => fact.source === 'github' && fact.fact === 'pull-request-observed')).toMatchObject({ availability: 'available' })
+})
