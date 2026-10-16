@@ -82,7 +82,7 @@ it('watches without sending, survives request closure and process-state restart,
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   const news = f.service.state().news!.find(event => event.kind === 'needs-user')!
   expect(news).toMatchObject({ requestId: watch.id, target })
-  expect(f.service.wakeDue(news)).toBe(true)
+  expect(f.service.wakeDueAll([news])).toEqual([true])
   await f.control.deliverWakeUp(f.watcherId(), { source: 'watcher', watcher: f.service.state().current!.target, events: [news], omitted: 0 }, { tool: false })
   expect(f.service.wakeReady()).toBe(true)
   // The news, with the standing watch's request, travels beside Sotto's short message.
@@ -90,7 +90,7 @@ it('watches without sending, survives request closure and process-state restart,
   await expect.poll(() => f.workspace.adapters.codex.commands.findLast(command => command.type === 'send' && command.threadId === sessionId)).toMatchObject({
     text: WATCHER_WAKE_UP_PROMPT, watcherNews: expect.stringContaining(`Use requestId ${watch.id}`) })
   expect(await f.call('unwatch_thread', { target })).toMatchObject({ status: 'ok', watched: false })
-  expect(f.service.wakeDue(news)).toBe(false)
+  expect(f.service.wakeDueAll([news])).toEqual([false])
   expect(f.service.state().news).toEqual([])
   expect(f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)?.watched).not.toBe(true)
 })

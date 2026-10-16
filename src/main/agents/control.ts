@@ -1719,17 +1719,24 @@ export class AgentControl {
     const target = this.watcher.current?.target
     return !!target && this.followupStore.peek().items.some(item => item.threadId === target.threadId && isWatcherOnlyWakeUp(item))
   }
-  /** Takes Watcher's hidden wake-up out of its queue and tells Watcher's news how it ended (hiddenWakeUp.ts). */
-  private async settleWatcherWakeUp(item: Pick<QueuedFollowup, 'id' | 'news'>, outcome: HiddenWakeUpOutcome): Promise<void> {
-    await this.followupStore.removeWakeUp(item.id)
-    this.watcherHooks?.wakeUpSettled?.(hiddenEvents(item.news), outcome)
+  /** Takes Watcher's hidden wake-ups out of the queue in one change and tells Watcher's news how they ended (hiddenWakeUp.ts). */
+  private async settleWatcherWakeUp(item: Pick<QueuedFollowup, 'id' | 'news'> | readonly Pick<QueuedFollowup, 'id' | 'news'>[], outcome: HiddenWakeUpOutcome): Promise<void> {
+    const items = Array.isArray(item) ? item : [item]
+    await this.followupStore.removeWakeUp(...items.map(entry => entry.id))
+    this.watcherHooks?.wakeUpSettled?.(items.flatMap(entry => hiddenEvents(entry.news)), outcome)
   }
   async pruneWatcherWakeUps(): Promise<void> {
     if (this.dependencies.watcherEnabled !== true || this.disposed || !this.watcherHooks?.wakeReady?.()) return
-    const items = this.followupStore.peek().items.filter(item => item.news?.some(isWatcherNews) && isWaitingWakeUp(item) && this.wakeUpOutdated(item.threadId, item))
+    // One ask for every queued event, and one change for every outdated wake-up: this runs after every Watcher pass (#1070).
+    const waiting = this.followupStore.peek().items.filter(item => item.news?.some(isWatcherNews) && isWaitingWakeUp(item))
+    const due = this.watcherDue(waiting), items = waiting.filter(item => this.wakeUpOutdated(item.threadId, item, due))
+    if (!items.length) return
     // A hidden wake-up never changes: one whose news moved on goes whole, and what is still true waits for the next one.
-    for (const item of items) await (isWatcherOnlyWakeUp(item) ? this.settleWatcherWakeUp(item, 'withdrawn') : this.pruneWakeUp(item.threadId, item.id))
-    if (items.length) { this.syncFollowups(); this.publish(); this.pumpFollowups() }
+    const hidden = items.filter(isWatcherOnlyWakeUp)
+    if (hidden.length) await this.settleWatcherWakeUp(hidden, 'withdrawn')
+    const rest = items.filter(item => !isWatcherOnlyWakeUp(item))
+    if (rest.length) await this.pruneWakeUps(rest.map(item => item.id))
+    this.syncFollowups(); this.publish(); this.pumpFollowups()
   }
   /**
    * Early start (#769): the user began typing in this thread's composer, so its provider session starts now rather
@@ -2099,24 +2106,42 @@ export class AgentControl {
    * Whether a wake-up holds news that may no longer go: the last line of defence behind withdrawal, so that whatever
    * order a stop, the switch and the queue run in, a babysitting ended quietly or by the switch sends nothing after.
    */
-  private wakeUpOutdated(threadId: string, item: Pick<QueuedFollowup, 'wakeUp' | 'news'>): boolean {
+  private wakeUpOutdated(threadId: string, item: Pick<QueuedFollowup, 'wakeUp' | 'news'>, due = this.watcherDue([item])): boolean {
     const guard = this.wakeUpGuard
     // A resume note goes only while the feature and its setting are on (ADR-0076), so one saved in the queue goes nowhere else.
     return item.wakeUp === true && (item.news ?? []).some(news => isWatcherNews(news)
-      ? this.dependencies.watcherEnabled !== true || news.events.some(event => !this.watcherHooks?.wakeDue?.(event))
+      ? this.dependencies.watcherEnabled !== true || news.events.some(event => !due(event))
       : isRestartNews(news) ? this.restartHooks?.due() !== true
         : guard !== undefined && (!guard.due(threadId, news) || (guard.current !== undefined && JSON.stringify(guard.current(threadId, news)) !== JSON.stringify(news))))
   }
-  private pruneWakeUp(threadId: string, id: string): Promise<void> {
+  /**
+   * Which of these wake-ups' Watcher events may still go, asked of Watcher in one batch. Each ask reads the merged
+   * snapshot, which copies every paired host's shell, and the Watcher record, so asking event by event grew with the
+   * queue (#1070). The answer holds for the synchronous step that asked; a later step asks again.
+   */
+  private watcherDue(items: readonly Pick<QueuedFollowup, 'news'>[]): (event: WatcherEvent) => boolean {
+    const events = this.dependencies.watcherEnabled === true ? items.flatMap(item => item.news?.flatMap(news => isWatcherNews(news) ? news.events : []) ?? []) : []
+    const answers = events.length ? this.watcherHooks?.wakeDueAll?.(events) : undefined
+    const due = new Set(events.filter((_, index) => answers?.[index] === true))
+    return event => due.has(event)
+  }
+  private pruneWakeUps(ids: readonly string[]): Promise<void> {
     const guard = this.wakeUpGuard
-    return this.followupStore.pruneWakeUp(id, news => isWatcherNews(news) ? news.events.length > 0 : isRestartNews(news) ? this.restartHooks?.due() === true : !guard || guard.due(threadId, news),
-      items => queuedWakeUpText(items, { tool: guard?.tool(threadId) ?? false }), news => {
-        // A resume note is no pull request's news: babysitting has nothing to say of it (ADR-0076).
-        if (isRestartNews(news)) return news
-        if (!isWatcherNews(news)) return guard?.current ? guard.current(threadId, news) : news
-        const events = news.events.filter(event => this.dependencies.watcherEnabled === true && this.watcherHooks?.wakeDue?.(event))
-        return events.length ? { ...news, events } : undefined
+    return this.followupStore.pruneWakeUps(ids, items => {
+      // Asked as the store prunes, not before: the queue and Watcher may have moved while earlier writes landed.
+      const due = this.watcherDue(items)
+      return ({ threadId }) => ({
+        due: news => isWatcherNews(news) ? news.events.length > 0 : isRestartNews(news) ? this.restartHooks?.due() === true : !guard || guard.due(threadId, news),
+        word: kept => queuedWakeUpText(kept, { tool: guard?.tool(threadId) ?? false }),
+        transform: news => {
+          // A resume note is no pull request's news: babysitting has nothing to say of it (ADR-0076).
+          if (isRestartNews(news)) return news
+          if (!isWatcherNews(news)) return guard?.current ? guard.current(threadId, news) : news
+          const events = news.events.filter(due)
+          return events.length ? { ...news, events } : undefined
+        },
       })
+    })
   }
   /**
    * The user's Babysit pull request and Stop babysitting on the Pull request surface (ADR-0061 decision 3), from this
@@ -2724,7 +2749,7 @@ export class AgentControl {
         // What babysitting ended since it was told is taken out before the wake-up goes, and the rest goes after.
         this.pumping.add(threadId)
         let pruned = false
-        void this.pruneWakeUp(threadId, first.id).then(() => { pruned = true })
+        void this.pruneWakeUps([first.id]).then(() => { pruned = true })
           .catch(() => { this.state.error = 'Could not save the follow-up queue. The wake-up was not sent.' })
           .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (pruned) this.pumpFollowups() })
         continue
@@ -2794,7 +2819,7 @@ export class AgentControl {
             const outcome = error instanceof WakeUpNoLongerDue ? 'withdrawn' : sent || item?.messageId && this.thread(threadId).messages.some(m => m.role === 'user' && m.id === item.messageId) ? 'told'
               : this.outbox.some(o => o.id === item?.commandId) ? undefined : 'failed'
             await (outcome ? this.settleWatcherWakeUp(first, outcome) : this.followupStore.settle(first.id, 'uncertain', failure))
-          } else if (claimed && error instanceof WakeUpNoLongerDue) { await this.pruneWakeUp(threadId, first.id); requeued = true }
+          } else if (claimed && error instanceof WakeUpNoLongerDue) { await this.pruneWakeUps([first.id]); requeued = true }
           else if (claimed || first.watcherOperationId) {
             const item = this.followupStore.get().items.find(i => i.id === first.id)
             const accepted = item?.messageId && this.thread(threadId).messages.some(m => m.role === 'user' && m.id === item.messageId)

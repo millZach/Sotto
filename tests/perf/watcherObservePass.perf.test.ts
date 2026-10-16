@@ -11,6 +11,8 @@
  * - `observe`: one pass of Watcher's wake-up observation (`WatcherWakeUp.observe`), which main runs on every publish
  *   while Watcher is on, including every streamed chunk on this computer.
  * - `state`: one room state read (`WatcherService.state`), which every room publication and Get builds.
+ * - `prune`: one prune of queued Watcher wake-ups (`AgentControl.pruneWatcherWakeUps`), which main runs after every pass
+ *   while news waits in the queue (#1070). It is awaited, so it includes the queue write and the publish after it.
  *
  * For each it reports wall time and process CPU per call, how often the paired host's whole cached shell was read
  * (`shell()`) and cloned, how often the remote host list was asked for, and how often the whole Watcher record was cloned.
@@ -30,6 +32,9 @@ import { LocalHostService } from '../../src/main/agents/hostService'
 import { PairedClients } from '../../src/main/agents/pairing'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { WatcherService } from '../../src/main/agents/watcher'
+import type { FollowupStore, WordWakeUp } from '../../src/main/agents/followups'
+import { isWatcherNews, queuedWakeUpText } from '../../src/main/agents/wakeUp'
+import type { WatcherEvent } from '../../src/shared/watcherNews'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -38,7 +43,9 @@ import { stack } from '../fixtures/windowThreadShellPipeline'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 
 const ROUNDS = 3
-const ITERATIONS = { observe: 3, state: 10 } as const
+const ITERATIONS = { observe: 3, state: 10, prune: 3 } as const
+/** Queued Watcher wake-ups the prune reads, one per thread, as a queue holds one waiting wake-up per thread. */
+const WAKE_UPS = 8
 const STARTS = 6
 
 describe.skipIf(!PERF_BENCH)('Watcher observation pass and room state with a paired host (#1023)', () => {
@@ -115,6 +122,13 @@ describe.skipIf(!PERF_BENCH)('Watcher observation pass and room state with a pai
         }
         return Reflect.apply(nativeClone, globalThis, [value, options]) as Value
       }
+      /** One round's figures per call: its time and the reads counted while it was measured. */
+      const row = (iterations: number, wallMs: number, cpuMs: number): Record<string, number> => {
+        const per = (value: number) => Math.round(value / iterations * 100) / 100
+        return { wallMsPerCall: per(wallMs), cpuMsPerCall: per(cpuMs), shellCallsPerCall: per(counts.shellCalls), shellClonesPerCall: per(counts.shellClones),
+          hostListsPerCall: per(counts.hostLists), recordClonesPerCall: per(counts.recordClones) }
+      }
+      const medians = (rows: Record<string, number>[]) => Object.fromEntries(Object.keys(rows[0]!).map(key => [key, median(rows.map(item => item[key]!))]))
       const accepted = () => watcher.state().receipts.filter(item => item.action === 'start' && item.deliveryState === 'accepted').length
       const startsBefore = accepted()
       const results: Record<string, unknown> = {}
@@ -130,15 +144,38 @@ describe.skipIf(!PERF_BENCH)('Watcher observation pass and room state with a pai
               else expect(watcher.state().watchedThreads).toHaveLength(STARTS)
             }
           } finally { measuring = false }
-          const used = process.cpuUsage(cpu), wallMs = performance.now() - started
-          const per = (value: number) => Math.round(value / ITERATIONS[method] * 100) / 100
-          rows.push({ wallMsPerCall: per(wallMs), cpuMsPerCall: per((used.user + used.system) / 1000),
-            shellCallsPerCall: per(counts.shellCalls), shellClonesPerCall: per(counts.shellClones),
-            hostListsPerCall: per(counts.hostLists), recordClonesPerCall: per(counts.recordClones) })
+          const used = process.cpuUsage(cpu)
+          rows.push(row(ITERATIONS[method], performance.now() - started, (used.user + used.system) / 1000))
         }
-        const medians = Object.fromEntries(Object.keys(rows[0]!).map(key => [key, median(rows.map(row => row[key]!))]))
-        results[method] = { iterations: ITERATIONS[method], rounds: ROUNDS, rows, medians }
+        results[method] = { iterations: ITERATIONS[method], rounds: ROUNDS, rows, medians: medians(rows) }
       }
+      // Queued wake-ups (#1070): news waits in a busy Watcher thread's queue, and main prunes the queue after every pass.
+      // Each wake-up holds all the news still due and one event for a request Watcher does not have, which each prune drops.
+      const due = (wakes as unknown as { news(): WatcherEvent[] }).news(), outdated: WatcherEvent = { ...due[0]!, id: 'generated-outdated', requestId: randomUUID() }
+      const store = (f.control as unknown as { followupStore: FollowupStore }).followupStore
+      const word: WordWakeUp = news => queuedWakeUpText(news, { tool: false })
+      const queue = async () => {
+        for (let index = 0; index < WAKE_UPS; index++) await store.queueWakeUp(`generated-watcher-${index}`,
+          { source: 'watcher', watcher: { hostId: f.control.hostId()!, threadId: `generated-watcher-${index}` }, events: [...due, outdated], omitted: 0 }, word)
+      }
+      const rows: Record<string, number>[] = []
+      for (let round = 0; round < ROUNDS; round++) {
+        for (const name of Object.keys(counts) as (keyof typeof counts)[]) counts[name] = 0
+        let wallMs = 0, cpuMs = 0
+        for (let index = 0; index < ITERATIONS.prune; index++) {
+          await queue()
+          measuring = true
+          const cpu = process.cpuUsage(), started = performance.now()
+          try { await f.control.pruneWatcherWakeUps() } finally { measuring = false }
+          const used = process.cpuUsage(cpu)
+          wallMs += performance.now() - started; cpuMs += (used.user + used.system) / 1000
+        }
+        rows.push(row(ITERATIONS.prune, wallMs, cpuMs))
+      }
+      const queued = store.peek().items.filter(item => item.wakeUp)
+      expect(queued).toHaveLength(WAKE_UPS)
+      for (const item of queued) expect(item.news?.flatMap(news => isWatcherNews(news) ? news.events.map(event => event.id) : [])).toEqual(due.map(event => event.id))
+      results.prune = { iterations: ITERATIONS.prune, rounds: ROUNDS, wakeUps: WAKE_UPS, eventsPerWakeUp: due.length + 1, rows, medians: medians(rows) }
       console.log(`Watcher observe pass: ${JSON.stringify({ shape: { remoteThreads: cache.host.threads.length, remoteFinished: finished,
         remoteAcceptedStarts: startsBefore, remoteAcceptedStartsAfter: accepted() }, ...results })}`)
     } catch (error) { failures.push(error) }

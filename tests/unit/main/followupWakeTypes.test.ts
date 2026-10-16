@@ -31,7 +31,7 @@ it('requires stored-news callbacks to handle both babysitting and Watcher news',
     // @ts-expect-error Removing babysitting may leave only Watcher news to word.
     void store.withdrawWakeUp('thread', undefined, word)
     // @ts-expect-error Stored news and transformations must accept every source.
-    void store.pruneWakeUp('item', (item: BabysitNews) => item.ended === null, word, (item: BabysitNews) => item)
+    void store.pruneWakeUps(['item'], () => () => ({ due: (item: BabysitNews) => item.ended === null, word, transform: (item: BabysitNews) => item }))
   }
   expectTypeOf(rejectNarrowCallbacks).toBeFunction()
 })
@@ -72,7 +72,7 @@ it.each(['paused', 'failed'] as const)('retains a %s wake-up explanation when pr
   const id = store.peek().items[0]!.id, error = 'Synthetic explanation for the held queue'
   if (status === 'paused') await store.pause('thread', error)
   else { await store.claim(id); await store.settle(id, 'failed', error) }
-  await store.pruneWakeUp(id, item => isBabysitNews(item) && item.pullRequest.number === 2, word)
+  await store.pruneWakeUps([id], () => () => ({ due: item => isBabysitNews(item) && item.pullRequest.number === 2, word }))
   expect(store.peek().items[0]).toMatchObject({ id, status, error, news: [babysit(2)] })
   expect(store.peek().items[0]!.text).toBe(word([babysit(2)]))
   await store.resume('thread')

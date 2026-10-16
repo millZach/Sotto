@@ -25,7 +25,8 @@ export interface WatcherControlHooks {
   guardOperation(operationId: string): void
   preserveUserQueue(threadId: string): boolean
   watchedThreadIds?(): string[]
-  wakeDue?(event: WatcherEvent): boolean
+  /** Whether each queued event may still go, answered in one pass that reads the snapshot and the record once. */
+  wakeDueAll?(events: readonly WatcherEvent[]): boolean[]
   wakeReady?(): boolean
   /** Watcher's hidden wake-up left its queue with this outcome, holding these events (hiddenWakeUp.ts). */
   wakeUpSettled?(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void
