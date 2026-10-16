@@ -286,6 +286,8 @@ export class AgentControl {
   /** Delegation between threads (ADR-0081), given only while the Owl feature is on. */
   private delegationHooks: DelegationControlHooks | undefined
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
+  /** Delegation's own commands, among the machine commands above: they never reach delegation as the user's or Watcher's. */
+  private readonly delegationOrigins = new WeakSet<object>()
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
     const identities = [...this.watcher.current ? [this.watcher.current] : [], ...this.watcher.history,
       ...this.watcher.creation ? [this.watcher.creation.identity] : []]
@@ -328,7 +330,7 @@ export class AgentControl {
    */
   commandFromDelegation(command: DelegationCommand, guard: () => void): Promise<AgentState> {
     if (!this.delegationHooks || !['create-thread', 'manual-send', 'interrupt'].includes(command.type)) throw new Error('Delegation cannot answer requests or change permissions.')
-    const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard })
+    const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard }); this.delegationOrigins.add(parsed)
     return this.admitCommandShell(parsed)
   }
   /** Whether the user has words or images waiting in this thread's composer: typing there pauses delegated sends (ADR-0081). */
@@ -2395,8 +2397,9 @@ export class AgentControl {
       if (!this.watcherOrigins.has(command)) this.watcherHooks?.userCommand(command, explicitThreadId ?? implicitThreadId ?? undefined, answersQuestion)
     } catch (error) { return Promise.resolve({ ...this.shell(), error: error instanceof Error ? error.message : 'Watcher could not accept this instruction. Nothing was sent.' }) }
     // The user's own send pauses delegated sends to the thread, and their Stop stops the threads it delegated to (ADR-0081).
-    // Delegation only takes note here: it never refuses the user's command.
-    if (!this.watcherOrigins.has(command)) {
+    // Watcher's Stop of a thread stops them too, as the user's does; its sends pause nothing. Delegation only takes note
+    // here: it never refuses the command.
+    if (!this.watcherOrigins.has(command) || command.type === 'interrupt' && !this.delegationOrigins.has(command)) {
       try { this.delegationHooks?.userCommand(command, explicitThreadId ?? implicitThreadId ?? undefined, answersQuestion) } catch { /* The next snapshot reconciles it. */ }
     }
     // Reserve before the command waits for its lane. This token is distinct from the native dispatch token.
