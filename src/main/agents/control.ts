@@ -897,16 +897,18 @@ export class AgentControl {
    */
   private presentedMessages(thread: AgentThread): readonly AgentMessage[] {
     if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') return thread.messages
-    // An unchanged history is shown as the same array, so a publish neither copies it again nor rebuilds what reads it.
+    // An unchanged history is shown as the same array, so a publish neither copies it again nor rebuilds what reads it. Only
+    // a history a window holds is kept: an offscreen read keeps no text, as the display itself keeps none (ADR-0073).
+    const retained = this.watcherMessageDisplay?.isRetained(this.state.host.hostId, thread.id) ?? true
     const signature = `${this.watcherDisplayVersion}|${this.state.host.hostId ?? ''}|${historySignature(thread.messages)}`
-    const held = this.presentedCache.get(thread.messages)
+    const held = retained ? this.presentedCache.get(thread.messages) : undefined
     if (held?.signature === signature) return held.messages
     const messages = watcherWakeUpsAsShown(this.watcherMessageDisplay?.project(this.state.host.hostId, thread.id, thread.messages) ?? thread.messages)
-    this.presentedCache.set(thread.messages, { signature, messages })
+    if (retained) this.presentedCache.set(thread.messages, { signature, messages })
     return messages
   }
   /** Each Watcher history's presented messages, by the history they were made from, and what they were made under. */
-  private readonly presentedCache = new WeakMap<readonly AgentMessage[], { signature: string; messages: readonly AgentMessage[] }>()
+  private presentedCache = new WeakMap<readonly AgentMessage[], { signature: string; messages: readonly AgentMessage[] }>()
   /** Each presented history's shown text lengths, for detailRevision. */
   private readonly shownLengths = new WeakMap<readonly AgentMessage[], ReadonlyMap<string, number>>()
   /** Changes whenever the Watcher message display learns new requests, which changes what it shows. */
@@ -1362,7 +1364,7 @@ export class AgentControl {
   private broadcastDetail(): void {
     if (!this.detailListeners.size && !this.watcherMessageDisplay && this.dependencies.streamingPublishCost !== true) return
     const targets = this.detailTargets()
-    this.watcherMessageDisplay?.retain(this.state.host.hostId, targets)
+    if (this.watcherMessageDisplay?.retain(this.state.host.hostId, targets)) this.presentedCache = new WeakMap()
     if (!this.detailListeners.size && this.dependencies.streamingPublishCost !== true) return
     for (const threadId of this.publishedDetail.keys()) if (!targets.includes(threadId)) this.publishedDetail.delete(threadId)
     for (const threadId of this.detailSnapshots.keys()) if (!targets.includes(threadId)) this.detailSnapshots.delete(threadId)
@@ -4089,7 +4091,7 @@ export class AgentControl {
     this.listeners.clear()
     this.detailListeners.clear()
     this.detailSnapshots.clear()
-    this.watcherMessageDisplay?.retain(undefined, [])
+    if (this.watcherMessageDisplay?.retain(undefined, [])) this.presentedCache = new WeakMap()
     this.certifiedDetailRevisions.clear()
     this.certifiedDetailCounters.clear()
   }

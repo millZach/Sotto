@@ -29,9 +29,17 @@ export class WatcherMessageDisplay {
   private readonly cache = new Map<string, Map<string, { wire: string; proof: WatcherDisplayPrompt; text: string }>>()
 
   /** Text belongs only to the windows still held; closing one keeps its text-free presentation evidence. */
-  retain(hostId: string | undefined, threadIds: readonly string[]): void {
+  /** Returns whether any thread stopped being held, whose text a caller keeping it must let go of too. */
+  retain(hostId: string | undefined, threadIds: readonly string[]): boolean {
+    const previous = this.retained
     this.retained = new Set(hostId === undefined ? [] : threadIds.map(threadId => ownerKey(hostId, threadId)))
     for (const key of this.cache.keys()) if (!this.retained.has(key)) this.cache.delete(key)
+    return [...previous].some(key => !this.retained.has(key))
+  }
+
+  /** Whether a window still holds this thread, so its shown text may be kept between reads. */
+  isRetained(hostId: string | undefined, threadId: string): boolean {
+    return hostId !== undefined && this.retained.has(ownerKey(hostId, threadId))
   }
 
   update(requests: readonly WatcherRequest[]): void {
