@@ -3,9 +3,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
 import { WATCHER_QUIET_MS, watcherOverview } from '../../../src/shared/watcherOverview'
-import type { WatcherEvent, WatcherNews } from '../../../src/shared/watcherNews'
+import type { WatcherNews } from '../../../src/shared/watcherNews'
 import type { WatcherRecord } from '../../../src/shared/watcher'
-import { WatcherWakeUp, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
+import { WatcherWakeUp, WAKE_UP_TRIES, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
@@ -495,21 +495,25 @@ it('holds a Git-backed turn end for the read its finish starts, and tells what t
   expect(f.delivered).toHaveLength(2)
 })
 
-it('wakes at once for a pull request change during a running turn and keeps waiting news current without another wake-up', async () => {
-  const waiting: WatcherNews[] = []
-  const f = fixture(true, undefined, { waitingEvents: () => waiting.flatMap(news => news.events) }), { move } = gitFixture(f)
+it('wakes at once for a pull request change during a running turn, and tells it again as it stands if it was withdrawn as the working copy moved', async () => {
+  let waking = false
+  const f = fixture(true, undefined, { wakeUpQueued: () => waking }), { move } = gitFixture(f)
   f.wakes.observe(); await f.advance(2_000)
   f.checks('failed'); await f.advance(2_000)
   expect(kinds(f.delivered[0])).toEqual(['evidence-changed'])
-  // Watcher is busy, so that news waits in its queue. The working copy moving keeps it current rather than stale.
-  waiting.push(f.delivered[0]!)
-  move({ changedFiles: 6 }); await f.advance(2_000)
-  expect(f.delivered).toHaveLength(2)
+  // Watcher is busy, so that news waits in its hidden wake-up, which never changes. The working copy moving saves nothing.
+  waking = true
+  move({ changedFiles: 6 }); await f.advance(30_000)
+  expect(f.delivered).toHaveLength(1)
   expect(f.wakes.due(f.delivered[0]!.events[0]!)).toBe(false)
+  // The wake-up is withdrawn, its news no longer true as it stood: the pull request's news is told again, as it stands now.
+  waking = false; f.wakes.settled(f.delivered[0]!.events, 'withdrawn'); await f.advance(2_000)
+  expect(f.delivered.map(kinds)).toEqual([['evidence-changed'], ['evidence-changed']])
   expect(f.wakes.due(f.delivered[1]!.events[0]!)).toBe(true)
+  expect(f.wakes.needsAttention(f.delivered[1]!.events)).toBe(true)
   // Once it has gone, the working copy moving is held again.
-  waiting.splice(0)
-  move({ changedFiles: 8 }); await f.advance(2_000)
+  f.wakes.settled(f.delivered[1]!.events, 'told')
+  move({ changedFiles: 8 }); await f.advance(30_000)
   expect(f.delivered).toHaveLength(2)
 })
 
@@ -633,12 +637,10 @@ it.each([true, false])('retains waiting checkpoint news during incomplete restar
   f.wakes.checkpoint(checkpoint(1)); await f.advance(2_000)
   const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
   if (!savedMetadata) f.record.wakeEventIds = []
-  // What the queue keeps of which waiting events needed Watcher (hiddenWakeUp.ts).
-  const attention = f.wakes.attentionOf(f.delivered.flatMap(news => news.events)).all
   f.wakes.close()
   const retained: boolean[] = [], deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
   const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
-    waitingEvents: () => f.delivered.flatMap(news => news.events), waitingAttention: () => attention, deliver, remember: async () => undefined,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver, remember: async () => undefined,
     prune: async () => { retained.push(recovered.due(saved)) }, schedule: callback => { callback(); return () => undefined } })
   cleanups.push(() => recovered.close())
   recovered.start(); await recovered.drained()
@@ -649,7 +651,12 @@ it.each([true, false])('retains waiting checkpoint news during incomplete restar
   expect(deliver).not.toHaveBeenCalled()
   recovered.checkpoint(checkpoint(2)); await recovered.drained()
   expect(recovered.due(saved)).toBe(false)
+  // A thread's own facts keep no queued news current by themselves. Withdrawn, the turn end goes again with them as they stand.
+  expect(deliver).not.toHaveBeenCalled()
+  recovered.settled(f.delivered.flatMap(news => news.events), 'withdrawn'); await recovered.drained()
   expect(deliver).toHaveBeenCalledTimes(1)
+  expect(deliver.mock.calls[0]![0].events.map(event => event.kind)).toEqual(['turn-finished', 'evidence-changed'])
+  expect(recovered.due(deliver.mock.calls[0]![0].events[1]!)).toBe(true)
 })
 
 it('invalidates an explicitly unlinked PR during incomplete evidence recovery', async () => {
@@ -661,7 +668,7 @@ it('invalidates an explicitly unlinked PR during incomplete evidence recovery', 
   await f.advance(2_000); f.wakes.close()
   const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
   const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
-    waitingEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
     prune: async () => undefined, schedule: () => () => undefined })
   cleanups.push(() => recovered.close())
   recovered.start()
@@ -684,7 +691,7 @@ it('keeps waiting checkpoint news through recovery of a full evidence projection
   const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
   expect(saved.evidenceIds).toHaveLength(100)
   const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
-    waitingEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
     prune: async () => undefined, schedule: () => () => undefined })
   cleanups.push(() => recovered.close())
   recovered.start()
@@ -704,7 +711,7 @@ it('invalidates newly linked PR news during incomplete recovery', async () => {
   await f.advance(2_000); f.wakes.close()
   const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
   const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
-    waitingEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
     prune: async () => undefined, schedule: () => () => undefined })
   cleanups.push(() => recovered.close())
   recovered.start(); expect(recovered.due(saved)).toBe(true)
@@ -721,7 +728,7 @@ it('supersedes waiting news when a newer saved checkpoint loads after its refere
   f.wakes.checkpoint(read); await f.advance(2_000); f.wakes.close()
   const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
   const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
-    waitingEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver: async () => undefined, remember: async () => undefined,
     prune: async () => undefined, schedule: () => () => undefined })
   cleanups.push(() => recovered.close())
   recovered.start(); expect(recovered.due(saved)).toBe(true)
@@ -775,12 +782,10 @@ it('supersedes partially restored paired news only when a known owning-host fact
   owner.pullRequest(target, { url: 'https://github.com/o/r/pull/1', head: 'head', observedAt: capture.observedAt, availability: 'available', checks: 'passed' })
   f.wakes.start(); f.wakes.pairedEvidence(remoteHost, owner.read(target, true, f.now())); await f.advance(2_000)
   const saved = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
-  // What the queue keeps of which waiting events needed Watcher (hiddenWakeUp.ts).
-  const attention = f.wakes.attentionOf(f.delivered.flatMap(news => news.events)).all
   f.wakes.close()
   const deliver = vi.fn<(news: WatcherNews) => Promise<void>>(async () => undefined)
   const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
-    waitingEvents: () => f.delivered.flatMap(news => news.events), waitingAttention: () => attention, deliver, remember: async () => undefined,
+    restoredEvents: () => f.delivered.flatMap(news => news.events), deliver, remember: async () => undefined,
     prune: async () => undefined, schedule: callback => { callback(); return () => undefined } })
   cleanups.push(() => recovered.close())
   recovered.start()
@@ -795,8 +800,12 @@ it('supersedes partially restored paired news only when a known owning-host fact
   recovered.pairedEvidence(remoteHost, owner.read(target, true, f.now()).filter(fact => fact.source === 'checkpoint'))
   await recovered.drained()
   expect(recovered.due(saved)).toBe(false)
+  // Its wake-up never changes: withdrawn, the pull request's news is told again as it stands, still needing Watcher.
+  expect(deliver).not.toHaveBeenCalled()
+  recovered.settled(f.delivered.flatMap(news => news.events), 'withdrawn'); await recovered.drained()
   expect(deliver).toHaveBeenCalledTimes(1)
   expect(deliver.mock.calls[0]![0].events.every(event => event.target.hostId === remoteHost)).toBe(true)
+  expect(recovered.needsAttention(deliver.mock.calls[0]![0].events)).toBe(true)
 })
 
 it('removes paired PR facts and Landing only after the connected owning roster explicitly unlinks it', async () => {
@@ -924,11 +933,11 @@ it('owes nothing for a turn that a new turn replaced', async () => {
   expect(turnKinds(f.delivered)).toEqual(['turn-finished', 'turn-finished'])
 })
 
-function restarted(f: ReturnType<typeof fixture>, waitingEvents?: WatcherWakeOptions['waitingEvents']) {
+function restarted(f: ReturnType<typeof fixture>, restoredEvents?: WatcherWakeOptions['restoredEvents']) {
   f.wakes.close()
   const delivered: WatcherNews[] = []
   const recovered = new WatcherWakeUp({ snapshot: () => f.snapshot, record: () => f.record, canDeliver: () => true, now: f.now,
-    deliver: async news => { delivered.push(structuredClone(news)) }, prune: async () => undefined, ...waitingEvents ? { waitingEvents } : {},
+    deliver: async news => { delivered.push(structuredClone(news)) }, prune: async () => undefined, ...restoredEvents ? { restoredEvents } : {},
     remember: async ids => { f.record.wakeEventIds = [...f.record.wakeEventIds ?? [], ...ids] }, schedule: callback => { callback(); return () => undefined } })
   cleanups.push(() => recovered.close())
   return { recovered, delivered }
@@ -1097,14 +1106,66 @@ it('tells news afresh once its wake-up is let go with its send unknown, and only
   f.wakes.observe(); await f.advance(10_000)
   expect(f.delivered).toHaveLength(1)
   // The queue let that wake-up go without knowing whether it was sent; it is never sent twice, so its news is told anew.
-  f.wakes.forget(f.delivered[0]!.events)
-  f.wakes.observe(); await f.advance(2_000)
+  f.wakes.settled(f.delivered[0]!.events, 'unknown'); await f.advance(2_000)
   expect(f.delivered).toHaveLength(2)
   expect(f.delivered[1]!.events.map(event => [event.kind, event.turnId])).toEqual([['turn-finished', 'turn-1']])
   // News that is no longer true stays untold: the thread has started its next turn.
   f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }
-  f.wakes.forget(f.delivered[1]!.events); f.wakes.observe(); await f.advance(10_000)
+  f.wakes.settled(f.delivered[1]!.events, 'unknown'); await f.advance(10_000)
   expect(f.delivered).toHaveLength(2)
+})
+
+it('tries news observed afresh after unknown sends a bounded number of times, then only with news that needs Watcher', async () => {
+  const f = fixture()
+  finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  for (let miss = 1; miss < WAKE_UP_TRIES; miss++) { f.wakes.settled(f.delivered.at(-1)!.events, 'unknown'); await f.advance(2_000) }
+  expect(f.delivered).toHaveLength(WAKE_UP_TRIES)
+  // The last try missed too: what it held is observed afresh, and waits.
+  f.wakes.settled(f.delivered.at(-1)!.events, 'unknown'); await f.advance(60_000)
+  expect(f.delivered).toHaveLength(WAKE_UP_TRIES)
+  f.thread.requests = [{ id: 'card', kind: 'question', text: 'secret', options: [] }]; f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered.map(kinds).at(-1)!.sort()).toEqual(['needs-user', 'turn-finished'])
+  // One that reaches Watcher starts the count again.
+  f.wakes.settled(f.delivered.at(-1)!.events, 'told')
+  f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.wakes.observe()
+  finish(f.thread); f.thread.lastTurn = { id: 'turn-2', status: 'completed' }; f.wakes.observe(); await f.advance(2_000)
+  f.wakes.settled(f.delivered.at(-1)!.events, 'unknown'); await f.advance(2_000)
+  expect(turnKinds(f.delivered.slice(-2))).toEqual(['turn-finished', 'turn-finished'])
+})
+
+it('keeps news that comes while Watcher’s hidden wake-up exists for the next one, and holds a failed one’s news for news that needs Watcher or its rest', async () => {
+  let waking = false
+  const f = fixture(true, undefined, { wakeUpQueued: () => waking })
+  const watcher: AgentThread = { ...structuredClone(f.thread), id: f.record.current!.target.threadId, kind: 'watcher', title: 'Watcher', status: 'idle', lastTurn: { id: 'w-1', status: 'completed' } }
+  f.snapshot.threads.push(watcher)
+  finish(f.thread); f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(1)
+  // It is being sent when a question comes: the question waits, saving nothing, and folds into nothing.
+  waking = true
+  f.thread.requests = [{ id: 'card', kind: 'question', text: 'secret', options: [] }]; f.wakes.observe(); await f.advance(10_000)
+  expect(f.delivered).toHaveLength(1)
+  // The send surely did not go. The question is news it did not carry, so the next goes with both.
+  waking = false; f.wakes.settled(f.delivered[0]!.events, 'failed'); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(2)
+  expect(f.delivered[1]!.events.map(event => event.kind).sort()).toEqual(['needs-user', 'turn-finished'])
+  // That one fails with nothing new beside it: its news waits for Watcher to come to rest.
+  f.wakes.settled(f.delivered[1]!.events, 'failed'); await f.advance(60_000)
+  expect(f.delivered).toHaveLength(2)
+  watcher.status = 'running'; watcher.lastTurn = { id: 'w-2', status: 'running' }; f.wakes.observe(); await f.advance(10_000)
+  watcher.status = 'idle'; watcher.lastTurn = { id: 'w-2', status: 'completed' }; f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(3)
+  // That made the third miss in a row: past the bound, Watcher's rest makes no more, and only news that needs it does.
+  expect(WAKE_UP_TRIES).toBe(3)
+  f.wakes.settled(f.delivered.at(-1)!.events, 'failed')
+  watcher.status = 'running'; f.wakes.observe(); watcher.status = 'idle'; f.wakes.observe(); await f.advance(60_000)
+  expect(f.delivered).toHaveLength(3)
+  f.thread.requests.push({ id: 'card-2', kind: 'question', text: 'secret', options: [] }); f.wakes.observe(); await f.advance(2_000)
+  expect(f.delivered).toHaveLength(4)
+  // A thread's own facts are no such news: they never make one by themselves.
+  f.wakes.settled(f.delivered.at(-1)!.events, 'failed')
+  f.wakes.checkpoint({ threadId: f.thread.id, checkpointId: 'capture', observedAt: new Date(f.now()).toISOString(), availability: 'available', changedFiles: 4 })
+  await f.advance(60_000)
+  expect(f.delivered).toHaveLength(4)
 })
 
 it('lets a Git read hold only its own thread’s turn end, never a question beside it', async () => {
@@ -1172,76 +1233,67 @@ it('tells quiet and pull request news afresh once their wake-up is let go with i
   expect(checks).toHaveLength(1)
   const told = f.delivered.length
   // Nothing about the thread changes; only the wake-up that carried this news was let go.
-  f.wakes.forget([...quiet, ...checks]); f.wakes.observe(); await f.advance(2_000)
+  f.wakes.settled([...quiet, ...checks], 'unknown'); await f.advance(2_000)
   const again = f.delivered.slice(told).flatMap(news => news.events)
   expect(again.filter(event => event.kind === 'quiet')).toHaveLength(1)
   expect(again.filter(event => event.kind === 'evidence-changed')).toHaveLength(1)
   expect(f.wakes.needsAttention(again)).toBe(true)
 })
 
-it('saves nothing while a waiting wake-up holds only a thread’s own facts, and tells them with the next news that needs Watcher', async () => {
-  const waiting: WatcherEvent[] = []
-  const f = fixture(true, undefined, { waitingEvents: () => waiting }), { move } = gitFixture(f)
+it('never wakes Watcher with a thread’s own facts alone, while its hidden wake-up is on its way or after it was told', async () => {
+  let waking = false
+  const f = fixture(true, undefined, { wakeUpQueued: () => waking }), { move } = gitFixture(f)
   f.wakes.observe(); await f.advance(2_000)
+  f.checks('failed'); await f.advance(2_000)
+  // The thread's own record of the link is read on its next observation, as part of that same pull request's news.
+  f.wakes.observe(); await f.advance(5_000)
+  f.delivered.splice(0, f.delivered.length - 1)
+  expect(f.delivered.map(kinds)).toEqual([['evidence-changed']])
+  // The worker's tool calls move the working copy while that wake-up is sent, and after it is told. None of it wakes Watcher.
+  waking = true
+  for (const change of [{ changedFiles: 3 }, { insertions: 9 }]) { move(change); await f.advance(30_000) }
+  waking = false; f.wakes.settled(f.delivered[0]!.events, 'told')
+  for (const change of [{ deletions: 1 }, { ahead: 1 }]) { move(change); await f.advance(30_000) }
+  expect(f.delivered).toHaveLength(1)
+  // They ride with the turn's end.
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }; f.wakes.observe(); await f.advance(5_000)
-  // What is left waiting in Watcher's queue is that turn's working copy alone, as after a prune.
-  waiting.push(...f.delivered.at(-1)!.events.filter(event => event.kind === 'evidence-changed'))
-  expect(f.wakes.needsAttention(waiting)).toBe(false)
-  const saves = f.deliver.mock.calls.length
-  // The next turn's tool calls move the working copy. Each keeps that news current in memory, and saves nothing.
-  f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.wakes.observe()
-  for (const change of [{ changedFiles: 3 }, { insertions: 9 }, { deletions: 1 }, { ahead: 1 }]) { move(change); await f.advance(30_000) }
-  expect(f.deliver.mock.calls.length).toBe(saves)
-  // A question is news that needs Watcher: it goes, and the thread's current facts go with it.
-  f.thread.requests = [{ id: 'card', kind: 'question', text: 'secret', options: [] }]; f.wakes.observe(); await f.advance(2_000)
-  expect(f.deliver.mock.calls.length).toBe(saves + 1)
-  expect(f.delivered.at(-1)!.events.map(event => event.kind).sort()).toEqual(['evidence-changed', 'needs-user'])
-  expect(f.delivered.at(-1)!.events.find(event => event.kind === 'evidence-changed')!.revision)
-    .toBe(observationDigest(f.wakes.evidence.read(centerTarget).map(fact => fact.id).sort()))
+  expect(f.delivered.map(kinds)).toEqual([['evidence-changed'], ['turn-finished', 'evidence-changed']])
+  expect(f.wakes.needsAttention(f.delivered[1]!.events.filter(event => event.kind === 'evidence-changed'))).toBe(false)
 })
 
 it('works out news only for watched threads', async () => {
-  const waiting = vi.fn((): WatcherEvent[] => [])
-  const f = fixture(true, undefined, { waitingEvents: waiting }), { move } = gitFixture(f)
+  const f = fixture(), { move } = gitFixture(f)
   // A thread no request or watch names: its facts stay current, and no news is worked out for it.
   const other: AgentThread = { ...structuredClone(f.thread), id: 'unwatched', title: 'Unwatched' }
   f.snapshot.threads.push(other)
-  const digest = vi.spyOn(f.wakes.evidence, 'digest'); waiting.mockClear()
+  const digest = vi.spyOn(f.wakes.evidence, 'digest')
   for (let n = 0; n < 5; n++) { other.messages = [{ id: `m-${n}`, role: 'assistant', text: 'x', createdAt: centerTime }]; f.wakes.observe() }
   expect(digest.mock.calls.filter(([target]) => target.threadId === 'unwatched')).toEqual([])
   void move
 })
 
-it('keeps which restored evidence needed Watcher from the queue, never guessing that a thread’s own facts did', async () => {
-  const seed = fixture(), { move } = gitFixture(seed)
-  seed.wakes.observe(); await seed.advance(2_000)
-  seed.checks('failed'); await seed.advance(2_000)
-  const pullRequest = seed.delivered.at(-1)!.events.find(event => event.kind === 'evidence-changed')!
-  seed.thread.status = 'idle'; seed.thread.lastTurn = { id: 'turn-1', status: 'completed' }; move({ changedFiles: 4 }); seed.wakes.observe(); await seed.advance(5_000)
-  const local = seed.delivered.at(-1)!.events.find(event => event.kind === 'evidence-changed')!
-  seed.wakes.close()
-  // After a restart the queue says which of its events needed Watcher when observed; the rest are a thread's own facts.
-  const restored = fixture(false, undefined, { waitingEvents: () => [pullRequest, local], waitingAttention: () => new Set([pullRequest.id]) })
-  restored.wakes.start()
-  expect(restored.wakes.needsAttention([pullRequest])).toBe(true)
-  expect(restored.wakes.needsAttention([local])).toBe(false)
-})
-
-it('marks a refresh of queued pull request news as needing Watcher, though not as news of its own', async () => {
-  const waiting: WatcherEvent[] = []
-  const f = fixture(true, undefined, { waitingEvents: () => waiting, waitingAttention: () => new Set(waiting.filter(event => f.wakes.needsAttention([event])).map(event => event.id)) })
-  const { move } = gitFixture(f)
+it('keeps a failed pull request’s news needing Watcher where a thread’s own facts replaced it, though it is no news that came since', async () => {
+  let waking = false
+  const f = fixture(true, undefined, { wakeUpQueued: () => waking }), { move } = gitFixture(f)
   f.wakes.observe(); await f.advance(2_000)
   f.checks('failed'); await f.advance(2_000)
-  // The pull request's news waits in Watcher's queue; the worker's turn then ends and its working copy moves.
-  waiting.push(...f.delivered.at(-1)!.events)
+  f.wakes.observe(); await f.advance(5_000)
+  f.delivered.splice(0, f.delivered.length - 1)
+  const pullRequest = f.delivered[0]!.events
+  // While its wake-up is sent, the worker's turn ends and its working copy moves: the turn end carries the thread's facts.
+  waking = true
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }; f.wakes.observe()
   move({ changedFiles: 6 }); await f.advance(5_000)
-  const refreshed = f.delivered.at(-1)!.events.find(event => event.kind === 'evidence-changed')!
-  expect(waiting.some(event => event.id === refreshed.id)).toBe(false)
-  const { all, fresh } = f.wakes.attentionOf([refreshed])
-  expect(all.has(refreshed.id)).toBe(true)
-  expect(fresh.has(refreshed.id)).toBe(false)
+  expect(f.delivered).toHaveLength(1)
+  // The send failed: the pull request's news goes back, and the facts that replaced it carry it.
+  waking = false; f.wakes.settled(pullRequest, 'failed'); await f.advance(5_000)
+  expect(f.delivered.map(news => kinds(news)!.sort())).toEqual([['evidence-changed'], ['evidence-changed', 'turn-finished']])
+  const replaced = f.delivered[1]!.events.find(event => event.kind === 'evidence-changed')!
+  expect(replaced.id).not.toBe(pullRequest[0]!.id)
+  expect(f.wakes.needsAttention([replaced])).toBe(true)
+  // The turn's end was the news that came since; with it told, the same facts failing again wait for Watcher.
+  f.wakes.settled(f.delivered[1]!.events, 'failed'); await f.advance(60_000)
+  expect(f.delivered).toHaveLength(2)
 })
 it('rechecks a batch of news with a fixed number of snapshot and record reads, whatever its size (#1023)', async () => {
   const reads = async (size: number) => {

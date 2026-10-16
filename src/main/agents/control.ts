@@ -21,7 +21,7 @@ import { BABYSIT_REFUSALS, type Babysitter } from './babysitting'
 import { pullRequestAddress } from '../../shared/gitPullRequests'
 import { queuedWakeUpText, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, watcherWakeUpNote, type WakeUpNews } from './wakeUp'
 import { watcherWakeUpShown, watcherWakeUpsAsShown } from './watcherNews'
-import { HIDDEN_WAKE_UP_ATTEMPTS, hiddenWakeUpAction, needsWatcherNow } from './hiddenWakeUp'
+import { hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from './hiddenWakeUp'
 import type { UsagePromptRecorder } from './usageService'
 import { isUsageProviderId } from '../../shared/usageDashboard'
 import type { WatcherEvent } from '../../shared/watcherNews'
@@ -589,7 +589,10 @@ export class AgentControl {
     // Upgrade the native singleton in place, never from the currently selected thread.
     this.syncLegacyDraft()
     await this.followupStore.load(this.stageInline, handle => this.attachments.has(handle.digest), id => this.threadAvailable(id))
-    await this.followupStore.rewordWakeUps(item => this.queuedWords(item))
+    // A restart starts Watcher's news afresh (ADR-0073): its hidden wake-up goes from the queue, and what it held is untold
+    // again, so it is observed and told anew while it is still true.
+    const untold = new Set((await this.followupStore.dropWatcherNews(news => queuedWakeUpText(news, { tool: false }))).map(event => event.id))
+    if (untold.size && this.watcher.wakeEventIds?.some(id => untold.has(id))) this.mutateWatcher(record => { record.wakeEventIds = record.wakeEventIds!.filter(id => !untold.has(id)) })
     this.syncFollowups()
     await this.dependencies.host.initialize?.()
     if (this.dependencies.host.workspaceSnapshot) this.state.host = this.shownSnapshot(this.dependencies.host.workspaceSnapshot())
@@ -1666,9 +1669,7 @@ export class AgentControl {
     }
     // News arriving while the thread rests follows the turn it rests on; a request waiting on the user still holds it.
     const reviewed = !isThreadTurnRunning(thread) ? thread.lastTurn?.id ?? UNKNOWN_TURN : undefined
-    // Which of Watcher's events needed it when observed travels with them into the queue (hiddenWakeUp.ts, rule c).
-    const attention = isWatcherNews(news) ? this.watcherHooks?.wakeAttention?.(news.events) : undefined
-    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed, attention?.all, attention?.fresh)
+    await this.followupStore.queueWakeUp(threadId, news, items => queuedWakeUpText(items, options), reviewed)
     if (this.syncFollowups()) this.publish()
     this.pumpFollowups()
   }
@@ -1706,29 +1707,28 @@ export class AgentControl {
     if (this.watcherObservedIds === ids) return
     this.watcherObservedIds = ids; this.observe()
   }
-  /**
-   * Watcher's news in its queue that has not been sent: waiting, or claimed and on its way to the writer. A claimed
-   * wake-up still counts, since the writer withdraws any of its news whose facts moved on, and that news must be told
-   * again as it stands now.
-   */
-  waitingWatcherEvents(): WatcherEvent[] {
+  restoredWatcherEvents(): WatcherEvent[] {
     if (this.dependencies.watcherEnabled !== true || !this.watcherHooks || !this.watcher.current) return []
     const target = this.watcher.current.target
-    return this.followupStore.peek().items.filter(item => (isWaitingWakeUp(item) || item.wakeUp === true && item.status === 'dispatching') && item.threadId === target.threadId)
+    return this.followupStore.peek().items.filter(item => isWaitingWakeUp(item) && item.threadId === target.threadId)
       .flatMap(item => item.news?.flatMap(news => isWatcherNews(news) && news.watcher.hostId === target.hostId
         && news.watcher.threadId === target.threadId ? news.events : []) ?? []).slice(-400)
   }
-  /** Which of Watcher's queued events needed it when they were observed, as its hidden wake-up keeps them. */
-  waitingWatcherAttention(): ReadonlySet<string> {
-    if (this.dependencies.watcherEnabled !== true || !this.watcherHooks || !this.watcher.current) return new Set()
-    const target = this.watcher.current.target
-    return new Set(this.followupStore.peek().items.filter(item => item.threadId === target.threadId && isWatcherOnlyWakeUp(item)
-      && (isWaitingWakeUp(item) || item.status === 'dispatching')).flatMap(item => needsWatcherNow(item) ? item.attention ?? [] : []))
+  /** Whether Watcher's queue holds its hidden wake-up, in any state: while it does, Watcher's news waits for it (ADR-0073). */
+  watcherWakeUpQueued(): boolean {
+    const target = this.watcher.current?.target
+    return !!target && this.followupStore.peek().items.some(item => item.threadId === target.threadId && isWatcherOnlyWakeUp(item))
+  }
+  /** Takes Watcher's hidden wake-up out of its queue and tells Watcher's news how it ended (hiddenWakeUp.ts). */
+  private async settleWatcherWakeUp(item: Pick<QueuedFollowup, 'id' | 'news'>, outcome: HiddenWakeUpOutcome): Promise<void> {
+    await this.followupStore.removeWakeUp(item.id)
+    this.watcherHooks?.wakeUpSettled?.(hiddenEvents(item.news), outcome)
   }
   async pruneWatcherWakeUps(): Promise<void> {
     if (this.dependencies.watcherEnabled !== true || this.disposed || !this.watcherHooks?.wakeReady?.()) return
     const items = this.followupStore.peek().items.filter(item => item.news?.some(isWatcherNews) && isWaitingWakeUp(item) && this.wakeUpOutdated(item.threadId, item))
-    for (const item of items) await this.pruneWakeUp(item.threadId, item.id)
+    // A hidden wake-up never changes: one whose news moved on goes whole, and what is still true waits for the next one.
+    for (const item of items) await (isWatcherOnlyWakeUp(item) ? this.settleWatcherWakeUp(item, 'withdrawn') : this.pruneWakeUp(item.threadId, item.id))
     if (items.length) { this.syncFollowups(); this.publish(); this.pumpFollowups() }
   }
   /**
@@ -2106,14 +2106,6 @@ export class AgentControl {
       ? this.dependencies.watcherEnabled !== true || news.events.some(event => !this.watcherHooks?.wakeDue?.(event))
       : isRestartNews(news) ? this.restartHooks?.due() !== true
         : guard !== undefined && (!guard.due(threadId, news) || (guard.current !== undefined && JSON.stringify(guard.current(threadId, news)) !== JSON.stringify(news))))
-  }
-  /**
-   * A queued item's words as this build words them. A wake-up holding Watcher's news is worded again from the news it
-   * keeps, so one an earlier build saved with that news in its text shows and sends without it (ADR-0073); the news goes
-   * beside it in the send's note. Every other item keeps its own text.
-   */
-  private queuedWords(item: Pick<QueuedFollowup, 'threadId' | 'text' | 'wakeUp' | 'news'>): string {
-    return item.wakeUp && item.news?.some(isWatcherNews) ? queuedWakeUpText(item.news, { tool: this.wakeUpGuard?.tool(item.threadId) ?? false }) : item.text
   }
   private pruneWakeUp(threadId: string, id: string): Promise<void> {
     const guard = this.wakeUpGuard
@@ -2612,7 +2604,7 @@ export class AgentControl {
     const before = shown()
     const { items, receipts } = this.followupStore.get()
     // A wake-up holding only Watcher's news is Sotto's background action: no queue, transcript or phone shows it.
-    this.state.followups = items.filter(item => !isWatcherOnlyWakeUp(item)).map(item => withoutNews({ ...item, text: this.queuedWords(item) })); this.state.followupReceipts = receipts.map(({ threadId, draftId }) => ({ threadId, draftId }))
+    this.state.followups = items.filter(item => !isWatcherOnlyWakeUp(item)).map(withoutNews); this.state.followupReceipts = receipts.map(({ threadId, draftId }) => ({ threadId, draftId }))
     // A crash between the two stores leaves both copies. Durable queue ownership wins
     // only for the submitted revision; newer draft revisions are never touched.
     const owned = [...receipts, ...items]
@@ -2692,35 +2684,29 @@ export class AgentControl {
       const first = items.find(item => item.threadId === threadId && item.messageId && thread?.messages.some(message => message.role === 'user' && message.id === item.messageId))
         ?? items.find(item => item.threadId === threadId)!
       if (first.news?.some(isWatcherNews) && !this.watcherHooks?.wakeReady?.()) continue
-      // Watcher's hidden wake-up is shown nowhere, so no one can resume, reorder or remove it: what Sotto does with it by
-      // itself is hiddenWakeUp.ts's to say, from what the item keeps, and never repeats without a change.
-      if (isWatcherOnlyWakeUp(first) && thread) {
-        const resting = !isThreadTurnRunning(thread) && !thread.requests.length
-        const action = hiddenWakeUpAction(first, { resting,
-          finished: resting && thread.lastTurn?.status === 'completed' && thread.lastTurn.id !== first.resumeAfterTurnId,
-          echoed: !!first.messageId && thread.messages.some(message => message.role === 'user' && message.id === first.messageId),
-          reconciling: this.outbox.some(item => item.id === first.commandId),
-          holdingOthers: items.slice(items.indexOf(first) + 1).some(item => item.threadId === threadId && !isWatcherOnlyWakeUp(item)) })
-        if (action !== 'send' && action !== 'none') {
-          this.pumping.add(threadId)
-          let changed = false
-          const word = (news: readonly WakeUpNews[]) => queuedWakeUpText(news, { tool: false })
-          const step = action === 'acknowledge' ? this.followupStore.settleSent(first.id, word).then(() => true)
-            : action === 'revive' ? this.followupStore.reviveWakeUp(first.id, thread.lastTurn?.id ?? UNKNOWN_TURN).then(() => true)
-              : action === 'let-go' ? this.followupStore.letGoWakeUp(first.id, word).then(gone => { if (gone.length) this.watcherHooks?.forgetWakeEvents?.(gone); return true })
-                : this.followupStore.blockWakeUp(first.id, needsWatcherNow(first) ? 'Sotto tried this wake-up as often as it will by itself. It goes again with news that needs Watcher.'
-                  : 'This wake-up holds only a thread’s own facts, which wait for news that needs Watcher.')
-          void step.then(wrote => { changed = wrote })
-            .catch(() => { this.state.error = 'Could not save the follow-up queue.'; this.publish() })
-            .finally(() => { if (this.syncFollowups()) this.publish(); this.pumping.delete(threadId); if (changed) this.pumpFollowups() })
-          continue
-        }
-        if (action === 'none') continue
-      }
       // Native idle status can precede turn/completed. A still-running outcome is
       // neither permission to dispatch nor a terminal failure requiring review.
       const terminalBlocked = thread && !isThreadTurnRunning(thread)
         && (thread.lastTurn ? thread.lastTurn.status !== 'completed' && first.resumeAfterTurnId !== thread.lastTurn.id : first.resumeAfterTurnId !== UNKNOWN_TURN)
+      // Watcher's hidden wake-up is shown nowhere, so no one can resume, reorder or remove it. It never changes and never
+      // pauses: it goes, waits, or leaves whole (hiddenWakeUp.ts). A turn of Watcher's that did not finish holds it as it
+      // holds a user's queue, so it leaves as unsent and its news waits for the next.
+      if (isWatcherOnlyWakeUp(first) && thread) {
+        const step = hiddenWakeUpStep(first, { echoed: !!first.messageId && thread.messages.some(message => message.role === 'user' && message.id === first.messageId),
+          reconciling: this.outbox.some(item => item.id === first.commandId),
+          // Asked only when it could go now, as for every other wake-up: each event's check reads Watcher's record.
+          outdated: first.status === 'queued' && !terminalBlocked && this.followupReady(threadId) && this.wakeUpOutdated(threadId, first) })
+        const outcome = step === 'send' && terminalBlocked ? 'failed' : step
+        if (outcome === 'wait') continue
+        if (outcome !== 'send') {
+          this.pumping.add(threadId)
+          let settled = false
+          void this.settleWatcherWakeUp(first, outcome).then(() => { settled = true })
+            .catch(() => { this.state.error = 'Could not save the follow-up queue.'; this.publish() })
+            .finally(() => { if (this.syncFollowups()) this.publish(); this.pumping.delete(threadId); if (settled) this.pumpFollowups() })
+          continue
+        }
+      }
       if (first.status === 'queued' && terminalBlocked) {
         // A machine Stop fences its own sends. A user's queue remains intact and waits for explicit review.
         if (!first.watcherOperationId && this.watcherHooks?.preserveUserQueue(threadId)) continue
@@ -2746,9 +2732,8 @@ export class AgentControl {
       this.pumping.add(threadId)
       let requeued = false
       void (async () => {
-        // An acknowledged hidden wake-up keeps what its send did not carry (hiddenWakeUp.ts, rule d).
-        if (confirmed) { await (isWatcherOnlyWakeUp(first) ? this.followupStore.settleSent(first.id, news => queuedWakeUpText(news, { tool: false })) : this.followupStore.settle(first.id, 'accepted')); return }
-        let claimed = false
+        if (confirmed) { await this.followupStore.settle(first.id, 'accepted'); return }
+        let claimed = false, sent = false
         const turn = this.beginTurn(first.wakeUp ? { source: 'wake-up', commandType: 'wake-up', text: first.text } : { source: 'command', commandType: 'manual-send', text: first.text })
         // A queued follow-up is timed from the moment the queue takes it, not from when it was queued.
         if (turn) turn.receivedAt = performance.now()
@@ -2794,16 +2779,22 @@ export class AgentControl {
           if (item.news?.some(isRestartNews)) this.restartHooks?.sending(threadId)
           // Watcher's news goes beside the message, as its request note does, never in it (ADR-0073).
           const watcherNews = item.wakeUp && item.news ? watcherWakeUpNote(item.news) : undefined
-          await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: this.queuedWords(item).trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
+          await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
             expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}), ...(watcherNews ? { watcherNews } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
             this.localClient, undefined, undefined, writeGuard)
-          // Watcher's news that came while this was being sent stays in the item, and goes next.
-          if (isWatcherOnlyWakeUp(item)) await this.followupStore.settleSent(item.id, news => queuedWakeUpText(news, { tool: false }))
+          sent = true
+          if (isWatcherOnlyWakeUp(item)) await this.settleWatcherWakeUp(item, 'told')
           else await this.followupStore.settle(item.id, 'accepted')
         } catch (error) {
           failure = error instanceof CheckoutSendRefusal ? error.queuedMessage() : error instanceof Error ? error.message : first.wakeUp ? 'Could not send this wake-up.' : 'Could not dispatch this follow-up.'
           if (first.news?.some(isRestartNews)) this.restartHooks?.unsent(threadId)
-          if (claimed && error instanceof WakeUpNoLongerDue) { await this.pruneWakeUp(threadId, first.id); requeued = true }
+          if (claimed && isWatcherOnlyWakeUp(first)) {
+            // A hidden wake-up leaves whole. Only one whose send may have gone stays, until its echo or the outbox settles it.
+            const item = this.followupStore.get().items.find(i => i.id === first.id)
+            const outcome = error instanceof WakeUpNoLongerDue ? 'withdrawn' : sent || item?.messageId && this.thread(threadId).messages.some(m => m.role === 'user' && m.id === item.messageId) ? 'told'
+              : this.outbox.some(o => o.id === item?.commandId) ? undefined : 'failed'
+            await (outcome ? this.settleWatcherWakeUp(first, outcome) : this.followupStore.settle(first.id, 'uncertain', failure))
+          } else if (claimed && error instanceof WakeUpNoLongerDue) { await this.pruneWakeUp(threadId, first.id); requeued = true }
           else if (claimed || first.watcherOperationId) {
             const item = this.followupStore.get().items.find(i => i.id === first.id)
             const accepted = item?.messageId && this.thread(threadId).messages.some(m => m.role === 'user' && m.id === item.messageId)
@@ -2816,21 +2807,8 @@ export class AgentControl {
           }
         } finally { await this.finishTurn(turn, failure) }
       })().catch(() => { this.state.error = 'Could not save follow-up delivery state. Refresh before making changes.' })
-        .finally(() => {
-          this.syncFollowups(); this.publish(); this.pumping.delete(threadId)
-          if (requeued || this.followupStore.peek().items.find(i => i.threadId === threadId)?.id !== first.id) this.pumpFollowups()
-          // Nothing may change after a hidden wake-up fails to send, so its tries again are timed (WAKE_UP_ATTEMPTS).
-          const after = this.followupStore.peek().items.find(item => item.id === first.id)
-          const watcher = this.state.host.threads.find(item => item.id === threadId)
-          if (after && watcher && isWatcherOnlyWakeUp(after) && after.status === 'failed' && needsWatcherNow(after) && (after.attempts ?? 0) < HIDDEN_WAKE_UP_ATTEMPTS) this.retryWakeUpLater()
-        })
+        .finally(() => { this.syncFollowups(); this.publish(); this.pumping.delete(threadId); if (requeued || this.followupStore.peek().items.find(i => i.threadId === threadId)?.id !== first.id) this.pumpFollowups() })
     }
-  }
-  private wakeRetryTimer: ReturnType<typeof setTimeout> | undefined
-  private retryWakeUpLater(): void {
-    if (this.wakeRetryTimer || this.disposed) return
-    this.wakeRetryTimer = setTimeout(() => { this.wakeRetryTimer = undefined; this.pumpFollowups() }, WAKE_UP_RETRY_MS)
-    this.wakeRetryTimer.unref?.()
   }
   private async interruptThread(command: Extract<AgentCommand, { type: 'interrupt' }>): Promise<AgentState> {
     const turn = this.beginTurn({ source: 'command', commandType: 'interrupt', text: '', threadId: command.threadId,
@@ -2889,7 +2867,7 @@ export class AgentControl {
       validatePrompt()
       if (turn) { turn.threadId = command.threadId; turn.projectId = this.thread(command.threadId).projectId }
       await this.dispatch({ type: 'steer', threadId: item.threadId, commandId: item.commandId!, messageId: item.messageId!,
-        text: this.queuedWords(item).trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
+        text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
         expectedLastUserMessageId: lastUserMessageIdOf(this.thread(item.threadId)) }, turn, validatePrompt, item.draftId)
       await this.followupStore.settle(item.id, 'accepted')
     } catch (error) {
@@ -4049,7 +4027,6 @@ export class AgentControl {
   }
   dispose(): void {
     this.disposed = true
-    if (this.wakeRetryTimer) { clearTimeout(this.wakeRetryTimer); this.wakeRetryTimer = undefined }
     // No snapshot is accepted from here on, so no first output can be seen: the records waiting for one are written now.
     this.firstOutputs.closeAll()
     // A held broadcast dies with the control: its listeners are going away, and a run that
@@ -4082,8 +4059,6 @@ export class AgentControl {
  * One broadcast per animation frame. Below what a person can see, so no state looks late, and
  * far fewer full copies of every thread's history than a streaming provider would otherwise force.
  */
-/** How long such a wake-up waits before it is tried again, so a provider that refuses at once is not asked in a loop. */
-const WAKE_UP_RETRY_MS = 3_000
 export const AGENT_STATE_BROADCAST_INTERVAL_MS = 16
 
 /**

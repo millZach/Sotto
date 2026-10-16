@@ -25,14 +25,7 @@ const receiptsSchema = z.array(agentDeliveryReceiptsSchema.element.extend({ dige
  * A queued item as the store keeps it. A wake-up keeps the news it was worded from, one part per pull request, so news
  * that comes later folds into it and a stop takes back its pull request's part; the window is sent the words alone.
  */
-const eventIdsSchema = z.array(z.string().max(512)).max(400)
-/**
- * A hidden wake-up (hiddenWakeUp.ts) also keeps which of its events needed Watcher when they were observed (attention),
- * which a send in flight carried (carried), and how many sends of it were tried (attempts). A build without them reads
- * the item without them, which counts its evidence as a thread's own facts.
- */
-const queuedSchema = agentFollowupSchema.extend({ watcherOperationId: z.uuid().optional(), news: z.array(wakeUpNewsSchema).max(WAKE_UP_NEWS_MAX + 1).optional(),
-  attention: eventIdsSchema.optional(), carried: eventIdsSchema.optional(), attempts: z.number().int().nonnegative().max(1_000).optional() })
+const queuedSchema = agentFollowupSchema.extend({ watcherOperationId: z.uuid().optional(), news: z.array(wakeUpNewsSchema).max(WAKE_UP_NEWS_MAX + 1).optional() })
 export type QueuedFollowup = z.infer<typeof queuedSchema>
 type State = { items: QueuedFollowup[]; receipts: z.infer<typeof receiptsSchema> }
 /**
@@ -53,40 +46,7 @@ const waitingWakeUp = (item: QueuedFollowup, threadId: string): boolean => item.
  * waiting on that turn; every other wake-up goes after them.
  */
 const leadsQueue = (item: QueuedFollowup, threadId: string): boolean => waitingWakeUp(item, threadId) && (item.news ?? []).some(isRestartNews)
-/** Watcher's news without the events in `ids`, and without any part left empty. */
-function withoutEvents(news: readonly WakeUpNews[], ids: ReadonlySet<string>): WakeUpNews[] {
-  return news.flatMap((part): WakeUpNews[] => {
-    if (!isWatcherNews(part)) return [part]
-    const events = part.events.filter(event => !ids.has(event.id))
-    return events.length ? [{ ...part, events }] : []
-  })
-}
-/** The ids in `attention` of the events these news still hold, once each and within the schema's bound. */
-function keptAttention(news: readonly WakeUpNews[], attention: readonly string[]): string[] {
-  const held = new Set(hiddenEvents(news).map(event => event.id))
-  return [...new Set(attention)].filter(id => held.has(id)).slice(-400)
-}
-/**
- * The hidden wake-ups an earlier build left side by side for one Watcher, as one: their news folded in order, what
- * needed Watcher kept, and the least settled state among them, so an unknown send stays unknown and nothing is lost.
- */
-function consolidateHidden(items: readonly QueuedFollowup[]): QueuedFollowup[] {
-  const out: QueuedFollowup[] = []
-  for (const item of items) {
-    const kept = isWatcherOnlyWakeUp(item) ? out.find(other => other.threadId === item.threadId && isWatcherOnlyWakeUp(other)) : undefined
-    if (!kept) { out.push(item); continue }
-    let news: readonly WakeUpNews[] = kept.news ?? []
-    for (const part of item.news ?? []) news = foldWakeUpNews(news, part)
-    const order = ['uncertain', 'dispatching', 'queued', 'failed', 'paused'] as const
-    const status = order.find(state => state === kept.status || state === item.status)!
-    const source = status === item.status ? item : kept
-    const merged = { ...source, id: kept.id, news, status, attention: keptAttention(news, [...kept.attention ?? [], ...item.attention ?? []]),
-      carried: [...new Set([...kept.carried ?? [], ...item.carried ?? []])].slice(-400), attempts: Math.max(kept.attempts ?? 0, item.attempts ?? 0) }
-    out[out.indexOf(kept)] = queuedSchema.parse(merged)
-  }
-  return out
-}
-const WAKE_UP_NOT_EDITABLE ="A wake-up is Sotto's own message and cannot be edited. Remove it if the thread should not get it."
+const WAKE_UP_NOT_EDITABLE = "A wake-up is Sotto's own message and cannot be edited. Remove it if the thread should not get it."
 
 type Stored = z.infer<typeof storedSchema>
 /** The durable queue as it stands, for reading only. */
@@ -139,13 +99,6 @@ export class FollowupStore {
     }
     this.state = { items, receipts: stored.receipts }
     await this.change(state => {
-      // An earlier build could keep two hidden wake-ups for one Watcher; this one keeps one (hiddenWakeUp.ts, rule a).
-      const live = state.items.filter(item => active(item.threadId)), merged = consolidateHidden(live)
-      if (merged.length !== live.length) state.items = [...merged, ...state.items.filter(item => !active(item.threadId))]
-      // An earlier build kept no record of which events needed Watcher. Anything but evidence always does; evidence without
-      // that record counts as a thread's own facts (rule c).
-      for (const item of state.items) if (active(item.threadId) && isWatcherOnlyWakeUp(item) && !item.attention)
-        item.attention = keptAttention(item.news ?? [], hiddenEvents(item.news).filter(event => event.kind !== 'evidence-changed').map(event => event.id))
       for (const item of state.items) {
         if (!active(item.threadId)) continue
         const remaining = item.attachments.filter(kept)
@@ -274,32 +227,24 @@ export class FollowupStore {
    * once when the thread is ready and otherwise when it would send the next one. A thread holds one waiting wake-up,
    * and later news folds into it until it goes. Resolves once it is saved.
    */
-  queueWakeUp(threadId: string, news: WakeUpNews, word: WordWakeUp, resumeAfterTurnId?: string, attention: ReadonlySet<string> = new Set(), fresh: ReadonlySet<string> = attention): Promise<void> {
+  queueWakeUp(threadId: string, news: WakeUpNews, word: WordWakeUp, resumeAfterTurnId?: string): Promise<void> {
     return this.change(state => {
       const now = new Date().toISOString()
-      // Watcher has one hidden wake-up (hiddenWakeUp.ts): its news folds into it whatever its state, while it is being
-      // sent too, and what that send did not carry stays in it when the send is acknowledged (settleSent).
-      const hidden = isWatcherNews(news) ? state.items.find(item => item.threadId === threadId && isWatcherOnlyWakeUp(item)) : undefined
-      const waiting = hidden ?? state.items.find(item => waitingWakeUp(item, threadId))
+      // Watcher's news is a hidden wake-up of its own, made whole and never changed (hiddenWakeUp.ts): no news folds into
+      // it and it folds into no other wake-up, and a Watcher holds one at a time.
+      const hidden = isWatcherNews(news)
+      if (hidden && state.items.some(item => item.threadId === threadId && isWatcherOnlyWakeUp(item))) throw new Error('Watcher already has news on its way.')
+      const waiting = hidden ? undefined : state.items.find(item => waitingWakeUp(item, threadId) && !isWatcherOnlyWakeUp(item))
       if (waiting) {
         const folded = foldWakeUpNews(waiting.news ?? [], wakeUpNewsSchema.parse(news))
-        const held = new Set(hiddenEvents(waiting.news).map(event => event.id))
         // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
         // A resume note is the review a paused queue waits for: the turn it follows did not finish, and it says so.
-        // New news that needed Watcher when it was observed starts a stopped hidden wake-up again, with its tries anew. A
-        // thread's own facts only keep its news current: they never send it, mid-turn or otherwise.
-        // Only news that is new in itself counts; evidence that merely keeps earlier news current does not (fresh).
-        const renewed = isWatcherNews(news) && news.events.some(event => fresh.has(event.id) && !held.has(event.id))
-        const stopped = waiting.status === 'failed' || waiting.status === 'paused'
-        const resumes = isRestartNews(news) || renewed && stopped && waiting === hidden ? { status: 'queued' as const, error: undefined } : {}
-        const next = queuedSchema.parse({ ...waiting, news: folded, text: word(folded), updatedAt: now,
-          ...resumeAfterTurnId && waiting.status !== 'dispatching' && waiting.status !== 'uncertain' ? { resumeAfterTurnId } : {}, ...resumes,
-          ...waiting === hidden ? { attention: keptAttention(folded, [...waiting.attention ?? [], ...attention]), ...renewed ? { attempts: 0 } : {} } : {} })
+        const resumes = isRestartNews(news) ? { status: 'queued' as const, error: undefined } : {}
+        const next = queuedSchema.parse({ ...waiting, news: folded, text: word(folded), updatedAt: now, ...resumeAfterTurnId ? { resumeAfterTurnId } : {}, ...resumes })
         state.items = state.items.map(item => item === waiting ? next : item)
       } else {
         state.items.push(queuedSchema.parse({ id: randomUUID(), threadId, draftId: randomUUID(), text: word([news]), attachments: [], status: 'queued', wakeUp: true,
-          news: [news], createdAt: now, updatedAt: now, ...(resumeAfterTurnId ? { resumeAfterTurnId } : {}),
-          ...isWatcherNews(news) ? { attention: keptAttention([news], [...attention]) } : {} }))
+          news: [news], createdAt: now, updatedAt: now, ...(resumeAfterTurnId ? { resumeAfterTurnId } : {}) }))
       }
       // A resume note goes first, so the turn it resumes ends before the follow-ups queued behind that turn go.
       const leading = state.items.find(item => leadsQueue(item, threadId))
@@ -320,7 +265,7 @@ export class FollowupStore {
     // Looked for inside the lane, never in the snapshot before it: a wake-up whose save is still pending is in the lane
     // ahead of this, and is taken back once it lands rather than left to send.
     return this.change(state => {
-      const waiting = state.items.find(item => waitingWakeUp(item, threadId))
+      const waiting = state.items.find(item => waitingWakeUp(item, threadId) && !isWatcherOnlyWakeUp(item))
       if (!waiting) return false
       const kept = (waiting.news ?? []).filter(item => !isBabysitNews(item) || key !== undefined && pullRequestKey(item.pullRequest.url) !== key)
       if (kept.length === (waiting.news ?? []).length) return false
@@ -341,56 +286,40 @@ export class FollowupStore {
       if (JSON.stringify(kept) === JSON.stringify(item.news) && item.status === 'queued') return false
       if (!kept.length) { state.items = state.items.filter(candidate => candidate !== item); return }
       Object.assign(item, { news: kept, text: word(kept), status: item.status === 'dispatching' ? 'queued' : item.status, updatedAt: new Date().toISOString() })
-      delete item.commandId; delete item.messageId; delete item.carried
-      if (item.attention) item.attention = keptAttention(kept, item.attention)
+      delete item.commandId; delete item.messageId
       if (item.status === 'queued') delete item.error
     })
   }
-  /** Sets a stopped hidden wake-up (hiddenWakeUp.ts) going again, behind the thread's other items, after `turnId`. */
-  reviveWakeUp(id: string, turnId: string): Promise<void> {
+  /**
+   * Takes Watcher's saved news out of the queue as it loads, and returns its events: every hidden wake-up goes, and a wake-up
+   * an earlier build saved with Watcher's news beside other news keeps the rest, worded again with `word`. A restart starts
+   * Watcher's news afresh, so the coordinator lets these events be observed again (ADR-0073).
+   */
+  dropWatcherNews(word: WordWakeUp): Promise<WatcherEvent[]> {
+    let dropped: WatcherEvent[] = []
     return this.change(state => {
-      const item = state.items.find(candidate => candidate.id === id)
-      if (!item || !isWatcherOnlyWakeUp(item) || !['paused', 'failed'].includes(item.status)) return false
-      Object.assign(item, { status: 'queued', resumeAfterTurnId: turnId, updatedAt: new Date().toISOString() })
-      delete item.error; delete item.commandId; delete item.messageId; delete item.carried
-      state.items = [...state.items.filter(candidate => candidate !== item), item]
+      const held = state.items.filter(item => item.wakeUp && item.news?.some(isWatcherNews) && this.active(item.threadId) && !this.dormant.has(item.id))
+      if (!held.length) return false
+      dropped = held.flatMap(item => hiddenEvents(item.news))
+      state.items = state.items.flatMap(item => {
+        if (!held.includes(item) || isWatcherOnlyWakeUp(item)) return held.includes(item) ? [] : [item]
+        const kept = item.news!.filter(news => !isWatcherNews(news))
+        return [{ ...item, news: kept, text: word(kept), updatedAt: new Date().toISOString() }]
+      })
+    }).then(() => dropped)
+  }
+  /** Takes Watcher's hidden wake-up out of the queue whole, in whatever state it is (hiddenWakeUp.ts). */
+  removeWakeUp(id: string): Promise<void> {
+    return this.change(state => {
+      const item = state.items.find(candidate => candidate.id === id && isWatcherOnlyWakeUp(candidate))
+      if (!item) return false
+      state.items = state.items.filter(candidate => candidate !== item)
     })
   }
-  /**
-   * Lets go of what a hidden wake-up whose send is unknown carried, as an unknown send is never sent twice, and returns
-   * those events so their news can be observed afresh. What came after that send stays, waiting; with nothing left, it goes.
-   */
-  letGoWakeUp(id: string, word: WordWakeUp): Promise<WatcherEvent[]> {
-    let gone: WatcherEvent[] = []
-    return this.change(state => {
-      const item = state.items.find(candidate => candidate.id === id)
-      if (!item || !isWatcherOnlyWakeUp(item) || item.status !== 'uncertain') return false
-      const carried = new Set(item.carried ?? hiddenEvents(item.news).map(event => event.id))
-      gone = hiddenEvents(item.news).filter(event => carried.has(event.id))
-      const kept = withoutEvents(item.news ?? [], carried)
-      if (!kept.length) { state.items = state.items.filter(candidate => candidate !== item); return }
-      Object.assign(item, { news: kept, text: word(kept), status: 'queued', attention: keptAttention(kept, item.attention ?? []), updatedAt: new Date().toISOString() })
-      delete item.error; delete item.commandId; delete item.messageId; delete item.carried
-    }).then(() => gone)
-  }
-  /**
-   * Words each waiting wake-up again from the news it keeps, with `word`, and saves those whose words changed: an
-   * earlier build saved Watcher's news in a wake-up's text, which this build sends beside it instead (ADR-0073).
-   */
-  rewordWakeUps(word: (item: QueuedFollowup) => string): Promise<void> {
-    return this.change(state => {
-      let changed = false
-      for (const item of state.items) {
-        if (!isWaitingWakeUp(item) || !this.active(item.threadId) || this.dormant.has(item.id)) continue
-        const text = word(item)
-        if (text !== item.text) { item.text = text; changed = true }
-      }
-      if (!changed) return false
-    })
-  }
+  /** Pauses the thread's queued follow-ups. Watcher's hidden wake-up never pauses: no one could resume it. */
   pause(threadId: string, error: string): Promise<void> {
     return this.change(state => {
-      for (const item of state.items) if (item.threadId === threadId && item.status === 'queued') Object.assign(item, { status: 'paused', error })
+      for (const item of state.items) if (item.threadId === threadId && item.status === 'queued' && !isWatcherOnlyWakeUp(item)) Object.assign(item, { status: 'paused', error })
     })
   }
   resume(threadId: string, turnId?: string): Promise<void> {
@@ -416,41 +345,7 @@ export class FollowupStore {
       const item = state.items.find(item => item.id === id)
       if (!item || item.status !== 'queued' || mode === 'send' && state.items.find(candidate => candidate.threadId === item.threadId)?.id !== id) throw new Error(item?.wakeUp ? 'This wake-up is no longer ready to send.' : 'This follow-up is no longer ready to send.')
       Object.assign(item, { status: 'dispatching', commandId: randomUUID(), messageId: item.watcherOperationId && item.messageId ? item.messageId : randomUUID(), updatedAt: new Date().toISOString() })
-      // A hidden wake-up's send carries what it holds now, and uses one of its tries (hiddenWakeUp.ts).
-      if (isWatcherOnlyWakeUp(item)) Object.assign(item, { carried: hiddenEvents(item.news).map(event => event.id).slice(-400), attempts: (item.attempts ?? 0) + 1 })
     })
-  }
-  /**
-   * A hidden wake-up's send was acknowledged. The events it carried leave; Watcher's news that came while it was being
-   * sent was not carried, and waits again in the same item, with its tries anew. With nothing left, the item goes.
-   */
-  settleSent(id: string, word: WordWakeUp): Promise<void> {
-    return this.change(state => {
-      const item = state.items.find(candidate => candidate.id === id)
-      if (!item) return false
-      const carried = new Set(item.carried ?? hiddenEvents(item.news).map(event => event.id))
-      const kept = withoutEvents(item.news ?? [], carried)
-      if (!kept.length) { state.items = state.items.filter(candidate => candidate !== item); return }
-      Object.assign(item, { news: kept, text: word(kept), status: 'queued', attention: keptAttention(kept, item.attention ?? []), attempts: 0, updatedAt: new Date().toISOString() })
-      delete item.error; delete item.commandId; delete item.messageId; delete item.carried
-    })
-  }
-  /**
-   * Stops a hidden wake-up that may not go by itself where it is, behind the thread's other items, so it holds none of
-   * them up. Nothing is written when it already stands there as it should.
-   */
-  blockWakeUp(id: string, reason: string): Promise<boolean> {
-    let wrote = false
-    return this.change(state => {
-      const item = state.items.find(candidate => candidate.id === id)
-      if (!item || !isWatcherOnlyWakeUp(item) || item.status === 'dispatching' || item.status === 'uncertain') return false
-      const at = state.items.indexOf(item)
-      const behind = state.items.slice(at + 1).some(other => other.threadId === item.threadId && !isWatcherOnlyWakeUp(other))
-      if (item.status !== 'queued' && !behind) return false
-      if (item.status === 'queued') Object.assign(item, { status: 'paused', error: reason, updatedAt: new Date().toISOString() })
-      if (behind) state.items = [...state.items.filter(candidate => candidate !== item), item]
-      wrote = true
-    }).then(() => wrote)
   }
   settle(id: string, status: 'accepted' | 'uncertain' | 'failed', error?: string): Promise<void> {
     return this.change(state => {
@@ -458,8 +353,6 @@ export class FollowupStore {
       if (!item) return
       if (status === 'accepted') state.items = state.items.filter(candidate => candidate !== item)
       else Object.assign(item, { status, error, updatedAt: new Date().toISOString() })
-      // A send that surely did not go carried nothing; one whose outcome is unknown keeps what it carried for its echo.
-      if (status === 'failed') delete item.carried
     })
   }
 }

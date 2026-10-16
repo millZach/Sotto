@@ -7,6 +7,8 @@ import type { AgentMessage } from '../../../src/shared/agents'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import { buildHandover, HANDOVER_BUDGET, readHandover, type HandoverOptions } from '../../../src/main/agents/handover'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
+import { watcherMessageAsShown } from '../../../src/main/agents/watcherHandover'
+import { WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 
 const at = (minute: number): string => new Date(Date.UTC(2026, 9, 14, 10, minute)).toISOString()
 let clock = 0
@@ -216,6 +218,21 @@ describe('reading a handover from the thread store', () => {
     const { text } = readHandover(threads, { source })
     expect(text).toContain('Sotto, waking the thread, ')
     expect(text.match(/The user, /g)).toHaveLength(1)
+  })
+
+  it('leaves out a Watcher wake-up its pane does not show, and counts it nowhere, as a user message saying the same is carried', async () => {
+    const threads = await store()
+    const news = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.\n{"hostId":"h","threadId":"t"}: The foreground turn finished. [e]'
+    const all = [...conversation(1), message('w1', 'user', WATCHER_WAKE_UP_PROMPT), message('a1', 'assistant', 'Answer 1'),
+      message('w2', 'user', news), message('u1', 'user', news), message('a2', 'assistant', 'Answer 2')]
+    threads.appendMany('thread-1', all.map(entry => ({ kind: 'message-added', at: entry.createdAt, message: entry })))
+    threads.addWakeUp('thread-1', 'w1'); threads.addWakeUp('thread-1', 'w2')
+    const read = readHandover(threads, { source, shown: item => watcherMessageAsShown('h', 'thread-1', item, []) })
+    const kept = all.filter(item => item.id !== 'w1' && item.id !== 'w2')
+    expect(read.text).toBe(buildHandover(kept, { source, historyKept: true }).text)
+    expect(read.summary).toMatchObject({ total: kept.length, notCarried: 0 })
+    expect(read.text).not.toContain(WATCHER_WAKE_UP_PROMPT)
+    expect(read.text).not.toContain('Sotto, waking the thread')
   })
 
   it('names tool records the store holds without carrying them', async () => {

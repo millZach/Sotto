@@ -4,184 +4,275 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
+import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
+import type { WatcherEvent, WatcherNews } from '../../../src/shared/watcherNews'
 import { FollowupStore, type QueuedFollowup, type WordWakeUp } from '../../../src/main/agents/followups'
-import { HIDDEN_WAKE_UP_ATTEMPTS, hiddenEvents, hiddenWakeUpAction, needsWatcherNow } from '../../../src/main/agents/hiddenWakeUp'
-import { isWatcherOnlyWakeUp, queuedWakeUpText, type WakeUpNews } from '../../../src/main/agents/wakeUp'
+import { hiddenEvents, hiddenWakeUpStep, type HiddenWakeUpOutcome } from '../../../src/main/agents/hiddenWakeUp'
+import { isWatcherOnlyWakeUp, queuedWakeUpText } from '../../../src/main/agents/wakeUp'
+import { WatcherWakeUp, WAKE_UP_TRIES } from '../../../src/main/agents/watcherWakeUp'
+import { watcherNewsText } from '../../../src/main/agents/watcherNews'
+import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/watcher'
 
 /**
- * Drives Watcher's hidden wake-up through table-driven and seeded random sequences (news, sends that land, fail or go
- * unknown, late echoes, Stops, Watcher's own turns, prunes and restarts) with the real store and the one policy the
- * coordinator applies (hiddenWakeUp.ts), and checks its rules after every step:
- * (a) at most one hidden wake-up, after any load; (b) nothing repeats without news that needs Watcher, and tries are
- * bounded; (c) no send carries only events that did not need Watcher; (d) an event leaves only with an acknowledged send
- * that carried it, or when it is withdrawn or let go to be observed afresh.
+ * Drives Watcher's news (WatcherWakeUp) and its hidden wake-up in the real queue (FollowupStore) through table-driven and
+ * seeded random sequences, with the coordinator's own step for the item (hiddenWakeUpStep): a worker's turns, questions,
+ * pull request checks and working copy; sends that land, fail or go unknown, with news arriving mid-send and late echoes;
+ * failed saves; withdrawals; Watcher's own turns; restarts mid-dispatch; and queues earlier builds saved. After every step:
+ * (a) at most one hidden wake-up; (b) no send without new news that needs Watcher, and automatic tries bounded; (c) a
+ * thread's own facts never wake Watcher by themselves; (d) every event told at most once unless forgotten and observed
+ * again, and none lost; (e) pumping with nothing new writes nothing.
  */
 const directories: string[] = []
 afterEach(async () => { for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true }) })
-const hostId = '11111111-1111-4111-8111-111111111111', thread = 'watcher-thread'
 const word: WordWakeUp = news => queuedWakeUpText(news, { tool: false })
+const prUrl = 'https://github.com/synthetic/project/pull/9'
+/** How the hidden wake-ups the sequences made ended, so a run that never reached a path cannot pass quietly. */
+const outcomes: Record<HiddenWakeUpOutcome, number> = { told: 0, failed: 0, unknown: 0, withdrawn: 0 }
 function random(seed: number): () => number {
   let state = seed >>> 0
   return () => { state = (state * 1_664_525 + 1_013_904_223) >>> 0; return state / 2 ** 32 }
 }
 
 interface World {
-  store: FollowupStore; directory: string; writes: number
-  watcher: { running: boolean; lastTurn: { id: string; status: 'completed' | 'interrupted' } | undefined }
-  echoes: Set<string>; observed: Map<string, boolean>; acknowledged: Set<string>; released: Set<string>
-  sends: { carried: string[] }[]; renewals: number
+  directory: string; store: FollowupStore; wakes: WatcherWakeUp; clock: number; timers: Set<{ at: number; callback: () => void }>
+  record: ReturnType<typeof watcherRecordFixture>; snapshot: AgentHostSnapshot; worker: AgentThread; watcher: AgentThread
+  writes: number; failNextWrite: boolean; turn: number; checks: 'failed' | 'passed'
+  sends: { events: WatcherEvent[]; warranted: boolean }[]; told: Set<string>; forgotten: Set<string>; uncertain: Map<string, string>; reconciling: Set<string>
+  echoes: Set<string>; attentionSince: boolean; automatic: number; tolds: number
 }
+const watcherId = () => 'center'
+const hidden = (w: World): QueuedFollowup[] => w.store.peek().items.filter(item => item.threadId === watcherId() && isWatcherOnlyWakeUp(item))
+
 async function world(): Promise<World> {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-hidden-wake-'))
   if (dirname(resolve(directory)) !== resolve(tmpdir())) throw new Error('Unexpected fixture path')
   directories.push(directory)
-  const w: World = { store: new FollowupStore(directory), directory, writes: 0, watcher: { running: false, lastTurn: undefined },
-    echoes: new Set(), observed: new Map(), acknowledged: new Set(), released: new Set(), sends: [], renewals: 0 }
+  const record = watcherRecordFixture()
+  record.operations[0]!.deliveryState = 'accepted'
+  const worker: AgentThread = { id: centerTarget.threadId, providerId: 'codex', projectId: 'project', modelId: 'model', title: 'Worker',
+    status: 'running', lastTurn: { id: 'turn-0', status: 'running' }, messages: [], requests: [],
+    pullRequests: [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }] }
+  const watcher: AgentThread = { id: watcherId(), providerId: 'codex', projectId: 'center-project', modelId: 'model', title: 'Watcher', kind: 'watcher',
+    status: 'idle', lastTurn: { id: 'w-0', status: 'completed' }, messages: [], requests: [] }
+  const snapshot: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), connected: true, hostId: centerTarget.hostId,
+    capabilities: { ...EMPTY_AGENT_HOST.capabilities, observe: true }, threads: [worker, watcher], projects: [{ id: 'project', title: 'Project', path: 'synthetic' }] }
+  const w = { directory, record, snapshot, worker, watcher, clock: Date.parse('2026-10-11T10:00:00Z'), timers: new Set(), writes: 0, failNextWrite: false,
+    turn: 0, checks: 'passed', sends: [], told: new Set(), forgotten: new Set(), uncertain: new Map(), reconciling: new Set(), echoes: new Set(), attentionSince: false,
+    automatic: 0, tolds: 0 } as unknown as World
   await load(w)
   return w
 }
+/** Sotto starting: the queue loads and Watcher's saved news goes from it, untold again, and Watcher's news starts afresh. */
 async function load(w: World): Promise<void> {
+  w.wakes?.close()
   w.store = new FollowupStore(w.directory); await w.store.load()
   const inner = (w.store as unknown as { store: { write: (value: unknown) => Promise<void> } }).store, write = inner.write.bind(inner)
-  inner.write = async value => { w.writes++; await write(value) }
+  inner.write = async value => { if (w.failNextWrite) { w.failNextWrite = false; throw new Error('Synthetic disk failure') } w.writes++; await write(value) }
+  const dropped = await w.store.dropWatcherNews(word)
+  for (const event of dropped) w.forgotten.add(event.id)
+  const ids = new Set(dropped.map(event => event.id))
+  w.record.wakeEventIds = (w.record.wakeEventIds ?? []).filter(id => !ids.has(id))
+  w.uncertain.clear(); w.reconciling.clear()
+  w.wakes = new WatcherWakeUp({ now: () => w.clock, snapshot: () => w.snapshot, record: () => w.record, canDeliver: () => true,
+    schedule: (callback, delay) => { const timer = { at: w.clock + delay, callback }; w.timers.add(timer); return () => { w.timers.delete(timer) } },
+    restoredEvents: () => [], wakeUpQueued: () => hidden(w).length > 0, prune: async () => undefined,
+    remember: async ids => { w.record.wakeEventIds = [...new Set([...w.record.wakeEventIds ?? [], ...ids])].slice(-1_000) },
+    deliver: async (news: WatcherNews) => { await w.store.queueWakeUp(watcherId(), news, word, w.watcher.lastTurn?.id) } })
+  w.wakes.start()
+  w.attentionSince = true // A restart observes afresh.
 }
-const hidden = (w: World): QueuedFollowup[] => w.store.peek().items.filter(item => item.threadId === thread && isWatcherOnlyWakeUp(item))
-
-/** News of one event, and whether it needed Watcher when it was observed. */
-async function news(w: World, attention: boolean): Promise<void> {
-  const id = randomUUID()
-  w.observed.set(id, attention)
-  if (attention) w.renewals++
-  const item: WakeUpNews = { source: 'watcher', watcher: { hostId, threadId: thread }, omitted: 0, events: [{ id, requestId: randomUUID(),
-    target: { hostId, threadId: `worker-${id}` }, generation: 0, kind: attention ? 'turn-finished' : 'evidence-changed', turnId: id,
-    ...attention ? {} : { evidenceIds: [id], revision: id }, observedAt: new Date().toISOString() }] }
-  await w.store.queueWakeUp(thread, item, word, undefined, attention ? new Set([id]) : new Set())
+async function advance(w: World, ms: number): Promise<void> {
+  const end = w.clock + ms
+  for (;;) {
+    const timer = [...w.timers].sort((a, b) => a.at - b.at).find(item => item.at <= end)
+    if (!timer) break
+    w.clock = timer.at; w.timers.delete(timer); timer.callback(); await w.wakes.drained()
+  }
+  w.clock = end; await w.wakes.drained()
 }
+const observe = (w: World) => { w.wakes.observe() }
 
-/** One pass of the coordinator's pump over the hidden wake-up; `outcome` says how a send it makes ends. Returns whether it acted. */
-async function pump(w: World, outcome: 'ack' | 'fail' | 'unknown'): Promise<boolean> {
-  const first = w.store.peek().items.find(item => item.threadId === thread)
-  if (!first || !isWatcherOnlyWakeUp(first)) return false
-  const resting = !w.watcher.running
-  const action = hiddenWakeUpAction(first, { resting, finished: resting && w.watcher.lastTurn?.status === 'completed' && w.watcher.lastTurn.id !== first.resumeAfterTurnId,
-    echoed: !!first.messageId && w.echoes.has(first.messageId), reconciling: false,
-    holdingOthers: w.store.peek().items.slice(w.store.peek().items.indexOf(first) + 1).some(item => item.threadId === thread && !isWatcherOnlyWakeUp(item)) })
-  if (action === 'none') return false
-  if (action === 'acknowledge') { for (const id of first.carried ?? []) w.acknowledged.add(id); await w.store.settleSent(first.id, word); return true }
-  if (action === 'revive') { await w.store.reviveWakeUp(first.id, w.watcher.lastTurn?.id ?? 'unknown'); return true }
-  if (action === 'block') return w.store.blockWakeUp(first.id, 'Synthetic block')
-  if (action === 'let-go') { for (const event of await w.store.letGoWakeUp(first.id, word)) w.released.add(event.id); return true }
-  if (w.watcher.running) return false
-  await w.store.claim(first.id)
-  const sent = w.store.peek().items.find(item => item.id === first.id)!
-  w.sends.push({ carried: [...sent.carried ?? []] })
-  if (outcome === 'ack') { for (const id of sent.carried ?? []) w.acknowledged.add(id); await w.store.settleSent(sent.id, word); w.watcher.lastTurn = { id: randomUUID(), status: 'completed' } }
-  else if (outcome === 'fail') await w.store.settle(sent.id, 'failed', 'Synthetic refusal')
-  else { await w.store.settle(sent.id, 'uncertain', 'Synthetic unknown'); if (sent.messageId) w.echoes.add(sent.messageId) }
+/** Takes the item out whole, as the coordinator does, and tells Watcher's news how it ended. */
+async function settleItem(w: World, item: QueuedFollowup, outcome: HiddenWakeUpOutcome): Promise<void> {
+  const events = hiddenEvents(item.news)
+  await w.store.removeWakeUp(item.id)
+  outcomes[outcome]++
+  if (outcome === 'told') {
+    // (d) Told once, unless forgotten and observed again in between.
+    for (const event of events) { expect(w.told.has(event.id) && !w.forgotten.has(event.id), `told twice: ${event.kind}`).toBe(false); w.told.add(event.id); w.forgotten.delete(event.id) }
+    w.tolds++
+  }
+  if (outcome === 'unknown') for (const event of events) w.forgotten.add(event.id)
+  w.wakes.settled(events, outcome)
+}
+/**
+ * One pass of the coordinator's pump over the hidden wake-up; `mode` says how a send it makes ends, or `hold` that
+ * Watcher cannot take one now. Returns whether it acted.
+ */
+type Mode = 'ack' | 'fail' | 'unknown' | 'ack-save-fails' | 'hold'
+async function pump(w: World, mode: Mode): Promise<boolean> {
+  const item = hidden(w)[0], first = w.store.peek().items.find(other => other.threadId === watcherId())
+  const ready = mode !== 'hold' && w.watcher.status !== 'running' && w.watcher.lastTurn?.status !== 'running'
+  // Anything else at the head of Watcher's queue, a resume note an earlier build saved, goes first, as any follow-up does.
+  if (first && first !== item) { if (!ready) return false; await w.store.claim(first.id); await w.store.settle(first.id, 'accepted'); return true }
+  if (!item) return false
+  const step = hiddenWakeUpStep(item, { echoed: !!item.messageId && w.echoes.has(item.messageId), reconciling: w.reconciling.has(item.id),
+    outdated: item.status === 'queued' && ready && hiddenEvents(item.news).some(event => !w.wakes.due(event)) })
+  if (step === 'wait' || step === 'send' && !ready) return false
+  if (step !== 'send') { await settleItem(w, item, step); return true }
+  await w.store.claim(item.id)
+  const sent = w.store.peek().items.find(other => other.id === item.id)!, events = hiddenEvents(sent.news)
+  // (c) Every send holds news that needs Watcher; a thread's own facts only ride with it.
+  expect(w.wakes.needsAttention(events), 'a send of a thread’s own facts alone').toBe(true)
+  w.sends.push({ events, warranted: w.attentionSince })
+  if (!w.attentionSince) w.automatic++
+  w.attentionSince = false
+  if (mode === 'fail') await settleItem(w, sent, 'failed')
+  else if (mode === 'unknown') { await w.store.settle(sent.id, 'uncertain', 'Synthetic unknown send'); w.uncertain.set(sent.id, sent.messageId!); w.reconciling.add(sent.id) }
+  else if (mode === 'ack') await settleItem(w, sent, 'told')
+  else {
+    // It went, and saving that fails once: nothing is lost, and the coordinator settles it as told on its next try.
+    w.failNextWrite = true
+    await expect(settleItem(w, sent, 'told')).rejects.toThrow('Synthetic disk failure')
+    expect(hidden(w).map(other => other.id)).toEqual([sent.id])
+    await settleItem(w, sent, 'told')
+  }
   return true
 }
-
-/** Pumps until nothing more happens by itself, as the coordinator does, and says how many passes acted. */
-async function settle(w: World, outcome: 'ack' | 'fail' | 'unknown'): Promise<number> {
-  let acted = 0
-  for (let pass = 0; pass < 40; pass++) { if (!await pump(w, outcome)) return acted; acted++ }
-  throw new Error('The hidden wake-up kept acting without news (rule b)')
+/** Pumps and lets time pass until nothing more happens by itself, as the coordinator does. */
+async function quiesce(w: World, mode: Mode): Promise<void> {
+  for (let pass = 0; pass < 60; pass++) {
+    await advance(w, 6_000)
+    if (!await pump(w, mode)) { await advance(w, 6_000); if (!await pump(w, mode)) return }
+  }
+  throw new Error('Watcher’s news kept acting without news (rule b)')
 }
 
-function check(w: World): void {
-  // (a) One hidden wake-up at most.
+type Step = 'finish' | 'start' | 'question' | 'answer' | 'checks' | 'local' | 'pump-ack' | 'pump-fail' | 'pump-unknown' | 'echo' | 'restart'
+  | 'watcher-turn' | 'save-fail' | 'legacy' | 'mid-send' | 'lose-echo'
+async function apply(w: World, step: Step): Promise<void> {
+  const worker = w.worker
+  switch (step) {
+    case 'finish': if (worker.status === 'running') { worker.status = 'idle'; worker.lastTurn = { id: `turn-${w.turn}`, status: 'completed' }; w.attentionSince = true; observe(w) } break
+    case 'start': if (worker.status !== 'running') { w.turn++; worker.status = 'running'; worker.lastTurn = { id: `turn-${w.turn}`, status: 'running' }; observe(w) } break
+    case 'question': worker.requests = [...worker.requests, { id: randomUUID(), kind: 'question', text: 'Synthetic question', options: [] }]; w.attentionSince = true; observe(w); break
+    case 'answer': worker.requests = []; observe(w); break
+    case 'checks':
+      w.checks = w.checks === 'failed' ? 'passed' : 'failed'; w.attentionSince = true
+      w.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(w.clock).toISOString(), availability: 'available', checks: w.checks, checkCount: 1 })
+      break
+    case 'local': w.wakes.checkpoint({ threadId: worker.id, checkpointId: randomUUID(), observedAt: new Date(w.clock).toISOString(), availability: 'available', changedFiles: w.clock % 7 }); break
+    case 'pump-ack': await advance(w, 6_000); await pump(w, 'ack'); break
+    case 'pump-fail': await advance(w, 6_000); await pump(w, 'fail'); break
+    case 'pump-unknown': await advance(w, 6_000); await pump(w, 'unknown'); break
+    // The outbox settles an unknown send: its late echo shows it went, or no echo is ever seen.
+    case 'echo': for (const [id, messageId] of w.uncertain) { w.echoes.add(messageId); w.reconciling.delete(id) } break
+    case 'lose-echo': w.reconciling.clear(); break
+    case 'restart': await load(w); break
+    case 'watcher-turn':
+      w.watcher.status = 'running'; w.watcher.lastTurn = { id: randomUUID(), status: 'running' }; observe(w)
+      w.watcher.status = 'idle'; w.watcher.lastTurn = { ...w.watcher.lastTurn, status: 'completed' }; observe(w)
+      break
+    case 'save-fail': await advance(w, 6_000); await pump(w, 'ack-save-fails'); break
+    case 'mid-send': {
+      // News arrives while a wake-up is being sent: it waits for the next one and changes nothing in this one.
+      const item = hidden(w)[0]
+      if (item?.status !== 'queued' || w.store.peek().items.find(other => other.threadId === watcherId()) !== item) break
+      await w.store.claim(item.id)
+      const before = structuredClone(w.store.peek().items.find(other => other.id === item.id)!)
+      worker.requests = [...worker.requests, { id: randomUUID(), kind: 'question', text: 'Synthetic question', options: [] }]; observe(w); await advance(w, 6_000)
+      expect(w.store.peek().items.find(other => other.id === item.id)).toEqual(before)
+      expect(hidden(w)).toHaveLength(1)
+      const events = hiddenEvents(before.news)
+      w.sends.push({ events, warranted: true }); w.attentionSince = true
+      await settleItem(w, before, 'told')
+      break
+    }
+    case 'legacy': {
+      // Earlier builds' queues: main's, with the news in the words; mixed with a resume note; and this branch's earlier
+      // rounds, with and without what they kept beside the news, two side by side, one mid-send.
+      const at = new Date(w.clock).toISOString()
+      const news = (kind: 'turn-finished' | 'needs-user'): WatcherNews => ({ source: 'watcher', watcher: w.record.current!.target, omitted: 0, events: [{ id: randomUUID(),
+        requestId: w.record.requests[0]!.id, target: centerTarget, generation: 0, kind, turnId: worker.lastTurn!.id, observedAt: at,
+        ...kind === 'needs-user' ? { requestCardId: 'legacy-card', requestCardKind: 'question', revision: 'legacy' } : {} }] })
+      const item = (patch: Record<string, unknown>): Record<string, unknown> => ({ id: randomUUID(), threadId: watcherId(), draftId: randomUUID(), attachments: [], status: 'queued',
+        wakeUp: true, createdAt: at, updatedAt: at, text: 'Synthetic earlier words', ...patch })
+      const main = news('turn-finished'), mixed = news('needs-user')
+      const items = [item({ news: [main], text: watcherNewsText(main) }), item({ news: [{ source: 'restart', since: at, resumes: 1 }, mixed] }),
+        item({ news: [news('turn-finished')], attention: [], status: 'dispatching', commandId: randomUUID(), messageId: randomUUID() }),
+        item({ news: [news('needs-user')], attention: ['x'], carried: ['x'], attempts: 3, status: 'paused' })]
+      for (const entry of items) for (const event of hiddenEvents(entry.news as WatcherNews[])) w.record.wakeEventIds = [...w.record.wakeEventIds ?? [], event.id]
+      await writeFile(join(w.directory, 'followups.json'), JSON.stringify({ items, receipts: [] }))
+      await load(w)
+      expect(hidden(w)).toEqual([])
+      for (const entry of items) for (const event of hiddenEvents(entry.news as WatcherNews[])) expect(w.record.wakeEventIds).not.toContain(event.id)
+      break
+    }
+  }
+}
+
+async function check(w: World): Promise<void> {
+  // (a) One hidden wake-up at most, in memory and saved.
   expect(hidden(w).length).toBeLessThanOrEqual(1)
-  // (c) No send carried only events that did not need Watcher.
-  for (const send of w.sends) expect(send.carried.some(id => w.observed.get(id))).toBe(true)
-  // (d) Every event is still held, or left with an acknowledged send that carried it, or was let go to be observed afresh.
-  const held = new Set(hidden(w).flatMap(item => hiddenEvents(item.news).map(event => event.id)))
-  for (const id of w.observed.keys()) expect(held.has(id) || w.acknowledged.has(id) || w.released.has(id)).toBe(true)
-  // (b) Tries are bounded: each run of news that needs Watcher earns at most the budget.
-  expect(w.sends.length).toBeLessThanOrEqual((w.renewals + 1) * HIDDEN_WAKE_UP_ATTEMPTS)
+  // (b) Automatic tries are bounded: at most WAKE_UP_TRIES - 1 after each send that reached Watcher, and after the start.
+  expect(w.automatic).toBeLessThanOrEqual((WAKE_UP_TRIES - 1) * (w.tolds + 1) + w.forgotten.size)
+  // (e) With nothing new, pumping again changes nothing and writes nothing.
+  await quiesce(w, 'hold')
+  const writes = w.writes, sends = w.sends.length
+  await quiesce(w, 'hold')
+  expect(w.writes - writes).toBe(0)
+  expect(w.sends.length - sends).toBe(0)
+}
+
+/** (d) None lost: with Watcher answering, every news that needs it and is still true reaches it. */
+async function noneLost(w: World): Promise<void> {
+  w.attentionSince = true
+  // The outbox settles every unknown send in the end, and a question is news that needs Watcher, which takes everything
+  // waiting with it.
+  w.reconciling.clear()
+  await apply(w, 'question')
+  for (let round = 0; round < 6; round++) { await quiesce(w, 'ack'); await apply(w, 'watcher-turn') }
+  await quiesce(w, 'ack')
+  const pending = (w.wakes as unknown as { pending: WatcherEvent[] }).pending
+  const due = w.wakes.news().filter(event => w.wakes.needsAttention([event]))
+  for (const event of due) expect(w.told.has(event.id) || pending.some(item => item.id === event.id) || hidden(w).some(item => hiddenEvents(item.news).some(other => other.id === event.id)),
+    `${event.kind} was lost`).toBe(true)
+  expect(pending.filter(event => w.wakes.needsAttention([event]))).toEqual([])
 }
 
 it.each([
-  ['a refusal, then news that needs Watcher', [['news', true], ['pump', 'fail'], ['pump', 'fail'], ['news', true], ['pump', 'ack']]],
-  ['only a thread’s own facts', [['news', false], ['pump', 'ack'], ['news', false], ['restart'], ['pump', 'ack']]],
-  ['news folded while a send is unknown, and its late echo', [['news', true], ['claim-unknown'], ['news', true], ['echo'], ['pump', 'ack'], ['pump', 'ack']]],
-  ['a Stop, a restart and Watcher’s own turn', [['news', true], ['pause'], ['restart'], ['turn'], ['pump', 'ack']]],
-  ['two hidden wake-ups an earlier build saved', [['legacy'], ['pump', 'fail'], ['pump', 'fail'], ['pump', 'fail'], ['pump', 'fail'], ['pump', 'fail']]],
+  ['a send with news arriving mid-send', ['start', 'finish', 'mid-send', 'pump-ack']],
+  ['a refusal, then news that needs Watcher', ['question', 'pump-fail', 'pump-fail', 'question', 'pump-ack']],
+  ['only a thread’s own facts', ['local', 'local', 'pump-ack', 'start', 'local', 'pump-ack']],
+  ['an unknown send and its late echo', ['question', 'pump-unknown', 'echo', 'pump-ack', 'pump-ack']],
+  ['a failed save of an acknowledgement', ['question', 'save-fail', 'pump-ack', 'question', 'pump-ack']],
+  ['a withdrawal as the worker starts a new turn', ['finish', 'start', 'pump-ack', 'checks', 'local', 'pump-ack']],
+  ['an unknown send no echo ever settles', ['question', 'pump-unknown', 'lose-echo', 'pump-ack']],
+  ['a restart mid-dispatch', ['question', 'pump-unknown', 'restart', 'pump-ack']],
+  ['queues earlier builds saved', ['question', 'legacy', 'pump-ack', 'pump-fail', 'watcher-turn', 'pump-ack']],
+  ['refusals past the bound', ['question', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn', 'pump-fail', 'watcher-turn']],
 ] as const)('keeps the hidden wake-up’s rules through %s', async (_, steps) => {
   const w = await world()
-  for (const step of steps) { await apply(w, step as unknown as Step); check(w) }
+  for (const step of steps) { await apply(w, step); await check(w) }
+  await noneLost(w)
+}, 60_000)
+
+it('never wakes Watcher for a thread’s own facts alone', async () => {
+  const w = await world()
+  for (const step of ['local', 'local', 'start', 'local', 'local', 'watcher-turn', 'local'] as const) { await apply(w, step); await check(w) }
+  expect(w.sends).toEqual([])
 })
 
-type Step = readonly ['news', boolean] | readonly ['pump', 'ack' | 'fail' | 'unknown'] | readonly ['restart'] | readonly ['pause'] | readonly ['turn']
-  | readonly ['legacy'] | readonly ['claim-unknown'] | readonly ['echo'] | readonly ['user'] | readonly ['prune']
-async function apply(w: World, step: Step): Promise<void> {
-  switch (step[0]) {
-    case 'news': await news(w, step[1]); break
-    case 'pump': await settle(w, step[1]); break
-    case 'restart': await load(w); break
-    case 'pause': await w.store.pause(thread, 'Synthetic Stop'); w.watcher.lastTurn = { id: randomUUID(), status: 'interrupted' }; break
-    case 'turn': w.watcher.lastTurn = { id: randomUUID(), status: 'completed' }; break
-    case 'user': await w.store.enqueue({ threadId: thread, draftId: randomUUID(), text: 'Synthetic user follow-up', attachments: [] }); break
-    case 'prune': {
-      const item = hidden(w)[0]
-      if (item && ['queued', 'paused', 'failed'].includes(item.status)) {
-        const drop = new Set(hiddenEvents(item.news).filter((_, index) => index % 2 === 0).map(event => event.id))
-        for (const id of drop) w.released.add(id)
-        await w.store.pruneWakeUp(item.id, () => true, word, part => 'events' in part ? { ...part, events: part.events.filter(event => !drop.has(event.id)) } : part)
-      }
-      break
-    }
-    case 'claim-unknown': {
-      const item = hidden(w)[0]
-      if (item?.status === 'queued' && needsWatcherNow(item) && (item.attempts ?? 0) < HIDDEN_WAKE_UP_ATTEMPTS) {
-        await w.store.claim(item.id)
-        const sent = w.store.peek().items.find(other => other.id === item.id)!
-        w.sends.push({ carried: [...sent.carried ?? []] })
-        await w.store.settle(item.id, 'uncertain', 'Synthetic unknown'); w.echoes.delete(sent.messageId!)
-        if (sent.messageId) (w as World & { pendingEcho?: string }).pendingEcho = sent.messageId
-      }
-      break
-    }
-    case 'echo': { const id = (w as World & { pendingEcho?: string }).pendingEcho; if (id) w.echoes.add(id); break }
-    case 'legacy': {
-      // An earlier build saved two hidden wake-ups for one Watcher, without the fields this build keeps.
-      const item = (id: string): unknown => ({ id: randomUUID(), threadId: thread, draftId: randomUUID(), text: 'Synthetic earlier words', attachments: [], status: 'queued',
-        wakeUp: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-        news: [{ source: 'watcher', watcher: { hostId, threadId: thread }, omitted: 0, events: [{ id, requestId: randomUUID(), target: { hostId, threadId: `worker-${id}` },
-          generation: 0, kind: 'turn-finished', turnId: id, observedAt: new Date().toISOString() }] }] })
-      const ids = [randomUUID(), randomUUID()]
-      for (const id of ids) w.observed.set(id, true)
-      w.renewals += 2
-      await writeFile(join(w.directory, 'followups.json'), JSON.stringify({ items: ids.map(item), receipts: [] }))
-      await load(w)
-      break
-    }
-  }
-}
-
-it('keeps the hidden wake-up’s rules through seeded random sequences, with a bound on queue writes', async () => {
-  for (let seed = 1; seed <= 40; seed++) {
+it('keeps the hidden wake-up’s rules through seeded random sequences', async () => {
+  const steps: Step[] = ['finish', 'start', 'question', 'answer', 'checks', 'local', 'local', 'pump-ack', 'pump-fail', 'pump-unknown', 'echo', 'lose-echo', 'restart',
+    'watcher-turn', 'save-fail', 'mid-send', 'legacy']
+  for (let seed = 1; seed <= 30; seed++) {
     const next = random(seed), w = await world()
-    const pick = <T>(values: readonly T[]): T => values[Math.floor(next() * values.length)]!
-    for (let step = 0; step < 18; step++) {
-      const choice = pick(['news-attention', 'news-facts', 'pump-ack', 'pump-fail', 'pump-unknown', 'restart', 'pause', 'turn', 'user', 'prune', 'echo-all'] as const)
-      if (choice === 'news-attention') await apply(w, ['news', true])
-      else if (choice === 'news-facts') await apply(w, ['news', false])
-      else if (choice === 'pump-ack') await apply(w, ['pump', 'ack'])
-      else if (choice === 'pump-fail') await apply(w, ['pump', 'fail'])
-      else if (choice === 'pump-unknown') await apply(w, ['pump', 'unknown'])
-      else if (choice === 'echo-all') await settle(w, 'ack')
-      else await apply(w, [choice] as unknown as Step)
-      check(w)
-      // With nothing new, pumping again changes nothing and writes nothing.
-      const writes = w.writes
-      await settle(w, 'fail'); await settle(w, 'fail')
-      const quiet = w.writes
-      await settle(w, 'fail')
-      expect(w.writes - quiet).toBe(0)
-      // Each try is at most a revival, a claim and its outcome; then at most one block.
-      expect(quiet - writes).toBeLessThanOrEqual(3 * HIDDEN_WAKE_UP_ATTEMPTS + 2)
-      check(w)
-    }
-    expect(JSON.parse(await readFile(join(w.directory, 'followups.json'), 'utf8')).items.filter((item: QueuedFollowup) => item.threadId === thread && isWatcherOnlyWakeUp(item)).length).toBeLessThanOrEqual(1)
+    for (let step = 0; step < 16; step++) { await apply(w, steps[Math.floor(next() * steps.length)]!); await check(w) }
+    await noneLost(w)
+    const saved = JSON.parse(await readFile(join(w.directory, 'followups.json'), 'utf8').catch(() => '{"items":[]}')) as { items: QueuedFollowup[] }
+    expect(saved.items.filter(item => item.threadId === watcherId() && isWatcherOnlyWakeUp(item)).length).toBeLessThanOrEqual(1)
+    w.wakes.close()
   }
-}, 120_000)
+  for (const outcome of ['told', 'failed', 'unknown', 'withdrawn'] as const) expect(outcomes[outcome], outcome).toBeGreaterThan(0)
+}, 180_000)

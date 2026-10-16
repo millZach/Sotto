@@ -1,13 +1,26 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { expect, expectTypeOf, it, vi } from 'vitest'
 import { FollowupStore, type WordWakeUp } from '../../../src/main/agents/followups'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
-import { isBabysitNews, isWatcherNews, queuedWakeUpText, type WakeUpNews } from '../../../src/main/agents/wakeUp'
-import { WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
+import { isBabysitNews, isWatcherNews, queuedWakeUpText, wakeUpText, type WakeUpNews } from '../../../src/main/agents/wakeUp'
+import { WATCHER_WAKE_UP_PROMPT, watcherNewsText } from '../../../src/main/agents/watcherNews'
+import { RESUME_NOTE } from '../../../src/shared/restartResume'
+
+async function inDirectory(test: (directory: string) => Promise<void>): Promise<void> {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
+  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
+  try { await test(directory) } finally { await rm(directory, { recursive: true, force: true }) }
+}
+const hostId = randomUUID()
+const babysit = (number = 1): BabysitNews => ({ pullRequest: { number, title: 'Synthetic pull request', url: `https://github.com/o/r/pull/${number}` },
+  startedBy: 'user', head: 'head', changes: [], ended: null })
+const watcher = (...ids: string[]): Extract<WakeUpNews, { source: 'watcher' }> => ({ source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
+  events: ids.map(id => ({ id, requestId: randomUUID(), target: { hostId, threadId: `worker-${id}` }, generation: 0, kind: 'turn-finished' as const, turnId: id, observedAt: new Date().toISOString() })) })
+const word: WordWakeUp = items => queuedWakeUpText(items, { tool: true })
 
 it('requires stored-news callbacks to handle both babysitting and Watcher news', () => {
   expectTypeOf<WordWakeUp>().toEqualTypeOf<(news: readonly WakeUpNews[]) => string>()
@@ -23,174 +36,99 @@ it('requires stored-news callbacks to handle both babysitting and Watcher news',
   expectTypeOf(rejectNarrowCallbacks).toBeFunction()
 })
 
-it('words, withdraws and prunes a stored queue containing both news sources', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
-  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
-  try {
-    const store = new FollowupStore(directory)
-    await store.load()
-    const babysit: BabysitNews = { pullRequest: { number: 1, title: 'Synthetic pull request', url: 'https://github.com/o/r/pull/1' },
-      startedBy: 'user', head: 'head', changes: [], ended: null }
-    const hostId = randomUUID()
-    const watcher: WakeUpNews = { source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
-      events: [{ id: 'event', requestId: randomUUID(), target: { hostId, threadId: 'worker' },
-        generation: 0, kind: 'turn-finished', turnId: 'turn', observedAt: new Date().toISOString() }] }
-    const word = vi.fn<WordWakeUp>(items => queuedWakeUpText(items, { tool: true }))
-    await store.queueWakeUp('thread', babysit, word)
-    await store.queueWakeUp('thread', watcher, word)
-    expect(word.mock.calls.at(-1)![0].map(isWatcherNews)).toEqual([false, true])
-    await store.withdrawWakeUp('thread', babysit.pullRequest.url, word)
-    expect(word.mock.calls.at(-1)![0].map(isWatcherNews)).toEqual([true])
-    expect(store.peek().items[0]!.text).toBe(queuedWakeUpText([watcher], { tool: true }))
-    await store.queueWakeUp('thread', babysit, word)
-    const due = vi.fn((item: WakeUpNews) => !isWatcherNews(item))
-    const transform = vi.fn((item: WakeUpNews) => item)
-    await store.pruneWakeUp(store.peek().items[0]!.id, due, word, transform)
-    expect(due.mock.calls.map(([item]) => isWatcherNews(item))).toEqual([false, true])
-    expect(transform.mock.calls.map(([item]) => isWatcherNews(item))).toEqual([false, true])
-    expect(store.peek().items[0]!.news).toEqual([babysit])
-    expect(store.peek().items[0]!.text).toBe(queuedWakeUpText([babysit], { tool: true }))
-  } finally {
-    await rm(directory, { recursive: true, force: true })
-  }
-})
+it('keeps Watcher’s news in a wake-up of its own that no news joins, and that withdrawing, pruning and pausing pass by', () => inDirectory(async directory => {
+  const store = new FollowupStore(directory); await store.load()
+  await store.queueWakeUp('thread', babysit(), word)
+  await store.queueWakeUp('thread', watcher('first'), word)
+  // Two items, never one mixed: the hidden one says only Sotto's short message.
+  expect(store.peek().items.map(item => item.news!.map(isWatcherNews))).toEqual([[false], [true]])
+  const hidden = store.peek().items[1]!
+  expect(hidden.text).toBe(WATCHER_WAKE_UP_PROMPT)
+  // A second is refused, while the first waits and while it is sent: news waits in Watcher's own news instead.
+  await expect(store.queueWakeUp('thread', watcher('second'), word)).rejects.toThrow('Watcher already has news on its way.')
+  await store.withdrawWakeUp('thread', babysit().pullRequest.url, word)
+  await store.claim(hidden.id)
+  await expect(store.queueWakeUp('thread', watcher('third'), word)).rejects.toThrow('Watcher already has news on its way.')
+  // Pull request news never folds into it either.
+  await store.queueWakeUp('thread', babysit(2), word)
+  expect(store.peek().items.map(item => [item.id === hidden.id, item.status, item.news!.map(isWatcherNews)]))
+    .toEqual([[true, 'dispatching', [true]], [false, 'queued', [false]]])
+  expect(store.peek().items[0]!.news).toEqual(hidden.news)
+  // A pause holds the user's queue and passes it by: no one could resume it.
+  await store.removeWakeUp(hidden.id)
+  await store.queueWakeUp('thread', watcher('fourth'), word)
+  await store.pause('thread', 'Synthetic stop')
+  expect(store.peek().items.map(item => [isWatcherNews(item.news![0]!), item.status])).toEqual([[false, 'paused'], [true, 'queued']])
+  // It leaves whole; a user's follow-up is never taken for it.
+  await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text: 'Synthetic user follow-up', attachments: [] })
+  await store.removeWakeUp(store.peek().items.find(item => item.text === 'Synthetic user follow-up')!.id)
+  await store.removeWakeUp(store.peek().items.find(item => item.text === WATCHER_WAKE_UP_PROMPT)!.id)
+  expect(store.peek().items.map(item => item.text)).toEqual(['Synthetic user follow-up', word([babysit(2)])])
+}))
 
-it.each(['paused', 'failed'] as const)('retains a %s wake-up explanation when pruning part of its news', async status => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
-  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
-  try {
-    const store = new FollowupStore(directory); await store.load()
-    const news = (number: number): BabysitNews => ({ pullRequest: { number, title: 'Synthetic pull request', url: 'https://github.com/o/r/pull/' + number },
-      startedBy: 'user', head: 'head', changes: [], ended: null })
-    const word: WordWakeUp = items => queuedWakeUpText(items, { tool: true })
-    await store.queueWakeUp('thread', news(1), word); await store.queueWakeUp('thread', news(2), word)
-    const id = store.peek().items[0]!.id, error = 'Synthetic explanation for the held queue'
-    if (status === 'paused') await store.pause('thread', error)
-    else { await store.claim(id); await store.settle(id, 'failed', error) }
-    await store.pruneWakeUp(id, item => isBabysitNews(item) && item.pullRequest.number === 2, word)
-    expect(store.peek().items[0]).toMatchObject({ id, status, error, news: [news(2)] })
-    expect(store.peek().items[0]!.text).toBe(word([news(2)]))
-    await store.resume('thread')
-    expect(store.peek().items[0]).toMatchObject({ status: 'queued' })
-    expect(store.peek().items[0]!.error).toBeUndefined()
-  } finally { await rm(directory, { recursive: true, force: true }) }
-})
+it.each(['paused', 'failed'] as const)('retains a %s wake-up explanation when pruning part of its news', status => inDirectory(async directory => {
+  const store = new FollowupStore(directory); await store.load()
+  await store.queueWakeUp('thread', babysit(1), word); await store.queueWakeUp('thread', babysit(2), word)
+  const id = store.peek().items[0]!.id, error = 'Synthetic explanation for the held queue'
+  if (status === 'paused') await store.pause('thread', error)
+  else { await store.claim(id); await store.settle(id, 'failed', error) }
+  await store.pruneWakeUp(id, item => isBabysitNews(item) && item.pullRequest.number === 2, word)
+  expect(store.peek().items[0]).toMatchObject({ id, status, error, news: [babysit(2)] })
+  expect(store.peek().items[0]!.text).toBe(word([babysit(2)]))
+  await store.resume('thread')
+  expect(store.peek().items[0]).toMatchObject({ status: 'queued' })
+  expect(store.peek().items[0]!.error).toBeUndefined()
+}))
 
-it('sets a stopped wake-up for Watcher alone going again behind the user’s follow-ups, retries one not sent on new news, and lets an unknown one go', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
-  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
-  try {
-    const store = new FollowupStore(directory); await store.load()
-    const hostId = randomUUID(), word: WordWakeUp = items => queuedWakeUpText(items, { tool: true })
-    const news = (id: string): WakeUpNews => ({ source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
-      events: [{ id, requestId: randomUUID(), target: { hostId, threadId: 'worker' }, generation: 0, kind: 'turn-finished', turnId: id, observedAt: new Date().toISOString() }] })
-    // What WatcherWakeUp says of news as it comes: a finish needs Watcher, a thread's own facts do not.
-    const needed = (item: WakeUpNews) => new Set('events' in item ? item.events.filter(event => event.kind !== 'evidence-changed').map(event => event.id) : [])
-    await store.queueWakeUp('thread', news('first'), word, undefined, needed(news('first')))
-    const id = store.peek().items[0]!.id
-    expect(store.peek().items[0]!.text).toBe(WATCHER_WAKE_UP_PROMPT)
-    // Not sent, with the user's follow-up queued behind it while it was going.
-    await store.claim(id)
-    await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text: 'Synthetic user follow-up', attachments: [] })
-    await store.settle(id, 'failed', 'Synthetic send failure')
-    await store.reviveWakeUp(id, 'turn-after')
-    expect(store.peek().items.map(item => [item.text, item.status])).toEqual([['Synthetic user follow-up', 'queued'], [WATCHER_WAKE_UP_PROMPT, 'queued']])
-    expect(store.peek().items[1]).toMatchObject({ resumeAfterTurnId: 'turn-after' })
-    // Not sent again: new news is a reason to try once more.
-    await store.edit('thread', store.peek().items[0]!.id)
-    await store.claim(id); await store.settle(id, 'failed', 'Synthetic send failure')
-    // A thread's own facts moving only keep the news current: they never send it again, mid-turn or otherwise.
-    const evidence: WakeUpNews = { source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
-      events: [{ id: 'evidence', requestId: randomUUID(), target: { hostId, threadId: 'worker' }, generation: 0, kind: 'evidence-changed', evidenceIds: ['fact'], revision: 'revision', observedAt: new Date().toISOString() }] }
-    await store.queueWakeUp('thread', evidence, word, undefined, needed(evidence))
-    expect(store.peek().items[0]).toMatchObject({ id, status: 'failed' })
-    await store.queueWakeUp('thread', news('second'), word, undefined, needed(news('second')))
-    expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
-    // A wake-up a Stop paused starts again on news that needs Watcher, too.
-    await store.pause('thread', 'Synthetic stop')
-    await store.queueWakeUp('thread', evidence, word, undefined, needed(evidence))
-    expect(store.peek().items[0]).toMatchObject({ id, status: 'paused' })
-    // So does a pull request's change, which its caller says needs Watcher, though it is evidence.
-    await store.pause('thread', 'Synthetic stop')
-    const checks: WakeUpNews = { ...evidence, events: evidence.events.map(event => ({ ...event, id: 'checks' })) }
-    await store.queueWakeUp('thread', checks, word, undefined, new Set(['checks']))
-    expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
-    await store.pause('thread', 'Synthetic stop')
-    await store.queueWakeUp('thread', news('third'), word, undefined, needed(news('third')))
-    expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
-    // An unknown send is never sent twice: what it carried is let go, to be observed afresh.
-    await store.claim(id); await store.settle(id, 'uncertain', 'Synthetic unknown send')
-    expect((await store.letGoWakeUp(id, word)).map(event => event.id).sort()).toEqual(['checks', 'first', 'second', 'third'])
-    expect(store.peek().items).toEqual([])
-    // A user's own follow-up is never revived.
-    await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text: 'Synthetic paused follow-up', attachments: [] })
-    await store.pause('thread', 'Synthetic pause')
-    await store.reviveWakeUp(store.peek().items[0]!.id, 'turn-after')
-    expect(store.peek().items[0]).toMatchObject({ status: 'paused' })
-  } finally { await rm(directory, { recursive: true, force: true }) }
-})
+it('takes Watcher’s news out of every queue an earlier build saved, keeping a mixed wake-up’s other words, and returns its events', () => inDirectory(async directory => {
+  const now = new Date().toISOString()
+  const item = (patch: Record<string, unknown>): Record<string, unknown> => ({ id: randomUUID(), threadId: 'thread', draftId: randomUUID(), attachments: [], status: 'queued',
+    wakeUp: true, createdAt: now, updatedAt: now, ...patch })
+  const items = [
+    item({ text: 'Synthetic user follow-up', wakeUp: undefined }),
+    // Main's: a wake-up with Watcher's news in its words.
+    item({ text: watcherNewsText(watcher('legacy')), news: [watcher('legacy')] }),
+    // Mixed: a resume note, pull request news and Watcher's news in one, worded together.
+    item({ text: `${RESUME_NOTE}\n\n${watcherNewsText(watcher('mixed'))}`, news: [{ source: 'restart', since: now, resumes: 1 }, watcher('mixed')] }),
+    item({ threadId: 'other', text: [wakeUpText([babysit()], { tool: false }), watcherNewsText(watcher('pulled'))].join('\n\n'), news: [babysit(), watcher('pulled')] }),
+    // This branch's earlier rounds: hidden, with what it kept beside the news, two for one Watcher, one being sent.
+    item({ text: WATCHER_WAKE_UP_PROMPT, news: [watcher('kept', 'facts')], attention: ['kept'], carried: ['kept'], attempts: 2, status: 'dispatching', commandId: randomUUID(), messageId: randomUUID() }),
+    item({ text: WATCHER_WAKE_UP_PROMPT, news: [watcher('second')], status: 'paused', error: 'Synthetic stop' }),
+    // A thread no longer here keeps everything it had.
+    item({ threadId: 'dormant', text: WATCHER_WAKE_UP_PROMPT, news: [watcher('dormant')] }),
+  ]
+  await writeFile(join(directory, 'followups.json'), JSON.stringify({ items, receipts: [] }))
+  const store = new FollowupStore(directory); await store.load(undefined, undefined, thread => thread !== 'dormant')
+  const dropped = await store.dropWatcherNews(news => queuedWakeUpText(news, { tool: false }))
+  expect(dropped.map(event => event.id).sort()).toEqual(['facts', 'kept', 'legacy', 'mixed', 'pulled', 'second'])
+  const left = store.peek().items
+  expect(left.map(entry => [entry.threadId, entry.text])).toEqual([['thread', 'Synthetic user follow-up'], ['thread', RESUME_NOTE],
+    ['other', wakeUpText([babysit()], { tool: false })], ['dormant', WATCHER_WAKE_UP_PROMPT]])
+  expect(left.filter(entry => entry.threadId !== 'dormant').some(entry => entry.news?.some(isWatcherNews))).toBe(false)
+  // Saved so, and the dormant thread's item whole as it was.
+  const saved = JSON.parse(await readFile(join(directory, 'followups.json'), 'utf8')) as { items: { threadId: string; text: string; news?: unknown[] }[] }
+  expect(saved.items.map(entry => entry.text)).toEqual(left.map(entry => entry.text))
+  expect(saved.items.find(entry => entry.threadId === 'dormant')!.news).toEqual(items.find(entry => entry.threadId === 'dormant')!.news)
+  // Nothing left to take: nothing written.
+  const write = vi.spyOn((store as unknown as { store: { write: (value: unknown) => Promise<void> } }).store, 'write')
+  expect(await store.dropWatcherNews(word)).toEqual([])
+  expect(write).not.toHaveBeenCalled()
+}))
 
-it('words a restored wake-up again from its news and saves it, leaving the user’s follow-ups as they are', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
-  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
-  try {
-    const hostId = randomUUID()
-    const news: WakeUpNews = { source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
-      events: [{ id: 'event', requestId: randomUUID(), target: { hostId, threadId: 'worker' }, generation: 0, kind: 'turn-finished', turnId: 'turn', observedAt: new Date().toISOString() }] }
-    // An earlier build put Watcher's news in the wake-up's words.
-    const earlier = new FollowupStore(directory); await earlier.load()
-    await earlier.enqueue({ threadId: 'thread', draftId: randomUUID(), text: 'Sotto saw changes, the user typed', attachments: [] })
-    await earlier.queueWakeUp('thread', news, () => 'Sotto saw changes in watched threads. Synthetic earlier words')
-    const store = new FollowupStore(directory); await store.load()
-    await store.rewordWakeUps(item => item.wakeUp ? queuedWakeUpText(item.news ?? [], { tool: false }) : item.text)
-    expect(store.peek().items.map(item => item.text)).toEqual(['Sotto saw changes, the user typed', WATCHER_WAKE_UP_PROMPT])
-    const reloaded = new FollowupStore(directory); await reloaded.load()
-    expect(reloaded.peek().items.map(item => item.text)).toEqual(['Sotto saw changes, the user typed', WATCHER_WAKE_UP_PROMPT])
-  } finally { await rm(directory, { recursive: true, force: true }) }
-})
-
-it('reorders the follow-ups the user sees around a wake-up no one is shown, and refuses an order a change overtook', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
-  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
-  try {
-    const hostId = randomUUID(), store = new FollowupStore(directory); await store.load()
-    const news: WakeUpNews = { source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
-      events: [{ id: 'event', requestId: randomUUID(), target: { hostId, threadId: 'worker' }, generation: 0, kind: 'turn-finished', turnId: 'turn', observedAt: new Date().toISOString() }] }
-    for (const text of ['First', 'Second']) await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text, attachments: [] })
-    await store.queueWakeUp('thread', news, items => queuedWakeUpText(items, { tool: false }))
-    const id = (text: string) => store.peek().items.find(item => item.text === text)!.id
-    // The window sends the order of what it shows: the user's two follow-ups.
-    await store.reorder('thread', [id('Second'), id('First')])
-    expect(store.peek().items.map(item => item.text)).toEqual(['Second', 'First', WATCHER_WAKE_UP_PROMPT])
-    // An order naming every item still works.
-    await store.reorder('thread', [id('First'), id(WATCHER_WAKE_UP_PROMPT), id('Second')])
-    expect(store.peek().items.map(item => item.text)).toEqual(['First', 'Second', WATCHER_WAKE_UP_PROMPT])
-    // A follow-up queued since the order was read is a real change.
-    const stale = [id('Second'), id('First')]
-    await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text: 'Third', attachments: [] })
-    await expect(store.reorder('thread', stale)).rejects.toThrow('The follow-up order changed')
-    expect(store.peek().items.map(item => item.text)).toEqual(['First', 'Second', 'Third', WATCHER_WAKE_UP_PROMPT])
-  } finally { await rm(directory, { recursive: true, force: true }) }
-})
-
-it('folds news into a wake-up no one is shown while it is sent, and keeps what the send did not carry', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-wake-types-'))
-  if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-wake-types-')) throw new Error('Unexpected fixture path')
-  try {
-    const hostId = randomUUID(), store = new FollowupStore(directory); await store.load()
-    const word: WordWakeUp = items => queuedWakeUpText(items, { tool: false })
-    const news = (id: string): WakeUpNews => ({ source: 'watcher', watcher: { hostId, threadId: 'thread' }, omitted: 0,
-      events: [{ id, requestId: randomUUID(), target: { hostId, threadId: `worker-${id}` }, generation: 0, kind: 'turn-finished', turnId: id, observedAt: new Date().toISOString() }] })
-    await store.queueWakeUp('thread', news('first'), word, undefined, new Set(['first']))
-    const id = store.peek().items[0]!.id
-    await store.claim(id)
-    await store.queueWakeUp('thread', news('second'), word, undefined, new Set(['second']))
-    expect(store.peek().items.map(item => [item.id, item.status])).toEqual([[id, 'dispatching']])
-    await store.settleSent(id, word)
-    expect(store.peek().items).toHaveLength(1)
-    expect(store.peek().items[0]).toMatchObject({ id, status: 'queued' })
-    expect(store.peek().items[0]!.news!.flatMap(item => 'events' in item ? item.events.map(event => event.id) : [])).toEqual(['second'])
-    await store.claim(id); await store.settleSent(id, word)
-    expect(store.peek().items).toEqual([])
-  } finally { await rm(directory, { recursive: true, force: true }) }
-})
+it('reorders the follow-ups the user sees around a wake-up no one is shown, and refuses an order a change overtook', () => inDirectory(async directory => {
+  const store = new FollowupStore(directory); await store.load()
+  for (const text of ['First', 'Second']) await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text, attachments: [] })
+  await store.queueWakeUp('thread', watcher('event'), items => queuedWakeUpText(items, { tool: false }))
+  const id = (text: string) => store.peek().items.find(item => item.text === text)!.id
+  // The window sends the order of what it shows: the user's two follow-ups.
+  await store.reorder('thread', [id('Second'), id('First')])
+  expect(store.peek().items.map(item => item.text)).toEqual(['Second', 'First', WATCHER_WAKE_UP_PROMPT])
+  // An order naming every item still works.
+  await store.reorder('thread', [id('First'), id(WATCHER_WAKE_UP_PROMPT), id('Second')])
+  expect(store.peek().items.map(item => item.text)).toEqual(['First', 'Second', WATCHER_WAKE_UP_PROMPT])
+  // A follow-up queued since the order was read is a real change.
+  const stale = [id('Second'), id('First')]
+  await store.enqueue({ threadId: 'thread', draftId: randomUUID(), text: 'Third', attachments: [] })
+  await expect(store.reorder('thread', stale)).rejects.toThrow('The follow-up order changed')
+  expect(store.peek().items.map(item => item.text)).toEqual(['First', 'Second', 'Third', WATCHER_WAKE_UP_PROMPT])
+}))

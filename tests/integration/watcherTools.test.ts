@@ -1,14 +1,13 @@
 // @vitest-environment node
 import { createHash, randomUUID } from 'node:crypto'
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { watcherMessageRequests, watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
 import { watcherDisplayPrompt } from '../../src/main/agents/watcherMessageDisplay'
 import { WATCHER_WAKE_UP_PROMPT, watcherNewsText } from '../../src/main/agents/watcherNews'
-import { isBabysitNews, isWatcherNews, wakeUpText, watcherWakeUpNote } from '../../src/main/agents/wakeUp'
-import type { BabysitNews } from '../../src/main/agents/babysitNews'
+import { watcherWakeUpNote } from '../../src/main/agents/wakeUp'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
 import type { AgentThread, ProviderId } from '../../src/shared/agents'
@@ -20,7 +19,6 @@ import { deferred } from '../fixtures/deferred'
 import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { initializeGitRepository } from '../fixtures/gitRepository'
 import { followupStoreOf, storedFollowups } from '../fixtures/followupQueue'
-import { HIDDEN_WAKE_UP_ATTEMPTS } from '../../src/main/agents/hiddenWakeUp'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -736,125 +734,119 @@ it('hides Sotto’s wake-ups in Watcher’s conversation and on the phone, an ea
   expect(presented(watcher)).toBe(first)
 })
 
-it('lets a paused wake-up no one is shown go on by itself once Watcher finishes a turn', async () => {
-  const f = await fixture(), started = await f.call('start_thread', f.start())
+/** Watcher's wake-up queued behind its own running turn, holding a worker's question. */
+async function heldQuestion(f: Awaited<ReturnType<typeof fixture>>) {
+  const started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
-  await f.finish(started.target.threadId)
-  expect(await f.service.watchThread({ target: started.target })).toMatchObject({ status: 'ok' })
-  // Watcher is still on the user's request when the worker asks a question, so the news waits.
-  f.native(started.target.threadId).requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
-  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
-  // The user stops Watcher. Its queue pauses, and no one is shown this wake-up to resume it.
-  expect((await f.control.commandShell({ type: 'interrupt', threadId: f.id })).error).toBeNull()
-  await vi.waitFor(() => expect(queued(f).find(item => item.threadId === f.id && item.wakeUp)).toMatchObject({ status: 'paused' }))
-  expect(f.control.shell().followups?.filter(item => item.threadId === f.id)).toEqual([])
-  // Watcher's next turn ends, and the wake-up goes by itself.
-  await f.finish(f.id)
-  const master = f.workspace.registry.byThread(f.id)!.sessionId
-  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master
-    && command.watcherNews?.includes('Open this thread to answer'))).toBe(true), { timeout: 15_000 })
-})
-
-it('starts a stopped wake-up no one is shown again on news that needs Watcher, and tries a failed send again while Watcher rests', async () => {
-  const f = await fixture(), started = await f.call('start_thread', f.start())
-  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
-  await f.finish(started.target.threadId)
-  expect(await f.service.watchThread({ target: started.target })).toMatchObject({ status: 'ok' })
   const worker = f.native(started.target.threadId)
   worker.requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
-  // The user stops Watcher, which pauses its queue; Watcher takes no turn after that.
-  expect((await f.control.commandShell({ type: 'interrupt', threadId: f.id })).error).toBeNull()
-  await vi.waitFor(() => expect(queued(f).find(item => item.threadId === f.id && item.wakeUp)).toMatchObject({ status: 'paused' }))
-  // The provider refuses the first send that follows.
-  const master = f.workspace.registry.byThread(f.id)!.sessionId, execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
-  let refused = 0
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const sends = (words?: string) => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master
+    && command.watcherNews !== undefined && (words === undefined || command.watcherNews.includes(words)))
+  return { started, worker, master, sends, hidden: () => queued(f).filter(item => item.threadId === f.id && item.wakeUp) }
+}
+/** The provider refuses Watcher's wake-ups, every one or the first `times`. */
+function refuseWakeUps(f: Awaited<ReturnType<typeof fixture>>, master: string, times = Infinity) {
+  const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex), refused = { count: 0 }
   vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
-    if (command.type === 'send' && command.threadId === master && command.watcherNews && refused++ === 0) throw new Error('Synthetic native pre-write failure')
+    if (command.type === 'send' && command.threadId === master && command.watcherNews && refused.count < times) { refused.count++; throw new Error('Synthetic native pre-write failure') }
     return execute(command)
   })
-  // The worker's turn fails, its question still open: news that needs Watcher, so the paused wake-up goes again, and after the refusal, again.
+  return refused
+}
+
+it('lets a Stop of Watcher hold its wake-up no one is shown without pausing it, and sends the news once Watcher next comes to rest', async () => {
+  const f = await fixture(), { sends, hidden } = await heldQuestion(f)
+  // The user stops Watcher. The wake-up is never paused, since no one is shown it to resume: it leaves unsent, its news kept.
+  expect((await f.control.commandShell({ type: 'interrupt', threadId: f.id })).error).toBeNull()
+  await vi.waitFor(() => expect(hidden()).toEqual([]), { timeout: 15_000 })
+  expect(f.control.shell().followups?.filter(item => item.threadId === f.id)).toEqual([])
+  await new Promise(resolve => setTimeout(resolve, 3_000))
+  expect(sends()).toHaveLength(0)
+  // The user asks Watcher something; when that turn ends, Watcher rests, and the news goes.
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic second request' })).error).toBeNull()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(sends('Open this thread to answer')).toHaveLength(1), { timeout: 15_000 })
+}, 40_000)
+
+it('asks a provider that refused a wake-up no one is shown again only with news that needs Watcher, and sends both then', async () => {
+  const f = await fixture(), { worker, master, sends, hidden } = await heldQuestion(f)
+  const refused = refuseWakeUps(f, master, 1)
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(refused.count).toBe(1), { timeout: 15_000 })
+  await vi.waitFor(() => expect(hidden()).toEqual([]))
+  // Nothing new: the provider is not asked again, and nothing is written for it.
+  await new Promise(resolve => setTimeout(resolve, 4_000))
+  expect(refused.count).toBe(1); expect(hidden()).toEqual([])
+  // The worker's turn fails, its question still open: news that needs Watcher, and the question goes with it.
   worker.status = 'error'; worker.lastTurn = { id: 'stranded-turn', status: 'failed' }
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master
-    && command.watcherNews?.includes('turn failed') && command.watcherNews.includes('Open this thread to answer'))).toBe(true), { timeout: 15_000 })
-  expect(refused).toBeGreaterThanOrEqual(2)
-}, 30_000)
+  await vi.waitFor(() => expect(sends().some(command => command.type === 'send' && command.watcherNews!.includes('turn failed')
+    && command.watcherNews!.includes('Open this thread to answer'))).toBe(true), { timeout: 15_000 })
+  expect(refused.count).toBe(1)
+}, 40_000)
 
-it('keeps one wake-up no one is shown, folding news in while it is sent, and tries it a bounded number of times', async () => {
-  const f = await fixture(), started = await f.call('start_thread', f.start())
-  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
-  const worker = f.native(started.target.threadId)
-  worker.requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
-  f.workspace.adapters.codex.emit()
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
-  // The provider refuses every send of it.
-  const master = f.workspace.registry.byThread(f.id)!.sessionId, execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
-  let refused = 0
-  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
-    if (command.type === 'send' && command.threadId === master && command.watcherNews) { refused++; throw new Error('Synthetic native pre-write failure') }
-    return execute(command)
-  })
+it('never changes a wake-up no one is shown while it is sent: news that comes then is the next one, and a refusing provider is asked a bounded number of times', async () => {
+  const f = await fixture(), { worker, master, hidden } = await heldQuestion(f)
+  const refused = refuseWakeUps(f, master)
   const entered = deferred<void>(), release = deferred<void>()
   f.workspace.host.setCheckpointHooks({ isBlocked: async () => false, beforeTurn: async id => { if (id === f.id) { entered.resolve(); await release.promise } } })
-  const hidden = () => queued(f).filter(item => item.threadId === f.id && item.wakeUp)
   try {
     const finishing = f.finish(f.id)
     await entered.promise
-    // News that needs Watcher arrives while the wake-up is being sent: it folds into that one, not a second.
-    worker.status = 'error'; worker.lastTurn = { id: 'folded-turn', status: 'failed' }
+    const sending = hidden()
+    expect(sending).toMatchObject([{ status: 'dispatching' }])
+    // News that needs Watcher arrives while the wake-up is being sent: it waits for the next one and changes nothing.
+    worker.status = 'error'; worker.lastTurn = { id: 'later-turn', status: 'failed' }
     f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-    await vi.waitFor(() => expect(watcherWakeUpNote(hidden()[0]?.news ?? []) ?? '').toContain('turn failed'), { timeout: 15_000 })
-    expect(hidden()).toHaveLength(1)
+    await f.service.wakes.drained(); await new Promise(resolve => setTimeout(resolve, 3_000))
+    expect(hidden()).toEqual(sending)
     release.resolve(); await finishing
   } finally { release.resolve() }
-  // Every try uses the one budget: the first send, then, since the news folded in renewed it, four more. Then it waits.
-  await vi.waitFor(() => expect(refused).toBe(1 + HIDDEN_WAKE_UP_ATTEMPTS), { timeout: 25_000 })
+  // Refused: the news that came is news the send did not carry, so the next goes with it. Refused again, nothing new: it waits.
+  await vi.waitFor(() => expect(refused.count).toBe(2), { timeout: 15_000 })
+  const asked = f.workspace.adapters.codex.execute as unknown as { mock: { calls: [{ type: string; watcherNews?: string }][] } }
+  expect(asked.mock.calls.map(([command]) => command).filter(command => command.watcherNews).at(-1)!.watcherNews).toContain('turn failed')
   await new Promise(resolve => setTimeout(resolve, 7_000))
-  expect(refused).toBe(1 + HIDDEN_WAKE_UP_ATTEMPTS)
-  expect(hidden()).toHaveLength(1)
+  expect(refused.count).toBe(2)
+  expect(hidden()).toEqual([])
 }, 60_000)
 
-it('never sends a wake-up no one is shown that holds only a thread’s own facts, mid-turn or otherwise', async () => {
+it('never makes a wake-up no one is shown of a thread’s own facts, and sends them with news that needs Watcher', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
-  const worker = f.native(started.target.threadId)
-  // The news is recorded as not needing Watcher when observed, as a thread's own facts are, or what a prune leaves.
-  const asked = vi.spyOn(f.service, 'wakeAttention').mockReturnValue({ all: new Set(), fresh: new Set() })
-  worker.requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
-  f.workspace.adapters.codex.emit()
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
-  const master = f.workspace.registry.byThread(f.id)!.sessionId
-  const sent = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master && command.watcherNews)
   await f.finish(f.id)
-  await vi.waitFor(() => expect(queued(f).find(item => item.threadId === f.id && item.wakeUp)).toMatchObject({ status: 'paused' }), { timeout: 15_000 })
-  await new Promise(resolve => setTimeout(resolve, 4_000))
-  expect(sent()).toHaveLength(0)
-  expect(asked).toHaveBeenCalled()
-  // News that needs Watcher comes, and it goes with it.
-  asked.mockRestore()
-  worker.status = 'error'; worker.lastTurn = { id: 'attention-turn', status: 'failed' }
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const sends = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master && command.watcherNews)
+  // The worker's working copy moves again and again while its turn runs: no wake-up is made, and nothing is saved for it.
+  for (let n = 1; n <= 3; n++) {
+    f.service.checkpointObserved({ threadId: started.target.threadId, checkpointId: randomUUID(), observedAt: new Date().toISOString(), availability: 'available', changedFiles: n })
+    await f.service.wakes.drained(); await new Promise(resolve => setTimeout(resolve, 1_500))
+  }
+  expect(queued(f).filter(item => item.threadId === f.id)).toEqual([])
+  expect(sends()).toHaveLength(0)
+  f.native(started.target.threadId).requests = [{ id: 'card', kind: 'question', text: 'Synthetic question', options: [] }]
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  await vi.waitFor(() => expect(sent().some(command => command.type === 'send' && command.watcherNews?.includes('turn failed'))).toBe(true), { timeout: 15_000 })
+  await vi.waitFor(() => expect(sends()).toHaveLength(1), { timeout: 15_000 })
 }, 40_000)
 
-it('publishes nothing for a change to a wake-up no one is shown', async () => {
-  const f = await fixture(), started = await f.call('start_thread', f.start())
-  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
-  f.native(started.target.threadId).requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
-  f.workspace.adapters.codex.emit()
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
-  const waiting = queued(f).find(item => item.threadId === f.id && item.wakeUp)!
-  const news = waiting.news!.find(item => 'events' in item)!
+it('publishes nothing for a wake-up no one is shown', async () => {
+  const f = await fixture(), { hidden } = await heldQuestion(f)
+  const news = hidden()[0]!.news!.find(item => 'events' in item)!
   if (!('events' in news)) throw new Error('Expected Watcher news')
+  await followupStoreOf(f.control).removeWakeUp(hidden()[0]!.id)
   let published = 0
   const off = f.control.subscribe(() => { published++ })
   try {
-    // Watcher's news folds into its hidden wake-up again: saved, and nothing any window or phone shows changed.
+    // Watcher's news is saved as its hidden wake-up, and nothing any window or phone shows changed.
     await f.control.deliverWakeUp(f.id, news, { tool: false })
+    expect(hidden()).toHaveLength(1)
     expect(published).toBe(0)
+    // A second is refused while it is there.
+    await expect(f.control.deliverWakeUp(f.id, news, { tool: false })).rejects.toThrow('Watcher already has news on its way.')
     // A follow-up of the user's own is shown, and is published.
     await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'Synthetic user follow-up' })
     expect(published).toBeGreaterThan(0)
@@ -878,6 +870,76 @@ it('lets a hidden wake-up whose send is unknown go, and tells its news afresh ra
     && command.watcherNews?.includes('Open this thread to answer'))).toBe(true), { timeout: 15_000 })
 }, 40_000)
 
+/**
+ * Resolves when the provider hears Watcher's wake-up. The fake provider acknowledges a send when the turn it starts
+ * ends, so until the test ends that turn, the wake-up is heard and not yet acknowledged.
+ */
+function heardWakeUp(f: Awaited<ReturnType<typeof fixture>>, master: string): Promise<void> {
+  const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex), heard = deferred<void>()
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+    if (command.type === 'send' && command.threadId === master && command.watcherNews) heard.resolve()
+    return execute(command)
+  })
+  return heard.promise
+}
+it('never sends a thread’s own facts alone after a pull request’s wake-up they changed under was acknowledged (finding 1)', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('Sotto observed changed evidence'), { timeout: 15_000 })
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const told = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.threadId === master && command.watcherNews)
+  const moves = async (count: number) => {
+    for (let n = 0; n < count; n++) {
+      f.service.checkpointObserved({ threadId: started.target.threadId, checkpointId: randomUUID(), observedAt: new Date().toISOString(), availability: 'available', changedFiles: n + 2 })
+      await f.service.wakes.drained(); await new Promise(resolve => setTimeout(resolve, 500))
+    }
+  }
+  await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] })
+  const heard = heardWakeUp(f, master)
+  await f.finish(f.id); await heard
+  expect(told()).toHaveLength(1)
+  // The worker's working copy moves after the provider heard the wake-up and before it is acknowledged, as Watcher's turn ends.
+  await moves(2)
+  await f.finish(f.id)
+  // It keeps moving while the worker works. None of it wakes Watcher by itself.
+  await moves(4)
+  await new Promise(resolve => setTimeout(resolve, 5_000))
+  expect(told()).toHaveLength(1)
+}, 40_000)
+
+it('loses no news that came while a wake-up was sent when saving its acknowledgement fails (finding 3)', async () => {
+  const f = await fixture(), started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const worker = f.native(started.target.threadId)
+  worker.status = 'idle'; worker.lastTurn = { id: 'first-turn', status: 'completed' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(waitingNews(f)).toContain('foreground turn finished'), { timeout: 15_000 })
+  const master = f.workspace.registry.byThread(f.id)!.sessionId
+  const inner = (followupStoreOf(f.control) as unknown as { store: { write: (value: unknown) => Promise<void> } }).store
+  const write = inner.write.bind(inner)
+  let failNext = false
+  vi.spyOn(inner, 'write').mockImplementation(async value => { if (failNext) { failNext = false; throw new Error('Synthetic disk failure') } return write(value) })
+  // Sotto reads Watcher's conversation, so its send names the message it follows as the provider has it.
+  await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] })
+  const entered = deferred<void>(), release = deferred<void>()
+  f.workspace.host.setCheckpointHooks({ isBlocked: async () => false, beforeTurn: async id => { if (id === f.id) { entered.resolve(); await release.promise } } })
+  try {
+    const finishing = f.finish(f.id)
+    await entered.promise
+    // GitHub reads the worker's pull request while the wake-up is being sent, and the save that records the send then fails once.
+    f.service.pullRequestObserved(pullRequestNews(f, started.target.threadId).read)
+    await f.service.wakes.drained(); await new Promise(resolve => setTimeout(resolve, 3_000))
+    failNext = true
+    release.resolve(); await finishing
+  } finally { release.resolve() }
+  // Watcher's turn on that wake-up ends; the pull request's news, which it did not carry, goes next.
+  await vi.waitFor(() => expect(storedFollowups(f.control).some(item => item.threadId === f.id && item.wakeUp && item.status === 'dispatching')).toBe(false))
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master
+    && command.watcherNews?.includes('Sotto observed changed evidence'))).toBe(true), { timeout: 20_000 })
+}, 40_000)
+
 it('withdraws answered worker news while retaining the user queue before a busy master wake-up', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
@@ -894,36 +956,37 @@ it('withdraws answered worker news while retaining the user queue before a busy 
   expect(f.control.shell().followups!.some(item => item.text === 'User continuation first')).toBe(true)
 })
 
-it('words a wake-up an earlier build saved with Watcher’s news in it again, and shows and sends it without that news', async () => {
-  const f = await fixture(), started = await f.call('start_thread', f.start())
-  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
-  // Watcher is on the user's request when the worker asks a question, so the news waits.
-  f.native(started.target.threadId).requests = [{ id: 'held-card', kind: 'question', text: 'Synthetic question', options: [] }]
-  f.workspace.adapters.codex.emit()
-  await vi.waitFor(() => expect(waitingNews(f)).toContain('Open this thread to answer'), { timeout: 15_000 })
-  // Pull request news folds in, worded as an earlier build worded a mixed wake-up: Watcher's news after it, in the text.
-  const pullRequest: BabysitNews = { pullRequest: { number: 5, title: 'Synthetic pull request', url: 'https://github.com/synthetic/project/pull/5' },
-    startedBy: 'user', head: null, ended: null, changes: [{ kind: 'checks-failed', checks: [{ name: 'Synthetic check', status: 'failure', url: 'https://github.com/synthetic/project/actions/1' }] }] }
-  await followupStoreOf(f.control).queueWakeUp(f.id, pullRequest, items => [wakeUpText(items.filter(isBabysitNews), { tool: false }),
-    ...items.filter(isWatcherNews).map(watcherNewsText)].join('\n\n'))
-  expect(queued(f).find(item => item.threadId === f.id && item.wakeUp)!.text).toContain('Sotto saw changes in watched threads')
-  // The window and the phone are sent the pull request's words alone.
-  await f.control.commandShell({ type: 'queue-followup', threadId: f.id, draftId: randomUUID(), text: 'Synthetic user follow-up' })
-  const shown = f.control.shell().followups!.filter(item => item.threadId === f.id && item.wakeUp)
-  expect(shown).toHaveLength(1)
-  expect(shown[0]!.text).toContain('Pull request #5')
-  expect(shown[0]!.text).not.toContain('Sotto saw changes')
-  // And so is the provider, with Watcher's news beside them.
-  await f.control.commandShell({ type: 'remove-followup', threadId: f.id, itemId: queued(f).find(item => item.text === 'Synthetic user follow-up')!.id })
-  await f.finish(f.id)
+it('starts Watcher’s news afresh after a restart: wake-ups an earlier build saved go, and what is still true is told anew', async () => {
+  const f = await fixture(), { started } = await heldQuestion(f)
+  const saved = queued(f).find(item => item.threadId === f.id && item.wakeUp)!
+  const question = saved.news!.flatMap(news => 'events' in news ? news.events : [])
+  expect(f.control.watcherRecord().wakeEventIds).toEqual(expect.arrayContaining(question.map(event => event.id)))
+  f.service.close(); f.control.dispose(); await f.control.closed()
+  // An earlier build saved two for this Watcher, without what this one keeps beside them: one whose send was unknown, with
+  // the news in its words, and one waiting behind it.
+  const path = join(f.root, 'followups.json'), file = JSON.parse(await readFile(path, 'utf8')) as { items: Record<string, unknown>[] }
+  const finish = { ...question[0]!, id: randomUUID(), kind: 'turn-finished', turnId: 'synthetic-earlier-turn' }
+  file.items = file.items.flatMap(item => item.id !== saved.id ? [item] : [
+    { ...item, status: 'uncertain', commandId: randomUUID(), messageId: randomUUID(), text: watcherNewsText(saved.news![0] as Parameters<typeof watcherNewsText>[0]) },
+    { ...item, id: randomUUID(), draftId: randomUUID(), news: [{ ...saved.news![0], events: [finish] }] }])
+  await writeFile(path, JSON.stringify(file))
+  const restored = f.create(), service = new WatcherService({ directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true, limit: () => 4 })
+  f.workspace.host.useWatcherTools(new WatcherToolServer(service))
+  cleanups.push(async () => { service.close(); restored.dispose(); await restored.closed() })
+  await restored.start(); await restored.commandShell({ type: 'connect', provider: 'codex' }); await service.recover()
+  // Both are gone, and so is the record that their news was told.
+  expect(storedFollowups(restored).filter(item => item.threadId === f.id)).toEqual([])
+  expect(restored.watcherRecord().wakeEventIds ?? []).not.toEqual(expect.arrayContaining([question[0]!.id]))
+  expect(restored.watcherRecord().wakeEventIds ?? []).not.toContain(finish.id)
+  // The question is still open, so it is observed afresh and reaches Watcher once it rests.
+  await restored.commandShell({ type: 'refresh', provider: 'codex' })
+  const native = f.native(f.id); native.status = 'idle'; native.lastTurn = { id: randomUUID(), status: 'completed' }
+  f.workspace.adapters.codex.emit(); await restored.commandShell({ type: 'refresh', provider: 'codex' })
   const master = f.workspace.registry.byThread(f.id)!.sessionId
-  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master && command.watcherNews !== undefined)).toBe(true), { timeout: 15_000 })
-  const sent = f.workspace.adapters.codex.commands.find(command => command.type === 'send' && command.threadId === master && command.watcherNews !== undefined)!
-  if (sent.type !== 'send') throw new Error('Expected a send')
-  expect(sent.text).toContain('Pull request #5')
-  expect(sent.text).not.toContain('Sotto saw changes')
-  expect(sent.watcherNews).toContain('Open this thread to answer')
-})
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.threadId === master
+    && command.watcherNews?.includes('Open this thread to answer'))).toBe(true), { timeout: 20_000 })
+  void started
+}, 40_000)
 
 it('rechecks answered news after checkpoint preparation and before the provider writer', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())

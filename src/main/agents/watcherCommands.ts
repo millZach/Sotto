@@ -3,6 +3,7 @@ import type { AgentCommand, AgentHostSnapshot } from '../../shared/agents'
 import type { AgentHostCommand } from './host'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
+import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 
 /** Main-owned capability. This object never crosses IPC or a socket. */
 export interface WatcherCommandOrigin {
@@ -26,12 +27,8 @@ export interface WatcherControlHooks {
   watchedThreadIds?(): string[]
   wakeDue?(event: WatcherEvent): boolean
   wakeReady?(): boolean
-  /** Whether this news needs Watcher's attention, as opposed to a thread's own facts that only ride with such news. */
-  wakeNeedsAttention?(events: readonly WatcherEvent[]): boolean
-  /** Which of these events need Watcher, and which of those are news in themselves rather than evidence kept current. */
-  wakeAttention?(events: readonly WatcherEvent[]): { all: ReadonlySet<string>; fresh: ReadonlySet<string> }
-  /** News whose wake-up was let go with its send unknown: forget it was told, so what is still true is told afresh. */
-  forgetWakeEvents?(events: readonly WatcherEvent[]): void
+  /** Watcher's hidden wake-up left its queue with this outcome, holding these events (hiddenWakeUp.ts). */
+  wakeUpSettled?(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void
   pullRequestObserved?(read: PullRequestObservation): void
   restoreCheckpoint?(read: CheckpointObservation): void
   checkpointObserved?(read: CheckpointObservation): void
