@@ -3,7 +3,7 @@ import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { EMPTY_AGENT_HOST, PROVIDER_LABELS, type AgentProviderStatus, type AgentState, type ProviderId } from '../../../../../src/shared/agents'
+import type { AgentProviderStatus, AgentState, ProviderId } from '../../../../../src/shared/agents'
 import type { HostsState } from '../../../../../src/shared/hosts'
 import type { SottoE2EBridge } from '../../../../../src/shared/e2e'
 import { AgentProvider } from '../../../../../src/renderer/src/agents/AgentContext'
@@ -11,21 +11,10 @@ import { writeShellCache } from '../../../../../src/renderer/src/agents/shellCac
 import { STARTING_SCREEN_DONE_KEY, StartingScreenGate } from '../../../../../src/renderer/src/features/starting/StartingScreen'
 import { LATE_AFTER_MS, LEAVE_MS, REVEAL_AFTER_MS } from '../../../../../src/renderer/src/features/starting/startingView'
 import { agentWireBridge } from '../../../../fixtures/agentBridge'
-import { threadsStateFixture } from '../../../../fixtures/agentState'
 import { hostStatus, hostsBridgeFixture, hostsState } from '../../../../fixtures/renderer/hostBridges'
+import { FORGE_HOST_ID as FORGE, providerStatuses, startingAgentState } from '../../../../fixtures/renderer/startingScreenState'
 
-const LOCAL = '11111111-1111-4111-8111-111111111111'
-const FORGE = '22222222-2222-4222-8222-222222222222'
-
-function agent(providers: Partial<Record<ProviderId, AgentProviderStatus['connection']>>): AgentState {
-  const statuses = Object.entries(providers).map(([id, connection]) => ({
-    id: id as ProviderId, connection, name: PROVIDER_LABELS[id as ProviderId], version: '', capabilities: EMPTY_AGENT_HOST.capabilities,
-  }))
-  return threadsStateFixture({
-    topLevel: { clientScoped: true, connections: [{ hostId: LOCAL, name: 'This computer', kind: 'local', connected: true }] },
-    host: { clientHosts: [{ hostId: LOCAL, connected: true, models: [], capabilities: EMPTY_AGENT_HOST.capabilities, providers: statuses }] },
-  })
-}
+const agent = (providers: Partial<Record<ProviderId, AgentProviderStatus['connection']>>): AgentState => startingAgentState(providerStatuses(providers))
 
 /** The preload's agent and hosts bridges over states the test publishes. */
 function bridges(initial: AgentState, hosts: HostsState = hostsState(), get?: () => Promise<AgentState>) {

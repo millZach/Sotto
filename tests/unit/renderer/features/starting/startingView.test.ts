@@ -1,31 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { EMPTY_AGENT_HOST, PROVIDER_LABELS, type AgentProviderStatus, type AgentState, type ProviderId } from '../../../../../src/shared/agents'
 import type { HostsState, HostStatus } from '../../../../../src/shared/hosts'
 import { listNames, localProviders, startingView, type StartingInput } from '../../../../../src/renderer/src/features/starting/startingView'
-import { threadsStateFixture } from '../../../../fixtures/agentState'
 import { hostStatus, hostsState } from '../../../../fixtures/renderer/hostBridges'
-
-const LOCAL = '11111111-1111-4111-8111-111111111111'
-const FORGE = '22222222-2222-4222-8222-222222222222'
-
-function provider(id: ProviderId, connection: AgentProviderStatus['connection'], patch: Partial<AgentProviderStatus> = {}): AgentProviderStatus {
-  return { id, connection, name: PROVIDER_LABELS[id], version: '', capabilities: EMPTY_AGENT_HOST.capabilities, ...patch }
-}
-
-/** The window's state as the desktop router publishes it: this computer's providers on its own client host entry. */
-function agent(local: readonly AgentProviderStatus[], remote?: readonly AgentProviderStatus[]): AgentState {
-  return threadsStateFixture({
-    topLevel: { clientScoped: true, connections: [
-      { hostId: LOCAL, name: 'This computer', kind: 'local', connected: true },
-      ...(remote ? [{ hostId: FORGE, name: 'forge', kind: 'remote' as const, connected: true }] : []),
-    ] },
-    host: { clientHosts: [
-      { hostId: LOCAL, connected: true, models: [], capabilities: EMPTY_AGENT_HOST.capabilities, providers: [...local] },
-      ...(remote ? [{ hostId: FORGE, connected: true, models: [], capabilities: EMPTY_AGENT_HOST.capabilities, providers: [...remote] }] : []),
-    ] },
-  })
-}
+import { FORGE_HOST_ID as FORGE, providerStatus as provider, startingAgentState as agent } from '../../../../fixtures/renderer/startingScreenState'
 
 function forge(patch: Partial<HostStatus> = {}): HostsState {
   return hostsState({ hosts: [hostStatus({ id: FORGE, name: 'forge', phase: 'connecting', ...patch })] })
