@@ -110,7 +110,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   await settings.migrate(() => options.log?.('openrouter-key-migration-failed')).catch(() => {
     throw new HostKeyMigrationError('The OpenRouter key could not be stored securely and was removed from settings. Enter it again on the host machine after restoring storage access. Start the host with --key-file <file>.')
   })
-  await repositories.settings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(directory))
+  // The host's identity, read once from its own file; the self-update reads it here rather than copying the runtime's state.
+  const hostId = await loadHostIdentity(directory)
+  await repositories.settings.migrateProjectWorkingCopyDefaults(hostId)
   await repositories.settings.save(await repositories.settings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await removeRetiredVoiceCache(directory)
   const startup = await settings.get()
@@ -184,7 +186,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         const desktops = new DesktopClients(directory, options.log)
         // One for both listeners, so an update one desktop runs over either is the only one running (ADR-0087).
         const selfUpdate = options.entryPath ? createHostSelfUpdate({ entry: options.entryPath, dataDirectory: directory, port: options.port,
-          hostId: runtime.hostService.shell().hostId!, sottoVersion: options.sottoVersion ?? packageVersion, startedBy: options.startedBy,
+          hostId, sottoVersion: options.sottoVersion ?? packageVersion, startedBy: options.startedBy,
           ...(options.releasesUrl ? { releasesUrl: options.releasesUrl } : {}), ...(options.log ? { log: options.log } : {}) }) : undefined
         if (selfUpdate && !selfUpdate.ok) options.log?.(selfUpdate.reason === 'update-not-owned' ? 'host-update-not-owned' : 'host-update-layout-unknown')
         const hostUpdate = selfUpdate?.ok ? { hostUpdate: selfUpdate.update } : {}
