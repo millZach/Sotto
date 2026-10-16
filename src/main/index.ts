@@ -863,7 +863,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The threads as the busy-host question reads them, for an update and a start at boot change alike: Stop N threads
   // stops a turn the way the composer's Stop does.
   const busyThreads: BusyHostThreads = {
-    working: hostId => hostRouter.shell().host.threads.filter(thread => thread.hostId === hostId && threadKeepsHostBusy(thread)).map(thread => thread.id),
+    working: hostId => hostRouter.publishedThreads(hostId).filter(threadKeepsHostBusy).map(thread => thread.id),
     interrupt: async threadId => { await hostRouter.command({ type: 'interrupt', threadId }, desktopWindowClient()) },
     subscribe: listener => hostRouter.subscribeChanges(listener),
   }
