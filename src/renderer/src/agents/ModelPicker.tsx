@@ -36,6 +36,18 @@ export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
   })
 }
 
+/** Models under the name `by` gives each, in the order each name first appears and each group in the order given. */
+function groupModels(models: readonly AgentModel[], by: (model: AgentModel) => string): Map<string, AgentModel[]> {
+  const result = new Map<string, AgentModel[]>()
+  for (const model of models) {
+    const name = by(model)
+    const group = result.get(name)
+    if (group) group.push(model)
+    else result.set(name, [model])
+  }
+  return result
+}
+
 /** One model source of a provider that offers models from several (ADR-0087), with its models newest first. */
 export interface ModelSourceGroup { readonly name: string; readonly models: AgentModel[] }
 
@@ -46,14 +58,7 @@ export interface ModelSourceGroup { readonly name: string; readonly models: Agen
  */
 export function modelSources(models: readonly AgentModel[], provider: string): ModelSourceGroup[] | undefined {
   if (!models.some(model => model.source !== undefined)) return undefined
-  const result = new Map<string, AgentModel[]>()
-  for (const model of models) {
-    const name = model.source ?? provider
-    const group = result.get(name)
-    if (group) group.push(model)
-    else result.set(name, [model])
-  }
-  return [...result].map(([name, items]) => ({ name, models: newestModelsFirst(items) }))
+  return [...groupModels(models, model => model.source ?? provider)].map(([name, items]) => ({ name, models: newestModelsFirst(items) }))
     .sort((left, right) => Number(right.name === OPENCODE_ZEN_SOURCE) - Number(left.name === OPENCODE_ZEN_SOURCE))
 }
 
@@ -117,12 +122,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const dialogId = useId()
   const groups = useMemo(() => {
     if (!open) return []
-    const result = new Map<string, AgentModel[]>()
-    for (const model of models) {
-      const group = result.get(model.provider)
-      if (group) group.push(model)
-      else result.set(model.provider, [model])
-    }
+    const result = groupModels(models, model => model.provider)
     return [...[...result].map(([name, items]) => ({ name, providerId: items[0]?.providerId, models: newestModelsFirst(items), sources: modelSources(items, name), reason: undefined as string | undefined })),
       ...unavailable.filter(item => !result.has(item.name)).map(item => ({ name: item.name, providerId: item.providerId, models: [] as AgentModel[], sources: undefined, reason: item.reason as string | undefined }))]
   }, [models, open, unavailable])
