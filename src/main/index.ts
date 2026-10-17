@@ -727,7 +727,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(authority === undefined ? {} : { authority }),
     logFailure: (code, detail) => { console.error(`[Sotto] ${code} ${detail}`) },
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
-    ...(e2eConfiguration === null ? { installedProviders: () => detectInstalledProviders({ museEnabled: !heldProviders.has('muse') }) } : {}),
+    ...(e2eConfiguration === null ? { installedProviders: () => detectInstalledProviders({ heldProviders }) } : {}),
     ...(testAgentHost === null ? {} : { host: testAgentHost }),
     ...(devinFixtureRoot ? { providers: {
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(),
