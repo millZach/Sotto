@@ -45,9 +45,11 @@ export class WatcherReadMarks {
   track(marks: readonly WatcherReadMark[], threads: Iterable<ReadMarkThread>, at: string): WatcherReadMark[] | null {
     const byTarget = new Map(marks.map(mark => [key(mark.target), mark] as const))
     let changed = false
+    const present = new Set<string>()
     for (const { target, thread, connected } of threads) {
       if (thread.kind === 'watcher' || thread.kind === 'watcher-history') continue
       const slot = key(target)
+      present.add(slot)
       // Out of reach, Sotto cannot see its news change: when it connects again, what it has then is first sight.
       if (!connected) { this.seen.delete(slot); continue }
       const news = threadNews(thread)
@@ -62,6 +64,9 @@ export class WatcherReadMarks {
       }
       if (before !== undefined && before !== news.newsId) { byTarget.set(slot, { target, kind: news.kind, newsId: news.newsId, at }); changed = true }
     }
+    // A thread no pass lists any more, as when its host is put away before its connection closes, is out of reach like a
+    // disconnected one: what it has when it is listed again is first sight. Its unread mark, if any, stays.
+    for (const slot of this.seen.keys()) if (!present.has(slot)) this.seen.delete(slot)
     if (!changed) return null
     // Oldest first, as saved; a changed mark keeps its place.
     const order = new Map(marks.map((mark, index) => [key(mark.target), index] as const))

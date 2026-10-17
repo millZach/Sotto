@@ -76,6 +76,16 @@ describe('read marks', () => {
     expect(marks.track([], pass(finished('a', 't2')), AT)).toHaveLength(1)
   })
 
+  it('marks nothing a thread already had when its host is put away and listed again, and keeps a mark it had', () => {
+    const marks = new WatcherReadMarks()
+    // Settings, Disconnect takes the host away before its connection closes: its rows vanish rather than go offline.
+    marks.track([], pass(running('a', 't1'), running('b', 't2')), AT)
+    const marked = marks.track([], pass(running('a', 't1'), finished('b', 't2')), AT)!
+    expect(marked.map(mark => mark.target.threadId)).toEqual(['b'])
+    expect(marks.track(marked, [], AT)).toBeNull()
+    expect(marks.track(marked, pass(finished('a', 't1'), finished('b', 't2')), AT)).toBeNull()
+  })
+
   it('goes when the user reads the thread, records when, and the same news never marks it again', () => {
     const marks = new WatcherReadMarks()
     marks.track([], pass(running('a', 't1')), AT)
