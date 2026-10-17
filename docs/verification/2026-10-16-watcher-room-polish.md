@@ -26,6 +26,18 @@ On Windows, in `.worktrees/watcher-room-polish`, against Sotto Owl built from th
 - `tests/unit/main/watcherPhoneTakeovers.test.ts`: the phone's page carries the lines with each thread's title, and a page without them still parses.
 - `tests/unit/main/watcherObserveCounts.test.ts` (#1023's guard) still reads the paired host's shell, the host list and the Watcher record a fixed number of times per pass. The first version of the read marks' pass read every paired host's shell again on each update; this guard caught it, and the pass now reads the wake-ups' own observation.
 
+## After review
+
+A two-axis review found ten problems, each fixed in its own commit with a test that fails without the fix:
+
+- A receipt stays under the reply of its own turn when a hidden wake-up's turn replies after it, and under the turn's reply, not the user's message, when the user wrote mid-turn. The pane keeps such a reply in view instead of folding it (`watcherReceiptReplies.test.ts`, `watcherRoomPolish.test.tsx`).
+- A read mark stays until the user opens the thread or marks it read: Watcher sending the thread more keeps it, and a thread reconnecting marks nothing it already had (`watcherReadMarks.test.ts`).
+- The window clears a mark only while it is shown and has the focus (`watcherRoomPolish.test.tsx`).
+- The room resolves marks and watched threads through one address index per thread list, never a search per mark (`watcherRoomPolish.test.tsx`).
+- One send that ends several requests' work on a thread is one takeover time, so one line (`watcherTakeoverOnce.test.ts`).
+- Stop all says it cannot tell what stopped when the stop's answer is lost, answers Escape while its stop runs, and keeps the results for the button's next press (`watcherRoomPolish.test.tsx`).
+- A first message returned to the composer after a reload still becomes Watcher's draft after a second reload (`watcherFirstMessage.test.tsx`).
+- Main and the window place cards and takeover lines by one shared rule for a shown reply (`isShownReply`).
 ## Not checked
 
 - Receipt cards, the takeover line and Stop all against main's own Watcher in the running app: those journeys use the stand-in projection, and main's placement of receipts and its takeover lines are covered by the unit tests. Read marks were checked through main. No live provider turn was run, and Sotto was not restarted between a mark and its reading; the unit tests restart the coordinator instead.
