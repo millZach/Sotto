@@ -71,6 +71,13 @@ function service(options: { record?: WatcherRecord; remote?: AgentThread[] } = {
       watcher.dispatched(command)
       return messageId
     },
+    /** A steer into the thread's running turn, through the same hooks. */
+    steer(threadId: string, messageId = randomUUID()): string {
+      const command = { type: 'steer', commandId: randomUUID(), threadId, messageId, text: 'Synthetic steer' } as AgentHostCommand
+      watcher.beforeDispatch(command, undefined)
+      watcher.dispatched(command)
+      return messageId
+    },
     /** This desktop routing a send to a paired host's thread. */
     routed(threadId: string): void { notify?.({ hostId: REMOTE, threadId }) },
     marks: () => (watcher.state().readMarks ?? []).map(mark => [mark.target.threadId, mark.kind]),
@@ -179,6 +186,26 @@ describe('a dispatched turn’s own end', () => {
     room.pass(thread('pair', { ...turn('t2', 'interrupted'), activities: [activity('t1', 'completed', first), activity('t2', 'interrupted', second)] }))
     expect(room.marks()).toEqual([['pair', 'finished']])
     expect(room.record().readMarks?.[0]?.newsId).toBe('finished:t1')
+  })
+})
+
+describe('a steer', () => {
+  it('carries its dispatch into the turn the steer runs as, and is a dispatch of its own into a turn Sotto did not send', () => {
+    const room = service()
+    const claude = (lastTurn: NonNullable<AgentThread['lastTurn']>, activities: AgentThread['activities'] = []) =>
+      thread('claude', { providerId: 'claude', status: lastTurn.status === 'running' ? 'running' : 'idle', lastTurn, activities })
+    const cut = (turnId: string) => ({ id: `claude-turn-${turnId}`, turnId, sequence: 0, kind: 'turn' as const, title: 'Turn steered', status: 'interrupted' as const, afterMessageId: turnId, steered: true })
+    room.pass(claude({ id: 'u0', status: 'completed', messageId: 'm0' }), thread('cli', turn('t1', 'running')))
+    const first = room.send('claude')
+    room.pass(claude({ id: 'u1', status: 'running', messageId: first }), thread('cli', turn('t1', 'running')))
+    // Claude Code cuts the first turn for the steer and runs the steer as a turn of its own.
+    const second = room.steer('claude')
+    // A turn started at Codex's own command line, which the user steers from Sotto.
+    room.steer('cli')
+    room.pass(claude({ id: 'u1', status: 'interrupted', messageId: first }, [cut(first)]), thread('cli', turn('t1', 'running')))
+    expect(room.marks()).toEqual([])
+    room.pass(claude({ id: 'u2', status: 'completed', messageId: second }, [cut(first)]), thread('cli', turn('t1', 'completed')))
+    expect(room.marks()).toEqual([['claude', 'finished'], ['cli', 'finished']])
   })
 })
 

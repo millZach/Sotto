@@ -28,7 +28,7 @@ import type { CheckpointObservation, PullRequestObservation } from './watcherEvi
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { watcherOwnChanges } from './watcherOwnChanges'
-import { markThreadsRead, recordDispatch, trackDispatches, type ReadMarkThread } from './watcherReadMarks'
+import { markThreadsRead, recordDispatch, recordSteer, trackDispatches, type ReadMarkThread } from './watcherReadMarks'
 import { watcherReceiptReplies } from './watcherReceiptReplies'
 import { WATCHER_FINAL_OUTCOMES, watcherLatestTurnMessageId, watcherTurnOutcome } from './watcherOutcomes'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts } from '../../shared/watcherHost'
@@ -440,10 +440,13 @@ export class WatcherService implements WatcherControlHooks {
     if (next !== null) try { void this.options.control.updateWatcher(update => { update.readDispatches = next.dispatches; update.readMarks = next.marks }).catch(() => undefined) } catch { /* Not saved. */ }
   }
   /** A turn Sotto dispatched to a thread, which earns a read mark when it ends (`trackReadMarks`). */
-  private noteDispatch(target: WatcherThreadTarget, thread: DispatchBefore | undefined, messageId?: string): void {
+  private noteDispatch(target: WatcherThreadTarget, thread: DispatchBefore | undefined, messageId?: string, steer = false): void {
     if (this.options.workerHost || this.closed || thread?.kind === 'watcher' || thread?.kind === 'watcher-history') return
     // Saved now, so a turn in flight across a restart still earns its mark when it ends.
-    try { void this.options.control.updateWatcher(record => recordDispatch(record, target, thread, now(), messageId)).catch(() => undefined) } catch { /* Not kept: its turn earns no mark. */ }
+    try {
+      void this.options.control.updateWatcher(record => steer && messageId ? recordSteer(record, target, thread, now(), messageId)
+        : recordDispatch(record, target, thread, now(), messageId)).catch(() => undefined)
+    } catch { /* Not kept: its turn earns no mark. */ }
   }
   /** The user has seen these threads' news (read marks): their marks go, and the room is told. */
   async markRead(input: WatcherMarkReadRequest): Promise<WatcherRoomResult> {
@@ -919,7 +922,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   beforeDispatch(command: AgentHostCommand, _draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand {
     // The thread as the send finds it, read before the provider starts the turn, so the turn's end is told from the one before.
-    if (command.type === 'send' && !this.closed && !this.options.workerHost) {
+    if ((command.type === 'send' || command.type === 'steer') && !this.closed && !this.options.workerHost) {
       const thread = this.options.control.watcherSnapshot().threads.find(item => item.id === command.threadId)
       this.dispatchesBefore.set(command.commandId, { ...thread?.lastTurn ? { lastTurn: { ...thread.lastTurn } } : {}, requests: [...thread?.requests ?? []], ...thread?.kind ? { kind: thread.kind } : {} })
       while (this.dispatchesBefore.size > 1_000) this.dispatchesBefore.delete(this.dispatchesBefore.keys().next().value!)
@@ -981,11 +984,12 @@ export class WatcherService implements WatcherControlHooks {
     this.pendingPromptTurns.delete(commandId)
   }
   dispatched(command: AgentHostCommand): void {
-    // Every send this computer's coordinator dispatches, the user's, Watcher's or a wake-up, starts a turn that earns a read mark.
-    if (command.type === 'send') {
+    // Every send this computer's coordinator dispatches, the user's, Watcher's or a wake-up, starts a turn that earns a
+    // read mark, and so does every steer into a turn.
+    if (command.type === 'send' || command.type === 'steer') {
       const hostId = this.options.control.hostId()
       const before = this.dispatchesBefore.get(command.commandId)
-      if (hostId && before) this.noteDispatch({ hostId, threadId: command.threadId }, before, command.messageId)
+      if (hostId && before) this.noteDispatch({ hostId, threadId: command.threadId }, before, command.messageId, command.type === 'steer')
     }
     this.dispatchesBefore.delete(command.commandId)
     this.activatePromptTurn(command.commandId)

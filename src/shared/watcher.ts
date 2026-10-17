@@ -241,6 +241,8 @@ export const WATCHER_READ_MARKS_MAX = 500
 export const WATCHER_READ_DISPATCHES_MAX = 200
 /** How many waiting requests a dispatch names as shown; past it, a digest of them all stands for the set. */
 export const WATCHER_READ_DISPATCH_REQUESTS_MAX = 200
+/** How many steers one dispatch follows into the turns they run as. */
+export const WATCHER_READ_DISPATCH_STEERS_MAX = 8
 /** What a read mark says is new: a turn that finished, a question or permission waiting, or a turn that failed. */
 export const watcherReadMarkKindSchema = z.enum(['finished', 'question', 'permission', 'failed'])
 export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, rootUserMessageId: id,
@@ -294,9 +296,11 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
     .max(WATCHER_READ_MARKS_MAX).optional(),
   /**
    * The turns Sotto dispatched whose end has not been read yet (read marks): the thread, Sotto's message for the turn when
-   * this computer knows it, the thread's newest turn and its waiting requests when the send went, and when. Text-free.
+   * this computer knows it, the thread's newest turn and its waiting requests when the send went, Sotto's messages for the
+   * steers sent into that turn since, and when. Text-free.
    */
   readDispatches: z.array(z.object({ target: watcherThreadTargetSchema, messageId: id.optional(), priorTurnId: id.nullable(),
+    steerIds: z.array(id).max(WATCHER_READ_DISPATCH_STEERS_MAX).optional(),
     requestIds: z.array(id).max(WATCHER_READ_DISPATCH_REQUESTS_MAX), requestsDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
     at: time }).strict()).max(WATCHER_READ_DISPATCHES_MAX).optional(),
   /** When the user last read each thread's news, newest last: what list_threads gives as `userReadAt`. */

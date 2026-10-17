@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { AgentThread } from '../../shared/agents'
-import { WATCHER_READ_DISPATCHES_MAX, WATCHER_READ_DISPATCH_REQUESTS_MAX, WATCHER_READ_MARKS_MAX, type WatcherReadDispatch, type WatcherReadMark, type WatcherRecord,
+import { WATCHER_READ_DISPATCHES_MAX, WATCHER_READ_DISPATCH_REQUESTS_MAX, WATCHER_READ_DISPATCH_STEERS_MAX, WATCHER_READ_MARKS_MAX, type WatcherReadDispatch, type WatcherReadMark, type WatcherRecord,
   type WatcherThreadTarget } from '../../shared/watcher'
 
 const key = (target: WatcherThreadTarget): string => JSON.stringify([target.hostId, target.threadId])
@@ -33,21 +33,34 @@ export function recordDispatch(record: WatcherRecord, target: WatcherThreadTarge
   record.readDispatches = kept.slice(-WATCHER_READ_DISPATCHES_MAX)
 }
 
+/**
+ * A steer Sotto sent into a thread's running turn is a dispatch too. With a dispatch already waiting on that thread, the
+ * steer joins it: the turn the steer runs as, where the provider cuts the first turn for it (Claude Code), is that
+ * dispatch's turn. Without one, the steer is a dispatch of its own, and the turn it went into counts as its turn. Edits
+ * `record` in place, as `updateWatcher` hands it.
+ */
+export function recordSteer(record: WatcherRecord, target: WatcherThreadTarget, thread: Pick<AgentThread, 'requests'> & Partial<Pick<AgentThread, 'lastTurn'>> | undefined, at: string, messageId: string): void {
+  const pending = (record.readDispatches ?? []).findLast(entry => key(entry.target) === key(target))
+  if (pending) { pending.steerIds = [...(pending.steerIds ?? []).filter(id => id !== messageId), messageId].slice(-WATCHER_READ_DISPATCH_STEERS_MAX); return }
+  const running = thread?.lastTurn?.status === 'running'
+  recordDispatch(record, target, running ? { requests: thread.requests } : thread, at, messageId)
+}
+
 /** A thread's turns oldest first, from its turn records and its newest turn: each turn's ID, the message it began with and how it stands. */
-interface TurnView { readonly id: string; messageId: string | undefined; status: string }
+interface TurnView { readonly id: string; messageId: string | undefined; status: string; recorded: boolean; steered: boolean }
 function turnsOf(thread: AgentThread): TurnView[] {
   const turns: TurnView[] = [], byId = new Map<string, TurnView>()
   for (const activity of thread.activities ?? []) if (activity.kind === 'turn') {
     const known = byId.get(activity.turnId)
-    if (known) { known.status = activity.status; known.messageId ??= activity.afterMessageId; continue }
-    const turn = { id: activity.turnId, messageId: activity.afterMessageId, status: activity.status }
+    if (known) { known.status = activity.status; known.messageId ??= activity.afterMessageId; known.steered ||= activity.steered === true; continue }
+    const turn = { id: activity.turnId, messageId: activity.afterMessageId, status: activity.status, recorded: true, steered: activity.steered === true }
     byId.set(turn.id, turn); turns.push(turn)
   }
   const last = thread.lastTurn
   if (last) {
     const known = byId.get(last.id)
     if (known) { known.status = last.status; known.messageId ??= last.messageId }
-    else turns.push({ id: last.id, messageId: last.messageId, status: last.status })
+    else turns.push({ id: last.id, messageId: last.messageId, status: last.status, recorded: false, steered: false })
   }
   return turns
 }
@@ -55,23 +68,29 @@ function turnsOf(thread: AgentThread): TurnView[] {
 /**
  * How a dispatch's own turn ended, from that turn alone: never from whether the thread is idle, so work the turn left
  * running in the background holds nothing back, and never from a later turn, so two dispatches whose turns end between
- * two passes each read their own. The turn is the newest that names Sotto's message (Claude Code, Grok Build, Devin, Muse,
- * and Codex's own turn records), else the first turn after the one that was the thread's newest when the send went.
+ * two passes each read their own. The turn is the newest that names Sotto's message or a steer of it (Claude Code, Grok
+ * Build, Devin, Muse, and Codex's own turn records), else the first turn after the one that was the thread's newest when
+ * the send went. A turn cut for a steer goes on in the turn the steer runs as, so its end is not the dispatch's.
  */
 function endOf(entry: WatcherReadDispatch, thread: AgentThread): { readonly end: 'finished' | 'failed' | 'stopped'; readonly turnId: string } | null {
   const turns = turnsOf(thread)
-  const id = entry.messageId
-  let turn = id === undefined ? undefined : turns.findLast(item => item.id === id || item.messageId === id)
+  const steers = entry.steerIds ?? []
+  const ids = new Set([...entry.messageId === undefined ? [] : [entry.messageId], ...steers])
+  const named = (item: TurnView): boolean => ids.has(item.id) || item.messageId !== undefined && ids.has(item.messageId)
+  let turn = ids.size ? turns.findLast(named) : undefined
   if (turn === undefined) {
     // Every provider but Codex names its turns by Sotto's message: wait for that turn.
-    if (id !== undefined && thread.providerId !== 'codex') return null
+    if (entry.messageId !== undefined && thread.providerId !== 'codex') return null
     const at = entry.priorTurnId === null ? -1 : turns.findIndex(item => item.id === entry.priorTurnId)
     turn = at >= 0 ? turns[at + 1] : entry.priorTurnId === null ? turns.at(-1) : turns.findLast(item => item.id !== entry.priorTurnId)
   }
   if (turn === undefined || turn.id === entry.priorTurnId) return null
   if (turn.status === 'completed') return { end: 'finished', turnId: turn.id }
   if (turn.status === 'failed') return { end: 'failed', turnId: turn.id }
-  return turn.status === 'interrupted' ? { end: 'stopped', turnId: turn.id } : null
+  if (turn.status !== 'interrupted') return null
+  // Cut for a steer, or, without its turn record to say, stopped while a steer was on its way: the steer's turn is next.
+  const steerTurn = steers.some(steer => turn.id === steer || turn.messageId === steer)
+  return !steerTurn && (turn.steered || steers.length > 0 && !turn.recorded) ? null : { end: 'stopped', turnId: turn.id }
 }
 /**
  * Read marks (CONTEXT.md) from Sotto's own dispatches. A thread earns a mark when a turn Sotto dispatched ends, finished
