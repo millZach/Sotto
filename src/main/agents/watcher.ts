@@ -430,7 +430,9 @@ export class WatcherService implements WatcherControlHooks {
    */
   private trackReadMarks(snapshot: AgentHostSnapshot): void {
     const localId = this.options.control.hostId(), record = this.view()
-    if (this.options.workerHost || this.closed || !localId || !record.readDispatches?.length) return
+    if (this.options.workerHost || this.closed || !localId) return
+    this.pruneReadMarks(snapshot, record, localId)
+    if (!record.readDispatches?.length) return
     const wanted = new Set(record.readDispatches.map(entry => key(entry.target)))
     const found = new Map<string, ReadMarkThread>()
     for (const thread of snapshot.threads) {
@@ -448,6 +450,33 @@ export class WatcherService implements WatcherControlHooks {
       void this.options.control.updateWatcher(update => { update.readDispatches = next.dispatches; update.readMarks = next.marks })
         .then(() => { if (!this.closed) this.options.control.refreshWatcherObservation() }, () => undefined)
     } catch { /* Not saved. */ }
+  }
+  /** What the last prune of read marks read: the thread count, the connected hosts and the marks and read times. */
+  private readMarksPruned = ''
+  /**
+   * A thread deleted, or no longer listed by its connected host, takes its read mark and read time with it, so a dot never
+   * waits on a thread nobody can open and the record's bounds hold real threads. Only a host that is connected now and
+   * lists a thread says what it lists; one away, or one whose list has not arrived, keeps its marks. It reads the threads
+   * again only when their count, the connected hosts or the marks changed, so an unchanged pass costs nothing.
+   */
+  private pruneReadMarks(snapshot: AgentHostSnapshot, record: WatcherRecord, localId: string): void {
+    const marks = record.readMarks ?? [], reads = record.userReads ?? []
+    if (marks.length === 0 && reads.length === 0) return
+    const connected = (snapshot.clientHosts ?? [{ hostId: snapshot.hostId ?? localId, connected: snapshot.connected }]).filter(host => host.connected).map(host => host.hostId)
+    const signature = JSON.stringify([snapshot.threads.length, connected.sort(), marks.length, reads.length])
+    if (signature === this.readMarksPruned) return
+    this.readMarksPruned = signature
+    const present = new Set(snapshot.threads.map(thread => key({ hostId: thread.hostId ?? snapshot.hostId ?? localId, threadId: thread.id })))
+    const listed = new Set(snapshot.threads.map(thread => thread.hostId ?? snapshot.hostId ?? localId))
+    const listing = new Set(connected.filter(hostId => listed.has(hostId)))
+    const live = (target: WatcherThreadTarget): boolean => !listing.has(target.hostId) || present.has(key(target))
+    if (marks.every(mark => live(mark.target)) && reads.every(entry => live(entry.target))) return
+    try {
+      void this.options.control.updateWatcher(update => {
+        update.readMarks = (update.readMarks ?? []).filter(mark => live(mark.target))
+        update.userReads = (update.userReads ?? []).filter(entry => live(entry.target))
+      }).then(() => { if (!this.closed) this.publish() }, () => undefined)
+    } catch { /* Not saved: the next change tries again. */ }
   }
   /** A turn Sotto dispatched to a thread, which earns a read mark when it ends (`trackReadMarks`). */
   private noteDispatch(target: WatcherThreadTarget, thread: DispatchBefore | undefined, messageId?: string, steer = false): void {

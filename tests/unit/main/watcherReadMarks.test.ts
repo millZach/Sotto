@@ -343,6 +343,33 @@ describe('reading a thread', () => {
     expect(published.at(-1)).toBe(1)
   })
 
+  it('go with a thread its connected host no longer lists, here or on a paired host, and stay while a thread is listed', async () => {
+    const room = service({ remote: [thread('far', turn('t0', 'completed'))] })
+    room.pass(thread('gone', turn('t0', 'completed')), thread('kept', turn('t0', 'completed')))
+    room.send('gone'); room.send('kept'); room.routed('far')
+    room.pass(thread('gone', turn('t1', 'completed')), thread('kept', turn('t1', 'completed')))
+    room.remotePass(thread('far', turn('t1', 'completed')))
+    expect(room.marks()).toEqual([['gone', 'finished'], ['kept', 'finished'], ['far', 'finished']])
+    await room.read('gone')
+    room.send('gone')
+    room.pass(thread('gone', turn('t2', 'completed')), thread('kept', turn('t1', 'completed')))
+    // The user deletes one thread here, and the paired host stops listing the other.
+    room.pass(thread('kept', turn('t1', 'completed')))
+    room.remotePass(thread('other', turn('o1', 'completed')))
+    expect(room.marks()).toEqual([['kept', 'finished']])
+    expect(room.record().userReads ?? []).toEqual([])
+    expect(room.record().readMarks?.map(mark => mark.target.threadId)).toEqual(['kept'])
+  })
+
+  it('stay while a connected host lists no thread yet', () => {
+    const room = service({ remote: [thread('far', turn('t0', 'completed'))] })
+    room.routed('far')
+    room.remotePass(thread('far', turn('t1', 'completed')))
+    room.pass(thread('here', turn('t0', 'completed')))
+    room.remotePass()
+    expect(room.marks()).toEqual([['far', 'finished']])
+  })
+
   it('keeps a read time only for a thread that had a mark or exists', async () => {
     const room = service()
     room.pass(thread('worker', turn('t0', 'completed')), thread('quiet', turn('t0', 'completed')))
