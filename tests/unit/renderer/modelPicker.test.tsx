@@ -387,6 +387,18 @@ describe('provider model picker', () => {
       expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Claude Opus 5.5'])
     })
 
+    it('keeps focus in the menu when a source has no model to choose, so Escape still steps back', async () => {
+      const user = userEvent.setup()
+      const waiting = [...sourced, { ...openCode('xai/grok-5', 'Grok 5', 'xAI'), ready: false }]
+      render(<ModelPicker models={waiting} modelId="anthropic/claude-sonnet-5" disabled={false} onChange={vi.fn()} />)
+      await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+      await user.click(screen.getByRole('button', { name: /^Show xAI models/u }))
+      expect(screen.getByRole('button', { name: 'Back to model sources' })).toHaveFocus()
+      await user.keyboard('{Escape}')
+      expect(screen.getByRole('dialog', { name: 'Choose model' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^Show xAI models/u })).toHaveFocus()
+    })
+
     it('leaves a provider without model sources as it was: one list, and Escape left to the dialog', async () => {
       const user = userEvent.setup()
       render(<ModelPicker models={models} modelId="astra" disabled={false} onChange={vi.fn()} />)

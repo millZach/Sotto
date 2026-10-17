@@ -119,6 +119,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const search = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const rail = useRef<HTMLDivElement>(null)
+  const back = useRef<HTMLButtonElement>(null)
   const dialogId = useId()
   const groups = useMemo(() => {
     if (!open) return []
@@ -214,15 +215,20 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   // A step of the menu can be taller or shorter than the last (a provider's model sources, then one source's models),
   // so each draw places it again before it shows, keeping it clear of the chip.
   useLayoutEffect(() => { placeMenu.current?.() })
-  // The step a key or a press asked for has drawn: focus what it said.
+  // The step a key or a press asked for has drawn: focus what it said. A source with no model to choose yet puts focus on
+  // its back control. Whatever the step, focus stays in the menu: where what held it has gone (a source that left, a
+  // model that went), it goes to search, so Escape still steps back rather than reaching the window behind.
   useLayoutEffect(() => {
+    if (!open) return
     const target = pendingFocus.current
-    if (!target || !open) return
     pendingFocus.current = null
-    if (target.to === 'search') { search.current?.focus(); return }
-    const items = [...(list.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
-    if (target.to === 'model') (items.find(item => item.getAttribute('aria-selected') === 'true') ?? items[0])?.focus()
-    else items.find(item => item.dataset.source === target.name)?.focus()
+    if (target?.to === 'search') search.current?.focus()
+    else if (target) {
+      const items = [...(list.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
+      if (target.to === 'model') (items.find(item => item.getAttribute('aria-selected') === 'true') ?? items[0] ?? back.current)?.focus()
+      else items.find(item => item.dataset.source === target.name)?.focus()
+    }
+    if (dialog.current && !dialog.current.contains(document.activeElement)) search.current?.focus()
   })
   // Escape steps back one level where the menu has levels, and is taken here, before the dialog would close on it.
   const stepBack = (event: React.KeyboardEvent): void => {
@@ -282,7 +288,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
           </div>
           : openSource ? <>
             <div className="model-picker__step">
-              <button type="button" aria-label="Back to model sources" title="Back to model sources" onClick={leaveSource}><ChevronLeft size={14} aria-hidden="true" />Model sources</button>
+              <button ref={back} type="button" aria-label="Back to model sources" title="Back to model sources" onClick={leaveSource}><ChevronLeft size={14} aria-hidden="true" />Model sources</button>
               <b>{openSource.name}</b><span>{countModels(openSource.models.length)}</span>
             </div>
             <div ref={list} role="listbox" aria-label={`${openSource.name} models`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
