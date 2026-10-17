@@ -386,10 +386,18 @@ export async function startSocketServer(options: SocketServerOptions) {
     return peer.clientUpdates || !state.clientUpdates ? rows : { ...rows, clientUpdates: state.clientUpdates.map(clientUpdateForOlderClient) }
   }
   /**
-   * The catalog revisions this listener names to peers that accept `model-catalog-revision`. One counter for every
-   * peer, so a revision names one catalog for as long as the listener runs; what each peer was sent is its own.
+   * The catalog revisions this listener names to peers that accept `model-catalog-revision`. A peer that does not know a
+   * provider is sent the catalog without its models (#1107), so each set of unknown providers has its own counter: a
+   * revision names one catalog of that variant for as long as the listener runs, and moves only when that variant's list
+   * changes. What each peer was sent is its own.
    */
-  const catalogRevisions = new ModelCatalogRevisions()
+  const catalogRevisions = new Map<string, ModelCatalogRevisions>()
+  const revisionsFor = (peer: Peer): ModelCatalogRevisions => {
+    const key = [...peer.unknownProviders].sort().join(',')
+    let revisions = catalogRevisions.get(key)
+    if (!revisions) catalogRevisions.set(key, revisions = new ModelCatalogRevisions())
+    return revisions
+  }
   /**
    * A shell as it goes to `peer`, at the moment it is written. A peer that does not accept `model-catalog-revision`
    * gets it whole, as v1 has it. One that does is told the catalog's revision, and sent the catalog itself only when
@@ -398,7 +406,7 @@ export async function startSocketServer(options: SocketServerOptions) {
    */
   const wireShell = (peer: Peer, state: HostClientShell): WireShell => {
     if (!peer.catalogRevisions) return { state, carries: null }
-    const modelsRevision = catalogRevisions.revisionFor(hostCatalogKey(state.host.hostId), state.host.models)
+    const modelsRevision = revisionsFor(peer).revisionFor(hostCatalogKey(state.host.hostId), state.host.models)
     const host: HostWireShell['host'] = { ...state.host, modelsRevision }
     if (peer.catalogSent !== modelsRevision) return { state: { ...state, host }, carries: modelsRevision }
     delete host.models

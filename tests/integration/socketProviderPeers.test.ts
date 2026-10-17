@@ -161,3 +161,33 @@ it('still sends a client that knows OpenCode all of it', async () => {
   expect(named(hello)).toBe(true)
   expect(await peer.call('phone-read', { op: 'watcher-phone-read' })).toSatisfy(named)
 })
+
+it('names each peer the revision of the catalog it was sent, so neither is sent its catalog again on every publish (#1143)', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-provider-peers-'))
+  cleanup.push(() => rm(directory, { recursive: true, force: true }))
+  const pairing = new PairedClients(directory); await pairing.load()
+  const host = service()
+  const server = await startSocketServer({ service: host.service, pairing })
+  cleanup.push(() => server.close())
+  const connect = async (name: string, accepts: string[]) => {
+    const paired = await pairing.redeem(pairing.issuePairingCode().code, name)
+    const peer = await rawPeer(server.descriptor.port, pairing.signSession(paired.clientId, Date.now()))
+    cleanup.push(async () => peer.frames.close())
+    const hello = await peer.call('hello', { op: 'hello', afterSeq: 0, accepts })
+    return { peer, models: (hello.result as { shell: { host: { models?: { id: string }[]; modelsRevision: number } } }).shell.host }
+  }
+  const newer = await connect('A newer client', ['model-catalog-revision', 'provider-opencode'])
+  const older = await connect('An older client', ['model-catalog-revision'])
+  expect(newer.models.models!.map(model => model.id)).toContain(zen)
+  expect(older.models.models!.map(model => model.id)).not.toContain(zen)
+  const shells = (peer: typeof newer.peer) => peer.messages.filter(message => message.event === 'shell').map(message => (message.state as { host: { models?: unknown; modelsRevision: number } }).host)
+  for (let round = 1; round <= 3; round++) {
+    host.publish()
+    await expect.poll(() => shells(newer.peer).length >= round && shells(older.peer).length >= round).toBe(true)
+  }
+  // Both lists are unchanged, so each peer keeps the revision its hello named and is never sent its catalog again.
+  for (const { peer, models } of [newer, older]) for (const pushed of shells(peer)) {
+    expect(pushed.modelsRevision).toBe(models.modelsRevision)
+    expect(pushed).not.toHaveProperty('models')
+  }
+})
