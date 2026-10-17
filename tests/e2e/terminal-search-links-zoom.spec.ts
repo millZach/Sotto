@@ -121,7 +121,7 @@ let repaintOnResize=false;
 process.stdout.on('resize', () => { if(repaintOnResize) paint(); });
 paint();
 process.stdin.setRawMode(true); process.stdin.resume(); let line='';
-process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x03') process.exit(0); if(c==='\\x0c') {repaintOnResize=true;asked++;paint();continue;} if(c==='\\x02') {process.stdout.write('\\r\\n'+('many-match\\r\\n').repeat(1001));continue;} if(c==='\\r') {process.stdout.write('INPUT='+line+'\\r\\n');line='';} else line+=c; } });
+process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x03') process.exit(0); if(c==='\\x0c') {repaintOnResize=true;asked++;paint();continue;} if(c==='\\x02') {process.stdout.write('\\r\\n'+('many-match\\r\\n').repeat(1001)+'Wrote the long output\\r\\n');continue;} if(c==='\\r') {process.stdout.write('INPUT='+line+'\\r\\n');line='';} else line+=c; } });
 `, 'utf8')
       await app.evaluate(({ shell }) => {
         const state = globalThis as typeof globalThis & { terminalOpenedLinks?: string[] }
@@ -433,6 +433,9 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       }
       if (surface === 'workspace') {
         await input.press('Control+b')
+        // Search the long output once all of it has arrived. A query typed while it streams in finds nothing at first,
+        // and the addon's recount after the rest lands shows the total with no current match.
+        await expect(scope.locator('.xterm-rows')).toContainText('Wrote the long output')
         await input.press('Control+f'); await find.fill('many-match')
         await expect(search.locator('output')).toHaveText('1 of 1000+')
         await find.press('Control+=')
