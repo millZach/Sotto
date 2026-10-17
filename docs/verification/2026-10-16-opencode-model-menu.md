@@ -46,7 +46,7 @@ Captures: [sources, 1600 dark](../../artifacts/opencode-model-menu/sources-1600-
 These touch every provider's menu, not only OpenCode's.
 
 - **A long list hid the note under it.** The menu's grid row grew with its content past the menu's height, so the list did not scroll and the note was cut off. The row is now held to the menu's height.
-- **The menu could cover its own chip.** When a step changed the menu's height, it kept the position it had for the old height. It is now placed again on every draw. Where it fits on neither side of the chip, as at 820x560 with the composer mid-way down, it takes the roomier side and is shortened to fit.
+- **The menu could cover its own chip.** When a step changed the menu's height, it kept the position it had for the old height. It is now placed again on every draw, holding the chip's edge: a menu above its chip keeps its foot there and grows and shrinks upward, one below keeps its head there, and it changes sides only when it no longer fits on its own. Where it fits on neither side of the chip, as at 820x560 with the composer mid-way down, it takes the roomier side and is shortened to fit.
 - **A 1ms transition held the menu over the chip.** Reduced motion gives every property a 1ms transition, and a window in the background never finished it, so the menu stayed in its old place. The menu now has no transitions; its opening animation is separate and unaffected.
 
 ## Not changed
