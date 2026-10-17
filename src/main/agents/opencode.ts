@@ -495,7 +495,8 @@ export class OpenCodeHost implements AgentHost {
     else delete this.state.verifiedVersion
     const names = new Map(providers.map(provider => [provider.id, provider.name]))
     const sourceOf = (providerId: string): string => providerId === ZEN ? ZEN_NAME : names.get(providerId) ?? providerId
-    this.state.models = models.filter(model => model.enabled !== false && model.status !== 'deprecated').map((model): AgentModel => {
+    const shown = models.filter(model => model.enabled !== false && model.status !== 'deprecated')
+    this.state.models = shown.map((model): AgentModel => {
       const efforts = orderReasoningEfforts(model.variants.map(variant => variant.id))
       const preferred = ['medium', 'high'].find(level => efforts.includes(level)) ?? efforts[0]
       return {
@@ -505,8 +506,9 @@ export class OpenCodeHost implements AgentHost {
         ...(fallback && fallback.id === model.id && fallback.providerID === model.providerID ? { recommended: true } : {}),
       }
     })
-    // Sotto's OpenCode folder starts with no sign-ins: until the user signs in to a model source inside it, only Zen's free models are listed.
-    const signedIn = [...new Set(models.map(model => model.providerID).filter(id => id !== ZEN))].map(sourceOf)
+    // Sotto's OpenCode folder starts with no sign-ins: until the user signs in to a model source inside it, only Zen's free
+    // models are listed. A source is named only for models Sotto offers, so the line never names one the list leaves out.
+    const signedIn = [...new Set(shown.map(model => model.providerID).filter(id => id !== ZEN))].map(sourceOf)
     const account = signedIn.length ? `Signed in to ${signedIn.join(', ')}` : 'No model source signed in yet; OpenCode Zen’s free models only'
     this.state.account = account.length > 80 ? `${account.slice(0, 79)}…` : account
   }

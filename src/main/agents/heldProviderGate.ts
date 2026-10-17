@@ -1,6 +1,6 @@
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdOfLabel, type AgentCommand, type AgentHostSnapshot,
   type AgentModel, type AgentProject, type AgentThread, type ProviderId } from '../../shared/agents'
-import { heldProviderRefusal, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
+import { heldProviderRefusal, inHeldOrder, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { resolveModel } from '../../shared/modelCatalog'
 import type { WatcherRefusal } from '../../shared/watcher'
 import type { WatcherHostControl, WatcherHostRead } from '../../shared/watcherHost'
@@ -164,7 +164,7 @@ export function heldProviderOfWatcherRequest(request: WatcherHostRead | WatcherH
   if (call.name !== 'list_threads') return undefined
   const project = call.input.project
   if (!project) {
-    const providers = [...new Set([...threads.values()].map(thread => thread.provider))]
+    const providers = inHeldOrder([...threads.values()].map(thread => thread.provider))
     return providers.length > 1 ? providers : providers[0]
   }
   const projects = snapshot?.projects ?? []

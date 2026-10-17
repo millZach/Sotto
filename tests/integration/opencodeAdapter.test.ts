@@ -641,3 +641,17 @@ it('settles a steered turn its server never finished under the prompt that start
     expect(resumed.activities?.some(activity => activity.turnId === 'steered')).toBe(false)
   } finally { await (restarted ?? f).cleanup() }
 })
+
+it('names as signed in only the model sources whose models it offers', async () => {
+  const f = await opencodeFixture()
+  try {
+    await f.script({
+      providers: [{ id: 'opencode', name: 'OpenCode', activation: 'enabled' }, { id: 'anthropic', name: 'Anthropic', activation: 'enabled' }],
+      models: [{ id: 'fixture-model', providerID: 'opencode', name: 'Fixture Model', capabilities: { input: ['text'] }, variants: [], enabled: true, status: 'active' },
+        { id: 'retired', providerID: 'anthropic', name: 'Retired', capabilities: { input: ['text'] }, variants: [], enabled: true, status: 'deprecated' }],
+    })
+    const snapshot = await f.host.connect()
+    expect(snapshot.models.map(model => model.id)).toEqual(['opencode/fixture-model'])
+    expect(snapshot.account).toBe('No model source signed in yet; OpenCode Zen’s free models only')
+  } finally { await f.cleanup() }
+})
