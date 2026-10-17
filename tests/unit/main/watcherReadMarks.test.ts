@@ -159,6 +159,15 @@ describe('read marks come from Sotto’s own dispatches', () => {
   })
 })
 
+describe('a dispatched turn’s own end', () => {
+  it('marks when the turn finishes, though work it started keeps running in the background', () => {
+    const room = service()
+    room.pass(thread('worker', turn('t0', 'completed')))
+    room.send('worker')
+    room.pass(thread('worker', { ...turn('t1', 'completed'), backgroundWork: [{ id: 'build' }] as AgentThread['backgroundWork'] }))
+    expect(room.marks()).toEqual([['worker', 'finished']])
+  })
+})
 describe('the dispatches read marks wait on', () => {
   it('let a turn that never ends go after a day, unmarked, and keep one whose thread is out of reach', () => {
     const record = emptyWatcherRecord()

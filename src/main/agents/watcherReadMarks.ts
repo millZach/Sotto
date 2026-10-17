@@ -8,9 +8,6 @@ export const READ_DISPATCH_MAX_MS = 24 * 60 * 60 * 1_000
 /** How many waiting requests one dispatch remembers as already shown. */
 const REQUESTS_KEPT = 50
 
-/** A thread at work: a turn running, or work a turn left running in the background. */
-const busy = (thread: AgentThread): boolean => thread.status === 'running' || (thread.backgroundWork?.length ?? 0) > 0 || (thread.monitoring?.length ?? 0) > 0
-
 /** One thread as a pass reads it: where it lives, and whether its host and provider are connected now. */
 export interface ReadMarkThread { readonly target: WatcherThreadTarget; readonly thread: AgentThread; readonly connected: boolean }
 
@@ -34,7 +31,8 @@ export function recordDispatch(record: WatcherRecord, target: WatcherThreadTarge
  */
 function endOf(entry: WatcherReadDispatch, thread: AgentThread): 'finished' | 'failed' | 'stopped' | null {
   const turn = thread.lastTurn
-  if (busy(thread) || !turn || turn.status === 'running') return null
+  // The turn's own end, never whether the thread is idle: work the turn left running in the background holds nothing back.
+  if (!turn || turn.status === 'running') return null
   const named = turn.messageId ?? turn.id
   const ours = entry.messageId === undefined ? turn.id !== entry.priorTurnId
     : named === entry.messageId || turn.id === entry.messageId || turn.messageId === undefined && turn.id !== entry.priorTurnId && thread.providerId === 'codex'
