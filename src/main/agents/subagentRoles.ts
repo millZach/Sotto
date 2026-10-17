@@ -9,7 +9,7 @@ import { compareClientVersions } from './clientVersions'
 import type { WorkerRoleSource } from './host'
 
 /**
- * Each provider's own sub-agents follow the worker roles (#1042, ADR-0088). The table itself is `workerRoles.ts`'s; this
+ * Each provider's own sub-agents follow the worker roles (#1042, ADR-0091). The table itself is `workerRoles.ts`'s; this
  * module turns it into what each client takes at a thread's launch: Claude Code's agent definitions and Codex's role
  * files. Neither holds prompt text, and nothing here logs more than a stable event name.
  */
