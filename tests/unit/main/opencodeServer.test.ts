@@ -1,5 +1,10 @@
+// @vitest-environment node
+import { spawn } from 'node:child_process'
+import { mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { isRecordedServer, loopbackServerUrl, OpenCodeTooOld, opencodeVersionRefusal, orphanedDescendants, parseProcessStart } from '../../../src/main/agents/opencodeServer'
+import { endServersLeftBehind, isRecordedServer, loopbackServerUrl, OpenCodeTooOld, opencodeVersionRefusal, orphanedDescendants, parseProcessStart, recordOpenCodeServer } from '../../../src/main/agents/opencodeServer'
 
 describe('which OpenCode Sotto drives (ADR-0087)', () => {
   it.each([
@@ -78,6 +83,48 @@ describe('a server a crash left, as the next connect knows it', () => {
     expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:47:59 2026 ' + command))).toBe(false)
     // The command line still has to be OpenCode's server.
     expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:01 2026 /usr/bin/python3 -m http.server'))).toBe(false)
+  })
+})
+
+describe('the record of each server, while Sotto writes it and a sweep reads it', () => {
+  const ledgerFolder = (): Promise<string> => mkdtemp(join(tmpdir(), 'sotto-opencode-ledger-'))
+  it('loses no record while records are written and swept at once', { timeout: 60_000 }, async () => {
+    const ledger = await ledgerFolder()
+    try {
+      // Records of this Sotto's servers, each written twice as a start writes it, while other connects sweep the folder.
+      const pids = Array.from({ length: 40 }, (_, index) => 900_000 + index)
+      let writing = true
+      const writes = (async () => {
+        try {
+          for (let round = 0; round < 10; round++) {
+            await Promise.all(pids.map(async pid => {
+              await recordOpenCodeServer(ledger, { pid, startedAt: Date.now(), owner: process.pid })
+              await recordOpenCodeServer(ledger, { pid, startedAt: Date.now(), started: Date.now() - 1_000, owner: process.pid })
+            }))
+          }
+        } finally { writing = false }
+      })()
+      const sweeps = (async () => { while (writing) await Promise.all([endServersLeftBehind(ledger), endServersLeftBehind(ledger)]) })()
+      await Promise.all([writes, sweeps])
+      expect((await readdir(ledger)).sort()).toEqual(pids.map(pid => `${pid}.json`).sort())
+    } finally { await rm(ledger, { recursive: true, force: true }) }
+  })
+  it('keeps a record it cannot read while it may still be being written, and clears one long left', async () => {
+    const ledger = await ledgerFolder()
+    try {
+      const gone = spawn(process.execPath, ['-e', ''], { stdio: 'ignore', windowsHide: true })
+      const owner = gone.pid!
+      await new Promise(done => gone.once('close', done))
+      await writeFile(join(ledger, '900101.json'), '{"pid":900101,"start')
+      await writeFile(join(ledger, '900102.json'), '{"pid":900102,"start')
+      const long = new Date(Date.now() - 60_000)
+      await utimes(join(ledger, '900102.json'), long, long)
+      // A write a Sotto that has gone never finished, and one this Sotto is still making.
+      await writeFile(join(ledger, `900103.json.${owner}.1.tmp`), '{"pid":900103')
+      await writeFile(join(ledger, `900104.json.${process.pid}.1.tmp`), '{"pid":900104')
+      await endServersLeftBehind(ledger)
+      expect((await readdir(ledger)).sort()).toEqual(['900101.json', `900104.json.${process.pid}.1.tmp`])
+    } finally { await rm(ledger, { recursive: true, force: true }) }
   })
 })
 
