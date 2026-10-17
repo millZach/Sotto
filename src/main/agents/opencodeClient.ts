@@ -52,15 +52,16 @@ export class OpenCodeClient {
     this.authorization = `Basic ${Buffer.from(`opencode:${password}`, 'utf8').toString('base64')}`
   }
 
-  /** Wait before retrying, unless the server is being stopped; the timer never keeps Sotto running. */
-  private retryAfter(ms: number): Promise<void> {
+  /** Wait before retrying, unless the server is being stopped or the caller gives up; the timer never keeps Sotto running. */
+  private retryAfter(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
-      const closed = this.closed
-      if (closed?.aborted) { reject(new OpenCodeUncertain('The OpenCode server was stopped.')); return }
-      const stop = (): void => { clearTimeout(timer); reject(new OpenCodeUncertain('The OpenCode server was stopped.')) }
-      const timer = setTimeout(() => { closed?.removeEventListener('abort', stop); resolve() }, ms)
+      const ends = [this.closed, signal].filter((candidate): candidate is AbortSignal => candidate !== undefined)
+      if (ends.some(end => end.aborted)) { reject(new OpenCodeUncertain('The OpenCode server was stopped.')); return }
+      const settle = (): void => { clearTimeout(timer); for (const end of ends) end.removeEventListener('abort', stop) }
+      const stop = (): void => { settle(); reject(new OpenCodeUncertain('The OpenCode server was stopped.')) }
+      const timer = setTimeout(() => { settle(); resolve() }, ms)
       timer.unref()
-      closed?.addEventListener('abort', stop, { once: true })
+      for (const end of ends) end.addEventListener('abort', stop, { once: true })
     })
   }
 
@@ -85,7 +86,7 @@ export class OpenCodeClient {
       }
       let tag: string | undefined, service: string | null | undefined
       try { ({ _tag: tag, service } = errorSchema.parse(await response.json())) } catch { /* An error without a readable body still has its status. */ }
-      if (response.status === 503 && isWait(service) && Date.now() < giveUp) { await this.retryAfter(Math.min(250 * (attempt + 1), 1_000)); continue }
+      if (response.status === 503 && isWait(service) && Date.now() < giveUp) { await this.retryAfter(Math.min(250 * (attempt + 1), 1_000), options.signal); continue }
       throw new OpenCodeRejected(response.status, tag)
     }
   }
