@@ -149,6 +149,51 @@ it('reads a host’s model sources again when its answer to a sign-in or sign-ou
   expect(await ask({ action: 'sources' })).toEqual({ status: 'refused', message: HOST_ANSWER_LOST.unread('forge') })
 })
 
+// A wait is only a read: one whose answer is lost leaves the sign-in waiting on the host, so the dialog keeps asking. Sotto
+// says it cannot tell only when what the host did is truly unknown (#1143).
+it('keeps waiting on a host’s sign-in through a lost answer, and says it cannot tell only when it cannot', { timeout: 90_000 }, async () => {
+  const f = await opencodeFixture()
+  cleanup.push(f.cleanup)
+  await f.script({ oauth: { 'gitlab:pkce': { mode: 'code' } } })
+  const { hosts, forge } = await desktopWithForge(OWL, f)
+  await vi.waitFor(() => expect(hosts.providerStatus(forge, 'opencode')?.connection).toBe('connected'), { timeout: 30_000 })
+  const ask = (call: Parameters<typeof hosts.opencodeSignIn>[0]['call']) => hosts.opencodeSignIn({ id: forge, call })
+  const through = SocketHostService.prototype.opencodeSignIn
+  const loseAnswer = (reach: boolean) => vi.spyOn(SocketHostService.prototype, 'opencodeSignIn').mockImplementationOnce(async function (this: SocketHostService, call) {
+    if (reach) await through.call(this, call as never)
+    throw new Error('The connection closed before the answer came back.')
+  })
+  cleanup.push(async () => { vi.restoreAllMocks() })
+  const start = async () => {
+    const started = await ask({ action: 'browser', request: { sourceId: 'gitlab', methodId: 'pkce', answer: { instanceUrl: 'https://gitlab.com' } } }) as { status: string; attempt: { id: string } }
+    expect(started.status).toBe('waiting')
+    return started.attempt.id
+  }
+
+  const attemptId = await start()
+  // A lost wait: the sign-in still waits on forge, so the dialog waits on and asks again.
+  loseAnswer(true)
+  expect(await ask({ action: 'wait', request: { attemptId } })).toEqual({ status: 'pending' })
+  expect(await ask({ action: 'wait', request: { attemptId } })).toEqual({ status: 'pending' })
+  // A pasted code whose answer was lost before forge took it: the sign-in still waits, so the code is asked for again.
+  loseAnswer(false)
+  expect(await ask({ action: 'finish', request: { attemptId, code: 'good-code' } })).toEqual({ status: 'refused', reason: 'code-refused', message: HOST_ANSWER_LOST.code('forge') })
+  // One forge took and finished: the sign-in waits no longer, and Sotto cannot tell how it ended, so it says so.
+  loseAnswer(true)
+  expect(await ask({ action: 'finish', request: { attemptId, code: 'good-code' } })).toEqual({ status: 'refused', reason: 'answer-lost', message: HOST_ANSWER_LOST.untold('forge') })
+
+  // A sign-in that ended on forge after a wait's answer was lost: how it ended was in the answer that never came.
+  const second = await start()
+  loseAnswer(true)
+  expect(await ask({ action: 'wait', request: { attemptId: second } })).toEqual({ status: 'pending' })
+  await f.host.signIn.cancel({ attemptId: second })
+  expect(await ask({ action: 'wait', request: { attemptId: second } })).toEqual({ status: 'refused', reason: 'answer-lost', message: HOST_ANSWER_LOST.untold('forge') })
+  // A sign-in whose waits all came back ends in OpenCode's own words.
+  const third = await start()
+  expect(await ask({ action: 'cancel', request: { attemptId: third } })).toEqual({ status: 'ok' })
+  expect(await ask({ action: 'wait', request: { attemptId: third } })).toEqual({ status: 'refused', message: SIGN_IN_WORDS.notRunning })
+})
+
 // A host gives no thread Sotto's tool servers: the browser, visuals, pull request tools and delegation are this computer's
 // own (docs/agent-control.md), so a host's Codex threads have none, and its OpenCode threads have none either.
 it('gives an OpenCode thread on a host none of Sotto’s tool servers, as the host gives no other provider’s threads', { timeout: 90_000 }, async () => {

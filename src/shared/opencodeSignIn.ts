@@ -220,6 +220,8 @@ export const HOST_ANSWER_LOST = {
     `${host} did not answer, so Sotto could not tell whether anything was signed in or out there, and could not read its model sources to find out. Check that ${host} is connected, then look under its model sources before you try again.`,
   /** Reading the list itself got no answer; a read changes nothing. */
   unread: (host: string): string => `${host} did not answer, so Sotto could not read its model sources. Nothing was changed. Check that ${host} is connected, then try again.`,
+  /** A pasted code whose answer was lost while the sign-in still waits: the host may never have had it, so it is asked for again. */
+  code: (host: string): string => `${host} did not answer, so Sotto could not tell whether it took the code. The sign-in is still waiting. Paste the code again.`,
   /** Asking for a waiting sign-in's page got no answer, so the page did not open. */
   page: (host: string): string => `${host} did not answer, so the sign-in page did not open. Nothing was saved. Press Open the page again.`,
 } as const
