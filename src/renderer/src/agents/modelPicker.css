@@ -5,6 +5,7 @@
 .model-picker__trigger .provider-mark[data-provider='claude'], .model-picker__rail .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
 .model-picker__trigger .provider-mark[data-provider='grok'], .model-picker__rail .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
 .model-picker__trigger .provider-mark[data-provider='devin'], .model-picker__rail .provider-mark[data-provider='devin'] { color: var(--tt-provider-devin); }
+.model-picker__trigger .provider-mark[data-provider='opencode'], .model-picker__rail .provider-mark[data-provider='opencode'] { color: var(--tt-provider-opencode); }
 
 /* Where the model control is a named field rather than a chip: the New thread and New terminal dialogs. */
 .thread-options__model { display: grid; gap: 5px; min-width: 0; }

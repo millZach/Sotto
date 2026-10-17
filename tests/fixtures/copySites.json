@@ -51,6 +51,11 @@
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
   },
+  "src/main/agents/opencode.ts": {
+    "structuredClone(": 1,
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
   "src/main/agents/providerRetirement.ts": {
     "structuredClone(": 1
   },

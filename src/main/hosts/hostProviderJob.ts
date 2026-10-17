@@ -1,6 +1,6 @@
 import { PROVIDER_LABELS, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import type { HostsCommand } from '../../shared/hosts'
-import { HOST_PROVIDER_JOB_WORDS, hostProviderFound, hostProviderJobCase, hostProviderJobTitle, type HostProviderJobCase, type HostProviderJobState } from '../../shared/hostProviders'
+import { HOST_PROVIDER_JOB_WORDS, hostProviderFound, hostProviderJobCase, hostProviderJobTitle, type HostProviderId, type HostProviderJobCase, type HostProviderJobState } from '../../shared/hostProviders'
 import { hostProviderBrief, PROVIDER_COMMANDS, PROVIDER_INSTALL_METHODS, providerLookupOrder } from './hostProviderBrief'
 import type { HostSetupThreads } from './hostSetup'
 import { PROVIDER_JOB_TOOL_NAMES, type AgentJobToolName, type HostSetupToolReply } from './hostSetupTools'
@@ -27,7 +27,7 @@ interface Job {
   readonly id: string
   readonly hostId: string
   readonly host: string
-  readonly provider: ProviderId
+  readonly provider: HostProviderId
   readonly case: HostProviderJobCase
   readonly threadTitle: string
   readonly modelName: string

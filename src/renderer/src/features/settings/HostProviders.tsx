@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { writeClipboard } from '../../agents/richActions'
-import { everyProvider, PROVIDER_LABELS, type AgentProviderStatus, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
+import { PROVIDER_LABELS, type AgentProviderStatus, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
 import type { HostSetupChoice, HostsBridge, HostStatus } from '../../../../shared/hosts'
-import { HOST_PROVIDER_JOB_WORDS, hostProviderJobCase, PROVIDER_SIGN_IN_COMMANDS, PROVIDER_SIGN_IN_SHAPES, type HostProviderAction, type HostProviderJobCase, type HostProviderJobState } from '../../../../shared/hostProviders'
+import { HOST_PROVIDER_JOB_WORDS, HOST_PROVIDERS, hostProviderJobCase, PROVIDER_SIGN_IN_COMMANDS, PROVIDER_SIGN_IN_SHAPES, type HostProviderAction, type HostProviderId, type HostProviderJobCase, type HostProviderJobState } from '../../../../shared/hostProviders'
 import { useHeldProviders } from '../../state/owlFeature'
 import { Button } from '../../components/Button'
 import { ProviderMark } from '../../agents/ProviderMark'
@@ -15,8 +15,8 @@ import { HostClientUpdatesChip, tileUpdateParts, useHostClientUpdates, waitingFo
 import type { HostClientUpdatesView } from './hostClientUpdateWords'
 import './hostProviders.css'
 
-/** The order the tiles are in: the providers the prototype drew, in its order (ADR-0037). */
-export const HOST_PROVIDER_ORDER: readonly ProviderId[] = everyProvider(['claude', 'codex', 'grok', 'devin', 'muse'])
+/** The order the tiles are in: the providers the prototype drew, in its order (ADR-0037). OpenCode joins in #1107. */
+export const HOST_PROVIDER_ORDER: readonly HostProviderId[] = HOST_PROVIDERS
 
 /**
  * What one tile says. `kind` decides its dot and its actions: Disconnect when connected, Connect when turned off, Sign in
@@ -94,9 +94,9 @@ interface TileUpdates {
 }
 
 function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, updates }: {
-  readonly host: HostStatus; readonly provider: ProviderId; readonly status: AgentProviderStatus | undefined
+  readonly host: HostStatus; readonly provider: HostProviderId; readonly status: AgentProviderStatus | undefined
   readonly bridge: HostsBridge; readonly job: HostProviderJobState | undefined
-  readonly onSignIn: (provider: ProviderId) => void; readonly onAgent: (provider: ProviderId, jobCase: HostProviderJobCase) => void
+  readonly onSignIn: (provider: HostProviderId) => void; readonly onAgent: (provider: HostProviderId, jobCase: HostProviderJobCase) => void
   /** The host's client updates, when it offers them: this tile shows its own client's. */
   readonly updates?: TileUpdates | undefined
 }): ReactNode {
@@ -241,8 +241,8 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
 }): ReactNode {
   const heldProviders = useHeldProviders()
   const [open, setOpen] = useState(false)
-  const [signingIn, setSigningIn] = useState<ProviderId | null>(null)
-  const [agent, setAgent] = useState<{ readonly provider: ProviderId; readonly jobCase: HostProviderJobCase } | null>(null)
+  const [signingIn, setSigningIn] = useState<HostProviderId | null>(null)
+  const [agent, setAgent] = useState<{ readonly provider: HostProviderId; readonly jobCase: HostProviderJobCase } | null>(null)
   const gridId = useId()
   const grid = useRef<HTMLUListElement>(null)
   const own = job?.hostId === host.id ? job : undefined

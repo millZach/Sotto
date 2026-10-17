@@ -80,13 +80,18 @@ describe('provider lists', () => {
       .toEqual([true, true, true, true, true, true])
   })
 
+  it('gives OpenCode neither side writing nor Sotto’s tools until #1106 does', () => {
+    expect(providerWritesShortText('opencode')).toBe(false)
+    expect(providerTakesSottoTools('opencode')).toBe(false)
+  })
+
   it('names the provider a list that must name every provider leaves out', () => {
-    expect(everyProvider(['muse', 'devin', 'grok', 'claude', 'codex'])).toEqual(['muse', 'devin', 'grok', 'claude', 'codex'])
-    // @ts-expect-error Muse is missing, and the type checker says so.
-    everyProvider(['codex', 'claude', 'grok', 'devin'])
+    expect(everyProvider(['opencode', 'muse', 'devin', 'grok', 'claude', 'codex'])).toEqual(['opencode', 'muse', 'devin', 'grok', 'claude', 'codex'])
+    // @ts-expect-error OpenCode is missing, and the type checker says so.
+    everyProvider(['codex', 'claude', 'grok', 'devin', 'muse'])
   })
 
   it('refuses a list of every provider that names one twice', () => {
-    expect(() => everyProvider(['codex', 'codex', 'claude', 'grok', 'devin', 'muse'])).toThrow('codex is listed twice in a list of every provider.')
+    expect(() => everyProvider(['codex', 'codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])).toThrow('codex is listed twice in a list of every provider.')
   })
 })

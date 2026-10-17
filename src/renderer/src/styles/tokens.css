@@ -302,6 +302,7 @@
   --tt-provider-claude: #e3b58e;
   --tt-provider-grok: #c9baff;
   --tt-provider-devin: #a5d8f5;
+  --tt-provider-opencode: #ece3d0;
   --tt-provider-ink: #080b0a;
   --tt-overlay: color-mix(in srgb, var(--theme-canvas) 64%, transparent);
   --tt-backdrop: rgb(0 0 0 / 38%);
@@ -349,6 +350,8 @@
   --tt-provider-claude: #e2ad80;
   --tt-provider-grok: #bfaefc;
   --tt-provider-devin: #8fcaef;
+  /* OpenCode's mark is drawn straight from its token in both modes, so the light one is already dark enough to read. */
+  --tt-provider-opencode: #625843;
   --tt-provider-ink: #0b0d0c;
   --tt-overlay: color-mix(in srgb, var(--theme-canvas) 60%, transparent);
   --tt-backdrop: rgb(20 24 22 / 22%);

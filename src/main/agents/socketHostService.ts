@@ -30,7 +30,7 @@ import { requestQuestionsDigest } from './requestDrafts'
 import { version as sourceVersion } from '../../../package.json'
 import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from './heldProviderGate'
-import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
+import { heldProviderRefusal, heldProvidersOption, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
@@ -649,7 +649,7 @@ export class SocketHostService implements HostService {
   get supportsWatcherWorkSettled(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-work-settled') }
   get supportsWatcherOutcomes(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-outcomes') }
   get supportsWatcherMuse(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-muse') }
-  private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): ProviderId | undefined {
+  private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): HeldProviderNames | undefined {
     return heldProviderOfWatcherRequest(request, this.held, this.cached?.host, this.dormantProviderThreads)
   }
   async watcherControl(request: WatcherHostControl, _client?: ClientIdentity, guard?: () => void): Promise<unknown> {

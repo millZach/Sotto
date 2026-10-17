@@ -1,5 +1,5 @@
-import { PROVIDER_LABELS, type ProviderId } from '../../shared/agents'
-import type { HostProviderJobCase } from '../../shared/hostProviders'
+import { PROVIDER_LABELS } from '../../shared/agents'
+import type { HostProviderId, HostProviderJobCase } from '../../shared/hostProviders'
 
 /** What the brief says about the job: the host, the provider, the case and what the host reported, and nothing else. */
 export interface HostProviderBriefInput {
@@ -7,7 +7,7 @@ export interface HostProviderBriefInput {
   readonly host: string
   readonly target: string
   readonly sshPort?: number | undefined
-  readonly provider: ProviderId
+  readonly provider: HostProviderId
   readonly case: HostProviderJobCase
   /** What the host reported: the version it found, the oldest Sotto accepts, and the adapter's own sentence. */
   readonly version?: string | undefined
@@ -16,14 +16,14 @@ export interface HostProviderBriefInput {
 }
 
 /** The command each client is started by on the host, which the lookup searches for. */
-export const PROVIDER_COMMANDS: Readonly<Record<ProviderId, string>> = { claude: 'claude', codex: 'codex', grok: 'grok', devin: 'devin', muse: 'muse' }
+export const PROVIDER_COMMANDS: Readonly<Record<HostProviderId, string>> = { claude: 'claude', codex: 'codex', grok: 'grok', devin: 'devin', muse: 'muse' }
 
 /**
  * Each provider's official way to install it on Linux or macOS, as its maker documents it, and what the host's lookup
  * needs of the result. Checked September 28, 2026 against code.claude.com/docs/en/setup, github.com/openai/codex,
  * docs.x.ai and npm's @xai-official/grok, and docs.devin.ai/cli.
  */
-export const PROVIDER_INSTALL_METHODS: Readonly<Record<ProviderId, string>> = {
+export const PROVIDER_INSTALL_METHODS: Readonly<Record<HostProviderId, string>> = {
   claude: 'Anthropic\'s native installer, `curl -fsSL https://claude.ai/install.sh | bash`, which puts `claude` in ~/.local/bin (https://code.claude.com/docs/en/setup). npm\'s `npm install -g @anthropic-ai/claude-code` installs the same binary. Update a native install with `claude update`.',
   codex: 'npm\'s `npm install -g @openai/codex`, or OpenAI\'s installer, `curl -fsSL https://chatgpt.com/codex/install.sh | sh` (https://github.com/openai/codex). The host starts only Codex\'s native binary, never a script that wraps it; the GitHub release archive `codex-x86_64-unknown-linux-musl.tar.gz` (or the aarch64 one) holds it, to be renamed `codex` and put in ~/.local/bin.',
   grok: 'npm\'s `npm install -g @xai-official/grok`, or xAI\'s installer, `curl -fsSL https://x.ai/cli/install.sh | bash` (https://docs.x.ai/build/overview). Either keeps the native binary in ~/.grok/bin, which the host searches first. An npm install needs Node for the SSH account.',
@@ -32,7 +32,7 @@ export const PROVIDER_INSTALL_METHODS: Readonly<Record<ProviderId, string>> = {
 }
 
 /** Where the host's CLI lookup searches on Linux and macOS, in order (ADR-0036, `src/main/agents/cliLookup.ts`). */
-export function providerLookupOrder(provider: ProviderId): string {
+export function providerLookupOrder(provider: HostProviderId): string {
   const command = PROVIDER_COMMANDS[provider]
   const own = provider === 'grok' ? '~/.grok/bin (Grok Build\'s own folder), then ' : ''
   const last = provider === 'codex' ? ', then ~/.codex/bin' : ''

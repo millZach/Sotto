@@ -3,7 +3,8 @@ import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentBridge, type AgentState } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentBridge, type AgentState, type ProviderId } from '../../../src/shared/agents'
+import { HELD_PROVIDER_ENTRIES } from '../../../src/shared/heldProviders'
 import { useAgentConnection, useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ProvidersSettings } from '../../../src/renderer/src/agents/ProvidersSettings'
 import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
@@ -11,6 +12,9 @@ import { AgentSetupFields } from '../../../src/renderer/src/agents/AgentAccountS
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { AppProvider } from '../../../src/renderer/src/state/AppContext'
 import { createBridge, createController } from '../../fixtures/renderer/appHarness'
+
+/** The providers an Owl feature holds; a run with no Owl answers shows none of them. */
+const HELD: ReadonlySet<ProviderId> = new Set(HELD_PROVIDER_ENTRIES.map(entry => entry.provider))
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn() }))
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
@@ -124,9 +128,10 @@ describe('independent provider settings', () => {
     state.configuration.defaultModelId = 'grok:same-native-model'
     const { command } = provide(state)
     render(<ProvidersSettings />)
-    // Muse is an Owl feature: with no Owl answers it is not offered at all (ADR-0079).
+    // Muse and OpenCode are Owl features: with no Owl answers neither is offered at all (ADR-0079, ADR-0087).
     expect(screen.queryByRole('button', { name: 'Muse' })).toBeNull()
-    for (const provider of providerIdSchema.options.filter(id => id !== 'muse')) {
+    expect(screen.queryByRole('button', { name: 'OpenCode' })).toBeNull()
+    for (const provider of providerIdSchema.options.filter(id => !HELD.has(id))) {
       fireEvent.click(screen.getByRole('button', { name: PROVIDER_LABELS[provider] }))
       expect(screen.queryByRole('combobox', { name: /default thread model/i })).toBeNull()
     }
@@ -150,7 +155,7 @@ describe('independent provider settings', () => {
   it("marks each provider and the selected detail with that provider's mark", () => {
     provide()
     const { container } = render(<ProvidersSettings />)
-    for (const provider of providerIdSchema.options.filter(id => id !== 'muse')) {
+    for (const provider of providerIdSchema.options.filter(id => !HELD.has(id))) {
       // Every provider Sotto ships draws its own mark; the initial is the fallback for one it has none for.
       const drawn = screen.getByRole('button', { name: PROVIDER_LABELS[provider] }).querySelector(`svg.provider-mark[data-provider="${provider}"]`)
       expect(drawn, `${provider} needs its own mark rather than its initial`).not.toBeNull()

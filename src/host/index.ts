@@ -26,6 +26,7 @@ import { version as packageVersion } from '../../package.json'
 import { getReleaseTrack } from '../shared/releaseTrack'
 import { owlFeaturesForTrack } from '../shared/owlFeatures'
 import { heldProvidersOf } from '../shared/heldProviders'
+import { heldOnHost } from '../shared/hostProviders'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import { createHostSelfUpdate } from './selfUpdate'
 
@@ -100,7 +101,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // A host reads its features from its own packaged version; a paired desktop cannot turn any on.
   const owlFeatures = owlFeaturesForTrack(getReleaseTrack(options.sottoVersion ?? packageVersion))
   const usageEnabled = owlFeatures.usage
-  const heldProviders = heldProvidersOf(owlFeatures)
+  // Its Owl answers, and every provider hosts do not take yet: OpenCode until #1107 adds it to HOST_PROVIDERS.
+  const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
   const resumeAfterRestart = owlFeatures['resume-after-restart']
   const streamingPublishCost = owlFeatures['streaming-publish-cost']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']

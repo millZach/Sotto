@@ -1,11 +1,31 @@
 import { z } from 'zod'
 import { PROVIDER_COUNT, PROVIDER_LABELS, providerIdSchema, type AgentProviderStatus, type ProviderId, type ProviderProblem } from './agents'
+import type { HeldProviders } from './heldProviders'
 
 /**
  * A host's providers from this computer (ADR-0037): the tiles under a connected host's row in Settings > Hosts, the
  * host's own connect, disconnect and refresh for one of its providers, and a provider's sign-in, run on the host by its
  * own client and finished by the user in this computer's browser.
  */
+
+/**
+ * The providers a host offers from this computer: its tiles, their connect, sign-in and agent jobs, and the provider job
+ * brief. OpenCode is not one yet: hosts and phones take it in #1107, which adds it here. A headless host may still run
+ * its adapter behind the Owl gate; nothing on this computer offers it for a host.
+ */
+export const HOST_PROVIDERS = ['claude', 'codex', 'grok', 'devin', 'muse'] as const satisfies readonly ProviderId[]
+export type HostProviderId = typeof HOST_PROVIDERS[number]
+export const hostProviderIdSchema = z.enum(HOST_PROVIDERS)
+/**
+ * What a headless host holds on its run: the providers its Owl answers hold, and every provider hosts do not take yet,
+ * whatever those answers are. A host starts no process for one, and its state names none of its providers, models or
+ * threads, so a desktop or phone that does not know the provider never reads it there. OpenCode is held so until #1107
+ * adds it to `HOST_PROVIDERS`, which lifts this; #1107 must then send it only to peers that list a host feature for it.
+ */
+export function heldOnHost(held: HeldProviders): HeldProviders {
+  const hosted: readonly ProviderId[] = HOST_PROVIDERS
+  return new Set([...held, ...providerIdSchema.options.filter(id => !hosted.includes(id))])
+}
 
 /** How long a sign-in lives on the host before its client is stopped and what it printed is dropped. */
 export const PROVIDER_SIGN_IN_LIFETIME_MS = 15 * 60_000
@@ -28,7 +48,7 @@ export type ProviderSignInStage = z.infer<typeof providerSignInStageSchema>
 
 /** Which providers sign in from this computer, and how. Devin's and Muse's sign-ins run on the host itself, so their tiles show the command. */
 export const PROVIDER_SIGN_IN_SHAPES: Readonly<Record<ProviderId, ProviderSignInShape | null>> = {
-  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null,
+  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null,
 }
 /** What Devin's tile says to run on the host: its sign-in for a machine reached over SSH, where a browser cannot come back to it. */
 export const DEVIN_SIGN_IN_COMMAND = 'devin auth login --force-manual-token-flow'
@@ -50,6 +70,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
   grok: 'https://docs.x.ai/build/overview',
   devin: 'https://docs.devin.ai/cli',
   muse: 'https://dev.meta.ai/docs/muse-code',
+  opencode: 'https://opencode.ai/docs',
 }
 
 /**
@@ -59,7 +80,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
  * versions printed on `claude.ai`. A page anywhere else is not opened, and the sign-in says to finish it on the host.
  */
 export const PROVIDER_SIGN_IN_PAGES: Readonly<Record<ProviderId, readonly string[]>> = {
-  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [],
+  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [], opencode: [],
 }
 export function isProviderSignInPage(provider: ProviderId, value: string): boolean {
   if (value.length > 4096 || /\s/u.test(value)) return false
@@ -90,14 +111,14 @@ export const PASTED_CODE_MAX = 2048
 
 /** What Settings > Hosts asks of one of a saved host's providers. `id` is the saved host's. */
 export const hostProviderActionSchema = z.object({
-  id: z.uuid(), provider: providerIdSchema, action: z.enum(['connect', 'disconnect', 'refresh']),
+  id: z.uuid(), provider: hostProviderIdSchema, action: z.enum(['connect', 'disconnect', 'refresh']),
 }).strict()
 export type HostProviderAction = z.infer<typeof hostProviderActionSchema>
 /** How a provider action went: nothing when the host took it, else the host's own sentence, naming the host. */
 export interface HostProviderActionResult { readonly error?: string }
 
 export const hostSignInRequestSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('start'), id: z.uuid(), provider: providerIdSchema }).strict(),
+  z.object({ type: z.literal('start'), id: z.uuid(), provider: hostProviderIdSchema }).strict(),
   z.object({ type: z.literal('read'), id: z.uuid(), signInId: z.uuid() }).strict(),
   z.object({ type: z.literal('code'), id: z.uuid(), signInId: z.uuid(), code: z.string().min(1).max(PASTED_CODE_MAX) }).strict(),
   z.object({ type: z.literal('cancel'), id: z.uuid(), signInId: z.uuid() }).strict(),

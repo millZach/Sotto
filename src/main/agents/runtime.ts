@@ -12,6 +12,7 @@ import { subagentRoleTable } from '../../shared/workerRoles'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
+import { OpenCodeHost } from './opencode'
 import { HeldProviderHost } from './heldProviderGate'
 import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { ConfiguredProviderHost } from './providerSwitch'
@@ -137,6 +138,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true })),
     devin: adapter('devin', () => options.providers?.devin ?? new DevinAcpHost(directory)),
     muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory)),
+    opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, { heldProviders: held })),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -146,6 +148,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       grok: new SottoThreadHost('grok', providers.grok!, threadRegistry!),
       devin: new SottoThreadHost('devin', providers.devin!, threadRegistry!),
       muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
+      opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
     },
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
