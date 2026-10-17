@@ -5,7 +5,7 @@ import type { WatcherThreadTarget } from '../../../shared/watcher'
 import { isWatchedRow, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
-import { useFirstMessageDelivery } from './watcherFirstMessage'
+import { firstMessage, useFirstMessageDelivery } from './watcherFirstMessage'
 import { watchNotices } from './watchNotice'
 
 /** Why the room has no state to show: main has not answered yet, or this build offers no Watcher bridge. */
@@ -148,6 +148,9 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   const standingThreadIds = useMemo<ReadonlySet<string>>(() => standingKey === '' ? NONE : new Set(JSON.parse(standingKey) as string[]), [standingKey])
   // A first message sent before Watcher existed goes to it from here, so leaving the room cannot lose it.
   useFirstMessageDelivery(enabled ? agents : null, currentThreadId)
+  // A first message read back after a reload as started, when main then says there is no Watcher, goes back to the composer.
+  const noWatcher = live && answered && state !== null && state.current === null
+  useEffect(() => { if (noWatcher) firstMessage.noWatcher() }, [noWatcher])
   // The contract keeps these three optional for stand-ins written before them, so the room asks before offering them.
   // Main's own preload supplies all three.
   const manage = useMemo(() => {

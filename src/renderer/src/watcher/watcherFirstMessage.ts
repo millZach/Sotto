@@ -7,8 +7,9 @@ import { describeThreads } from '../agents/threadFacts'
  * What the first entry holds before Watcher exists (the plan, section 6): the message, the model and effort picked
  * for it, and how far starting has got. It is the window's, not the room's, so leaving the room while main creates
  * Watcher keeps the message, and it goes to the new Watcher once, whether or not the room is open when its thread
- * arrives. A reload loses it until Watcher exists: the draft store keeps drafts by thread, and there is no thread
- * until `open` answers. Once there is, the message is Watcher's draft and is sent from there.
+ * arrives. The draft store keeps drafts by thread, and there is no thread until `open` answers, so the window keeps it
+ * in its own session too: a reload finds it as it was. Once there is a thread, the message is Watcher's draft and is
+ * sent from there.
  */
 export interface FirstMessage {
   readonly text: string
@@ -25,15 +26,55 @@ export interface FirstMessage {
   readonly error: string | null
 }
 
+/** Where the window's session keeps the first message, so a reload does not lose it. Gone once it is sent. */
+export const FIRST_MESSAGE_KEY = 'sotto.watcher.firstMessage'
 const BLANK: FirstMessage = { text: '', modelId: '', effort: null, phase: 'writing', error: null }
-let current = BLANK
 const listeners = new Set<() => void>()
 const emit = (): void => { for (const listener of [...listeners]) listener() }
+
+function session(): Storage | null {
+  try { return typeof sessionStorage === 'undefined' ? null : sessionStorage } catch { return null }
+}
+
+/**
+ * Whether the message was read back while starting or started, before this window saw main's answer: if main then
+ * says there is no Watcher, starting did not finish, and the message goes back to the composer rather than wait.
+ */
+let resumed = false
+
+/** The message as the session kept it. A kept start resumes as started; nothing kept, or anything unreadable, is blank. */
+function restored(): FirstMessage {
+  resumed = false
+  let raw: string | null = null
+  try { raw = session()?.getItem(FIRST_MESSAGE_KEY) ?? null } catch { /* A session that cannot be read keeps nothing. */ }
+  if (raw === null) return BLANK
+  try {
+    const kept = JSON.parse(raw) as Partial<Record<keyof FirstMessage, unknown>>
+    if (typeof kept.text !== 'string' || typeof kept.modelId !== 'string' || (kept.effort !== null && typeof kept.effort !== 'string')
+      || !['writing', 'starting', 'started'].includes(kept.phase as string)) return BLANK
+    const starting = kept.phase !== 'writing' && kept.text.trim() !== ''
+    resumed = starting
+    return { text: kept.text, modelId: kept.modelId, effort: kept.effort as string | null, phase: starting ? 'started' : 'writing', error: null }
+  } catch { return BLANK }
+}
+
+function keep(): void {
+  const store = session()
+  if (store === null) return
+  try {
+    if (current.text === '' && current.phase === 'writing') store.removeItem(FIRST_MESSAGE_KEY)
+    else store.setItem(FIRST_MESSAGE_KEY, JSON.stringify({ text: current.text, modelId: current.modelId, effort: current.effort, phase: current.phase }))
+  } catch { /* Kept in this window until it reloads, as before. */ }
+}
+
+let current = restored()
 
 export const firstMessage = {
   get: (): FirstMessage => current,
   update(patch: Partial<FirstMessage>): void {
     current = { ...current, ...patch }
+    if (patch.phase !== undefined) resumed = false
+    keep()
     emit()
   },
   /** The message waiting for Watcher, taken once: whoever takes it sends it, and a second take finds nothing. */
@@ -41,11 +82,26 @@ export const firstMessage = {
     if (current.phase !== 'started') return null
     const text = current.text.trim()
     current = BLANK
+    resumed = false
+    keep()
     emit()
     return text === '' ? null : text
   },
+  /**
+   * Main answered with no Watcher. A message read back as started was starting when the window reloaded, and starting
+   * did not finish: it goes back to the composer, with nothing sent.
+   */
+  noWatcher(): void {
+    if (!resumed || current.phase !== 'started') return
+    resumed = false
+    current = { ...current, phase: 'writing' }
+    keep()
+    emit()
+  },
+  /** Reads the message back from the window's session, as a reloaded window does. */
+  reload(): void { current = restored(); emit() },
   /** Back to an empty first entry, for a test's fresh window. */
-  clear(): void { current = BLANK; emit() },
+  clear(): void { current = BLANK; resumed = false; keep(); emit() },
   subscribe(listener: () => void): () => void { listeners.add(listener); return () => { listeners.delete(listener) } },
 }
 
