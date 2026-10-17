@@ -1,0 +1,1241 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Sotto runs OpenCode with its own OpenCode folder, apart from the OpenCode the user runs, so a fresh
+  install is signed in to nothing and offers only OpenCode Zen's free models. A plain `opencode auth login` in the
+  user's own terminal signs in the user's OpenCode, not Sotto's. How does the user sign Sotto's OpenCode in to a
+  model source (Anthropic, OpenAI, OpenRouter, GitHub Copilot, ...) from Settings > Providers > OpenCode?
+
+  Three variants on ?variant=a|b|c, and the bar at the top (Left and Right arrows too, unless the focus is in a
+  field, a list, a dialog or the terminal):
+   a  Add a model source (dialog). The tile lists its model sources: OpenCode Zen (free, always there) and each
+      signed-in source with its model count and Sign out. "Add a model source" opens a dialog: a search over all
+      235 sources OpenCode 2.0.31 knows, the six common ones on top. Picking one shows its ways to sign in: an
+      API key field, or a browser sign-in that opens the page and then waits, showing the code to enter (device
+      code) or a field for the code the page shows (paste code), with Cancel and the expiry.
+   b  OpenCode's own sign-in, in Sotto's terminal. The tile lists the sources read-only (Sign out stays) and has
+      one button, "Sign in to a model source", which opens a Sotto terminal in a drawer running OpenCode's own
+      `opencode auth login` against Sotto's OpenCode folder. Sotto never handles a key. When OpenCode finishes,
+      Sotto reads the list again. The terminal here is a mock of OpenCode's picker: type to search, arrows to
+      choose, Enter to confirm.
+   c  Sources inline on the tile. No dialog. The tile lists the six common sources, each with its state and its
+      own action: "Add key" opens a key field in the row, a browser sign-in starts in the row and waits there.
+      "More model sources" opens a searchable list of the other 229 in place.
+
+  Every variant shows the fresh install (only OpenCode Zen, and a sentence on what signing in adds), a key OpenCode
+  refused and an expired browser sign-in, in plain words. Bar extras: Light flips the palette; Signed in starts
+  with Anthropic (API key) and OpenAI (ChatGPT account) signed in; "Offer my own OpenCode's sign-ins" adds an offer
+  to copy the sign-ins of the user's own OpenCode (here: Anthropic, OpenAI and OpenRouter, SAMPLE), a product
+  question for Zach, shown and not argued for. Escape closes the dialog, the drawer or an open row.
+
+  Pretending: a key shorter than 8 characters, or one that starts with "bad", is refused. A browser sign-in waits
+  until you press one of the grey "Pretend" pills, which are the prototype's, not the design's.
+
+  URL switches for captures: theme=light, signed=1, offer=1, tab=models, scene=pick|key|device|auto|code|
+  error-key|error-expired (each opens the variant's own version of that moment).
+
+  Data: the 235 model sources and their sign-in methods are real (`/api/integration` on a scratch
+  `opencode serve` 2.0.31, 2026-10-16). OpenCode Zen's twelve free models are real. Everything else is SAMPLE:
+  every model count but Zen's, the codes, the sign-in page addresses, the expiry time, which methods are device
+  code and which paste code (OpenCode only says when an attempt starts), and the terminal's text, which is
+  modelled on OpenCode 1.x's prompts and not read from 2.x. Methods OpenCode labels "(legacy)" are left out of
+  Sotto's own lists in a and c; b shows OpenCode's list as OpenCode draws it.
+
+  Palette: the same block shape as opencode-model-menu-prototype.html, with the values brought up to the current
+  SOTTO_DARK/LIGHT_THEME_COLORS in src/shared/themes/palettes.ts and named after the --tt-* tokens the page's
+  stylesheets read (providers.css, crossing-settings.css, global.css), so the page is the running one.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto - signing OpenCode in to a model source, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'), url('src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'), url('src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+
+/* The Sotto palette through the roles tokens.css derives (contrast base 100%, so each token is its theme role). */
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-surface-overlay: oklch(0.215 0.008 265);
+  --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-sidebar: oklch(0.235 0.003 265);
+  --tt-sidebar-row-hover: oklch(0.28 0.003 265);
+  --tt-sidebar-row-active: oklch(0.32 0.025 190);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-text-faint: oklch(0.675 0.012 270);
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-field-border: oklch(0.375 0.024 265);
+  --tt-border: color-mix(in oklab, oklch(0.375 0.024 265) 25%, oklch(0.72 0.014 265));
+  --tt-accent: oklch(0.714403 0.104089 183.092);
+  --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-activity: var(--tt-accent-text);
+  --tt-activity-wash: color-mix(in srgb, var(--tt-accent) 14%, transparent);
+  --tt-focus-ring: oklch(0.714403 0.104089 183.092);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--tt-canvas);
+  --tt-error: oklch(0.702184 0.189226 22.228);
+  --tt-error-contrast: var(--tt-canvas);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-code-bg: oklch(0.155 0.008 265);
+  --tt-code-border: var(--tt-hairline);
+  --tt-overlay: color-mix(in srgb, var(--tt-canvas) 64%, transparent);
+  --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
+  --tt-scrollbar: oklch(0.315 0.008 265);
+  --tt-terminal-bg: oklch(0.115 0.008 265);
+  --tt-terminal-fg: oklch(0.985 0.005 280);
+  --tt-terminal-cursor: oklch(0.714403 0.104089 183.092);
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-codex: #d7dbe1;
+  --tt-provider-grok: #c9baff;
+  --tt-provider-devin: #a5d8f5;
+  --tt-provider-opencode: #ece3d0;
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --app-sidebar-width: 264px;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85);
+  --tt-surface-overlay: oklch(0.945 0.007 85);
+  --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-sidebar: oklch(0.955 0.008 85);
+  --tt-sidebar-row-hover: oklch(0.93 0.01 85);
+  --tt-sidebar-row-active: oklch(0.915 0.02 190);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-text-faint: oklch(0.525 0.015 78);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-field-border: oklch(0.8 0.016 80);
+  --tt-border: color-mix(in oklab, oklch(0.8 0.016 80) 25%, oklch(0.5 0.014 75));
+  --tt-accent: oklch(0.53 0.095 186);
+  --tt-accent-text: oklch(0.43 0.08 186);
+  --tt-focus-ring: oklch(0.53 0.095 186);
+  --tt-hover: color-mix(in srgb, oklch(0.92 0.03 186) 70%, transparent);
+  --tt-error: oklch(0.509494 0.208583 28.513);
+  --tt-success: oklch(0.445 0.11 158);
+  --tt-code-bg: oklch(0.96 0.005 85);
+  --tt-overlay: color-mix(in srgb, var(--tt-canvas) 60%, transparent);
+  --tt-shadow-lg: 0 24px 60px rgb(20 24 22 / 18%);
+  --tt-scrollbar: oklch(0.84 0.01 85);
+  --tt-terminal-bg: oklch(0.978 0.004 85);
+  --tt-terminal-fg: oklch(0.235 0.014 75);
+  --tt-terminal-cursor: oklch(0.53 0.095 186);
+  --tt-provider-claude: color-mix(in srgb, #e3b58e 55%, var(--tt-text));
+  --tt-provider-codex: color-mix(in srgb, #d7dbe1 30%, var(--tt-text));
+  --tt-provider-grok: color-mix(in srgb, #c9baff 55%, var(--tt-text));
+  --tt-provider-devin: color-mix(in srgb, #a5d8f5 45%, var(--tt-text));
+  --tt-provider-opencode: #625843;
+}
+@media (max-width: 980px) { :root { --app-sidebar-width: 244px; } }
+@media (max-width: 820px) { :root { --app-sidebar-width: 224px; } }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.5 var(--tt-font-ui); -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 14px; height: 14px; }
+svg.provider-mark { flex: none; fill: currentColor; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 999px; background: var(--tt-scrollbar) padding-box; }
+
+/* ---- controls (global.css) ---- */
+.tt-button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--tt-hairline); border-radius: 999px; padding: 0 14px; background: transparent; color: var(--tt-text-2); font-size: 13.5px; font-weight: 500; line-height: 1.2; white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
+.tt-button:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); }
+.tt-button:active:not(:disabled) { background: var(--tt-hover); }
+.tt-button:disabled { cursor: not-allowed; opacity: .45; }
+.tt-button--primary { border-color: var(--tt-pill); background: var(--tt-pill); color: var(--tt-pill-ink); font-weight: 600; }
+.tt-button--primary:hover:not(:disabled) { border-color: var(--tt-pill); color: var(--tt-pill-ink); filter: brightness(1.12); }
+.tt-button--ghost { border-color: transparent; color: var(--tt-text-faint); }
+.tt-button--ghost:hover:not(:disabled) { border-color: transparent; color: var(--tt-text); }
+.tt-button--icon { width: 34px; padding: 0; }
+.tt-input { width: 100%; min-height: 30px; border: 1px solid var(--tt-field-border); border-radius: 10px; background: var(--tt-surface-sunken); padding: 4px 12px; color: var(--tt-text); font-size: 13.5px; font-weight: 500; }
+.tt-input::placeholder { color: var(--tt-text-faint); font-weight: 400; }
+.tt-input:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+.tt-toggle { display: grid; min-height: 30px; grid-template-columns: 36px minmax(0, 1fr); align-items: start; gap: 12px; border: 0; background: transparent; padding: 2px 0; text-align: left; }
+.tt-toggle__track { position: relative; width: 36px; height: 20px; margin-top: 1px; border: 1px solid var(--tt-border); border-radius: 999px; background: var(--tt-surface-sunken); transition: background-color 120ms ease, border-color 120ms ease; }
+.tt-toggle__thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--tt-text-muted); transition: transform 120ms ease, background-color 120ms ease; }
+.tt-toggle[aria-checked='true'] .tt-toggle__track { border-color: var(--tt-text); background: var(--tt-text); }
+.tt-toggle[aria-checked='true'] .tt-toggle__thumb { background: var(--tt-canvas); transform: translateX(16px); }
+
+/* ---- the Settings page frame (crossing-settings.css, threadSidebar.css, threadsChrome.css) ---- */
+.window { position: relative; height: 100%; }
+.settings-layout { display: grid; grid-template-columns: var(--app-sidebar-width) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; overflow: hidden; }
+.settings-sidebar { display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 0 10px; border-right: 1px solid var(--tt-hairline); background: var(--tt-sidebar); }
+.nav-top { display: flex; flex: none; align-items: center; gap: 8px; height: 44px; padding: 0 6px 0 4px; color: var(--tt-text); font-size: 14px; font-weight: 600; letter-spacing: -.1px; user-select: none; }
+.nav-top i { width: 18px; height: 18px; border-radius: 5px; background: linear-gradient(135deg, var(--tt-accent), color-mix(in srgb, var(--tt-accent) 45%, var(--tt-text))); }
+.settings-sidebar__body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 0 12px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.settings-sidebar h1 { margin: 6px 0 18px; padding: 0 8px; font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -.7px; }
+.settings-subnav { display: flex; flex-direction: column; gap: 4px; }
+.settings-subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--tt-text-muted); background: transparent; text-align: left; font-size: 14px; line-height: 1.35; }
+.settings-subnav button > span { flex: 1; }
+.settings-subnav button:hover { background: var(--tt-sidebar-row-hover); color: var(--tt-text); }
+.settings-subnav button[aria-selected='true'] { color: var(--tt-text); background: var(--tt-sidebar-row-active); }
+.settings-subnav button[aria-selected='true'] > svg:first-child { color: var(--tt-accent); }
+.settings-subnav button:nth-of-type(4), .settings-subnav button:nth-of-type(8) { margin-top: 32px; }
+.settings-subnav button:nth-of-type(4)::before, .settings-subnav button:nth-of-type(8)::before { content: ''; position: absolute; top: -18px; left: 12px; right: 12px; height: 1px; background: var(--tt-hairline); }
+.nav-foot { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px 2px; padding: 8px 6px 10px; border-top: 1px solid var(--tt-hairline); }
+.nav-foot__seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--tt-surface-sunken); margin-right: auto; }
+.nav-foot__seg span { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.nav-foot__seg span[data-on] { background: var(--tt-surface-elevated); color: var(--tt-text); }
+.nav-foot > svg { margin: 0 5px; color: var(--tt-text-muted); }
+.nav-foot > svg[data-on] { color: var(--tt-text); }
+.window-controls { position: absolute; top: 0; right: 0; z-index: 5; display: flex; color: var(--tt-text-muted); }
+.window-controls span { display: grid; place-items: center; width: 44px; height: 34px; }
+.settings-detail { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.settings-scroll { flex: 1; min-width: 0; min-height: 0; padding: 42px 6vw 40px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.settings-form { width: 100%; max-width: 790px; margin: 0 auto; }
+.settings-section__heading { margin: 0 0 10px; padding: 0 0 20px; border-bottom: 1px solid var(--tt-hairline); }
+.settings-section__heading h2 { margin: 0 0 10px; font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -1px; }
+.settings-section__heading p { margin: 0; color: var(--tt-text-muted); font-size: 16px; line-height: 1.5; }
+@media (max-width: 1100px) { .settings-layout { grid-template-columns: 205px minmax(0, 1fr); } .settings-sidebar { padding-left: 15px; } .settings-scroll { padding: 32px 35px; } }
+@media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 178px minmax(0, 1fr); }
+  .settings-sidebar { padding: 0 10px 0; }
+  .settings-sidebar h1 { font-size: 25px; margin-bottom: 20px; }
+  .settings-subnav button { padding: 8px 10px; gap: 8px; min-height: 38px; }
+  .settings-subnav button > svg:last-child:not(:first-child) { display: none; }
+  .settings-subnav button:nth-of-type(4), .settings-subnav button:nth-of-type(8) { margin-top: 24px; }
+  .settings-subnav button:nth-of-type(4)::before, .settings-subnav button:nth-of-type(8)::before { top: -14px; }
+  .settings-scroll { padding: 28px; }
+  .nav-foot__seg span { padding: 0 7px; }
+}
+
+/* ---- Providers (providers.css, copied) ---- */
+.providers-workspace { display: grid; grid-template-columns: minmax(240px, 33%) minmax(0, 1fr); min-height: 380px; border: 1px solid var(--tt-hairline); border-radius: 14px; overflow: hidden; background: var(--tt-surface); }
+.providers-list { border-right: 1px solid var(--tt-hairline); padding: 8px; }
+.providers-list__row { display: flex; align-items: center; gap: 8px; padding-right: 10px; border-radius: 9px; }
+.providers-list__row[data-selected='true'] { background: var(--tt-activity-wash); }
+.providers-list__select { display: flex; align-items: flex-start; flex: 1; gap: 12px; min-width: 0; padding: 19px 10px; border: 0; background: transparent; text-align: left; color: var(--tt-text); }
+.providers-list__select > .provider-mark { flex: none; margin-top: 1px; }
+.provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
+.provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
+.provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
+.provider-mark[data-provider='devin'] { color: var(--tt-provider-devin); }
+.provider-mark[data-provider='opencode'] { color: var(--tt-provider-opencode); }
+.providers-list__select > span { display: grid; gap: 7px; min-width: 0; }
+.providers-list__select strong { font-size: 15px; font-weight: 600; }
+.providers-list__select small { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-text-muted); }
+.providers-list__select small i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
+.providers-list__select small[data-status='connected'] { color: var(--tt-activity); }
+.providers-list__row .tt-toggle { width: auto; padding: 7px 0; flex: none; }
+.provider-detail { min-width: 0; }
+.provider-detail__header { display: flex; align-items: center; gap: 11px; min-height: 72px; padding: 16px 24px; }
+.provider-detail__header h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.provider-detail__version { color: var(--tt-text-muted); font-size: 12px; }
+.provider-detail__header .tt-button { margin-left: auto; }
+.provider-tabs { display: flex; gap: 22px; padding: 0 24px; border-bottom: 1px solid var(--tt-hairline); }
+.provider-tabs button { color: var(--tt-text-muted); border: 0; border-bottom: 2px solid transparent; background: transparent; min-height: 44px; padding: 0 0 12px; font-size: 14px; }
+.provider-tabs button[aria-selected='true'] { color: var(--tt-text); border-bottom-color: var(--tt-activity); }
+.provider-detail__body { padding: 24px; }
+.provider-connection { display: flex; align-items: start; flex-wrap: wrap; gap: 20px; justify-content: space-between; }
+.provider-connection > div { flex: 1 1 220px; }
+.provider-connection h4, .oc-sources h4 { margin: 0 0 9px; font-size: 15px; font-weight: 600; }
+.provider-connection p { margin: 0; max-width: 32em; font-size: 14px; line-height: 1.6; color: var(--tt-text-muted); }
+.provider-models { margin: -8px 0; padding: 0; list-style: none; }
+.provider-models li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 0; }
+.provider-models li + li { border-top: 1px solid var(--tt-hairline); }
+.provider-models li > span { display: grid; gap: 7px; min-width: 0; }
+.provider-models strong { font-size: 15px; font-weight: 500; }
+.provider-models small { color: var(--tt-text-muted); font-size: 12px; }
+.provider-models__empty { color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; }
+.provider-detail__error { margin: 14px 0 0; padding: 12px 14px; border-left: 2px solid var(--tt-error); background: var(--tt-error-contrast); color: var(--tt-error); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.provider-client { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 22px 0 4px; }
+.provider-client > div:first-child { flex: 1 1 210px; min-width: 0; }
+.provider-client h4 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.provider-client p { margin: 0; max-width: 34em; color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; }
+.providers-updates { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--tt-hairline); }
+.providers-updates h4 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.providers-updates p { margin: 0; max-width: 44em; color: var(--tt-text-muted); font-size: 13px; line-height: 1.6; }
+.providers-updates .tt-toggle { width: auto; flex: none; grid-template-columns: 36px; }
+@media (max-width: 1050px) { .providers-workspace { grid-template-columns: minmax(220px, 36%) minmax(0, 1fr); } .provider-detail__header, .provider-detail__body { padding: 20px 16px; } .provider-tabs { padding: 0 16px; } .providers-list__select { gap: 8px; padding: 18px 7px; } .providers-list__select > .provider-mark { width: 17px; } }
+@media (max-width: 900px) { .providers-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; } .providers-list__row { padding-inline: 8px; } }
+@media (max-width: 820px) { .providers-workspace { grid-template-columns: 1fr; } .providers-list { gap: 3px; border-right: 0; border-bottom: 1px solid var(--tt-hairline); } .providers-list__row { flex-direction: column; gap: 0; align-items: start; padding: 4px 8px 10px; } .providers-list__select { width: 100%; padding: 10px 0; gap: 6px; } .providers-list__select > .provider-mark { display: none; } .providers-list__select strong { font-size: 14px; } .providers-list__row .tt-toggle { align-self: end; padding: 0; } .provider-connection > div { flex-basis: 190px; } }
+
+/* ---- New: OpenCode's model sources. Every colour is a role token. ---- */
+.oc-sources { margin-top: 24px; padding: 22px 0 20px; border-top: 1px solid var(--tt-hairline); border-bottom: 1px solid var(--tt-hairline); }
+.oc-lead, .oc-empty, .oc-keynote, .oc-cta p { margin: 0; max-width: 34em; color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; }
+.oc-empty { margin-top: 2px; }
+.oc-list { margin: 6px 0 0; padding: 0; list-style: none; }
+.oc-list > li { display: flex; align-items: center; gap: 14px; min-height: 58px; padding: 10px 0; }
+.oc-list > li + li { border-top: 1px solid var(--tt-hairline); }
+.oc-src { display: grid; flex: 1; gap: 3px; min-width: 0; }
+.oc-src strong { font-size: 14.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-src small { color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.oc-src small[data-state='signed'] { display: flex; align-items: center; gap: 6px; }
+.oc-src small[data-state='signed'] i { width: 5px; height: 5px; flex: none; border-radius: 50%; background: var(--tt-activity); }
+.oc-count { flex: none; color: var(--tt-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.oc-list .tt-button, .oc-rows .tt-button, .oc-inline .tt-button, .oc-offer .tt-button { min-height: 30px; padding: 0 12px; font-size: 13px; }
+.oc-list .tt-button--ghost, .oc-rows .tt-button--ghost { margin-right: -12px; }
+.oc-below { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-top: 14px; }
+.oc-notice { margin: 12px 0 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.55; }
+.oc-notice:empty { display: none; }
+.oc-offer { display: grid; gap: 10px; margin: 12px 0 6px; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); }
+.oc-offer p { margin: 0; color: var(--tt-text); font-size: 14px; line-height: 1.55; }
+.oc-offer small { color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.oc-offer__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.oc-cta { display: grid; gap: 8px; margin-top: 16px; }
+.oc-cta .tt-button { justify-self: start; }
+
+/* a - the dialog (global.css .tt-dialog, with room for a list). */
+.tt-dialog-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: var(--tt-overlay); }
+.tt-dialog { width: min(480px, 100%); border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); padding: 24px; }
+.tt-dialog h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.tt-dialog__description { margin: 8px 0 16px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.55; }
+.tt-dialog__actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: 10px; padding-top: 16px; }
+.tt-dialog__actions .tt-button { min-height: 40px; padding-inline: 16px; font-size: 13px; }
+.oc-dialog { display: flex; flex-direction: column; width: min(520px, 100%); max-height: calc(100vh - 40px); min-height: 0; }
+.oc-dialog--pick { height: min(620px, calc(100vh - 40px)); }
+.oc-dialog__body input, .oc-dialog__body button { scroll-margin: 12px 0 64px; }
+.oc-dialog__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 -24px; padding: 0 24px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+@media (prefers-reduced-motion: no-preference) { .tt-dialog { animation: oc-rise 160ms cubic-bezier(.2, .8, .2, 1); } .oc-drawer { animation: oc-up 180ms cubic-bezier(.2, .8, .2, 1); } }
+@keyframes oc-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes oc-up { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+.oc-search { display: flex; flex: none; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 10px; background: var(--tt-surface-sunken); color: var(--tt-text-muted); }
+.oc-search:focus-within { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+.oc-search input { flex: 1; min-width: 0; min-height: 0; padding: 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font-size: 13.5px; }
+.oc-search input::placeholder { color: var(--tt-text-faint); }
+.oc-pick { flex: 1; min-height: 0; overflow-y: auto; margin: 10px -12px 0; padding: 0 12px 4px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.oc-group-head { position: sticky; top: 0; z-index: 1; margin: 0 -12px; padding: 10px 22px 4px; background: var(--tt-surface-elevated); color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.oc-opt { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; scroll-margin: 32px 0 4px; }
+.oc-opt:hover, .oc-opt:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.oc-opt:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
+.oc-opt[aria-disabled='true'] { cursor: default; }
+.oc-opt__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.oc-opt__how { flex: none; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); font-size: 12.5px; }
+.oc-opt:hover .oc-opt__how, .oc-opt:focus-visible .oc-opt__how { color: var(--tt-text-2); }
+.oc-opt[aria-disabled='true'] .oc-opt__how { display: inline-flex; align-items: center; gap: 5px; color: var(--tt-activity); }
+.oc-none { margin: 0; padding: 14px 10px; color: var(--tt-text-muted); font-size: 13.5px; }
+.oc-back { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; height: 30px; margin: -6px 0 10px -10px; padding: 0 10px 0 6px; border: 0; border-radius: 999px; background: transparent; color: var(--tt-text-muted); font-size: 13px; }
+.oc-back:hover { background: var(--tt-hover); color: var(--tt-text); }
+.oc-methods { display: grid; gap: 8px; margin: 16px 0 0; padding: 0; border: 0; }
+.oc-methods legend { margin-bottom: 8px; padding: 0; font-size: 13.5px; font-weight: 600; }
+.oc-method { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 10px; padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; cursor: pointer; }
+.oc-method:has(input:checked) { border-color: var(--tt-text-faint); background: var(--tt-surface-overlay); }
+.oc-method:has(input:focus-visible) { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+.oc-method input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--tt-accent); }
+.oc-method input:focus-visible { outline: 0; }
+.oc-method b { font-size: 14px; font-weight: 500; }
+.oc-method small { grid-column: 2; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.oc-field { display: grid; gap: 7px; margin-top: 16px; font-size: 13.5px; font-weight: 600; }
+.oc-field .tt-input { min-height: 38px; }
+.oc-field + .oc-keynote, .oc-keyrow + .oc-keynote { margin-top: 8px; font-size: 13px; }
+.oc-open { margin: 16px 0 0; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.6; }
+.oc-open b { color: var(--tt-text-2); font-weight: 500; }
+.oc-wait { display: grid; gap: 10px; margin-top: 16px; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface); }
+.oc-wait p { margin: 0; font-size: 14px; line-height: 1.55; }
+.oc-wait:focus { outline: 0; }
+.oc-wait__status { display: flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: 13px !important; }
+.oc-pulse { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--tt-activity); }
+@media (prefers-reduced-motion: no-preference) { .oc-pulse { animation: oc-pulse 1.6s ease-in-out infinite; } }
+@keyframes oc-pulse { 50% { opacity: .3; } }
+.oc-code { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.oc-code code { padding: 6px 12px; border: 1px solid var(--tt-code-border); border-radius: 8px; background: var(--tt-code-bg); color: var(--tt-text); font: 600 21px/1.25 var(--tt-font-mono); letter-spacing: .06em; user-select: all; }
+.oc-site { color: var(--tt-text-2); font: 13px/1.5 var(--tt-font-mono); overflow-wrap: anywhere; }
+.oc-wait .oc-actions-inline { display: flex; flex-wrap: wrap; gap: 8px; }
+.oc-wait .oc-field { margin-top: 2px; }
+.proto { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.proto button { height: 24px; padding: 0 9px; border: 1px dashed #999; border-radius: 999px; background: #f4f4f4; color: #111; font: 12px/1 var(--tt-font-ui); }
+.proto button:hover { background: #ddd; }
+
+/* b - Sotto's terminal, in a drawer over the page's foot. */
+.settings-detail[data-drawer-open] .settings-scroll { padding-bottom: calc(min(360px, 58vh) + 24px); }
+.oc-drawer { position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; flex-direction: column; height: min(360px, 58vh); border-top: 1px solid var(--tt-field-border); background: var(--tt-terminal-bg); box-shadow: var(--tt-shadow-lg); }
+.oc-drawer__head { display: flex; flex: none; align-items: center; gap: 9px; min-height: 40px; padding: 4px 6px 4px 14px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface); }
+.oc-drawer__head b { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.oc-drawer__head small { overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.oc-drawer__head .proto { margin-left: auto; }
+.oc-drawer__head .tt-button--icon { width: 30px; min-height: 30px; margin-left: auto; border-color: transparent; color: var(--tt-text-muted); }
+.oc-drawer__head .proto + .tt-button--icon { margin-left: 4px; }
+.oc-drawer__head .tt-button--icon:hover { background: var(--tt-hover); color: var(--tt-text); }
+.oc-term { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px 16px; color: var(--tt-terminal-fg); font: 13px/1.6 var(--tt-font-mono); white-space: pre; outline: 0; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.oc-term:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
+.oc-term .g { color: var(--tt-text-faint); }
+/* The frame's upright is drawn, not a glyph: a 1px glyph stroke picks up coloured subpixel fringes on Windows. */
+.oc-term .bar { display: inline-block; width: 1ch; height: 1.6em; vertical-align: top; background: linear-gradient(currentColor, currentColor) 45% 0 / 1px 100% no-repeat; }
+.oc-term .m { color: var(--tt-text-muted); }
+.oc-term .a { color: var(--tt-accent-text); }
+.oc-term .s { color: var(--tt-success); }
+.oc-term .e { color: var(--tt-error); }
+.oc-term .c { background: var(--tt-terminal-cursor); color: var(--tt-terminal-bg); }
+.oc-term:not(:focus) .c { background: transparent; box-shadow: inset 0 0 0 1px var(--tt-terminal-cursor); }
+
+/* c - rows with their own actions, and the rest of the sources in place. */
+.oc-rows { margin: 6px 0 0; padding: 0; list-style: none; }
+.oc-row { padding: 10px 0; }
+.oc-row + .oc-row { border-top: 1px solid var(--tt-hairline); }
+.oc-row__line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; min-height: 38px; }
+.oc-row__actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
+.oc-inline { margin: 8px 0 4px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); }
+.oc-inline .oc-field { margin-top: 0; }
+.oc-keyrow { display: flex; flex-wrap: wrap; gap: 8px; }
+.oc-keyrow .tt-input { flex: 1 1 200px; min-height: 34px; }
+.oc-inline .oc-wait { margin-top: 0; padding: 0; border: 0; background: transparent; }
+.oc-inline .oc-open { margin-top: 0; }
+.oc-inline .oc-methods { margin-top: 0; }
+.oc-inline .provider-detail__error { margin-top: 10px; font-size: 13.5px; }
+.oc-inline__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.oc-more { margin-top: 10px; padding: 10px 12px 4px; border: 1px solid var(--tt-hairline); border-radius: 10px; }
+.oc-more .oc-search { height: 36px; }
+.oc-more__list { max-height: min(320px, 46vh); overflow-y: auto; margin: 6px -12px 0; padding: 0 12px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.oc-more__list:has(.oc-inline) { max-height: min(460px, 70vh); }
+.oc-more__list .oc-row { padding: 6px 0; }
+.oc-more__list .oc-src strong { font-size: 14px; }
+.oc-more-btn svg { transition: transform 120ms ease; }
+.oc-more-btn[aria-expanded='true'] svg { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .oc-more-btn svg, .tt-button, .tt-toggle__track, .tt-toggle__thumb { transition: none; } }
+
+/* The prototype's own bar: not part of the design. */
+.switcher { position: fixed; top: 6px; left: 50%; z-index: 99; display: flex; align-items: center; gap: 4px; padding: 4px 7px; border-radius: 999px; background: #f4f4f4; color: #111; font: 12.5px/1 var(--tt-font-ui); box-shadow: 0 8px 30px rgb(0 0 0 / 40%); transform: translateX(-50%); white-space: nowrap; }
+.switcher button { height: 24px; padding: 0 9px; border: 0; border-radius: 999px; background: none; color: #111; }
+.switcher button:hover { background: #ddd; }
+.switcher button[aria-pressed='true'] { background: #d6d6d6; font-weight: 600; }
+.switcher .label { padding: 0 4px; }
+.switcher .label b { font-weight: 600; }
+.switcher .short { display: none; }
+@media (max-width: 900px) { .switcher .long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); } .switcher .short { display: inline; } }
+.switcher .sep { width: 1px; height: 16px; margin: 0 2px; background: #ccc; }
+.switcher :focus-visible { outline: 2px solid #0a6; outline-offset: 1px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></symbol>
+  <symbol id="i-audio" viewBox="0 0 24 24"><path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15v4M21 17h-4"/></symbol>
+  <symbol id="i-command" viewBox="0 0 24 24"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
+  <symbol id="i-workflow" viewBox="0 0 24 24"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></symbol>
+  <symbol id="i-arrow-ur" viewBox="0 0 24 24"><path d="M7 7h10v10M7 17 17 7"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.12a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.55-2.5 5.55-5.55C21.97 6.01 17.46 2 12 2z"/><circle cx="13.5" cy="6.5" r=".6"/><circle cx="17.5" cy="10.5" r=".6"/><circle cx="8.5" cy="7.5" r=".6"/><circle cx="6.5" cy="12.5" r=".6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></symbol>
+  <symbol id="i-git" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6M12 19h8"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></symbol>
+  <!-- Provider marks, copied from src/renderer/src/agents/ProviderMark.tsx. -->
+  <symbol id="m-claude" viewBox="0 0 256 257"><path d="m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"/></symbol>
+  <symbol id="m-codex" viewBox="0 0 256 260"><path d="M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z"/></symbol>
+  <symbol id="m-grok" viewBox="0 0 24 24"><path d="M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257"/></symbol>
+  <symbol id="m-devin" viewBox="48 48 330 330"><path d="M70 159.333V91.3471C70 88.3592 71.594 85.5983 74.1816 84.1044L133.043 50.1205C135.631 48.6265 138.819 48.6265 141.407 50.1205L200.269 84.1044C202.856 85.5983 204.45 88.3592 204.45 91.3471V126.068C204.708 137.606 210.806 148.734 221.531 154.926C232.256 161.117 244.942 160.834 255.063 155.289L285.132 137.929C287.719 136.435 290.907 136.435 293.495 137.929L352.357 171.913C354.944 173.406 356.538 176.167 356.538 179.155V247.123C356.538 250.111 354.944 252.872 352.357 254.366L293.495 288.35C290.907 289.844 287.719 289.844 285.132 288.35L255.306 271.13C245.146 265.456 232.344 265.117 221.534 271.358C210.809 277.55 204.711 288.678 204.453 300.215V334.926C204.453 337.914 202.859 340.675 200.271 342.169L141.41 376.153C138.822 377.647 135.634 377.647 133.046 376.153L74.1845 342.169C71.5969 340.675 70.0028 337.914 70.0028 334.926V266.959C70.0029 263.971 71.5969 261.21 74.1845 259.716L133.046 225.732C135.634 224.238 138.822 224.238 141.41 225.732L171.547 243.132C181.656 248.638 194.306 248.906 205.005 242.729C215.815 236.488 221.922 225.231 222.088 213.595C221.83 202.057 215.732 189.737 205.008 183.545C194.283 177.353 181.597 177.636 171.476 183.181L141.269 200.72C138.67 202.229 135.461 202.228 132.864 200.716L74.1576 166.562C71.5835 165.065 70 162.311 70 159.333Z"/></symbol>
+  <symbol id="m-muse" viewBox="0 0 100 100"><path d="M24.6257 16.1214C28.2365 16.1214 30.8187 18.9408 30.8187 23.3643C30.8185 27.7868 30.1055 31.7765 28.9225 40.2466C28.0743 46.1813 26.62 55.2418 26.0132 59.0088C27.1782 56.7815 29.9074 51.5757 30.3914 50.5982C36.1081 39.061 42.0657 28.7544 43.7826 26.0254C46.0594 22.382 48.062 20.9229 51.1597 20.9229C52.7685 20.923 54.6826 21.7357 55.6315 22.819C56.9178 24.2895 57.1859 26.6602 57.1411 29.244C57.0738 33.2073 56.5599 39.5264 55.8553 46.5698C55.5416 49.7057 54.9365 56.1066 54.5288 60.4004C58.1883 53.8532 64.9609 41.8109 67.6921 37.6058C70.0727 33.9402 72.466 31.5797 75.6836 31.5796C78.4595 31.5796 81.8809 33.5416 81.6772 38.7573C81.3774 46.4556 80.2673 63.2232 79.7607 70.7479C83.1662 65.7913 87.6377 58.4543 89.3148 55.6966C91.0104 52.908 92.75 50.6542 95.3898 50.5778C98.0987 50.4995 99.913 52.341 99.9959 55.1839C100.078 58.0277 98.3835 61.2256 96.1344 64.856C93.6937 68.7957 90.9621 73.0123 87.6383 76.9491C84.3148 80.8856 81.2604 83.8782 76.5991 83.8786C72.4243 83.8786 69.4869 81.1043 69.283 76.0254C69.1768 73.364 69.6804 67.6405 70.0602 63.1673C70.5 57.9875 71.0315 52.9861 71.403 49.6786C67.7337 56.3979 60.0101 70.4676 56.5348 75.9603C53.1343 81.3339 51.4774 83.2269 47.8882 83.2275C44.2977 83.2275 42.7226 80.6416 42.6717 76.7497C42.6142 72.5285 45.7852 47.1821 46.8587 38.737C45.1183 42.4616 40.839 51.6056 38.1551 57.0435C35.5587 62.3055 31.204 71.3978 28.0436 76.6357C25.7668 80.4094 23.2092 83.2273 19.4173 83.2275C15.6252 83.2275 13.4847 80.6784 13.4847 76.5788C13.4847 72.4794 14.6716 65.6492 15.9465 57.1777C16.5839 53.0781 17.3108 48.6133 18.1315 43.8761C18.7324 40.448 19.7764 34.4169 20.4183 30.7129C17.502 35.2539 12.2536 43.4278 10.6567 45.8903C8.88113 48.6291 7.28747 50.626 4.64681 50.6266C1.7329 50.6266 0.000532901 48.3522 0 45.7113C0 43.0703 1.34323 41.0344 3.52376 37.4512C6.32403 32.8465 11.3578 26.57 14.1154 23.2747C17.3656 19.3912 20.6139 16.1219 24.6257 16.1214Z"/></symbol>
+  <!-- OpenCode: the square ring ProviderMark.tsx draws (adapted from T3 Code, MIT). -->
+  <symbol id="m-opencode" viewBox="0 0 32 40"><path fill-rule="evenodd" d="M24 8H8V32H24V8ZM32 40H0V0H32V40Z"/></symbol>
+</svg>
+
+<div class="window">
+  <div class="window-controls" aria-hidden="true"><span><svg class="i sm"><use href="#i-min"/></svg></span><span><svg class="i sm"><use href="#i-max"/></svg></span><span><svg class="i sm"><use href="#i-x"/></svg></span></div>
+  <div class="settings-layout">
+    <aside class="settings-sidebar">
+      <div class="nav-top"><i aria-hidden="true"></i>Sotto</div>
+      <div class="settings-sidebar__body">
+        <h1>Settings</h1>
+        <nav class="settings-subnav" aria-label="Settings sections" role="tablist" aria-orientation="vertical" data-subnav></nav>
+      </div>
+      <div class="nav-foot" aria-hidden="true">
+        <span class="nav-foot__seg"><span>Dictate</span><span data-on>Threads</span></span>
+        <svg class="i"><use href="#i-history"/></svg><svg class="i" data-on><use href="#i-gear"/></svg><svg class="i"><use href="#i-help"/></svg>
+      </div>
+    </aside>
+    <div class="settings-detail" data-detail>
+      <div class="settings-scroll" data-scroll-root>
+        <div class="settings-form">
+          <section class="settings-section" role="tabpanel" aria-labelledby="tab-providers">
+            <div class="settings-section__heading"><h2>Providers</h2><p>Accounts &amp; connections</p></div>
+            <div class="providers-settings">
+              <div class="providers-workspace">
+                <nav class="providers-list" aria-label="Thread providers" data-plist></nav>
+                <section class="provider-detail" aria-label="Provider configuration">
+                  <header class="provider-detail__header">
+                    <svg class="provider-mark" data-provider="opencode" width="21" height="21" aria-hidden="true"><use href="#m-opencode"/></svg>
+                    <h3>OpenCode</h3><span class="provider-detail__version">2.0.31</span>
+                    <button type="button" class="tt-button tt-button--ghost tt-button--icon" aria-label="Refresh OpenCode"><svg class="i"><use href="#i-refresh"/></svg></button>
+                  </header>
+                  <div class="provider-tabs" role="tablist" aria-label="Provider details" data-tabs></div>
+                  <div class="provider-detail__body" role="tabpanel" id="oc-panel" data-body></div>
+                </section>
+              </div>
+              <div class="providers-updates">
+                <div><h4>Check for client updates</h4><p>Checks each client's published version, at most once an hour. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.</p></div>
+                <button type="button" class="tt-toggle" role="switch" aria-checked="true" aria-label="Check for client updates"><span class="tt-toggle__track"><span class="tt-toggle__thumb"></span></span></button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <div data-drawer></div>
+    </div>
+  </div>
+</div>
+<div data-dialog></div>
+
+<div class="switcher" role="group" aria-label="Prototype controls">
+  <button type="button" data-prev aria-label="Show the previous variant">&#8592;</button>
+  <span class="label"><b data-key></b> &#8212; <span class="long" data-name></span><span class="short" data-short aria-hidden="true"></span></span>
+  <button type="button" data-next aria-label="Show the next variant">&#8594;</button>
+  <span class="sep"></span>
+  <button type="button" data-theme-toggle>Light</button>
+  <button type="button" data-signed aria-pressed="false">Signed in</button>
+  <button type="button" data-offer aria-pressed="false">Offer my own OpenCode's sign-ins</button>
+</div>
+
+<script>
+/* PROTOTYPE - throwaway. Everything below exists to draw three ways of signing OpenCode in, nothing more. */
+
+/* Real: every model source OpenCode 2.0.31 lists at /api/integration, as [id, name, methods?]. Without methods a
+   source takes a plain API key. A method is [type, OpenCode's label, OpenCode's method id]. */
+const RAW_SOURCES = [["302ai","302.AI"],["abacus","Abacus"],["abliteration-ai","abliteration.ai"],["above","above.dev"],["agentrouter","AgentRouter"],["agnes","Agnes AI"],["ai-router","AI-ROUTER"],["aimlapi","AI/ML API"],["aiand","ai&"],["ai21","AI21 Labs"],["aihubmix","AIHubMix"],["ainetcafe","ainetcafe"],["aixy","Aixy"],["aki-io","AKI.IO"],["alibaba","Alibaba"],["alibaba-cn","Alibaba (China)"],["alibaba-coding-plan","Alibaba Coding Plan"],["alibaba-coding-plan-cn","Alibaba Coding Plan (China)"],["alibaba-token-plan","Alibaba Token Plan"],["alibaba-token-plan-cn","Alibaba Token Plan (China)"],["amazon-bedrock","Amazon Bedrock",[["key","Bedrock API key",null],["external","AWS profile (SSO or named profile)","aws-profile"]]],["ambient","Ambient"],["amd","AMD"],["anthropic","Anthropic"],["anyapi","AnyAPI"],["arcee","Arcee"],["atomic-chat","Atomic Chat"],["auriko","Auriko"],["azure","Azure",[["key","API key",null]]],["bailing","Bailing"],["baseten","Baseten"],["bee","Bee by HEOSSI"],["berget","Berget.AI"],["blueclaw","Blue Claw"],["bothub","Bothub"],["boundless","Boundless"],["cerebras","Cerebras"],["hyper","Charm Hyper"],["chutes","Chutes"],["clarifai","Clarifai"],["claudinio","Claudinio"],["cline-pass","ClinePass"],["cloudferro-sherlock","CloudFerro Sherlock"],["cloudflare-ai-gateway","Cloudflare AI Gateway",[["key","Gateway API token",null]]],["cloudflare-workers-ai","Cloudflare Workers AI",[["key","API key",null]]],["cohere","Cohere"],["commandcode","CommandCode"],["coralbricks","CoralBricks"],["wandb","CoreWeave"],["cortecs","Cortecs"],["crof","CrofAI"],["crossmodel","CrossModel"],["crusoe","Crusoe"],["drun","D.Run (China)"],["daoxe","DaoXE"],["databricks","Databricks"],["deepinfra","Deep Infra"],["deepseek","DeepSeek"],["llmgateway","DevPass (LLM Gateway)"],["digitalocean","DigitalOcean",[["key",null,null],["oauth","Login with DigitalOcean","browser"]]],["dinference","DInference"],["ebcloud","EBCloud"],["echo","Echo"],["edenai","Eden AI"],["empiriolabs","EmpirioLabs AI"],["engy","engy"],["evroc","evroc"],["exa","Exa"],["fastrouter","FastRouter"],["firecrawl","Firecrawl"],["fireworks-ai","Fireworks AI"],["freemodel","FreeModel"],["friendli","Friendli"],["frogbot","FrogBot"],["github-copilot","GitHub Copilot",[["oauth","Login with GitHub Copilot","device"]]],["gitlab","GitLab Duo",[["key",null,null],["oauth","Login with GitLab (OAuth)","pkce"]]],["gmicloud","GMI Cloud"],["google","Google"],["greenpt","GreenPT"],["groq","Groq"],["helicone","Helicone"],["hetzner","Hetzner"],["hpc-ai","HPC-AI"],["huggingface","Hugging Face"],["iflowcn","iFlow"],["impossibl","Impossibl"],["inception","Inception"],["inceptron","Inceptron"],["inco","Inco"],["infer","Infer by Flow7"],["inference","Inference"],["inferx","InferX"],["infomaniak","Infomaniak"],["io-net","IO.NET"],["iteracompute","IteraCompute"],["jalapeno","Jalapeno Cloud"],["jiekou","Jiekou.AI"],["kenari","Kenari"],["kilo","Kilo Gateway"],["kimi-code-plan-global","Kimi For Coding (kimi.ai)"],["kimi-code-plan-cn","Kimi For Coding (kimi.com)"],["klokintegration","klokintegration.se"],["kosmik","Kosmik Compute"],["kuae-cloud-coding-plan","KUAE Cloud Coding Plan"],["lilac","Lilac"],["llama","Llama"],["llmgateway-providers","LLM Gateway"],["llmtech","LLM Tech"],["llmtr","LLMTR"],["lmstudio","LMStudio"],["longcat","LongCat"],["lowrouter","LowRouter"],["lucidquery","LucidQuery"],["lynkr","Lynkr"],["meganova","Meganova"],["melious","Melious"],["merge-gateway","Merge Gateway"],["meta","Meta"],["minimax-cn","MiniMax (minimax.cn)"],["minimax","MiniMax (minimax.io)"],["minimax-cn-coding-plan","MiniMax Token Plan (minimax.cn)"],["minimax-coding-plan","MiniMax Token Plan (minimax.io)"],["mistral","Mistral"],["mixlayer","Mixlayer"],["moark","Moark"],["modal","Modal"],["model-oracle-ai","Model Oracle AI"],["modelis","Modelis"],["modelscope","ModelScope"],["moonshotai","Moonshot AI"],["moonshotai-cn","Moonshot AI (China)"],["morph","Morph"],["nan","NaN"],["nano-gpt","NanoGPT"],["nearai","NEAR AI Cloud"],["nebius","Nebius Token Factory"],["neon","Neon"],["neosmith","NeoSmith"],["neuralwatt","Neuralwatt"],["nova","Nova"],["novita-ai","Novita AI"],["nvidia","Nvidia"],["oci","OCI Generative AI"],["ofox","Ofox"],["ollama-cloud","Ollama Cloud"],["openai","OpenAI",[["key",null,null],["oauth","Sign in with ChatGPT","chatgpt-token-sharing"],["oauth","Codex browser (legacy)","chatgpt-browser"],["oauth","Codex device code (legacy)","chatgpt-headless"]]],["opencode","OpenCode Console",[["key","API key (service account)",null],["oauth","OpenCode Console account","device"]]],["opencode-go","OpenCode Go"],["openreason","OpenReason"],["openrouter","OpenRouter"],["opper","Opper"],["orcarouter","OrcaRouter"],["ovhcloud","OVHcloud AI Endpoints"],["parallel","Parallel"],["pareto","Pareto Inference"],["pendra","Pendra"],["perplexity","Perplexity"],["perplexity-agent","Perplexity Agent"],["pioneer","Pioneer"],["poe","Poe",[["key",null,null],["oauth","Login with Poe (browser)","browser"]]],["poolside","Poolside"],["prime","Prime Inference"],["privatemode-ai","Privatemode AI"],["qihang-ai","QiHang"],["qiniu-ai","Qiniu"],["qvac","QVAC"],["reflection","Reflection"],["regolo-ai","Regolo AI"],["requesty","Requesty"],["routing-run","routing.run"],["runinfra","RunInfra"],["sakana","Sakana AI"],["salad-cloud","SaladCloud AI Gateway"],["sambanova","SambaNova"],["sap-ai-core","SAP AI Core"],["sarvam","Sarvam AI"],["scaleway","Scaleway"],["scnet-token-plan","SCNet Token Plan"],["scx-ai","SCX.ai"],["sensenova","SenseNova (China)"],["siliconflow","SiliconFlow"],["siliconflow-cn","SiliconFlow (China)"],["snowflake-cortex","Snowflake Cortex",[["key","Paste PAT or bearer token",null],["oauth","Login with Snowflake (External Browser)","browser"]]],["stackit","STACKIT"],["standardcompute","Standard Compute"],["stepfun","StepFun (China)"],["stepfun-ai","StepFun (Global)"],["stepfun-step-plan","StepFun Step Plan (China)"],["stepfun-ai-step-plan","StepFun Step Plan (Global)"],["subconscious","Subconscious"],["submodel","submodel"],["synthetic","Synthetic"],["tavily","Tavily"],["tempr","Tempr Gateway"],["tencent-coding-plan","Tencent Coding Plan (China)"],["tencent-token-plan","Tencent Token Plan"],["tencent-tokenhub","Tencent TokenHub"],["tensorx","TensorX"],["the-grid-ai","The Grid AI"],["thinkingmachines","Thinking Machines"],["tinfoil","Tinfoil"],["tinyfish","TinyFish"],["togetherai","Together AI"],["tokengo","TokenGo"],["tokenrouter","TokenRouter"],["trustedrouter","TrustedRouter"],["umans-ai","Umans AI"],["umans-ai-coding-plan","Umans AI Coding Plan"],["unorouter","UnoRouter"],["upstage","Upstage"],["vancine","Vancine"],["venice","Venice AI"],["vercel","Vercel AI Gateway"],["google-vertex","Vertex",[["key",null,null],["external","Google Cloud credentials (gcloud auth or environment)","google-adc"]]],["vispark","Vispark"],["vivgrid","Vivgrid"],["volcengine","Volcengine Ark"],["volcengine-coding-plan","Volcengine Ark Coding Plan"],["vultr","Vultr"],["wafer.ai","Wafer"],["wallaby","Wallaby"],["watsonx","watsonx.ai"],["xai","xAI",[["key","Manually enter API Key",null],["oauth","SuperGrok Subscription","device"]]],["xiaomi","Xiaomi"],["xiaomi-token-plan-cn","Xiaomi Token Plan (China)"],["xiaomi-token-plan-ams","Xiaomi Token Plan (Europe)"],["xiaomi-token-plan-sgp","Xiaomi Token Plan (Singapore)"],["xpersona","Xpersona"],["zai","Z.AI"],["zai-coding-plan","Z.AI Coding Plan"],["zeldoc","Zeldoc"],["zenifra","Zenifra"],["zenmux","ZenMux"],["zhipuai","Zhipu AI"],["zhipuai-coding-plan","Zhipu AI Coding Plan"]] // @sources
+const SOURCES = RAW_SOURCES.map(([id, name, methods]) => ({ id, name, methods: methods || [['key', null, null]] }))
+const byId = id => SOURCES.find(source => source.id === id)
+/* Real: `GET /api/model` on a fresh home. */
+const ZEN_MODELS = ['Beam Free', 'Big Pickle', 'DeepSeek V4.1 Flash Free', 'GLM 5.3 Flash Free', 'LL Alpha Free', 'LongCat 2.5 Preview Free', 'MiMo V2.6 Flash Free', 'Muse Spark 1.3 Contributor Free', 'Nemotron 3 Ultra Free', 'Nemotron 3.5 Lightning Free', 'Nemotron 3.5 Super VL Free', 'Space Bunny Free']
+const COMMON = ['anthropic', 'openai', 'openrouter', 'github-copilot', 'google', 'xai']
+/* SAMPLE: model names and counts for signed-in sources. */
+const MODEL_NAMES = { anthropic: ['Claude Opus 5.5', 'Claude Fable 5.1', 'Claude Sonnet 5', 'Claude Sonnet 4.6', 'Claude Haiku 4.5'], openai: ['GPT-6-Astra', 'GPT-6-Sol', 'GPT-6-Luna', 'GPT-5.6-Sol', 'GPT-5.6-Terra', 'GPT-5.5'] }
+const MODEL_COUNT = { openrouter: 312, 'github-copilot': 18, google: 11, xai: 8, gitlab: 7, 'amazon-bedrock': 24, 'google-vertex': 16 }
+const modelCount = id => (MODEL_NAMES[id] || []).length || MODEL_COUNT[id] || 6
+/* SAMPLE: the user's own OpenCode's sign-ins, for the copy offer. */
+const OWN = [['anthropic', 'API key'], ['openai', 'ChatGPT account'], ['openrouter', 'API key']]
+const EXPIRES = '3:52 PM'
+const KEY_SENTENCE = "Sotto's OpenCode keeps the key in its own folder, and Sotto keeps no copy."
+
+/* How Sotto would name and run each non-key method. SAMPLE where it says code, site or kind. */
+const FLOWS = {
+  'openai:chatgpt-token-sharing': { kind: 'browser', label: 'ChatGPT account', verb: 'Sign in with ChatGPT', site: 'auth.openai.com', about: 'In your browser, on your ChatGPT plan.' },
+  'openai:chatgpt-browser': { kind: 'browser', label: 'ChatGPT account', site: 'auth.openai.com' },
+  'openai:chatgpt-headless': { kind: 'device', label: 'ChatGPT account', site: 'auth.openai.com/codex/device', code: 'K4TW-8NQZ' },
+  'github-copilot:device': { kind: 'device', label: 'GitHub account', verb: 'Sign in with GitHub', site: 'github.com/login/device', code: '8F2D-91KQ', askHost: true, about: 'In your browser, with a short code.' },
+  'xai:device': { kind: 'device', label: 'SuperGrok subscription', verb: 'Sign in with SuperGrok', site: 'accounts.x.ai/device', code: 'QX7M-4LRT', about: 'In your browser, with a short code, on your SuperGrok plan.' },
+  'opencode:device': { kind: 'device', label: 'OpenCode Console account', verb: 'Sign in with OpenCode Console', site: 'opencode.ai/device', code: 'ZN4P-7KDR', about: 'In your browser, with a short code.' },
+  'gitlab:pkce': { kind: 'code', label: 'GitLab account', verb: 'Sign in with GitLab', site: 'gitlab.com', about: 'In your browser. The page gives you a code to paste here.' },
+  'digitalocean:browser': { kind: 'browser', label: 'DigitalOcean account', verb: 'Sign in with DigitalOcean', site: 'cloud.digitalocean.com' },
+  'poe:browser': { kind: 'browser', label: 'Poe account', verb: 'Sign in with Poe', site: 'poe.com' },
+  'snowflake-cortex:browser': { kind: 'browser', label: 'Snowflake account', verb: 'Sign in with Snowflake', site: 'your Snowflake account page' },
+  'amazon-bedrock:aws-profile': { kind: 'external', label: 'AWS profile', verb: 'Use my AWS profile', about: 'Uses the AWS profile on this computer, the one the AWS command line uses.' },
+  'google-vertex:google-adc': { kind: 'external', label: 'Google Cloud credentials', verb: 'Use my Google Cloud sign-in', about: 'Uses the Google Cloud sign-in on this computer, from gcloud or the environment.' }
+}
+const keyLabel = label => !label || /manually enter api key/i.test(label) ? 'API key' : /pat or bearer/i.test(label) ? 'Access token' : /service account/i.test(label) ? 'Service account API key' : label
+/* Sotto's own list of ways to sign in: OpenCode's methods, named in Sotto's words, without the legacy ones. */
+function methodsOf(source, withLegacy) {
+  return source.methods.filter(([, label]) => withLegacy || !/\(legacy\)/i.test(label || '')).map(([type, label, id]) => {
+    if (type === 'key') { const name = keyLabel(label); return { kind: 'key', id: 'key', label: name, raw: label || 'API key', about: 'Paste ' + (/^[aeiou]/i.test(name) ? 'an ' : 'a ') + name.replace(/^API/, 'API') + ' from your ' + source.name + ' account.' } }
+    const flow = FLOWS[source.id + ':' + id] || {}
+    const kind = flow.kind || (type === 'external' ? 'external' : 'browser')
+    return { kind, id, raw: label, label: flow.label || label, verb: flow.verb || (kind === 'external' ? 'Use ' + label : 'Sign in in browser'), site: flow.site || source.name.toLowerCase().replace(/[^a-z0-9]+/g, '') + '.com', code: flow.code, askHost: flow.askHost, about: flow.about || (kind === 'external' ? label + ', on this computer.' : 'In your browser.') }
+  })
+}
+const shortLabel = method => method.kind !== 'key' ? method.label : /access token/i.test(method.label) ? 'Access token' : /token/i.test(method.label) ? 'API token' : 'API key'
+const howHint = source => methodsOf(source).map(shortLabel).join(' or ')
+const sortByName = list => [...list].sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }))
+
+const VARIANTS = { a: { name: 'Add a model source (dialog)', short: 'Dialog' }, b: { name: 'OpenCode sign-in, in Sotto’s terminal', short: 'Terminal' }, c: { name: 'Sources inline on the tile', short: 'Inline' } }
+const state = { variant: 'a', tab: 'configuration', sources: {}, signed: false, offer: false, offerDone: false, notice: null,
+  dialog: null, drawer: null, tileError: null, open: null, more: false, moreQuery: '' }
+
+const $ = selector => document.querySelector(selector)
+const el = (tag, attrs, kids) => {
+  const node = document.createElement(tag)
+  for (const key of Object.keys(attrs || {})) {
+    const value = attrs[key]
+    if (value === undefined || value === false || value === null) continue
+    if (key === 'text') node.textContent = value
+    else if (key === 'on') for (const name of Object.keys(value)) node.addEventListener(name, value[name])
+    else if (key === 'value') node.value = value
+    else node.setAttribute(key, value === true ? '' : String(value))
+  }
+  for (const kid of [].concat(kids || [])) if (kid !== null && kid !== undefined && kid !== false) node.append(kid)
+  return node
+}
+const svg = (href, cls, size) => {
+  const node = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  node.setAttribute('class', cls || 'i'); node.setAttribute('aria-hidden', 'true')
+  if (size) { node.setAttribute('width', size); node.setAttribute('height', size) }
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use')
+  use.setAttribute('href', href); node.append(use)
+  return node
+}
+const icon = (id, cls) => svg('#i-' + id, cls || 'i')
+const button = (text, attrs, kids) => el('button', { type: 'button', ...attrs }, [kids, text].flat().filter(Boolean))
+const plural = (count, word) => count + ' ' + word + (count === 1 ? '' : 's')
+
+/* ---------- The fixed parts of the page ---------- */
+const SECTIONS = [['Dictation', 'mic'], ['Transcription', 'audio'], ['Cleanup', 'sparkles'], ['Providers', 'command'], ['Hosts', 'server'], ['Phones', 'phone'], ['Cloud iPhone', 'cloud'], ['Agents', 'workflow'], ['Output', 'arrow-ur'], ['Appearance', 'palette'], ['Application', 'settings'], ['Git', 'git']]
+function drawSubnav() {
+  const nav = $('[data-subnav]')
+  nav.replaceChildren(...SECTIONS.map(([label, glyph]) => {
+    const on = label === 'Providers'
+    return button(null, { role: 'tab', id: 'tab-' + label.toLowerCase().replace(/\s+/g, '-'), 'aria-selected': String(on), tabindex: on ? '0' : '-1' },
+      [icon(glyph), el('span', { text: label }), on ? icon('chev-r', 'i sm') : null])
+  }))
+  nav.addEventListener('keydown', event => {
+    const tabs = [...nav.querySelectorAll('button')]
+    const at = tabs.indexOf(document.activeElement)
+    const next = event.key === 'ArrowDown' ? (at + 1) % tabs.length : event.key === 'ArrowUp' ? (at - 1 + tabs.length) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1
+    if (next >= 0) { event.preventDefault(); tabs[next].focus() }
+  })
+}
+const PROVIDERS = [['codex', 'Codex', 'Connected', true], ['claude', 'Claude Code', 'Connected', true], ['grok', 'Grok Build', 'Connected', true], ['devin', 'Devin', 'Not connected', true], ['muse', 'Muse', 'Disabled', false], ['opencode', 'OpenCode', 'Connected', true]]
+function drawProviderList() {
+  $('[data-plist]').replaceChildren(...PROVIDERS.map(([id, name, status, on]) => {
+    const selected = id === 'opencode'
+    return el('div', { class: 'providers-list__row', 'data-selected': String(selected) }, [
+      button(null, { class: 'providers-list__select', 'aria-label': name, 'aria-pressed': String(selected) }, [
+        svg('#m-' + id, 'provider-mark', 21), el('span', {}, [el('strong', { text: name }), el('small', { 'data-status': status === 'Connected' ? 'connected' : undefined }, [el('i', { 'aria-hidden': 'true' }), status])])]),
+      el('button', { type: 'button', class: 'tt-toggle', role: 'switch', 'aria-checked': String(on), 'aria-label': 'Enable ' + name }, [el('span', { class: 'tt-toggle__track' }, [el('span', { class: 'tt-toggle__thumb' })])])
+    ])
+  }))
+  for (const mark of document.querySelectorAll('.providers-list .provider-mark')) mark.setAttribute('data-provider', mark.querySelector('use').getAttribute('href').slice(3))
+}
+function drawTabs() {
+  const host = $('[data-tabs]')
+  host.replaceChildren(...[['configuration', 'Configuration'], ['models', 'Models']].map(([value, label]) => button(label, {
+    role: 'tab', id: 'oc-tab-' + value, 'aria-selected': String(state.tab === value), 'aria-controls': 'oc-panel', tabindex: state.tab === value ? '0' : '-1', 'data-k': 'tab:' + value,
+    on: { click: () => { state.tab = value; draw('tab:' + value) }, keydown: event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); state.tab = value === 'configuration' ? 'models' : 'configuration'; draw('tab:' + state.tab) } } }
+  })))
+  $('[data-body]').setAttribute('aria-labelledby', 'oc-tab-' + state.tab)
+}
+
+/* ---------- Signing in and out: the same steps behind all three variants ---------- */
+function signIn(id, label, copied) {
+  state.sources[id] = { label, models: modelCount(id), copied: Boolean(copied) }
+}
+function finishFlow(flow) {
+  const source = byId(flow.id), method = methodsOf(source)[flow.m]
+  signIn(flow.id, method.label)
+  const count = modelCount(flow.id)
+  state.notice = 'Signed in to ' + source.name + '. Its ' + plural(count, 'model') + ' are in the model menu, under OpenCode.'
+  if (state.variant === 'a') { state.dialog = null; draw('add') }
+  else { state.open = null; draw('signout:' + flow.id) }
+}
+function signOut(id) {
+  const source = id === 'zen' ? null : byId(id)
+  const was = state.sources[id]
+  delete state.sources[id]
+  state.notice = 'Signed out of ' + source.name + '. Its ' + (/key|token/i.test(was.label) ? 'key' : 'sign-in') + ' is gone from Sotto’s OpenCode.'
+  const rest = Object.keys(state.sources)
+  draw(rest.length ? 'signout:' + rest[0] : state.variant === 'a' ? 'add' : state.variant === 'b' ? 'term' : 'act:' + id + ':0')
+}
+const refusedText = source => 'OpenCode could not sign in to ' + source.name + ' with that key, so nothing was saved. Check the key in your ' + source.name + ' account and paste it again.'
+const expiredText = source => 'The ' + source.name + ' sign-in page expired before you finished, so nothing was saved. Open the sign-in page again to start over.'
+function submitKey(flow) {
+  const key = flow.key.trim()
+  if (!key) return
+  if (key.length < 8 || /^bad/i.test(key)) { flow.error = refusedText(byId(flow.id)); flow.key = ''; draw(flow.ctx + '-key'); return }
+  finishFlow(flow)
+}
+const waitFocus = flow => { const method = methodsOf(byId(flow.id))[flow.m]; return flow.ctx + (method.kind === 'device' ? '-copy' : method.kind === 'code' ? '-code' : '-wait') }
+function startBrowser(flow) { flow.phase = 'waiting'; flow.error = null; flow.code = ''; draw(waitFocus(flow)) }
+function expireFlow(flow) { flow.phase = 'form'; flow.error = expiredText(byId(flow.id)); draw(flow.ctx + '-open') }
+function cancelWait(flow) { flow.phase = 'form'; draw(flow.ctx + '-open') }
+
+/* The body of one way to sign in, for the dialog (a) or a row (c). Returns its nodes and its actions. */
+function flowParts(flow) {
+  const source = byId(flow.id), method = methodsOf(source)[flow.m], ctx = flow.ctx
+  const body = [], actions = []
+  const errorId = 'oc-err-' + ctx
+  const error = flow.error ? el('p', { class: 'provider-detail__error', role: 'alert', id: errorId, text: flow.error }) : null
+  const cancelAll = button('Cancel', { class: 'tt-button' + (ctx === 'c' ? ' tt-button--ghost' : ''), 'data-k': ctx + '-cancel', 'aria-label': 'Cancel signing in to ' + source.name, on: { click: () => closeFlow() } })
+  if (method.kind === 'key') {
+    const fieldLabel = method.label === 'API key' ? source.name + ' API key' : source.name + ' ' + method.label.replace(/^./, c => c.toLowerCase())
+    const input = el('input', { class: 'tt-input', type: 'password', id: 'oc-key-' + ctx, 'data-k': ctx + '-key', autocomplete: 'off', spellcheck: 'false', value: flow.key, placeholder: 'Paste the key',
+      'aria-describedby': (flow.error ? errorId + ' ' : '') + 'oc-keynote-' + ctx, 'aria-invalid': flow.error ? 'true' : undefined,
+      on: { input: event => { flow.key = event.target.value; draw() }, keydown: event => { if (event.key === 'Enter') { event.preventDefault(); submitKey(flow) } } } })
+    const submit = button('Sign in', { class: 'tt-button tt-button--primary', 'data-k': ctx + '-submit', disabled: !flow.key.trim(), 'aria-label': 'Sign in to ' + source.name + ' with this key', on: { click: () => submitKey(flow) } })
+    if (ctx === 'c') {
+      body.push(el('label', { class: 'oc-field', for: 'oc-key-' + ctx, text: fieldLabel }), el('div', { class: 'oc-keyrow' }, [input, submit, cancelAll]))
+    } else {
+      body.push(el('label', { class: 'oc-field' }, [fieldLabel, input]))
+      actions.push(cancelAll, submit)
+    }
+    body.push(el('p', { class: 'oc-keynote', id: 'oc-keynote-' + ctx, text: KEY_SENTENCE }))
+    if (error) body.push(error)
+    return { body, actions }
+  }
+  if (method.kind === 'external') {
+    body.push(el('p', { class: 'oc-open', text: method.about + ' Sotto’s OpenCode reads it there, and Sotto keeps no copy.' }))
+    const use = button(method.verb, { class: 'tt-button tt-button--primary', 'data-k': ctx + '-open', on: { click: () => finishFlow(flow) } })
+    if (ctx === 'c') body.push(el('div', { class: 'oc-inline__actions' }, [use, cancelAll])); else actions.push(cancelAll, use)
+    return { body, actions }
+  }
+  if (flow.phase === 'waiting') {
+    const wait = el('div', { class: 'oc-wait', role: 'group', 'aria-label': 'Signing in to ' + source.name, 'data-k': ctx + '-wait', tabindex: '-1' })
+    const status = text => el('p', { class: 'oc-wait__status', role: 'status' }, [el('span', { class: 'oc-pulse', 'aria-hidden': 'true' }), text])
+    if (method.kind === 'device') {
+      wait.append(el('p', { text: 'Enter this code on the ' + source.name + ' page that opened in your browser.' }))
+      const copy = button(flow.copied ? 'Copied' : 'Copy code', { class: 'tt-button', 'data-k': ctx + '-copy', 'aria-label': 'Copy the code ' + method.code, on: { click: () => { try { navigator.clipboard.writeText(method.code) } catch {} flow.copied = true; draw(ctx + '-copy'); setTimeout(() => { flow.copied = false; if (document.body.contains(document.querySelector('[data-k="' + ctx + '-copy"]'))) draw() }, 1500) } } }, icon('copy', 'i sm'))
+      wait.append(el('div', { class: 'oc-code' }, [el('code', { text: method.code }), copy]))
+      wait.append(el('p', { class: 'oc-site', text: method.site }))
+      wait.append(status('Waiting for ' + source.name + '. This updates by itself once you enter the code. It expires at ' + EXPIRES + '.'))
+    } else if (method.kind === 'code') {
+      wait.append(el('p', { text: 'Approve on the ' + source.name + ' page that opened in your browser, then paste the code it shows.' }))
+      const input = el('input', { class: 'tt-input', type: 'text', 'data-k': ctx + '-code', autocomplete: 'off', spellcheck: 'false', value: flow.code, placeholder: 'Paste the code',
+        on: { input: event => { flow.code = event.target.value; draw() }, keydown: event => { if (event.key === 'Enter' && flow.code.trim()) { event.preventDefault(); finishFlow(flow) } } } })
+      wait.append(el('label', { class: 'oc-field' }, ['Code from the ' + source.name + ' page', input]))
+      wait.append(el('div', { class: 'oc-actions-inline' }, [button('Finish signing in', { class: 'tt-button tt-button--primary', 'data-k': ctx + '-finish', disabled: !flow.code.trim(), 'aria-label': 'Finish signing in to ' + source.name + ' with this code', on: { click: () => finishFlow(flow) } })]))
+      wait.append(el('p', { class: 'oc-wait__status' }, ['The code works until ' + EXPIRES + '.']))
+    } else {
+      wait.append(el('p', { text: 'Finish signing in on the ' + source.name + ' page that opened in your browser.' }))
+      wait.append(status('Waiting for ' + source.name + '. This updates by itself when you are done. It expires at ' + EXPIRES + '.'))
+    }
+    if (method.kind !== 'code') wait.append(el('div', { class: 'proto' }, [button('Pretend it finished', { on: { click: () => finishFlow(flow) } }), button('Pretend it expired', { on: { click: () => expireFlow(flow) } })]))
+    else wait.append(el('div', { class: 'proto' }, [button('Pretend it expired', { on: { click: () => expireFlow(flow) } })]))
+    body.push(wait)
+    const again = button('Open the page again', { class: 'tt-button', 'data-k': ctx + '-again', 'aria-label': 'Open the ' + source.name + ' sign-in page again' }, icon('external', 'i sm'))
+    const stop = button('Cancel', { class: 'tt-button' + (ctx === 'c' ? ' tt-button--ghost' : ''), 'data-k': ctx + '-stop', 'aria-label': 'Cancel signing in to ' + source.name, on: { click: () => ctx === 'c' ? closeFlow() : cancelWait(flow) } })
+    if (ctx === 'c') body.push(el('div', { class: 'oc-inline__actions' }, [again, stop])); else actions.push(stop, again)
+    return { body, actions }
+  }
+  /* Before the browser opens. */
+  if (method.askHost) {
+    const where = el('fieldset', { class: 'oc-methods' }, [el('legend', { text: 'Where your GitHub account is' })])
+    for (const [value, label, about] of [['github.com', 'GitHub.com', 'Most accounts.'], ['enterprise', 'GitHub Enterprise', 'Your company’s own GitHub, at its own address.']]) {
+      where.append(el('label', { class: 'oc-method' }, [el('input', { type: 'radio', name: 'oc-host-' + ctx, value, 'data-k': ctx + '-host:' + value, checked: (flow.host || 'github.com') === value, on: { change: () => { flow.host = value; draw(ctx + '-host:' + value) } } }), el('b', { text: label }), el('small', { text: about })]))
+    }
+    body.push(where)
+    if (flow.host === 'enterprise') body.push(el('label', { class: 'oc-field' }, ['GitHub Enterprise address', el('input', { class: 'tt-input', type: 'text', 'data-k': ctx + '-domain', placeholder: 'github.example.com', value: flow.domain || '', autocomplete: 'off', spellcheck: 'false', on: { input: event => { flow.domain = event.target.value; draw() } } })]))
+  }
+  const site = method.askHost && flow.host === 'enterprise' ? (flow.domain || 'your GitHub Enterprise address') : method.site.split('/')[0]
+  body.push(el('p', { class: 'oc-open' }, ['Opens ', el('b', { text: site }), ' in your browser. ', method.kind === 'code' ? 'Sign in there, then paste the code it shows here. ' : method.kind === 'device' ? 'Sign in there and enter the code Sotto shows you. ' : 'Sign in there, and Sotto’s OpenCode finishes by itself. ', 'Sotto’s OpenCode keeps the sign-in in its own folder, and Sotto keeps no copy.']))
+  if (error) body.push(error)
+  const open = button(flow.error ? 'Open sign-in page again' : 'Open sign-in page', { class: 'tt-button tt-button--primary', 'data-k': ctx + '-open', 'aria-label': 'Open the ' + source.name + ' sign-in page in your browser',
+    disabled: method.askHost && flow.host === 'enterprise' && !(flow.domain || '').trim(), on: { click: () => startBrowser(flow) } }, icon('external', 'i sm'))
+  if (ctx === 'c') body.push(el('div', { class: 'oc-inline__actions' }, [open, cancelAll])); else actions.push(cancelAll, open)
+  return { body, actions }
+}
+function closeFlow() {
+  if (state.variant === 'a') { closeDialog(); return }
+  const was = state.open
+  state.open = null
+  draw(was ? 'act:' + was.id + ':' + was.m : undefined)
+}
+
+/* ---------- The tile: what every variant shares ---------- */
+function offerBlock() {
+  if (!state.offer || state.offerDone) return null
+  const missing = OWN.filter(([id]) => !state.sources[id])
+  if (!missing.length) return null
+  const names = missing.map(([id]) => byId(id).name)
+  const list = names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]
+  return el('div', { class: 'oc-offer', role: 'group', 'aria-label': 'Copy sign-ins from your own OpenCode' }, [
+    el('p', { text: 'Your own OpenCode is signed in to ' + list + '. Copy ' + (names.length === 1 ? 'that sign-in' : 'those sign-ins') + ' to Sotto’s OpenCode?' }),
+    el('small', { text: 'Sotto’s copies are its own: signing out here leaves your own OpenCode signed in.' }),
+    el('div', { class: 'oc-offer__actions' }, [
+      button(names.length === 1 ? 'Copy 1 sign-in' : 'Copy ' + names.length + ' sign-ins', { class: 'tt-button', 'data-k': 'offer-copy', 'aria-label': 'Copy the ' + list + ' sign-ins from your own OpenCode to Sotto’s OpenCode', on: { click: () => {
+        for (const [id, label] of missing) signIn(id, label, true)
+        state.offerDone = true
+        state.notice = 'Copied ' + plural(missing.length, 'sign-in') + ' from your own OpenCode. Their models are in the model menu, under OpenCode.'
+        draw('signout:' + missing[0][0])
+      } } }),
+      button('Not now', { class: 'tt-button tt-button--ghost', 'data-k': 'offer-no', 'aria-label': 'Do not copy sign-ins from your own OpenCode', on: { click: () => { state.offerDone = true; draw(state.variant === 'a' ? 'add' : state.variant === 'b' ? 'term' : undefined) } } })
+    ])
+  ])
+}
+const signedIds = () => Object.keys(state.sources)
+const freshSentence = () => el('p', { class: 'oc-empty', text: 'Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads. That account pays for them.' })
+const zenItem = () => el('li', {}, [el('span', { class: 'oc-src' }, [el('strong', { text: 'OpenCode Zen' }), el('small', { text: 'Free models. No sign-in needed.' })]), el('span', { class: 'oc-count', text: plural(ZEN_MODELS.length, 'model') })])
+function sourceList() {
+  const list = el('ul', { class: 'oc-list', 'aria-label': 'Model sources Sotto’s OpenCode can use' }, [zenItem()])
+  for (const id of signedIds()) {
+    const source = byId(id), signed = state.sources[id]
+    list.append(el('li', {}, [
+      el('span', { class: 'oc-src' }, [el('strong', { text: source.name }), el('small', { text: signed.label + (signed.copied ? ', copied from your own OpenCode' : '') })]),
+      el('span', { class: 'oc-count', text: plural(signed.models, 'model') }),
+      button('Sign out', { class: 'tt-button tt-button--ghost', 'data-k': 'signout:' + id, 'aria-label': 'Sign out of ' + source.name, on: { click: () => signOut(id) } })
+    ]))
+  }
+  return list
+}
+const notice = () => el('p', { class: 'oc-notice', role: 'status', text: state.notice || '' })
+
+function tileA() {
+  const wrap = el('div', { class: 'oc-sources', role: 'group', 'aria-labelledby': 'oc-sources-h' }, [el('h4', { id: 'oc-sources-h', text: 'Model sources' })])
+  wrap.append(offerBlock() || '', sourceList())
+  if (!signedIds().length) wrap.append(freshSentence())
+  wrap.append(el('div', { class: 'oc-below' }, [button('Add a model source', { class: 'tt-button', 'data-k': 'add', 'aria-haspopup': 'dialog', 'aria-expanded': String(Boolean(state.dialog)), on: { click: openDialog } }, icon('plus', 'i sm'))]))
+  wrap.append(notice())
+  return wrap
+}
+function tileB() {
+  const wrap = el('div', { class: 'oc-sources', role: 'group', 'aria-labelledby': 'oc-sources-h' }, [el('h4', { id: 'oc-sources-h', text: 'Model sources' })])
+  wrap.append(offerBlock() || '', sourceList())
+  if (!signedIds().length) wrap.append(freshSentence())
+  wrap.append(el('div', { class: 'oc-cta' }, [
+    button('Sign in to a model source', { class: 'tt-button', 'data-k': 'term', 'aria-controls': 'oc-drawer', 'aria-expanded': String(Boolean(state.drawer)), on: { click: () => state.drawer ? draw('term-screen') : openDrawer() } }, icon('terminal', 'i sm')),
+    el('p', { text: 'Opens OpenCode’s own sign-in in a Sotto terminal. It signs in Sotto’s OpenCode, not the OpenCode you run yourself.' }),
+    el('p', { class: 'oc-keynote', text: 'You type any key into OpenCode itself, which keeps it in Sotto’s OpenCode folder; Sotto keeps no copy.' })
+  ]))
+  if (state.tileError) wrap.append(el('p', { class: 'provider-detail__error', role: 'alert', text: state.drawer
+    ? 'OpenCode’s sign-in ended without adding a model source, so nothing changed. What OpenCode said is in the terminal below.'
+    : 'OpenCode’s sign-in ended without adding a model source, so nothing changed. Sign in to a model source to try again.' }))
+  wrap.append(notice())
+  return wrap
+}
+function cRow(source, inMore) {
+  const signed = state.sources[source.id]
+  const open = state.open && state.open.id === source.id ? state.open : null
+  const methods = methodsOf(source)
+  const main = el('span', { class: 'oc-src' }, [el('strong', { text: source.name })])
+  const actions = el('span', { class: 'oc-row__actions' })
+  if (signed) {
+    main.append(el('small', { 'data-state': 'signed' }, [el('i', { 'aria-hidden': 'true' }), 'Signed in · ' + signed.label + (signed.copied ? ', copied' : '') + ' · ' + plural(signed.models, 'model')]))
+    actions.append(button('Sign out', { class: 'tt-button tt-button--ghost', 'data-k': 'signout:' + source.id, 'aria-label': 'Sign out of ' + source.name, on: { click: () => signOut(source.id) } }))
+  } else if (open) {
+    main.append(el('small', { text: open.error ? 'Not signed in' : open.phase === 'waiting' ? 'Waiting for the browser' : 'Signing in' }))
+  } else {
+    main.append(el('small', { text: open && open.phase === 'waiting' ? 'Waiting for the browser' : inMore ? howHint(source) : 'Not signed in' }))
+    methods.forEach((method, index) => {
+      const pressed = Boolean(open && open.m === index)
+      const label = method.kind === 'key' ? 'Add key' : method.verb
+      const spoken = method.kind === 'key' ? (method.label === 'API key' ? 'Add an ' + source.name + ' API key' : 'Add a ' + source.name + ' ' + method.label.toLowerCase())
+        : method.kind === 'external' ? method.verb + ' for ' + source.name : method.verb === 'Sign in in browser' ? 'Sign in to ' + source.name + ' in your browser' : method.verb + ' to use ' + source.name + ', in your browser'
+      actions.append(button(label, { class: 'tt-button', 'data-k': 'act:' + source.id + ':' + index, 'aria-label': spoken, 'aria-expanded': String(pressed), on: { click: () => {
+        if (pressed) { closeFlow(); return }
+        state.open = { ctx: 'c', id: source.id, m: index, phase: method.kind === 'key' || method.kind === 'external' || method.askHost ? 'form' : 'waiting', key: '', code: '', host: 'github.com', error: null }
+        draw(method.kind === 'key' ? 'c-key' : method.kind === 'external' || method.askHost ? (method.askHost ? 'c-host:github.com' : 'c-open') : waitFocus(state.open))
+      } } }))
+    })
+  }
+  const li = el('li', { class: 'oc-row' }, [el('div', { class: 'oc-row__line' }, [main, actions])])
+  if (open) { const parts = flowParts(open); li.append(el('div', { class: 'oc-inline' }, parts.body)) }
+  return li
+}
+function tileC() {
+  const wrap = el('div', { class: 'oc-sources', role: 'group', 'aria-labelledby': 'oc-sources-h' }, [el('h4', { id: 'oc-sources-h', text: 'Model sources' })])
+  if (!signedIds().length) wrap.append(freshSentence())
+  wrap.append(offerBlock() || '')
+  const rows = el('ul', { class: 'oc-rows', 'aria-label': 'Common model sources' })
+  rows.append(el('li', { class: 'oc-row' }, [el('div', { class: 'oc-row__line' }, [el('span', { class: 'oc-src' }, [el('strong', { text: 'OpenCode Zen' }), el('small', { text: 'Free · ' + plural(ZEN_MODELS.length, 'model') + ' · No sign-in needed' })])])]))
+  const extras = signedIds().filter(id => !COMMON.includes(id))
+  for (const id of [...extras, ...COMMON]) rows.append(cRow(byId(id)))
+  wrap.append(rows)
+  const others = sortByName(SOURCES.filter(source => !COMMON.includes(source.id) && !state.sources[source.id]))
+  wrap.append(el('div', { class: 'oc-below' }, [button(state.more ? 'Hide the other model sources' : 'More model sources (' + others.length + ')', { class: 'tt-button oc-more-btn', 'data-k': 'more', 'aria-expanded': String(state.more), 'aria-controls': 'oc-more',
+    'aria-label': state.more ? 'Hide the other model sources' : 'Show ' + others.length + ' more model sources', on: { click: () => { state.more = !state.more; if (!state.more && state.open && !COMMON.includes(state.open.id) && !state.sources[state.open.id]) state.open = null; draw(state.more ? 'more-search' : 'more') } } }, icon('chev-d', 'i sm'))]))
+  if (state.more) {
+    const query = state.moreQuery.trim().toLowerCase()
+    const found = others.filter(source => !query || (source.name + ' ' + source.id).toLowerCase().includes(query))
+    const panel = el('div', { class: 'oc-more', id: 'oc-more' })
+    panel.append(el('div', { class: 'oc-search' }, [icon('search', 'i sm'), el('input', { type: 'text', 'data-k': 'more-search', 'aria-label': 'Search the other model sources', placeholder: 'Search ' + others.length + ' more model sources', value: state.moreQuery, autocomplete: 'off', spellcheck: 'false',
+      on: { input: event => { state.moreQuery = event.target.value; draw() } } }), el('span', { class: 'oc-count', 'aria-live': 'polite', text: query ? plural(found.length, 'match') + (found.length === 1 ? '' : '') : '' })]))
+    const list = el('ul', { class: 'oc-rows oc-more__list', 'data-scroll': 'more', 'aria-label': 'Other model sources' })
+    for (const source of found) list.append(cRow(source, true))
+    if (!found.length) list.append(el('li', { class: 'oc-none', text: 'No model source matches “' + state.moreQuery.trim() + '”.' }))
+    panel.append(list)
+    wrap.append(panel)
+  }
+  wrap.append(notice())
+  return wrap
+}
+
+function modelsTab() {
+  const list = el('ul', { class: 'provider-models', 'aria-label': 'OpenCode available models' })
+  for (const name of ZEN_MODELS) list.append(el('li', {}, [el('span', {}, [el('strong', { text: name }), el('small', { text: 'OpenCode Zen' })]), el('small', { text: 'Available' })]))
+  for (const id of signedIds()) {
+    const names = MODEL_NAMES[id]
+    if (names) for (const name of names) list.append(el('li', {}, [el('span', {}, [el('strong', { text: name }), el('small', { text: byId(id).name })]), el('small', { text: 'Available' })]))
+    else list.append(el('li', {}, [el('span', {}, [el('strong', { text: byId(id).name }), el('small', { text: plural(state.sources[id].models, 'model') + ', not drawn in this prototype' })]), el('small', { text: 'Available' })]))
+  }
+  return list
+}
+function drawBody() {
+  const body = $('[data-body]')
+  if (state.tab === 'models') { body.replaceChildren(modelsTab()); return }
+  body.replaceChildren(
+    el('div', { class: 'provider-connection' }, [
+      el('div', {}, [el('h4', { text: 'Local connection' }), el('p', { text: 'Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.' })]),
+      button('Disconnect', { class: 'tt-button', 'aria-label': 'Disconnect OpenCode' })
+    ]),
+    state.variant === 'a' ? tileA() : state.variant === 'b' ? tileB() : tileC(),
+    el('div', { class: 'provider-client' }, [el('div', {}, [el('h4', { text: 'Installed client' }), el('p', { text: '2.0.31 is installed, and that is what is published.' })]), el('div', {}, [button('Check again', { class: 'tt-button' })])]),
+    el('p', { class: 'provider-models__empty', text: 'Choose what new threads start with under Agents.' })
+  )
+}
+
+/* ---------- a: the dialog ---------- */
+let dialogOpener = 'add'
+function openDialog() { state.dialog = { step: 'pick', query: '', ctx: 'a' }; state.notice = null; draw('pick-search') }
+function closeDialog() { state.dialog = null; draw(dialogOpener) }
+function pickSource(id) {
+  const d = state.dialog
+  Object.assign(d, { step: 'source', id, m: 0, phase: 'form', key: '', code: '', host: 'github.com', domain: '', error: null })
+  const method = methodsOf(byId(id))[0]
+  draw(methodsOf(byId(id)).length > 1 ? 'a-method:0' : method.kind === 'key' ? 'a-key' : method.askHost ? 'a-host:github.com' : 'a-open')
+}
+function pickOption(source) {
+  const signed = Boolean(state.sources[source.id])
+  const how = signed ? 'Signed in' : howHint(source)
+  return button(null, { class: 'oc-opt', role: 'option', tabindex: '-1', 'data-k': 'pick:' + source.id, 'aria-disabled': signed ? 'true' : undefined, 'aria-selected': 'false',
+    'aria-label': source.name + ', ' + (signed ? 'already signed in' : how), on: { click: () => { if (!signed) pickSource(source.id) } } },
+    [el('span', { class: 'oc-opt__name', text: source.name }), el('span', { class: 'oc-opt__how' }, [signed ? icon('check', 'i sm') : null, how])])
+}
+function drawDialog() {
+  const host = $('[data-dialog]')
+  host.replaceChildren()
+  const d = state.variant === 'a' ? state.dialog : null
+  $('.window').inert = Boolean(d)
+  if (!d) return
+  const backdrop = el('div', { class: 'tt-dialog-backdrop', on: { pointerdown: event => { if (event.target === event.currentTarget) closeDialog() } } })
+  const box = el('div', { class: 'tt-dialog oc-dialog' + (d.step === 'pick' ? ' oc-dialog--pick' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'oc-dialog-title', 'aria-describedby': 'oc-dialog-about' })
+  if (d.step === 'pick') {
+    box.append(el('h2', { id: 'oc-dialog-title', text: 'Add a model source' }))
+    box.append(el('p', { class: 'tt-dialog__description', id: 'oc-dialog-about', text: 'Sign Sotto’s OpenCode in to a model source to use its models in OpenCode threads. That account pays for them.' }))
+    const query = d.query.trim().toLowerCase()
+    const matches = source => !query || (source.name + ' ' + source.id).toLowerCase().includes(query)
+    const list = el('div', { class: 'oc-pick', role: 'listbox', id: 'oc-pick', 'aria-label': 'Model sources', 'data-scroll': 'pick' })
+    const group = (title, sources) => { if (!sources.length) return; const id = 'oc-g-' + title.replace(/\W+/g, ''); list.append(el('div', { role: 'group', 'aria-labelledby': id }, [el('div', { class: 'oc-group-head', id, text: title }), ...sources.map(pickOption)])) }
+    const common = COMMON.map(byId).filter(matches)
+    const rest = sortByName(SOURCES.filter(source => !COMMON.includes(source.id) && matches(source)))
+    group('Common', common)
+    group(query ? 'More matches' : 'Every model source, A to Z', rest)
+    if (!common.length && !rest.length) list.append(el('p', { class: 'oc-none', text: 'No model source matches “' + d.query.trim() + '”.' }))
+    const input = el('input', { type: 'text', 'data-k': 'pick-search', 'aria-label': 'Search model sources', 'aria-controls': 'oc-pick', placeholder: 'Search ' + SOURCES.length + ' model sources', value: d.query, autocomplete: 'off', spellcheck: 'false',
+      on: { input: event => { d.query = event.target.value; draw() }, keydown: event => {
+        if (event.key === 'ArrowDown') { event.preventDefault(); const first = list.querySelector('.oc-opt'); if (first) focusOpt(first) }
+        if (event.key === 'Enter') { event.preventDefault(); const first = list.querySelector('.oc-opt:not([aria-disabled])'); if (first) first.click() }
+      } } })
+    box.append(el('div', { class: 'oc-search' }, [icon('search', 'i sm'), input]))
+    box.append(list)
+    const items = [...list.querySelectorAll('.oc-opt')]
+    if (items[0]) items[0].tabIndex = 0
+    list.addEventListener('keydown', event => {
+      const at = items.indexOf(document.activeElement)
+      let next = -1
+      if (event.key === 'ArrowDown') next = Math.min(at + 1, items.length - 1)
+      else if (event.key === 'ArrowUp') { if (at <= 0) { event.preventDefault(); input.focus(); return } next = at - 1 }
+      else if (event.key === 'Home') next = 0
+      else if (event.key === 'End') next = items.length - 1
+      if (next >= 0) { event.preventDefault(); focusOpt(items[next]) }
+    })
+    box.append(el('div', { class: 'tt-dialog__actions' }, [button('Cancel', { class: 'tt-button', 'data-k': 'a-close', 'aria-label': 'Close without adding a model source', on: { click: closeDialog } })]))
+  } else {
+    const source = byId(d.id), methods = methodsOf(source)
+    const inner = el('div', { class: 'oc-dialog__body', 'data-scroll': 'dialog' })
+    inner.append(button('Model sources', { class: 'oc-back', 'data-k': 'back', 'aria-label': 'Back to the list of model sources', on: { click: () => { d.step = 'pick'; draw('pick:' + d.id) } } }, icon('left', 'i sm')))
+    inner.append(el('h2', { id: 'oc-dialog-title', text: 'Sign in to ' + source.name }))
+    inner.append(el('p', { class: 'tt-dialog__description', id: 'oc-dialog-about', text: 'Its models join the model menu under OpenCode, billed to your ' + source.name + ' account.' }))
+    if (methods.length > 1) {
+      const set = el('fieldset', { class: 'oc-methods' }, [el('legend', { text: 'How to sign in' })])
+      methods.forEach((method, index) => set.append(el('label', { class: 'oc-method' }, [
+        el('input', { type: 'radio', name: 'oc-method-a', value: String(index), 'data-k': 'a-method:' + index, checked: d.m === index, on: { change: () => { Object.assign(d, { m: index, phase: 'form', error: null, key: '', code: '' }); draw('a-method:' + index) } } }),
+        el('b', { text: method.label }), el('small', { text: method.about })])))
+      inner.append(set)
+    }
+    const parts = flowParts(d)
+    inner.append(...parts.body)
+    box.append(inner)
+    box.append(el('div', { class: 'tt-dialog__actions' }, parts.actions))
+  }
+  box.addEventListener('keydown', trapTab)
+  backdrop.append(box)
+  host.append(backdrop)
+}
+function focusOpt(item) {
+  for (const other of item.closest('.oc-pick').querySelectorAll('.oc-opt[tabindex="0"]')) other.tabIndex = -1
+  item.tabIndex = 0; item.focus()
+}
+function trapTab(event) {
+  if (event.key !== 'Tab') return
+  const box = event.currentTarget
+  const items = [...box.querySelectorAll('button:not(:disabled), input:not(:disabled), [tabindex="0"]')].filter(node => node.tabIndex >= 0 && node.offsetParent !== null && !(node.type === 'radio' && !node.checked))
+  if (!items.length) return
+  const first = items[0], last = items[items.length - 1]
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+}
+
+/* ---------- b: OpenCode's own sign-in, in a Sotto terminal (a mock of its prompts) ---------- */
+const TERM_ORDER = ['opencode', 'anthropic', 'github-copilot', 'openai', 'google', 'openrouter', 'xai']
+const termSources = () => [...TERM_ORDER.map(byId), ...sortByName(SOURCES.filter(source => !TERM_ORDER.includes(source.id)))]
+const T = (cls, text) => ({ cls, text })
+function openDrawer() {
+  state.tileError = null; state.notice = null
+  state.drawer = { phase: 'pick', query: '', cursor: 0, out: [[T('m', '> '), T('', 'opencode auth login')], [], [T('g', '┌  '), T('', 'Add credential')], [T('g', '│')]] }
+  draw('term-screen')
+}
+function closeDrawer() { state.drawer = null; draw('term') }
+function termRawMethods(source) { return methodsOf(source, true) }
+function termChoose(id) {
+  const dr = state.drawer, source = byId(id)
+  dr.id = id
+  dr.out.push([T('m', '◇  '), T('m', 'Select provider')], [T('g', '│  '), T('m', source.name)], [T('g', '│')])
+  dr.cursor = 0
+  if (id === 'github-copilot') { dr.phase = 'host'; return }
+  const methods = termRawMethods(source)
+  if (methods.length > 1) { dr.phase = 'method'; return }
+  termStart(methods[0])
+}
+function termStart(method) {
+  const dr = state.drawer
+  dr.method = method
+  if (method.kind === 'key') { dr.phase = 'key'; dr.key = ''; return }
+  if (method.kind === 'external') { dr.out.push([T('a', '●  '), T('', 'Using ' + method.raw)]); termDone(); return }
+  if (method.kind === 'code') {
+    dr.out.push([T('a', '●  '), T('', 'Go to: https://' + method.site + '/oauth/authorize?client_id=…')], [T('g', '│')])
+    dr.phase = 'code'; dr.code = ''; return
+  }
+  dr.out.push([T('a', '●  '), T('', 'Go to: https://' + method.site + (method.kind === 'device' ? '' : '/oauth/authorize?client_id=…'))])
+  if (method.kind === 'device') dr.out.push([T('a', '●  '), T('', 'Enter code: '), T('a', method.code)])
+  dr.out.push([T('g', '│')])
+  dr.phase = 'wait'
+}
+function termDone() {
+  const dr = state.drawer, source = byId(dr.id), method = dr.method
+  dr.out.push([T('g', '│')], [T('g', '└  '), T('s', 'Login successful')], [], [T('m', '[OpenCode has finished. Press Escape to close the terminal.]')])
+  dr.phase = 'ended'
+  signIn(dr.id, methodsOf(source).find(item => item.id === method.id) ? methodsOf(source).find(item => item.id === method.id).label : method.label)
+  state.notice = 'Signed in to ' + source.name + '. Its ' + plural(modelCount(dr.id), 'model') + ' are in the model menu, under OpenCode.'
+  state.tileError = null
+}
+function termFail(why) {
+  const dr = state.drawer
+  dr.out.push([T('g', '│')], [T('e', '■  '), T('e', why)], [T('g', '└  '), T('e', 'Login failed')], [], [T('m', '[OpenCode has finished. Press Escape to close the terminal.]')])
+  dr.phase = 'ended'
+  state.tileError = true
+}
+function termSubmitKey() {
+  const dr = state.drawer, source = byId(dr.id)
+  dr.out.push([T('m', '◇  '), T('m', 'Enter your API key')], [T('g', '│  '), T('m', '▪'.repeat(Math.min(dr.key.length, 40)))])
+  if (dr.key.length < 8 || /^bad/i.test(dr.key)) termFail(source.name + ' did not accept this API key')
+  else termDone()
+}
+function termLines() {
+  const dr = state.drawer
+  const lines = dr.out.map(line => line)
+  const cursor = T('c', ' ')
+  if (dr.phase === 'pick') {
+    const query = dr.query.trim().toLowerCase()
+    const found = termSources().filter(source => !query || source.name.toLowerCase().includes(query))
+    dr.found = found
+    dr.cursor = Math.min(dr.cursor, Math.max(found.length - 1, 0))
+    const top = Math.max(0, Math.min(dr.cursor - 3, found.length - 7))
+    lines.push([T('a', '◆  '), T('', 'Select provider')], [T('a', '│  '), T('m', 'Search: '), T('', dr.query), cursor])
+    if (top > 0) lines.push([T('a', '│  '), T('g', '…')])
+    found.slice(top, top + 7).forEach((source, index) => {
+      const on = top + index === dr.cursor
+      lines.push([T('a', '│  '), on ? T('a', '● ' + source.name) : T('m', '○ ' + source.name)])
+    })
+    if (top + 7 < found.length) lines.push([T('a', '│  '), T('g', '… ' + (found.length - top - 7) + ' more')])
+    if (!found.length) lines.push([T('a', '│  '), T('m', 'No matches')])
+    lines.push([T('a', '│  '), T('g', '↑/↓ to select • Enter: confirm • Type: to search')], [T('a', '└')])
+  } else if (dr.phase === 'method' || dr.phase === 'host') {
+    const options = dr.phase === 'host' ? ['GitHub.com (Public)', 'GitHub Enterprise (Data residency or self-hosted)'] : termRawMethods(byId(dr.id)).map(method => method.raw)
+    lines.push([T('a', '◆  '), T('', dr.phase === 'host' ? 'Select GitHub deployment type' : 'Login method')])
+    options.forEach((label, index) => lines.push([T('a', '│  '), index === dr.cursor ? T('a', '● ' + label) : T('m', '○ ' + label)]))
+    lines.push([T('a', '└')])
+  } else if (dr.phase === 'key') {
+    lines.push([T('a', '◆  '), T('', 'Enter your API key')], [T('a', '│  '), T('', '▪'.repeat(Math.min(dr.key.length, 40))), cursor], [T('a', '└')])
+  } else if (dr.phase === 'code') {
+    lines.push([T('a', '◆  '), T('', 'Paste the authorization code here:')], [T('a', '│  '), T('', dr.code), cursor], [T('a', '└')])
+  } else if (dr.phase === 'wait') {
+    lines.push([T('a', '◒  '), T('', 'Waiting for authorization...')])
+  }
+  return lines
+}
+function termKey(event) {
+  const dr = state.drawer
+  if (!dr || event.key === 'Escape' || event.key === 'Tab' || event.ctrlKey || event.metaKey || event.altKey) return
+  const printable = event.key.length === 1
+  if (dr.phase === 'pick') {
+    if (printable) dr.query += event.key
+    else if (event.key === 'Backspace') dr.query = dr.query.slice(0, -1)
+    else if (event.key === 'ArrowDown') dr.cursor = Math.min(dr.cursor + 1, dr.found.length - 1)
+    else if (event.key === 'ArrowUp') dr.cursor = Math.max(dr.cursor - 1, 0)
+    else if (event.key === 'Enter' && dr.found.length) termChoose(dr.found[dr.cursor].id)
+    else return
+    if (printable || event.key === 'Backspace') dr.cursor = 0
+  } else if (dr.phase === 'method' || dr.phase === 'host') {
+    const count = dr.phase === 'host' ? 2 : termRawMethods(byId(dr.id)).length
+    if (event.key === 'ArrowDown') dr.cursor = Math.min(dr.cursor + 1, count - 1)
+    else if (event.key === 'ArrowUp') dr.cursor = Math.max(dr.cursor - 1, 0)
+    else if (event.key === 'Enter') {
+      if (dr.phase === 'host') { dr.out.push([T('m', '◇  '), T('m', 'Select GitHub deployment type')], [T('g', '│  '), T('m', dr.cursor ? 'GitHub Enterprise' : 'GitHub.com (Public)')], [T('g', '│')]); termStart(methodsOf(byId('github-copilot'))[0]) }
+      else { const method = termRawMethods(byId(dr.id))[dr.cursor]; dr.out.push([T('m', '◇  '), T('m', 'Login method')], [T('g', '│  '), T('m', method.raw)], [T('g', '│')]); termStart(method) }
+    } else return
+  } else if (dr.phase === 'key' || dr.phase === 'code') {
+    const field = dr.phase === 'key' ? 'key' : 'code'
+    if (printable) dr[field] += event.key
+    else if (event.key === 'Backspace') dr[field] = dr[field].slice(0, -1)
+    else if (event.key === 'Enter') {
+      if (dr.phase === 'key') termSubmitKey()
+      else if (dr.code.trim()) { dr.out.push([T('m', '◇  '), T('m', 'Paste the authorization code here:')], [T('g', '│  '), T('m', dr.code)]); termDone() }
+    } else return
+  } else return
+  event.preventDefault()
+  draw('term-screen')
+}
+function drawDrawer() {
+  const host = $('[data-drawer]')
+  host.replaceChildren()
+  const dr = state.variant === 'b' ? state.drawer : null
+  $('[data-detail]').toggleAttribute('data-drawer-open', Boolean(dr))
+  if (!dr) return
+  const head = el('div', { class: 'oc-drawer__head' }, [icon('terminal', 'i sm'), el('b', { text: 'OpenCode sign-in' }), el('small', { text: 'Sotto’s OpenCode, not your own' })])
+  if (dr.phase === 'wait') head.append(el('div', { class: 'proto' }, [
+    button('Pretend it finished', { on: { click: () => { dr.out.push([T('m', '◇  '), T('m', 'Waiting for authorization...')]); termDone(); draw('term-screen') } } }),
+    button('Pretend it expired', { on: { click: () => { dr.out.push([T('m', '◇  '), T('m', 'Waiting for authorization...')]); termFail('The sign-in expired before it was finished'); draw('term-screen') } } })]))
+  head.append(button(null, { class: 'tt-button tt-button--icon', 'data-k': 'term-close', 'aria-label': 'Close the terminal', title: 'Close the terminal (Escape)', on: { click: closeDrawer } }, icon('x', 'i sm')))
+  const screen = el('div', { class: 'oc-term', tabindex: '0', role: 'application', 'data-k': 'term-screen', 'data-scroll': 'term',
+    'aria-label': 'Terminal running OpenCode’s sign-in for Sotto’s OpenCode. Type to search, arrows to choose, Enter to confirm, Escape to close.', on: { keydown: termKey } })
+  for (const line of termLines()) {
+    const row = el('div')
+    if (!line.length) row.append('​')
+    for (const part of line) {
+      if (part.text.startsWith('│')) { row.append(el('span', { class: 'bar ' + part.cls, 'aria-hidden': 'true' })); if (part.text.length > 1) row.append(el('span', { class: part.cls, text: part.text.slice(1) })); continue }
+      row.append(part.cls ? el('span', { class: part.cls, text: part.text }) : document.createTextNode(part.text))
+    }
+    screen.append(row)
+  }
+  host.append(el('section', { class: 'oc-drawer', id: 'oc-drawer', role: 'region', 'aria-label': 'Terminal: OpenCode sign-in' }, [head, screen]))
+  requestAnimationFrame(() => { screen.scrollTop = screen.scrollHeight })
+}
+
+/* ---------- Drawing and focus ---------- */
+function draw(focusKey) {
+  const active = document.activeElement
+  const key = focusKey || (active && active.dataset ? active.dataset.k : undefined)
+  const caret = active && active.tagName === 'INPUT' && (active.type === 'text' || active.type === 'password') ? active.selectionStart : null
+  const scrolls = {}
+  for (const node of document.querySelectorAll('[data-scroll]')) scrolls[node.dataset.scroll] = node.scrollTop
+  document.documentElement.dataset.variant = state.variant
+  drawTabs(); drawBody(); drawDialog(); drawDrawer(); drawBar()
+  for (const node of document.querySelectorAll('[data-scroll]')) if (scrolls[node.dataset.scroll] !== undefined && node.dataset.scroll !== 'term') node.scrollTop = scrolls[node.dataset.scroll]
+  let target = key ? document.querySelector('[data-k="' + CSS.escape(key) + '"]') : null
+  if (target && target.disabled) target = null
+  if (target && target !== document.activeElement) {
+    if (target.classList.contains('oc-opt')) focusOpt(target); else target.focus({ preventScroll: false })
+    if (caret !== null && target.tagName === 'INPUT' && target.type !== 'radio') try { target.setSelectionRange(caret, caret) } catch {}
+  }
+  if (target && target.closest('.oc-sources')) target.scrollIntoView({ block: 'nearest' })
+  const openInMore = document.querySelector('.oc-more__list .oc-inline')
+  if (openInMore) openInMore.closest('.oc-row').scrollIntoView({ block: 'nearest' })
+}
+function drawBar() {
+  $('[data-key]').textContent = state.variant
+  $('[data-name]').textContent = VARIANTS[state.variant].name
+  $('[data-short]').textContent = VARIANTS[state.variant].short
+  $('[data-signed]').setAttribute('aria-pressed', String(state.signed))
+  $('[data-signed]').setAttribute('aria-label', state.signed ? 'Start signed in to nothing' : 'Start signed in to Anthropic and OpenAI')
+  $('[data-offer]').setAttribute('aria-pressed', String(state.offer))
+  $('[data-offer]').setAttribute('aria-label', state.offer ? 'Stop offering to copy your own OpenCode’s sign-ins' : 'Offer to copy your own OpenCode’s sign-ins')
+}
+function reset() {
+  state.sources = {}; state.notice = null; state.dialog = null; state.drawer = null; state.tileError = null; state.open = null; state.more = false; state.moreQuery = ''; state.offerDone = false
+  if (state.signed) { signIn('anthropic', 'API key'); signIn('openai', 'ChatGPT account') }
+}
+const keys = Object.keys(VARIANTS)
+function go(step) {
+  state.variant = keys[(keys.indexOf(state.variant) + step + keys.length) % keys.length]
+  const url = new URL(location.href); url.searchParams.set('variant', state.variant); url.searchParams.delete('scene'); history.replaceState(null, '', url)
+  reset(); draw()
+}
+function setTheme(light) {
+  document.documentElement.dataset.theme = light ? 'light' : 'dark'
+  const toggle = $('[data-theme-toggle]')
+  toggle.textContent = light ? 'Dark' : 'Light'
+  toggle.setAttribute('aria-label', light ? 'Switch to the dark palette' : 'Switch to the light palette')
+}
+$('[data-prev]').addEventListener('click', () => go(-1))
+$('[data-next]').addEventListener('click', () => go(1))
+$('[data-theme-toggle]').addEventListener('click', () => setTheme(document.documentElement.dataset.theme !== 'light'))
+$('[data-signed]').addEventListener('click', () => { state.signed = !state.signed; reset(); draw() })
+$('[data-offer]').addEventListener('click', () => { state.offer = !state.offer; state.offerDone = false; draw() })
+addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    if (state.variant === 'a' && state.dialog) { event.preventDefault(); closeDialog(); return }
+    if (state.variant === 'b' && state.drawer) { event.preventDefault(); closeDrawer(); return }
+    if (state.variant === 'c' && state.open) { event.preventDefault(); closeFlow(); return }
+    if (state.variant === 'c' && state.more && document.activeElement && document.activeElement.closest('#oc-more')) { event.preventDefault(); state.more = false; draw('more'); return }
+    return
+  }
+  const node = document.activeElement
+  const free = !node || node === document.body || node.closest('.switcher')
+  if (!free) return
+  if (event.key === 'ArrowLeft') go(-1)
+  if (event.key === 'ArrowRight') go(1)
+})
+
+/* ---------- Scenes, for captures and for a quick look ---------- */
+function scene(name) {
+  const v = state.variant
+  const flowFor = (id, m, extra) => ({ ctx: v, id, m, phase: 'form', key: '', code: '', host: 'github.com', domain: '', error: null, ...extra })
+  const methodIndex = (id, methodId) => methodsOf(byId(id)).findIndex(method => method.id === methodId)
+  const place = (flow, focus) => {
+    if (v === 'a') { state.dialog = { step: 'source', query: '', ...flow }; dialogOpener = 'add' }
+    else { state.open = flow; if (!COMMON.includes(flow.id)) { state.more = true; state.moreQuery = byId(flow.id).name } }
+    return focus
+  }
+  if (name === 'pick') {
+    if (v === 'a') { state.dialog = { step: 'pick', query: '', ctx: 'a' }; return 'pick-search' }
+    if (v === 'b') { openDrawer(); return 'term-screen' }
+    state.more = true; return 'more-search'
+  }
+  if (name === 'key') {
+    if (v === 'b') { openDrawer(); termChoose('anthropic'); state.drawer.key = 'sk-ant-api03-Qm8'; return 'term-screen' }
+    return place(flowFor('anthropic', 0, { key: 'sk-ant-api03-Qm8' }), v + '-key')
+  }
+  if (name === 'device' || name === 'error-expired') {
+    if (v === 'b') {
+      openDrawer(); termChoose('github-copilot')
+      state.drawer.out.push([T('m', '◇  '), T('m', 'Select GitHub deployment type')], [T('g', '│  '), T('m', 'GitHub.com (Public)')], [T('g', '│')]); termStart(methodsOf(byId('github-copilot'))[0])
+      if (name === 'error-expired') { state.drawer.out.push([T('m', '◇  '), T('m', 'Waiting for authorization...')]); termFail('The sign-in expired before it was finished') }
+      return 'term-screen'
+    }
+    if (name === 'device') return place(flowFor('github-copilot', 0, { phase: 'waiting' }), v + '-copy')
+    return place(flowFor('github-copilot', 0, { error: expiredText(byId('github-copilot')) }), v + '-open')
+  }
+  if (name === 'auto') {
+    if (v === 'b') { openDrawer(); termChoose('openai'); const method = termRawMethods(byId('openai'))[1]; state.drawer.out.push([T('m', '◇  '), T('m', 'Login method')], [T('g', '│  '), T('m', method.raw)], [T('g', '│')]); termStart(method); return 'term-screen' }
+    return place(flowFor('openai', methodIndex('openai', 'chatgpt-token-sharing'), { phase: 'waiting' }), v + '-wait')
+  }
+  if (name === 'code') {
+    if (v === 'b') { openDrawer(); termChoose('gitlab'); const method = termRawMethods(byId('gitlab'))[1]; state.drawer.out.push([T('m', '◇  '), T('m', 'Login method')], [T('g', '│  '), T('m', method.raw)], [T('g', '│')]); termStart(method); state.drawer.code = 'gl-7Hq2'; return 'term-screen' }
+    return place(flowFor('gitlab', methodIndex('gitlab', 'pkce'), { phase: 'waiting', code: '' }), v + '-code')
+  }
+  if (name === 'error-key') {
+    if (v === 'b') { openDrawer(); termChoose('anthropic'); state.drawer.key = 'bad-key'; termSubmitKey(); return 'term-screen' }
+    return place(flowFor('anthropic', 0, { error: refusedText(byId('anthropic')) }), v + '-key')
+  }
+  return undefined
+}
+
+const params = new URL(location.href).searchParams
+state.variant = keys.indexOf(params.get('variant')) >= 0 ? params.get('variant') : 'a'
+setTheme(params.get('theme') === 'light')
+state.signed = params.get('signed') === '1'
+state.offer = params.get('offer') === '1'
+if (params.get('tab') === 'models') state.tab = 'models'
+drawSubnav(); drawProviderList(); reset()
+const focus = scene(params.get('scene'))
+draw(focus)
+</script>
+</body>
+</html>
