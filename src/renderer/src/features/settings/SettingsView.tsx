@@ -48,6 +48,8 @@ import { AppearanceSettings } from './AppearanceSettings'
 import { CloudIphoneSettings } from './CloudIphoneSettings'
 import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
+import { WorkerRolesSettings } from './WorkerRolesSettings'
+import { WatcherOwl } from '../../watcher/WatcherOwl'
 import { VoiceWave } from '../../components/VoiceWave'
 import {
   useAudioInputDevices,
@@ -96,6 +98,8 @@ const SETTINGS_SECTIONS = [
   { id: 'settings-phones', label: 'Phones', icon: Smartphone },
   { id: 'settings-cloud-iphone', label: 'Cloud iPhone', icon: Cloud },
   { id: 'settings-agents', label: 'Agents', icon: Workflow },
+  // Worker roles (#1041), an Owl feature: shown only while the Owl list turns it on, with Watcher.
+  { id: 'settings-watcher', label: 'Watcher', icon: WatcherNavIcon },
   { id: 'settings-output', label: 'Output', icon: ArrowUpRight },
   { id: 'settings-appearance', label: 'Appearance', icon: Palette },
   { id: 'settings-privacy', label: 'Application', icon: Settings2 },
@@ -103,6 +107,11 @@ const SETTINGS_SECTIONS = [
 ] as const
 
 type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]['id']
+
+/** Watcher's owl at the rail's icon size; the rail passes lucide's props, of which the owl takes only the size. */
+function WatcherNavIcon({ size }: { readonly size?: number; readonly strokeWidth?: number; readonly 'aria-hidden'?: 'true' }): ReactNode {
+  return <WatcherOwl size={size ?? 17} />
+}
 
 function updateStatusCopy(status: UpdateStatus | null): string {
   if (status === null) return 'Update status is unavailable.'
@@ -361,6 +370,10 @@ export function SettingsView({
   const copy = platformCopy(platform)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(SETTINGS_SECTIONS[0].id)
+  // Settings, under Watcher, exists only while the Owl list turns on both Watcher and its worker roles.
+  const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles')
+  const workerRoles = watcherOn && workerRolesOn
+  const sections = SETTINGS_SECTIONS.filter(section => section.id !== 'settings-watcher' || workerRoles)
   // Panels stay mounted so account, key and theme drafts survive category changes.
   // Each visit starts at the heading; the sidebar keeps its own scroll position.
   useLayoutEffect(() => {
@@ -417,7 +430,7 @@ export function SettingsView({
           <div className="settings-sidebar__body">
           <h1 ref={headingRef} tabIndex={-1}>Settings</h1>
           <nav className="settings-subnav" aria-label="Settings sections" role="tablist" aria-orientation="vertical">
-            {SETTINGS_SECTIONS.map((section, index) => {
+            {sections.map((section, index) => {
               const Icon = section.icon
               return <button
                 type="button"
@@ -431,13 +444,13 @@ export function SettingsView({
                 onClick={() => selectSection(section.id)}
                 onKeyDown={(event) => {
                   let next: number
-                  if (event.key === 'ArrowDown') next = (index + 1) % SETTINGS_SECTIONS.length
-                  else if (event.key === 'ArrowUp') next = (index - 1 + SETTINGS_SECTIONS.length) % SETTINGS_SECTIONS.length
+                  if (event.key === 'ArrowDown') next = (index + 1) % sections.length
+                  else if (event.key === 'ArrowUp') next = (index - 1 + sections.length) % sections.length
                   else if (event.key === 'Home') next = 0
-                  else if (event.key === 'End') next = SETTINGS_SECTIONS.length - 1
+                  else if (event.key === 'End') next = sections.length - 1
                   else return
                   event.preventDefault()
-                  const category = SETTINGS_SECTIONS[next]!
+                  const category = sections[next]!
                   selectSection(category.id)
                   document.getElementById(`tab-${category.id}`)?.focus()
                 }}
@@ -557,6 +570,10 @@ export function SettingsView({
                 <CloudIphoneSettings settings={settings} onUpdateSettings={onUpdateSettings} /></Card>
 
               <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}><div className="settings-section__heading"><h2>Agents</h2><p>New threads & projects</p></div><AgentSetupFields /></Card>
+
+              {workerRoles ? <Card className="settings-section" id="settings-watcher" {...panelProps('settings-watcher')}><div className="settings-section__heading"><h2>Watcher</h2><p>What each kind of work runs on</p></div>
+                <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
+                  onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /></Card> : null}
 
               <Card className="settings-section" id="settings-output" {...panelProps('settings-output')}>
                 <div className="settings-section__heading"><h2>Output</h2><p>Clipboard & automatic paste</p></div>

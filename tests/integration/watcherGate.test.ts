@@ -17,6 +17,7 @@ import { claudeFixture } from '../fixtures/claudeFixture'
 import { codexFixture } from '../fixtures/codexFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { devinFixture } from '../fixtures/devinFixture'
+import { museFixture } from '../fixtures/museFixture'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -132,8 +133,8 @@ it.each([false, true])('keeps ordinary project creation and first sends with Wat
   expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === threadId)).toMatchObject({ kind: 'project', status: 'running' })
 })
 
-const factories = { claude: claudeFixture, codex: codexFixture, grok: grokFixture, devin: devinFixture }
-it.each(['claude', 'codex', 'grok', 'devin'] as const)('refuses disabled Watcher at the %s adapter boundary before launch', async provider => {
+const factories = { claude: claudeFixture, codex: codexFixture, grok: grokFixture, devin: devinFixture, muse: () => museFixture() }
+it.each(['claude', 'codex', 'grok', 'devin', 'muse'] as const)('refuses disabled Watcher at the %s adapter boundary before launch', async provider => {
   const f = await factories[provider]()
   cleanups.push(f.cleanup)
   const hostId = randomUUID(), threadId = randomUUID()

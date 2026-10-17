@@ -17,6 +17,9 @@ export const OWL_FEATURES = [
   { id: 'update-all', name: 'Update all', owlSince: '2026-10-12', owner: 'docs/adr/0077-update-all-updates-sotto-its-clients-and-hosts-together.md', sentToStable: false },
   { id: 'streaming-publish-cost', name: 'Cheaper publish windows while streaming', owlSince: '2026-10-13', owner: 'docs/adr/0016-sotto-owned-history-on-an-event-store.md', sentToStable: false },
   { id: 'thread-delegation', name: 'Delegation between threads', owlSince: '2026-10-15', owner: 'docs/adr/0081-a-thread-may-delegate-work-to-threads-it-starts.md', sentToStable: false },
+  { id: 'worker-roles', name: 'Worker roles', owlSince: '2026-10-16', owner: 'docs/adr/0088-worker-roles-say-what-each-kind-of-work-starts-on.md', sentToStable: false },
+  { id: 'continue-on-provider', name: 'Continue a thread on another provider', owlSince: '2026-10-16', owner: 'docs/adr/0089-a-thread-continues-on-another-provider-as-a-new-linked-thread.md', sentToStable: false },
+  { id: 'continue-agent-thread', name: 'Continue an agent as its own thread, and Fork from here', owlSince: '2026-10-16', owner: 'docs/adr/0090-an-agent-or-a-reply-can-start-a-thread-of-its-own.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

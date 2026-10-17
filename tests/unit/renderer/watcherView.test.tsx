@@ -81,11 +81,11 @@ function fakeBridge(state: WatcherRoomState) {
   return { bridge: bridge as unknown as WatcherBridge & typeof bridge, publish: (next: WatcherRoomState) => { for (const listener of listeners) listener(next) } }
 }
 
-function mockApp(navigation: AppNavigation, watcherEnabled = true) {
+function mockApp(navigation: AppNavigation, watcherEnabled = true, museEnabled = false) {
   const navigate = vi.fn()
   vi.mocked(useOptionalApp).mockReturnValue({
     navigation, platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: { watcherEnabled }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
+    update: museEnabled ? { watcherEnabled, owlFeatures: { watcher: watcherEnabled, muse: true } } : { watcherEnabled }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
   } as unknown as AppContextValue)
   return navigate
 }
@@ -201,6 +201,19 @@ describe("Watcher's room", () => {
     expect(promptText(screen.getByRole('textbox', { name: 'Watcher message' }))).toBe('Start the release checks.')
     expect(screen.getByRole('button', { name: 'Start Watcher and send' })).toBeEnabled()
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send' }))
+  })
+
+  it('offers a Muse model for Watcher where Muse is shown, and starts Watcher on Muse with it', async () => {
+    const state = stateWithWatcher()
+    state.host.models = [{ id: 'muse:fixture', provider: 'Muse', providerId: 'muse', name: 'Fixture Muse', ready: true }]
+    mockApp('watcher', true, true)
+    mockAgents(state)
+    const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
+    render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
+    expect(await screen.findByText(/your own Codex, Claude Code, Grok Build or Muse account/)).toBeInTheDocument()
+    setPromptText(await screen.findByRole('textbox', { name: 'Watcher message' }), 'Keep an eye on the footer links.')
+    fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledWith(expect.objectContaining({ provider: 'muse', modelId: 'muse:fixture' })))
   })
 
   it('never offers Devin for Watcher, and says where to connect a provider when none can host it', async () => {

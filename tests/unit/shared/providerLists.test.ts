@@ -16,7 +16,7 @@ vi.mock('../../../src/shared/usageDashboard', async importOriginal => ({
 }))
 
 import { agentClientHostSchema, agentCommandSchema, agentConfigurationSchema, agentStateSchema, everyProvider, providerIdSchema,
-  providerTakesSottoTools, providerWritesShortText, PROVIDER_COUNT, type ProviderId } from '../../../src/shared/agents'
+  providerTakesSottoTools, providerWritesShortText, PROVIDER_COUNT, threadTakesSottoTools, type ProviderId } from '../../../src/shared/agents'
 import { agentSkillCatalogSchema } from '../../../src/shared/agentSkills'
 import { hostClientUpdateRequestSchema } from '../../../src/shared/hostProviders'
 import { hostRequestSchema } from '../../../src/shared/hostProtocol'
@@ -69,13 +69,15 @@ describe('provider lists', () => {
     const fresh = 'test-seventh' as ProviderId
     expect(providerWritesShortText(fresh)).toBe(false)
     expect(providerTakesSottoTools(fresh)).toBe(false)
+    expect(threadTakesSottoTools({ providerId: fresh, sottoToolsGiven: true })).toBe(false)
   })
 
   it('keeps what the five providers and an unlabelled thread do', () => {
     expect(['codex', 'claude', 'grok', 'devin', 'muse', undefined].map(id => providerWritesShortText(id as ProviderId | undefined)))
       .toEqual([true, true, true, false, false, true])
+    // Devin's threads take Sotto's tools only where their host says it gives them (#1086).
     expect(['codex', 'claude', 'grok', 'devin', 'muse', undefined].map(id => providerTakesSottoTools(id as ProviderId | undefined)))
-      .toEqual([true, true, true, false, true, true])
+      .toEqual([true, true, true, true, true, true])
   })
 
   it('names the provider a list that must name every provider leaves out', () => {

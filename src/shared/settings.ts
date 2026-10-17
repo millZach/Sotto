@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './themes/omarchy'
 
 import { DEFAULT_HOTKEY } from './constants'
+import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
@@ -134,6 +135,11 @@ export interface AppSettings {
   resumeThreadsAfterRestart: boolean
   /** Computer-wide watcher capacity; lowering it holds admission and stops nothing. */
   watcherInFlightLimit: number
+  /**
+   * Worker roles (#1041, an Owl feature): the rows the user chose under Settings, Watcher, by role. A role left out follows
+   * its defaults over the providers connected now (`workerRoles.ts`), so nothing here changes when a provider comes or goes.
+   */
+  workerRoles: WorkerRoleChoices
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -291,6 +297,7 @@ const fieldSchemas = {
   babysitPullRequests: z.boolean(),
   resumeThreadsAfterRestart: z.boolean(),
   watcherInFlightLimit: z.number().int().min(1).max(8),
+  workerRoles: workerRoleChoicesSchema,
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -371,6 +378,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   babysitPullRequests: true,
   resumeThreadsAfterRestart: true,
   watcherInFlightLimit: 4,
+  workerRoles: {},
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -493,6 +501,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
     resumeThreadsAfterRestart: parseField(persisted, 'resumeThreadsAfterRestart', defaults),
     watcherInFlightLimit: parseField(persisted, 'watcherInFlightLimit', defaults),
+    // Row by row, so one damaged row costs only that row.
+    workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),

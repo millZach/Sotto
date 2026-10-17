@@ -7,8 +7,8 @@ import { DEVIN_CLI_VERSION } from '../../src/main/agents/devinRpc'
 import { devinFixture } from '../fixtures/devinFixture'
 import { devinOtelDefaults } from '../fixtures/devinOtel.mjs'
 
-// Devin CLI 3000.11.1 added an `otel` block to `_cognition.ai/config/read` (#1045). The fake answers as 3000.10.31 by
-// default, leaving the block out; these scripts make it answer as 3000.11.3 does.
+// Devin CLI 3000.11.1 added an `otel` block to `_cognition.ai/config/read` (#1045). The fake answers as 3000.11.92 does by
+// default, reading back the profile's block filled in with defaults; these scripts change what it reads back.
 let f: Awaited<ReturnType<typeof devinFixture>>
 const create = (id: string) => f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id,
   projectId: f.projectId, modelId: f.modelId, title: 'Synthetic telemetry check' })
@@ -19,10 +19,10 @@ beforeEach(async () => { f = await devinFixture(undefined, 5000, 60_000) })
 afterEach(async () => { await f?.cleanup() })
 
 it.each(['profile', 'default'])('runs a thread on a Devin that reads otel back as %s, with telemetry pinned off in the profile', async otel => {
-  await f.script({ otel, cliVersion: '3000.11.3' })
+  await f.script({ otel })
   const connected = await f.host.connect()
   expect(connected.connected).toBe(true)
-  expect(connected.verifiedVersion).toBe(DEVIN_CLI_VERSION)
+  expect(connected.version).toBe(`${DEVIN_CLI_VERSION} / ACP 1`)
   expect(JSON.parse(await readFile(devinPolicyPath(f.root, 'nothing'), 'utf8')).otel).toEqual({ enabled: false })
   await project()
   const id = randomUUID()
@@ -31,14 +31,15 @@ it.each(['profile', 'default'])('runs a thread on a Devin that reads otel back a
   expect(await methods('session/prompt')).toHaveLength(1)
 })
 
-it('connects the pinned version, which leaves otel out of its readback', async () => {
+it('connects a Devin that leaves otel out of its readback, as 3000.10.31 did', async () => {
+  await f.script({ otel: 'absent' })
   const connected = await f.host.connect()
   expect(connected.connected).toBe(true)
   expect(connected.verifiedVersion).toBeUndefined()
 })
 
 it('refuses a Devin whose telemetry settings Sotto did not set, in plain words, before any session exists', async () => {
-  await f.script({ otel: { enabled: true, ...devinOtelDefaults, endpoint: 'https://private-value.invalid' }, cliVersion: '3000.11.3' })
+  await f.script({ otel: { enabled: true, ...devinOtelDefaults, endpoint: 'https://private-value.invalid' } })
   const refused = await f.host.connect()
   expect(refused.connected).toBe(false)
   expect(refused.error).toBe('Devin reports telemetry settings that Sotto’s profile does not set, such as a collector to send to. Nothing was sent, and your threads are kept. Remove the otel settings Devin reads, then reconnect.')

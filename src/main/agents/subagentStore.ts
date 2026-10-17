@@ -293,6 +293,18 @@ export class SubagentStore {
     this.counts.pageRowsRead += parents.length
     return { threadId: request.threadId, revision: state.revision, rows: [...parents, ...rows].sort((a, b) => a.sequence - b.sequence), summary: state.summary, ...(records.length > SUBAGENT_PAGE_SIZE ? { before: rows[0]!.sequence } : {}) }
   }
+  /** One agent's row, by an indexed read: what continuing it as a thread starts from (#1028). */
+  row(threadId: string, agentId: string): SubagentRow | undefined {
+    this.counts.indexedReads++
+    const record = this.requireOpen().prepare('SELECT value FROM subagent_rows WHERE thread_id = ? AND agent_id = ?').get(threadId, agentId)
+    return record ? JSON.parse(String(record.value)) as SubagentRow : undefined
+  }
+  /** One assignment of an agent's, by its identity: the task and result a thin handover carries (#1028). */
+  assignment(threadId: string, agentId: string, assignmentId: string): SubagentAssignment | undefined {
+    this.counts.indexedReads++
+    const record = this.requireOpen().prepare('SELECT value FROM subagent_assignments WHERE thread_id = ? AND agent_id = ? AND assignment_id = ?').get(threadId, agentId, assignmentId)
+    return record ? JSON.parse(String(record.value)) as SubagentAssignment : undefined
+  }
   assignments(request: SubagentAssignmentsRequest): SubagentAssignmentsPage {
     const records = this.requireOpen().prepare('SELECT value FROM subagent_assignments WHERE thread_id = ? AND agent_id = ? AND sequence < ? ORDER BY sequence DESC LIMIT ?').all(request.threadId, request.agentId, request.before ?? Number.MAX_SAFE_INTEGER, SUBAGENT_ASSIGNMENT_PAGE_SIZE + 1)
     this.counts.pageRowsRead += records.length
