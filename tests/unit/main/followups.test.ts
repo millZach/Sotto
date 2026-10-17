@@ -764,6 +764,28 @@ it('does not resume updates on another thread when a new message is confirmed', 
   expect(f.control.get().deliveries?.find(item => item.draftId === draftId)?.updatesResumed).not.toBe(true)
 })
 
+it('does not let a late confirmation release a newer recovery hold', async () => {
+  const f = await fixture(); f.host.result = { accepted: false, uncertain: true }
+  const original = randomUUID(), earlier = randomUUID(), newer = randomUUID()
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: original, text: 'Original unknown prompt' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId: original })
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: earlier, text: 'Earlier replacement' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId: earlier })
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: newer, text: 'Newer unknown message' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId: newer })
+  const late = f.host.attempts[1]!
+  if (late.type !== 'send') throw new Error('Expected the earlier replacement send')
+  f.host.state.threads.find(thread => thread.id === 'workshop')!.messages.push({ id: late.messageId, commandId: late.commandId, role: 'user', text: late.text, createdAt: new Date().toISOString() })
+  complete(f.host)
+  delete f.host.result
+  f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+    guardOperation: () => undefined, preserveUserQueue: () => false })
+  expect((await f.control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic continuation' }, { guard: () => undefined })).error).toMatch(/unknown result/)
+  expect(f.host.attempts).toHaveLength(3)
+  expect(f.control.get().deliveries?.find(item => item.draftId === original)?.updatesResumed).toBe(true)
+  expect(f.control.get().deliveries?.find(item => item.draftId === newer)?.updatesResumed).not.toBe(true)
+})
+
 it.each([false, true])('keeps updates held when the new user message is not confirmed (uncertain %s)', async uncertain => {
   const f = await fixture(); const draftId = randomUUID(); f.host.result = { accepted: false, uncertain: true }
   await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Old unknown prompt' })

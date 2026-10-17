@@ -156,7 +156,7 @@ const savedSchema = z.object({
     options: agentThreadOptionsSchema.optional(), draftDigest: z.string().optional(), draftId: z.uuid().optional(),
     questionsDigest: z.string().optional(), atomicDigest: z.string().optional(),
     setAside: z.boolean().optional(),
-    updatesResumed: z.boolean().optional(), resumesSetAside: z.boolean().optional(),
+    updatesResumed: z.boolean().optional(), resumesSetAside: z.array(z.uuid()).optional(),
     /** The images a send or steer carried: while its result is unknown, it owns their content (ADR-0031). */
     attachmentDigests: z.array(attachmentDigestSchema).max(AGENT_MAX_ATTACHMENTS).optional(),
     /** A wake-up's send (ADR-0061): reconciled by its message like any send, with no draft or delivery receipt. */
@@ -3842,7 +3842,8 @@ export class AgentControl {
       ...(answerQuestions.length ? { questionsDigest: requestQuestionsDigest(answerQuestions) } : {}),
       ...(atomicDigest && draftId ? { draftId, atomicDigest } : {}),
       ...(wakeUp ? { wakeUp: true as const } : {}),
-      ...(prompt && !automatic && threadId && this.hasUnconfirmedSetAside(threadId) ? { resumesSetAside: true } : {}),
+      ...(prompt && !automatic && threadId && this.hasUnconfirmedSetAside(threadId) ? { resumesSetAside: (this.state.deliveries ?? [])
+        .filter(item => item.threadId === threadId && item.setAside && !item.updatesResumed && item.status === 'uncertain').map(item => item.draftId) } : {}),
       ...(command.type === 'configure-thread' ? { options: agentThreadOptionsSchema.parse({ ...command, ...(startingEffort ? { reasoningEffort: startingEffort } : {}) }) } : {}),
       ...(prompt ? { draftDigest: followupDigest(prompt), ...(draftId ? { draftId } : {}),
         ...(prompt.attachments?.length ? { attachmentDigests: prompt.attachments.map(image => image.digest) } : {}) } : {}),
@@ -4043,13 +4044,14 @@ export class AgentControl {
     return !item.setAside || this.pendingSetAsideDeliveries.has(item.threadId ?? '') || item.draftId === draftId
       || automatic && !item.updatesResumed || (item.type !== 'send' && item.type !== 'steer')
   }
-  private resumeSetAsideUpdates(threadId: string): void {
+  private resumeSetAsideUpdates(threadId: string, draftIds: readonly string[]): void {
+    const recovered = new Set(draftIds)
     for (const delivery of this.state.deliveries ?? []) {
-      if (delivery.threadId === threadId && delivery.setAside && !delivery.updatesResumed) {
+      if (delivery.threadId === threadId && recovered.has(delivery.draftId) && delivery.setAside && !delivery.updatesResumed) {
         this.setDelivery(threadId, delivery.draftId, delivery.status, { updatesResumed: true })
       }
     }
-    this.outbox = this.outbox.map(item => item.threadId === threadId && item.setAside ? { ...item, updatesResumed: true } : item)
+    this.outbox = this.outbox.map(item => item.threadId === threadId && item.draftId && recovered.has(item.draftId) && item.setAside ? { ...item, updatesResumed: true } : item)
   }
   private assertCanSetAside(threadId: string, draftId: string): void {
     this.thread(threadId)
@@ -4314,7 +4316,7 @@ export class AgentControl {
         : !this.state.draftAttachments?.length && this.state.draft.trim() === message.text)
       this.outbox = this.outbox.filter(o => o.id !== item.id)
       if (message && item.draftId && item.threadId) {
-        if (item.resumesSetAside) this.resumeSetAsideUpdates(item.threadId)
+        if (item.resumesSetAside) this.resumeSetAsideUpdates(item.threadId, item.resumesSetAside)
         this.setDelivery(item.threadId, item.draftId, 'accepted', { commandId: item.id, messageId: item.messageId })
         this.state.deliveredDrafts = this.trimReceipts([...(this.state.deliveredDrafts ?? []).filter(receipt => receipt.threadId !== item.threadId || receipt.draftId !== item.draftId),
           { threadId: item.threadId, draftId: item.draftId }])

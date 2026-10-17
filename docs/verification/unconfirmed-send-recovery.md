@@ -53,4 +53,6 @@ Zach chose to resume normal updates after the new message. The follow-up regress
 
 After that choice, typecheck, lint, notices and build passed again. Both focused Electron journeys passed (12.7 seconds), including the new assertion that `hello` releases the automatic-update hold while the original delivery stays uncertain. No new full-suite run was made for this follow-up; the broader-run limits above still apply.
 
+PR preflight reproduced one further edge: a late confirmation of an earlier replacement could release a recovery hold created after that send. The fresh prompt now retains the exact set-aside draft revisions it follows, so confirmation releases only those holds. The new regression failed before correction; the six-file group then passed all 177 tests. A final full run follows this correction.
+
 The installed Sotto build has not been replaced or restarted. Live Muse, packaged Windows, macOS and Linux recovery journeys have not been run. Remote hosts and phones cannot perform this recovery; they direct the user to the desktop that owns the thread. Questions, permissions, a live send and queued follow-ups retain their own recovery rules. No design baselines were regenerated.
