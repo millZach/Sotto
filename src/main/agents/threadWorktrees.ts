@@ -3,12 +3,15 @@ import { createHash, randomUUID } from 'node:crypto'
 import { lstat, mkdir, opendir, readdir, readFile, readlink, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
+import { QUIET_GIT_ENV } from './gitStatus'
 import { nativeEnvironment } from './subscriptionCodex'
 
-export type RunGit = (cwd: string, args: string[]) => Promise<string>
+/** `quiet` is for a fetch nobody pressed anything for: it fails rather than ask for a sign-in, as the background fetch does. */
+export type RunGit = (cwd: string, args: string[], options?: { readonly quiet?: boolean }) => Promise<string>
 const QUOTE_PATHS: readonly string[] = ['-c', 'core.quotePath=false']
 const isWorktreeAdd = (args: readonly string[]): boolean => args[0] === 'worktree' && args[1] === 'add'
-export const runWorktreeGit: RunGit = async (cwd, args) => runWorktreeGitProcess(cwd, args, { prefix: await worktreeGitPrefix(cwd, args) })
+export const runWorktreeGit: RunGit = async (cwd, args, options) =>
+  runWorktreeGitProcess(cwd, args, { prefix: await worktreeGitPrefix(cwd, args), ...(options?.quiet ? { env: QUIET_GIT_ENV } : {}) })
 
 /** The options Sotto puts before a Git command of its own: paths unquoted, and a new checkout written in parallel. */
 export async function worktreeGitPrefix(cwd: string, args: readonly string[]): Promise<string[]> {
@@ -25,12 +28,12 @@ export async function parallelCheckout(cwd: string): Promise<string[]> {
 }
 
 /** The executable and deadline seam lets a real launcher/checkout tree exercise timeout recovery. */
-export function runWorktreeGitProcess(cwd: string, args: string[], options: { executable?: string; prefix?: string[]; timeout?: number } = {}): Promise<string> {
+export function runWorktreeGitProcess(cwd: string, args: string[], options: { executable?: string; prefix?: string[]; timeout?: number; env?: Readonly<Record<string, string>> } = {}): Promise<string> {
   return new Promise((accept, reject) => {
     const child = spawn(options.executable ?? 'git', [...(options.prefix ?? QUOTE_PATHS), ...args], {
       cwd, windowsHide: true, shell: false, detached: process.platform !== 'win32',
       // No optional locks: a status read here never takes the index lock from a commit running beside it.
-      env: { ...nativeEnvironment(), LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
+      env: { ...nativeEnvironment(), LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', ...options.env },
     })
     let timedOut = false
     let processError: Error | undefined
@@ -249,6 +252,12 @@ export interface WorktreeHome {
 const THREAD_WORKTREE_HOME: WorktreeHome = { folder: 'thread-worktrees', branchPrefix: 'sotto/' }
 export const TERMINAL_WORKTREE_HOME: WorktreeHome = { folder: 'terminal-worktrees', branchPrefix: 'sotto/terminal-' }
 
+type OriginBase = NonNullable<AgentWorktree['originBase']>
+interface OriginFetch { readonly answer: Promise<OriginBase>; finishedAt?: number }
+/** How long a send uses an origin base typing fetched instead of fetching again (owner's choice, October 16, 2026). */
+export const EARLY_ORIGIN_FETCH_FRESH_MS = 120_000
+const originFetchKey = (repositoryRoot: string, baseBranch: string): string => `${pathKey(repositoryRoot)}\0${baseBranch}`
+
 /** What reclaiming a worktree would touch, so the caller can name it before asking. */
 export interface WorktreeReclaimFacts {
   readonly path: string
@@ -292,6 +301,10 @@ export function periodicYield(): () => Promise<void> {
  * WorkspaceHost before ensure.
  */
 export class ThreadWorktrees {
+  /** Origin fetches by repository and base branch: running, or started by typing and finished (ADR-0057). */
+  private readonly originFetches = new Map<string, OriginFetch>()
+  private fetchHeadFlag = true
+
   constructor(private readonly directory: string, private readonly git: RunGit = runWorktreeGit, private readonly home: WorktreeHome = THREAD_WORKTREE_HOME) {}
 
   /** Identity belongs to this operation, never to a cached cwd or persisted worktree record. */
@@ -392,21 +405,82 @@ export class ThreadWorktrees {
   }
 
   /**
+   * Fetches a new worktree's origin base while its first message is typed (ADR-0057), so the send can use that
+   * fetch instead of making its own. Finds the base branch the way `allocate` would and fetches nothing it would not.
+   */
+  async prefetchOriginBase(projectPath: string, baseBranch?: string): Promise<void> {
+    const cwd = await existingWorkingDirectory(projectPath)
+    let repositoryRoot: string
+    try { repositoryRoot = (await this.git(cwd, ['rev-parse', '--show-toplevel'])).trim() } catch { return }
+    const branch = baseBranch ?? ((await this.git(repositoryRoot, ['branch', '--show-current'])).trim() || undefined)
+    if (!branch) return
+    await this.git(repositoryRoot, ['check-ref-format', `refs/heads/${branch}`])
+    if (!this.usableOriginFetch(repositoryRoot, branch)) await this.trackOriginFetch(repositoryRoot, branch, 'typing')
+  }
+
+  /**
+   * A fetch of this base the send can use instead of its own: one still running, which a second would race for the
+   * same ref, or one typing started that finished in the last two minutes. A failed fetch is forgotten as it fails.
+   */
+  private usableOriginFetch(repositoryRoot: string, baseBranch: string): Promise<OriginBase> | undefined {
+    const key = originFetchKey(repositoryRoot, baseBranch), known = this.originFetches.get(key)
+    if (!known) return undefined
+    if (known.finishedAt === undefined || Date.now() - known.finishedAt <= EARLY_ORIGIN_FETCH_FRESH_MS) return known.answer
+    this.originFetches.delete(key)
+    return undefined
+  }
+
+  /**
+   * Only a fetch typing started is kept once it finishes; the send's own is kept only while it runs. Typing's never
+   * asks for a sign-in: the user pressed nothing, so a remote that needs one fails it and the send fetches again.
+   */
+  private trackOriginFetch(repositoryRoot: string, baseBranch: string, startedBy: 'typing' | 'send'): Promise<OriginBase> {
+    const key = originFetchKey(repositoryRoot, baseBranch)
+    const early = startedBy === 'typing'
+    const entry: OriginFetch = { answer: this.fetchOriginBase(repositoryRoot, baseBranch, early) }
+    this.originFetches.set(key, entry)
+    const settle = (keep: boolean): void => {
+      if (this.originFetches.get(key) !== entry) return
+      if (keep) entry.finishedAt = Date.now()
+      else this.originFetches.delete(key)
+    }
+    entry.answer.then(() => settle(early), () => settle(false))
+    return entry.answer
+  }
+
+  /** The send's origin base: from a fetch `usableOriginFetch` offers, else from its own, so a failure it reports is its own. */
+  private async resolveOriginBase(repositoryRoot: string, baseBranch: string): Promise<OriginBase> {
+    const running = this.usableOriginFetch(repositoryRoot, baseBranch)
+    if (running) { try { return await running } catch { /* Fetched again below. */ } }
+    // Sends that waited on the same failed fetch make one fetch between them, not one each racing for the ref.
+    return this.usableOriginFetch(repositoryRoot, baseBranch) ?? this.trackOriginFetch(repositoryRoot, baseBranch, 'send')
+  }
+
+  /**
    * Start from origin, T3's way (ADR-0014, amended September 24, 2026): fetch the base when origin has it, fall back
    * to the local branch when origin does not, and skip the fetch for a project with no origin at all. Only a fetch
    * that fails for another reason, the connection or the credentials, stops setup. The answer is kept on the
    * worktree so the pane can say which happened.
    */
-  private async resolveOriginBase(repositoryRoot: string, baseBranch: string): Promise<NonNullable<AgentWorktree['originBase']>> {
+  private async fetchOriginBase(repositoryRoot: string, baseBranch: string, quiet: boolean): Promise<OriginBase> {
     // No origin is an answer; Git being unavailable is not, and the message runWorktreeGit gives it must reach the user.
     try { await this.git(repositoryRoot, ['remote', 'get-url', 'origin']) }
     catch (error) { if (error instanceof Error && /Git is unavailable/u.test(error.message)) throw error; return 'no-origin' }
     const failure = new Error(`The origin branch ${baseBranch} could not be fetched. Check the remote and connection, or choose a local branch under Start from.`)
     // --exit-code answers 2 for a remote that is reachable and has no such branch; anything else is a real failure.
-    try { await this.git(repositoryRoot, ['ls-remote', '--exit-code', '--heads', 'origin', `refs/heads/${baseBranch}`]) }
+    try { await this.git(repositoryRoot, ['ls-remote', '--exit-code', '--heads', 'origin', `refs/heads/${baseBranch}`], { quiet }) }
     catch (error) { if ((error as { code?: unknown }).code === 2) return 'not-on-origin'; throw failure }
-    try { await this.git(repositoryRoot, ['fetch', '--no-tags', 'origin', `refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`]) }
-    catch { throw failure }
+    // No FETCH_HEAD, as the background fetch writes none: a fetch typing started must not change what a
+    // `git merge FETCH_HEAD` in the project would merge. A Git older than 2.29 does not know the flag.
+    const fetch = (): Promise<string> => this.git(repositoryRoot, ['fetch', '--no-tags', ...this.fetchHeadFlag ? ['--no-write-fetch-head'] : [],
+      'origin', `refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`], { quiet })
+    try {
+      await fetch().catch((error: unknown) => {
+        if (!this.fetchHeadFlag || !/no-write-fetch-head/u.test(error instanceof Error ? error.message : String(error))) throw error
+        this.fetchHeadFlag = false
+        return fetch()
+      })
+    } catch { throw failure }
     return 'fetched'
   }
 
