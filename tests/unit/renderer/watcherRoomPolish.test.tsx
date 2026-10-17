@@ -118,7 +118,7 @@ describe('receipt cards', () => {
     await waitFor(() => expect(roomView.get().besideId).toBe('footer-links'))
   })
 
-  it('never turn a name in Watcherâ€™s words into a link: without the receiptâ€™s place there is no card', async () => {
+  it('never turn a name in Watcher’s words into a link: without the receipt’s place there is no card', async () => {
     renderRoom(roomState())
     await paneReady()
     expect(screen.getByText('Started Footer links on Codex.')).toBeInTheDocument()
@@ -147,7 +147,7 @@ describe('receipt cards', () => {
 })
 
 describe('the takeover line', () => {
-  it('lands in Watcherâ€™s conversation when the user sent in a thread Watcher drove, with the name opening it beside Watcher', async () => {
+  it('lands in Watcher’s conversation when the user sent in a thread Watcher drove, with the name opening it beside Watcher', async () => {
     const room = roomState()
     const taken = { ...room.requests[0]!.participants[0]!, state: 'taken-over' as const, takeover: { reason: 'user-send' as const, at: new Date(NOW - 10_000).toISOString() } }
     renderRoom({ ...room, requests: [{ ...room.requests[0]!, participants: [taken] }], watchedThreads: room.watchedThreads.map(row => ({ ...row, watched: false, participation: [taken] })) })
@@ -169,7 +169,7 @@ describe('Stop all', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Stop all threads Watcher started/ })).toBeNull())
   })
 
-  it('asks first, naming each thread, stops through mainâ€™s preview, says what came of each, and Escape returns to the button', async () => {
+  it('asks first, naming each thread, stops through main’s preview, says what came of each, and Escape returns to the button', async () => {
     const { bridge } = renderRoom(roomState())
     await paneReady()
     const button = screen.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' })
@@ -247,7 +247,7 @@ describe('Stop all', () => {
 describe('read marks', () => {
   const marked = (): Partial<WatcherRoomState> => ({ readMarks: [{ target: target('footer-links'), kind: 'finished', at }, { target: target('wav-stall'), kind: 'failed', at }] })
 
-  it('put a dot before a rowâ€™s name in All threads, count what is new, and Mark all read clears them through main', async () => {
+  it('put a dot before a row’s name in All threads, count what is new, and Mark all read clears them through main', async () => {
     const { bridge } = renderRoom(roomState(marked()))
     await paneReady()
     fireEvent.click(screen.getByRole('button', { name: /^All threads, \d+\. Show the list$/ }))
