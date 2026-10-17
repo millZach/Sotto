@@ -8,8 +8,10 @@ import { URL } from 'node:url'
 // A scripted OpenCode 2 server (`opencode serve`), in the shape Sotto's OpenCode adapter speaks: the HTTP routes and the
 // server-sent events captured from OpenCode 2.0.31 (.zstack/opencode-provider/v2-captures, not committed). Files in the
 // root steer it, as with the other fakes: `script.json` (version, infoVersion, models, providers, delay by operation,
-// refuse by operation (the HTTP status the next such request is refused with, once), migrationMs, unavailable,
-// printPassword, pageSize, eventStream: 'refuse' to answer the event stream with an error before its first frame;
+// refuse by operation (the HTTP status the next such request is refused with, once, or `[status, times]` in a row),
+// loseAnswer by operation (the next such request is done and its connection then cut, so its answer never arrives),
+// migrationMs, unavailable, printPassword, pageSize, eventStream: 'refuse' to answer the event stream with an error
+// before its first frame;
 // integrations, sourceModels, oauth by `<integration>:<method>`, oauthExpiresMs and oauthUrl for the sign-in routes),
 // `approve.json` (`{ integrationID }`: the next read of that source's browser sign-in finds it complete),
 // `credentials.json` (the sign-ins, shared by every process as OpenCode's database is, secrets included as OpenCode
@@ -233,9 +235,11 @@ const delayOf = name => {
 /** A refusal the script asks for once: the next request of this operation is refused with that status, before anything is done. */
 const refusalOf = name => {
   const current = script()
-  const status = current.refuse?.[name]
-  if (!status) return 0
-  writeFileSync(path('script.json'), JSON.stringify({ ...current, refuse: { ...current.refuse, [name]: 0 } }))
+  const asked = current.refuse?.[name]
+  if (!asked) return 0
+  // `[status, times]` refuses that many in a row.
+  const [status, times] = Array.isArray(asked) ? asked : [asked, 1]
+  writeFileSync(path('script.json'), JSON.stringify({ ...current, refuse: { ...current.refuse, [name]: times > 1 ? [status, times - 1] : 0 } }))
   return status
 }
 let unavailable = startup.unavailable ?? 0
@@ -258,9 +262,18 @@ const routes = [
   ['GET', /^\/api\/credential$/u, 'credential.list'], ['DELETE', /^\/api\/credential\/([^/]+)$/u, 'credential.remove'],
 ]
 const expected = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD ?? ''}`).toString('base64')}`
+/** An answer the script asks to lose once: the next request of this operation is done, and its connection cut unanswered. */
+const lossOf = name => {
+  const current = script()
+  if (!current.loseAnswer?.[name]) return false
+  writeFileSync(path('script.json'), JSON.stringify({ ...current, loseAnswer: { ...current.loseAnswer, [name]: false } }))
+  return true
+}
 const server = createServer((request, response) => {
   const url = new URL(request.url, 'http://fixture')
+  let lost = false
   const send = (status, body) => {
+    if (lost) { response.socket?.destroy(); return }
     if (body === undefined) { response.writeHead(status); response.end(); return }
     response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(body))
   }
@@ -279,6 +292,7 @@ const server = createServer((request, response) => {
     record({ method: name, params: { ...(sessionId ? { sessionID: sessionId } : {}), ...(itemId ? { itemID: itemId } : {}), ...(body ?? {}), ...(Object.keys(query).length ? { query } : {}) } })
     const refused = refusalOf(name)
     if (refused) { fail(refused, 'InvalidRequestError'); return }
+    lost = lossOf(name)
     const go = () => handle(name, sessionId, itemId, body, query, request, response, send, fail)
     const delay = delayOf(name)
     if (delay) setTimeout(go, delay); else go()

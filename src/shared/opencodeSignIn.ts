@@ -84,19 +84,26 @@ export const signInAttemptSchema = z.object({
 }).strict()
 export type SignInAttempt = z.infer<typeof signInAttemptSchema>
 const refused = z.object({ status: z.literal('refused'), message: words }).strict()
-export const signInResultSchema = z.discriminatedUnion('status', [z.object({ status: z.literal('ok'), sources: modelSourcesSchema }).strict(), refused])
+/** The sign-ins changed. `warning` says what did not follow them, such as a model list that could not be read again. */
+const changed = z.object({ status: z.literal('ok'), sources: modelSourcesSchema, warning: words.optional() }).strict()
+export const signInResultSchema = z.discriminatedUnion('status', [changed, refused])
 export type SignInResult = z.infer<typeof signInResultSchema>
 export const signInStartSchema = z.discriminatedUnion('status', [z.object({ status: z.literal('waiting'), attempt: signInAttemptSchema }).strict(), refused])
 export type SignInStart = z.infer<typeof signInStartSchema>
 /** Where a waiting sign-in stands: still waiting, done, or over without saving anything. */
 export const signInWaitSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('pending') }).strict(),
-  z.object({ status: z.literal('ok'), sources: modelSourcesSchema }).strict(),
+  changed,
   z.object({ status: z.literal('expired'), message: words }).strict(),
   refused,
 ])
 export type SignInWait = z.infer<typeof signInWaitSchema>
-export const signInDoneSchema = z.discriminatedUnion('status', [z.object({ status: z.literal('ok') }).strict(), refused])
+/**
+ * Done, refused, or, for opening a page, a browser that did not open: then `address` is the page OpenCode gave, to open
+ * by hand. It is the sign-in page's own address, which carries no key or code.
+ */
+export const signInDoneSchema = z.discriminatedUnion('status', [z.object({ status: z.literal('ok') }).strict(), refused,
+  z.object({ status: z.literal('not-opened'), message: words, address: z.string().max(4_096).regex(/^https:\/\//u) }).strict()])
 export type SignInDone = z.infer<typeof signInDoneSchema>
 
 export interface OpenCodeSignInBridge {
@@ -121,7 +128,13 @@ export const SIGN_IN_WORDS = {
   codeRefused: (source: string) => `${source} did not accept that code, so nothing was saved. Copy the code from the ${source} page and paste it again.`,
   formRefused: (source: string) => `OpenCode needs every question answered before it signs in to ${source}. Nothing was saved. Fill them in and try again.`,
   unsafePage: 'OpenCode gave a sign-in page that is not a secure https address, so Sotto did not open it and nothing was saved.',
-  pageNotOpened: 'Your browser did not open. Nothing was saved. Press Open the page again to try once more.',
+  pageNotOpened: 'Your browser did not open the sign-in page. Nothing was saved. Open this address in your browser yourself, or press Open the page again.',
+  /** A key's acknowledgement was lost and the list read again says it was not saved. */
+  keyNotSaved: (source: string) => `Sotto could not tell whether OpenCode saved the ${source} key, so it read OpenCode’s sign-ins again: ${source} is not signed in, so nothing was saved. Paste the key again.`,
+  /** A key's acknowledgement was lost and the list could not be read again either. */
+  keyUnknown: (source: string) => `Sotto could not tell whether OpenCode saved the ${source} key, and could not read OpenCode’s sign-ins to find out. Close this and look under Model sources: ${source} is listed there if it was saved. If it is not, paste the key again.`,
+  /** The sign-ins changed and every thread moves to them, but the model list could not be read again. */
+  catalogUnread: 'Sotto could not read OpenCode’s model list again, so the model menu may be out of date. Each thread still moves to the new sign-ins when it next goes idle. Press Refresh OpenCode to read the list again.',
   signOutFailed: (source: string) => `Sotto could not sign out of ${source}, so it is still signed in. Try again.`,
   unknownSource: 'OpenCode no longer lists that model source, so nothing was signed in. Close this and open it again.',
   signedIn: (source: string, models: number) => `Signed in to ${source}. ${models === 1 ? 'Its model is' : `Its ${models} models are`} in the model menu, under OpenCode.`,

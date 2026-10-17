@@ -599,16 +599,18 @@ export class OpenCodeHost implements AgentHost {
     return { client: started.client, closed: started.server.closed, stop: () => { closed.abort(); return started.server.stop() } }
   }
   /**
-   * After a sign-in or a sign-out, the catalog is read again, so the model menu and the account line have what changed.
-   * Thread servers read the sign-ins when they start, so each moves to a fresh one as its thread goes idle.
+   * After a sign-in or a sign-out (ADR-0087): thread servers read the sign-ins when they start, so every one is outdated
+   * at once and moves to a fresh one as its thread goes idle, whatever happens next. Then the catalog is read again, so
+   * the model menu and the account line have what changed; a catalog that cannot be read rejects, for the words to say so.
    */
   private async catalogChanged(client: OpenCodeClient): Promise<void> {
     if (!this.state.connected) return
     const generation = this.generation
+    this.renew()
+    this.emit()
     const catalog = await this.readCatalog(client)
     if (generation !== this.generation || !this.state.connected) return
     this.applyCatalog(this.state.version, catalog.models, catalog.providers, catalog.fallback)
-    this.renew()
     this.emit()
   }
   /**

@@ -13,12 +13,14 @@ const KEY = 'sk-fixture-made-up-key-7d1e4b'
 
 async function signInFixture(script: Record<string, unknown> = {}) {
   const opened: string[] = []
-  const f = await opencodeFixture(undefined, undefined, {}, { openExternal: async url => { opened.push(url) }, signInIdleMs: 200 })
+  // A browser that does not open while `browser.fails` is set.
+  const browser = { fails: false }
+  const f = await opencodeFixture(undefined, undefined, {}, { openExternal: async url => { if (browser.fails) throw new Error('No browser.'); opened.push(url) }, signInIdleMs: 200 })
   await f.script(script)
   await f.host.connect()
   const requests = async (method: string) => (await f.driver.requests()).filter(record => record.method === method)
   const ok = (read: ModelSources): Extract<ModelSources, { status: 'ok' }> => { if (read.status !== 'ok') throw new Error(read.message); return read }
-  return { f, opened, requests, ok, signIn: f.host.signIn }
+  return { f, opened, browser, requests, ok, signIn: f.host.signIn }
 }
 const okResult = (result: SignInResult | SignInWait): ModelSources => { if (result.status !== 'ok') throw new Error(JSON.stringify(result)); return result.sources }
 const waiting = (result: SignInStart) => { if (result.status !== 'waiting') throw new Error(result.message); return result.attempt }
@@ -77,6 +79,9 @@ it('runs a device-code sign-in: opens the https page from main, shows the code, 
   try {
     const attempt = waiting(await signIn.startBrowserSignIn({ sourceId: 'xai', methodId: 'device' }))
     expect(attempt).toMatchObject({ sourceId: 'xai', mode: 'auto', code: 'QX7M-4LRT', page: 'sign-in.fixture.invalid/xai/device' })
+    // The page opens once the dialog that asked still shows it, so a dialog closed meanwhile never opens one.
+    expect(opened).toEqual([])
+    expect(await signIn.reopenPage({ attemptId: attempt.id })).toEqual({ status: 'ok' })
     expect(opened).toEqual(['https://sign-in.fixture.invalid/xai/device?user_code=QX7M-4LRT'])
     expect(await signIn.wait({ attemptId: attempt.id })).toEqual({ status: 'pending' })
     expect(await signIn.reopenPage({ attemptId: attempt.id })).toEqual({ status: 'ok' })
@@ -167,5 +172,55 @@ it('names the signed-in source when it refuses a turn, since OpenCode keeps a ke
     await f.action(id, { type: 'fail' })
     await expect.poll(async () => JSON.stringify((await f.host.snapshot()).threads.find(thread => thread.id === id)))
       .toContain('Anthropic refused the sign-in Sotto’s OpenCode has for it, so this turn did not run. Nothing else was lost.')
+  } finally { await f.cleanup() }
+})
+
+it('says the page did not open when the browser does not, with its address to open by hand, and keeps the sign-in waiting', async () => {
+  const { f, signIn, opened, browser } = await signInFixture({ oauth: { 'xai:device': { mode: 'auto', code: 'QX7M-4LRT' } } })
+  try {
+    const attempt = waiting(await signIn.startBrowserSignIn({ sourceId: 'xai', methodId: 'device' }))
+    browser.fails = true
+    expect(await signIn.reopenPage({ attemptId: attempt.id }))
+      .toEqual({ status: 'not-opened', message: SIGN_IN_WORDS.pageNotOpened, address: 'https://sign-in.fixture.invalid/xai/device?user_code=QX7M-4LRT' })
+    expect(await signIn.wait({ attemptId: attempt.id })).toEqual({ status: 'pending' })
+    browser.fails = false
+    expect(await signIn.reopenPage({ attemptId: attempt.id })).toEqual({ status: 'ok' })
+    expect(opened).toHaveLength(1)
+  } finally { await f.cleanup() }
+})
+
+it('reads OpenCode’s sign-ins again when a key’s acknowledgement is lost, and says what it found', async () => {
+  const { f, signIn, requests, ok } = await signInFixture({ loseAnswer: { 'integration.connect.key': true } })
+  try {
+    // OpenCode saved the key and its answer never came: the list says it is signed in, so it is.
+    const saved = okResult(await signIn.signInWithKey({ sourceId: 'anthropic', key: KEY }))
+    expect(ok(saved).sources.find(source => source.id === 'anthropic')).toMatchObject({ signedIn: { how: 'API key' } })
+    await expect.poll(async () => (await f.host.snapshot()).models.some(model => model.source === 'Anthropic')).toBe(true)
+    // OpenCode failed before saving it: the list says it is not, and the words say so.
+    await f.script({ refuse: { 'integration.connect.key': 500 } })
+    const listed = (await requests('integration.list')).length
+    expect(await signIn.signInWithKey({ sourceId: 'openrouter', key: KEY })).toEqual({ status: 'refused', message: SIGN_IN_WORDS.keyNotSaved('OpenRouter') })
+    expect((await requests('integration.list')).length).toBeGreaterThan(listed)
+    expect(SIGN_IN_WORDS.keyNotSaved('OpenRouter')).toBe('Sotto could not tell whether OpenCode saved the OpenRouter key, so it read OpenCode’s sign-ins again: OpenRouter is not signed in, so nothing was saved. Paste the key again.')
+  } finally { await f.cleanup() }
+})
+
+it('moves every thread server to the new sign-ins after a sign-out even when the model list cannot be read again, and says so', async () => {
+  const { f, signIn } = await signInFixture()
+  try {
+    okResult(await signIn.signInWithKey({ sourceId: 'anthropic', key: KEY }))
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Outdated by a sign-out' })
+    f.host.observeThreads?.([id])
+    await expect.poll(async () => f.holder(id)).toBeDefined()
+    const before = await f.holder(id)
+    // Sign-out reads the list first, then the catalog is read again: both reads of the model list are refused.
+    await f.script({ refuse: { 'model.list': [500, 2] } })
+    const out = await signIn.signOut({ sourceId: 'anthropic' })
+    expect(out).toMatchObject({ status: 'ok', warning: SIGN_IN_WORDS.catalogUnread })
+    // The idle thread's server held the old sign-in; it stops, and the watched thread opens again on a fresh one.
+    await expect.poll(async () => f.holder(id), { timeout: 10_000 }).not.toBe(before)
+    await expect.poll(async () => f.holder(id), { timeout: 10_000 }).toBeDefined()
   } finally { await f.cleanup() }
 })

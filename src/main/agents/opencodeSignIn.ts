@@ -4,6 +4,7 @@ import {
   type ModelSources, type SignInDone, type SignInResult, type SignInStart, type SignInWait,
 } from '../../shared/opencodeSignIn'
 import { locationQuery, OpenCodeRejected, type OpenCodeClient } from './opencodeClient'
+import { OpenCodeUncertain } from './opencodeServer'
 import { attemptOf, attemptReplySchema, attemptStatusSchema, credentialsOf, hiddenAnswers, integrationListSchema, KEY_METHOD, modelSourcesOf, safeSignInPage, type Integration } from './opencodeSources'
 
 /** Stable event names a sign-in is logged by. No key, code, address or answer from OpenCode ever reaches a log. */
@@ -17,7 +18,10 @@ export interface OpenCodeSignInOptions {
   readonly start: () => Promise<SignInServer>
   /** The folder every request names as its location. */
   readonly location: string
-  /** After a sign-in or sign-out: read the catalog again on this server, so the model menu has what changed. */
+  /**
+   * After a sign-in or sign-out: every thread server is outdated, and the catalog is read again on this server so the model
+   * menu has what changed. Rejects when the catalog could not be read; the thread servers move on regardless.
+   */
   readonly changed: (client: OpenCodeClient) => Promise<void>
   /** Opens an https page in the user's own browser, from main. */
   readonly openExternal: (url: string) => Promise<void>
@@ -115,9 +119,11 @@ export class OpenCodeSignIn {
     const counted = shown.map(model => model.providerID === 'opencode' ? 'opencode' : integrationOf.get(model.providerID) ?? model.providerID)
     return { status: 'ok', ...modelSourcesOf(list, counted) }
   }
-  private async afterChange(server: SignInServer): Promise<ModelSources> {
-    await this.options.changed(server.client).catch(() => undefined)
-    return this.read(server).catch((): ModelSources => ({ status: 'refused', message: SIGN_IN_WORDS.notRunning }))
+  /** The answer once the sign-ins changed: the sources as they are now, and words for a model list that was not read again. */
+  private async afterChange(server: SignInServer): Promise<{ status: 'ok'; sources: ModelSources; warning?: string }> {
+    const read = await this.options.changed(server.client).then(() => true, () => false)
+    const sources = await this.read(server).catch((): ModelSources => ({ status: 'refused', message: SIGN_IN_WORDS.notRunning }))
+    return { status: 'ok', sources, ...(read ? {} : { warning: SIGN_IN_WORDS.catalogUnread }) }
   }
   /** The integration a request names, from the last list read, reading again when it is not there. */
   private async integration(server: SignInServer, sourceId: string): Promise<Integration | undefined> {
@@ -143,13 +149,26 @@ export class OpenCodeSignIn {
         await server.client.request('POST', `/api/integration/${encodeURIComponent(sourceId)}/connect/key`,
           { query: this.location, body: { key: trimmed, ...(Object.keys(merged).length ? { answer: merged } : {}) } })
       } catch (error) {
-        this.log('opencode-sign-in-failed')
-        if (error instanceof OpenCodeRejected && error.status === 404) return { status: 'refused', message: SIGN_IN_WORDS.unknownSource }
-        if (error instanceof OpenCodeRejected && error.status === 400 && answer && Object.keys(answer).length) return { status: 'refused', message: SIGN_IN_WORDS.formRefused(integration.name) }
-        return { status: 'refused', message: error instanceof OpenCodeRejected && error.status < 500 ? SIGN_IN_WORDS.keyRefused(integration.name) : SIGN_IN_WORDS.notRunning }
+        if (error instanceof OpenCodeRejected && error.status < 500) {
+          this.log('opencode-sign-in-failed')
+          if (error.status === 404) return { status: 'refused', message: SIGN_IN_WORDS.unknownSource }
+          if (error.status === 400 && answer && Object.keys(answer).length) return { status: 'refused', message: SIGN_IN_WORDS.formRefused(integration.name) }
+          return { status: 'refused', message: SIGN_IN_WORDS.keyRefused(integration.name) }
+        }
+        if (!(error instanceof OpenCodeUncertain || error instanceof OpenCodeRejected)) throw error
+        // No answer, or a server error: OpenCode may have saved the key all the same, so its sign-ins are read again.
+        let saved: boolean
+        try {
+          const now = await this.read(server)
+          saved = now.sources.some(source => source.id === sourceId && source.signedIn !== undefined)
+        } catch {
+          this.log('opencode-sign-in-failed')
+          return { status: 'refused', message: SIGN_IN_WORDS.keyUnknown(integration.name) }
+        }
+        if (!saved) { this.log('opencode-sign-in-failed'); return { status: 'refused', message: SIGN_IN_WORDS.keyNotSaved(integration.name) } }
       }
       this.log('opencode-sign-in-key')
-      return { status: 'ok', sources: await this.afterChange(server) }
+      return await this.afterChange(server)
     }, message => ({ status: 'refused', message }))
   }
 
@@ -167,7 +186,7 @@ export class OpenCodeSignIn {
         return { status: 'refused', message: error instanceof OpenCodeRejected && error.status === 400 ? SIGN_IN_WORDS.formRefused(integration.name) : SIGN_IN_WORDS.failed(integration.name) }
       }
       this.log('opencode-sign-in-complete')
-      return { status: 'ok', sources: await this.afterChange(server) }
+      return await this.afterChange(server)
     }, message => ({ status: 'refused', message }))
   }
 
@@ -196,8 +215,7 @@ export class OpenCodeSignIn {
       const expiresAt = attempt.expiresAt !== undefined && attempt.expiresAt > now ? attempt.expiresAt + 60_000 : now + UNTIMED_ATTEMPT_MS
       this.attempts.set(attempt.id, { sourceId, name: integration.name, url: reply.url, server, expiresAt })
       this.log('opencode-sign-in-browser-started')
-      // The page opens from main, in the user's own browser. A browser that does not open leaves Open the page again.
-      await this.options.openExternal(reply.url).catch(() => undefined)
+      // The page opens when the dialog asks for it with `reopenPage`, so a dialog closed while this started opens none.
       return { status: 'waiting', attempt }
     }, message => ({ status: 'refused', message }))
   }
@@ -234,18 +252,23 @@ export class OpenCodeSignIn {
       }
       if (status === 'pending') return { status: 'pending' }
       this.attempts.delete(attemptId)
-      if (status === 'complete') { this.log('opencode-sign-in-complete'); return { status: 'ok', sources: await this.afterChange(server) } }
+      if (status === 'complete') { this.log('opencode-sign-in-complete'); return await this.afterChange(server) }
       if (status === 'expired') { this.log('opencode-sign-in-expired'); return { status: 'expired', message: SIGN_IN_WORDS.expired(attempt.name) } }
       this.log('opencode-sign-in-failed')
       return { status: 'refused', message: SIGN_IN_WORDS.failed(attempt.name) }
     }, message => ({ status: 'refused', message }))
   }
-  /** Opens a waiting sign-in's page again, the address OpenCode gave, from main. */
+  /**
+   * Opens a waiting sign-in's page in the user's browser, from main: first once the dialog has the sign-in, then each time
+   * it asks again. A browser that does not open answers with the page's address, to open by hand; the sign-in waits on.
+   */
   async reopenPage(request: unknown): Promise<SignInDone> {
     const { attemptId } = signInAttemptRequestSchema.parse(request)
     const attempt = this.attempts.get(attemptId)
     if (!attempt) return { status: 'refused', message: SIGN_IN_WORDS.notRunning }
-    try { await this.options.openExternal(attempt.url); return { status: 'ok' } } catch { return { status: 'refused', message: SIGN_IN_WORDS.pageNotOpened } }
+    try { await this.options.openExternal(attempt.url); return { status: 'ok' } } catch {
+      return { status: 'not-opened', message: SIGN_IN_WORDS.pageNotOpened, address: attempt.url }
+    }
   }
   async cancel(request: unknown): Promise<SignInDone> {
     const { attemptId } = signInAttemptRequestSchema.parse(request)
@@ -275,7 +298,7 @@ export class OpenCodeSignIn {
         return { status: 'refused', message: SIGN_IN_WORDS.signOutFailed(integration.name) }
       }
       this.log('opencode-sign-out')
-      return { status: 'ok', sources: await this.afterChange(server) }
+      return await this.afterChange(server)
     }, message => ({ status: 'refused', message }))
   }
 }
