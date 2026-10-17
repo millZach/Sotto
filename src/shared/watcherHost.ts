@@ -45,7 +45,7 @@ export type WatcherRoomThreadInput = Pick<WatcherRoomState['watchedThreads'][num
 
 export interface WatcherRemoteHosts {
   /** `name` is the machine's name as this computer saved it; `facts` says whether the host lists `host-facts` (#1031). */
-  hosts(): { hostId: string; name?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
+  hosts(): { hostId: string; name?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; muse?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
   snapshot(hostId: string): AgentHostSnapshot | undefined

@@ -13,7 +13,7 @@ const WEEK_MS = 7 * DAY_MS
 export type ThreadRowState = 'needs' | 'working' | 'done'
 
 /** The badge tint for a provider; `other` is the neutral badge for a provider Sotto has no colour for. */
-export type ProviderKey = 'claude' | 'codex' | 'grok' | 'devin' | 'muse' | 'other'
+export type ProviderKey = ProviderId | 'other'
 
 export interface ThreadLastMessage {
   readonly who: string
@@ -86,7 +86,8 @@ export function providerKey(provider: string): ProviderKey {
 
 /** Sotto's badge glyph for an agent provider; an unknown provider gets its initial. */
 export function providerGlyph(provider: string): string {
-  const glyph = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', muse: 'M', other: provider.trim().charAt(0).toLocaleUpperCase() }[providerKey(provider)]
+  const glyphs: Readonly<Record<ProviderKey, string>> = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', muse: 'M', other: provider.trim().charAt(0).toLocaleUpperCase() }
+  const glyph = glyphs[providerKey(provider)]
   return glyph === '' ? '?' : glyph
 }
 

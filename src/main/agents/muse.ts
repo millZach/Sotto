@@ -31,7 +31,10 @@ import { scopedThreadServers, TOOL_WAIT_HEADER, type ScopedThreadTools, type Thr
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
-import { WatcherProfileRefusal } from './watcherProfile'
+import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
+import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
+import { watcherRequestLine } from './watcherRequestNote'
 
 const digest = (text: string): string => createHash('sha256').update(text).digest('hex')
 const THREAD_PROCESS_LOST = 'Muse stopped before this reply finished, so it may be cut short. Send a message to carry on.'
@@ -90,9 +93,12 @@ const museSessionSchema = z.looseObject({
   sessionId: z.string().min(1), status: z.string().default('idle'), modelId: z.string().nullable().default(null),
   providerId: z.string().nullable().default(null), activeTurnId: z.string().nullable().default(null),
   approvalMode: z.looseObject({ mode: z.string() }).optional(),
+  /** The session's permission profile as Muse committed it, where the client says (ADR-0079): who reviews its approvals. */
+  permissionState: z.looseObject({ reviewerAuthority: z.string().optional() }).optional(),
 })
 type MuseSession = z.infer<typeof museSessionSchema>
 const sessionStartSchema = z.looseObject({ session: museSessionSchema, viewCursor: z.string().default('') })
+const sessionReadSchema = z.looseObject({ session: museSessionSchema })
 const historySchema = z.looseObject({
   mode: z.string(), items: z.array(museItemSchema).nullable().default(null),
   snapshot: z.looseObject({ state: z.looseObject({ items: z.array(museItemSchema).default([]) }) }).nullable().default(null),
@@ -133,28 +139,65 @@ export function museServeArguments(): string[] { return ['serve'] }
 const SESSION_MCP = 'sessionMcp'
 /**
  * How long Muse waits for one tool call, in seconds. It has no per-session setting and `muse serve -c` takes no key for
- * it, so each of Sotto's servers is told instead, and a tool that waits for the user returns inside it (ADR-0079).
+ * it, so each of Sotto's servers is told instead, and a tool that waits returns inside it (ADR-0079): the browser for the
+ * user's answer, Watcher's tools for a start or send still under way.
  */
 const MUSE_TOOL_WAIT_SECONDS = 300
 /** One of Sotto's servers in MSP's form: loopback streamable HTTP with its bearer token, required for the session to run. */
-function museToolServer(server: ThreadMcpServer): Record<string, unknown> {
+function museToolServer(server: Readonly<Pick<ThreadMcpServer, 'name' | 'url'>> & { readonly headers: readonly { readonly name: string; readonly value: string }[] }, waitSeconds: number): Record<string, unknown> {
   return { transport: 'streamableHttp', url: server.url, mode: 'required',
-    headers: { ...Object.fromEntries(server.headers.map(header => [header.name, header.value])), [TOOL_WAIT_HEADER]: String(MUSE_TOOL_WAIT_SECONDS) } }
+    headers: { ...Object.fromEntries(server.headers.map(header => [header.name, header.value])), [TOOL_WAIT_HEADER]: String(waitSeconds) } }
+}
+/**
+ * The permission profile Watcher's session starts on (ADR-0079): Muse's **Ask me**, the same access as its default
+ * Auto-review with no automated reviewer, so a request Muse asks about in Watcher's session reaches the user and no model
+ * of Muse's decides it. MSP selects a profile only when a session starts; a resume keeps the one it committed.
+ */
+const MUSE_WATCHER_PROFILE = ':ask-me'
+/** Why Muse refuses a profile it does not know or cannot offer; Watcher is then refused rather than started reviewed. */
+const MUSE_PROFILE_REFUSALS: ReadonlySet<string> = new Set(['permission_profile_unknown', 'permission_profile_unavailable', 'permission_profile_ephemeral_fixed'])
+const MUSE_WATCHER_WITHOUT_TOOLS = 'This Muse cannot give Watcher its Sotto tools, so Watcher did not start. Nothing was sent. Update Muse to 1.4.7 or newer and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
+const MUSE_WATCHER_REVIEWED = 'This Muse would let its own reviewer decide Watcher’s approvals instead of you, so Watcher did not start. Nothing was sent. Update Muse and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
+const MUSE_WATCHER_UNPROVEN = 'This Muse cannot show that Watcher’s approvals stay with you, so Watcher did not start. Nothing was sent. Update Muse and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
+/**
+ * Watcher's instructions on Muse. MSP takes no system prompt or instructions from a client, so they travel as a text part
+ * ahead of each message Sotto sends Watcher, marked as Sotto's. The turn's `displayText` is the message alone, so Muse's
+ * transcript and Sotto's show only what was sent; the model reads both (ADR-0073).
+ */
+export const MUSE_WATCHER_INSTRUCTIONS = `[Sotto: Watcher's instructions. Muse takes no instructions from Sotto any other way, so they come ahead of each message Sotto sends you. They are not the user's words.]\n${WATCHER_SYSTEM_PROMPT}\n[End of Watcher's instructions. The message follows.]\n\n`
+/** The request note's line as `watcherRequestLine` writes it, at the end of a message Sotto sent Watcher. */
+const MUSE_WATCHER_NOTE = /\n\n\[Sotto Watcher request: [^\]\n]{1,500}\]$/u
+/**
+ * A message Sotto sent Watcher on Muse, as it was typed, from the wire text when Muse kept no whole display text: the
+ * instructions Sotto put ahead of it and the note after it come off (ADR-0079). Only a message beginning with the exact
+ * instructions is touched. The words are proved by the digest Sotto kept when it sent them; when Muse cut the message
+ * short there is nothing to prove them by, and only Sotto's own parts come off.
+ */
+function museWatcherTyped(text: string, typedDigest: string): string | undefined {
+  const marker = MUSE_WATCHER_INSTRUCTIONS.trimEnd()
+  if (!text.startsWith(marker)) return undefined
+  // MSP joins a turn's text parts in order; the separator it puts between them is Muse's.
+  const body = text.slice(marker.length).replace(/^\n{1,2}/u, '')
+  const note = MUSE_WATCHER_NOTE.exec(body)
+  const candidates = [body, ...(note ? [body.slice(0, note.index)] : []), text.slice(MUSE_WATCHER_INSTRUCTIONS.length)]
+  return candidates.find(candidate => digest(candidate) === typedDigest) ?? (note ? body.slice(0, note.index) : body)
 }
 
 /**
  * The one `session/start` a thread makes, the same on every try: its replay after a lost acknowledgement must match the
  * first byte for byte, or Muse refuses it (`command_id_conflict`).
  */
-function startParams(alias: Alias, tools: { config?: unknown }): Record<string, unknown> {
+function startParams(alias: Alias, tools: { config?: unknown }, watcher: boolean): Record<string, unknown> {
   return { commandId: alias.startCommandId, workspaceRoot: alias.cwd, modelId: alias.modelId,
-    ...(alias.runtimeMode ? { approvalMode: MSP_MODE[alias.runtimeMode] } : {}), ...tools }
+    ...(alias.runtimeMode ? { approvalMode: MSP_MODE[alias.runtimeMode] } : {}), ...(watcher ? { permissionProfile: MUSE_WATCHER_PROFILE } : {}), ...tools }
 }
 
 interface ThreadProcess {
   rpc: MuseRpc; ready: Promise<ThreadProcess>; clientRevision: number; turnRevision: number; closing: boolean; lost: boolean; sessionId?: string; resync?: Promise<void>
   /** Whether this host granted `sessionMcp`, so its sessions may be given Sotto's tool servers. */
   sessionMcp?: boolean
+  /** Started for Watcher's thread with its launch profile: its session gets Watcher's tools and instructions, never the browser. */
+  watcher: boolean
   /**
    * Set once this host has built the thread's session runtime, by a start or the first resume, with the names of the
    * Sotto tools it was given. Later resumes on the same host send no servers: Muse keeps the ones it was built with,
@@ -183,6 +226,8 @@ export interface MuseMspOptions {
   args?: string[]
   environment?: NodeJS.ProcessEnv
   requestTimeoutMs?: number
+  /** How long Muse waits for one tool call, in seconds; the fixture shortens Muse's 300. */
+  toolWaitSeconds?: number
   reaperSweepMs?: number
   sessionIdleMs?: number
 }
@@ -190,40 +235,78 @@ export interface MuseMspOptions {
 /** Muse owns its sign-in, tools and durable sessions. Only alias and origin metadata belongs to Sotto. */
 export class MuseMspHost implements AgentHost {
   private launchProfiles: ThreadLaunchProfiles | undefined
+  /** The last profile main gave each Watcher thread: evidence for stopping it when main no longer resolves one, never a grant. */
+  private readonly knownLaunchProfiles = new Map<string, WatcherLaunchProfile>()
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
   profileRefusalHandler(id: string) {
     const generation = this.generation, entry = this.processes.get(id)
     if (!entry) return undefined
     return (reason: string): void => {
-      if (generation === this.generation && this.processes.get(id) === entry) this.revokeProfile(id, reason)
+      if (generation === this.generation && this.processes.get(id) === entry) this.revokeProfile(id, this.knownLaunchProfiles.get(id), reason)
     }
   }
   private assertGeneration(generation: number): void {
     if (generation !== this.generation) throw new MuseUncertain('Muse connection changed before the operation could continue.')
   }
   /**
-   * Muse cannot host Watcher: MSP v1 has no way to attach Sotto's thread tools to a session, so a Watcher
-   * thread is refused before its process starts rather than started without its tools (ADR-0079).
+   * Watcher's launch profile for this thread, or undefined for every other thread (ADR-0073). A Watcher thread whose profile
+   * main can no longer verify is stopped, its tools revoked, rather than left running without them.
    */
-  private async refuseWatcher(id: string, rpc?: MuseRpc): Promise<void> {
-    const generation = this.generation, entry = this.processes.get(id)
-    const current = (): boolean => generation === this.generation && (!rpc || this.processes.get(id)?.rpc === rpc)
-    let profile: WatcherLaunchProfile | undefined
-    try { profile = await this.launchProfiles?.profileFor(id) }
-    catch (error) {
+  private async launchProfile(id: string, rpc?: MuseRpc): Promise<WatcherLaunchProfile | undefined> {
+    const generation = this.generation, resolver = this.launchProfiles, entry = this.processes.get(id)
+    const current = (): boolean => generation === this.generation && resolver === this.launchProfiles && (!rpc || this.processes.get(id)?.rpc === rpc)
+    try {
+      const profile = await resolver?.profileFor(id)
+      if (!current()) throw new MuseUncertain('Muse connection changed while checking the thread profile.')
+      if (profile) { validateWatcherProfile(profile); this.knownLaunchProfiles.set(id, profile) }
+      else if (this.knownLaunchProfiles.has(id)) throw new WatcherProfileRefusal('Watcher’s tools are no longer admitted. Its session was stopped. Reopen Watcher to recover.')
+      return profile
+    } catch (error) {
       if (!current()) throw new MuseUncertain('Muse connection changed while checking the thread profile.')
       const refusal = error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal('Watcher’s saved profile could not be verified. Its session was stopped. Reopen Watcher to recover.')
-      if (this.processes.get(id) === entry) this.revokeProfile(id, refusal.message)
+      if (this.processes.get(id) === entry) {
+        try { this.revokeProfile(id, this.knownLaunchProfiles.get(id), refusal.message) } catch { /* A broken server cleanup never keeps the process alive. */ }
+      }
       throw refusal
     }
-    if (!current()) throw new MuseUncertain('Muse connection changed while checking the thread profile.')
-    if (!profile) return
-    const reason = 'Muse cannot host Watcher yet, because Sotto cannot give its sessions Watcher’s tools. Nothing was sent. Use an ordinary thread, or host Watcher on Codex, Claude Code or Grok Build.'
-    try { profile.revoke(reason) } catch { /* The refusal still stops the process. */ }
-    this.revokeProfile(id, reason)
+  }
+  /** The profile, checked against the host already running the thread: one started without Watcher's tools is stopped. */
+  private async checkLaunchProfile(id: string): Promise<WatcherLaunchProfile | undefined> {
+    const generation = this.generation, entry = this.processes.get(id)
+    const profile = await this.launchProfile(id)
+    this.assertGeneration(generation)
+    if (profile && entry && !entry.watcher) {
+      const reason = 'This Muse host started without Watcher’s tools. Nothing was sent. Reopen Watcher.'
+      this.revokeProfile(id, profile, reason)
+      throw new WatcherProfileRefusal(reason)
+    }
+    return profile
+  }
+  /**
+   * Watcher's session must leave its approvals to the user, and Muse must show it: every session it reports for Watcher
+   * names the user as its reviewer, read back with `session/read` when the reply leaves its permission state out. A
+   * session reviewed by anyone else, or one Muse cannot show, has its host stopped before anything is sent (ADR-0079).
+   * Watcher's tools stay admitted, so the same start, replayed by its command ID, is checked again after Muse is updated.
+   */
+  private async proveReviewer(id: string, entry: ThreadProcess, session: MuseSession): Promise<void> {
+    let authority = session.permissionState?.reviewerAuthority
+    if (authority === undefined) {
+      try { authority = sessionReadSchema.parse(await entry.rpc.request('session/read', { sessionId: session.sessionId, excludeItems: true })).session.permissionState?.reviewerAuthority }
+      catch (error) { if (error instanceof MuseUncertain) throw error /* A refused or unreadable read proves nothing. */ }
+    }
+    if (authority === 'human') return
+    const reason = authority === undefined ? MUSE_WATCHER_UNPROVEN : MUSE_WATCHER_REVIEWED
+    this.revokeProfile(id, undefined, reason)
     throw new WatcherProfileRefusal(reason)
   }
-  private revokeProfile(id: string, reason: string): void {
+  /** A start Muse refused because it cannot leave Watcher's approvals to the user, said as the refusal it is. */
+  private watcherStartRefusal(id: string, error: unknown): unknown {
+    if (!(error instanceof MuseRejected) || !error.reason || !MUSE_PROFILE_REFUSALS.has(error.reason)) return error
+    this.revokeProfile(id, undefined, MUSE_WATCHER_REVIEWED)
+    return new WatcherProfileRefusal(MUSE_WATCHER_REVIEWED)
+  }
+  /** A refusal ends the thread's host and, given the profile, revokes Watcher's tools, even if closing the host would fail. */
+  private revokeProfile(id: string, profile: WatcherLaunchProfile | undefined, reason: string): void {
     const entry = this.processes.get(id)
     this.processes.delete(id); this.loaded.delete(id); this.outdated.delete(id); this.folds.delete(id); this.reaper.forget(id)
     this.requestChanges.delete(id); this.requestReads.delete(id)
@@ -232,7 +315,7 @@ export class MuseMspHost implements AgentHost {
     const thread = this.threads.get(id)
     if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason }
     if (entry) this.closeProcess(entry)
-    this.emit()
+    try { profile?.revoke(reason) } finally { this.emit() }
   }
   private browserTools: BrowserAgentTools | undefined
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
@@ -241,16 +324,24 @@ export class MuseMspHost implements AgentHost {
   /**
    * What the next `session/start` or `session/resume` on this host carries: Sotto's own tool servers for the thread
    * (the browser's, and each scoped server that answers for it, ADR-0056) the first time the host builds the session's
-   * runtime, as Claude Code, Codex and Grok Build get them. Nothing when the host did not grant `sessionMcp`, for a
+   * runtime, as Claude Code, Codex and Grok Build get them. Watcher's thread gets its own `sotto_threads` server and the
+   * scoped servers Watcher takes, never the browser (ADR-0073). Nothing when the host did not grant `sessionMcp`, for a
    * personal chat, or once the runtime is built: a cold resume needs them again, because Muse keeps none across hosts.
    */
   private async sessionTools(id: string, entry: ThreadProcess): Promise<{ params: { config?: { mcpServers: Record<string, unknown> } }; tools: ReadonlySet<string> }> {
     if (entry.tools) return { params: {}, tools: entry.tools }
     if (!entry.sessionMcp || this.aliases[id]?.kind === 'personal') return { params: {}, tools: new Set() }
     const generation = this.generation
-    const servers: { server: ThreadMcpServer; names: readonly string[] }[] = []
-    if (this.browserTools) servers.push({ server: await this.browserTools.mcpServer(id), names: this.browserTools.definitions.map(tool => tool.name) })
-    for (const { server, tools } of await scopedThreadServers(this.threadTools, id)) servers.push({ server, names: tools.definitions.map(tool => tool.name) })
+    const servers: { server: Parameters<typeof museToolServer>[0]; names: readonly string[] }[] = []
+    if (entry.watcher) {
+      const profile = await this.launchProfile(id, entry.rpc)
+      if (!profile) throw new WatcherProfileRefusal('Watcher’s tools are no longer admitted. Nothing was sent. Reopen Watcher to recover.')
+      servers.push({ server: profile.server, names: profile.toolNames })
+      for (const { server, tools } of await scopedThreadServers(watcherThreadTools(this.threadTools), id)) servers.push({ server, names: tools.definitions.map(tool => tool.name) })
+    } else {
+      if (this.browserTools) servers.push({ server: await this.browserTools.mcpServer(id), names: this.browserTools.definitions.map(tool => tool.name) })
+      for (const { server, tools } of await scopedThreadServers(this.threadTools, id)) servers.push({ server, names: tools.definitions.map(tool => tool.name) })
+    }
     this.assertGeneration(generation)
     if (!servers.length) return { params: {}, tools: new Set() }
     // Each server goes by a name only this run's thread knows, so a user's own server cannot show its tool names (ADR-0079).
@@ -258,7 +349,7 @@ export class MuseMspHost implements AgentHost {
     if (!suffix) { suffix = museServerSuffix(); this.serverSuffixes.set(id, suffix) }
     const named = servers.map(({ server, names }) => ({ server, names, name: museSessionServerName(server.name, suffix) }))
     return {
-      params: { config: { mcpServers: Object.fromEntries(named.map(({ server, name }) => [name, museToolServer(server)])) } },
+      params: { config: { mcpServers: Object.fromEntries(named.map(({ server, name }) => [name, museToolServer(server, this.options.toolWaitSeconds ?? MUSE_TOOL_WAIT_SECONDS)])) } },
       tools: new Set(named.flatMap(({ name, names }) => names.map(tool => museToolName(name, tool)))),
     }
   }
@@ -426,9 +517,10 @@ export class MuseMspHost implements AgentHost {
    * Ask a host which client it is, and for session tool servers: a client that does not know the capability simply
    * leaves it out of its grant, so asking costs nothing at the floor. Whether Sotto will drive it is `clientRefusal`'s answer.
    */
-  private async identify(rpc: MuseRpc): Promise<MuseClient> {
+  private async identify(rpc: MuseRpc, watcher = false): Promise<MuseClient> {
+    // Watcher's host also asks for the experimental surface, where a session reports who reviews its approvals (ADR-0079).
     const client = initializeSchema.parse(await rpc.request('initialize', { clientInfo: { name: 'sotto', title: 'Sotto', version: appVersion },
-      capabilities: { requestedCapabilities: [SESSION_MCP] } }))
+      capabilities: { requestedCapabilities: [SESSION_MCP], ...(watcher ? { experimentalApi: true } : {}) } }))
     rpc.notify('initialized')
     return client
   }
@@ -460,20 +552,22 @@ export class MuseMspHost implements AgentHost {
   }
   private async threadProcess(id: string): Promise<ThreadProcess> {
     const generation = this.generation
-    await this.refuseWatcher(id)
+    const profile = await this.checkLaunchProfile(id)
     this.assertGeneration(generation)
     const current = this.processes.get(id); if (current) return current.ready
     const executable = this.executable
     if (!this.state.connected || !executable) return Promise.reject(new Error('Connect Muse before managing threads.'))
     const replacement = this.processes.get(id); if (replacement) return replacement.ready
-    const entry = { clientRevision: this.clientRevision, turnRevision: 0, closing: false, lost: false } as ThreadProcess
+    const entry = { clientRevision: this.clientRevision, turnRevision: 0, closing: false, lost: false, watcher: profile !== undefined } as ThreadProcess
     entry.rpc = this.spawn(executable, () => this.processLost(id, entry))
     entry.ready = (async () => {
       try {
-        const client = await this.identify(entry.rpc)
+        const client = await this.identify(entry.rpc, entry.watcher)
         const refusal = clientRefusal(client)
         if (refusal) throw refusal
         entry.sessionMcp = client.grantedCapabilities.includes(SESSION_MCP)
+        // Watcher works only through its tools, so a host that cannot take them never starts it (ADR-0079).
+        if (entry.watcher && !entry.sessionMcp) throw new WatcherProfileRefusal(MUSE_WATCHER_WITHOUT_TOOLS)
       } catch (error) {
         if (this.processes.get(id) === entry) this.processes.delete(id)
         this.closeProcess(entry)
@@ -639,7 +733,7 @@ export class MuseMspHost implements AgentHost {
    */
   async startThreadSession(id: string, draft?: ThreadSessionDraft): Promise<void> {
     const generation = this.generation
-    await this.refuseWatcher(id)
+    await this.checkLaunchProfile(id)
     this.assertGeneration(generation)
     if (!this.state.connected) return
     if (this.aliases[id]) { await this.open(id); return }
@@ -726,17 +820,18 @@ export class MuseMspHost implements AgentHost {
       if (!alias.museSessionId && alias.startCommandId) {
         const tools = await this.sessionTools(id, entry)
         this.assertGeneration(generation)
-        const start = () => entry.rpc.request('session/start', startParams(alias, tools.params))
+        const start = () => entry.rpc.request('session/start', startParams(alias, tools.params, entry.watcher))
         let reply: unknown
         try { reply = await start() } catch (error) {
-          if (!(error instanceof MuseRejected && error.reason === 'command_id_conflict')) throw error
+          if (!(error instanceof MuseRejected && error.reason === 'command_id_conflict')) throw entry.watcher ? this.watcherStartRefusal(id, error) : error
           // The first start reached Muse carrying tool servers this run cannot repeat: a restart gives them a new
           // address and token, and Muse refuses a changed replay. Sotto never learned that session, so no turn ran in
           // it; a fresh start loses nothing and leaves an empty session behind in Muse.
           alias.startCommandId = museCommandId(); await this.persist()
-          reply = await start()
+          try { reply = await start() } catch (retry) { throw entry.watcher ? this.watcherStartRefusal(id, retry) : retry }
         }
         const started = sessionStartSchema.parse(reply)
+        if (entry.watcher) await this.proveReviewer(id, entry, started.session)
         this.builtWith(id, entry, tools.tools)
         alias.museSessionId = started.session.sessionId
         entry.sessionId = alias.museSessionId
@@ -751,6 +846,7 @@ export class MuseMspHost implements AgentHost {
       const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', {
         commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false, ...tools.params,
       }))
+      if (entry.watcher) await this.proveReviewer(id, entry, resumed.session)
       this.builtWith(id, entry, tools.tools)
       if (this.processes.get(id) !== entry) return
       this.assertGeneration(generation)
@@ -897,8 +993,12 @@ export class MuseMspHost implements AgentHost {
         const active = this.activeTurns.get(id)
         if (active?.turnId === merged.turnId) active.messageId = messageId
       }
+      // A message Sotto sent with a display text is shown as that: Watcher's instructions and note are the model's alone.
+      // When Muse kept none whole, the words come from the wire text with Sotto's own parts off.
+      const text = !origin ? merged.text : merged.displayText !== undefined && !merged.truncated ? merged.displayText
+        : museWatcherTyped(merged.text ?? '', origin.digest) ?? merged.text
       const message: AgentMessage = {
-        id: messageId, role: 'user', text: merged.text ?? '',
+        id: messageId, role: 'user', text: text ?? '',
         createdAt: origin?.createdAt ?? (merged.recordedAt ?? new Date().toISOString()),
         ...(origin ? { commandId: origin.commandId } : {}),
         ...(origin?.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}),
@@ -1056,7 +1156,7 @@ export class MuseMspHost implements AgentHost {
         case 'approval/requested': {
           const parsed = museApprovalSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
-          await this.refuseWatcher(owner, rpc)
+          if (entry.watcher) await this.launchProfile(owner, rpc)
           if (!current()) return
           this.present(museApprovalPending(owner, parsed), entry)
           return
@@ -1087,7 +1187,7 @@ export class MuseMspHost implements AgentHost {
         case 'userInput/requested': {
           const parsed = museUserInputSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
-          await this.refuseWatcher(owner, rpc)
+          if (entry.watcher) await this.launchProfile(owner, rpc)
           if (!current()) return
           this.showRequest(museUserInputPending(owner, parsed), entry)
           return
@@ -1190,8 +1290,9 @@ export class MuseMspHost implements AgentHost {
   executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> { return this.executeNative(command, guard) }
   private async executeNative(command: AgentHostCommand, watcherGuard?: () => void): Promise<AgentHostResult> {
     const generation = this.generation
-    if ('threadId' in command) await this.refuseWatcher(command.threadId)
+    const watcherProfile = 'threadId' in command ? await this.checkLaunchProfile(command.threadId) : undefined
     this.assertGeneration(generation)
+    if (watcherProfile) assertWatcherPermission(command)
     if (!this.state.connected) throw new Error('Connect Muse before managing threads.')
     let settled = false
     const historyFromEvents = command.type === 'configure-thread' && command.historyFromEvents === true
@@ -1220,7 +1321,11 @@ export class MuseMspHost implements AgentHost {
           const tools = await this.sessionTools(command.threadId, entry)
           this.assertGeneration(generation)
           watcherGuard?.()
-          const started = sessionStartSchema.parse(await entry.rpc.request('session/start', startParams(alias, tools.params)))
+          let reply: unknown
+          try { reply = await entry.rpc.request('session/start', startParams(alias, tools.params, entry.watcher)) }
+          catch (error) { throw entry.watcher ? this.watcherStartRefusal(command.threadId, error) : error }
+          const started = sessionStartSchema.parse(reply)
+          if (entry.watcher) await this.proveReviewer(command.threadId, entry, started.session)
           this.builtWith(command.threadId, entry, tools.tools)
           alias.museSessionId = started.session.sessionId
           entry.sessionId = alias.museSessionId
@@ -1229,6 +1334,7 @@ export class MuseMspHost implements AgentHost {
           if (alias.nativeModelId !== alias.modelId) {
             await entry.rpc.request('session/setModel', { commandId: museCommandId(), sessionId: alias.museSessionId, model: { modelId: alias.modelId } })
             const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', { commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: true }))
+            if (entry.watcher) await this.proveReviewer(command.threadId, entry, resumed.session)
             this.confirmSession(command.threadId, alias, resumed.session)
             if (alias.nativeModelId !== alias.modelId) throw new MuseUnreadable('Muse did not confirm the requested model.')
             await this.persist()
@@ -1275,8 +1381,17 @@ export class MuseMspHost implements AgentHost {
             if (this.activePrompts.has(command.threadId) || this.activeTurns.has(command.threadId) || thread.status === 'running' || thread.requests.length) {
               throw new Error('Wait for this Muse thread to finish and answer its pending requests before changing its settings.')
             }
+            // A change Watcher's room or a phone asked for is checked before anything changes, and again at each write: a
+            // phone that let go of Watcher meanwhile changes nothing (ADR-0073).
+            watcherGuard?.()
             if (mode !== undefined && mode !== (alias.runtimeMode ?? 'approval-required')) {
+              const previousPending = alias.pendingRuntimeMode, previousConfirmed = alias.settingsConfirmed, previousStatus = thread.status
               alias.pendingRuntimeMode = mode; alias.settingsConfirmed = false; thread.status = 'error'; await this.persist(); this.emit()
+              try { watcherGuard?.() } catch (error) {
+                if (previousPending) alias.pendingRuntimeMode = previousPending; else delete alias.pendingRuntimeMode
+                alias.settingsConfirmed = previousConfirmed; thread.status = previousStatus; await this.persist(); this.emit()
+                throw error
+              }
               try {
                 await entry.rpc.request('session/setApprovalMode', { commandId: museCommandId(), sessionId: alias.museSessionId, mode: MSP_MODE[mode] })
                 alias.runtimeMode = mode; delete alias.pendingRuntimeMode
@@ -1293,9 +1408,11 @@ export class MuseMspHost implements AgentHost {
               }
             }
             if (modelId !== alias.modelId) {
+              watcherGuard?.()
               alias.settingsConfirmed = false; await this.persist()
               await entry.rpc.request('session/setModel', { commandId: museCommandId(), sessionId: alias.museSessionId, model: { modelId } })
               const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', { commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: true }))
+              if (entry.watcher) await this.proveReviewer(command.threadId, entry, resumed.session)
               if (resumed.session.modelId !== modelId) throw new MuseUnreadable('Muse did not confirm the requested model.')
               alias.modelId = modelId; alias.nativeModelId = modelId
               thread.modelId = modelId
@@ -1329,7 +1446,14 @@ export class MuseMspHost implements AgentHost {
           if (command.type === 'steer' && !active) throw new Error('There is no running turn to steer. Queue a follow-up instead.')
           if (thread.requests.length) throw new Error('Answer the pending Muse request before sending another prompt.')
           verifyFileMentions(command.text, command.files)
-          const parts: Record<string, unknown>[] = [{ type: 'text', text: command.text }]
+          // Watcher's instructions go ahead of each message to it, and its request note after the words as Grok's does, the
+          // two channels MSP offers; the turn's display text is the message alone (ADR-0073). A wake-up's news for Watcher
+          // goes the same way as the note.
+          const watcherNote = command.type === 'send' ? command.watcherRequestNote ?? command.watcherNews : undefined
+          const note = watcherProfile && watcherNote ? watcherRequestLine(watcherNote) : ''
+          const parts: Record<string, unknown>[] = [...(watcherProfile && command.type === 'send' ? [{ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS }] : []),
+            { type: 'text', text: command.text + note }]
+          const display = watcherProfile && command.type === 'send' ? { displayText: command.text } : {}
           for (const attachment of attachments) {
             const bytes = await attachment.read()
             parts.push({
@@ -1370,7 +1494,7 @@ export class MuseMspHost implements AgentHost {
             const effort = alias.reasoningEffort && MUSE_EFFORTS.includes(alias.reasoningEffort) ? { reasoningEffort: alias.reasoningEffort } : {}
             const ack = command.type === 'steer'
               ? await entry.rpc.request('turn/steer', { commandId: origin.nativeCommandId, sessionId: alias.museSessionId, expectedTurnId: active!.turnId, input: parts, ...effort })
-              : await entry.rpc.request('turn/start', { commandId: origin.nativeCommandId, sessionId: alias.museSessionId, input: parts, ...effort })
+              : await entry.rpc.request('turn/start', { commandId: origin.nativeCommandId, sessionId: alias.museSessionId, input: parts, ...display, ...effort })
             const started = turnStartSchema.parse(ack)
             if (command.type === 'send') this.activeTurns.set(command.threadId, { turnId: started.turnId, messageId: command.messageId })
             thread.status = 'running'
@@ -1394,6 +1518,7 @@ export class MuseMspHost implements AgentHost {
           await this.open(command.threadId); this.assertGeneration(generation)
           const pending = this.pending.get(command.requestId)
           if (!pending || pending.threadId !== command.threadId) throw new Error('That Muse request is no longer pending.')
+          if (watcherProfile) assertWatcherPermissionChoice(pending.request, command.permissionChoice)
           if (pending.answering) return { accepted: false, uncertain: true }
           const entry = this.processes.get(command.threadId)
           if (!entry || pending.rpc !== entry.rpc || !alias.museSessionId) return { accepted: false, uncertain: true }
@@ -1485,6 +1610,7 @@ export class MuseMspHost implements AgentHost {
       commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false,
     }))
     if (generation !== this.generation || this.processes.get(id) !== entry) return
+    if (entry.watcher) await this.proveReviewer(id, entry, resumed.session)
     const items = resumed.history.items ?? resumed.history.snapshot?.state.items
     if (!items) throw new MuseUnreadable('Muse did not serve this thread’s history.')
     for (const item of items) this.foldItem(id, item)

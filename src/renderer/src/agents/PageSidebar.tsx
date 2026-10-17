@@ -51,10 +51,12 @@ export function PageSidebar({ now: fixedNow }: {
     void command({ type: 'select-thread', threadId })
     navigate?.('threads')
   }, [command, navigate])
+  // The new thread opens in Threads mode, even when the page was last left in Terminal mode, so it is not made unseen.
   const startNewThread = useCallback((projectId?: string): void => {
     setNewThreadIntent({ projectId })
+    setMode('threads')
     navigate?.('threads')
-  }, [navigate])
+  }, [navigate, setMode])
   const onMode = useCallback((next: SidebarMode): void => {
     setMode(next)
     if (next === 'terminals') navigate?.('threads')

@@ -9,6 +9,7 @@ import { SottoMark } from '../components/SottoMark'
 import { PageWindowControls } from '../components/WindowControls'
 import { claimRoomFocus } from '../components/AppShell'
 import { useOptionalApp } from '../state/AppContext'
+import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from '../agents/AgentContext'
 import { EffortPicker } from '../agents/EffortPicker'
 import { ModelPicker } from '../agents/ModelPicker'
@@ -153,13 +154,15 @@ function WatcherHeader({ room, limit, count, tab, tabIds, listOpen, listButton, 
 
 /**
  * The first time: the room as it will be, with Watcher's composer ready (Zach's pick on October 11, 2026). The user
- * picks one of their own Codex, Claude Code or Grok Build models in the composer and sends what they want done first;
+ * picks one of their own Codex, Claude Code, Grok Build or Muse models in the composer and sends what they want done first;
  * that send asks main to create Watcher, selecting nothing anywhere, and the message then goes to it as its first. A
  * refusal is said in main's own words and the message stays in the composer. What it holds is the window's
  * (`firstMessage`), so leaving the room and coming back finds it as it was, starting included.
  */
 function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readonly room: WatcherRoom }): ReactNode {
   const app = useOptionalApp()
+  // Muse is named only where its own gate shows it (ADR-0072); its models are listed only then too.
+  const providers = useOwlFeature('muse') ? 'Codex, Claude Code, Grok Build or Muse' : 'Codex, Claude Code or Grok Build'
   const models = useMemo(() => state.host.models.filter(model => model.ready !== false && watcherProviderOf(model) !== null), [state.host.models])
   const { text, modelId, effort, phase, error } = useFirstMessage()
   const model = models.find(item => item.id === modelId) ?? models[0]
@@ -190,9 +193,9 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
           <WatcherOwl size={28} className="watcher-first__owl" />
           <h2>Start Watcher</h2>
           <p>Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work.</p>
-          <p>It runs on your own Codex, Claude Code or Grok Build account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions.</p>
+          <p>It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions.</p>
           {model === undefined ? <>
-            <p className="watcher-first__missing">Connect Codex, Claude Code or Grok Build in Settings, under Providers, to start Watcher.</p>
+            <p className="watcher-first__missing">Connect {providers} in Settings, under Providers, to start Watcher.</p>
             {app ? <div className="thread-workspace__empty-actions"><Button variant="secondary" onClick={() => app.actions.navigate('settings')}>Open Settings</Button></div> : null}
           </> : <p>Pick its model and what it may do without asking below, then send what you want done first. That message starts it.</p>}
         </div>
