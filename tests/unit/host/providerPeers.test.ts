@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import { agentStateSchema, defaultAgentConfiguration, EMPTY_AGENT_HOST, publicProviderEntityId, type AgentState, type AgentThreadDetail } from '../../../src/shared/agents'
 import { providersUnknownTo, PROVIDER_HOST_FEATURES } from '../../../src/shared/hostProtocol'
-import { deltaWithoutProviders, detailWithoutProviders, readWithoutProviders, stateWithoutProviders } from '../../../src/host/providerPeers'
+import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, readWithoutProviders, stateWithoutProviders, type ProviderScope } from '../../../src/host/providerPeers'
+import { OPENCODE_EVERYWHERE, openCodeEverywhere, openCodeOnlyInLinks } from '../../fixtures/openCodeEverywhere'
 
 /**
  * What a host sends a desktop or phone from before OpenCode joined Sotto (#1107): such a client reads provider IDs against a
@@ -87,7 +88,65 @@ describe('a client that does not know OpenCode', () => {
   it('is sent no Watcher row or worker of OpenCode in a read', () => {
     const read = { status: 'ok', result: { threads: [{ provider: 'codex', title: 'A' }, { provider: 'opencode', title: 'B' }],
       projects: [{ title: 'Work', workers: [{ provider: 'opencode', modelId: zen }, { provider: 'claude', modelId: 'claude:opus' }] }] } }
-    expect(readWithoutProviders(read, providersUnknownTo(undefined))).toEqual({ status: 'ok', result: { threads: [{ provider: 'codex', title: 'A' }],
+    expect(readWithoutProviders(read, scope)).toEqual({ status: 'ok', result: { threads: [{ provider: 'codex', title: 'A' }],
       projects: [{ title: 'Work', workers: [{ provider: 'claude', modelId: 'claude:opus' }] }] } })
+  })
+
+  it('is sent no Watcher row that names an OpenCode thread or project by its target alone', () => {
+    const { hostId, opencodeThread, codexThread, opencodeProject, codexProject } = OPENCODE_EVERYWHERE
+    const read = { status: 'ok', projects: [{ target: { hostId, projectId: opencodeProject }, title: 'Work', workers: [] }, { target: { hostId, projectId: codexProject }, title: 'Work', workers: [] }],
+      rows: [{ target: { hostId, threadId: codexThread }, waitsOn: [{ id: 'q', kind: 'question', label: 'Which?', openTarget: { hostId, threadId: opencodeThread } }] }],
+      operations: [{ id: 'a', target: { hostId, threadId: opencodeThread } }, { id: 'b', target: { hostId, threadId: codexThread } }],
+      evidence: [{ id: 'e', target: { hostId, threadId: opencodeThread } }], terminals: [{ id: 't', projectId: opencodeProject }] }
+    const view = readWithoutProviders(read, scope)
+    expect(JSON.stringify(view)).not.toContain('opencode')
+    expect(view).toEqual({ status: 'ok', projects: [{ target: { hostId, projectId: codexProject }, title: 'Work', workers: [] }],
+      rows: [{ target: { hostId, threadId: codexThread }, waitsOn: [] }], operations: [{ id: 'b', target: { hostId, threadId: codexThread } }], evidence: [], terminals: [] })
+  })
+})
+
+/** How the host tells an OpenCode thread or project apart for a peer that does not know OpenCode, as the socket server asks it. */
+const scope: ProviderScope = { providers: providersUnknownTo(undefined), thread: id => id.startsWith('opencode'), project: id => id === OPENCODE_EVERYWHERE.opencodeProject }
+
+describe('a whole shell with OpenCode in every field', () => {
+  const at = '2026-10-17T00:00:00.000Z'
+  it('reaches a client that does not know OpenCode with none of it, and every other part as the host holds it', () => {
+    const state = openCodeEverywhere()
+    const { codexThread } = OPENCODE_EVERYWHERE
+    const view = stateWithoutProviders(state, providersUnknownTo(undefined))
+    expect(JSON.stringify(view).toLowerCase()).not.toContain('opencode')
+    expect(agentStateSchema.safeParse(view).success).toBe(true)
+    // The Codex thread keeps its own links and words, and loses only what names OpenCode.
+    const codex = view.host.threads.find(item => item.id === codexThread)!
+    expect(codex.continuedIn).toEqual([{ threadId: 'claude-thread', provider: 'claude', at }])
+    expect([codex.continuedFrom, codex.delegatedBy, codex.startedFrom, codex.messages[0]!.handover]).toEqual([undefined, undefined, undefined, undefined])
+    expect(codex.messages[0]!.text).toBe('Carry on')
+    for (const list of [view.skillCatalogs, view.threadDrafts, view.threadDraftPersistence, view.deliveries, view.followups, view.followupReceipts,
+      view.deliveredDrafts, view.obsoleteDrafts, view.unconfirmedSettings]) expect(list!.map(item => item.threadId)).toEqual([codexThread])
+    expect(view.busyThreadIds).toEqual([codexThread])
+    expect([view.activeThreadId, view.activeProjectId, view.draftThreadId]).toEqual([null, null, null])
+    expect(view.host.clientHosts?.[0]?.agentModelId).toBeUndefined()
+    // The host's own state is never edited.
+    expect(JSON.stringify(state)).toContain('"provider":"opencode"')
+  })
+
+  it('is scrubbed when only a Codex thread’s links, a handover or a skill catalog name OpenCode', () => {
+    const state = openCodeOnlyInLinks()
+    const view = stateWithoutProviders(state, providersUnknownTo(undefined))
+    expect(JSON.stringify(state).toLowerCase()).toContain('opencode')
+    expect(JSON.stringify(view).toLowerCase()).not.toContain('opencode')
+    expect(agentStateSchema.safeParse(view).success).toBe(true)
+  })
+
+  it('sends an event page with no handover from an OpenCode thread, keeping the message itself', () => {
+    const counts = { total: 1, carried: 1, tooLong: 0, notCarried: 0, images: 0, files: 0, visuals: 0, toolRecords: 0, historyKept: true, answered: false }
+    const message = { id: 'first', role: 'user' as const, text: 'Carry on', createdAt: at, handover: { text: 'From before', provider: 'opencode' as const, counts } }
+    const page = [{ seq: 1, threadId: 'codex-thread', event: { kind: 'message-added' as const, at, message } },
+      { seq: 2, threadId: 'codex-thread', event: { kind: 'message-replaced' as const, at, message: { ...message, text: 'Carry on, please' } } },
+      { seq: 3, threadId: 'codex-thread', event: { kind: 'message-text-appended' as const, at, messageId: 'first', appendText: '!' } }]
+    const view = eventsWithoutProviders(page, providersUnknownTo(undefined))
+    expect(JSON.stringify(view)).not.toContain('opencode')
+    expect(view.map(row => row.seq)).toEqual([1, 2, 3])
+    expect(eventsWithoutProviders(page, providersUnknownTo(['provider-opencode']))).toBe(page)
   })
 })

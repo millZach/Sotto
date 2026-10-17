@@ -819,6 +819,10 @@ export class AgentControl {
     const thread = this.state.host.threads.find(item => item.id === threadId)
     return thread ? threadProviderOf(thread) : undefined
   }
+  /** One project's provider as this coordinator holds it, or as its scoped ID names it, read without copying any state (#1107). */
+  projectProvider(projectId: string): ProviderId | undefined {
+    return this.state.host.projects.find(item => item.id === projectId)?.providerId ?? parsePublicProviderEntityId(projectId)?.provider
+  }
   /**
    * The whole state, every loaded thread's history included, with attachment preview markers placed.
    * It copies every history and walks every message, so it is for a caller that reads histories;
