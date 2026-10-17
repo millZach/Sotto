@@ -256,3 +256,24 @@ it('moves the sign-in server to a new client at once when nothing needs it, and 
     expect(await servedBy()).not.toBe(holding)
   } finally { await f.cleanup() }
 })
+
+it('never lets a catalog read that answers late replace the newer client’s catalog', { timeout: 60_000 }, async () => {
+  const f = await opencodeFixture(undefined, undefined, {}, { openExternal: async () => undefined, signInIdleMs: 60_000 })
+  try {
+    await f.host.connect()
+    const signIn = f.host.signIn
+    expect((await signIn.sources()).status).toBe('ok')
+    // The newer client lists a model the older one does not, and the sign-in server, still on the older one, reads its
+    // model list slowly after a sign-in.
+    const newer = { id: 'newer-model', modelID: 'newer-model', providerID: 'opencode', name: 'Newer Model', capabilities: { tools: true, input: ['text'], output: ['text'] },
+      variants: [], enabled: true, status: 'active', limit: { context: 200000, output: 32000 } }
+    await f.script({ version: '2.0.40', modelsByVersion: { '2.0.40': [newer] }, delay: { 'model.list': 2_000 } })
+    const listed = (await f.driver.requests()).filter(record => record.method === 'model.list').length
+    const signing = signIn.signInWithKey({ sourceId: 'anthropic', key: KEY })
+    await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'model.list').length).toBeGreaterThan(listed)
+    await f.host.clientUpdated!()
+    expect((await signing).status).toBe('ok')
+    await expect.poll(async () => (await f.host.snapshot()).version).toContain('2.0.40')
+    expect((await f.host.snapshot()).models.map(model => model.id)).toContain('opencode/newer-model')
+  } finally { await f.cleanup() }
+})

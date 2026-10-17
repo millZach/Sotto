@@ -605,11 +605,24 @@ export class OpenCodeHost implements AgentHost {
     const generation = this.generation
     this.renew()
     this.emit()
-    const catalog = await this.readCatalog(client)
-    if (generation !== this.generation || !this.state.connected) return
-    this.applyCatalog(this.state.version, catalog.models, catalog.providers, catalog.fallback)
-    this.emit()
+    const applied = await this.inTurn(async () => {
+      const catalog = await this.readCatalog(client)
+      if (generation !== this.generation || !this.state.connected) return false
+      this.applyCatalog(this.state.version, catalog.models, catalog.providers, catalog.fallback)
+      return true
+    })
+    if (applied) this.emit()
   }
+  /**
+   * Catalog reads after a sign-in or an update take turns, so each reads once the one before it has been applied, and
+   * one that answers late never replaces what a newer client listed.
+   */
+  private inTurn<T>(work: () => Promise<T>): Promise<T> {
+    const turn = this.catalogTurns.then(work, work)
+    this.catalogTurns = turn.catch(() => undefined)
+    return turn
+  }
+  private catalogTurns: Promise<unknown> = Promise.resolve()
   /**
    * A new client is on disk (ADR-0042, ADR-0038): it is found again and checked on a server of its own, the catalog is read
    * from it, and every thread server, and the sign-in server, moves to it as it goes idle. Working threads finish on the old one.
@@ -630,9 +643,14 @@ export class OpenCodeHost implements AgentHost {
     try {
       // A disconnect ends its requests with it, as it does the connect check's.
       started = await this.startServer(this.folders.data, this.probeClosed.signal)
-      const catalog = await this.readCatalog(started.client)
-      if (generation !== this.generation || !this.state.connected) return
-      this.applyCatalog(started.version, catalog.models, catalog.providers, catalog.fallback)
+      const client = started.client, version = started.version
+      const applied = await this.inTurn(async () => {
+        const catalog = await this.readCatalog(client)
+        if (generation !== this.generation || !this.state.connected) return false
+        this.applyCatalog(version, catalog.models, catalog.providers, catalog.fallback)
+        return true
+      })
+      if (!applied) return
     } catch (error) {
       if (generation !== this.generation || !this.state.connected) return
       this.executable = previous

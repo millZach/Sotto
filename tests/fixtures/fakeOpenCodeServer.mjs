@@ -7,7 +7,8 @@ import { join } from 'node:path'
 import { URL } from 'node:url'
 // A scripted OpenCode 2 server (`opencode serve`), in the shape Sotto's OpenCode adapter speaks: the HTTP routes and the
 // server-sent events captured from OpenCode 2.0.31 (.zstack/opencode-provider/v2-captures, not committed). Files in the
-// root steer it, as with the other fakes: `script.json` (version, infoVersion, models, providers, delay by operation,
+// root steer it, as with the other fakes: `script.json` (version, infoVersion, models, modelsByVersion (the models a
+// process of that version lists, as a newer client's catalog may differ), providers, delay by operation,
 // refuse by operation (the HTTP status the next such request is refused with, once, or `[status, times]` in a row),
 // loseAnswer by operation (the next such request is done and its connection then cut, so its answer never arrives),
 // migrationMs, unavailable, printPassword, pageSize, eventStream: 'refuse' to answer the event stream with an error
@@ -303,7 +304,7 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
   if (name === 'server.info') { send(200, { version: script().infoVersion ?? VERSION, pid: process.pid, urls: [], paths: {}, capabilities: {} }); return }
   if (name === 'model.list') {
     if (unavailable > 0) { unavailable--; fail(503, 'ServiceUnavailableError'); return }
-    send(200, { location: { directory: query['location[directory]'] }, data: [...script().models ?? MODELS, ...sourceModels()] }); return
+    send(200, { location: { directory: query['location[directory]'] }, data: [...script().modelsByVersion?.[VERSION] ?? script().models ?? MODELS, ...sourceModels()] }); return
   }
   if (name === 'model.default') { send(200, { location: { directory: query['location[directory]'] }, data: (script().models ?? MODELS)[0] ?? null }); return }
   if (name === 'provider.list') {
