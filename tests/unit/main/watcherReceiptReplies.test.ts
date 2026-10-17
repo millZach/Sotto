@@ -46,6 +46,21 @@ describe('where a receipt shows in Watcher’s conversation', () => {
     expect(placed).toEqual([{ operationId: 'a', messageId: 'r2' }])
   })
 
+  it('stays under the reply that took the action when a hidden wake-up’s turn replies after it', () => {
+    // R1 starts a worker; a wake-up the user is not shown begins another turn; R2 reports progress. R1 took the action.
+    const placed = watcherReceiptReplies(record({ asked: 'u1', woke: 'w1' }, [operation('a', 'asked'), operation('b', 'woke')]),
+      thread([user('u1'), reply('r1'), wakeUp('w1'), reply('r2')]))
+    expect(placed).toEqual([{ operationId: 'a', messageId: 'r1' }, { operationId: 'b', messageId: 'r2' }])
+  })
+
+  it('goes under the turn’s reply when the user wrote before it came, never under a message of the user’s', () => {
+    const placed = watcherReceiptReplies(record({ asked: 'u1' }, [operation('a', 'asked')]), thread([user('u1'), user('u2'), reply('r1')]))
+    expect(placed).toEqual([{ operationId: 'a', messageId: 'r1' }])
+    // A wake-up's turn is never crossed for a reply: the card waits under the turn's own message.
+    expect(watcherReceiptReplies(record({ asked: 'u1' }, [operation('a', 'asked')]), thread([user('u1'), wakeUp('w1'), reply('r2')])))
+      .toEqual([{ operationId: 'a', messageId: 'u1' }])
+  })
+
   it('places nothing without a recorded turn, for another Watcher, or for a turn no longer in the conversation', () => {
     const value = record({ gone: 'u0', mine: 'u1' }, [operation('a', undefined), operation('b', 'gone'), operation('c', 'elsewhere')])
     value.promptTurns!.push({ id: 'elsewhere', watcher: { hostId: HOST, threadId: 'older-watcher' }, rootUserMessageId: 'u1', createdAt: AT })

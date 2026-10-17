@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useId, type ReactNode } from 'react'
+import React, { createContext, useContext, useId, useMemo, type ReactNode } from 'react'
 import { CheckCheck, Laptop, Play, Send, Server, Square, type LucideIcon } from 'lucide-react'
 import type { AgentMessage, ProviderId } from '../../../shared/agents'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
@@ -37,6 +37,15 @@ export interface WatcherConversation {
   readonly press: (threadId: string) => Pick<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'onKeyDown'>
 }
 export const WatcherConversationContext = createContext<WatcherConversation | null>(null)
+
+/**
+ * The replies that carry receipt cards, which the transcript keeps in view rather than fold with the turn's work. Null
+ * outside Watcher's own pane.
+ */
+export function useRepliesKeptInView(): ReadonlySet<string> | null {
+  const receipts = useContext(WatcherConversationContext)?.receipts
+  return useMemo(() => receipts === undefined ? null : new Set(receipts.keys()), [receipts])
+}
 
 /**
  * Where each takeover line goes: after the last reply of the Watcher turn it happened in, the turn begun by the last of

@@ -122,6 +122,19 @@ describe('receipt cards', () => {
     expect(screen.queryByRole('button', { name: 'Open Footer links beside Watcher' })).toBeNull()
   })
 
+  it('keep the reply that took the action in view when a later reply of the same turn on screen would fold it away', async () => {
+    // A wake-up the user is not shown began a second turn whose reply came after it: on screen the two replies share a turn.
+    const state = agentState()
+    const watcher = state.host.threads.find(thread => thread.id === 'watcher')!
+    watcher.messages = [...watcher.messages, { id: 'watcher-3', role: 'assistant', text: 'Footer links is half done.', createdAt: new Date(NOW - 10_000).toISOString() }]
+    renderRoom(roomState({ receiptReplies: [{ operationId: start.id, messageId: 'watcher-2' }] }), state)
+    await paneReady()
+    const cards = await screen.findByRole('list', { name: 'What Watcher did' })
+    expect(cards.closest('.thread-work')).toBeNull()
+    expect(screen.getByText('Started Footer links on Codex.')).toBeVisible()
+    const took = document.querySelector('[data-message-id="watcher-2"]')!, later = document.querySelector('[data-message-id="watcher-3"]')!
+    expect(took.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
   it('say when an action did not reach its thread', async () => {
     renderRoom(roomState({ receipts: [{ ...start, action: 'send', deliveryState: 'failed' }], receiptReplies: [{ operationId: start.id, messageId: 'watcher-2' }] }))
     await paneReady()
