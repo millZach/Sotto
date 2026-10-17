@@ -360,9 +360,11 @@ const isRunning = (pid: number): boolean => { try { process.kill(pid, 0); return
  * How far a process's start may sit from the moment Sotto wrote down starting it: a little before, for the coarse clocks
  * process start times are kept on, and a little after, for a slow spawn. Windows stamps a process on the clock Node
  * reads, so this is all it needs. Linux's `ps` adds ticks since boot to a boot time kept in whole seconds and drops the
- * fraction again, so it reads up to two seconds behind the clock, and a wall-clock step moves what it reads.
+ * fraction again, so it reads up to two seconds behind the clock, and a wall-clock step moves what it reads. Room before
+ * costs nothing: a process holding the PID that truly started before the server did would be the server itself, since
+ * the server held the PID from then on. A record written before `ps` answered relies on it.
  */
-const START_BEFORE_MS = 1_500
+const START_BEFORE_MS = 2_500
 const START_AFTER_MS = 10_000
 /**
  * How far `ps` may read from the start it reported when Sotto wrote the server down: the second it rounds to, once more if

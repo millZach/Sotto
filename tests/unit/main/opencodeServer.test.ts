@@ -85,6 +85,13 @@ describe('a server a crash left, as the next connect knows it', () => {
     // The command line still has to be OpenCode's server.
     expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:01 2026 /usr/bin/python3 -m http.server'))).toBe(false)
   })
+  it('knows its server by the record written at once, before ps answered, however far behind the clock ps reads', () => {
+    // A crash while ps was still answering leaves the first record only. Linux's ps reads up to two seconds behind the
+    // clock Sotto wrote down: 1.8 s on a machine measured for this, read here as the whole second before it.
+    expect(isRecordedServer(record, parseProcessStart('Fri Oct 16 21:48:01 2026 ' + command))).toBe(true)
+    // Further behind than ps ever reads, it is not the server's start.
+    expect(isRecordedServer(record, parseProcessStart('Fri Oct 16 21:48:00 2026 ' + command))).toBe(false)
+  })
   it('still knows its server after the clock steps forward, by Sotto’s clock', () => {
     // ps read 1.4 s behind Sotto's clock when the server was written down. Then the wall clock stepped 2 s forward, as
     // NTP or a WSL2 resync steps it, and what ps reads moved with it, since it adds ticks since boot to the wall clock's boot time.
