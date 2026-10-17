@@ -227,6 +227,8 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
    */
   source: id.optional(),
 })
+/** The model source OpenCode's free models come from (ADR-0087); the model menu says so on its row. */
+export const OPENCODE_ZEN_SOURCE = 'OpenCode Zen'
 export const agentProjectSchema = z.object({ hostId: z.uuid().optional(), id: providerEntityId, providerId: providerIdSchema.optional(), title: id, path: z.string().max(4_096), workspaceSettledAt: z.string().datetime().nullable().optional() })
 /** How many pages one question carries at most (ADR-0085). */
 export const QUESTION_PAGES_MAX = 8
