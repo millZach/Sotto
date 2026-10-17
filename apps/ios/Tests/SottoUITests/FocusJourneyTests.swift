@@ -789,7 +789,12 @@ import XCTest
         let dock: [(XCUIElement, CGFloat)] = [(byID("watcher-reply"), 20), (byID("watcher-send-held"), 8),
                                               (app.buttons["Dismiss message"].firstMatch, 8), (app.buttons["watcher-permissions"], 8),
                                               (byID("watch-toast"), 8)]
-        for (element, gap) in dock where element.exists { bottom = min(bottom, element.frame.minY - gap) }
+        // The frame comes from one snapshot, never a second look: what a press did leaves by itself after eight seconds,
+        // and on a loaded simulator it went between `exists` and `frame`, which XCTest fails as a missing match.
+        for (element, gap) in dock where element.exists {
+            guard let frame = try? element.snapshot().frame else { continue }
+            bottom = min(bottom, frame.minY - gap)
+        }
         return (top, bottom)
     }
     /// Scrolls Watcher's conversation until `target` sits whole in `watcherBand`, or for one taller than the band, until
@@ -1265,9 +1270,11 @@ import XCTest
         XCTAssertEqual(stop.label, "Stop watching Add keyboard shortcuts")
         capture("watcher-watched-card-dark")
         stop.tap()
-        XCTAssertTrue(waitUntilGone(stop), "Stop watching takes its card off Watched")
-        XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 5))
+        // What a press did is said for eight seconds, so it is read straight after the press: on a loaded simulator the
+        // waits that follow it have outlasted it.
+        XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 8))
         XCTAssertTrue(app.buttons["watch-undo"].exists, "With Undo")
+        XCTAssertTrue(waitUntilGone(stop), "Stop watching takes its card off Watched")
         capture("watcher-watched-stopped-dark")
         // Watch a thread offers it again.
         let add = app.buttons["watcher-watch-a-thread"]
@@ -1282,9 +1289,9 @@ import XCTest
         XCTAssertEqual(pick.label, "Watch Add keyboard shortcuts")
         capture("watcher-watch-a-thread-dark")
         pick.tap()
+        XCTAssertTrue(text("Watcher is watching Add keyboard shortcuts.").waitForExistence(timeout: 8), "What the press did is said at once")
         XCTAssertTrue(waitUntilGone(pick), "Choosing one closes the list")
         XCTAssertTrue(card.waitForExistence(timeout: 5), "And Watcher watches it")
-        XCTAssertTrue(text("Watcher is watching Add keyboard shortcuts.").exists)
         watcherInLight()
         app.buttons["watcher-section-watched"].tap()
         revealInWatcher(app.buttons["watched-stop-\(laptop)/shortcuts"])
