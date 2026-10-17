@@ -1,6 +1,6 @@
 # Worker roles in Settings, under Watcher
 
-October 16, 2026. Branch `feat/worker-roles`, from `0b15b3ca5` on `origin/main`. Records [ADR-0088](../adr/0088-worker-roles-say-what-each-kind-of-work-starts-on.md), the prototype's variant C as Zach picked it, checked in the built app on Windows 11.
+October 16, 2026. Branch `feat/worker-roles`, from `0b15b3ca5` on `origin/main`. Records [ADR-0091](../adr/0091-worker-roles-say-what-each-kind-of-work-starts-on.md), the prototype's variant C as Zach picked it, checked in the built app on Windows 11.
 
 ## What was run
 
@@ -31,4 +31,4 @@ In `artifacts/worker-roles/`:
 
 ## Not covered here
 
-When Watcher's own provider disconnects, offering a new Watcher on Orchestrating's next default when you send is not built yet (ADR-0088, Consequences). A paired host is not part of this journey; its start carries no role, which the integration suites check.
+When Watcher's own provider disconnects, offering a new Watcher on Orchestrating's next default when you send is not built yet (ADR-0091, Consequences). A paired host is not part of this journey; its start carries no role, which the integration suites check.
