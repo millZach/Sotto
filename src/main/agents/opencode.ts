@@ -1362,7 +1362,8 @@ export class OpenCodeHost implements AgentHost {
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     const generation = this.generation
     const alias = this.aliases[id]
-    if (!this.state.connected || !alias) return null
+    // A thread whose provider session is not known to exist has nothing to name yet, and no server is started for it.
+    if (!this.state.connected || !alias?.sessionConfirmed) return null
     // Watcher's thread is never an OpenCode one (ADR-0087), and it is given no side text.
     if (await this.launchProfiles?.profileFor(id).catch(() => true)) return null
     this.assertGeneration(generation)

@@ -282,3 +282,21 @@ for (const [what, mcp, withheld] of [['connects', { pendingMs: 1_500 }, undefine
     }
   })
 }
+
+it('writes no side text, and starts no server for it, for a thread whose provider session is not known to exist', async () => {
+  const { f } = await withTools({ visuals: false })
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+  // The creation's answer is lost: the thread is kept, but its provider session may or may not have been made.
+  await f.script({ delay: { 'session.create': 5_000 } })
+  const id = randomUUID()
+  expect(await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Unsettled' }))
+    .toMatchObject({ accepted: false, uncertain: true })
+  f.host.disconnect(); await f.adapter.closed()
+  await f.host.connect()
+  const started = (await f.processes()).length
+  await f.scriptAlso({ generate: { text: 'Fixture title' } })
+  await expect(f.host.writeShortText!(id, PROMPT)).resolves.toBeNull()
+  expect(await f.sideCalls()).toEqual([])
+  expect((await f.processes()).length).toBe(started)
+})
