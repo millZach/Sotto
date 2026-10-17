@@ -631,3 +631,13 @@ artifacts/starting-screen/*
 !artifacts/starting-screen/late-820x560-light.png
 !artifacts/starting-screen/late-long-name-820x560-dark.png
 !artifacts/starting-screen/providers-1280x800-dark.png
+artifacts/watcher-room-polish/*
+!artifacts/watcher-room-polish/polish-receipts-dark-1280x800.png
+!artifacts/watcher-room-polish/polish-receipts-light-1600x1000.png
+!artifacts/watcher-room-polish/polish-receipts-light-820x560.png
+!artifacts/watcher-room-polish/polish-receipts-dark-1280x800-reduced-motion.png
+!artifacts/watcher-room-polish/polish-stop-ask-dark-820x560.png
+!artifacts/watcher-room-polish/polish-stop-done-light-820x560.png
+!artifacts/watcher-room-polish/polish-read-marks-dark-1280x800.png
+!artifacts/watcher-room-polish/polish-read-marks-light-820x560.png
+!artifacts/watcher-room-polish/readings.json
