@@ -256,11 +256,14 @@ describe("independent working-copy allocation", () => {
     await initializeBareGitRepository(remote)
     await git(f.project, ['remote', 'add', 'origin', remote])
     await git(f.project, ['push', 'origin', 'HEAD:refs/heads/base'])
+    // A second project in a linked worktree of the same repository shares its origin refs, and so its fetches.
+    const linked = join(f.root, 'linked-project')
+    await git(f.project, ['worktree', 'add', '-b', 'linked-project', '--', linked, 'HEAD'])
     const remoteReads: string[] = []
     let fetched: string | undefined
     let held: { readonly read: string; readonly until: Promise<void> } | undefined
-    // A send checks its base's name just before it looks for a fetch to use, so a held fetch is let go only once
-    // that many sends are past that check.
+    // A send reads which repository it is in just before it looks for a fetch to use, so a held fetch is let go only
+    // once that many sends are past that read.
     let sendsPast: { count: number; readonly then: () => void } | undefined
     const service = new ThreadWorktrees(f.root, async (cwd, args, options) => {
       if (args[0] === 'ls-remote' || args[0] === 'fetch') {
@@ -269,7 +272,7 @@ describe("independent working-copy allocation", () => {
         if (held?.read === args[0]) await held.until
       }
       const output = await git(cwd, args, options)
-      if (args[0] === 'check-ref-format' && sendsPast && --sendsPast.count === 0) setImmediate(sendsPast.then)
+      if (args.includes('--git-common-dir') && sendsPast && --sendsPast.count === 0) setImmediate(sendsPast.then)
       return output
     })
     // Typing fetches the base without asking for a sign-in; a send while it runs waits for it rather than racing it.
@@ -277,8 +280,8 @@ describe("independent working-copy allocation", () => {
     held = { read: 'fetch', until: typing.promise }
     const typed = service.prefetchOriginBase(f.project, 'base')
     await vi.waitFor(() => expect(remoteReads).toEqual(['ls-remote (quiet)', 'fetch (quiet)']))
-    let clock = Date.now()
-    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    let clock = performance.now()
+    const now = vi.spyOn(performance, 'now').mockImplementation(() => clock)
     sendsPast = { count: 1, then: typing.resolve }
     const sent = await service.allocate(f.project, 'independent', { baseBranch: 'base', startFromOrigin: true })
     await typed
@@ -290,6 +293,7 @@ describe("independent working-copy allocation", () => {
     clock += EARLY_ORIGIN_FETCH_FRESH_MS
     const reused = await service.allocate(f.project, 'independent', { baseBranch: 'base', startFromOrigin: true })
     expect(reused).toMatchObject({ originBase: 'fetched', baseCommit: (await git(f.project, ['rev-parse', 'refs/remotes/origin/base'])).trim() })
+    expect(await service.allocate(linked, 'independent', { baseBranch: 'base', startFromOrigin: true })).toMatchObject({ originBase: 'fetched' })
     expect(remoteReads).toHaveLength(2)
     // After that the send fetches again, as it always has, and a send's own fetch is not kept for the next one.
     clock += 1
@@ -297,6 +301,14 @@ describe("independent working-copy allocation", () => {
     await service.allocate(f.project, 'independent', { baseBranch: 'base', startFromOrigin: true })
     expect(remoteReads.slice(2)).toEqual(['ls-remote', 'fetch', 'ls-remote', 'fetch'])
     now.mockRestore()
+    // Only a fetch is kept. An origin that had no such branch is asked again by the send: it may have been pushed since.
+    remoteReads.length = 0
+    await git(f.project, ['branch', 'later'])
+    await service.prefetchOriginBase(f.project, 'later')
+    expect(remoteReads).toEqual(['ls-remote (quiet)'])
+    await git(f.project, ['push', 'origin', 'later'])
+    expect(await service.allocate(f.project, 'independent', { baseBranch: 'later', startFromOrigin: true })).toMatchObject({ originBase: 'fetched' })
+    expect(remoteReads).toEqual(['ls-remote (quiet)', 'ls-remote', 'fetch'])
     // With no base named, typing fetches the branch the project has checked out, as the send would, and typing
     // again while that fetch is fresh fetches nothing more.
     remoteReads.length = 0

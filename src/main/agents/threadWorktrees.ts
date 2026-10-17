@@ -256,7 +256,6 @@ type OriginBase = NonNullable<AgentWorktree['originBase']>
 interface OriginFetch { readonly answer: Promise<OriginBase>; finishedAt?: number }
 /** How long a send uses an origin base typing fetched instead of fetching again (owner's choice, October 16, 2026). */
 export const EARLY_ORIGIN_FETCH_FRESH_MS = 120_000
-const originFetchKey = (repositoryRoot: string, baseBranch: string): string => `${pathKey(repositoryRoot)}\0${baseBranch}`
 
 /** What reclaiming a worktree would touch, so the caller can name it before asking. */
 export interface WorktreeReclaimFacts {
@@ -415,45 +414,57 @@ export class ThreadWorktrees {
     const branch = baseBranch ?? ((await this.git(repositoryRoot, ['branch', '--show-current'])).trim() || undefined)
     if (!branch) return
     await this.git(repositoryRoot, ['check-ref-format', `refs/heads/${branch}`])
-    if (!this.usableOriginFetch(repositoryRoot, branch)) await this.trackOriginFetch(repositoryRoot, branch, 'typing')
+    const key = await this.originFetchKey(repositoryRoot, branch)
+    if (!this.usableOriginFetch(key)) await this.trackOriginFetch(key, repositoryRoot, branch, 'typing')
+  }
+
+  /**
+   * One key per repository and branch, not per checkout: a project in a linked worktree and one in its main checkout
+   * share `refs/remotes/origin/<base>`, so their fetches of it are one fetch, never two racing for the ref.
+   */
+  private async originFetchKey(repositoryRoot: string, baseBranch: string): Promise<string> {
+    return `${(await this.registryIdentity(repositoryRoot)).key}\0${baseBranch}`
   }
 
   /**
    * A fetch of this base the send can use instead of its own: one still running, which a second would race for the
-   * same ref, or one typing started that finished in the last two minutes. A failed fetch is forgotten as it fails.
+   * same ref, or one typing started that fetched in the last two minutes. Measured on the monotonic clock, so a
+   * change of the computer's time cannot stretch the two minutes. A failed fetch is forgotten as it fails.
    */
-  private usableOriginFetch(repositoryRoot: string, baseBranch: string): Promise<OriginBase> | undefined {
-    const key = originFetchKey(repositoryRoot, baseBranch), known = this.originFetches.get(key)
+  private usableOriginFetch(key: string): Promise<OriginBase> | undefined {
+    const known = this.originFetches.get(key)
     if (!known) return undefined
-    if (known.finishedAt === undefined || Date.now() - known.finishedAt <= EARLY_ORIGIN_FETCH_FRESH_MS) return known.answer
+    if (known.finishedAt === undefined || performance.now() - known.finishedAt <= EARLY_ORIGIN_FETCH_FRESH_MS) return known.answer
     this.originFetches.delete(key)
     return undefined
   }
 
   /**
-   * Only a fetch typing started is kept once it finishes; the send's own is kept only while it runs. Typing's never
-   * asks for a sign-in: the user pressed nothing, so a remote that needs one fails it and the send fetches again.
+   * Only a fetch typing started is kept once it finishes, only when it fetched, and only for two minutes: an origin
+   * that had no such branch, or no origin at all, is asked again by the send, since the branch may have been pushed
+   * since. The send's own fetch is kept only while it runs. Typing's never asks for a sign-in: the user pressed
+   * nothing, so a remote that needs one fails it and the send fetches again.
    */
-  private trackOriginFetch(repositoryRoot: string, baseBranch: string, startedBy: 'typing' | 'send'): Promise<OriginBase> {
-    const key = originFetchKey(repositoryRoot, baseBranch)
+  private trackOriginFetch(key: string, repositoryRoot: string, baseBranch: string, startedBy: 'typing' | 'send'): Promise<OriginBase> {
     const early = startedBy === 'typing'
     const entry: OriginFetch = { answer: this.fetchOriginBase(repositoryRoot, baseBranch, early) }
     this.originFetches.set(key, entry)
-    const settle = (keep: boolean): void => {
-      if (this.originFetches.get(key) !== entry) return
-      if (keep) entry.finishedAt = Date.now()
-      else this.originFetches.delete(key)
-    }
-    entry.answer.then(() => settle(early), () => settle(false))
+    const forget = (): void => { if (this.originFetches.get(key) === entry) this.originFetches.delete(key) }
+    entry.answer.then(answer => {
+      if (!early || answer !== 'fetched') return forget()
+      entry.finishedAt = performance.now()
+      setTimeout(forget, EARLY_ORIGIN_FETCH_FRESH_MS).unref?.()
+    }, forget)
     return entry.answer
   }
 
   /** The send's origin base: from a fetch `usableOriginFetch` offers, else from its own, so a failure it reports is its own. */
   private async resolveOriginBase(repositoryRoot: string, baseBranch: string): Promise<OriginBase> {
-    const running = this.usableOriginFetch(repositoryRoot, baseBranch)
+    const key = await this.originFetchKey(repositoryRoot, baseBranch)
+    const running = this.usableOriginFetch(key)
     if (running) { try { return await running } catch { /* Fetched again below. */ } }
     // Sends that waited on the same failed fetch make one fetch between them, not one each racing for the ref.
-    return this.usableOriginFetch(repositoryRoot, baseBranch) ?? this.trackOriginFetch(repositoryRoot, baseBranch, 'send')
+    return this.usableOriginFetch(key) ?? this.trackOriginFetch(key, repositoryRoot, baseBranch, 'send')
   }
 
   /**
