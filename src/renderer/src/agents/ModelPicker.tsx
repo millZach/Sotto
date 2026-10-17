@@ -129,9 +129,13 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const selectedProvider = groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
   const sources = selectedProvider?.sources
-  const sourceQuery = query.trim().toLowerCase()
-  // Across every source at once, matching the source's name too, so "anthropic" finds all of Anthropic's models.
-  const found = sources && sourceQuery ? sources.map(source => ({ ...source, models: source.models.filter(model => `${model.name} ${model.id} ${source.name}`.toLowerCase().includes(sourceQuery)) })).filter(source => source.models.length) : undefined
+  const sourceWords = query.toLowerCase().split(/\s+/u).filter(Boolean)
+  // Across every source at once, matching the source's name too, so "anthropic" finds all of Anthropic's models. Each word
+  // matches on its own, so "anthropic sonnet" finds Anthropic's Sonnets though no one name holds both words side by side.
+  const found = sources && sourceWords.length ? sources.map(source => ({ ...source, models: source.models.filter(model => {
+    const text = `${model.name} ${model.id} ${source.name}`.toLowerCase()
+    return sourceWords.every(word => text.includes(word))
+  }) })).filter(source => source.models.length) : undefined
   const openSource = sources && step?.provider === selectedProvider?.name ? sources.find(source => source.name === step?.source) : undefined
   const holdsChosen = (source: ModelSourceGroup): boolean => source.models.some(model => model.id === currentEntryId)
   const stopSource = sources?.find(source => source.name === sourceStop)?.name ?? sources?.find(holdsChosen)?.name ?? sources?.[0]?.name

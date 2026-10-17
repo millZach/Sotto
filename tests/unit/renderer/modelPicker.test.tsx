@@ -377,6 +377,16 @@ describe('provider model picker', () => {
       expect(chip.querySelector('.provider-mark')).toHaveAttribute('data-provider', 'opencode')
     })
 
+    it('finds a model by its source and its name together, a word of each, in either order', async () => {
+      const { user } = await open()
+      await user.keyboard('anthropic sonnet')
+      expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Claude Sonnet 5', 'Claude Sonnet 4.6'])
+      await user.clear(screen.getByRole('textbox', { name: 'Search models' }))
+      await user.keyboard('opus  openrouter')
+      expect(within(screen.getByRole('listbox', { name: 'OpenCode models' })).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual(['OpenRouter'])
+      expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Claude Opus 5.5'])
+    })
+
     it('leaves a provider without model sources as it was: one list, and Escape left to the dialog', async () => {
       const user = userEvent.setup()
       render(<ModelPicker models={models} modelId="astra" disabled={false} onChange={vi.fn()} />)
