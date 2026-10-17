@@ -112,7 +112,7 @@ export const RUNTIME_MODE_WORDS: Readonly<Record<AgentRuntimeMode, string>> = {
  * The providers Watcher runs on, as `watcherProviderSchema` names them (ADR-0073, ADR-0079): Orchestrating's model is one
  * of theirs. A provider is named here once Watcher runs on it; one that is not is never Orchestrating's.
  */
-const WATCHER_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'muse'])
+export const WATCHER_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'muse'])
 /** The order a role with no ready default looks through for one of a provider's own models. */
 const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin'])
 /** Whether a role can run on a model: Orchestrating only on a provider Watcher can run on. */

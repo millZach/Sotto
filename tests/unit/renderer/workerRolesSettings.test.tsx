@@ -8,8 +8,12 @@ import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext
 import { WorkerRolesSettings } from '../../../src/renderer/src/features/settings/WorkerRolesSettings'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
+import { useHeldProviders } from '../../../src/renderer/src/state/owlFeature'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn() }))
+// Muse is held to Owl unless a test says otherwise, as on a run whose Owl answer for it is off.
+vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/owlFeature')>(),
+  useHeldProviders: vi.fn(() => new Set(['muse'])) }))
 
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
 const MODES = ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] as const
@@ -38,7 +42,7 @@ function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true, 
   return { update, open }
 }
 const card = (name: string) => screen.getByRole('article', { name })
-afterEach(() => { cleanup(); vi.clearAllMocks(); firstMessage.clear() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); firstMessage.clear(); vi.mocked(useHeldProviders).mockImplementation(() => new Set(['muse'])) })
 
 describe('Settings, under Watcher: worker roles (#1041)', () => {
   it('shows each role on its default with its defaults in order', () => {
@@ -105,6 +109,17 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
     expect(within(orchestrating).getByText('Permissions, Watcher’s own')).toBeInTheDocument()
     expect(orchestrating.querySelector('.worker-role__composer')).toHaveAttribute('aria-hidden', 'true')
     expect(within(orchestrating).getByText(/Watcher’s composer shows these three\. A change in either place changes both\./u)).toBeInTheDocument()
+  })
+
+  it('names Muse among Watcher’s providers only while Muse is not held to Owl on this run', () => {
+    show()
+    fireEvent.click(within(card('Orchestrating')).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
+    expect(screen.getByText(/Watcher runs on Codex, Claude Code or Grok Build\.$/u)).toBeInTheDocument()
+    cleanup()
+    vi.mocked(useHeldProviders).mockReturnValue(new Set())
+    show()
+    fireEvent.click(within(card('Orchestrating')).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
+    expect(screen.getByText(/Watcher runs on Codex, Claude Code, Grok Build or Muse\.$/u)).toBeInTheDocument()
   })
 
   it('lets a change to Orchestrating replace the first message’s own pick before Watcher exists', () => {
