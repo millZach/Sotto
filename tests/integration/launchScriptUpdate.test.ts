@@ -399,11 +399,11 @@ it('leaves exactly one owner when several updates take over the same stale lock 
     requests = 0
     const contenders = Array.from({ length: 4 }, () => launchScriptChild({ ...configuration, op: 'update-fetch', version: NEW, releasesUrl }, undefined, child => children.push(child)))
     const outcomes = contenders.map(child => collect(child))
-    // All but one find the lock held; the one that owns it waits in its download.
-    const refused: number[] = []
+    // All but one find the lock held; the one that owns it waits in its download. Each update's own answer is compared, so
+    // a failure says whether two owned the lock or one ended some other way.
     await vi.waitFor(async () => {
-      refused.splice(0, refused.length, ...await Promise.all(contenders.map(async (child, index) => child.exitCode === null ? -1 : last(await outcomes[index]!).reason === 'update-busy' ? index : -2)))
-      expect(refused.filter(index => index >= 0)).toHaveLength(3)
+      const ends = await Promise.all(contenders.map(async (child, index) => child.exitCode === null ? 'running' : String(last(await outcomes[index]!).reason)))
+      expect(ends.sort()).toEqual(['running', 'update-busy', 'update-busy', 'update-busy'])
       expect(requests).toBe(1)
     }, { timeout: 30_000, interval: 50 })
     const owner = contenders.find(child => child.exitCode === null)!
@@ -413,6 +413,30 @@ it('leaves exactly one owner when several updates take over the same stale lock 
     await outcomes[contenders.indexOf(owner)]
   }
   expect((await readdir(join(configuration.installPath, 'versions'))).filter(name => name.startsWith('.update-lock.'))).toEqual([])
+})
+
+it('refuses while another update takes over a stale lock, and clears a turn left by one that was killed', async () => {
+  const configuration = await fixture()
+  const install = { op: 'update-install', version: NEW, file: FILE, sha256: 'a'.repeat(64) }
+  const versions = join(configuration.installPath, 'versions')
+  const gone = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore', windowsHide: true })
+  await new Promise(resolve => gone.once('exit', resolve))
+  const place = async (name: string, pid: number): Promise<void> => {
+    await mkdir(join(versions, name), { recursive: true }); await writeFile(join(versions, name, 'pid'), String(pid))
+  }
+  await place('.update-lock', gone.pid!)
+  // An update in the middle of its turn: the stale lock is its to take over, and it stays as it was.
+  const taking = spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { stdio: 'ignore', windowsHide: true })
+  children.push(taking)
+  await new Promise(resolve => taking.once('spawn', resolve))
+  await place('.update-lock.takeover', taking.pid!)
+  expect(last(await run(configuration, install))).toEqual({ type: 'error', reason: 'update-busy' })
+  expect(Number(await readFile(join(versions, '.update-lock', 'pid'), 'utf8'))).toBe(gone.pid)
+  // That update is killed partway through its turn: the next one clears the turn, takes the lock over and gives it up after.
+  taking.kill()
+  await vi.waitFor(() => expect(alive(taking.pid!)).toBe(false))
+  expect(last(await run(configuration, install))).toEqual({ type: 'error', reason: 'update-missing' })
+  expect((await readdir(versions)).filter(name => name.startsWith('.update-lock'))).toEqual([])
 })
 
 it('downloads under the lock, which a download that was stopped gives up to the next update', async () => {
