@@ -26,10 +26,17 @@ describe('which OpenCode Sotto finds, and which it refuses', () => {
 describe('the channel that installed OpenCode updates it (ADR-0042, ADR-0087)', () => {
   it('checks an npm install against @opencode/cli and updates it through Sotto’s npm runner', async () => {
     const prefix = await root('sotto-opencode-npm-')
-    const executable = join(prefix, 'node_modules', '@opencode', 'cli', 'bin', 'opencode.exe')
+    const cli = join(prefix, 'node_modules', '@opencode', 'cli')
+    await mkdir(join(cli, 'bin'), { recursive: true }); await writeFile(join(cli, 'package.json'), '{}')
+    const executable = join(cli, 'bin', 'opencode.exe')
     const asked: string[] = []
     const clients = new ProviderClients({ fetchImpl: async url => { asked.push(url); return answer('2.0.40') }, npmPath: async () => join(prefix, 'npm-cli.js') })
     expect(await detectClientInstall('opencode', executable, await noMise())).toEqual({ channel: 'npm' })
+    // The program package npm hoists beside it stands for it, and one with no @opencode/cli beside it is nobody's to update.
+    const hoisted = join(prefix, 'node_modules', '@opencode', 'cli-windows-x64', 'bin', 'opencode.exe')
+    expect(await detectClientInstall('opencode', hoisted, await noMise())).toEqual({ channel: 'npm' })
+    const alone = join(await root('sotto-opencode-alone-'), 'node_modules', '@opencode', 'cli-windows-x64', 'bin', 'opencode.exe')
+    expect(await detectClientInstall('opencode', alone, await noMise())).toEqual({ channel: 'unknown' })
     const reading = await clients.check('opencode', '2.0.31', executable, await noMise())
     expect(asked).toEqual(['https://registry.npmjs.org/%40opencode/cli/latest'])
     expect(reading).toMatchObject({ id: 'opencode', installed: '2.0.31', published: '2.0.40', behind: true, channel: 'npm', canInstall: true,
@@ -108,5 +115,35 @@ describe('the channel that installed OpenCode updates it (ADR-0042, ADR-0087)', 
     await mkdir(join(codex, 'bin'), { recursive: true }); await writeFile(join(codex, 'package.json'), '{}')
     expect(await detectClientInstall('codex', join(codex, 'bin', 'codex.js'), await noMise())).toEqual({ channel: 'unknown' })
     expect(await detectClientInstall('codex', join(brew, 'bin', 'codex'), await noMise())).toEqual({ channel: 'unknown' })
+  })
+
+  it.each([
+    ['bun', ['.bun', 'install', 'global', 'node_modules', '@opencode', 'cli']],
+    ['pnpm', ['AppData', 'Local', 'pnpm', 'global', '5', 'node_modules', '@opencode', 'cli']],
+    ['pnpm’s store', ['.local', 'share', 'pnpm', 'global', '5', '.pnpm', '@opencode+cli@2.0.31', 'node_modules', '@opencode', 'cli']],
+    ['Volta', ['.volta', 'tools', 'image', 'packages', '@opencode', 'cli', 'lib', 'node_modules', '@opencode', 'cli']],
+  ])('leaves a copy %s installed as that tool’s to update, and never runs npm over it', async (_tool, parts) => {
+    const cli = join(await root('sotto-opencode-other-manager-'), ...parts)
+    await mkdir(join(cli, 'bin'), { recursive: true }); await writeFile(join(cli, 'package.json'), '{}')
+    const executable = join(cli, 'bin', 'opencode')
+    expect(await detectClientInstall('opencode', executable, await noMise())).toEqual({ channel: 'unknown' })
+    const ran: string[] = []
+    const clients = new ProviderClients({ fetchImpl: async () => answer('2.0.40'), run: async file => { ran.push(file); return { ok: true } }, npmPath: async () => join(cli, 'npm-cli.js') })
+    expect(await clients.check('opencode', '2.0.31', executable, await noMise())).toMatchObject({ channel: 'unknown', canInstall: false })
+    expect((await clients.install('opencode', executable, await noMise())).ok).toBe(false)
+    expect(ran).toEqual([])
+  })
+
+  it('never lets a global @opencode/cli claim the install script’s copy or one in a folder npm did not install', async () => {
+    const prefix = await root('sotto-opencode-global-npm-')
+    const cli = join(prefix, 'lib', 'node_modules', '@opencode', 'cli')
+    await mkdir(cli, { recursive: true }); await writeFile(join(cli, 'package.json'), '{}')
+    const environment = { ...await noMise(), npm_config_prefix: prefix }
+    const own = join(homedir(), '.opencode', 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode')
+    expect(await detectClientInstall('opencode', own, environment)).toEqual({ channel: 'self-update' })
+    const system = join(await root('sotto-opencode-system-'), 'usr', 'bin', 'opencode')
+    expect(await detectClientInstall('opencode', system, environment)).toEqual({ channel: 'unknown' })
+    // npm's own launcher beside that global package is still npm's.
+    expect(await detectClientInstall('opencode', join(prefix, 'bin', 'opencode'), environment)).toEqual({ channel: 'npm' })
   })
 })

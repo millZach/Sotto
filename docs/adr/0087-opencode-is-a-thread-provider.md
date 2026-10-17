@@ -26,7 +26,7 @@ Sotto's servers run with `share` set to `disabled`, so a thread is never publish
 
 ## Finding and updating the client
 
-Settings gives OpenCode the same connection, version, model and update controls as the other providers. Sotto finds `opencode` by its CLI lookup (ADR-0036), plus `~/.opencode/bin`, where the v2 install script puts it. Updates follow ADR-0042: the channel that installed the client updates it. An npm install is checked against `@opencode/cli` on `registry.npmjs.org`, which the README already names, and updated by Sotto's npm runner. A copy npm does not own, such as the v2 install script's, updates itself with `opencode upgrade`. A copy Homebrew, scoop or pacman owns shows the command to run by hand. Sotto never moves an install between the 1.x and 2.x packages.
+Settings gives OpenCode the same connection, version, model and update controls as the other providers. Sotto finds `opencode` by its CLI lookup (ADR-0036), plus `~/.opencode/bin`, where the v2 install script puts it. Updates follow ADR-0042: the channel that installed the client updates it. An npm install is checked against `@opencode/cli` on `registry.npmjs.org`, which the README already names, and updated by Sotto's npm runner. A copy npm does not own, such as the v2 install script's, updates itself with `opencode upgrade`. A copy Homebrew, scoop or pacman owns shows the command to run by hand. A copy bun, pnpm, Volta or asdf installed is left to that tool, as ADR-0042 has it for every other client, and only the program's own prefix makes a copy npm's, so a global `@opencode/cli` elsewhere never claims the install script's copy or a system package's. Sotto never moves an install between the 1.x and 2.x packages.
 
 ## Permissions
 
