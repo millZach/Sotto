@@ -8,13 +8,15 @@ const key = (target: WatcherThreadTarget): string => JSON.stringify([target.host
 export const READ_DISPATCH_MAX_MS = 24 * 60 * 60 * 1_000
 
 /**
- * The waiting requests a dispatch knows as shown: all their IDs up to the bound, and past it a digest of the whole set,
- * so the set a pass sees replaces the known one whole and an unchanged set is never written again.
+ * The waiting requests a dispatch knows as shown: those showing now first, then those it knew before, up to the bound,
+ * so one withdrawn and shown again is not news twice; and past the bound, a digest of the whole set showing, which
+ * stands for it. A pass that shows nothing new is never written again.
  */
-function knownRequests(ids: readonly string[]): Pick<WatcherReadDispatch, 'requestIds' | 'requestsDigest'> {
+function knownRequests(ids: readonly string[], before: readonly string[] = []): Pick<WatcherReadDispatch, 'requestIds' | 'requestsDigest'> {
   const sorted = [...new Set(ids)].sort()
-  return sorted.length <= WATCHER_READ_DISPATCH_REQUESTS_MAX ? { requestIds: sorted }
-    : { requestIds: sorted.slice(0, WATCHER_READ_DISPATCH_REQUESTS_MAX), requestsDigest: createHash('sha256').update(JSON.stringify(sorted)).digest('hex') }
+  const requestIds = [...new Set([...sorted, ...before])].slice(0, WATCHER_READ_DISPATCH_REQUESTS_MAX)
+  return sorted.length <= WATCHER_READ_DISPATCH_REQUESTS_MAX ? { requestIds }
+    : { requestIds, requestsDigest: createHash('sha256').update(JSON.stringify(sorted)).digest('hex') }
 }
 
 /** One thread as a pass reads it: where it lives, and whether its host and provider are connected now. */
@@ -122,13 +124,13 @@ export function trackDispatches(dispatches: readonly WatcherReadDispatch[], mark
     if (!found || !found.connected) { kept.push(entry); continue }
     const { thread } = found
     let next = entry
-    // The requests showing now replace those known before, whole, so a pass that changes nothing writes nothing.
-    const showing = knownRequests(thread.requests.map(request => request.id))
-    if (showing.requestsDigest !== entry.requestsDigest || JSON.stringify(showing.requestIds) !== JSON.stringify(entry.requestIds)) {
-      const shown = new Set(entry.requestIds)
-      const arrived = thread.requests.filter(request => !shown.has(request.id))
-      const asks = arrived.find(request => request.kind === 'question') ?? arrived[0]
-      if (asks) mark(entry.target, asks.kind === 'question' ? 'question' : 'permission', `request:${asks.id}`)
+    // Only a request not known before is news; a pass that shows none, or past the bound the same set, writes nothing.
+    const shown = new Set(entry.requestIds)
+    const arrived = thread.requests.filter(request => !shown.has(request.id))
+    const showing = arrived.length ? knownRequests(thread.requests.map(request => request.id), entry.requestIds) : undefined
+    if (showing && (showing.requestsDigest === undefined || showing.requestsDigest !== entry.requestsDigest)) {
+      const asks = arrived.find(request => request.kind === 'question') ?? arrived[0]!
+      mark(entry.target, asks.kind === 'question' ? 'question' : 'permission', `request:${asks.id}`)
       const { requestsDigest: _digest, ...rest } = entry; void _digest
       next = { ...rest, requestIds: showing.requestIds, ...showing.requestsDigest ? { requestsDigest: showing.requestsDigest } : {} }
       changed = true

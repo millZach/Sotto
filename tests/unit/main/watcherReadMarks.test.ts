@@ -257,6 +257,21 @@ describe('the requests a dispatch knows', () => {
   })
 })
 
+describe('a request that comes back', () => {
+  it('is not news twice: one withdrawn while the turn runs and shown again earns no second mark once read', async () => {
+    const room = service()
+    room.pass(thread('flicker', { providerId: 'grok', ...turn('t0', 'completed') }))
+    const sent = room.send('flicker')
+    const running = (requests: Request[]) => thread('flicker', { providerId: 'grok', status: 'running', lastTurn: { id: sent, status: 'running' }, requests })
+    room.pass(running([card('p1', 'permission')]))
+    await room.read('flicker')
+    // A provider's reload takes the card away for a moment and shows it again.
+    room.pass(running([]))
+    room.pass(running([card('p1', 'permission')]))
+    expect(room.marks()).toEqual([])
+  })
+})
+
 describe('the dispatches read marks wait on', () => {
   it('let a turn that never ends go after a day, unmarked, and keep one whose thread is out of reach', () => {
     const record = emptyWatcherRecord()
