@@ -1230,7 +1230,8 @@ export class AgentControl {
     // Recovery evidence is durable in the same write as its outbox flag or tombstone, but remains unpublished until then.
     return [...deliveries.map(delivery => {
       const pending = this.pendingSetAsideDeliveries.get(delivery.threadId)
-      return delivery.status !== 'accepted' && pending?.draftId === delivery.draftId ? pending : delivery
+      if (pending?.draftId !== delivery.draftId) return delivery
+      return delivery.status === 'accepted' ? { ...delivery, setAside: true } : pending
     }), ...[...this.pendingSetAsideDeliveries.values()].filter(pending => !deliveries.some(delivery => delivery.threadId === pending.threadId && delivery.draftId === pending.draftId))]
   }
   /**
@@ -4107,7 +4108,7 @@ export class AgentControl {
       throw new Error('Could not save this recovery. The prompt is still unconfirmed. Restore access to local storage and try again.')
     } finally { this.pendingSetAsideDeliveries.delete(threadId) }
     const latest = this.state.deliveries?.find(matches)
-    if (!latest || latest.status === 'uncertain') this.setDelivery(threadId, draftId, 'uncertain', recovery)
+    this.setDelivery(threadId, draftId, latest?.status ?? 'uncertain', { ...recovery, ...latest, setAside: true })
   }
   private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachmentHandle[] = [], draftId?: string, skills?: AgentSkillReference[], files?: AgentFileReference[], origin?: WatcherCommandOrigin): Promise<void> {
     if (draftId && this.state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === draftId)) return

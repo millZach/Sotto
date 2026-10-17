@@ -264,6 +264,35 @@ describe('setting aside unconfirmed sends', () => {
     }
   })
 
+  it.each([false, true])('retains recovery when the original echo lands during its write (restart %s)', async restart => {
+    const f = await fixture(), draftId = randomUUID(), entered = deferred<void>(), gate = deferred<void>()
+    f.host.withheld = 'uncertain'
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Original unknown prompt' })
+    const write = AtomicJsonStore.prototype.write, acceptedWrites: { status: string; setAside?: boolean }[] = []
+    let held = false
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      const record = (value as { deliveries?: { draftId: string; status: string; setAside?: boolean }[] }).deliveries?.find(item => item.draftId === draftId)
+      if (record?.status === 'accepted') acceptedWrites.push({ ...record })
+      if (!held && record?.setAside) { held = true; entered.resolve(); await gate.promise }
+      return write.call(this, value)
+    })
+    const recovery = f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    await entered.promise
+    try { await f.host.acknowledge() } finally { gate.resolve() }
+    expect((await recovery).deliveries).toContainEqual(expect.objectContaining({ draftId, status: 'accepted', setAside: true }))
+    await f.control.privacyChanged()
+    expect(acceptedWrites.length).toBeGreaterThan(0)
+    expect(acceptedWrites.every(item => item.setAside)).toBe(true)
+    vi.restoreAllMocks()
+    if (restart) { await f.restart(); await f.control.command({ type: 'connect' }) }
+    f.host.event({ type: 'ready', threadId: 'workshop', text: 'The original turn finished.' })
+    f.host.withheld = null
+    f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+      guardOperation: () => undefined, preserveUserQueue: () => false })
+    expect((await f.control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic before a fresh message' }, { guard: () => undefined })).error).toMatch(/unknown result/)
+    expect(f.host.attempts).toHaveLength(1)
+  })
+
   it.each([false, true])('reads no provider history to set aside a prompt (missing main record %s)', async missing => {
     const f = await fixture(); const draftId = randomUUID()
     if (!missing) {
