@@ -7,7 +7,7 @@ import type { HostPhonesLink } from './hostPhones'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { RetainedDraftStore } from '../agents/retainedDraftStore'
 import type { AgentCredentials } from '../agents/credentials'
-import { HostConnectionError, SocketHostService, type HostUpdateMiss } from '../agents/socketHostService'
+import { HostConnectionError, HostUpdateMissed, SocketHostService, type HostUpdateMiss } from '../agents/socketHostService'
 import { afterSocketMiss, missOf, restartFromOutcome, socketStepResult, updateCarrier } from './hostSelfUpdateRoute'
 import { HOST_UPDATE_RESTART_BUDGET_MS, type HostUpdateAnswer, type HostUpdateRequest, type HostUpdateRestartResult } from '../../shared/hostSelfUpdate'
 import { afterTailnetFailure, classifyTailnetFailure, connectOrder, TAILNET_HEALTH_MS, TAILNET_RETURN_MS, tryTailnetAfterSsh, type HostConnectionPreference, type HostVia, type TailnetFailure } from './hostConnectionPlan'
@@ -403,12 +403,24 @@ export class DesktopHosts {
    * Runs a host's socket update steps one after another, so a Try again after Cancel update waits for the cancelled
    * download's own answer, and the host is free when the next download is asked for.
    */
-  private socketStep<T>(id: string, step: () => Promise<T>): Promise<T> {
-    const next = (this.socketSteps.get(id) ?? Promise.resolve()).then(step)
+  private socketStep<T>(id: string, step: () => Promise<T>, deadline?: number): Promise<T> {
+    if (deadline !== undefined && deadline <= this.now()) return Promise.reject(new HostUpdateMissed('timeout'))
+    let timer: ReturnType<typeof setTimeout> | undefined, expired = false
+    const next = (this.socketSteps.get(id) ?? Promise.resolve()).then(() => {
+      clearTimeout(timer)
+      if (deadline !== undefined && (expired || deadline <= this.now())) throw new HostUpdateMissed('timeout')
+      return step()
+    })
     const settled = next.then(() => undefined, () => undefined)
     this.socketSteps.set(id, settled)
     void settled.then(() => { if (this.socketSteps.get(id) === settled) this.socketSteps.delete(id) })
-    return next
+    if (deadline === undefined) return next
+    // Only the queue wait is timed here. Once this step starts, its request owns the remaining answer deadline.
+    // Expiring a queued read never ends the earlier update; its callback later skips sending anything.
+    return new Promise<T>((resolve, reject) => {
+      timer = setTimeout(() => { expired = true; reject(new HostUpdateMissed('timeout')) }, Math.max(0, deadline - this.now()))
+      next.then(resolve, reject)
+    })
   }
   /**
    * An update's restart: the launch script starts `version` in place of the running host, or the old one again, and this
@@ -461,7 +473,7 @@ export class DesktopHosts {
         if (next === 'ssh') return { refused: true }
         if (next === 'ask' && socket.connected()) {
           // The host is still there to ask: a restart under way stops it in a moment, and anything else means none went.
-          const now = await this.socketStep(host.id, () => socket.hostUpdate({ action: 'outcome' })).catch(() => undefined)
+          const now = await this.socketStep(host.id, () => socket.hostUpdate({ action: 'outcome' }, { timeoutMs: Math.max(0, deadline - this.now()) }), deadline).catch(() => undefined)
           if (now?.type === 'update-outcome' && now.restart.state !== 'restarting') return { answer: { type: 'error', reason: 'restart-not-sent' } }
         }
         // The restart may have gone ahead: the host says how it went once this computer is back.
@@ -491,25 +503,26 @@ export class DesktopHosts {
     const left = (): number => Math.max(0, deadline - this.now())
     // Asked at most as often as fits in the time left, whatever the clock says.
     let outcome: HostUpdateAnswer | undefined
-    for (let tries = Math.ceil(left() / 500) + 1; tries > 0; tries--) {
+    for (let tries = Math.ceil(left() / 500) + 1; tries > 0 && left() > 0; tries--) {
       const back = await this.until(() => {
         if (this.closed || !this.saved.includes(host) || host.enabled === false) return false
         const status = this.status.get(host.id), socket = this.live.get(host.id)?.socket
         if (status?.phase === 'error') return false
         return status?.phase === 'connected' && socket !== undefined && socket !== before ? true : undefined
       }, left())
-      if (!back) return undefined
+      if (!back || left() === 0) return undefined
       const socket = this.live.get(host.id)?.socket
       if (this.closed) return undefined
       outcome = undefined
-      try { if (socket && this.status.get(host.id)?.phase === 'connected') outcome = await this.socketStep(host.id, () => socket.hostUpdate({ action: 'outcome' })) }
+      try { if (socket && this.status.get(host.id)?.phase === 'connected') outcome = await this.socketStep(host.id,
+        () => socket.hostUpdate({ action: 'outcome' }, { timeoutMs: left() }), deadline) }
       catch (error) {
         // A quick reconnect can reach the old host before it stops. Its outcome read drops too; wait for the next host.
         if (!['closed', 'timeout'].includes(missOf(error))) return undefined
         outcome = undefined
       }
       if (left() === 0 || (outcome !== undefined && (outcome.type !== 'update-outcome' || outcome.restart.state !== 'restarting'))) return outcome
-      await new Promise(resolve => setTimeout(resolve, 500).unref?.())
+      await new Promise(resolve => setTimeout(resolve, Math.min(500, left())).unref?.())
     }
     return outcome
   }

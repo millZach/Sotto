@@ -1200,8 +1200,12 @@ export class SocketHostService implements HostService {
    * answer, `update-cancelled`, so the host is free before anything asks it for the next step. Without an answer it throws
    * `HostUpdateMissed`, which says whether the host refused it, it never went, or its answer was lost; never by message.
    */
-  async hostUpdate(request: HostUpdateRequest, options: { readonly onStep?: ((step: HostUpdateStep) => void) | undefined; readonly signal?: AbortSignal | undefined } = {}): Promise<HostUpdateAnswer> {
+  async hostUpdate(request: HostUpdateRequest, options: { readonly onStep?: ((step: HostUpdateStep) => void) | undefined; readonly signal?: AbortSignal | undefined;
+    /** A restart outcome read takes only the restart budget left, never longer than its usual answer deadline. */
+    readonly timeoutMs?: number | undefined } = {}): Promise<HostUpdateAnswer> {
     if (!this.offersHostUpdate() || options.signal?.aborted) throw new HostUpdateMissed('unsent')
+    const timeoutMs = Math.min(HOST_UPDATE_ANSWER_DEADLINES_MS[request.action], options.timeoutMs ?? Number.POSITIVE_INFINITY)
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new HostUpdateMissed('timeout')
     const { onStep, signal } = options
     if (onStep) this.updateSteps.add(onStep)
     const frames = this.frames
@@ -1214,7 +1218,7 @@ export class SocketHostService implements HostService {
       const operation = { op: 'host-update', action: request.action, ...(request.version ? { version: request.version } : {}),
         ...(request.file ? { file: request.file } : {}), ...(request.sha256 ? { sha256: request.sha256 } : {}) } as const
       let answer: unknown
-      try { answer = await this.call(operation, randomUUID(), undefined, HOST_UPDATE_ANSWER_DEADLINES_MS[request.action]) }
+      try { answer = await this.call(operation, randomUUID(), undefined, timeoutMs) }
       catch (error) {
         if (error instanceof HostRequestUnanswered) {
           // The SSH fallback must not leave a timed-out socket download holding the host's update lock.

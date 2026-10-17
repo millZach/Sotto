@@ -14,6 +14,14 @@ The Windows recovery started from `0f5328b43` in `.worktrees/feat-host-update-ov
 
 The rollback test also scripts a lost outcome reply after the lost restart answer, so process speed cannot hide this failure. Both integration suites passed their post-extraction run: 15 tests in 94.35 seconds, including that stronger regression. Fresh full gates, performance comparisons and review are pending integration with current main.
 
+## Restart budget review fix
+
+Independent Standards review found that an outcome read could begin after the restart budget ended, or wait its usual 30 seconds despite having less restart time left. At `9bcbe4884`, controlled-time tests reproduced five failures: an expired budget still sent a read, a queued read waited past the deadline, a silent answer retained its pending call, queue time was not deducted, and a retry pause overran the budget. Two neighboring checks already passed.
+
+The queue now rejects an expired read without ending the earlier update. When a read starts, its answer timer uses the remaining restart budget; the usual outcome deadline remains an upper bound. Retry pauses use only the time left. Ten controlled-time tests cover these paths, reconnecting one millisecond before expiry, preserving an earlier update failure, and a confirmed rollback just before the deadline. They use the real recovery queue and socket request timer with a held transport, without real sockets or processes.
+
+The controlled-time file and the neighboring route and host self-update unit suites passed: 61 tests across three files in 3.80 seconds. Targeted ESLint and `git diff --check` passed. This stage did not rerun the real-host integration suites, broad gates or performance measurements; those remain queued under the shared machine lease. The earlier lost-restart and lost-outcome integration scenarios are unchanged.
+
 ## Limits
 
 The panel itself is unchanged. No live provider turn, real Tailscale approval, Linux start-at-boot update or forge update was run here. Zach deferred the real Linux host check until the next Owl release and his go. These local journeys verify the socket and SSH choice against stand-ins; they do not replace that deferred check.
