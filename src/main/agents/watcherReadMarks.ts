@@ -34,8 +34,8 @@ export interface ReadMarkThread { readonly target: WatcherThreadTarget; readonly
  * Read marks (CONTEXT.md): which threads have news the user has not seen. Each pass reads every thread once. A thread
  * earns a mark when its news changes to something new while Sotto watches it change, so a restart, a host connecting
  * or a thread reconnecting marks nothing it already had: what changed out of reach was not seen to change. The marks it
- * saved stay until the user reads them. Working again takes a mark away, since the news it was for is over, and a
- * disconnected thread neither earns nor loses one.
+ * saved stay until the user opens the thread or marks it read: working again, as when Watcher sends it more, keeps the
+ * mark, and new news changes what it says. A disconnected thread neither earns nor loses one.
  */
 export class WatcherReadMarks {
   /** Each thread's news at the last pass, by target. Ephemeral: a restart starts from what it sees. */
@@ -54,7 +54,8 @@ export class WatcherReadMarks {
       const before = this.seen.get(slot)
       this.seen.set(slot, news?.newsId ?? null)
       const mark = byTarget.get(slot)
-      if (news === null) { if (mark) { byTarget.delete(slot); changed = true } continue }
+      // Only the user reading the thread takes a mark away (markThreadsRead): Watcher sending it more work does not.
+      if (news === null) continue
       if (mark) {
         if (mark.newsId !== news.newsId) { byTarget.set(slot, { target, kind: news.kind, newsId: news.newsId, at }); changed = true }
         continue

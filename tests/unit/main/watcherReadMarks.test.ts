@@ -52,13 +52,16 @@ describe('read marks', () => {
     expect(marks.track(asked!, pass(finished('done', 't0'), asking('asks', 'q0'), asking('works', 'q1'), failing('breaks', 't2')), AT)).toBeNull()
   })
 
-  it('takes a mark away when the thread works again, and a disconnected thread neither earns nor loses one', () => {
+  it('keeps a mark when Watcher sends the thread more before the user opens it, and a disconnected thread keeps one too', () => {
     const marks = new WatcherReadMarks()
     marks.track([], pass(running('a', 't1'), running('b', 't2')), AT)
     const marked = marks.track([], pass(finished('a', 't1'), finished('b', 't2')), AT)!
     expect(marked).toHaveLength(2)
-    const after = marks.track(marked, [...pass(running('a', 't3')), { target: target('b'), thread: running('b', 't4'), connected: false }], AT)
-    expect(after?.map(mark => mark.target.threadId)).toEqual(['b'])
+    // An automatic continuation: the thread works again with no news of its own, and its unseen finish stays marked.
+    expect(marks.track(marked, [...pass(running('a', 't3')), { target: target('b'), thread: running('b', 't4'), connected: false }], AT)).toBeNull()
+    // Its next news replaces what the mark says, still unread.
+    const asked = marks.track(marked, pass(asking('a', 'q1')), AT)
+    expect(asked?.map(mark => [mark.target.threadId, mark.kind])).toEqual([['a', 'question'], ['b', 'finished']])
   })
 
   it('marks nothing a thread already had when it connects again, even news that came while it was out of reach', () => {
