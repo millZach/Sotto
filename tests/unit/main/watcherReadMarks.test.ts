@@ -39,11 +39,12 @@ function service(options: { record?: WatcherRecord; remote?: AgentThread[] } = {
   let notify: ((target: { hostId: string; threadId: string }) => void) | undefined
   const providers = (['codex', 'claude', 'grok'] as const).map(id => ({ id, connection: 'connected' }))
   const local = (): AgentHostSnapshot => ({ ...emptyDesktopState(HOST).host, connected: true, providers, threads } as AgentHostSnapshot)
+  let writes = 0
   const update = (change: (next: WatcherRecord) => void): void => { const next = structuredClone(record); change(next); record = watcherRecordSchema.parse(next) }
   const control = {
     watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherSnapshot: local, hostId: () => HOST,
     useWatcher: () => () => undefined, subscribe: () => () => undefined, refreshWatcherObservation: () => undefined,
-    updateWatcher: async (change: (next: WatcherRecord) => void) => update(change), mutateWatcher: update,
+    updateWatcher: async (change: (next: WatcherRecord) => void) => { writes++; update(change) }, mutateWatcher: update,
     restoredWatcherEvents: () => [], watcherWakeUpQueued: () => false, canDeliverWatcherNews: () => false, pruneWatcherWakeUps: async () => undefined,
     deliverWakeUp: async () => undefined, watcherSendRecords: () => ({ deliveries: [], followups: [] }), hasPendingThreadWork: () => false,
     configuration: () => ({}), cancelWatcherQueue: async () => undefined,
@@ -60,7 +61,7 @@ function service(options: { record?: WatcherRecord; remote?: AgentThread[] } = {
   }
   watcher.wakes.start()
   return {
-    watcher, record: () => record,
+    watcher, record: () => record, writes: () => writes,
     pass(...next: AgentThread[]): void { threads = next; watcher.wakes.observe() },
     remotePass(...next: AgentThread[]): void { remoteThreads = next; watcher.wakes.observe() },
     /** A send through the coordinator: read before it goes, then dispatched once the provider took it. */
@@ -168,6 +169,23 @@ describe('a dispatched turn’s own end', () => {
     expect(room.marks()).toEqual([['worker', 'finished']])
   })
 })
+describe('the requests a dispatch knows', () => {
+  it('write nothing on a pass that changes nothing, with sixty cards, and stay read once read', async () => {
+    const room = service()
+    const cards = Array.from({ length: 60 }, (_, index) => card(`q${String(index).padStart(2, '0')}`))
+    room.pass(thread('busy', turn('t0', 'completed')))
+    room.send('busy')
+    room.pass(thread('busy', { ...turn('t1', 'running'), requests: cards }))
+    expect(room.marks()).toEqual([['busy', 'question']])
+    await room.watcher.markRead({ targets: [target('busy')] })
+    const writes = room.writes()
+    room.pass(thread('busy', { ...turn('t1', 'running'), requests: cards }))
+    room.pass(thread('busy', { ...turn('t1', 'running'), requests: cards }))
+    expect(room.writes()).toBe(writes)
+    expect(room.marks()).toEqual([])
+  })
+})
+
 describe('the dispatches read marks wait on', () => {
   it('let a turn that never ends go after a day, unmarked, and keep one whose thread is out of reach', () => {
     const record = emptyWatcherRecord()

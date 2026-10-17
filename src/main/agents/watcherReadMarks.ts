@@ -1,12 +1,21 @@
+import { createHash } from 'node:crypto'
 import type { AgentThread } from '../../shared/agents'
-import { WATCHER_READ_DISPATCHES_MAX, WATCHER_READ_MARKS_MAX, type WatcherReadDispatch, type WatcherReadMark, type WatcherRecord,
+import { WATCHER_READ_DISPATCHES_MAX, WATCHER_READ_DISPATCH_REQUESTS_MAX, WATCHER_READ_MARKS_MAX, type WatcherReadDispatch, type WatcherReadMark, type WatcherRecord,
   type WatcherThreadTarget } from '../../shared/watcher'
 
 const key = (target: WatcherThreadTarget): string => JSON.stringify([target.hostId, target.threadId])
 /** How long a dispatched turn may go without reporting its end before it is let go, unmarked. */
 export const READ_DISPATCH_MAX_MS = 24 * 60 * 60 * 1_000
-/** How many waiting requests one dispatch remembers as already shown. */
-const REQUESTS_KEPT = 50
+
+/**
+ * The waiting requests a dispatch knows as shown: all their IDs up to the bound, and past it a digest of the whole set,
+ * so the set a pass sees replaces the known one whole and an unchanged set is never written again.
+ */
+function knownRequests(ids: readonly string[]): Pick<WatcherReadDispatch, 'requestIds' | 'requestsDigest'> {
+  const sorted = [...new Set(ids)].sort()
+  return sorted.length <= WATCHER_READ_DISPATCH_REQUESTS_MAX ? { requestIds: sorted }
+    : { requestIds: sorted.slice(0, WATCHER_READ_DISPATCH_REQUESTS_MAX), requestsDigest: createHash('sha256').update(JSON.stringify(sorted)).digest('hex') }
+}
 
 /** One thread as a pass reads it: where it lives, and whether its host and provider are connected now. */
 export interface ReadMarkThread { readonly target: WatcherThreadTarget; readonly thread: AgentThread; readonly connected: boolean }
@@ -20,7 +29,7 @@ export interface ReadMarkThread { readonly target: WatcherThreadTarget; readonly
 export function recordDispatch(record: WatcherRecord, target: WatcherThreadTarget, thread: Pick<AgentThread, 'requests'> & Partial<Pick<AgentThread, 'lastTurn'>> | undefined, at: string, messageId?: string): void {
   const kept = (record.readDispatches ?? []).filter(entry => !(key(entry.target) === key(target) && messageId !== undefined && entry.messageId === messageId))
   kept.push({ target, ...(messageId ? { messageId } : {}), priorTurnId: thread?.lastTurn?.id ?? null,
-    requestIds: (thread?.requests ?? []).map(request => request.id).slice(0, REQUESTS_KEPT), at })
+    ...knownRequests((thread?.requests ?? []).map(request => request.id)), at })
   record.readDispatches = kept.slice(-WATCHER_READ_DISPATCHES_MAX)
 }
 
@@ -66,12 +75,15 @@ export function trackDispatches(dispatches: readonly WatcherReadDispatch[], mark
     if (!found || !found.connected) { kept.push(entry); continue }
     const { thread } = found
     let next = entry
-    const shown = new Set(entry.requestIds)
-    const arrived = thread.requests.filter(request => !shown.has(request.id))
-    if (arrived.length) {
-      const asks = arrived.find(request => request.kind === 'question') ?? arrived[0]!
-      mark(entry.target, asks.kind === 'question' ? 'question' : 'permission', `request:${asks.id}`)
-      next = { ...entry, requestIds: [...entry.requestIds, ...arrived.map(request => request.id)].slice(-REQUESTS_KEPT) }
+    // The requests showing now replace those known before, whole, so a pass that changes nothing writes nothing.
+    const showing = knownRequests(thread.requests.map(request => request.id))
+    if (showing.requestsDigest !== entry.requestsDigest || JSON.stringify(showing.requestIds) !== JSON.stringify(entry.requestIds)) {
+      const shown = new Set(entry.requestIds)
+      const arrived = thread.requests.filter(request => !shown.has(request.id))
+      const asks = arrived.find(request => request.kind === 'question') ?? arrived[0]
+      if (asks) mark(entry.target, asks.kind === 'question' ? 'question' : 'permission', `request:${asks.id}`)
+      const { requestsDigest: _digest, ...rest } = entry; void _digest
+      next = { ...rest, requestIds: showing.requestIds, ...showing.requestsDigest ? { requestsDigest: showing.requestsDigest } : {} }
       changed = true
     }
     const end = endOf(entry, thread)
