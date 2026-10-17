@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useId, type ReactNode } from 'react'
 import { CheckCheck, Laptop, Play, Send, Server, Square, type LucideIcon } from 'lucide-react'
-import { isVisualMessage, type AgentMessage, type ProviderId } from '../../../shared/agents'
+import type { AgentMessage, ProviderId } from '../../../shared/agents'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
-import type { WatcherTakeover } from '../../../shared/watcherRoom'
+import { isShownReply, type WatcherTakeover } from '../../../shared/watcherRoom'
 import { SottoMark } from '../components/SottoMark'
 import { ProviderMark } from '../agents/ProviderMark'
 import { clockLabel } from '../agents/threadFacts'
@@ -38,10 +38,6 @@ export interface WatcherConversation {
 }
 export const WatcherConversationContext = createContext<WatcherConversation | null>(null)
 
-/** A reply the transcript draws: words or attachments, never a visual. */
-const drawnReply = (message: AgentMessage): boolean => message.role === 'assistant' && !isVisualMessage(message)
-  && (message.text.length > 0 || Boolean(message.attachments?.length))
-
 /**
  * Where each takeover line goes: after the last reply of the Watcher turn it happened in, the turn begun by the last of
  * the user's messages before it, or after that message while the turn has no reply. A line from before every message
@@ -55,7 +51,7 @@ export function placeTakeovers(messages: readonly AgentMessage[], takeovers: rea
     const user = messages.findLastIndex(message => message.role === 'user' && Date.parse(message.createdAt) <= at)
     let anchor = messages[Math.max(0, user)]!.id
     if (user >= 0) for (let index = user + 1; index < messages.length && messages[index]!.role !== 'user'; index++) {
-      if (drawnReply(messages[index]!)) anchor = messages[index]!.id
+      if (isShownReply(messages[index]!)) anchor = messages[index]!.id
     }
     placed.set(anchor, [...placed.get(anchor) ?? [], line])
   }

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema, watcherRefusalSchema,
   watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema } from './watcher'
 import { watcherEventSchema } from './watcherNews'
-import { agentRuntimeModeSchema, handoverCountsSchema } from './agents'
+import { agentRuntimeModeSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
 import { watcherOwnChangeSchema, watcherReadMarkKindSchema, watcherStandingWatchSchema, WATCHER_READ_MARKS_MAX, type WatcherThreadTarget } from './watcher'
 
 /** Private desktop channels. A host may project the same state later without acquiring command authority. */
@@ -110,6 +110,15 @@ export function takesPartInActiveRequest(participation: WatcherRoomRow['particip
 export function isWatchedRow(row: WatcherRoomRow, requests: WatcherRoomState['requests']): boolean {
   return row.watched ?? takesPartInActiveRequest(row.participation, new Set(requests.filter(request => request.state === 'active').map(request => request.id)))
 }
+/**
+ * A Watcher reply the transcript draws: an assistant message with words or attachments, never a visual (the
+ * transcript's own rule for what it draws). Main places receipt cards by it and the window places takeover lines by it,
+ * so both mean the same reply.
+ */
+export function isShownReply(message: Pick<AgentMessage, 'id' | 'role' | 'text' | 'attachments' | 'visual'>): boolean {
+  return message.role === 'assistant' && !isVisualMessage(message) && (message.text.length > 0 || Boolean(message.attachments?.length))
+}
+
 /** One takeover line (CONTEXT.md): the user sent in a thread the current Watcher was driving, and when. */
 export interface WatcherTakeover { readonly target: WatcherThreadTarget; readonly at: string }
 

@@ -1,10 +1,8 @@
-import { isVisualMessage, type AgentMessage, type AgentThread } from '../../shared/agents'
+import type { AgentMessage, AgentThread } from '../../shared/agents'
 import type { WatcherRecord } from '../../shared/watcher'
+import { isShownReply } from '../../shared/watcherRoom'
 import { watcherWakeUpShown } from './watcherNews'
 
-/** A reply the transcript draws: written words or attachments, never a visual (ThreadTranscript's `drawn`). */
-const drawnReply = (message: AgentMessage): boolean => message.role === 'assistant' && !isVisualMessage(message)
-  && (message.text.length > 0 || Boolean(message.attachments?.length))
 /** A user message the user is shown. A wake-up holding only Watcher's news is not, so it ends no turn on screen. */
 const shownUser = (message: AgentMessage): boolean => message.role === 'user' && watcherWakeUpShown(message) !== null
 
@@ -32,7 +30,7 @@ export function watcherReceiptReplies(record: Readonly<WatcherRecord>, watcher: 
     if (message.role === 'user') {
       anchorOf.set(message.id, reply ?? (shownUser(message) ? message.id : null))
       if (shownUser(message)) reply = null
-    } else if (reply === null && drawnReply(message)) reply = message.id
+    } else if (reply === null && isShownReply(message)) reply = message.id
   }
   const placed: { operationId: string; messageId: string }[] = []
   for (const operation of record.operations) {

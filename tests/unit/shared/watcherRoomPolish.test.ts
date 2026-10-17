@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { stopAllRunning, watcherTakeovers, type WatcherRoomState } from '../../../src/shared/watcherRoom'
+import { isShownReply, stopAllRunning, watcherTakeovers, type WatcherRoomState } from '../../../src/shared/watcherRoom'
 
 const HOST = '11111111-1111-4111-8111-111111111111'
 const AT = '2026-10-16T10:00:00.000Z'
@@ -46,5 +46,16 @@ describe('Stop all', () => {
     request([part('closed', {}, '77777777-7777-4777-8777-777777777777')], { id: '77777777-7777-4777-8777-777777777777', state: 'stopped', closedAt: AT })]
     expect(stopAllRunning({ requests, watchedThreads: rows }).map(item => item.threadId)).toEqual(['running', 'background'])
     expect(stopAllRunning({ requests, watchedThreads: rows.map(item => ({ ...item, status: 'idle', backgroundWorkCount: 0 })) })).toEqual([])
+  })
+})
+
+describe('a shown reply', () => {
+  it('is one rule for main’s receipt placement and the window’s takeover lines: words or attachments, never a visual or the user’s', () => {
+    const reply = { id: 'r', role: 'assistant' as const, text: 'Started it.', createdAt: AT }
+    expect(isShownReply(reply)).toBe(true)
+    expect(isShownReply({ ...reply, text: '' })).toBe(false)
+    expect(isShownReply({ ...reply, text: '', attachments: [{ id: 'a', name: 'shot.png', mimeType: 'image/png', sizeBytes: 1 }] as never })).toBe(true)
+    expect(isShownReply({ ...reply, id: 'visual:1', visual: { kind: 'diagram' } as never })).toBe(false)
+    expect(isShownReply({ ...reply, role: 'user' })).toBe(false)
   })
 })
