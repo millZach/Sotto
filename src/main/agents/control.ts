@@ -115,10 +115,13 @@ const savedReceiptsSchema = z.array(agentDeliveryReceiptsSchema.element).max(MAX
 /** A dormant legacy singleton can be parked while stable uses its ordinary composer. */
 const dormantLegacyDraftSchema = z.object({ draft: z.string(), draftThreadId: z.string(), draftRequestId: z.string().nullable(),
   draftAttachments: savedAttachmentsSchema, manualDraftId: z.uuid().nullable(), composing: z.boolean() })
-/** A held provider's choices, parked while stable uses an available provider; ordinary choices remain editable. */
-const dormantProviderConfigurationSchema = agentConfigurationSchema.pick({ provider: true, defaultModelId: true,
-  newThreadModelId: true, newThreadReasoningEffort: true }).partial().extend({ enabled: z.boolean().optional(),
-    newThreadRuntimeMode: agentConfigurationSchema.shape.newThreadRuntimeMode.nullable() })
+/**
+ * A held provider's choices, parked while stable uses an available provider; ordinary choices remain editable. Only
+ * what was parked is read back: the configuration's defaults would otherwise fill in a provider and an effort it never had.
+ */
+const dormantProviderConfigurationSchema = agentConfigurationSchema.pick({ defaultModelId: true, newThreadModelId: true }).partial().extend({
+  provider: providerIdSchema.optional(), newThreadReasoningEffort: agentConfigurationSchema.shape.newThreadReasoningEffort.unwrap().optional(),
+  enabled: z.boolean().optional(), newThreadRuntimeMode: agentConfigurationSchema.shape.newThreadRuntimeMode.nullable() })
 type DormantProviderConfiguration = z.infer<typeof dormantProviderConfigurationSchema>
 const savedSchema = z.object({
   watcher: z.preprocess(migrateWatcherRecord, watcherRecordSchema),
@@ -395,6 +398,8 @@ export class AgentControl {
   private dormantLegacyDraft: Saved['dormantLegacyDraft']
   /** Each held provider's parked choices, by provider. */
   private readonly dormantProviderConfigurations = new Map<ProviderId, DormantProviderConfiguration>()
+  /** The parked choices as `agents.json` holds them, made when they change rather than on every save. */
+  private savedDormant: Pick<Saved, 'dormantMuseConfiguration' | 'dormantProviderConfigurations'> = {}
   /** The held provider of each dormant thread this run has seen, so its refusal names it. */
   private readonly dormantThreadProviders = new Map<string, ProviderId>()
   /** The providers held to Owl on this run, read once at start (ADR-0072). */
@@ -604,6 +609,8 @@ export class AgentControl {
       const dormant = this.dependencies.host.dormantThreadIds?.()
         ?? (this.dependencies.watcherEnabled !== true ? this.dependencies.host.watcherThreadIds?.() : undefined) ?? []
       for (const id of dormant) this.dormantThreadIds.add(id)
+      // The workspace's snapshot already omits these threads, so their providers come from the host that hid them.
+      for (const [id, provider] of this.dependencies.host.dormantThreadProviders?.() ?? []) this.dormantThreadProviders.set(id, provider)
       if (this.dependencies.watcherEnabled !== true) for (const id of this.dependencies.host.watcherThreadIds?.() ?? []) this.dormantWatcherIds.add(id)
       const snapshot = this.dependencies.host.workspaceSnapshot?.()
       if (snapshot) this.shownSnapshot(snapshot)
@@ -1150,7 +1157,7 @@ export class AgentControl {
     this.syncLegacyDraft()
     const { configuration, activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId, composing } = this.state
     const saved = { configuration, watcher: this.watcher, providerUpgrade: this.state.providerUpgrade ?? null,
-      ...this.savedDormantConfigurations(),
+      ...this.savedDormant,
       activeThreadId, activeProjectId, draft, draftThreadId, draftRequestId,
       draftAttachments: this.dormantLegacyDraft?.draftThreadId === draftThreadId ? this.dormantLegacyDraft.draftAttachments : this.state.draftAttachments ?? [], composing,
       ...(this.dormantLegacyDraft && this.dormantLegacyDraft.draftThreadId !== draftThreadId ? { dormantLegacyDraft: this.dormantLegacyDraft } : {}),
@@ -1175,44 +1182,63 @@ export class AgentControl {
     return { ...(muse ? { dormantMuseConfiguration: muse } : {}),
       ...(others.length ? { dormantProviderConfigurations: Object.fromEntries(others) } : {}) }
   }
+  /**
+   * Every held provider's choices are read from the configuration as saved, before any is moved aside, so parking one
+   * cannot hide another's. A released provider's parked choices then merge back, and only then are held providers taken
+   * out, so one provider's return keeps every other's.
+   */
   private restoreProviderConfiguration(saved: Saved): void {
     const parked = new Map(Object.entries(saved.dormantProviderConfigurations ?? {}) as [ProviderId, DormantProviderConfiguration][])
     if (saved.dormantMuseConfiguration) parked.set('muse', saved.dormantMuseConfiguration)
     this.dormantProviderConfigurations.clear()
-    for (const provider of providerIdSchema.options) {
-      if (this.held.has(provider)) this.parkProviderConfiguration(saved, provider, parked.get(provider))
-      else this.unparkProviderConfiguration(provider, parked.get(provider))
+    const configuration = this.state.configuration
+    let parks = false
+    for (const provider of this.held) {
+      const held = parked.get(provider), dormant = this.parkedChoices(configuration, provider, held)
+      if (held || Object.keys(dormant).length) parks = true
+      if (Object.keys(dormant).length) this.dormantProviderConfigurations.set(provider, dormant)
     }
+    for (const provider of providerIdSchema.options) if (!this.held.has(provider)) this.unparkProviderConfiguration(provider, parked.get(provider))
+    if (parks) this.parkHeldChoices(configuration)
+    this.savedDormant = this.savedDormantConfigurations()
   }
-  /** A provider this run allows takes its parked choices back. */
+  /** A provider this run allows takes its parked choices back, beside whatever else is enabled. */
   private unparkProviderConfiguration(provider: ProviderId, held: DormantProviderConfiguration | undefined): void {
     if (!held) return
     const configuration = this.state.configuration
-    const { enabled, newThreadRuntimeMode, ...choices } = held
+    const { enabled, newThreadRuntimeMode, provider: chosen, newThreadReasoningEffort, ...choices } = held
     Object.assign(configuration, choices)
+    // Earlier builds read a parked record back with the configuration's defaults: a provider other than this one, or an
+    // effort without its model, was never the user's.
+    if (chosen === provider) configuration.provider = provider
     if (held.newThreadModelId !== undefined) {
+      if (newThreadReasoningEffort !== undefined) configuration.newThreadReasoningEffort = newThreadReasoningEffort
       if (newThreadRuntimeMode == null) delete configuration.newThreadRuntimeMode
       else configuration.newThreadRuntimeMode = newThreadRuntimeMode
     }
     if (enabled) configuration.enabledProviders = [...new Set([...enabledThreadProviders(configuration), provider])]
   }
-  /** A held provider's choices move aside, so stable uses an available provider and nothing of the held one is lost. */
-  private parkProviderConfiguration(saved: Saved, provider: ProviderId, held: DormantProviderConfiguration | undefined): void {
-    const configuration = this.state.configuration
+  /** A held provider's choices in the saved configuration, over what it already had parked. */
+  private parkedChoices(configuration: AgentConfiguration, provider: ProviderId, held: DormantProviderConfiguration | undefined): DormantProviderConfiguration {
     const dormant = { ...held }
-    if (!held && configuration.provider !== provider && !enabledThreadProviders(configuration).includes(provider)
-      && parsePublicProviderEntityId(configuration.defaultModelId)?.provider !== provider
-      && parsePublicProviderEntityId(configuration.newThreadModelId)?.provider !== provider) return
-    if (configuration.provider === provider) { dormant.provider = provider; configuration.provider = enabledThreadProviders(configuration).find(item => this.providerAvailable(item)) ?? 'codex' }
-    if (enabledThreadProviders(saved.configuration).includes(provider)) dormant.enabled = true
-    configuration.enabledProviders = enabledThreadProviders(saved.configuration).filter(item => this.providerAvailable(item))
-    if (parsePublicProviderEntityId(configuration.defaultModelId)?.provider === provider) { dormant.defaultModelId = configuration.defaultModelId; configuration.defaultModelId = '' }
+    if (configuration.provider === provider) dormant.provider = provider
+    if (enabledThreadProviders(configuration).includes(provider)) dormant.enabled = true
+    if (parsePublicProviderEntityId(configuration.defaultModelId)?.provider === provider) dormant.defaultModelId = configuration.defaultModelId
     if (parsePublicProviderEntityId(configuration.newThreadModelId)?.provider === provider) {
       dormant.newThreadModelId = configuration.newThreadModelId; dormant.newThreadReasoningEffort = configuration.newThreadReasoningEffort
       dormant.newThreadRuntimeMode = configuration.newThreadRuntimeMode ?? null
+    }
+    return dormant
+  }
+  /** Held providers' choices move aside, so stable uses an available provider and nothing of the held ones is lost. */
+  private parkHeldChoices(configuration: AgentConfiguration): void {
+    const held = (id: string): boolean => this.held.has(parsePublicProviderEntityId(id)?.provider as ProviderId)
+    if (!this.providerAvailable(configuration.provider)) configuration.provider = enabledThreadProviders(configuration).find(item => this.providerAvailable(item)) ?? 'codex'
+    configuration.enabledProviders = enabledThreadProviders(configuration).filter(item => this.providerAvailable(item))
+    if (held(configuration.defaultModelId)) configuration.defaultModelId = ''
+    if (held(configuration.newThreadModelId)) {
       configuration.newThreadModelId = ''; configuration.newThreadReasoningEffort = ''; delete configuration.newThreadRuntimeMode
     }
-    if (Object.keys(dormant).length) this.dormantProviderConfigurations.set(provider, dormant)
   }
   private parseSaved(input: unknown): Saved {
     const saved = savedSchema.parse(withoutLegacyManagement(input))

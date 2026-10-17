@@ -21,8 +21,8 @@ import { watcherRoomInputs } from '../../../src/main/agents/watcherRoomInput'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState, inactiveLocalHost } from '../../../src/main/hosts/inactiveLocalHost'
-import { defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, publicProviderEntityId, type AgentCommand, type AgentHostSnapshot,
-  type AgentState, type ProviderClientUpdate } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, EMPTY_AGENT_HOST, PROVIDER_LABELS, publicProviderEntityId, type AgentCommand, type AgentConfiguration,
+  type AgentHostSnapshot, type AgentState, type ProviderClientUpdate, type ProviderId } from '../../../src/shared/agents'
 import { HELD_PROVIDER_ENTRIES, heldProviderRefusal, heldProvidersOf, heldProvidersOption, releasesHeldProvider, type HeldProviderEntry } from '../../../src/shared/heldProviders'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { HostRequest } from '../../../src/shared/hostProtocol'
@@ -180,6 +180,28 @@ describe.each(providers)('the gate functions hold %s', provider => {
     expect(watcherRoomInputs({ ...host, threads: [...host.threads, heldThread!] }, ['worker', 'held-worker'], HELD, remembered).map(row => row.id)).toEqual(['worker'])
   })
 
+  it("keeps an unchanged dormant thread's entry and a cached catalog without walking the held set", () => {
+    const host = hostState(provider).host
+    const remembered = rememberDormantProviderThreads(new Map<string, DormantProviderThread>(), host, HELD)
+    const entry = remembered.get('held-worker')
+    rememberDormantProviderThreads(remembered, host, HELD)
+    expect(remembered.get('held-worker')).toBe(entry)
+    host.threads = host.threads.map(thread => thread.id === 'held-worker' ? { ...thread, projectId: 'project' } : thread)
+    rememberDormantProviderThreads(remembered, host, HELD)
+    expect(remembered.get('held-worker')).toEqual({ projectId: 'project', provider })
+
+    let walks = 0
+    class CountedHeld extends Set<ProviderId> {
+      override [Symbol.iterator](): SetIterator<ProviderId> { walks++; return super[Symbol.iterator]() }
+      override values(): SetIterator<ProviderId> { walks++; return super.values() }
+    }
+    const counted = new CountedHeld(HELD), certified = immutableModels(host.models)
+    const visible = modelsWithoutHeld(certified, counted)
+    walks = 0
+    expect(modelsWithoutHeld(certified, counted)).toBe(visible)
+    expect(walks).toBe(0)
+  })
+
   it('refuses Watcher requests on its threads, models and projects in its name', () => {
     const host = hostState(provider).host
     const target = { hostId: centerHostId, threadId: 'held-worker' }
@@ -313,5 +335,99 @@ describe.each(providers)('every boundary holds %s', provider => {
     expect(back.workspaceSnapshot().threads.map(thread => thread.id)).toContain('held-worker')
     expect(reopened.control.shell().configuration).toMatchObject({ provider, enabledProviders: ['codex', provider], defaultModelId: scopedModel,
       newThreadModelId: scopedModel, newThreadReasoningEffort: 'high', newThreadRuntimeMode: 'approval-required' })
+  })
+})
+
+describe('parking and restoring held providers', () => {
+  const grokModel = publicProviderEntityId('grok', 'model', 'scoped-model')
+  const parkedGrok = { provider: 'grok', enabled: true, defaultModelId: grokModel }
+  const options = (heldProviders: ReadonlySet<ProviderId>) => ({ credentialOptions: { mode: 'unavailable' as const }, control: { watcherEnabled: true, heldProviders } })
+  async function seeded(patch: (saved: Record<string, unknown>) => void): Promise<string> {
+    const root = await directory()
+    const first = await agentControlFixture({ directory: root, host: new FakeProviderHost(), ...options(new Set()) })
+    await first.control.start(); await first.dispose(); await first.control.closed()
+    const file = join(root, 'agents.json'), saved = JSON.parse(await readFile(file, 'utf8'))
+    patch(saved); await writeFile(file, JSON.stringify(saved))
+    return root
+  }
+  async function run(root: string, held: ReadonlySet<ProviderId>) {
+    const opened = await agentControlFixture({ directory: root, host: new FakeProviderHost(), ...options(held) })
+    await opened.control.start()
+    const configuration = opened.control.shell().configuration
+    const internal = opened.control as unknown as { savedOverLiveState(): { dormantProviderConfigurations?: unknown } }
+    const parkedRecord = internal.savedOverLiveState().dormantProviderConfigurations
+    const again = internal.savedOverLiveState().dormantProviderConfigurations
+    await opened.dispose(); await opened.control.closed()
+    return { configuration, parkedRecord, again, saved: JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')) as Record<string, unknown> }
+  }
+  /** Grok selected, enabled and defaulted to, and Muse enabled alone, as a stable run parked them. */
+  const bothParked = (saved: Record<string, unknown>) => {
+    saved.configuration = { ...defaultAgentConfiguration(), provider: 'codex', enabledProviders: ['codex'], defaultModelId: '' } satisfies AgentConfiguration
+    saved.dormantMuseConfiguration = { enabled: true }
+    saved.dormantProviderConfigurations = { grok: parkedGrok }
+  }
+
+  it("parks each held provider's choices from the configuration as saved", async () => {
+    const root = await seeded(saved => {
+      saved.configuration = { ...defaultAgentConfiguration(), provider: 'grok', enabledProviders: ['grok', 'codex', 'muse'], defaultModelId: grokModel } satisfies AgentConfiguration
+    })
+    const { configuration, saved, parkedRecord, again } = await run(root, HELD)
+    expect(configuration).toMatchObject({ provider: 'codex', enabledProviders: ['codex'], defaultModelId: '' })
+    expect(saved.dormantMuseConfiguration).toEqual({ enabled: true })
+    expect(saved.dormantProviderConfigurations).toEqual({ grok: parkedGrok })
+    // The saved form is made once, when the parked choices change, rather than on every save.
+    expect(parkedRecord).toEqual({ grok: parkedGrok })
+    expect(again).toBe(parkedRecord)
+  })
+
+  it("restores Grok alone without dropping Muse's parked choice", async () => {
+    const { configuration, saved } = await run(await seeded(bothParked), new Set(['muse']))
+    expect(configuration).toMatchObject({ provider: 'grok', enabledProviders: ['codex', 'grok'], defaultModelId: grokModel })
+    expect(saved.dormantMuseConfiguration).toEqual({ enabled: true })
+    expect(saved.dormantProviderConfigurations).toBeUndefined()
+  })
+
+  it('restores Muse alone and keeps Grok parked whole', async () => {
+    const { configuration, saved } = await run(await seeded(bothParked), new Set(['grok']))
+    expect(configuration).toMatchObject({ provider: 'codex', enabledProviders: ['codex', 'muse'], defaultModelId: '' })
+    expect(saved.dormantMuseConfiguration).toBeUndefined()
+    expect(saved.dormantProviderConfigurations).toEqual({ grok: parkedGrok })
+  })
+
+  it("restores Muse's enabled choice without the configuration's defaults", async () => {
+    const root = await seeded(saved => {
+      saved.configuration = { ...defaultAgentConfiguration(), provider: 'claude', enabledProviders: ['claude'], newThreadReasoningEffort: 'high' } satisfies AgentConfiguration
+      saved.dormantMuseConfiguration = { enabled: true }
+    })
+    const { configuration, saved } = await run(root, new Set())
+    expect(configuration).toMatchObject({ provider: 'claude', enabledProviders: ['claude', 'muse'], newThreadReasoningEffort: 'high' })
+    expect(saved.dormantMuseConfiguration).toBeUndefined()
+  })
+
+  it('restores both whole', async () => {
+    const { configuration, saved } = await run(await seeded(bothParked), new Set())
+    expect(configuration).toMatchObject({ provider: 'grok', enabledProviders: ['codex', 'grok', 'muse'], defaultModelId: grokModel })
+    expect(saved.dormantMuseConfiguration).toBeUndefined()
+    expect(saved.dormantProviderConfigurations).toBeUndefined()
+  })
+
+  it("refuses a stale command on a dormant thread in that thread's own provider's name", async () => {
+    const root = await directory(), host = hostState('grok').host
+    host.threads = [...host.threads.map(thread => thread.id === 'held-worker' ? { ...thread, id: 'grok-worker' } : thread),
+      { ...host.threads[1]!, id: 'muse-worker', providerId: 'muse', modelId: 'model', title: 'Muse' }]
+    const owlSnapshot: AgentHostSnapshot = { ...structuredClone(EMPTY_AGENT_HOST), ...host,
+      capabilities: { ...EMPTY_AGENT_HOST.capabilities, projects: true, threads: true, submit: true, observe: true } }
+    const owl = new WorkspaceHost(new FakeProviderHost(owlSnapshot), root, () => true, undefined, true, new Set())
+    await owl.initialize(); await owl.connect()
+    const first = await agentControlFixture({ directory: root, host: owl, ...options(new Set()) })
+    await first.control.start(); await first.dispose(); await first.control.closed(); await owl.close()
+
+    const stable = new WorkspaceHost(new FakeProviderHost({ ...structuredClone(EMPTY_AGENT_HOST), connected: true }), root, () => true, undefined, true, HELD)
+    cleanup.push(() => stable.close()); await stable.initialize()
+    const held = await agentControlFixture({ directory: root, host: stable, ...options(HELD) })
+    cleanup.push(held.dispose); await held.control.start()
+    expect(stable.dormantThreadIds()).toEqual(['grok-worker', 'muse-worker'])
+    expect((await held.control.command({ type: 'interrupt', threadId: 'grok-worker' })).error).toBe(refusal('grok'))
+    expect((await held.control.command({ type: 'interrupt', threadId: 'muse-worker' })).error).toBe(refusal('muse'))
   })
 })

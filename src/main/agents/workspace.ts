@@ -2368,6 +2368,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   dormantThreadIds(): readonly string[] {
     return [...new Set([...(this.watcherEnabled ? [] : this.retainedWatcherIds), ...this.state.snapshot.threads.filter(thread => !this.visible(thread)).map(thread => thread.id)])]
   }
+  dormantThreadProviders(): ReadonlyMap<string, ProviderId> {
+    const providers = new Map<string, ProviderId>()
+    for (const thread of this.state.snapshot.threads) {
+      const provider = heldProviderOfThreadRecord(thread, this.held)
+      if (provider) providers.set(thread.id, provider)
+    }
+    return providers
+  }
   watcherThreadIds(): readonly string[] {
     return [...new Set([...this.retainedWatcherIds, ...this.state.snapshot.threads.filter(thread => thread.kind === 'watcher' || thread.kind === 'watcher-history').map(thread => thread.id)])]
   }

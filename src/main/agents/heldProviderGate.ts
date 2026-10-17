@@ -1,6 +1,6 @@
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdOfLabel, type AgentCommand, type AgentHostSnapshot,
   type AgentModel, type AgentProject, type AgentThread, type ProviderId } from '../../shared/agents'
-import type { HeldProviders } from '../../shared/heldProviders'
+import { heldProviderRefusal, type HeldProviders } from '../../shared/heldProviders'
 import { resolveModel } from '../../shared/modelCatalog'
 import type { WatcherRefusal } from '../../shared/watcher'
 import type { WatcherHostControl, WatcherHostRead } from '../../shared/watcherHost'
@@ -30,18 +30,18 @@ export function heldProviderOfProject(project: Pick<AgentProject, 'id' | 'provid
   return heldOf(project.providerId, held) ?? heldOfScoped(project.id, held)
 }
 
-const heldCatalogs = new WeakMap<AgentModel[], Map<string, AgentModel[]>>()
+/** Keyed by the catalog and then by the held set itself, which a run makes once at start and never changes. */
+const heldCatalogs = new WeakMap<AgentModel[], WeakMap<HeldProviders, AgentModel[]>>()
 /** A stable catalog omits held providers and keeps certified ownership, so streaming snapshots can share it. */
 export function modelsWithoutHeld(models: AgentModel[], held: HeldProviders): AgentModel[] {
   const hidden = (model: AgentModel): boolean => heldProviderOfModel(model, held) !== undefined
   if (!held.size || !models.some(hidden)) return models
   if (!isImmutableModels(models)) return models.filter(model => !hidden(model))
-  const key = [...held].sort().join(' ')
-  const cached = heldCatalogs.get(models)?.get(key)
+  const cached = heldCatalogs.get(models)?.get(held)
   if (cached) return cached
   const visible = immutableModels(models.filter(model => !hidden(model)))
-  const byHeld = heldCatalogs.get(models) ?? new Map<string, AgentModel[]>()
-  byHeld.set(key, visible); heldCatalogs.set(models, byHeld)
+  const byHeld = heldCatalogs.get(models) ?? new WeakMap<HeldProviders, AgentModel[]>()
+  byHeld.set(held, visible); heldCatalogs.set(models, byHeld)
   return visible
 }
 
@@ -93,16 +93,12 @@ export function heldProviderChosenBy(command: AgentCommand, held: HeldProviders)
 
 /** Explicit provider choices and model/project ownership share the same gate at every desktop command boundary. */
 export function heldProviderOfCommand(command: AgentCommand, held: HeldProviders, snapshot?: AgentHostSnapshot): ProviderId | undefined {
-  if (!held.size) return undefined
-  if ('provider' in command) { const provider = heldOf(command.provider, held); if (provider) return provider }
-  if (command.type === 'queue-client-updates' || command.type === 'cancel-client-updates') {
-    const provider = command.providers.find(item => held.has(item)); if (provider) return provider
-  }
+  const chosen = heldProviderChosenBy(command, held)
+  if (chosen || !held.size) return chosen
   if ('modelId' in command) { const provider = heldProviderOfModelId(command.modelId, held, snapshot); if (provider) return provider }
   if ('projectId' in command) { const provider = heldProviderOfProjectId(command.projectId, held, snapshot); if (provider) return provider }
   if (command.type !== 'configure') return undefined
-  return heldOf(command.patch.provider, held) ?? command.patch.enabledProviders?.find(item => held.has(item))
-    ?? command.patch.disconnectedProviders?.find(item => held.has(item))
+  return command.patch.disconnectedProviders?.find(item => held.has(item))
     ?? heldProviderOfModelId(command.patch.defaultModelId, held, snapshot) ?? heldProviderOfModelId(command.patch.newThreadModelId, held, snapshot)
 }
 
@@ -135,7 +131,10 @@ export function rememberDormantProviderThreads(into: Map<string, DormantProvider
   if (!held.size) return into
   for (const thread of snapshot.threads) {
     const provider = heldProviderOfThread(thread, snapshot, held)
-    if (provider) into.set(thread.id, { projectId: thread.projectId, provider })
+    if (!provider) continue
+    // An unchanged thread keeps its entry: this runs on every published state.
+    const known = into.get(thread.id)
+    if (known?.provider !== provider || known.projectId !== thread.projectId) into.set(thread.id, { projectId: thread.projectId, provider })
   }
   return into
 }
@@ -175,8 +174,7 @@ export function heldProviderOfWatcherRequest(request: WatcherHostRead | WatcherH
 
 /** What Watcher hears for a held provider's thread, in that provider's name. */
 export function heldWatcherRefusal(provider: ProviderId): WatcherRefusal {
-  return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', retryable: false,
-    message: `${PROVIDER_LABELS[provider]} is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.` }
+  return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', retryable: false, message: heldProviderRefusal(provider) }
 }
 
 /**
