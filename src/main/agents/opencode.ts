@@ -221,6 +221,8 @@ export class OpenCodeHost implements AgentHost {
   private executable: string | undefined
   /** The connect check's short-lived server while it starts or answers, so a disconnect stops it too. */
   private probe: Promise<{ server: OpenCodeServer }> | undefined
+  /** Aborted when Sotto disconnects, which ends the connect check's requests with its server. */
+  private probeClosed = new AbortController()
   private writing = Promise.resolve()
   private readonly log = new ThreadMessageLog()
   private history: ThreadHistorySource | undefined
@@ -320,8 +322,11 @@ export class OpenCodeHost implements AgentHost {
     throw new WatcherProfileRefusal(WATCHER_REFUSED)
   }
 
-  /** Start one server and prove it is OpenCode 2 at the floor or newer; one that is not is stopped again. */
-  private async startServer(cwd: string): Promise<{ server: OpenCodeServer; client: OpenCodeClient; version: string }> {
+  /**
+   * Start one server and prove it is OpenCode 2 at the floor or newer; one that is not is stopped again. Its requests end
+   * when `closed` aborts, as the server is being stopped.
+   */
+  private async startServer(cwd: string, closed: AbortSignal): Promise<{ server: OpenCodeServer; client: OpenCodeClient; version: string }> {
     const executable = this.executable
     if (!executable) throw new Error('Connect OpenCode before managing threads.')
     await ensureOpenCodeFolders(this.folders)
@@ -331,7 +336,7 @@ export class OpenCodeHost implements AgentHost {
         env: opencodeEnvironment(this.environment, this.folders, password), timeoutMs: this.options.startTimeoutMs ?? 30_000, log: this.options.log,
         ledger: this.folders.servers })
       try {
-        const client = new OpenCodeClient(server.url, password, this.timeoutMs)
+        const client = new OpenCodeClient(server.url, password, this.timeoutMs, closed)
         const info = infoSchema.parse(await client.request('GET', '/api/info'))
         const refusal = opencodeVersionRefusal(info.version)
         if (refusal) throw refusal
@@ -351,7 +356,7 @@ export class OpenCodeHost implements AgentHost {
     entry.ready = (async () => {
       await this.refuseWatcher(id)
       this.assertGeneration(generation)
-      const started = await this.startServer(cwd ?? this.aliases[id]?.cwd ?? this.folders.data)
+      const started = await this.startServer(cwd ?? this.aliases[id]?.cwd ?? this.folders.data, entry.abort.signal)
       if (entry.closing || generation !== this.generation || this.processes.get(id) !== entry) {
         await started.server.stop()
         throw new OpenCodeUncertain('The OpenCode connection changed while the thread was starting.')
@@ -443,7 +448,8 @@ export class OpenCodeHost implements AgentHost {
       this.threads.clear(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
       this.assertGeneration(generation)
       this.executable = executable
-      const starting = this.startServer(this.folders.data)
+      this.probeClosed = new AbortController()
+      const starting = this.startServer(this.folders.data, this.probeClosed.signal)
       this.probe = starting
       // Its exit is tracked with the thread servers', so `closed()` waits for it however it ends.
       const exit: Promise<void> = starting.then(started => started.server.closed.then(() => started.server.stop()), () => undefined).finally(() => { this.exits.delete(exit) })
@@ -1170,6 +1176,7 @@ export class OpenCodeHost implements AgentHost {
     if (ended) void this.persist().catch(() => undefined)
     for (const entry of this.processes.values()) void this.closeProcess(entry)
     this.processes.clear()
+    this.probeClosed.abort()
     if (this.probe) { void this.probe.then(probe => probe.server.stop(), () => undefined); this.probe = undefined }
     this.state.connected = false; this.emit()
   }
