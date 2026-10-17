@@ -6,7 +6,7 @@ import { HOST_PROVIDER_ORDER, HostProviders } from '../../../src/renderer/src/fe
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import type { AgentProviderStatus, ProviderId } from '../../../src/shared/agents'
 import type { HostsBridge, HostStatus } from '../../../src/shared/hosts'
-import { hostKeySentence, opencodeHostNeedsUpdate, SIGN_IN_WORDS, type ModelSources } from '../../../src/shared/opencodeSignIn'
+import { hostKeySentence, opencodeHostNeedsUpdate, opencodeSignInComesBack, SIGN_IN_WORDS, type ModelSources } from '../../../src/shared/opencodeSignIn'
 
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn(),
@@ -103,4 +103,26 @@ it('shows no Model sources while OpenCode on the host is not connected, and noth
   expect(within(screen.getByRole('list', { name: 'Providers on forge' })).getAllByRole('heading').map(heading => heading.textContent)).not.toContain('OpenCode')
   expect(screen.queryByRole('group', { name: 'OpenCode model sources on forge' })).toBeNull()
   expect(opencodeSignIn).not.toHaveBeenCalled()
+})
+
+it('stops offering on a host a browser sign-in that finished on that machine, once forge has said so', async () => {
+  const chatgpt = { id: 'chatgpt-token-sharing', kind: 'browser', label: 'ChatGPT account' } as const
+  const sources: ModelSources = { status: 'ok', zenModels: 3, sources: [{ id: 'openai', name: 'OpenAI', methods: [key, chatgpt], models: 0 }] }
+  const { bridge: hosts, opencodeSignIn } = bridge(call => call.action === 'browser' ? { status: 'refused', message: opencodeSignInComesBack('forge') } : sources)
+  await open(hosts)
+  const add = await screen.findByRole('button', { name: 'Add a model source to OpenCode on forge' })
+  fireEvent.click(add)
+  fireEvent.click(within(await screen.findByRole('listbox', { name: 'Model sources' })).getByRole('option', { name: /^OpenAI/u }))
+  const dialog = await screen.findByRole('dialog', { name: 'Sign in to OpenAI' })
+  fireEvent.click(within(dialog).getByRole('radio', { name: /ChatGPT account/u }))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Open the OpenAI sign-in page in your browser' }))
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent(opencodeSignInComesBack('forge'))
+  // Asked once; from then on the method says why it is not offered, and cannot be pressed again.
+  expect(within(dialog).getByRole('button', { name: 'ChatGPT account cannot finish from this computer' })).toBeDisabled()
+  expect(within(dialog).getByText('Finishes on forge itself, so not from this computer.')).toBeVisible()
+  expect(opencodeSignIn.mock.calls.filter(([request]) => request.call.action === 'browser')).toHaveLength(1)
+  // The next time OpenAI is picked, it opens on its key.
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Back to the list of model sources' }))
+  fireEvent.click(within(await screen.findByRole('listbox', { name: 'Model sources' })).getByRole('option', { name: /^OpenAI/u }))
+  expect(await screen.findByLabelText('OpenAI API key')).toBeVisible()
 })

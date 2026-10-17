@@ -9,6 +9,11 @@ import { z } from 'zod'
 
 /** Passed to the main window's preload only while OpenCode's Owl feature is on; without it there is no bridge. */
 export const OPENCODE_RENDERER_ARGUMENT = '--sotto-opencode-enabled'
+/**
+ * Passed to the main window's preload while OpenCode's Owl feature is on, whether or not this computer runs its local host:
+ * a host's OpenCode is signed in from Settings > Hosts through its own bridge (#1107).
+ */
+export const OPENCODE_HOSTS_RENDERER_ARGUMENT = '--sotto-opencode-hosts'
 export const OPENCODE_SOURCES_READ = 'sotto:opencode:sources'
 export const OPENCODE_SIGN_IN_KEY = 'sotto:opencode:sign-in-key'
 export const OPENCODE_SIGN_IN_BROWSER = 'sotto:opencode:sign-in-browser'
