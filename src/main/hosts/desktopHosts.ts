@@ -30,7 +30,8 @@ import type { HostUpdateAction, HostUpdateState } from '../../shared/hostUpdates
 import { nameHostInRefusal, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import type { HostProviderJobSource, ProviderJobHost } from './hostProviderJob'
-import { isProviderSignInPage, type HostClientUpdateRequest, type HostProviderAction, type HostProviderActionResult, type HostSignIn, type HostSignInRequest, type ProviderSignInView } from '../../shared/hostProviders'
+import { SIGN_IN_WORDS, isOpenCodeSignInPage, opencodeHostNeedsUpdate, opencodeSignInComesBack } from '../../shared/opencodeSignIn'
+import { isProviderSignInPage, type HostOpenCodeSignInRequest, type HostClientUpdateRequest, type HostProviderAction, type HostProviderActionResult, type HostSignIn, type HostSignInRequest, type ProviderSignInView } from '../../shared/hostProviders'
 
 /** Files from before the switch have no `sshPort` or `enabled` and still read: both are optional, and no `enabled` means on. */
 const savedHostSchema = remoteHostSchema.extend({ hostId: z.uuid().optional(), clientId: z.string().optional() })
@@ -825,6 +826,43 @@ export class DesktopHosts {
     const shown: HostSignIn = { ...view }
     delete shown.url
     return shown
+  }
+  /**
+   * The host's own OpenCode signed in to a model source from its tile's Add a model source dialog (#1107, ADR-0037). Each
+   * call goes to that host alone and is answered as the desktop's own dialog is answered, a refusal in words included, so
+   * the dialog reads one shape for both. A key goes to the host once and comes back in nothing. Open the page asks the host
+   * for the page's address, checks it is https, and opens it in this computer's browser; the window never holds it unless
+   * the browser did not open, as on this computer. A browser sign-in that finishes by sending the browser back to OpenCode
+   * on the host's own machine cannot finish from here, so it is cancelled on the host as soon as it starts and refused.
+   */
+  async opencodeSignIn(request: HostOpenCodeSignInRequest): Promise<unknown> {
+    const refused = (message: string) => ({ status: 'refused' as const, message })
+    let target: { host: SavedHost; socket: SocketHostService }
+    try { target = this.connectedSocket(request.id) } catch (error) { return refused(error instanceof Error ? error.message : 'This host is not connected. Nothing was changed.') }
+    const { host, socket } = target
+    if (!socket.offersOpenCodeSignIn()) return refused(opencodeHostNeedsUpdate(host.name))
+    const { call } = request
+    try {
+      if (call.action === 'reopen') {
+        const page = await socket.opencodeSignIn({ action: 'page', request: call.request })
+        if (page.status !== 'ok') return page
+        if (!isOpenCodeSignInPage(page.address)) return refused(SIGN_IN_WORDS.unsafePage)
+        if (!this.options.openExternal) return { status: 'not-opened', message: SIGN_IN_WORDS.pageNotOpened, address: page.address }
+        try { await this.options.openExternal(page.address); return { status: 'ok' } } catch {
+          return { status: 'not-opened', message: SIGN_IN_WORDS.pageNotOpened, address: page.address }
+        }
+      }
+      if (call.action === 'browser') {
+        const started = await socket.opencodeSignIn(call)
+        if (started.status !== 'waiting' || started.attempt.mode !== 'auto' || started.attempt.code !== undefined) return started
+        await socket.opencodeSignIn({ action: 'cancel', request: { attemptId: started.attempt.id } }).catch(() => undefined)
+        return refused(opencodeSignInComesBack(host.name))
+      }
+      return await socket.opencodeSignIn(call)
+    } catch (error) {
+      if (error instanceof HostConnectionError && error.code === 'version_mismatch') return refused(opencodeHostNeedsUpdate(host.name))
+      return refused(`${host.name} did not answer, so nothing was signed in or out there. Check that ${host.name} is connected, then try again.`)
+    }
   }
   /** The live connection to a saved host that is connected now, for what its tiles ask of it. */
   private connectedSocket(id: string): { host: SavedHost; socket: SocketHostService } {

@@ -23,6 +23,9 @@ export const OPENCODE_SIGN_OUT = 'sotto:opencode:sign-out'
 export const COMMON_MODEL_SOURCES = ['anthropic', 'openai', 'openrouter', 'github-copilot', 'google', 'xai'] as const
 /** The sentence under every key field. */
 export const KEY_SENTENCE = 'Sotto’s OpenCode keeps the key in its own folder, and Sotto keeps no copy.'
+/** The same for a host's OpenCode (#1107): the key crosses the host connection once and is kept only there. */
+export const hostKeySentence = (host: string): string =>
+  `The key goes to Sotto’s OpenCode on ${host} once, which keeps it in its own folder there. Sotto keeps no copy on either computer.`
 /** The longest key Sotto passes on. Real keys are well under this; a longer paste is something else. */
 export const OPENCODE_KEY_MAX = 4_096
 
@@ -106,6 +109,36 @@ export const signInDoneSchema = z.discriminatedUnion('status', [z.object({ statu
   z.object({ status: z.literal('not-opened'), message: words, address: z.string().max(4_096).regex(/^https:\/\//u) }).strict()])
 export type SignInDone = z.infer<typeof signInDoneSchema>
 
+/**
+ * A host's OpenCode signed in from this computer (#1107, ADR-0037): one `opencode-sign-in` request per call, each the same
+ * call the desktop's own dialog makes of main, answered by the host's own sign-in on its own Sotto OpenCode folder. `page`
+ * stands in for opening the page: the host has no browser, so it answers with the page's address, which this computer's
+ * main checks and opens, and never hands the window. A key crosses the connection once, in `key`, and goes no further than
+ * the host's OpenCode.
+ */
+export const opencodeHostCallSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('sources') }).strict(),
+  z.object({ action: z.literal('key'), request: signInKeyRequestSchema }).strict(),
+  z.object({ action: z.literal('browser'), request: signInMethodRequestSchema }).strict(),
+  z.object({ action: z.literal('external'), request: signInMethodRequestSchema }).strict(),
+  z.object({ action: z.literal('wait'), request: signInAttemptRequestSchema }).strict(),
+  z.object({ action: z.literal('finish'), request: signInFinishRequestSchema }).strict(),
+  z.object({ action: z.literal('page'), request: signInAttemptRequestSchema }).strict(),
+  z.object({ action: z.literal('cancel'), request: signInAttemptRequestSchema }).strict(),
+  z.object({ action: z.literal('sign-out'), request: signOutRequestSchema }).strict(),
+])
+export type OpenCodeHostCall = z.infer<typeof opencodeHostCallSchema>
+/** A waiting sign-in's page as a host answers `page`: its https address, for this computer's main to open, or a refusal. */
+export const signInPageSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('ok'), address: z.string().max(4_096).regex(/^https:\/\//u) }).strict(), refused])
+export type SignInPage = z.infer<typeof signInPageSchema>
+/** What a host answers each call with, by action. */
+export const OPENCODE_HOST_ANSWERS = {
+  sources: modelSourcesSchema, key: signInResultSchema, browser: signInStartSchema, external: signInResultSchema, wait: signInWaitSchema,
+  finish: signInWaitSchema, page: signInPageSchema, cancel: signInDoneSchema, 'sign-out': signInResultSchema,
+} as const satisfies Record<OpenCodeHostCall['action'], z.ZodType>
+export type OpenCodeHostAnswer<A extends OpenCodeHostCall['action']> = z.infer<(typeof OPENCODE_HOST_ANSWERS)[A]>
+
 export interface OpenCodeSignInBridge {
   sources(): Promise<ModelSources>
   signInWithKey(request: SignInKeyRequest): Promise<SignInResult>
@@ -142,3 +175,19 @@ export const SIGN_IN_WORDS = {
   keyUnchecked: (source: string) => `OpenCode tries the key the first time a thread uses one of its models. If ${source} refuses it then, sign out here and paste the key again.`,
   signedOut: (source: string, key: boolean) => `Signed out of ${source}. Its ${key ? 'key' : 'sign-in'} is gone from Sotto’s OpenCode.`,
 } as const
+
+/** A host from before #1107 does not list `opencode-sign-in`: its tile says so, and nothing is sent to it. */
+export const opencodeHostNeedsUpdate = (host: string): string =>
+  `The host on ${host} cannot sign OpenCode in to model sources from here. Nothing was changed. Put this computer’s version of the host on ${host}, stop the host and connect again.`
+/**
+ * A browser sign-in OpenCode finishes by sending the browser back to its own machine (checked against 2.0.31: every `auto`
+ * sign-in without a code, whose page names a `localhost` or `127.0.0.1` address to come back to). A browser on this
+ * computer cannot reach OpenCode on the host, so on a host it is cancelled as it starts, and only a key, a pasted code or
+ * a device code signs in.
+ */
+export const opencodeSignInComesBack = (host: string): string =>
+  `This way of signing in finishes by sending your browser back to OpenCode on ${host}, which the browser on this computer cannot reach. Nothing was saved. Choose another way to sign in, such as a key.`
+/** Whether an address OpenCode gave is one Sotto opens: https, with a host name and no user name or password in it. */
+export function isOpenCodeSignInPage(address: string): boolean {
+  try { const url = new URL(address); return url.protocol === 'https:' && !url.username && !url.password && Boolean(url.hostname) } catch { return false }
+}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { writeClipboard } from '../../agents/richActions'
 import { PROVIDER_LABELS, type AgentProviderStatus, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
@@ -10,12 +10,14 @@ import { ProviderMark } from '../../agents/ProviderMark'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useOptionalApp } from '../../state/AppContext'
 import { HostProviderSignIn } from './HostProviderSignIn'
+import { OpenCodeModelSources } from '../../agents/OpenCodeModelSources'
+import { hostOpenCodeBridge } from './hostOpenCode'
 import { HostProviderAgent } from './HostProviderAgent'
 import { HostClientUpdatesChip, tileUpdateParts, useHostClientUpdates, waitingForOf, type SendClientUpdate } from './HostClientUpdates'
 import type { HostClientUpdatesView } from './hostClientUpdateWords'
 import './hostProviders.css'
 
-/** The order the tiles are in: the providers the prototype drew, in its order (ADR-0037). OpenCode joins in #1107. */
+/** The order the tiles are in: the providers the prototype drew, in its order (ADR-0037), then Muse and OpenCode (#1107). */
 export const HOST_PROVIDER_ORDER: readonly HostProviderId[] = HOST_PROVIDERS
 
 /**
@@ -197,6 +199,8 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
     }
     if (tile.kind === 'off') return <Button variant="secondary" disabled={pending !== null} aria-label={`Connect ${name} on ${host.name}`} onClick={() => void act('connect')}>{pending ? PENDING_LABEL[pending] : 'Connect'}</Button>
     if (tile.kind === 'signed-out') {
+      // OpenCode connects with no sign-in and signs in to model sources under the tiles instead (#1107).
+      if (provider === 'opencode') return null
       if (!PROVIDER_SIGN_IN_SHAPES[provider]) return <SignInCommand host={host.name} provider={provider} />
       return <Button variant="primary" aria-label={`Sign in to ${name} on ${host.name} from this computer`} onClick={() => onSignIn(provider)}>Sign in</Button>
     }
@@ -227,7 +231,8 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
  * A connected host's providers, under its row in Settings > Hosts (ADR-0037, layout B of `prototype/host-providers`):
  * Show providers opens a tile for each provider this build offers, and each tile acts on that host alone. Sign in opens a small dialog
  * that runs the provider's own sign-in on the host and finishes it in this computer's browser. A provider the host cannot
- * use offers an agent to install, update or fix it (ADR-0035), and its tile follows that agent while it works.
+ * use offers an agent to install, update or fix it (ADR-0035), and its tile follows that agent while it works. Under the
+ * tiles, a connected OpenCode's Model sources block signs the host's own OpenCode in to model sources (#1107).
  */
 export function HostProviders({ host, providers, bridge, job, choice, updates, run }: {
   readonly host: HostStatus; readonly providers: readonly AgentProviderStatus[]; readonly bridge: HostsBridge
@@ -246,6 +251,8 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
   const gridId = useId()
   const grid = useRef<HTMLUListElement>(null)
   const own = job?.hostId === host.id ? job : undefined
+  const opencodeBridge = useMemo(() => heldProviders.has('opencode') ? undefined : hostOpenCodeBridge(bridge, host.id), [bridge, host.id, heldProviders])
+  const opencodeConnected = providers.some(item => item.id === 'opencode' && item.connection === 'connected')
   const view = useHostClientUpdates(host.id, updates, HOST_PROVIDER_ORDER)
   const [sending, setSending] = useState(false)
   const [refusal, setRefusal] = useState<TileUpdates['refusal']>()
@@ -289,6 +296,7 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
           status={providers.find(item => item.id === provider)} job={own?.provider === provider ? own : undefined}
           onSignIn={setSigningIn} onAgent={(id, jobCase) => setAgent({ provider: id, jobCase })} updates={tileUpdates} />)}
       </ul>
+      {opencodeBridge && opencodeConnected ? <OpenCodeModelSources bridge={opencodeBridge} host={host.name} /> : null}
       <p className="host-providers__foot">{host.name} connects each provider that is signed in when its host starts. A provider you disconnect stays off.</p>
     </div> : null}
     {signingIn ? <HostProviderSignIn host={host} provider={signingIn} bridge={bridge} onClose={() => setSigningIn(null)} /> : null}

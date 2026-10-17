@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import {
   SIGN_IN_WORDS, signInAttemptRequestSchema, signInFinishRequestSchema, signInKeyRequestSchema, signInMethodRequestSchema, signOutRequestSchema,
-  type ModelSources, type SignInDone, type SignInResult, type SignInStart, type SignInWait,
+  type ModelSources, type SignInDone, type SignInPage, type SignInResult, type SignInStart, type SignInWait,
 } from '../../shared/opencodeSignIn'
 import { locationQuery, OpenCodeRejected, type OpenCodeClient } from './opencodeClient'
 import { OpenCodeUncertain } from './opencodeServer'
@@ -263,12 +263,20 @@ export class OpenCodeSignIn {
    * it asks again. A browser that does not open answers with the page's address, to open by hand; the sign-in waits on.
    */
   async reopenPage(request: unknown): Promise<SignInDone> {
+    const page = await this.pageAddress(request)
+    if (page.status !== 'ok') return page
+    try { await this.options.openExternal(page.address); return { status: 'ok' } } catch {
+      return { status: 'not-opened', message: SIGN_IN_WORDS.pageNotOpened, address: page.address }
+    }
+  }
+  /**
+   * A waiting sign-in's page address, which only https pages ever are, for main to open. A host has no browser, so it
+   * answers a desktop's `page` with this, and the desktop opens it in its own (#1107, ADR-0037).
+   */
+  async pageAddress(request: unknown): Promise<SignInPage> {
     const { attemptId } = signInAttemptRequestSchema.parse(request)
     const attempt = this.attempts.get(attemptId)
-    if (!attempt) return { status: 'refused', message: SIGN_IN_WORDS.notRunning }
-    try { await this.options.openExternal(attempt.url); return { status: 'ok' } } catch {
-      return { status: 'not-opened', message: SIGN_IN_WORDS.pageNotOpened, address: attempt.url }
-    }
+    return attempt ? { status: 'ok', address: attempt.url } : { status: 'refused', message: SIGN_IN_WORDS.notRunning }
   }
   async cancel(request: unknown): Promise<SignInDone> {
     const { attemptId } = signInAttemptRequestSchema.parse(request)

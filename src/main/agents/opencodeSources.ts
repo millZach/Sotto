@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ModelSource, ModelSourceField, ModelSourceMethod, SignInAttempt } from '../../shared/opencodeSignIn'
+import { isOpenCodeSignInPage, type ModelSource, type ModelSourceField, type ModelSourceMethod, type SignInAttempt } from '../../shared/opencodeSignIn'
 
 /**
  * OpenCode 2's model sources as Sotto shows them (#1104). OpenCode calls a model source an integration and lists every
@@ -161,6 +161,4 @@ export function attemptOf(sourceId: string, attempt: NativeAttempt): SignInAttem
     page: `${url.host}${url.pathname === '/' ? '' : url.pathname}`.slice(0, 300), ...(expires !== undefined ? { expiresAt: expires } : {}) }
 }
 /** Only an https page is opened in the user's browser, with no user name or password in its address. */
-export function safeSignInPage(address: string): boolean {
-  try { const url = new URL(address); return url.protocol === 'https:' && !url.username && !url.password && Boolean(url.hostname) } catch { return false }
-}
+export const safeSignInPage = isOpenCodeSignInPage

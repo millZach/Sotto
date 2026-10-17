@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { Check, ChevronLeft, Copy, ExternalLink, Plus, Search } from 'lucide-react'
 import {
-  COMMON_MODEL_SOURCES, KEY_SENTENCE, SIGN_IN_WORDS, type ModelSource, type ModelSourceField, type ModelSourceMethod, type ModelSources,
+  COMMON_MODEL_SOURCES, KEY_SENTENCE, SIGN_IN_WORDS, hostKeySentence, type ModelSource, type ModelSourceField, type ModelSourceMethod, type ModelSources,
   type OpenCodeSignInBridge, type SignInAttempt, type SignInWait,
 } from '../../../shared/opencodeSignIn'
 import { Button } from '../components/Button'
@@ -17,18 +17,24 @@ const howHint = (source: ModelSource): string => [...new Set(source.methods.map(
 const isKey = (how: string): boolean => /key|token/iu.test(how)
 const expiry = (at: number | undefined): string | undefined => at === undefined ? undefined
   : new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-function aboutMethod(source: ModelSource, method: ModelSourceMethod): string {
+function aboutMethod(source: ModelSource, method: ModelSourceMethod, host: string | undefined): string {
   if (method.kind === 'key') return `Paste ${/^[aeiou]/iu.test(method.label) ? 'an' : 'a'} ${method.label.replace(/^(?!API)\w/u, letter => letter.toLowerCase())} from your ${source.name} account.`
-  if (method.kind === 'external') return 'Uses a sign-in already on this computer.'
+  if (method.kind === 'external') return `Uses a sign-in already on ${host ?? 'this computer'}.`
   return 'In your browser.'
 }
 
 /**
  * The OpenCode tile's Model sources block (#1104, variant A of `prototype/opencode-sign-in`): OpenCode Zen, then each
  * source Sotto's OpenCode is signed in to with how and its model count, and Add a model source, which opens the dialog.
- * Everything it learns comes through main; it never holds a key past the field it was typed in.
+ * Everything it learns comes through main; it never holds a key past the field it was typed in. With `host`, the same block
+ * and dialog sign a connected host's own OpenCode in, over the host connection, and say so (#1107).
  */
-export function OpenCodeModelSources({ bridge, pollMs = 2_000 }: { readonly bridge: OpenCodeSignInBridge; readonly pollMs?: number }): ReactNode {
+export function OpenCodeModelSources({ bridge, pollMs = 2_000, host }: {
+  readonly bridge: OpenCodeSignInBridge; readonly pollMs?: number
+  /** The saved host whose OpenCode this signs in, by the name this computer saved it under; absent for this computer's own. */
+  readonly host?: string | undefined
+}): ReactNode {
+  const on = host ? ` on ${host}` : ''
   const [read, setRead] = useState<ModelSources | null>(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -69,24 +75,24 @@ export function OpenCodeModelSources({ bridge, pollMs = 2_000 }: { readonly brid
     setNotice([SIGN_IN_WORDS.signedIn(source.name, count), method.kind === 'key' ? SIGN_IN_WORDS.keyUnchecked(source.name) : '', warning ?? ''].filter(Boolean).join(' '))
   }
   return <div className="oc-sources" role="group" aria-labelledby={headingId} aria-busy={read === null}>
-    <h4 id={headingId}>Model sources</h4>
-    {read === null ? <p className="oc-empty" role="status">Reading what Sotto’s OpenCode is signed in to…</p> : null}
+    <h4 id={headingId}>{host ? `OpenCode model sources on ${host}` : 'Model sources'}</h4>
+    {read === null ? <p className="oc-empty" role="status">Reading what Sotto’s OpenCode{on} is signed in to…</p> : null}
     {read?.status === 'refused' ? <p className="provider-detail__error" role="alert">{read.message}</p> : null}
     {read?.status === 'ok' ? <>
-      <ul className="oc-list" ref={listRef} aria-label="Model sources Sotto’s OpenCode can use">
+      <ul className="oc-list" ref={listRef} aria-label={`Model sources Sotto’s OpenCode${on} can use`}>
         <li><span className="oc-src"><strong>OpenCode Zen</strong><small>Free models. No sign-in needed.</small></span><span className="oc-count">{plural(read.zenModels, 'model')}</span></li>
         {signed.map(source => <li key={source.id}>
           <span className="oc-src"><strong>{source.name}</strong><small>{source.signedIn!.how}</small></span>
           <span className="oc-count">{plural(source.models, 'model')}</span>
-          <Button variant="ghost" aria-label={`Sign out of ${source.name}`} disabled={signingOut !== null} onClick={() => void signOut(source)}>{signingOut === source.id ? 'Signing out…' : 'Sign out'}</Button>
+          <Button variant="ghost" aria-label={`Sign out of ${source.name}${on}`} disabled={signingOut !== null} onClick={() => void signOut(source)}>{signingOut === source.id ? 'Signing out…' : 'Sign out'}</Button>
         </li>)}
       </ul>
-      {!signed.length ? <p className="oc-empty">Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads. That account pays for them.</p> : null}
-      <div className="oc-below"><Button ref={addRef} variant="secondary" aria-haspopup="dialog" aria-expanded={open} onClick={() => { setNotice(''); setError(null); setOpen(true) }}><Plus aria-hidden="true" size={14} />Add a model source</Button></div>
+      {!signed.length ? <p className="oc-empty">Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads{on}. That account pays for them.</p> : null}
+      <div className="oc-below"><Button ref={addRef} variant="secondary" aria-haspopup="dialog" aria-expanded={open} aria-label={host ? `Add a model source to OpenCode on ${host}` : undefined} onClick={() => { setNotice(''); setError(null); setOpen(true) }}><Plus aria-hidden="true" size={14} />Add a model source</Button></div>
     </> : null}
     <p className="oc-notice" role="status">{notice}</p>
     {error ? <p className="provider-detail__error" role="alert">{error}</p> : null}
-    {open && read?.status === 'ok' ? <AddModelSourceDialog bridge={bridge} sources={read.sources} pollMs={pollMs} fallbackFocus={addRef}
+    {open && read?.status === 'ok' ? <AddModelSourceDialog bridge={bridge} sources={read.sources} pollMs={pollMs} fallbackFocus={addRef} host={host}
       onClose={() => setOpen(false)} onSignedIn={signedIn} /> : null}
   </div>
 }
@@ -131,11 +137,12 @@ function sentAnswers(method: ModelSourceMethod, answers: Record<string, string>)
  * sign in. Focus stays inside, Escape closes and hands focus back to the button that opened it, and a browser sign-in
  * that is waiting is cancelled when the dialog closes.
  */
-function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose, onSignedIn }: {
-  readonly bridge: OpenCodeSignInBridge; readonly sources: readonly ModelSource[]; readonly pollMs: number
+function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose, onSignedIn, host }: {
+  readonly bridge: OpenCodeSignInBridge; readonly sources: readonly ModelSource[]; readonly pollMs: number; readonly host?: string | undefined
   readonly fallbackFocus: RefObject<HTMLButtonElement | null>
   readonly onClose: () => void; readonly onSignedIn: (next: ModelSources, source: ModelSource, method: ModelSourceMethod, warning?: string) => void
 }): ReactNode {
+  const on = host ? ` on ${host}` : ''
   const [query, setQuery] = useState('')
   const [flow, setFlowState] = useState<Flow | null>(null)
   const [busy, setBusy] = useState(false)
@@ -214,8 +221,8 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
   if (!flow) {
     return <div className="tt-dialog-backdrop" role="presentation" onPointerDown={event => { if (event.target === event.currentTarget) close() }}>
       <section ref={dialogRef} className="tt-dialog oc-dialog oc-dialog--pick" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={aboutId}>
-        <h2 id={titleId}>Add a model source</h2>
-        <p className="tt-dialog__description" id={aboutId}>Sign Sotto’s OpenCode in to a model source to use its models in OpenCode threads. That account pays for them.</p>
+        <h2 id={titleId}>{host ? `Add a model source to OpenCode on ${host}` : 'Add a model source'}</h2>
+        <p className="tt-dialog__description" id={aboutId}>Sign Sotto’s OpenCode{on} in to a model source to use its models in OpenCode threads{host ? ' there' : ''}. That account pays for them.</p>
         <div className="oc-search"><Search aria-hidden="true" size={14} />
           <input ref={searchRef} type="text" aria-label="Search model sources" aria-controls={listId} placeholder={`Search ${sources.length} model sources`}
             value={query} autoComplete="off" spellCheck={false} onChange={event => setQuery(event.target.value)} onKeyDown={onSearchKey} /></div>
@@ -305,10 +312,10 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
         <input data-autofocus className="tt-input" type="password" value={flow.key} placeholder="Paste the key" autoComplete="off" spellCheck={false}
           aria-describedby={[flow.error ? errorId : '', noteId].filter(Boolean).join(' ')} aria-invalid={flow.error ? true : undefined}
           onChange={event => update({ key: event.target.value })} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void submitKey() } }} /></label>
-      <p className="oc-keynote" id={noteId}>{KEY_SENTENCE}</p>{error}</>
+      <p className="oc-keynote" id={noteId}>{host ? hostKeySentence(host) : KEY_SENTENCE}</p>{error}</>
     actions = <>{cancel}<Button variant="primary" aria-label={`Sign in to ${source.name} with this key`} disabled={busy || !flow.key.trim() || !answered(method, flow.answers)} onClick={() => void submitKey()}>{busy ? 'Signing in…' : 'Sign in'}</Button></>
   } else if (method.kind === 'external') {
-    body = <>{formFields}<p className="oc-open">{aboutMethod(source, method)} Sotto’s OpenCode reads it there, and Sotto keeps no copy.</p>{error}</>
+    body = <>{formFields}<p className="oc-open">{aboutMethod(source, method, host)} Sotto’s OpenCode{on} reads it there, and Sotto keeps no copy.</p>{error}</>
     actions = <>{cancel}<Button data-autofocus={!(method.form?.length) || undefined} variant="primary" disabled={busy || !answered(method, flow.answers)} onClick={() => void useExternal()}>{`Use ${method.label.replace(/^\w/u, letter => letter.toLowerCase())}`}</Button></>
   } else if (flow.phase === 'waiting' && flow.attempt) {
     const attempt = flow.attempt, until = expiry(attempt.expiresAt)
@@ -342,7 +349,7 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
     actions = <><Button variant="secondary" aria-label={`Cancel signing in to ${source.name}`} disabled={busy} onClick={() => void stopWaiting()}>Cancel</Button>
       <Button data-autofocus={attempt.mode === 'auto' && !attempt.code ? true : undefined} variant="secondary" aria-label={`Open the ${source.name} sign-in page again`} onClick={() => void openAgain()}><ExternalLink aria-hidden="true" size={14} />Open the page again</Button></>
   } else {
-    body = <>{formFields}<p className="oc-open">Opens the {source.name} sign-in page in your browser. Sotto’s OpenCode keeps the sign-in in its own folder, and Sotto keeps no copy.</p>{error}</>
+    body = <>{formFields}<p className="oc-open">Opens the {source.name} sign-in page in your browser{host ? ' on this computer' : ''}. Sotto’s OpenCode{on} keeps the sign-in in its own folder{host ? ' there' : ''}, and Sotto keeps no copy.</p>{error}</>
     actions = <>{cancel}<Button data-autofocus={!(method.form?.length) && source.methods.length < 2 ? true : undefined} variant="primary" aria-label={`Open the ${source.name} sign-in page in your browser`}
       disabled={busy || !answered(method, flow.answers)} onClick={() => void startBrowser()}><ExternalLink aria-hidden="true" size={14} />{busy ? 'Opening…' : flow.error ? 'Open sign-in page again' : 'Open sign-in page'}</Button></>
   }
@@ -353,10 +360,10 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
           onClick={() => { const attempt = flowRef.current?.attempt; if (attempt) void bridge.cancel({ attemptId: attempt.id }).catch(() => undefined); setFlow(null); queueMicrotask(() => searchRef.current?.focus()) }}>
           <ChevronLeft aria-hidden="true" size={14} />Model sources</button>
         <h2 id={titleId}>Sign in to {source.name}</h2>
-        <p className="tt-dialog__description" id={aboutId}>Its models join the model menu under OpenCode, billed to your {source.name} account.</p>
+        <p className="tt-dialog__description" id={aboutId}>Its models join the model menu under OpenCode{on}, billed to your {source.name} account.</p>
         {source.methods.length > 1 && flow.phase === 'form' ? <fieldset className="oc-methods"><legend>How to sign in</legend>{source.methods.map((choice, index) =>
           <label key={choice.id} className="oc-method"><input data-autofocus={index === flow.method || undefined} type="radio" name="oc-method" value={choice.id} checked={index === flow.method}
-            onChange={() => setFlow(freshFlow(source, index))} /><b>{choice.label}</b><small>{aboutMethod(source, choice)}</small></label>)}</fieldset> : null}
+            onChange={() => setFlow(freshFlow(source, index))} /><b>{choice.label}</b><small>{aboutMethod(source, choice, host)}</small></label>)}</fieldset> : null}
         {body}
       </div>
       <div className="tt-dialog__actions">{actions}</div>
