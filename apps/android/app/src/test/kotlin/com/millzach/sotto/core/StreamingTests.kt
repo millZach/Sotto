@@ -65,7 +65,7 @@ class StreamingTests {
         assertEquals(JsonPrimitive(9_007_199_254_740_991L), Wire.snapshotHello["afterSeq"])
         // Unlike the iPhone, Android leaves out client-liveness: OkHttp answers the host's own pings (Wire.snapshotHello).
         assertEquals(
-            JsonArray(listOf("detail-delta", "activity-summaries", "model-catalog-revision").map(::JsonPrimitive)),
+            JsonArray(listOf("detail-delta", "activity-summaries", "model-catalog-revision", "provider-opencode").map(::JsonPrimitive)),
             Wire.snapshotHello["accepts"],
         )
     }

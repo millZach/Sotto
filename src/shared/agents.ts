@@ -1240,6 +1240,10 @@ export function capabilitiesForThread(host: AgentHostSnapshot, thread: AgentThre
 export function publicProviderEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
   return `native:${provider}:${kind}:${encodeURIComponent(value)}`
 }
+/** A thread's provider as a host holds it: its own, or for a thread that names none, its model's public identity's. */
+export function threadProviderOf(thread: Pick<AgentThread, 'providerId' | 'modelId'>): ProviderId | undefined {
+  return thread.providerId ?? parsePublicProviderEntityId(thread.modelId)?.provider
+}
 /** The provider, kind and native value a public ID names, or null for any other ID or one whose value will not decode. */
 export function parsePublicProviderEntityId(id: string): { readonly provider: ProviderId; readonly kind: 'model' | 'project'; readonly value: string } | null {
   const match = /^native:([a-z]+):(model|project):(.*)$/u.exec(id)

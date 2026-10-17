@@ -257,10 +257,14 @@ private fun ConnectionNote(model: AppModel, computer: ComputerThreads) {
 
 @Composable
 private fun Metadata(row: HostedThread) {
-    Text(
-        listOfNotNull(row.project, Words.provider(row.thread.providerId), row.computer).joinToString(" · "),
-        style = figtree(12), color = LocalPalette.current.muted,
-    )
+    val p = LocalPalette.current
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        ProviderMark(row.thread.providerId, tint = p.muted, size = 12.dp)
+        Text(
+            listOfNotNull(row.project, Words.provider(row.thread.providerId), row.computer).joinToString(" · "),
+            style = figtree(12), color = p.muted,
+        )
+    }
 }
 
 @Composable

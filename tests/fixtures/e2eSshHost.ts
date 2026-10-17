@@ -10,12 +10,16 @@ import type { AgentHostSnapshot } from '../../src/shared/agents'
 import { fakeSignInCommand, signInProviders } from './signInProviders'
 import { clientUpdateHost } from './clientUpdateProviders'
 import { homedir } from 'node:os'
+import { OpenCodeHost } from '../../src/main/agents/opencode'
+import { version as packageVersion } from '../../package.json'
 
 /** A provider installed on the host but not signed in there: its connect fails, as Claude Code's did on forge (#459). */
 class SignedOut extends E2EAgentHost {
   override async connect(): Promise<AgentHostSnapshot> { throw new Error('Sign in to this provider on the host machine, then connect it again.') }
 }
 
+/** An Owl build of this release, which runs OpenCode (ADR-0087). */
+const OWL_HOST = `${packageVersion.replace(/-.*$/u, '')}-owl.20261012.1`
 const ADMIN = new Set(['--pairing-code', '--allow-answers', '--deny-answers', '--revoke-client'])
 /**
  * The version of the install this runs from, the way a release says it: the package.json beside its `host` folder. The
@@ -42,6 +46,17 @@ async function main(): Promise<void> {
   const signInDirectory = process.env.SOTTO_E2E_SIGN_IN_DIR, signInScript = process.env.SOTTO_E2E_SIGN_IN_SCRIPT
   if (signInDirectory && signInScript) {
     const host = await startHeadlessHost({ ...options, ...installedVersion(), providers: signInProviders(signInDirectory), reasoner: e2eAgentReasoner, signInCommand: fakeSignInCommand(signInDirectory, signInScript) })
+    keepRunning(() => host.close())
+    return
+  }
+  // With SOTTO_E2E_HOST_OPENCODE_ROOT, an Owl host whose OpenCode is the fake server (tests/fixtures/fakeOpenCodeServer.mjs, at
+  // SOTTO_E2E_HOST_OPENCODE_SCRIPT), which keeps its records in that folder, so a spec signs forge's OpenCode in from this
+  // computer (#1107). Its OpenCode folder is the host's own, under its data directory, as on a real host.
+  const opencodeRoot = process.env.SOTTO_E2E_HOST_OPENCODE_ROOT, opencodeScript = process.env.SOTTO_E2E_HOST_OPENCODE_SCRIPT
+  if (opencodeRoot && opencodeScript) {
+    const opencode = new OpenCodeHost(options.dataDirectory, { executable: process.execPath, args: [opencodeScript, opencodeRoot], startTimeoutMs: 30_000, heldProviders: new Set() })
+    const host = await startHeadlessHost({ ...options, sottoVersion: OWL_HOST, reasoner: e2eAgentReasoner,
+      providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode } })
     keepRunning(() => host.close())
     return
   }
