@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PROVIDER_LABELS, providerIdSchema, type AgentProviderStatus, type ProviderId, type ProviderProblem } from './agents'
+import { PROVIDER_COUNT, PROVIDER_LABELS, providerIdSchema, type AgentProviderStatus, type ProviderId, type ProviderProblem } from './agents'
 
 /**
  * A host's providers from this computer (ADR-0037): the tiles under a connected host's row in Settings > Hosts, the
@@ -170,7 +170,7 @@ export interface HostProviderJobState {
  * how each goes. `id` is the saved host's.
  */
 export const hostClientUpdateRequestSchema = z.object({
-  id: z.uuid(), action: z.enum(['update', 'cancel']), providers: z.array(providerIdSchema).min(1).max(5),
+  id: z.uuid(), action: z.enum(['update', 'cancel']), providers: z.array(providerIdSchema).min(1).max(PROVIDER_COUNT),
 }).strict()
 export type HostClientUpdateRequest = z.infer<typeof hostClientUpdateRequestSchema>
 

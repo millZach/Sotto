@@ -250,7 +250,7 @@ export class LocalHostService implements HostService {
   }
   usageRefresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
-    return this.usage.refresh(providerIds === undefined ? undefined : usageProviderIdSchema.array().max(4).parse(providerIds))
+    return this.usage.refresh(providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds))
   }
   usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
