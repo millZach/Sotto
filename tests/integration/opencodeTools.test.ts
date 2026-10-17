@@ -194,6 +194,29 @@ it('allows Sotto’s tools on a provider session made before the thread had them
   expect((await thread(f, id)).runtimeMode).toBe('approval-required')
 })
 
+it('gives every one of Sotto’s servers again when a thread’s server starts after one that could not connect them', { timeout: 60_000 }, async () => {
+  // Visuals admit a thread as the workspace does: one its host marks as without Sotto's tools is refused, and the mark
+  // reaches it a moment after the host says so.
+  let shown = new Map<string, boolean>()
+  const { f } = await withTools({ idle: true, admitsVisuals: threadId => shown.get(threadId) !== true })
+  f.host.subscribe(snapshot => { const next = new Map(snapshot.threads.map(item => [item.id, item.sottoToolsWithheld === true])); setTimeout(() => { shown = next }, 0) })
+  await f.script({ mcp: { fail: true } })
+  const id = await open(f)
+  await expect.poll(async () => (await thread(f, id)).sottoToolsWithheld).toBe(true)
+  await expect.poll(() => shown.get(id)).toBe(true)
+  const first = (await f.driver.requests()).length
+  // The thread sits idle, its server ends, and the next read starts a new one that can connect them.
+  await f.script({})
+  f.host.observeThreads([])
+  await expect.poll(() => f.sessions.stopped(id), { timeout: 20_000 }).toBe(true)
+  f.host.observeThreads([id]); await f.host.refreshThread!(id)
+  await expect.poll(async () => of((await f.driver.requests()).slice(first), 'fixture/mcp-connected').map(record => record.params), { timeout: 20_000 })
+    .toEqual(expect.arrayContaining([{ server: 'sotto_browser', status: 'connected' }, { server: VISUAL_MCP_SERVER, status: 'connected' }]))
+  await expect.poll(async () => (await thread(f, id)).sottoToolsWithheld).toBeUndefined()
+  await expect.poll(async () => rulesSent(await f.driver.requests())).toEqual([...opencodeRules('approval-required'), ...browserAllows,
+    { action: `${VISUAL_MCP_SERVER}_visualize`, resource: '*', effect: 'allow' }])
+})
+
 it('waits for a thread’s server to stop when Sotto disconnects while its tool servers are being taken off', { timeout: 60_000 }, async () => {
   const { f } = await withTools({ visuals: false, idle: true })
   const id = await open(f)

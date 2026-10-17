@@ -397,22 +397,30 @@ export class OpenCodeHost implements AgentHost {
    * bearer token (ADR-0087), as Grok Build and Muse get them: the same servers, asked for at each start, so a renewed token
    * reaches a new server. OpenCode keeps them for the folder until the process ends and writes nothing down. A server it
    * refuses or does not list as connected leaves the thread marked as without Sotto's tools, as a Muse thread is.
+   *
+   * A mark an earlier server left is cleared before the servers are asked for, since a scoped server answers no thread
+   * marked so (`admitsVisuals`, `admitsBabysitting`), and they are asked again once the first ones connect, so a scoped
+   * server that read the mark before it was cleared is given too.
    */
   private async addToolServers(id: string, entry: ThreadServer, folder: string): Promise<void> {
     const generation = this.generation
     const stale = (): boolean => entry.closing || generation !== this.generation || entry.toolsFolder !== folder || !entry.client
-    const servers: OpenCodeToolServer[] = await opencodeToolServers(this.browserTools, this.threadTools, id)
-    if (stale()) return
-    if (!servers.length) { this.withholdTools(id, false); return }
-    const client = entry.client!, location = locationQuery(folder)
-    entry.toolServers = [...new Set([...entry.toolServers ?? [], ...servers.map(server => server.name)])]
-    const added = await Promise.all(servers.map(server => client.request('PUT', `/api/experimental/mcp/${encodeURIComponent(server.name)}`,
-      { query: location, body: { config: server.config }, timeoutMs: TOOL_CONNECT_TIMEOUT_MS }).then(() => true, () => false)))
-    if (stale()) return
-    const connected = added.every(Boolean) ? connectedToolServers(await client.request('GET', '/api/mcp', { query: location }).catch(() => undefined)) : new Set<string>()
-    if (stale()) return
-    entry.toolActions = servers.filter(server => connected.has(server.name)).flatMap(server => server.actions)
-    this.withholdTools(id, !servers.every(server => connected.has(server.name)))
+    this.withholdTools(id, false)
+    const given = new Map<string, readonly string[]>()
+    for (let round = 0; round < 2; round++) {
+      const servers: OpenCodeToolServer[] = (await opencodeToolServers(this.browserTools, this.threadTools, id)).filter(server => !given.has(server.name))
+      if (stale() || !servers.length) return
+      const client = entry.client!, location = locationQuery(folder)
+      entry.toolServers = [...new Set([...entry.toolServers ?? [], ...servers.map(server => server.name)])]
+      const added = await Promise.all(servers.map(server => client.request('PUT', `/api/experimental/mcp/${encodeURIComponent(server.name)}`,
+        { query: location, body: { config: server.config }, timeoutMs: TOOL_CONNECT_TIMEOUT_MS }).then(() => true, () => false)))
+      if (stale()) return
+      const connected = added.every(Boolean) ? connectedToolServers(await client.request('GET', '/api/mcp', { query: location }).catch(() => undefined)) : new Set<string>()
+      if (stale()) return
+      for (const server of servers) if (connected.has(server.name)) given.set(server.name, server.actions)
+      entry.toolActions = [...given.values()].flat()
+      if (!servers.every(server => connected.has(server.name))) { this.withholdTools(id, true); return }
+    }
   }
   /**
    * Bring the provider session's rule set in line with the tool servers this thread's server was given: the rules it holds
