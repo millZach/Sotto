@@ -185,6 +185,8 @@ export interface SidebarFrameProps {
   /** A refusal from outside Add project, shown in the same place: an instant thread's creation, refused. */
   readonly extraError?: string | null | undefined
   readonly onDismissExtraError?: (() => void) | undefined
+  /** What a project chosen with Add project opens in: the mode's own New action, there. */
+  readonly onProjectAdded?: ((projectId: string) => void) | undefined
 }
 
 /**
@@ -193,9 +195,9 @@ export interface SidebarFrameProps {
  * top row is the frameless window's drag region, which is why every control in it is marked no-drag. A Sotto Owl
  * build paints its night sky behind the top row and the search field while the sidebar is open.
  */
-export function SidebarFrame({ state, command, mode, onMode, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title = 'Threads', children, collapsedContent, extraError, onDismissExtraError }: SidebarFrameProps): ReactNode {
+export function SidebarFrame({ state, command, mode, onMode, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title = 'Threads', children, collapsedContent, extraError, onDismissExtraError, onProjectAdded }: SidebarFrameProps): ReactNode {
   const app = useOptionalApp()
-  const addProject = useAddProject(state, command)
+  const addProject = useAddProject(state, command, { onAdded: onProjectAdded })
   const mac = (platform ?? app?.platform) === 'darwin'
   const size = useSidebarSize()
   const [resizing, setResizing] = useState(false)

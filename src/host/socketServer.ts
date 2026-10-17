@@ -207,6 +207,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-work-settled' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-outcomes' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
+    && (feature !== 'watcher-muse' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'terminals' || options.terminals !== undefined)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)

@@ -55,15 +55,15 @@ describe('an earlier conversation, handed over as its pane showed it', () => {
   it('carries a reply without the reason line its own-change line shows', () => {
     const reply: AgentMessage = { id: 'reply', role: 'assistant', text: 'Fixed the footer.\nWatcher change reason: A typo is smaller than a brief.', createdAt: at,
       watcherOwnChange: { replyMessageId: 'reply', turnId: 'turn', files: ['README.md'], fileCount: 1, reason: 'A typo is smaller than a brief.', source: 'provider-file-change' } }
-    expect(watcherMessageAsShown(HOST, 'watcher-new', reply, []).text).toBe('Fixed the footer.')
+    expect(watcherMessageAsShown(HOST, 'watcher-new', reply, [])!.text).toBe('Fixed the footer.')
   })
 
   it('carries the user’s words alone: no handover it began with, and no line Sotto put after them', () => {
     const first: AgentMessage = { id: 'first', role: 'user', text: `${prefix}Carry on.`, createdAt: at }
-    const carried = watcherMessageAsShown(HOST, 'watcher-new', first, [request()])
+    const carried = watcherMessageAsShown(HOST, 'watcher-new', first, [request()])!
     expect(carried.text).toBe('Carry on.')
     expect(carried.handover).toBeUndefined()
     const grok: AgentMessage = { id: 'first', role: 'user', text: `Carry on.${watcherRequestLine(watcherRequestNote(REQUEST, HOST))}`, createdAt: at }
-    expect(watcherMessageAsShown(HOST, 'watcher-new', grok, [request({ handover: undefined })]).text).toBe('Carry on.')
+    expect(watcherMessageAsShown(HOST, 'watcher-new', grok, [request({ handover: undefined })])!.text).toBe('Carry on.')
   })
 })

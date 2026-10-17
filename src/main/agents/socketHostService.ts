@@ -637,6 +637,7 @@ export class SocketHostService implements HostService {
   get supportsWatcherStandingWatch(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-standing-watch') }
   get supportsWatcherWorkSettled(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-work-settled') }
   get supportsWatcherOutcomes(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-outcomes') }
+  get supportsWatcherMuse(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-muse') }
   private museWatcherHeld(request: WatcherHostRead | WatcherHostControl): boolean {
     return this.options.museEnabled !== true && watcherRequestUsesMuse(request, this.cached?.host, this.dormantMuseThreads)
   }
@@ -1131,7 +1132,7 @@ export class SocketHostService implements HostService {
   }
   async usageRefresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead> {
     this.offers('usage-dashboard')
-    const parsed = providerIds === undefined ? undefined : usageProviderIdSchema.array().max(4).parse(providerIds)
+    const parsed = providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds)
     return this.read(usageLocalHostReadSchema, await this.call({ op: 'usage-refresh', ...(parsed ? { providerIds: parsed } : {}) }, undefined, undefined, 15000))
   }
   async usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {
