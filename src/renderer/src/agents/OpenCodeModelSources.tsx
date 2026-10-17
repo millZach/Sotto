@@ -293,7 +293,8 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
     // A dialog closed, or a step left, while this started: the sign-in is cancelled, and its page never opens.
     if (flowRef.current !== current) { if (result.status === 'waiting') void bridge.cancel({ attemptId: result.attempt.id }).catch(() => undefined); return }
     if (result.status !== 'waiting') {
-      if (host && result.message === opencodeSignInComesBack(host)) onUnreachable?.(`${source.id}:${method.id}`)
+      // The answer says why, by its reason and never its words: one that finishes on the host is not offered again.
+      if (host && result.reason === 'finishes-on-host') onUnreachable?.(`${source.id}:${method.id}`)
       setFlow({ ...current, error: result.message }); return
     }
     setFlow({ ...current, phase: 'waiting', attempt: result.attempt, error: null, code: '', taking: false, unopened: null })
@@ -303,7 +304,8 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
     if (!current.attempt || !current.code.trim()) return
     const result = await bridge.finish({ attemptId: current.attempt.id, code: current.code.trim() })
     if (result.status === 'pending') { if (flowRef.current === current) setFlow({ ...current, taking: true }); return }
-    if (result.status === 'refused' && flowRef.current === current && result.message === SIGN_IN_WORDS.codeRefused(source.name)) { setFlow({ ...current, code: '', taking: false, error: result.message }); return }
+    // A refused code is told by the answer's reason, never its words: the sign-in stays open for another one.
+    if (result.status === 'refused' && flowRef.current === current && result.reason === 'code-refused') { setFlow({ ...current, code: '', taking: false, error: result.message }); return }
     finish(result, current)
   })
   const stopWaiting = (): Promise<void> => run(async current => {

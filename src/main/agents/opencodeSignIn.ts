@@ -258,11 +258,11 @@ export class OpenCodeSignIn {
       if (server !== attempt.server) { this.attempts.delete(attemptId); return { status: 'refused', message: SIGN_IN_WORDS.failed(attempt.name) } }
       const path = `/api/integration/${encodeURIComponent(attempt.sourceId)}/connect/oauth/${encodeURIComponent(attemptId)}`
       if (code !== undefined) {
-        if (!code) return { status: 'refused', message: SIGN_IN_WORDS.codeRefused(attempt.name) }
+        if (!code) return { status: 'refused', reason: 'code-refused', message: SIGN_IN_WORDS.codeRefused(attempt.name) }
         try { await server.client.request('POST', `${path}/complete`, { query: this.location, body: { code } }) } catch (error) {
           if (!(error instanceof OpenCodeRejected) || error.status !== 404) {
             this.log('opencode-sign-in-failed')
-            return { status: 'refused', message: SIGN_IN_WORDS.codeRefused(attempt.name) }
+            return { status: 'refused', reason: 'code-refused', message: SIGN_IN_WORDS.codeRefused(attempt.name) }
           }
         }
       }

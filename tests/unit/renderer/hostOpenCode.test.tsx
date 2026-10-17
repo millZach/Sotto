@@ -108,7 +108,7 @@ it('shows no Model sources while OpenCode on the host is not connected, and noth
 it('stops offering on a host a browser sign-in that finished on that machine, once forge has said so', async () => {
   const chatgpt = { id: 'chatgpt-token-sharing', kind: 'browser', label: 'ChatGPT account' } as const
   const sources: ModelSources = { status: 'ok', zenModels: 3, sources: [{ id: 'openai', name: 'OpenAI', methods: [key, chatgpt], models: 0 }] }
-  const { bridge: hosts, opencodeSignIn } = bridge(call => call.action === 'browser' ? { status: 'refused', message: opencodeSignInComesBack('forge') } : sources)
+  const { bridge: hosts, opencodeSignIn } = bridge(call => call.action === 'browser' ? { status: 'refused', reason: 'finishes-on-host', message: opencodeSignInComesBack('forge') } : sources)
   await open(hosts)
   const add = await screen.findByRole('button', { name: 'Add a model source to OpenCode on forge' })
   fireEvent.click(add)
@@ -126,3 +126,24 @@ it('stops offering on a host a browser sign-in that finished on that machine, on
   fireEvent.click(within(await screen.findByRole('listbox', { name: 'Model sources' })).getByRole('option', { name: /^OpenAI/u }))
   expect(await screen.findByLabelText('OpenAI API key')).toBeVisible()
 })
+
+// The answer's reason says a sign-in finishes on the host, never its words: a reworded refusal still marks the method, and
+// a refusal that only reads like one does not.
+for (const [what, refusal, marked] of [
+  ['marks a method the answer says finishes on the host, whatever its words', { status: 'refused', reason: 'finishes-on-host', message: 'Reworded, as a later build may.' }, true],
+  ['leaves a method offered when only the words of its refusal read like one that finishes on the host', { status: 'refused', message: opencodeSignInComesBack('forge') }, false],
+] as const) {
+  it(what, async () => {
+    const chatgpt = { id: 'chatgpt-token-sharing', kind: 'browser', label: 'ChatGPT account' } as const
+    const sources: ModelSources = { status: 'ok', zenModels: 3, sources: [{ id: 'openai', name: 'OpenAI', methods: [key, chatgpt], models: 0 }] }
+    const { bridge: hosts } = bridge(call => call.action === 'browser' ? refusal : sources)
+    await open(hosts)
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a model source to OpenCode on forge' }))
+    fireEvent.click(within(await screen.findByRole('listbox', { name: 'Model sources' })).getByRole('option', { name: /^OpenAI/u }))
+    const dialog = await screen.findByRole('dialog', { name: 'Sign in to OpenAI' })
+    fireEvent.click(within(dialog).getByRole('radio', { name: /ChatGPT account/u }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open the OpenAI sign-in page in your browser' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(refusal.message)
+    expect(within(dialog).queryByText('Finishes on forge itself, so not from this computer.') !== null).toBe(marked)
+  })
+}

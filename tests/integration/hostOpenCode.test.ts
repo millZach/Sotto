@@ -245,7 +245,7 @@ it('refuses on a host a browser sign-in that sends the browser back to OpenCode 
   const { hosts, forge, opened } = await desktopWithForge(OWL, f)
   await vi.waitFor(() => expect(hosts.providerStatus(forge, 'opencode')?.connection).toBe('connected'), { timeout: 30_000 })
   expect(await hosts.opencodeSignIn({ id: forge, call: { action: 'browser', request: { sourceId: 'openai', methodId: 'chatgpt-token-sharing' } } }))
-    .toEqual({ status: 'refused', message: opencodeSignInComesBack('forge') })
+    .toEqual({ status: 'refused', reason: 'finishes-on-host', message: opencodeSignInComesBack('forge') })
   expect(opened).toEqual([])
   await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'integration.connect.oauth.cancel').length).toBe(1)
 })

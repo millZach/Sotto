@@ -91,7 +91,15 @@ export const signInAttemptSchema = z.object({
   page: z.string().min(1).max(300), expiresAt: z.number().int().nonnegative().optional(),
 }).strict()
 export type SignInAttempt = z.infer<typeof signInAttemptSchema>
-const refused = z.object({ status: z.literal('refused'), message: words }).strict()
+/**
+ * Why a refusal was made, where the window acts on it and not only shows its words: `code-refused` is a pasted code the
+ * source did not accept, and the dialog asks for another; `finishes-on-host` is a browser sign-in that sends the browser back
+ * to OpenCode on the host's own machine, which the dialog then stops offering (#1107). A refusal without one is told in its
+ * words alone, and a reason this build does not know reads as none.
+ */
+export const signInRefusalReasonSchema = z.enum(['code-refused', 'finishes-on-host'])
+export type SignInRefusalReason = z.infer<typeof signInRefusalReasonSchema>
+const refused = z.object({ status: z.literal('refused'), message: words, reason: signInRefusalReasonSchema.optional().catch(undefined) }).strict()
 /** The sign-ins changed. `warning` says what did not follow them, such as a model list that could not be read again. */
 const changed = z.object({ status: z.literal('ok'), sources: modelSourcesSchema, warning: words.optional() }).strict()
 export const signInResultSchema = z.discriminatedUnion('status', [changed, refused])

@@ -100,7 +100,7 @@ it('runs a pasted-code sign-in, asks again for a code the page did not give, and
     const attempt = waiting(await signIn.startBrowserSignIn({ sourceId: 'gitlab', methodId: 'pkce', answer: { instanceUrl: 'https://gitlab.com' } }))
     expect(attempt).toMatchObject({ mode: 'code', page: 'sign-in.fixture.invalid/gitlab/authorize' })
     expect(attempt.code).toBeUndefined()
-    expect(await signIn.finish({ attemptId: attempt.id, code: 'wrong' })).toEqual({ status: 'refused', message: SIGN_IN_WORDS.codeRefused('GitLab Duo') })
+    expect(await signIn.finish({ attemptId: attempt.id, code: 'wrong' })).toEqual({ status: 'refused', reason: 'code-refused', message: SIGN_IN_WORDS.codeRefused('GitLab Duo') })
     expect(okResult(await signIn.finish({ attemptId: attempt.id, code: 'good-code' })).status).toBe('ok')
     expect((await requests('integration.connect.oauth'))[0]!.params).toMatchObject({ methodID: 'pkce', answer: { instanceUrl: 'https://gitlab.com' } })
     // GitHub Enterprise needs its address before the page opens; OpenCode refuses without it, and Sotto says what to do.

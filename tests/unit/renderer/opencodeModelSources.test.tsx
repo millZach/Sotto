@@ -202,6 +202,22 @@ describe('Add a model source', () => {
     expect(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' })).toHaveTextContent('Open sign-in page again')
   })
 
+  // A code the source refused is told by the answer's reason, never its words: the sign-in stays open for another code.
+  it('takes another code when the answer says the source refused one, whatever its words', async () => {
+    const api = await mount(bridge({
+      startBrowserSignIn: vi.fn(async () => ({ status: 'waiting' as const, attempt: { id: 'con_7', sourceId: 'gitlab', mode: 'code' as const, page: 'gitlab.com/oauth/authorize' } })),
+      finish: vi.fn(async () => ({ status: 'refused' as const, reason: 'code-refused' as const, message: 'Reworded, as a later build may.' })),
+    }))
+    await openDialog()
+    const dialog = await pick(/^GitLab Duo,/u)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' }))
+    fireEvent.change(await within(dialog).findByLabelText('Code from the GitLab Duo page'), { target: { value: 'wrong' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Finish signing in to GitLab Duo with this code' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Reworded, as a later build may.')
+    expect(within(dialog).getByLabelText('Code from the GitLab Duo page')).toHaveValue('')
+    expect(api.cancel).not.toHaveBeenCalled()
+  })
+
   it('says when a page finishes by itself, and cancels a waiting sign-in on Cancel or Escape', async () => {
     const api = await mount(bridge({
       startBrowserSignIn: vi.fn(async () => ({ status: 'waiting' as const, attempt: { id: 'con_3', sourceId: 'openai', mode: 'auto' as const, page: 'auth.openai.com/oauth/authorize' } })),

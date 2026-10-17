@@ -30,7 +30,7 @@ import type { HostUpdateAction, HostUpdateState } from '../../shared/hostUpdates
 import { nameHostInRefusal, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import type { HostProviderJobSource, ProviderJobHost } from './hostProviderJob'
-import { SIGN_IN_WORDS, isOpenCodeSignInPage, opencodeHostNeedsUpdate, opencodeSignInComesBack } from '../../shared/opencodeSignIn'
+import { SIGN_IN_WORDS, isOpenCodeSignInPage, opencodeHostNeedsUpdate, opencodeSignInComesBack, type SignInRefusalReason } from '../../shared/opencodeSignIn'
 import { isProviderSignInPage, type HostOpenCodeSignInRequest, type HostClientUpdateRequest, type HostProviderAction, type HostProviderActionResult, type HostSignIn, type HostSignInRequest, type ProviderSignInView } from '../../shared/hostProviders'
 
 /** Files from before the switch have no `sshPort` or `enabled` and still read: both are optional, and no `enabled` means on. */
@@ -836,7 +836,7 @@ export class DesktopHosts {
    * on the host's own machine cannot finish from here, so it is cancelled on the host as soon as it starts and refused.
    */
   async opencodeSignIn(request: HostOpenCodeSignInRequest): Promise<unknown> {
-    const refused = (message: string) => ({ status: 'refused' as const, message })
+    const refused = (message: string, reason?: SignInRefusalReason) => ({ status: 'refused' as const, ...(reason ? { reason } : {}), message })
     let target: { host: SavedHost; socket: SocketHostService }
     try { target = this.connectedSocket(request.id) } catch (error) { return refused(error instanceof Error ? error.message : 'This host is not connected. Nothing was changed.') }
     const { host, socket } = target
@@ -856,7 +856,7 @@ export class DesktopHosts {
         const started = await socket.opencodeSignIn(call)
         if (started.status !== 'waiting' || started.attempt.mode !== 'auto' || started.attempt.code !== undefined) return started
         await socket.opencodeSignIn({ action: 'cancel', request: { attemptId: started.attempt.id } }).catch(() => undefined)
-        return refused(opencodeSignInComesBack(host.name))
+        return refused(opencodeSignInComesBack(host.name), 'finishes-on-host')
       }
       return await socket.opencodeSignIn(call)
     } catch (error) {
