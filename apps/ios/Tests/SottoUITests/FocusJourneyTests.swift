@@ -787,25 +787,50 @@ import XCTest
     /// anything the box carries over it. XCTest calls a row under the header hittable, but a press there lands on the
     /// header (on CI it opened Watched instead of a card's Review question).
     private var watcherBand: (top: CGFloat, bottom: CGFloat) {
-        let header = byID("watcher-section-conversation")
+        // Read the whole hierarchy once. Separate queries for every present and absent dock element repeatedly ask
+        // XCTest to walk the same accessibility tree; on CI those queries grew until an absent held line timed out.
+        let snapshot: any XCUIElementSnapshot
+        do {
+            snapshot = try app.snapshot()
+        } catch {
+            XCTFail("Watcher's visible bounds must provide a snapshot: \(error)")
+            return (.infinity, -.infinity)
+        }
+        var elements: [any XCUIElementSnapshot] = []
+        func collect(_ parent: any XCUIElementSnapshot) {
+            for child in parent.children {
+                elements.append(child)
+                collect(child)
+            }
+        }
+        collect(snapshot)
+        func element(_ identifier: String, type: XCUIElement.ElementType = .any) -> (any XCUIElementSnapshot)? {
+            // Like matching(identifier:), keep the first descendant of the requested type whose identifying
+            // attributes match. All of these attributes belong to the captured snapshot, with no further UI query.
+            elements.first {
+                (type == .any || $0.elementType == type) &&
+                ($0.identifier == identifier || $0.title == identifier || $0.label == identifier ||
+                 ($0.value as? String) == identifier || $0.placeholderValue == identifier)
+            }
+        }
+        guard let window = elements.first(where: { $0.elementType == .window }) else {
+            XCTFail("Watcher's visible bounds must include its window")
+            return (.infinity, -.infinity)
+        }
+        let header = element("watcher-section-conversation")
         // The header's glass ends the switch's own padding and the header's bottom padding below Conversation | Watched.
-        let top = (header.exists ? header.frame.maxY : app.windows.firstMatch.frame.minY) + 16
-        let tabs = app.tabBars.firstMatch
-        var bottom = tabs.exists ? tabs.frame.minY : app.windows.firstMatch.frame.maxY
+        let top = (header?.frame.maxY ?? window.frame.minY) + 16
+        let tabs = elements.first { $0.elementType == .tabBar }
+        var bottom = tabs?.frame.minY ?? window.frame.maxY
         // The box's glass starts above its text; a held line, a message or Watcher's permissions sit above the box, and
         // on Watched, what a Stop watching press did sits over the tab bar.
-        let dock: [(XCUIElement, CGFloat)] = [(byID("watcher-reply"), 20), (byID("watcher-send-held"), 8),
-                                              (app.buttons["Dismiss message"].firstMatch, 8), (app.buttons["watcher-permissions"], 8),
-                                              (byID("watch-toast"), 8)]
-        // The frame comes from one snapshot, never a second look: what a press did leaves by itself after eight seconds,
-        // and on a loaded simulator it went between `exists` and `frame`, which XCTest fails as a missing match.
-        for (element, gap) in dock where element.exists {
-            do {
-                let frame = try element.snapshot().frame
-                bottom = min(bottom, frame.minY - gap)
-            } catch {
-                XCTAssertFalse(element.exists, "A dock element that is still present must provide its frame: \(error)")
-            }
+        let dock: [((any XCUIElementSnapshot)?, CGFloat)] = [(element("watcher-reply"), 20), (element("watcher-send-held"), 8),
+                                                             (element("Dismiss message", type: .button), 8),
+                                                             (element("watcher-permissions", type: .button), 8),
+                                                             (element("watch-toast"), 8)]
+        // Presence and frame come from the same instant, including a toast that may leave between separate queries.
+        for (element, gap) in dock {
+            if let element { bottom = min(bottom, element.frame.minY - gap) }
         }
         return (top, bottom)
     }
