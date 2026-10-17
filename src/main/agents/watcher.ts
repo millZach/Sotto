@@ -463,7 +463,8 @@ export class WatcherService implements WatcherControlHooks {
     const parsed = watcherMarkReadRequestSchema.safeParse(input)
     if (!parsed.success) return watcherRefusal('INVALID_INPUT', 'Sotto could not tell which threads to mark read. Nothing changed.')
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing changed. Reopen Sotto.')
-    try { await this.options.control.updateWatcher(record => { markThreadsRead(record, parsed.data.reads, now()) }) }
+    const exists = (target: WatcherThreadTarget): boolean => Boolean(this.owningSnapshot(target.hostId)?.threads.some(thread => thread.id === target.threadId))
+    try { await this.options.control.updateWatcher(record => { markThreadsRead(record, parsed.data.reads, now(), exists) }) }
     catch { return watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not save that these threads are read. They still show as new. Try again.', true) }
     this.publish()
     return this.get()

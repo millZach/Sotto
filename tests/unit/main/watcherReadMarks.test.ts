@@ -319,9 +319,17 @@ describe('reading a thread', () => {
     expect(await room.watcher.markRead({ reads: [] })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
     const record = emptyWatcherRecord()
     record.readMarks = [{ target: target('a'), kind: 'finished', newsId: 'finished:t1', at: AT }]
-    expect(markThreadsRead(record, [{ target: target('a'), newsId: 'finished:t1' }], '2026-10-17T10:05:00.000Z')).toBe(true)
-    expect(markThreadsRead(record, [{ target: target('a'), newsId: 'finished:t1' }], '2026-10-17T10:06:00.000Z')).toBe(false)
+    expect(markThreadsRead(record, [{ target: target('a'), newsId: 'finished:t1' }], '2026-10-17T10:05:00.000Z', () => false)).toBe(true)
+    expect(markThreadsRead(record, [{ target: target('a'), newsId: 'finished:t1' }], '2026-10-17T10:06:00.000Z', item => item.threadId === 'a')).toBe(false)
     expect(record.userReads).toEqual([{ target: target('a'), readAt: '2026-10-17T10:06:00.000Z' }])
+  })
+
+  it('keeps a read time only for a thread that had a mark or exists', async () => {
+    const room = service()
+    room.pass(thread('worker', turn('t0', 'completed')), thread('quiet', turn('t0', 'completed')))
+    expect(await room.watcher.markRead({ reads: [{ target: target('quiet'), newsId: 'finished:t0' }, { target: target('nowhere'), newsId: 'finished:x' },
+      { target: target('far', REMOTE), newsId: 'finished:x' }] })).toMatchObject({ status: 'ok' })
+    expect(room.record().userReads?.map(entry => entry.target.threadId)).toEqual(['quiet'])
   })
 
   it('takes only the news the window showed: news that came after it stays new', async () => {

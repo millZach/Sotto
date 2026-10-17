@@ -150,14 +150,16 @@ export interface ReadNews { readonly target: WatcherThreadTarget; readonly newsI
 
 /**
  * The user has seen these threads' news: each mark goes while it is still the news the window showed, so news that came
- * after stays new, and each thread's read time is now. Edits `record` in place, as `updateWatcher` hands it; true when a
- * mark went.
+ * after stays new, and each thread's read time is now. A read time is kept only for a thread that had a mark or that
+ * `exists`, so a window cannot fill the record with addresses of nothing. Edits `record` in place, as `updateWatcher`
+ * hands it; true when a mark went.
  */
-export function markThreadsRead(record: WatcherRecord, reads: readonly ReadNews[], at: string): boolean {
+export function markThreadsRead(record: WatcherRecord, reads: readonly ReadNews[], at: string, exists: (target: WatcherThreadTarget) => boolean): boolean {
   const seen = new Set(reads.map(item => JSON.stringify([key(item.target), item.newsId])))
+  const marked = new Set((record.readMarks ?? []).map(mark => key(mark.target)))
   const before = record.readMarks?.length ?? 0
   if (record.readMarks) record.readMarks = record.readMarks.filter(mark => !seen.has(JSON.stringify([key(mark.target), mark.newsId])))
-  const targets = [...new Map(reads.map(item => [key(item.target), item.target] as const)).values()]
+  const targets = [...new Map(reads.filter(item => marked.has(key(item.target)) || exists(item.target)).map(item => [key(item.target), item.target] as const)).values()]
   const read = new Set(targets.map(key))
   record.userReads = [...(record.userReads ?? []).filter(entry => !read.has(key(entry.target))),
     ...targets.map(target => ({ target, readAt: at }))].slice(-WATCHER_READ_MARKS_MAX)
