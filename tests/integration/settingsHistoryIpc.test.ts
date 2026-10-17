@@ -312,6 +312,30 @@ describe('IPC validation and lifecycle', () => {
     }
   })
 
+  it('saves worker roles through the allow-list, reads them back, and refuses a row it cannot read (#1041)', async () => {
+    const { ipc, settings } = createIpcHarness()
+    const root = await mkdtemp(join(tmpdir(), 'sotto-worker-roles-setting-'))
+    try {
+      const path = join(root, 'settings.json')
+      const repository = new SettingsRepository(path)
+      settings.update.mockImplementation(patch => repository.update(patch))
+      settings.get.mockImplementation(() => repository.get())
+      const workerRoles = { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' as const },
+        orchestrating: { modelId: 'native:codex:model:gpt-6.1-sol', reasoningEffort: null } }
+      await expect(ipc.invoke(SETTINGS_UPDATE, { workerRoles })).resolves.toMatchObject({ workerRoles })
+      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ workerRoles })
+      await expect(ipc.invokeArgs(SETTINGS_GET, [])).resolves.toMatchObject({ workerRoles })
+      await expect(new SettingsRepository(path).get()).resolves.toMatchObject({ workerRoles })
+      for (const bad of [{ painting: { modelId: 'x', reasoningEffort: null } }, { ui: { modelId: '', reasoningEffort: null } }, { ui: { modelId: 'x', reasoningEffort: null, runtimeMode: 'yolo' } }, 'all']) {
+        await expect(ipc.invoke(SETTINGS_UPDATE, { workerRoles: bad })).rejects.toThrow('Invalid IPC payload')
+      }
+      await expect(ipc.invoke(SETTINGS_UPDATE, { workerRoles: {} })).resolves.toMatchObject({ workerRoles: {} })
+      expect(settings.update).toHaveBeenCalledTimes(2)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('persists phone access and the name phones show through the settings allow-list (ADR-0033)', async () => {
       const { ipc, settings } = createIpcHarness()
       await expect(ipc.invoke(SETTINGS_UPDATE, { phoneAccess: true })).resolves.toMatchObject({ phoneAccess: true })

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef,
 import { ArrowUp, ChevronDown, List, MoreHorizontal } from 'lucide-react'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { releaseTrackName } from '../../../shared/releaseTrack'
+import { resolveModel } from '../../../shared/modelCatalog'
 import { Button } from '../components/Button'
 import { Field } from '../components/Field'
 import { Select } from '../components/Select'
@@ -34,6 +35,7 @@ import { WatcherOwl } from './WatcherOwl'
 import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
 import { WatcherWatchedView, watchedCount } from './WatcherWatched'
+import { useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole'
 
 const WATCHER_PROMPT_ID = 'watcher-prompt'
 const WATCHER_PANE_ID = 'watcher-pane'
@@ -165,8 +167,14 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const providers = useOwlFeature('muse') ? 'Codex, Claude Code, Grok Build or Muse' : 'Codex, Claude Code or Grok Build'
   const models = useMemo(() => state.host.models.filter(model => model.ready !== false && watcherProviderOf(model) !== null), [state.host.models])
   const { text, modelId, effort, phase, error } = useFirstMessage()
-  const model = models.find(item => item.id === modelId) ?? models[0]
-  const reasoning = effort ?? model?.defaultReasoningEffort ?? ''
+  // Unchosen here, Watcher starts on the Orchestrating role's model and effort where worker roles are on (#1041). A pick
+  // here saves the role too, and a change to the role in Settings clears the pick, so the two never disagree.
+  const roleStart = useOrchestratingStart(models)
+  const saveOrchestrating = useSaveOrchestrating()
+  const roleModel = roleStart === null ? undefined : resolveModel(models, roleStart.modelId)
+  const model = models.find(item => item.id === modelId) ?? roleModel ?? models[0]
+  const roleEffort = roleStart !== null && model !== undefined && model.id === roleStart.modelId ? roleStart.reasoningEffort ?? undefined : undefined
+  const reasoning = effort ?? roleEffort ?? model?.defaultReasoningEffort ?? ''
   const efforts = effortChoices(model, reasoning)
   const starting = phase !== 'writing'
   const field = useRef<PromptEditorElement | null>(null)
@@ -217,8 +225,14 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
           <div className="thread-prompt__meta">
             <div className="thread-options-bar">
               <div className="thread-options thread-options--chips" role="group" aria-label="Watcher’s model">
-                <ModelPicker models={models} modelId={model.id} disabled={starting} onChange={id => firstMessage.update({ modelId: id, effort: null })} />
-                {efforts.length > 0 ? <EffortPicker key={model.id} value={reasoning} options={efforts} disabled={starting} onChange={value => firstMessage.update({ effort: value })}
+                <ModelPicker models={models} modelId={model.id} disabled={starting} onChange={id => {
+                  firstMessage.update({ modelId: id, effort: null })
+                  saveOrchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, models)
+                }} />
+                {efforts.length > 0 ? <EffortPicker key={model.id} value={reasoning} options={efforts} disabled={starting} onChange={value => {
+                  firstMessage.update({ effort: value })
+                  saveOrchestrating?.(model.id, value, models)
+                }}
                   defaultValue={model.defaultReasoningEffort} modelName={model.name} /> : null}
                 <WatcherPermissionChip model={model} provider={providerName ?? model.provider} disabled={starting} noticeSlot={notices} />
               </div>

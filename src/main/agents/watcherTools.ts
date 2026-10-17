@@ -3,6 +3,8 @@ import { watcherToolSchemas, type WatcherToolName } from '../../shared/watcher'
 import { ThreadToolServer, type ThreadToolCallContext, type ThreadToolDefinition, type ThreadMcpServer, type ThreadToolResult } from './threadToolServer'
 import { watcherRefusal, type WatcherService } from './watcher'
 import type { WatcherProfileTools } from './host'
+import { watcherSystemPrompt } from './watcherPrompt'
+import { WORKER_KIND_LIST } from '../../shared/workerRoles'
 
 const descriptions: Record<WatcherToolName, string> = {
   watch_thread: 'Keep watching and managing a thread until the user stops watching. This does not send a prompt or answer a card.',
@@ -18,20 +20,32 @@ const descriptions: Record<WatcherToolName, string> = {
   list_working_copies: 'Read host-issued working-copy and base-ref choices for a known project. No arbitrary paths or remote fetch.',
   read_operation: 'Read an admitted operation’s receipt and, for a start or send, its outcome: working, background, answered, failed, stopped, paused or unknown. Accepted means delivered; the outcome says how its turn ended. Once answered it carries that turn’s reply, the worker’s own words. Uncertain or unknown means reconcile, never resend.',
 }
-export const WATCHER_TOOL_DEFINITIONS: readonly ThreadToolDefinition[] = Object.freeze(
-  (Object.keys(watcherToolSchemas) as WatcherToolName[]).map(name => Object.freeze({ name, description: descriptions[name],
-    inputSchema: z.toJSONSchema(watcherToolSchemas[name].input), outputSchema: z.toJSONSchema(watcherToolSchemas[name].output),
+/** With worker roles on (#1041), a start names its role and leaves the rest to the user's Settings. */
+const START_BY_ROLE = `Start one worker in a known project and send its first prompt under an active user Watcher request. Name its role (${WORKER_KIND_LIST}) and leave out the model, effort and permission: Sotto starts it on what the user's Settings give that role, never wider than the new-thread default. Name a model, effort or permission only when the user asked for one for this request; that overrides the role for this start only, and the receipt says so. Retry with the same key to read the original receipt.`
+/** Without worker roles, a start names its model, as it always has, and the offered schema has no role. */
+const startByModel = watcherToolSchemas.start_thread.input.omit({ role: true }).extend({ modelId: z.string().min(1).max(6_144) })
+
+/** The tools Watcher is offered: with worker roles on, start_thread takes a role and its model is optional. */
+export function watcherToolDefinitions(roles: boolean): readonly ThreadToolDefinition[] {
+  return Object.freeze((Object.keys(watcherToolSchemas) as WatcherToolName[]).map(name => Object.freeze({ name,
+    description: roles && name === 'start_thread' ? START_BY_ROLE : descriptions[name],
+    inputSchema: z.toJSONSchema(name === 'start_thread' && !roles ? startByModel : watcherToolSchemas[name].input), outputSchema: z.toJSONSchema(watcherToolSchemas[name].output),
     annotations: { readOnlyHint: name.startsWith('list_') || name.startsWith('read_'), destructiveHint: false,
-      idempotentHint: true, openWorldHint: false } })),
-)
+      idempotentHint: true, openWorldHint: false } })))
+}
+export const WATCHER_TOOL_DEFINITIONS: readonly ThreadToolDefinition[] = watcherToolDefinitions(false)
 
 /** Tokens attach only to main's one current identity. Admission is repeated for every invocation. */
 export class WatcherToolServer implements WatcherProfileTools {
   readonly name = 'sotto_threads'
-  readonly definitions = WATCHER_TOOL_DEFINITIONS
+  readonly definitions: readonly ThreadToolDefinition[]
+  /** Watcher's system prompt with these tools: the worker-role lines when that Owl feature is on, else the base one. */
+  readonly instructions: string | undefined
   private readonly transport: ThreadToolServer
   private running = 0
-  constructor(private readonly service: WatcherService) {
+  constructor(private readonly service: WatcherService, options: { roles?: boolean } = {}) {
+    this.definitions = options.roles === true ? watcherToolDefinitions(true) : WATCHER_TOOL_DEFINITIONS
+    this.instructions = options.roles === true ? watcherSystemPrompt(true) : undefined
     this.transport = new ThreadToolServer({ name: this.name, serverName: 'Sotto threads',
       instructions: 'Use explicit Sotto host and thread IDs. Use the requestId supplied with the user’s Watcher instruction. Native project reads use your own tools. No tool answers a request, approves a permission or changes policy. Read receipts instead of replaying uncertain delivery.',
       unavailable: 'Watcher’s thread tools are unavailable.', failed: 'This Watcher call could not be completed. Check its receipt before trying again.' },
