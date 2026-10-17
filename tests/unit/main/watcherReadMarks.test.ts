@@ -86,19 +86,30 @@ describe('read marks', () => {
     expect(marks.track(marked, pass(finished('a', 't1'), finished('b', 't2')), AT)).toBeNull()
   })
 
-  it('earns nothing for history a fork or continued thread imports, and a mark for the first turn that runs in it', () => {
+  it('earns nothing for the conversation a fork’s provider copies in, and a mark for the first turn that runs in it', () => {
     const marks = new WatcherReadMarks()
+    const forked = (item: AgentThread, from: 'turn' | 'agent' = 'turn'): AgentThread => ({ ...item, startedFrom: { threadId: 'source', from, route: 'fork', at: AT } })
     // Fork from here: the fork first shows empty, then its copied history brings a completed turn that never ran here.
-    marks.track([], pass(thread('fork')), AT)
-    expect(marks.track([], pass(finished('fork', 'copied-turn')), AT)).toBeNull()
-    // A continued thread on another provider, the same: empty, then its imported history with a failed turn in it.
-    marks.track([], pass(thread('continued')), AT)
-    expect(marks.track([], pass(failing('continued', 'imported-turn')), AT)).toBeNull()
-    // A real turn in the fork, seen running, earns its mark when it finishes.
-    marks.track([], pass(running('fork', 'own-turn')), AT)
-    expect(marks.track([], pass(finished('fork', 'own-turn')), AT)?.map(mark => [mark.target.threadId, mark.kind])).toEqual([['fork', 'finished']])
+    marks.track([], pass(forked(thread('fork'))), AT)
+    expect(marks.track([], pass(forked(finished('fork', 'copied-turn'))), AT)).toBeNull()
+    // An agent its provider copied into a thread of its own, the same, with a failed turn in the copy.
+    marks.track([], pass(forked(thread('agent-copy'), 'agent')), AT)
+    expect(marks.track([], pass(forked(failing('agent-copy', 'copied-turn'), 'agent')), AT)).toBeNull()
+    // A real turn in the fork earns its mark when it finishes, and so does the next, even one no pass saw running.
+    marks.track([], pass(forked(running('fork', 'own-turn'))), AT)
+    const own = marks.track([], pass(forked(finished('fork', 'own-turn'))), AT)
+    expect(own?.map(mark => [mark.target.threadId, mark.kind])).toEqual([['fork', 'finished']])
+    expect(marks.track([], pass(forked(finished('fork', 'next-turn'))), AT)?.map(mark => mark.target.threadId)).toEqual(['fork'])
   })
 
+  it('marks a question, a permission and a failure that are new, and a turn that ran between two passes, with no sight of it working', () => {
+    const marks = new WatcherReadMarks()
+    const permission = (id: string): AgentThread => thread(id, { requests: [{ id: 'p1', kind: 'permission', text: 'Run the suite?' } as AgentThread['requests'][number]] })
+    marks.track([], pass(finished('asks', 't0'), finished('allows', 't0'), finished('fails', 't0'), finished('batched', 't0')), AT)
+    // A card appears on an idle thread; a turn starts and fails at once; a paired host's batch hides a whole turn.
+    const next = marks.track([], pass(asking('asks', 'q1'), permission('allows'), failing('fails', 't1'), finished('batched', 't1')), AT)
+    expect(next?.map(mark => [mark.target.threadId, mark.kind])).toEqual([['asks', 'question'], ['allows', 'permission'], ['fails', 'failed'], ['batched', 'finished']])
+  })
   it('goes when the user reads the thread, records when, and the same news never marks it again', () => {
     const marks = new WatcherReadMarks()
     marks.track([], pass(running('a', 't1')), AT)
