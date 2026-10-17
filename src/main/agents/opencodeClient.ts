@@ -11,7 +11,7 @@ export class OpenCodeRejected extends Error {
 /** OpenCode answered with a body Sotto cannot read: the client is ahead of or behind what Sotto checked. */
 export class OpenCodeUnreadable extends OpenCodeUncertain {}
 
-const errorSchema = z.looseObject({ _tag: z.string().optional() })
+const errorSchema = z.looseObject({ _tag: z.string().optional(), service: z.string().nullable().optional() })
 /** One event as OpenCode's stream carries it: a `data:` frame holding this envelope. */
 export const opencodeEventSchema = z.looseObject({
   id: z.string().optional(), type: z.string().min(1), created: z.number().optional(), data: z.unknown().optional(),
@@ -24,17 +24,25 @@ const STREAM_SILENCE_MS = 45_000
 const MAX_EVENT_BYTES = 64 * 1024 * 1024
 /** "Location plugins did not finish activating": a folder's first request can wait several seconds for this. */
 const UNAVAILABLE_RETRY_MS = 30_000
+/**
+ * A 503 that is only a wait: the folder's plugins still starting (service `plugin`), or one that names no service. A 503
+ * that names a model source is that source's own answer, such as OpenCode Zen's free models refusing a stateless
+ * generation (`service: "opencode"`, checked against 2.0.31), and is not asked again.
+ */
+const isWait = (service: string | null | undefined): boolean => service === undefined || service === null || service === 'plugin'
 
 export interface OpenCodeRequest {
   readonly query?: Readonly<Record<string, string | undefined>>
   readonly body?: unknown
   readonly timeoutMs?: number
+  /** Ends this request too, as a caller's own stop does. */
+  readonly signal?: AbortSignal
 }
 
 /**
  * OpenCode 2's HTTP API on one server, over Node's own `fetch` (ADR-0087): HTTP Basic as the user `opencode` with the
  * server's password, JSON both ways, and the event stream read as server-sent events. A request that times out is
- * uncertain and never repeated here; only a 503 is retried, which OpenCode answers before it has admitted anything.
+ * uncertain and never repeated here; only a 503 that is a wait is retried, which OpenCode answers before it has admitted anything.
  * Every request, and every wait between retries, ends when `closed` aborts: the thread's server is being stopped.
  * Nothing it sends or answers is logged.
  */
@@ -44,29 +52,30 @@ export class OpenCodeClient {
     this.authorization = `Basic ${Buffer.from(`opencode:${password}`, 'utf8').toString('base64')}`
   }
 
-  /** Wait before retrying, unless the server is being stopped; the timer never keeps Sotto running. */
-  private retryAfter(ms: number): Promise<void> {
+  /** Wait before retrying, unless the server is being stopped or the caller gives up; the timer never keeps Sotto running. */
+  private retryAfter(ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
-      const closed = this.closed
-      if (closed?.aborted) { reject(new OpenCodeUncertain('The OpenCode server was stopped.')); return }
-      const stop = (): void => { clearTimeout(timer); reject(new OpenCodeUncertain('The OpenCode server was stopped.')) }
-      const timer = setTimeout(() => { closed?.removeEventListener('abort', stop); resolve() }, ms)
+      const ends = [this.closed, signal].filter((candidate): candidate is AbortSignal => candidate !== undefined)
+      if (ends.some(end => end.aborted)) { reject(new OpenCodeUncertain('The OpenCode server was stopped.')); return }
+      const settle = (): void => { clearTimeout(timer); for (const end of ends) end.removeEventListener('abort', stop) }
+      const stop = (): void => { settle(); reject(new OpenCodeUncertain('The OpenCode server was stopped.')) }
+      const timer = setTimeout(() => { settle(); resolve() }, ms)
       timer.unref()
-      closed?.addEventListener('abort', stop, { once: true })
+      for (const end of ends) end.addEventListener('abort', stop, { once: true })
     })
   }
 
-  async request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, options: OpenCodeRequest = {}): Promise<unknown> {
+  async request(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, options: OpenCodeRequest = {}): Promise<unknown> {
     const query = Object.entries(options.query ?? {}).filter((entry): entry is [string, string] => entry[1] !== undefined)
     const target = `${this.url}${path}${query.length ? `?${new URLSearchParams(query).toString()}` : ''}`
     const giveUp = Date.now() + UNAVAILABLE_RETRY_MS
     for (let attempt = 0; ; attempt++) {
-      if (this.closed?.aborted) throw new OpenCodeUncertain('The OpenCode server was stopped.')
+      if (this.closed?.aborted || options.signal?.aborted) throw new OpenCodeUncertain('The OpenCode server was stopped.')
       const timeout = AbortSignal.timeout(options.timeoutMs ?? this.timeoutMs)
       let response: Response
       try {
         response = await fetch(target, {
-          method, redirect: 'error', signal: this.closed ? AbortSignal.any([timeout, this.closed]) : timeout,
+          method, redirect: 'error', signal: AbortSignal.any([timeout, ...(this.closed ? [this.closed] : []), ...(options.signal ? [options.signal] : [])]),
           headers: { authorization: this.authorization, accept: 'application/json', ...(options.body !== undefined ? { 'content-type': 'application/json' } : {}) },
           ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
         })
@@ -75,9 +84,9 @@ export class OpenCodeClient {
         if (response.status === 204) { await response.body?.cancel().catch(() => undefined); return undefined }
         try { return await response.json() } catch { throw new OpenCodeUnreadable('OpenCode sent a reply Sotto cannot read.') }
       }
-      let tag: string | undefined
-      try { tag = errorSchema.parse(await response.json())._tag } catch { /* An error without a readable body still has its status. */ }
-      if (response.status === 503 && Date.now() < giveUp) { await this.retryAfter(Math.min(250 * (attempt + 1), 1_000)); continue }
+      let tag: string | undefined, service: string | null | undefined
+      try { ({ _tag: tag, service } = errorSchema.parse(await response.json())) } catch { /* An error without a readable body still has its status. */ }
+      if (response.status === 503 && isWait(service) && Date.now() < giveUp) { await this.retryAfter(Math.min(250 * (attempt + 1), 1_000), options.signal); continue }
       throw new OpenCodeRejected(response.status, tag)
     }
   }
