@@ -33,22 +33,46 @@ export function recordDispatch(record: WatcherRecord, target: WatcherThreadTarge
   record.readDispatches = kept.slice(-WATCHER_READ_DISPATCHES_MAX)
 }
 
-/**
- * Whether a thread's newest turn is the dispatched one, ended. Sotto's message names the turn where the provider reports
- * it (Claude Code, Grok Build, Devin and Muse), or the turn's own ID is Sotto's message; a Codex turn, or one sent where this
- * computer does not know the message, is the first turn to end that was not the thread's newest when the send went.
- */
-function endOf(entry: WatcherReadDispatch, thread: AgentThread): 'finished' | 'failed' | 'stopped' | null {
-  const turn = thread.lastTurn
-  // The turn's own end, never whether the thread is idle: work the turn left running in the background holds nothing back.
-  if (!turn || turn.status === 'running') return null
-  const named = turn.messageId ?? turn.id
-  const ours = entry.messageId === undefined ? turn.id !== entry.priorTurnId
-    : named === entry.messageId || turn.id === entry.messageId || turn.messageId === undefined && turn.id !== entry.priorTurnId && thread.providerId === 'codex'
-  if (!ours) return null
-  return turn.status === 'interrupted' ? 'stopped' : turn.status === 'failed' || thread.status === 'error' ? 'failed' : 'finished'
+/** A thread's turns oldest first, from its turn records and its newest turn: each turn's ID, the message it began with and how it stands. */
+interface TurnView { readonly id: string; messageId: string | undefined; status: string }
+function turnsOf(thread: AgentThread): TurnView[] {
+  const turns: TurnView[] = [], byId = new Map<string, TurnView>()
+  for (const activity of thread.activities ?? []) if (activity.kind === 'turn') {
+    const known = byId.get(activity.turnId)
+    if (known) { known.status = activity.status; known.messageId ??= activity.afterMessageId; continue }
+    const turn = { id: activity.turnId, messageId: activity.afterMessageId, status: activity.status }
+    byId.set(turn.id, turn); turns.push(turn)
+  }
+  const last = thread.lastTurn
+  if (last) {
+    const known = byId.get(last.id)
+    if (known) { known.status = last.status; known.messageId ??= last.messageId }
+    else turns.push({ id: last.id, messageId: last.messageId, status: last.status })
+  }
+  return turns
 }
 
+/**
+ * How a dispatch's own turn ended, from that turn alone: never from whether the thread is idle, so work the turn left
+ * running in the background holds nothing back, and never from a later turn, so two dispatches whose turns end between
+ * two passes each read their own. The turn is the newest that names Sotto's message (Claude Code, Grok Build, Devin, Muse,
+ * and Codex's own turn records), else the first turn after the one that was the thread's newest when the send went.
+ */
+function endOf(entry: WatcherReadDispatch, thread: AgentThread): { readonly end: 'finished' | 'failed' | 'stopped'; readonly turnId: string } | null {
+  const turns = turnsOf(thread)
+  const id = entry.messageId
+  let turn = id === undefined ? undefined : turns.findLast(item => item.id === id || item.messageId === id)
+  if (turn === undefined) {
+    // Every provider but Codex names its turns by Sotto's message: wait for that turn.
+    if (id !== undefined && thread.providerId !== 'codex') return null
+    const at = entry.priorTurnId === null ? -1 : turns.findIndex(item => item.id === entry.priorTurnId)
+    turn = at >= 0 ? turns[at + 1] : entry.priorTurnId === null ? turns.at(-1) : turns.findLast(item => item.id !== entry.priorTurnId)
+  }
+  if (turn === undefined || turn.id === entry.priorTurnId) return null
+  if (turn.status === 'completed') return { end: 'finished', turnId: turn.id }
+  if (turn.status === 'failed') return { end: 'failed', turnId: turn.id }
+  return turn.status === 'interrupted' ? { end: 'stopped', turnId: turn.id } : null
+}
 /**
  * Read marks (CONTEXT.md) from Sotto's own dispatches. A thread earns a mark when a turn Sotto dispatched ends, finished
  * or failed, and when a question or permission appears while such a turn is in flight. Nothing else marks: history a
@@ -86,10 +110,10 @@ export function trackDispatches(dispatches: readonly WatcherReadDispatch[], mark
       next = { ...rest, requestIds: showing.requestIds, ...showing.requestsDigest ? { requestsDigest: showing.requestsDigest } : {} }
       changed = true
     }
-    const end = endOf(entry, thread)
-    if (end === null) { kept.push(next); continue }
+    const ended = endOf(entry, thread)
+    if (ended === null) { kept.push(next); continue }
     changed = true
-    if (end !== 'stopped') mark(entry.target, end, `${end}:${thread.lastTurn!.id}`)
+    if (ended.end !== 'stopped') mark(entry.target, ended.end, `${ended.end}:${ended.turnId}`)
   }
   if (!changed) return null
   // Oldest first, as saved; a changed mark keeps its place.

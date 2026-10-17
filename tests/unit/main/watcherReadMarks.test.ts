@@ -168,7 +168,20 @@ describe('a dispatched turn’s own end', () => {
     room.pass(thread('worker', { ...turn('t1', 'completed'), backgroundWork: [{ id: 'build' }] as AgentThread['backgroundWork'] }))
     expect(room.marks()).toEqual([['worker', 'finished']])
   })
+
+  it('reads each dispatch’s own turn when two end between passes, so a stopped second turn leaves the first’s finish', () => {
+    const room = service()
+    room.pass(thread('pair', turn('t0', 'completed')))
+    const first = room.send('pair'), second = room.send('pair')
+    // Codex finishes the first turn and the second is stopped before the next observation; only their turn records tell them apart.
+    const activity = (turnId: string, status: 'completed' | 'interrupted', afterMessageId: string) =>
+      ({ id: `codex-turn-${turnId}`, turnId, sequence: 0, kind: 'turn' as const, title: 'Turn', status, afterMessageId })
+    room.pass(thread('pair', { ...turn('t2', 'interrupted'), activities: [activity('t1', 'completed', first), activity('t2', 'interrupted', second)] }))
+    expect(room.marks()).toEqual([['pair', 'finished']])
+    expect(room.record().readMarks?.[0]?.newsId).toBe('finished:t1')
+  })
 })
+
 describe('the requests a dispatch knows', () => {
   it('write nothing on a pass that changes nothing, with sixty cards, and stay read once read', async () => {
     const room = service()
