@@ -29,7 +29,7 @@ import type { PhoneTerminals } from '../shared/phoneTerminals'
 import type { WatcherHostRead } from '../shared/watcherHost'
 import type { WatcherThreadTarget } from '../shared/watcher'
 import { visibleWatcherState } from '../shared/watcherVisibility'
-import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, type ProviderScope } from './providerPeers'
+import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, stopResultWithoutProviders, type ProviderScope } from './providerPeers'
 import type { HeldProviders } from '../shared/heldProviders'
 import type { OpenCodeHostCall } from '../shared/opencodeSignIn'
 import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
@@ -734,7 +734,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
         return stopPreviewWithoutProviders(phone.prepareStop(peer.client), peer.unknownProviders)
       }
-      return watcherFor(peer, await (async () => { switch (request.op) {
+      const answer = await (async () => { switch (request.op) {
         case 'watcher-phone-set-permission':
         case 'watcher-phone-watch':
         case 'watcher-phone-unwatch': {
@@ -817,7 +817,9 @@ export async function startSocketServer(options: SocketServerOptions) {
           if (result.error) throw new Refusal('unavailable')
           return phone.get(mayAnswer(), standing)
         }
-      } })())
+      } })()
+      // Stop all's result keeps a row for every thread its confirmation listed, so a phone hears which it could not stop.
+      return request.op === 'watcher-phone-stop-all' ? stopResultWithoutProviders(answer, scopeOf(peer)) : watcherFor(peer, answer)
     }
     if ('threadId' in request && request.threadId && hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
     if ('request' in request && request.request && 'threadId' in request.request && hiddenThread(peer, request.request.threadId as string)) throw new Refusal('forbidden')

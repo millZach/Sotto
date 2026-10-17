@@ -53,6 +53,9 @@ function service() {
     send: async (request: { draftId: string }) => { acted.push('phone-send'); return { status: 'ok', draftId: request.draftId, state: phoneState() } },
     prepareStop: () => ({ status: 'ok', confirmationId: '00000000-0000-4000-8000-0000000000d1', expiresAt: at,
       targets: [{ hostId, threadId: opencodeThread, title: 'OpenCode work', provider: 'opencode' }, { hostId, threadId: codexThread, title: 'Codex work', provider: 'codex' }] }),
+    stop: async () => { acted.push('phone-stop-all'); return { status: 'ok', state: phoneState(), results: [
+      { target: target(opencodeThread), status: 'uncertain', message: 'The stop was not confirmed. Reconnect and check this thread.' },
+      { target: target(codexThread), status: 'stopped', message: 'Stopped.' }] } },
   }
   const value = {
     shell: () => state, state: () => state, subscribe: (listener: (next: AgentState) => void) => { listeners.add(listener); return () => listeners.delete(listener) },
@@ -108,6 +111,12 @@ it('sends an older phone nothing of OpenCode from its shell, events, details or 
   expect(await peer.call('prepare', { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true, result: { status: 'ok', targets: [
     { hostId, threadId: opencodeThread, title: 'OpenCode work', provider: null }, { hostId, threadId: codexThread, title: 'Codex work', provider: 'codex' }] } })
   expect(await peer.call('watch-codex', { op: 'watcher-phone-watch', request: { target: target(codexThread) } })).toMatchObject({ ok: true })
+  // Its result says what became of every thread the confirmation listed, the OpenCode one included, as its confirmation did.
+  const stopped = await peer.call('stop-all', { op: 'watcher-phone-stop-all', confirmationId: '00000000-0000-4000-8000-0000000000d1' })
+  expect(stopped).toMatchObject({ ok: true, result: { status: 'ok', results: [
+    { target: target(opencodeThread), status: 'uncertain', message: 'The stop was not confirmed. Reconnect and check this thread.' },
+    { target: target(codexThread), status: 'stopped', message: 'Stopped.' }] } })
+  expect(named((stopped.result as { state: unknown }).state)).toBe(false)
   const before = peer.messages.length
   publish()
   await expect.poll(() => peer.messages.slice(before).some(message => message.event === 'shell')).toBe(true)
@@ -118,9 +127,9 @@ it('sends an older phone nothing of OpenCode from its shell, events, details or 
     ['send', { op: 'watcher-phone-send', request: { origin: { kind: 'phone', hostId, clientId: 'phone' }, target: target(opencodeThread), draftId: '00000000-0000-4000-8000-0000000000f1', text: 'Go on' } }],
     ['answer', { op: 'watcher-phone-answer', request: { target: target(opencodeThread), command: { type: 'answer', threadId: opencodeThread, requestId: 'q', answer: 'Yes' } } }],
   ] as const) expect(await peer.call(id, operation)).toMatchObject({ ok: false, error: { code: 'forbidden' } })
-  expect(acted).toEqual(['phone-watch'])
-  // Its fixture thread is named for OpenCode, so the one answer that lists it by title is left out of this check.
-  expect(peer.messages.filter(message => message.id !== 'prepare').filter(named)).toEqual([])
+  expect(acted).toEqual(['phone-watch', 'phone-stop-all'])
+  // Its fixture thread is named for OpenCode, so the two answers that list it by title or target are left out of this check.
+  expect(peer.messages.filter(message => message.id !== 'prepare' && message.id !== 'stop-all').filter(named)).toEqual([])
 })
 
 it('sends an older desktop no Watcher row, project or projection of OpenCode, and refuses its reads and directions of OpenCode threads before they run', async () => {

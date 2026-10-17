@@ -204,6 +204,16 @@ export function stopPreviewWithoutProviders(preview: WatcherPhonePrepareStopResu
 }
 
 /**
+ * Stop all's answer for a phone that does not know some providers: its state is filtered as any Watcher answer is, and every
+ * result row stays, as every thread stayed in the confirmation, so the phone hears which threads it could not stop. A row
+ * names its thread only by target and says what happened in words that name no provider (#1143).
+ */
+export function stopResultWithoutProviders<T>(answer: T, scope: ProviderScope): T {
+  if (!scope.providers.size || answer === null || typeof answer !== 'object' || !('results' in answer)) return readWithoutProviders(answer, scope)
+  return { ...readWithoutProviders({ ...answer, results: [] }, scope), results: answer.results }
+}
+
+/**
  * A Watcher answer, a Watcher projection or a phone's Watcher state without a row that names a provider the client does not
  * know: any object in a list that names one (`namesHidden`) is left out, as a thread, worker, project, card or receipt of
  * that provider would be on a shell. Everything else keeps its shape.
