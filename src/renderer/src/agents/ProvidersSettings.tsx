@@ -8,6 +8,7 @@ import { useOptionalAgents } from './AgentContext'
 import { useHeldProviders } from '../state/owlFeature'
 import { newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
+import { OpenCodeModelSources } from './OpenCodeModelSources'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
@@ -162,13 +163,13 @@ export function ProvidersSettings(): ReactNode {
           tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const next = value === 'configuration' ? 'models' : 'configuration'; setTab(next); document.getElementById(`${tabId}-${next}`)?.focus() } }}>{value === 'configuration' ? 'Configuration' : 'Models'}</button>)}</div>
         <div key={`${selected}-${tab}`} id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} className="provider-detail__body">
           {tab === 'configuration' ? <>
-            <div className="provider-connection"><div><h4>Local connection</h4><p>{selected === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : selected === 'muse' ? 'Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.' : selected === 'opencode' ? 'Uses OpenCode 2 on this computer, in a folder of Sotto’s own, apart from your own OpenCode. That folder starts with no sign-ins.' : `Uses your ${CLIENT_NAMES[selected]} sign-in on this computer.`}</p>
-              {selected === 'opencode' && connected && 'account' in status && status.account && <p>{status.account}.</p>}
+            <div className="provider-connection"><div><h4>Local connection</h4><p>{selected === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : selected === 'muse' ? 'Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.' : selected === 'opencode' ? 'Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.' : `Uses your ${CLIENT_NAMES[selected]} sign-in on this computer.`}</p>
               {selected === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label="Copy Muse login command" onClick={() => void copyMuseLogin()}>{loginFeedback ?? 'Copy'}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>Sign-in steps</Button><span className="tt-visually-hidden" role="status">{loginFeedback ? 'Muse login command copied.' : ''}</span></div>}
             </div>
               <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working) || selectedUpdating} aria-label={`${connected ? 'Disconnect' : status.connection === 'error' ? 'Retry' : 'Connect'} ${label}`}
                 onClick={() => void perform(selected, connected ? 'disconnect' : 'connect')}>{working ? pending[selected] === 'disconnect' ? 'Disconnecting…' : pending[selected] === 'refresh' ? 'Refreshing…' : 'Connecting…' : connected ? 'Disconnect' : status.connection === 'error' ? 'Retry connection' : 'Connect'}</Button>
             </div>
+            {selected === 'opencode' && connected && window.sotto?.opencode ? <OpenCodeModelSources bridge={window.sotto.opencode} /> : null}
             <div className="provider-client" aria-busy={checkingUpdates || selectedUpdating}>
               <div>
                 <h4>Installed client</h4>

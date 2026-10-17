@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
@@ -33,13 +33,19 @@ async function mount(opencode: boolean, change: (state: AgentState) => void = ()
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
 describe('OpenCode in provider settings', () => {
-  it('offers OpenCode under its own mark in Owl, says its folder is Sotto’s own and that no model source is signed in yet', async () => {
+  it('offers OpenCode under its own mark in Owl, says it runs its own OpenCode, and shows its Model sources', async () => {
+    vi.stubGlobal('sotto', { ...window.sotto, opencode: { sources: vi.fn(async () => ({ status: 'ok', zenModels: 12, sources: [] })) } })
     await mount(true)
     const button = await screen.findByRole('button', { name: 'OpenCode' })
     expect(button.querySelector('svg.provider-mark[data-provider="opencode"] path')?.getAttribute('d')).toBe('M24 8H8V32H24V8ZM32 40H0V0H32V40Z')
     fireEvent.click(button)
-    expect(screen.getByText(/in a folder of Sotto’s own, apart from your own OpenCode/)).toBeVisible()
-    expect(screen.getByText('No model source signed in yet; OpenCode Zen’s free models only.')).toBeVisible()
+    expect(screen.getByText('Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.')).toBeVisible()
+    const sources = screen.getByRole('group', { name: 'Model sources' })
+    expect(await within(sources).findByText('12 models')).toBeVisible()
+    // Model sources sit between Local connection and Installed client.
+    const connection = screen.getByRole('heading', { name: 'Local connection' }), installed = screen.getByRole('heading', { name: 'Installed client' })
+    expect(connection.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(sources.compareDocumentPosition(installed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('shows OpenCode’s installed and published versions and its update like any other client', async () => {

@@ -27,10 +27,16 @@ import { effortAfterChange, validatePromptAttachments, validateThreadOptions } f
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
 import { WatcherProfileRefusal } from './watcherProfile'
+import { OpenCodeSignIn, type OpenCodeSignInEvent, type SignInServer } from './opencodeSignIn'
 
 const SERVER_LOST = 'OpenCode stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 const TURN_FAILED = 'OpenCode could not finish this turn. Nothing else was lost. Send a message to carry on.'
 const SOURCE_REFUSED = 'The model source refused this turn: it may need signing in to in OpenCode, or its free models may not allow it. Nothing else was lost. Choose another model or sign in, then send again.'
+/**
+ * A signed-in source that refused a turn. OpenCode keeps a key without trying it (checked against 2.0.31), so a wrong key
+ * shows here, on the first turn that uses it, rather than when it was pasted.
+ */
+const signedInSourceRefused = (source: string): string => `${source} refused the sign-in Sotto’s OpenCode has for it, so this turn did not run. Nothing else was lost. In Settings › Providers › OpenCode, sign out of ${source} and sign in again, then send again.`
 const WATCHER_REFUSED = 'OpenCode cannot host Watcher. Nothing was sent. Choose a Codex, Claude Code or Grok Build model for Watcher.'
 /** OpenCode Zen's provider ID: the model source a folder with no sign-ins offers, its free models (ADR-0087). */
 const ZEN = 'opencode'
@@ -149,7 +155,7 @@ const modelSelectedSchema = ofSession.extend({ model: modelRefSchema })
 
 interface ThreadServer {
   ready: Promise<ThreadServer>
-  /** The client it started on: see `clientUpdated`. */
+  /** The client and sign-ins it started on: see `clientUpdated` and `catalogChanged`. */
   readonly revision: number
   server?: OpenCodeServer
   client?: OpenCodeClient
@@ -182,7 +188,11 @@ export interface OpenCodeHostOptions {
   reaperSweepMs?: number
   sessionIdleMs?: number
   /** Stable event names only: nothing OpenCode prints or sends reaches it. */
-  log?: (event: OpenCodeServerEvent) => void
+  log?: (event: OpenCodeServerEvent | OpenCodeSignInEvent) => void
+  /** Opens a sign-in page in the user's own browser; without it a browser sign-in has nothing to open. */
+  openExternal?: (url: string) => Promise<unknown>
+  /** How long the sign-in server stays up once nothing uses it. */
+  signInIdleMs?: number
 }
 
 /**
@@ -226,11 +236,13 @@ export class OpenCodeHost implements AgentHost {
   private readonly reaper: SessionReaper
   private generation = 0
   /**
-   * Bumped when the client on disk changes. A thread server started before is an
+   * Bumped when the client on disk or the sign-ins in Sotto's OpenCode folder change. A thread server started before is an
    * outdated process (CONTEXT.md): each stops as soon as its thread is not busy, and its next action starts a fresh one.
    */
   private revision = 0
   private readonly outdated = new Set<string>()
+  /** Signing Sotto's OpenCode in to model sources (#1104), on a short-lived server of its own. */
+  readonly signIn: OpenCodeSignIn
   private state: AgentHostSnapshot = {
     connected: false, name: 'OpenCode', version: '', projects: [], models: [], threads: [],
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, configureThreadModel: true, skills: false, steer: true, compact: false },
@@ -245,6 +257,11 @@ export class OpenCodeHost implements AgentHost {
       isWatched: id => this.observed.has(id),
       isBusy: id => this.busy(id),
       stop: id => this.stopSession(id),
+    })
+    this.signIn = new OpenCodeSignIn({
+      start: () => this.startSignInServer(), location: this.folders.data, changed: client => this.catalogChanged(client),
+      openExternal: async url => { if (!options.openExternal) throw new Error('No browser.'); await options.openExternal(url) },
+      log: options.log, ...(options.signInIdleMs !== undefined ? { idleMs: options.signInIdleMs } : {}),
     })
   }
   private get timeoutMs(): number { return this.options.requestTimeoutMs ?? 15_000 }
@@ -477,6 +494,7 @@ export class OpenCodeHost implements AgentHost {
       this.log.forgetAll()
       for (const id of Object.keys(this.aliases)) { this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? []) }
       this.state.connected = true; delete this.state.error
+      this.signIn.reopen()
       await Promise.all(Object.keys(this.aliases).filter(id => this.aliases[id]?.sessionConfirmed && this.observed.has(id)).map(id => this.open(id).catch(() => undefined)))
       this.assertGeneration(generation)
       this.reaper.start()
@@ -518,6 +536,12 @@ export class OpenCodeHost implements AgentHost {
     this.state.account = account.length > 80 ? `${account.slice(0, 79)}…` : account
   }
 
+  /** The words for a turn its model source refused: a signed-in source names itself; OpenCode Zen keeps the general words. */
+  private sourceRefused(id: string): string {
+    const modelId = this.aliases[id]?.modelId ?? this.threads.get(id)?.modelId
+    const model = this.state.models.find(item => item.id === modelId)
+    return model?.source && !modelId?.startsWith(`${ZEN}/`) ? signedInSourceRefused(model.source) : SOURCE_REFUSED
+  }
   /** The catalog as a server reads it now: the models, the default and the providers that name each model's source. */
   private async readCatalog(client: OpenCodeClient): Promise<{ models: NativeModel[]; providers: { id: string; name: string }[]; fallback: NativeModel | undefined }> {
     const location = locationQuery(this.folders.data)
@@ -525,6 +549,32 @@ export class OpenCodeHost implements AgentHost {
     const fallback = await client.request('GET', '/api/model/default', { query: location }).then(value => defaultModelSchema.parse(value).data ?? undefined, () => undefined)
     const providers = providerListSchema.parse(await client.request('GET', '/api/provider', { query: location })).data
     return { models, providers, fallback }
+  }
+  /**
+   * The server a sign-in runs on (#1104): one of Sotto's own, on Sotto's OpenCode folder, started only while OpenCode is
+   * connected. It is tracked with the thread servers, so a disconnect or a quit stops it too.
+   */
+  private async startSignInServer(): Promise<SignInServer> {
+    if (!this.state.connected || !this.executable) throw new Error('Connect OpenCode before signing in.')
+    const generation = this.generation
+    const started = await this.startServer(this.folders.data)
+    if (generation !== this.generation || !this.state.connected) { await started.server.stop(); throw new OpenCodeUncertain('The OpenCode connection changed.') }
+    const exit: Promise<void> = started.server.closed.then(() => started.server.stop()).finally(() => { this.exits.delete(exit) })
+    this.exits.add(exit)
+    return { client: started.client, closed: started.server.closed, stop: () => started.server.stop() }
+  }
+  /**
+   * After a sign-in or a sign-out, the catalog is read again, so the model menu and the account line have what changed.
+   * Thread servers read the sign-ins when they start, so each moves to a fresh one as its thread goes idle.
+   */
+  private async catalogChanged(client: OpenCodeClient): Promise<void> {
+    if (!this.state.connected) return
+    const generation = this.generation
+    const catalog = await this.readCatalog(client)
+    if (generation !== this.generation || !this.state.connected) return
+    this.applyCatalog(this.state.version, catalog.models, catalog.providers, catalog.fallback)
+    this.renew()
+    this.emit()
   }
   /**
    * A new client is on disk (ADR-0042, ADR-0038): it is found again and checked on a server of its own, the catalog is read
@@ -916,7 +966,7 @@ export class OpenCodeHost implements AgentHost {
           const outcome = event.type === 'session.execution.succeeded' ? 'completed' : event.type === 'session.execution.failed' ? 'failed' : 'interrupted'
           const messageId = this.activeTurns.get(id)?.messageId ?? this.log.lastUserMessageId(id)
           this.activeTurns.delete(id)
-          if (messageId) this.endTurn(id, messageId, outcome, outcome === 'failed' ? parsed.error?.type === 'provider.auth' ? SOURCE_REFUSED : TURN_FAILED : undefined)
+          if (messageId) this.endTurn(id, messageId, outcome, outcome === 'failed' ? parsed.error?.type === 'provider.auth' ? this.sourceRefused(id) : TURN_FAILED : undefined)
           else thread.status = outcome === 'failed' ? 'error' : 'idle'
           this.emit(); return
         }
@@ -1181,6 +1231,8 @@ export class OpenCodeHost implements AgentHost {
     this.processes.clear()
     if (this.probe) { void this.probe.then(probe => probe.server.stop(), () => undefined); this.probe = undefined }
     this.outdated.clear()
+    const signingIn: Promise<void> = this.signIn.shut().finally(() => { this.exits.delete(signingIn) })
+    this.exits.add(signingIn)
     this.state.connected = false; this.emit()
   }
   async closed(): Promise<void> { await Promise.all([...this.exits]); await Promise.allSettled(this.loading.values()); await this.writing }

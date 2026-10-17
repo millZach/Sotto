@@ -9,7 +9,10 @@ import { URL } from 'node:url'
 // server-sent events captured from OpenCode 2.0.31 (.zstack/opencode-provider/v2-captures, not committed). Files in the
 // root steer it, as with the other fakes: `script.json` (version, infoVersion, models, providers, delay by operation,
 // migrationMs, unavailable, printPassword, pageSize, eventStream: 'refuse' to answer the event stream with an error before
-// its first frame), `control.json` (one driver action at a time, taken by the process
+// its first frame; integrations, sourceModels, oauth by `<integration>:<method>`, oauthExpiresMs and oauthUrl for the
+// sign-in routes), `approve.json` (`{ integrationID }`: the next read of that source's browser sign-in finds it complete),
+// `credentials.json` (the sign-ins, shared by every process as OpenCode's database is, secrets included as OpenCode
+// answers them), `control.json` (one driver action at a time, taken by the process
 // holding its session). Every request is recorded in requests.jsonl under its OpenAPI operation name, with the process
 // that took it. Sessions are shared by every process through native-sessions.json under a lock, as OpenCode's database is.
 // A process holding a session writes `holders/<sessionId>` with its PID, so a test can see when that server has gone.
@@ -35,6 +38,32 @@ const MODELS = startup.models ?? [
     variants: [], enabled: true, status: 'active', limit: { context: 200000, output: 32000 } },
 ]
 const PROVIDERS = startup.providers ?? [{ id: 'opencode', name: 'OpenCode', activation: 'enabled', package: '@opencode/ai/providers/openai-compatible' }]
+// The model sources OpenCode 2.0.31 lists, cut to the ones the tests sign in to, in its shape (`Integration.Info`).
+const INTEGRATIONS = startup.integrations ?? [
+  { id: 'opencode', name: 'OpenCode Console', methods: [{ type: 'key', label: 'API key (service account)' }, { type: 'env', names: ['OPENCODE_API_KEY'] },
+    { id: 'device', type: 'oauth', label: 'OpenCode Console account', form: [{ key: 'server', hidden: true, type: 'string', format: 'uri', default: 'https://opencode.ai/console' }] }] },
+  { id: 'anthropic', name: 'Anthropic', methods: [{ type: 'key' }, { type: 'env', names: ['ANTHROPIC_API_KEY'] }] },
+  { id: 'openai', name: 'OpenAI', methods: [{ type: 'key' }, { type: 'env', names: ['OPENAI_API_KEY'] }, { id: 'chatgpt-token-sharing', type: 'oauth', label: 'Sign in with ChatGPT' },
+    { id: 'chatgpt-browser', type: 'oauth', label: 'Codex browser (legacy)' }, { id: 'chatgpt-headless', type: 'oauth', label: 'Codex device code (legacy)' }] },
+  { id: 'openrouter', name: 'OpenRouter', methods: [{ type: 'key' }, { type: 'env', names: ['OPENROUTER_API_KEY'] }] },
+  { id: 'github-copilot', name: 'GitHub Copilot', methods: [{ type: 'env', names: ['GITHUB_TOKEN'] }, { id: 'device', type: 'oauth', label: 'Login with GitHub Copilot', form: [
+    { key: 'deploymentType', title: 'Select GitHub deployment type', required: true, type: 'string', options: [{ value: 'github.com', label: 'GitHub.com', description: 'Public' }, { value: 'enterprise', label: 'GitHub Enterprise', description: 'Data residency or self-hosted' }] },
+    { key: 'enterpriseUrl', title: 'Enter your GitHub Enterprise URL or domain', required: true, when: [{ key: 'deploymentType', op: 'eq', value: 'enterprise' }], type: 'string', placeholder: 'company.ghe.com or https://company.ghe.com' }] }] },
+  { id: 'google', name: 'Google', methods: [{ type: 'key' }, { type: 'env', names: ['GEMINI_API_KEY'] }] },
+  { id: 'xai', name: 'xAI', methods: [{ type: 'key', label: 'Manually enter API Key' }, { type: 'env', names: ['XAI_API_KEY'] }, { id: 'device', type: 'oauth', label: 'SuperGrok Subscription' }] },
+  { id: 'gitlab', name: 'GitLab Duo', methods: [{ type: 'key' }, { id: 'pkce', type: 'oauth', label: 'Login with GitLab (OAuth)', form: [{ key: 'instanceUrl', title: 'GitLab instance URL', type: 'string', default: 'https://gitlab.com' }] }] },
+  { id: 'zenmux', name: 'ZenMux', methods: [{ type: 'key' }] },
+]
+// The models a signed-in source adds to the catalog, by source.
+const SOURCE_MODELS = startup.sourceModels ?? {
+  anthropic: [{ id: 'claude-fixture', name: 'Claude Fixture' }, { id: 'claude-fixture-small', name: 'Claude Fixture Small' }],
+  openai: [{ id: 'gpt-fixture', name: 'GPT Fixture' }], xai: [{ id: 'grok-fixture', name: 'Grok Fixture' }], gitlab: [{ id: 'duo-fixture', name: 'Duo Fixture' }],
+}
+const credentials = () => read('credentials.json', [])
+const saveCredentials = list => writeFileSync(path('credentials.json'), JSON.stringify(list))
+const sourceModels = () => credentials().flatMap(credential => (SOURCE_MODELS[credential.integrationID] ?? []).map(model => ({ ...model, modelID: model.id, providerID: credential.integrationID,
+  capabilities: { tools: true, input: ['text'], output: ['text'] }, variants: [], enabled: true, status: 'active', limit: { context: 200000, output: 32000 } })))
+const attempts = new Map()
 const PROVIDER_KEYS = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'XAI_API_KEY', 'META_API_KEY', 'OPENCODE_SERVER_PASSWORD', 'OPENCODE_DATA_DIR']
 record({ method: 'fixture/process', params: { pid: process.pid, version: VERSION, args, environment: {
   dataHome: process.env.XDG_DATA_HOME ?? null, configHome: process.env.XDG_CONFIG_HOME ?? null, stateHome: process.env.XDG_STATE_HOME ?? null, cacheHome: process.env.XDG_CACHE_HOME ?? null,
@@ -211,6 +240,13 @@ const routes = [
   ['GET', /^\/api\/session\/([^/]+)\/permission$/u, 'session.permission.list'], ['POST', /^\/api\/session\/([^/]+)\/permission\/([^/]+)\/reply$/u, 'session.permission.reply'],
   ['GET', /^\/api\/session\/([^/]+)\/form$/u, 'session.form.list'], ['POST', /^\/api\/session\/([^/]+)\/form\/([^/]+)\/reply$/u, 'session.form.reply'],
   ['DELETE', /^\/api\/session\/([^/]+)\/form\/([^/]+)$/u, 'session.form.cancel'],
+  ['GET', /^\/api\/integration$/u, 'integration.list'], ['POST', /^\/api\/integration\/([^/]+)\/connect\/key$/u, 'integration.connect.key'],
+  ['POST', /^\/api\/integration\/([^/]+)\/connect\/external$/u, 'integration.connect.external'],
+  ['POST', /^\/api\/integration\/([^/]+)\/connect\/oauth$/u, 'integration.connect.oauth'],
+  ['GET', /^\/api\/integration\/([^/]+)\/connect\/oauth\/([^/]+)$/u, 'integration.connect.oauth.status'],
+  ['DELETE', /^\/api\/integration\/([^/]+)\/connect\/oauth\/([^/]+)$/u, 'integration.connect.oauth.cancel'],
+  ['POST', /^\/api\/integration\/([^/]+)\/connect\/oauth\/([^/]+)\/complete$/u, 'integration.connect.oauth.complete'],
+  ['GET', /^\/api\/credential$/u, 'credential.list'], ['DELETE', /^\/api\/credential\/([^/]+)$/u, 'credential.remove'],
 ]
 const expected = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD ?? ''}`).toString('base64')}`
 const server = createServer((request, response) => {
@@ -242,10 +278,15 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
   if (name === 'server.info') { send(200, { version: script().infoVersion ?? VERSION, pid: process.pid, urls: [], paths: {}, capabilities: {} }); return }
   if (name === 'model.list') {
     if (unavailable > 0) { unavailable--; fail(503, 'ServiceUnavailableError'); return }
-    send(200, { location: { directory: query['location[directory]'] }, data: script().models ?? MODELS }); return
+    send(200, { location: { directory: query['location[directory]'] }, data: [...script().models ?? MODELS, ...sourceModels()] }); return
   }
   if (name === 'model.default') { send(200, { location: { directory: query['location[directory]'] }, data: (script().models ?? MODELS)[0] ?? null }); return }
-  if (name === 'provider.list') { send(200, { location: { directory: query['location[directory]'] }, data: script().providers ?? PROVIDERS }); return }
+  if (name === 'provider.list') {
+    const signed = [...new Set(credentials().map(credential => credential.integrationID))].map(integrationID => ({ id: integrationID, integrationID,
+      name: INTEGRATIONS.find(item => item.id === integrationID)?.name ?? integrationID, activation: 'enabled' }))
+    send(200, { location: { directory: query['location[directory]'] }, data: [...script().providers ?? PROVIDERS, ...signed.filter(item => item.id !== 'opencode')] }); return
+  }
+  if (name.startsWith('integration.') || name.startsWith('credential.')) { integration(name, sessionId, itemId, body, query, send); return }
   if (name === 'event.subscribe') {
     if (script().eventStream === 'refuse') { fail(500, 'InternalServerError'); return }
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
@@ -319,6 +360,56 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
     send(204); return
   }
   fail(404, 'NotFoundError')
+}
+/** OpenCode 2.0.31's sign-in routes, as the scratch probe of October 16, 2026 found them. */
+function integration(name, integrationID, attemptID, body, query, send) {
+  const location = { directory: query['location[directory]'] }
+  const add = (integrationID, value) => {
+    const entry = { id: id('cred'), integrationID, label: INTEGRATIONS.find(item => item.id === integrationID)?.name ?? integrationID, active: true, value }
+    saveCredentials([...credentials().filter(item => item.integrationID !== integrationID), entry])
+  }
+  if (name === 'credential.list') { send(200, { data: credentials() }); return }
+  if (name === 'credential.remove') { saveCredentials(credentials().filter(item => item.id !== integrationID)); send(204); return }
+  if (name === 'integration.list') {
+    const held = credentials()
+    send(200, { location, data: INTEGRATIONS.map(item => ({ ...item, connections: held.filter(credential => credential.integrationID === item.id)
+      .map(credential => ({ type: 'credential', id: credential.id, label: credential.label, method: credential.value.type })) })) }); return
+  }
+  const source = INTEGRATIONS.find(item => item.id === integrationID)
+  if (!source) { send(404, { _tag: 'IntegrationNotFoundError', integrationID, message: `Integration not found: ${integrationID}` }); return }
+  if (name === 'integration.connect.key') {
+    // OpenCode keeps any key without trying it; the fixture refuses one that says so, to draw a refused key.
+    if (typeof body?.key !== 'string' || body.key.startsWith('refuse')) { send(400, { _tag: 'InvalidRequestError', message: 'Invalid key', kind: 'integration_authorization' }); return }
+    add(source.id, { type: 'key', key: body.key, ...(body.answer ? { configuration: body.answer } : {}) }); send(204); return
+  }
+  if (name === 'integration.connect.external') { add(source.id, { type: 'external', methodID: body.methodID }); send(204); return }
+  if (name === 'integration.connect.oauth') {
+    const method = source.methods.find(item => item.type === 'oauth' && item.id === body?.methodID)
+    if (!method) { send(404, { _tag: 'IntegrationMethodNotFoundError', message: 'Method not found' }); return }
+    const missing = (method.form ?? []).find(field => field.required && !field.hidden && !(field.when ?? []).some(rule => body.answer?.[rule.key] !== rule.value) && !body.answer?.[field.key])
+    if (missing) { send(400, { _tag: 'InvalidRequestError', message: `Missing required form field: ${missing.key}`, kind: 'integration_authorization' }); return }
+    const how = script().oauth?.[`${source.id}:${method.id}`] ?? { mode: 'auto' }
+    const created = now(), attempt = { attemptID: id('con'), integrationID: source.id, methodID: method.id, mode: how.mode, time: { created, expires: created + (script().oauthExpiresMs ?? 600_000) } }
+    attempts.set(attempt.attemptID, attempt)
+    const url = script().oauthUrl ?? `https://sign-in.fixture.invalid/${source.id}/${how.code ? `device?user_code=${how.code}` : 'authorize?state=fixture-state'}`
+    const instructions = how.code ? `Open https://sign-in.fixture.invalid/${source.id}/device on any device and enter code: ${how.code}` : 'Complete authorization in your browser. This window will close automatically.'
+    send(200, { location, data: { attemptID: attempt.attemptID, url, instructions, mode: how.mode, time: attempt.time } }); return
+  }
+  const attempt = attempts.get(attemptID)
+  if (name === 'integration.connect.oauth.cancel') { attempts.delete(attemptID); send(204); return }
+  if (!attempt || attempt.integrationID !== source.id) { send(404, { _tag: 'IntegrationAttemptNotFoundError', integrationID, attemptID, message: `OAuth attempt not found: ${attemptID}` }); return }
+  if (name === 'integration.connect.oauth.complete') {
+    if (body?.code !== 'good-code') { send(400, { _tag: 'InvalidRequestError', message: 'Invalid code' }); return }
+    attempt.status = 'complete'; add(source.id, { type: 'oauth', methodID: attempt.methodID, refresh: 'fixture-refresh-secret', access: 'fixture-access-secret', expires: now() + 3_600_000 })
+    send(204); return
+  }
+  const approved = read('approve.json', null)
+  if (!attempt.status && approved?.integrationID === source.id) {
+    rmSync(path('approve.json'), { force: true })
+    attempt.status = 'complete'; add(source.id, { type: 'oauth', methodID: attempt.methodID, refresh: 'fixture-refresh-secret', access: 'fixture-access-secret', expires: now() + 3_600_000 })
+  }
+  const status = attempt.status ?? (now() >= attempt.time.expires ? 'expired' : 'pending')
+  send(200, { location, data: { status, time: attempt.time } })
 }
 const heartbeat = setInterval(() => { for (const client of clients) client.write(': heartbeat\n\n') }, 15_000)
 heartbeat.unref()

@@ -193,6 +193,8 @@ import { SecureSettings } from './agents/secureSettings'
 import { registerSubagentIpc } from './agents/subagentIpc'
 import { registerUsageIpc } from './agents/usageIpc'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
+import { OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
+import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
 import { createWatcherRoomDesktop } from './agents/watcherRoomDesktop'
@@ -652,7 +654,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     createWindow: options => {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
       const featureArguments = mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
-        ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : [])] : []
+        ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
+        ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : [])] : []
       const window = new BrowserWindow(featureArguments.length
         ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...(options.webPreferences?.additionalArguments ?? []), ...featureArguments] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
@@ -757,6 +760,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(),
       ...(!heldProviders.has('opencode') ? { opencode: new OpenCodeHost(userDataPath, {
         executable: opencodeFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeOpenCodeServer.mjs'), opencodeFixtureRoot],
+        // A journey's sign-in page is written down for the spec to read, never opened in a browser.
+        openExternal: url => appendFile(join(opencodeFixtureRoot, 'opened-pages.txt'), `${url}
+`, 'utf8'),
       }) } : {}),
     } } : {}),
     ...(nativeFixtureRoot ? { providers: {
@@ -1416,6 +1422,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
         (channel, payload) => { windows.sendToMain(channel, payload) })
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
+      // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
+      const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         report: () => { logOperational('checkpoint-unavailable') } })
       agentHost.setMutationGuard(checkpointIntegration.canMutate)
@@ -1610,6 +1618,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupUsage()
         cleanupDelegations()
         cleanupContinue()
+        cleanupOpenCodeSignIn()
         cleanupTerminals()
         worktreeCleanup?.dispose()
         cleanupTools()

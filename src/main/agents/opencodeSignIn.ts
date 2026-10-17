@@ -1,0 +1,281 @@
+import { z } from 'zod'
+import {
+  SIGN_IN_WORDS, signInAttemptRequestSchema, signInFinishRequestSchema, signInKeyRequestSchema, signInMethodRequestSchema, signOutRequestSchema,
+  type ModelSources, type SignInDone, type SignInResult, type SignInStart, type SignInWait,
+} from '../../shared/opencodeSignIn'
+import { locationQuery, OpenCodeRejected, type OpenCodeClient } from './opencodeClient'
+import { attemptOf, attemptReplySchema, attemptStatusSchema, credentialsOf, hiddenAnswers, integrationListSchema, KEY_METHOD, modelSourcesOf, safeSignInPage, type Integration } from './opencodeSources'
+
+/** Stable event names a sign-in is logged by. No key, code, address or answer from OpenCode ever reaches a log. */
+export type OpenCodeSignInEvent = 'opencode-sign-in-key' | 'opencode-sign-in-browser-started' | 'opencode-sign-in-complete' | 'opencode-sign-in-cancelled'
+  | 'opencode-sign-in-expired' | 'opencode-sign-in-failed' | 'opencode-sign-out' | 'opencode-sign-in-unavailable'
+
+/** The server a sign-in runs on: one of Sotto's own OpenCode servers, on Sotto's OpenCode folder (ADR-0087). */
+export interface SignInServer { readonly client: OpenCodeClient; readonly closed: Promise<void>; stop(): Promise<void> }
+export interface OpenCodeSignInOptions {
+  /** Starts a short-lived server; rejects when OpenCode is not connected or cannot start. */
+  readonly start: () => Promise<SignInServer>
+  /** The folder every request names as its location. */
+  readonly location: string
+  /** After a sign-in or sign-out: read the catalog again on this server, so the model menu has what changed. */
+  readonly changed: (client: OpenCodeClient) => Promise<void>
+  /** Opens an https page in the user's own browser, from main. */
+  readonly openExternal: (url: string) => Promise<void>
+  readonly log?: ((event: OpenCodeSignInEvent) => void) | undefined
+  /** How long the server stays up after its last use while nothing waits on it. */
+  readonly idleMs?: number
+  readonly now?: () => number
+}
+
+const modelListSchema = z.looseObject({ data: z.array(z.looseObject({ providerID: z.string(), enabled: z.boolean().optional(), status: z.string().optional() })) })
+const providerListSchema = z.looseObject({ data: z.array(z.looseObject({ id: z.string(), integrationID: z.string().optional() })) })
+interface Attempt { readonly sourceId: string; readonly name: string; readonly url: string; readonly server: SignInServer; readonly expiresAt: number }
+/** How long a waiting sign-in that OpenCode gave no expiry for keeps the server up. */
+const UNTIMED_ATTEMPT_MS = 30 * 60_000
+
+/**
+ * Signing Sotto's OpenCode in to model sources, and out again (#1104). Every call runs on one short-lived server of
+ * Sotto's own, started on first use and stopped once nothing has used it for a while and no browser sign-in waits on it,
+ * since OpenCode keeps a waiting sign-in in that server's memory. A key passes through here once, to that server, and
+ * is never kept, logged or returned; credential lists, which carry secrets, are never read.
+ */
+export class OpenCodeSignIn {
+  private server: Promise<SignInServer> | undefined
+  private readonly attempts = new Map<string, Attempt>()
+  private integrations = new Map<string, Integration>()
+  private idle: ReturnType<typeof setTimeout> | undefined
+  private busy = 0
+  private closed = false
+  constructor(private readonly options: OpenCodeSignInOptions) {}
+
+  private get location(): Record<string, string> { return locationQuery(this.options.location) }
+  private log(event: OpenCodeSignInEvent): void { this.options.log?.(event) }
+
+  /** Runs `work` on the server, starting it when there is none. A server that cannot start is "not running". */
+  private async use<T>(work: (server: SignInServer) => Promise<T>, refused: (message: string) => T): Promise<T> {
+    if (this.closed) return refused(SIGN_IN_WORDS.notRunning)
+    this.busy += 1
+    clearTimeout(this.idle)
+    try {
+      let server: SignInServer
+      try { server = await this.acquire() } catch { this.log('opencode-sign-in-unavailable'); return refused(SIGN_IN_WORDS.notRunning) }
+      return await work(server)
+    } finally { this.busy -= 1; this.rest() }
+  }
+  private acquire(): Promise<SignInServer> {
+    if (!this.server) {
+      const starting = this.options.start()
+      this.server = starting
+      starting.then(server => {
+        void server.closed.then(() => {
+          if (this.server !== starting) return
+          this.server = undefined
+          for (const [id, attempt] of this.attempts) if (attempt.server === server) this.attempts.delete(id)
+        })
+      }, () => { if (this.server === starting) this.server = undefined })
+    }
+    return this.server
+  }
+  /**
+   * Stops the server once it has been idle for a while, unless a browser sign-in still waits on it. A sign-in nobody asks
+   * after, such as one whose window was reloaded, stops holding it once its page has expired.
+   */
+  private rest(): void {
+    clearTimeout(this.idle)
+    if (this.busy || !this.server) return
+    const now = (this.options.now ?? Date.now)()
+    for (const [id, attempt] of this.attempts) if (attempt.expiresAt <= now) this.attempts.delete(id)
+    const idleMs = this.options.idleMs ?? 60_000
+    const waitMs = this.attempts.size ? Math.max(idleMs, Math.min(...[...this.attempts.values()].map(attempt => attempt.expiresAt - now))) : idleMs
+    this.idle = setTimeout(() => { if (this.busy) return; if (this.attempts.size) this.rest(); else void this.stop() }, Math.min(waitMs, 2_147_483_647))
+    this.idle.unref?.()
+  }
+  private async stop(): Promise<void> {
+    const server = this.server
+    this.server = undefined; this.attempts.clear()
+    await server?.then(running => running.stop(), () => undefined)
+  }
+  /** Stops everything: the server and any sign-in waiting on it. A disconnect or a quit calls this. */
+  async close(): Promise<void> { clearTimeout(this.idle); await this.stop() }
+  /** OpenCode was connected again: sign-ins may run once more. */
+  reopen(): void { this.closed = false }
+  /** OpenCode was disconnected: nothing runs until it connects again. */
+  async shut(): Promise<void> { this.closed = true; await this.close() }
+
+  private async read(server: SignInServer): Promise<ModelSources & { status: 'ok' }> {
+    const [list, models, providers] = await Promise.all([
+      server.client.request('GET', '/api/integration', { query: this.location }).then(value => integrationListSchema.parse(value).data),
+      server.client.request('GET', '/api/model', { query: this.location }).then(value => modelListSchema.parse(value).data),
+      server.client.request('GET', '/api/provider', { query: this.location }).then(value => providerListSchema.parse(value).data).catch(() => []),
+    ])
+    this.integrations = new Map(list.map(integration => [integration.id, integration]))
+    const integrationOf = new Map(providers.map(provider => [provider.id, provider.integrationID ?? provider.id]))
+    const shown = models.filter(model => model.enabled !== false && model.status !== 'deprecated')
+    // Zen's free models are counted under their own provider; every other model under the source that signs it in.
+    const counted = shown.map(model => model.providerID === 'opencode' ? 'opencode' : integrationOf.get(model.providerID) ?? model.providerID)
+    return { status: 'ok', ...modelSourcesOf(list, counted) }
+  }
+  private async afterChange(server: SignInServer): Promise<ModelSources> {
+    await this.options.changed(server.client).catch(() => undefined)
+    return this.read(server).catch((): ModelSources => ({ status: 'refused', message: SIGN_IN_WORDS.notRunning }))
+  }
+  /** The integration a request names, from the last list read, reading again when it is not there. */
+  private async integration(server: SignInServer, sourceId: string): Promise<Integration | undefined> {
+    if (!this.integrations.has(sourceId)) await this.read(server).catch(() => undefined)
+    return this.integrations.get(sourceId)
+  }
+
+  sources(): Promise<ModelSources> {
+    return this.use(server => this.read(server).catch((): ModelSources => ({ status: 'refused', message: SIGN_IN_WORDS.notRunning })),
+      message => ({ status: 'refused', message }))
+  }
+
+  signInWithKey(request: unknown): Promise<SignInResult> {
+    const { sourceId, key, answer } = signInKeyRequestSchema.parse(request)
+    const trimmed = key.trim()
+    return this.use(async server => {
+      const integration = await this.integration(server, sourceId)
+      if (!integration) return { status: 'refused', message: SIGN_IN_WORDS.unknownSource }
+      // OpenCode 2.0.31 takes an empty key without a word, so an empty one is refused here.
+      if (!trimmed) return { status: 'refused', message: SIGN_IN_WORDS.keyRefused(integration.name) }
+      const merged = { ...(answer ?? {}), ...hiddenAnswers(integration, KEY_METHOD) }
+      try {
+        await server.client.request('POST', `/api/integration/${encodeURIComponent(sourceId)}/connect/key`,
+          { query: this.location, body: { key: trimmed, ...(Object.keys(merged).length ? { answer: merged } : {}) } })
+      } catch (error) {
+        this.log('opencode-sign-in-failed')
+        if (error instanceof OpenCodeRejected && error.status === 404) return { status: 'refused', message: SIGN_IN_WORDS.unknownSource }
+        if (error instanceof OpenCodeRejected && error.status === 400 && answer && Object.keys(answer).length) return { status: 'refused', message: SIGN_IN_WORDS.formRefused(integration.name) }
+        return { status: 'refused', message: error instanceof OpenCodeRejected && error.status < 500 ? SIGN_IN_WORDS.keyRefused(integration.name) : SIGN_IN_WORDS.notRunning }
+      }
+      this.log('opencode-sign-in-key')
+      return { status: 'ok', sources: await this.afterChange(server) }
+    }, message => ({ status: 'refused', message }))
+  }
+
+  useExternalSignIn(request: unknown): Promise<SignInResult> {
+    const { sourceId, methodId, answer } = signInMethodRequestSchema.parse(request)
+    return this.use(async server => {
+      const integration = await this.integration(server, sourceId)
+      if (!integration) return { status: 'refused', message: SIGN_IN_WORDS.unknownSource }
+      const merged = { ...(answer ?? {}), ...hiddenAnswers(integration, methodId) }
+      try {
+        await server.client.request('POST', `/api/integration/${encodeURIComponent(sourceId)}/connect/external`,
+          { query: this.location, body: { methodID: methodId, ...(Object.keys(merged).length ? { answer: merged } : {}) } })
+      } catch (error) {
+        this.log('opencode-sign-in-failed')
+        return { status: 'refused', message: error instanceof OpenCodeRejected && error.status === 400 ? SIGN_IN_WORDS.formRefused(integration.name) : SIGN_IN_WORDS.failed(integration.name) }
+      }
+      this.log('opencode-sign-in-complete')
+      return { status: 'ok', sources: await this.afterChange(server) }
+    }, message => ({ status: 'refused', message }))
+  }
+
+  startBrowserSignIn(request: unknown): Promise<SignInStart> {
+    const { sourceId, methodId, answer } = signInMethodRequestSchema.parse(request)
+    return this.use(async server => {
+      const integration = await this.integration(server, sourceId)
+      if (!integration) return { status: 'refused', message: SIGN_IN_WORDS.unknownSource }
+      const merged = { ...(answer ?? {}), ...hiddenAnswers(integration, methodId) }
+      let reply
+      try {
+        reply = attemptReplySchema.parse(await server.client.request('POST', `/api/integration/${encodeURIComponent(sourceId)}/connect/oauth`,
+          { query: this.location, body: { methodID: methodId, ...(Object.keys(merged).length ? { answer: merged } : {}) } })).data
+      } catch (error) {
+        this.log('opencode-sign-in-failed')
+        return { status: 'refused', message: error instanceof OpenCodeRejected && error.status === 400 ? SIGN_IN_WORDS.formRefused(integration.name) : SIGN_IN_WORDS.startFailed(integration.name) }
+      }
+      if (!safeSignInPage(reply.url)) {
+        await this.cancelNative(server, sourceId, reply.attemptID)
+        this.log('opencode-sign-in-failed')
+        return { status: 'refused', message: SIGN_IN_WORDS.unsafePage }
+      }
+      const attempt = attemptOf(sourceId, reply)
+      const now = (this.options.now ?? Date.now)()
+      // OpenCode's own clock says when its page expires; a little past it, Sotto stops waiting on it.
+      const expiresAt = attempt.expiresAt !== undefined && attempt.expiresAt > now ? attempt.expiresAt + 60_000 : now + UNTIMED_ATTEMPT_MS
+      this.attempts.set(attempt.id, { sourceId, name: integration.name, url: reply.url, server, expiresAt })
+      this.log('opencode-sign-in-browser-started')
+      // The page opens from main, in the user's own browser. A browser that does not open leaves Open the page again.
+      await this.options.openExternal(reply.url).catch(() => undefined)
+      return { status: 'waiting', attempt }
+    }, message => ({ status: 'refused', message }))
+  }
+
+  /** Where a browser sign-in stands. A finished one reads the catalog again; an ended one is forgotten. */
+  wait(request: unknown): Promise<SignInWait> {
+    const { attemptId } = signInAttemptRequestSchema.parse(request)
+    return this.settle(attemptId, undefined)
+  }
+  /** Hands OpenCode the code its page showed, then says where the sign-in stands. */
+  finish(request: unknown): Promise<SignInWait> {
+    const { attemptId, code } = signInFinishRequestSchema.parse(request)
+    return this.settle(attemptId, code.trim())
+  }
+  private async settle(attemptId: string, code: string | undefined): Promise<SignInWait> {
+    const attempt = this.attempts.get(attemptId)
+    if (!attempt) return { status: 'refused', message: SIGN_IN_WORDS.notRunning }
+    return this.use(async server => {
+      if (server !== attempt.server) { this.attempts.delete(attemptId); return { status: 'refused', message: SIGN_IN_WORDS.failed(attempt.name) } }
+      const path = `/api/integration/${encodeURIComponent(attempt.sourceId)}/connect/oauth/${encodeURIComponent(attemptId)}`
+      if (code !== undefined) {
+        if (!code) return { status: 'refused', message: SIGN_IN_WORDS.codeRefused(attempt.name) }
+        try { await server.client.request('POST', `${path}/complete`, { query: this.location, body: { code } }) } catch (error) {
+          if (!(error instanceof OpenCodeRejected) || error.status !== 404) {
+            this.log('opencode-sign-in-failed')
+            return { status: 'refused', message: SIGN_IN_WORDS.codeRefused(attempt.name) }
+          }
+        }
+      }
+      let status: string
+      try { status = attemptStatusSchema.parse(await server.client.request('GET', path, { query: this.location })).data.status } catch (error) {
+        if (error instanceof OpenCodeRejected && error.status === 404) status = 'missing'
+        else return { status: 'pending' }
+      }
+      if (status === 'pending') return { status: 'pending' }
+      this.attempts.delete(attemptId)
+      if (status === 'complete') { this.log('opencode-sign-in-complete'); return { status: 'ok', sources: await this.afterChange(server) } }
+      if (status === 'expired') { this.log('opencode-sign-in-expired'); return { status: 'expired', message: SIGN_IN_WORDS.expired(attempt.name) } }
+      this.log('opencode-sign-in-failed')
+      return { status: 'refused', message: SIGN_IN_WORDS.failed(attempt.name) }
+    }, message => ({ status: 'refused', message }))
+  }
+  /** Opens a waiting sign-in's page again, the address OpenCode gave, from main. */
+  async reopenPage(request: unknown): Promise<SignInDone> {
+    const { attemptId } = signInAttemptRequestSchema.parse(request)
+    const attempt = this.attempts.get(attemptId)
+    if (!attempt) return { status: 'refused', message: SIGN_IN_WORDS.notRunning }
+    try { await this.options.openExternal(attempt.url); return { status: 'ok' } } catch { return { status: 'refused', message: SIGN_IN_WORDS.pageNotOpened } }
+  }
+  async cancel(request: unknown): Promise<SignInDone> {
+    const { attemptId } = signInAttemptRequestSchema.parse(request)
+    const attempt = this.attempts.get(attemptId)
+    if (!attempt) return { status: 'ok' }
+    this.attempts.delete(attemptId)
+    await this.cancelNative(attempt.server, attempt.sourceId, attemptId)
+    this.log('opencode-sign-in-cancelled')
+    this.rest()
+    return { status: 'ok' }
+  }
+  private async cancelNative(server: SignInServer, sourceId: string, attemptId: string): Promise<void> {
+    await server.client.request('DELETE', `/api/integration/${encodeURIComponent(sourceId)}/connect/oauth/${encodeURIComponent(attemptId)}`, { query: this.location }).catch(() => undefined)
+  }
+
+  /** Signs out of a source: every credential Sotto's OpenCode holds for it is deleted, then the catalog is read again. */
+  signOut(request: unknown): Promise<SignInResult> {
+    const { sourceId } = signOutRequestSchema.parse(request)
+    return this.use(async server => {
+      await this.read(server).catch(() => undefined)
+      const integration = this.integrations.get(sourceId)
+      if (!integration) return { status: 'refused', message: SIGN_IN_WORDS.unknownSource }
+      try {
+        for (const credential of credentialsOf(integration)) await server.client.request('DELETE', `/api/credential/${encodeURIComponent(credential)}`)
+      } catch {
+        this.log('opencode-sign-in-failed')
+        return { status: 'refused', message: SIGN_IN_WORDS.signOutFailed(integration.name) }
+      }
+      this.log('opencode-sign-out')
+      return { status: 'ok', sources: await this.afterChange(server) }
+    }, message => ({ status: 'refused', message }))
+  }
+}
