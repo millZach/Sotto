@@ -20,7 +20,17 @@ Independent Standards review found that an outcome read could begin after the re
 
 The queue now rejects an expired read without ending the earlier update. When a read starts, its answer timer uses the remaining restart budget; the usual outcome deadline remains an upper bound. Retry pauses use only the time left. Ten controlled-time tests cover these paths, reconnecting one millisecond before expiry, preserving an earlier update failure, and a confirmed rollback just before the deadline. They use the real recovery queue and socket request timer with a held transport, without real sockets or processes.
 
-The controlled-time file and the neighboring route and host self-update unit suites passed: 61 tests across three files in 3.80 seconds. Targeted ESLint and `git diff --check` passed. This stage did not rerun the real-host integration suites, broad gates or performance measurements; those remain queued under the shared machine lease. The earlier lost-restart and lost-outcome integration scenarios are unchanged.
+The controlled-time file and the neighboring route and host self-update unit suites passed: 61 tests across three files in 3.80 seconds. Targeted ESLint and `git diff --check` passed. Independent Standards recheck cleared the deadline correction at `1419497ef`.
+
+## Current desktop proof
+
+On exact clean `1419497ef6b3482394e3bd90ae7df4dae8ea6878`, all four typechecks, lint and 189 licence notices passed. The desktop host self-update, host self-update and socket update-client integration files passed all 24 tests, including rollback after losing both the restart answer and the first outcome connection. The shared heavy-job helper held its slot through all owned descendants; no other project's processes were stopped.
+
+A fresh build of that same candidate then passed all four existing `host-update.spec.ts` and `update-all.spec.ts` desktop journeys with one worker and no retries. They cover failed checksum, preserved conflicting version, successful retry, client/host update ordering, and a press made while the remote check is still pending. The panel checks cover 1600×1000, 1280×800 and 820×560, light and dark, keyboard focus and Escape, reduced motion, overflow and text contrast. These local fixtures stand in for the remote machine; this did not update the real forge host.
+
+The coordinator opened the new minimum-size [checksum failure](../../artifacts/host-update/oct17-panel-failed-820x560-light.png), [preserved version conflict](../../artifacts/host-update/oct17-panel-version-conflict-820x560-dark.png) and [successful update](../../artifacts/host-update/oct17-panel-done-1280x800-dark.png) captures. The error explanations and retry controls fit; the success state names the installed version. These images come from the current build, not the earlier source thread.
+
+Functional durations are not comparable performance evidence: background CPU was above the quiet measurement threshold. Full-suite validation, comparative timing and process resources, prerequisite integration and final PR gates remain open.
 
 ## Limits
 
