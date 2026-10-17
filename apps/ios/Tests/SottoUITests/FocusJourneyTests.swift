@@ -9,8 +9,7 @@ import XCTest
     override func setUpWithError() throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
-        launch(Self.fixture)
-        waitForRenderedOrientation(landscape: false)
+        // Each journey launches the fixture it uses; CPU journeys can skip before starting the app.
     }
 
     override func tearDownWithError() throws {
@@ -35,6 +34,7 @@ import XCTest
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "Sotto must come to the foreground after launch")
         XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 20))
+        waitForRenderedOrientation(landscape: false)
     }
 
     private func row(_ id: String) -> XCUIElement { app.buttons["thread-\(laptop)/\(id)"] }
@@ -349,6 +349,7 @@ import XCTest
     // MARK: Journeys
 
     func testCreateThreadInAKnownProject() {
+        launch(Self.fixture)
         app.buttons["new-thread"].tap()
         let offline = app.buttons["new-thread-computer-22222222-2222-4222-8222-222222222222"]
         XCTAssertTrue(offline.waitForExistence(timeout: 5))
@@ -369,9 +370,13 @@ import XCTest
         capture("new-thread-conversation-dark")
     }
 
-    func testCreateThreadByBrowsingANewFolder() { browseANewFolder() }
+    func testCreateThreadByBrowsingANewFolder() {
+        launch(Self.fixture)
+        browseANewFolder()
+    }
     /// Return closes search's keyboard on Threads, where the page's looping lights and wash run in Core Animation.
     func testSearchClosesOnReturn() {
+        launch(Self.fixture)
         let search = app.textFields["thread-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
@@ -431,6 +436,7 @@ import XCTest
     }
 
     func testFocusSearchAndNavigation() {
+        launch(Self.fixture)
         XCTAssertTrue(app.tabBars.buttons["Threads"].isSelected)
         XCTAssertFalse(app.tabBars.buttons["Needs you"].exists)
         XCTAssertTrue(app.tabBars.buttons["Computers"].exists)
@@ -571,6 +577,7 @@ import XCTest
     /// Thread page B: the conversation opens at its end and stays there while the reply keyboard opens and closes; the
     /// title block and Git chips scroll away with it; messages read as Markdown blocks.
     func testThreadPageKeepsItsPlaceAndReadsMarkdown() {
+        launch(Self.fixture)
         let thread = row("iphone")
         reveal(thread)
         thread.tap()
@@ -639,6 +646,7 @@ import XCTest
     /// Each run of steps between two messages is one line. The working run names the step running now; a finished run
     /// says how many steps it had and how long they took. A press opens a run's steps in place and another folds them.
     func testARunOfStepsOpensInPlaceAndFoldsAgain() {
+        launch(Self.fixture)
         let thread = row("iphone")
         reveal(thread)
         thread.tap()
@@ -1304,6 +1312,7 @@ import XCTest
 
     /// Settings on this iPhone: the look, alerts off until turned on, another theme, light, compact and larger text.
     func testSettingsThemeAppearanceDensityAndAlerts() {
+        launch(Self.fixture)
         app.tabBars.buttons["Settings"].tap()
         let dark = app.buttons["setting-dark"]
         XCTAssertTrue(dark.waitForExistence(timeout: 5))
@@ -1358,6 +1367,7 @@ import XCTest
 
     /// New thread's fields open from anywhere in their box, and New worktree can be chosen.
     func testNewThreadFieldsOpenFromTheirWholeBox() {
+        launch(Self.fixture)
         app.buttons["new-thread"].tap()
         let computer = app.buttons["new-thread-computer-\(laptop)"]
         XCTAssertTrue(computer.waitForExistence(timeout: 5))
@@ -1397,7 +1407,7 @@ import XCTest
     /// moving; the variants switch off looping animations to show how close Core Animation's loops come to a still page.
     private func idleCPU(_ arguments: [String], openThread: Bool) throws {
         try skipUnlessMeasuring()
-        if !arguments.isEmpty { launch(["--ui-fixture", "--reset-ui-preferences"] + arguments) }
+        launch(Self.fixture + arguments)
         measureCPUForThreeSeconds(openThread: openThread)
     }
     func testIdleCPUOnThreads() throws { try idleCPU([], openThread: false) }
@@ -1407,6 +1417,7 @@ import XCTest
     /// The same still thread with the reply keyboard open and nothing typed: the page must not keep itself busy there either.
     func testIdleCPUInAThreadWithTheKeyboardOpen() throws {
         try skipUnlessMeasuring()
+        launch(Self.fixture)
         openWorkingThread()
         let reply = byID("thread-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
@@ -1479,6 +1490,7 @@ import XCTest
 
     /// Threads and Computers at the top in the Glow look, dark then light.
     func testThreadsAndComputersInTheGlowLook() {
+        launch(Self.fixture)
         let counts = byID("thread-counts")
         XCTAssertTrue(counts.exists)
         XCTAssertTrue(counts.label.contains("2 working"), "The summary counts the threads at work")
@@ -1573,6 +1585,7 @@ import XCTest
     }
 
     func testAppearanceAndLargerTextPersist() {
+        launch(Self.fixture)
         app.tabBars.buttons["Settings"].tap()
         let light = app.buttons["setting-light"]
         XCTAssertTrue(light.waitForExistence(timeout: 5))
@@ -1600,6 +1613,7 @@ import XCTest
     }
 
     func testComputerScopePreservesSearchAndLandscape() {
+        launch(Self.fixture)
         let filter = app.buttons["computer-filter"]
         let search = app.textFields["thread-search"]
         let lighting = app.buttons["thread-22222222-2222-4222-8222-222222222222/lighting"]
