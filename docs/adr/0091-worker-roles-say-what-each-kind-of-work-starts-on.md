@@ -40,7 +40,7 @@ Watcher's `start_thread` and a thread's `delegate` each named a model, an effort
 - The model for the work is the one the user chose for that kind of work, without the agent having to know it, and the user's words still win for one request.
 - A role's model can be on a provider the user has disconnected; the row says what starts meanwhile, and nothing the user chose is lost.
 - Not yet built: when Watcher's own provider disconnects, offering a new Watcher on Orchestrating's next default when the user sends. Watcher does not switch by itself; until the follow-up, the room says its provider is not connected, as today.
-- Provider sub-agents follow the roles (decision 9) on Claude Code and Codex by name, on Grok Build by instruction, and not yet on Muse, Devin or a paired host. That a real Codex sub-agent started as `sotto_<role>` runs on the role's model rests on Codex's own text until the live check behind `SOTTO_CODEX_LIVE` (`codexSubagentRoleLive.test.ts`) is run; it spends one short turn.
+- Provider sub-agents follow the roles (decision 9) on Claude Code and Codex by name, on Grok Build by instruction, and not yet on Muse, Devin or a paired host. That a real Codex sub-agent started as `sotto_<role>` runs on the role's model was checked once on October 16, 2026, on Codex 0.163.0, with the live check behind `SOTTO_CODEX_LIVE` (`codexSubagentRoleLive.test.ts`, one short turn): a parent on GPT-6 Astra at low effort started `sotto_research`, and its child session recorded that role and ran GPT-6 Luna, the role's model, at medium effort. A fork's role files rest on the same config path and were not checked live.
 
 ## Proof
 
