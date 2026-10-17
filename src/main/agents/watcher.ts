@@ -243,7 +243,10 @@ export class WatcherService implements WatcherControlHooks {
   watchedThreadIds(): string[] {
     return [...new Set([...this.wakes.watchedThreadIds(this.hostId()).filter(id => this.options.control.watcherSnapshot().threads.some(thread => thread.id === id)),
       ...(this.record().watches ?? []).filter(watch => watch.target.hostId === this.hostId()).map(watch => watch.target.threadId),
-      ...this.record().requests.filter(request => request.remoteOrigin && request.state === 'active').flatMap(request => request.participants.filter(item => item.target.hostId === this.hostId() && item.state === 'participating' && !item.automationStopped).map(item => item.target.threadId))])]
+      ...this.record().requests.filter(request => request.remoteOrigin && request.state === 'active').flatMap(request => request.participants.filter(item => item.target.hostId === this.hostId() && item.state === 'participating' && !item.automationStopped).map(item => item.target.threadId)),
+      // A thread with a dispatched turn in flight is observed until the turn ends, across a restart too, so its read mark
+      // does not wait for the user to open it. The dispatches are bounded, and a record without any adds nothing.
+      ...(this.view().readDispatches ?? []).filter(entry => entry.target.hostId === this.hostId()).map(entry => entry.target.threadId)])]
   }
   wakeDueAll(events: readonly WatcherEvent[]): boolean[] { return this.wakes.dueAll(events) }
   wakeReady(): boolean { return this.wakes.ready() }
@@ -441,7 +444,10 @@ export class WatcherService implements WatcherControlHooks {
       (failed ??= new Set(record.operations.filter(operation => operation.deliveryState === 'failed').map(operation => operation.id))).has(operationId)
     const next = trackDispatches(record.readDispatches, record.readMarks ?? [], target => found.get(key(target)), Date.now(), now(), refused)
     // A mark that cannot be saved is lost, never the pass it rode in on: the wake-ups' news must still go.
-    if (next !== null) try { void this.options.control.updateWatcher(update => { update.readDispatches = next.dispatches; update.readMarks = next.marks }).catch(() => undefined) } catch { /* Not saved. */ }
+    if (next !== null) try {
+      void this.options.control.updateWatcher(update => { update.readDispatches = next.dispatches; update.readMarks = next.marks })
+        .then(() => { if (!this.closed) this.options.control.refreshWatcherObservation() }, () => undefined)
+    } catch { /* Not saved. */ }
   }
   /** A turn Sotto dispatched to a thread, which earns a read mark when it ends (`trackReadMarks`). */
   private noteDispatch(target: WatcherThreadTarget, thread: DispatchBefore | undefined, messageId?: string, steer = false): void {
@@ -449,7 +455,7 @@ export class WatcherService implements WatcherControlHooks {
     // Saved now, so a turn in flight across a restart still earns its mark when it ends.
     try {
       void this.options.control.updateWatcher(record => steer && messageId ? recordSteer(record, target, thread, now(), messageId)
-        : recordDispatch(record, target, thread, now(), messageId)).catch(() => undefined)
+        : recordDispatch(record, target, thread, now(), messageId)).then(() => { if (!this.closed) this.options.control.refreshWatcherObservation() }, () => undefined)
     } catch { /* Not kept: its turn earns no mark. */ }
   }
   /** The user has seen these threads' news (read marks): their marks go, and the room is told. */

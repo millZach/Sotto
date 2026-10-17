@@ -221,6 +221,21 @@ describe('a steer', () => {
   })
 })
 
+describe('observing a thread a dispatch waits on', () => {
+  it('keeps it observed across a restart until its turn ends, and adds no other thread', () => {
+    const before = service()
+    before.pass(thread('worker', turn('t0', 'completed')), thread('quiet', turn('t0', 'completed')))
+    before.send('worker')
+    // Sotto restarts mid-turn: the saved dispatch alone asks the coordinator to keep the thread observed.
+    const after = service({ record: watcherRecordSchema.parse(JSON.parse(JSON.stringify(before.record()))) })
+    after.pass(thread('worker', turn('t1', 'running')), thread('quiet', turn('t0', 'completed')))
+    expect(after.watcher.watchedThreadIds()).toEqual(['worker'])
+    after.pass(thread('worker', turn('t1', 'completed')), thread('quiet', turn('t0', 'completed')))
+    expect(after.watcher.watchedThreadIds()).toEqual([])
+    expect(after.marks()).toEqual([['worker', 'finished']])
+  })
+})
+
 describe('the requests a dispatch knows', () => {
   it('write nothing on a pass that changes nothing, with sixty cards, and stay read once read', async () => {
     const room = service()
