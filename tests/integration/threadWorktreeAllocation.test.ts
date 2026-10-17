@@ -6,7 +6,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 
 import { basename, dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { runWorktreeGit as git, ThreadWorktrees, type RunGit } from '../../src/main/agents/threadWorktrees'
+import { parallelCheckout, runWorktreeGit as git, ThreadWorktrees, worktreeGitPrefix, type RunGit } from '../../src/main/agents/threadWorktrees'
 
 import { fixture, removeTestCheckout } from '../fixtures/threadWorktreeFixture'
 
@@ -247,6 +247,17 @@ describe("independent working-copy allocation", () => {
     const options = await f.service.options(f.project)
     expect(options.branches).toContain('base')
     expect(options.worktrees).toContainEqual({ path: checkout.path!.replaceAll('\\', '/'), branch: checkout.branch })
+  })
+  it('checks out a new worktree with a worker per core unless the user set their own count', async () => {
+    const f = await fixture()
+    // The machine's own Git config may set a count already; the repository's then decides below.
+    const configured = await git(f.project, ['config', '--get', 'checkout.workers']).then(() => true, () => false)
+    expect(await worktreeGitPrefix(f.project, ['worktree', 'add', '--', join(f.root, 'new'), 'HEAD'])).toEqual(['-c', 'core.quotePath=false', ...configured ? [] : ['-c', 'checkout.workers=0']])
+    expect(await worktreeGitPrefix(f.project, ['status'])).toEqual(['-c', 'core.quotePath=false'])
+    await git(f.project, ['config', 'checkout.workers', '2'])
+    expect(await parallelCheckout(f.project)).toEqual([])
+    await git(f.project, ['config', '--unset', 'checkout.workers'])
+    if (!configured) expect(await parallelCheckout(f.project)).toEqual(['-c', 'checkout.workers=0'])
   })
   it('lets Git refuse a conflicting shared-checkout restore without losing current edits', async () => {
     const f = await fixture()

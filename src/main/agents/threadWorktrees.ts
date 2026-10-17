@@ -6,12 +6,28 @@ import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type
 import { nativeEnvironment } from './subscriptionCodex'
 
 export type RunGit = (cwd: string, args: string[]) => Promise<string>
-export const runWorktreeGit: RunGit = (cwd, args) => runWorktreeGitProcess(cwd, args)
+const QUOTE_PATHS: readonly string[] = ['-c', 'core.quotePath=false']
+const isWorktreeAdd = (args: readonly string[]): boolean => args[0] === 'worktree' && args[1] === 'add'
+export const runWorktreeGit: RunGit = async (cwd, args) => runWorktreeGitProcess(cwd, args, { prefix: await worktreeGitPrefix(cwd, args) })
+
+/** The options Sotto puts before a Git command of its own: paths unquoted, and a new checkout written in parallel. */
+export async function worktreeGitPrefix(cwd: string, args: readonly string[]): Promise<string[]> {
+  return isWorktreeAdd(args) ? [...QUOTE_PATHS, ...await parallelCheckout(cwd)] : [...QUOTE_PATHS]
+}
+
+/**
+ * Git writes a new checkout's files one at a time unless `checkout.workers` says otherwise, and a worktree of a few
+ * thousand files took 9-18 s that way on Windows against about 5 s with a worker per core
+ * (`docs/perf/2026-10-16-worktree-first-send.md`). A value the user set in their own Git config is left to apply.
+ */
+export async function parallelCheckout(cwd: string): Promise<string[]> {
+  return runWorktreeGitProcess(cwd, ['config', '--get', 'checkout.workers']).then(() => [], () => ['-c', 'checkout.workers=0'])
+}
 
 /** The executable and deadline seam lets a real launcher/checkout tree exercise timeout recovery. */
 export function runWorktreeGitProcess(cwd: string, args: string[], options: { executable?: string; prefix?: string[]; timeout?: number } = {}): Promise<string> {
   return new Promise((accept, reject) => {
-    const child = spawn(options.executable ?? 'git', [...(options.prefix ?? ['-c', 'core.quotePath=false']), ...args], {
+    const child = spawn(options.executable ?? 'git', [...(options.prefix ?? QUOTE_PATHS), ...args], {
       cwd, windowsHide: true, shell: false, detached: process.platform !== 'win32',
       // No optional locks: a status read here never takes the index lock from a commit running beside it.
       env: { ...nativeEnvironment(), LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
@@ -54,7 +70,7 @@ export function runWorktreeGitProcess(cwd: string, args: string[], options: { ex
     child.stdout.on('data', (chunk: Buffer) => collect(output, chunk))
     child.stderr.on('data', (chunk: Buffer) => collect(errors, chunk))
     child.on('error', error => { processError = error })
-    const timer = setTimeout(() => { timedOut = true; stop() }, options.timeout ?? (args[0] === 'worktree' && args[1] === 'add' ? 300_000 : 30_000))
+    const timer = setTimeout(() => { timedOut = true; stop() }, options.timeout ?? (isWorktreeAdd(args) ? 300_000 : 30_000))
     // close follows exit and closed pipes; the tree termination command must finish before cleanup can start.
     child.on('close', code => {
       clearTimeout(timer)
