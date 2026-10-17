@@ -164,6 +164,9 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       }, { surface, threadId })
       // The fixture is a fresh Node process. On a loaded runner its first line had not arrived five seconds after the shell
       // echoed the command (#1135), so wait for that line as long as for the shell's first prompt.
+      // Like waitForShellPrompt, the wait adds its deadline to the test's, so a slow start fails with this wait's message.
+      const info = test.info()
+      if (info.timeout > 0) info.setTimeout(info.timeout + SHELL_START_TIMEOUT)
       await expect.poll(output, { message: 'the fixture printed its first screen', timeout: SHELL_START_TIMEOUT }).toContain('Search check ready')
       if (surface === 'workspace') await expect(scope.locator('.xterm-screen canvas:not(.xterm-link-layer)')).toBeVisible()
       else await expect(scope.locator('.xterm-rows')).toContainText('CJK 界 emoji 😀')
