@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentThread } from '../../src/shared/agents'
-import { AGENT_FORK_GONE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, START_HANDOVER_CLOSE } from '../../src/shared/threadStarts'
+import { AGENT_FORK_GONE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, FORK_REPLY_GONE, FORK_TURN_RUNNING, START_HANDOVER_CLOSE } from '../../src/shared/threadStarts'
 import type { AgentHostCommand, ThreadForkRequest } from '../../src/main/agents/host'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -31,8 +31,8 @@ async function fixture(options: { readonly threadStarts?: boolean } = {}) {
   cleanups.push(async () => { await f.dispose(); await workspace.stop() })
   await f.control.start()
   await f.control.commandShell({ type: 'connect', provider: 'codex' }); await f.control.commandShell({ type: 'connect', provider: 'claude' })
-  const sotto = (provider: 'codex' | 'claude', session = 'session-workshop') => workspace.registry.bySession(provider, session)!.threadId
-  const native = (provider: 'codex' | 'claude', session = 'session-workshop') => workspace.adapters[provider].state.threads.find(thread => thread.id === session)!
+  const sotto = (provider: 'codex' | 'claude' | 'grok', session = 'session-workshop') => workspace.registry.bySession(provider, session)!.threadId
+  const native = (provider: 'codex' | 'claude' | 'grok', session = 'session-workshop') => workspace.adapters[provider].state.threads.find(thread => thread.id === session)!
   const thread = (id: string): AgentThread | undefined => f.control.shell().host.threads.find(item => item.id === id)
   const model = (provider: 'codex' | 'claude') => f.control.shell().host.models.find(item => item.providerId === provider)!.id
   /** The parent's agent as its provider reports it: finished with a result, or still working. */
@@ -155,6 +155,98 @@ describe('continuing a Claude Code agent as its own thread', () => {
     expect(answer.error).toMatch(/available in Sotto Owl/u)
     expect(f.control.shell().host.threads).toHaveLength(before)
     await expect(f.workspace.host.continueAgent({ threadId: randomUUID(), sourceThreadId: f.sotto('claude'), agentId, modelId: f.model('claude') })).rejects.toThrow('Sotto Owl')
+  })
+})
+
+describe('forking a thread at a reply', () => {
+  const at = (minute: number): string => new Date(Date.UTC(2026, 9, 16, 12, minute)).toISOString()
+  /** The provider's conversation as it reported it: two finished turns. */
+  const conversation = async (f: Awaited<ReturnType<typeof fixture>>, provider: 'claude' | 'grok') => {
+    const thread = f.workspace.adapters[provider].state.threads.find(item => item.id === 'session-workshop')!
+    thread.messages = [
+      { id: 'ask-1', role: 'user', text: 'Why does the WAV preview stall?', createdAt: at(1) },
+      { id: 'reply-1', role: 'assistant', text: 'The length marker was written once, before any audio arrived.', createdAt: at(2) },
+      { id: 'ask-2', role: 'user', text: 'Paste the full test output.', createdAt: at(3) },
+      { id: 'reply-2', role: 'assistant', text: 'Here is the full test output.', createdAt: at(4) },
+    ]
+    f.workspace.adapters[provider].emit()
+    await f.control.commandShell({ type: 'refresh', provider })
+    await f.control.commandShell({ type: 'observe-threads', threadIds: [f.sotto(provider)] })
+    await expect.poll(() => f.workspace.host.threadMessage(f.sotto(provider), 'reply-2')?.text).toBe('Here is the full test output.')
+  }
+
+  it('starts a Grok Build fork from a handover of the conversation up to the reply, which goes with its first message', async () => {
+    const f = await fixture()
+    await f.control.commandShell({ type: 'connect', provider: 'grok' })
+    await conversation(f, 'grok')
+    const newThreadId = randomUUID()
+    expect((await f.control.commandShell({ type: 'fork-thread', threadId: f.sotto('grok'), messageId: 'reply-1', newThreadId })).error).toBeNull()
+    expect(f.thread(newThreadId)).toMatchObject({ title: 'Fork of Workshop', providerId: 'grok', nativeSessionStarted: false,
+      startedFrom: { threadId: f.sotto('grok'), from: 'turn', route: 'handover', messageId: 'reply-1', handover: { thin: false, counts: { total: 2, carried: 2 } } } })
+    expect(f.control.shell().activeThreadId).toBe(newThreadId)
+    expect((await f.control.commandShell({ type: 'manual-send', threadId: newThreadId, draftId: randomUUID(), text: 'Add a test for a stream that ends mid-chunk.' })).error).toBeNull()
+    const send = f.workspace.adapters.grok.commands.find((command): command is Extract<AgentHostCommand, { type: 'send' }> => command.type === 'send')!
+    expect(send.text.startsWith('This is a handover from another Sotto thread.')).toBe(true)
+    expect(send.text).toContain('The length marker was written once')
+    expect(send.text).not.toContain('Paste the full test output')
+    expect(send.text.endsWith(`${START_HANDOVER_CLOSE}\n\nAdd a test for a stream that ends mid-chunk.`)).toBe(true)
+  })
+
+  it('forks a Claude Code thread through its own copy, bound to the new thread when it is made', async () => {
+    const f = await fixture()
+    await conversation(f, 'claude')
+    const forks: ThreadForkRequest[] = []
+    f.workspace.adapters.claude.forkThread = async request => {
+      forks.push(request)
+      const source = f.workspace.adapters.claude.state.threads.find(item => item.id === request.source.threadId)!
+      f.workspace.adapters.claude.state.threads.push({ id: request.threadId, projectId: 'project', title: request.title, modelId: request.modelId, status: 'idle', requests: [],
+        messages: structuredClone(source.messages.slice(0, 2)) })
+      f.workspace.adapters.claude.emit()
+      return { accepted: true }
+    }
+    const newThreadId = randomUUID()
+    expect((await f.control.commandShell({ type: 'fork-thread', threadId: f.sotto('claude'), messageId: 'reply-1', newThreadId, modelId: f.model('claude') })).error).toBeNull()
+    expect(forks[0]).toMatchObject({ source: { threadId: 'session-workshop', messageId: 'reply-1' } })
+    expect(f.workspace.registry.byThread(newThreadId)).toMatchObject({ provider: 'claude', sessionId: forks[0]!.threadId })
+    expect(f.thread(newThreadId)).toMatchObject({ title: 'Fork of Workshop', nativeSessionStarted: true, startedFrom: { from: 'turn', route: 'fork', messageId: 'reply-1' } })
+    expect(f.workspace.adapters.claude.commands.filter(command => command.type === 'create-thread')).toHaveLength(0)
+  })
+
+  it('carries nothing that came after the reply, even where the thread began with a reply', async () => {
+    const f = await fixture()
+    await f.control.commandShell({ type: 'connect', provider: 'grok' })
+    const thread = f.workspace.adapters.grok.state.threads.find(item => item.id === 'session-workshop')!
+    thread.messages = [
+      { id: 'reply-0', role: 'assistant', text: 'Picked up from the handover: the stall is in the WAV header.', createdAt: at(1) },
+      { id: 'ask-1', role: 'user', text: 'Paste the full test output.', createdAt: at(2) },
+      { id: 'reply-1', role: 'assistant', text: 'Here is the full test output.', createdAt: at(3) },
+    ]
+    f.workspace.adapters.grok.emit()
+    await f.control.commandShell({ type: 'refresh', provider: 'grok' })
+    await f.control.commandShell({ type: 'observe-threads', threadIds: [f.sotto('grok')] })
+    await expect.poll(() => f.workspace.host.threadMessage(f.sotto('grok'), 'reply-1')?.text).toBe('Here is the full test output.')
+    const newThreadId = randomUUID()
+    expect((await f.control.commandShell({ type: 'fork-thread', threadId: f.sotto('grok'), messageId: 'reply-0', newThreadId })).error).toBeNull()
+    expect(f.thread(newThreadId)!.startedFrom?.handover?.counts).toMatchObject({ total: 1, carried: 1 })
+    const handover = f.workspace.host.startHandover(newThreadId)!.text
+    expect(handover).toContain('the stall is in the WAV header')
+    expect(handover).not.toContain('Paste the full test output')
+    expect(handover).not.toContain('Here is the full test output')
+  })
+
+  it('refuses a thread that is working, a reply Sotto no longer has, and makes nothing on stable', async () => {
+    const f = await fixture()
+    await conversation(f, 'claude')
+    const before = f.control.shell().host.threads.length
+    expect((await f.control.commandShell({ type: 'fork-thread', threadId: f.sotto('claude'), messageId: 'not-a-reply', newThreadId: randomUUID() })).error).toBe(FORK_REPLY_GONE)
+    expect((await f.control.commandShell({ type: 'fork-thread', threadId: f.sotto('claude'), messageId: 'ask-1', newThreadId: randomUUID() })).error).toBe(FORK_REPLY_GONE)
+    f.native('claude').status = 'running'; f.workspace.adapters.claude.emit()
+    await f.control.commandShell({ type: 'refresh', provider: 'claude' })
+    await expect.poll(() => f.thread(f.sotto('claude'))?.status).toBe('running')
+    expect((await f.control.commandShell({ type: 'fork-thread', threadId: f.sotto('claude'), messageId: 'reply-1', newThreadId: randomUUID() })).error).toBe(FORK_TURN_RUNNING)
+    expect(f.control.shell().host.threads).toHaveLength(before)
+    const stable = await fixture({ threadStarts: false })
+    expect((await stable.control.commandShell({ type: 'fork-thread', threadId: stable.sotto('claude'), messageId: 'reply-1', newThreadId: randomUUID() })).error).toMatch(/available in Sotto Owl/u)
   })
 })
 

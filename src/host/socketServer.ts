@@ -1,3 +1,4 @@
+import { startsThread } from '../shared/threadStarts'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
@@ -579,7 +580,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           if (input.type === 'compose' && result.error) peer.editingThreadId = previousEditor
           if (['cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
           // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, as a send's is.
-          if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || input.type === 'continue-agent' || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
+          if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || startsThread(input) || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
           if (input.type === 'answer' || input.type === 'send' && draftRequestId) {
             receipt.answerDelivered = result.error == null
             if (!receipt.answerDelivered) receipt.error = { code: 'unavailable', message: errors.unavailable }
