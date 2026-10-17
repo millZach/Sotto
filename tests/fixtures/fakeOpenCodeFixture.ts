@@ -10,7 +10,6 @@ import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from '.
 export const opencodeFixtureSkips: AdapterContractSkips = {
   backgroundWork: 'OpenCode reports no work a turn leaves running, and the fixture drives none.',
   liveSettings: 'OpenCode takes a model, effort or permission change on the live provider session and has no refusal to recover from by starting it again; opencodeAdapter.test.ts checks the live change itself.',
-  clientUpdate: 'Updating OpenCode is #1104; this adapter does not yet take the news of a new client.',
 }
 /** A log may not exist before its first event; any other read failure is evidence, not an empty trace. */
 async function readLog(path: string): Promise<string> {
@@ -59,6 +58,8 @@ export async function opencodeFixture(root?: string, requestTimeoutMs = 3000, se
       calls: async () => (await sideCalls()).map(call => ({ cwd: call.cwd, model: call.model ? `${call.model.providerID}/${call.model.id}` : undefined, material: call.prompt })),
     },
     // A settings change comes back with the snapshot the adapter itself confirmed (#318), and its answer can be lost.
+    // A new client on disk: every process started from now on reports the new version, as `opencode --version` would.
+    clientUpdate: { provider: 'opencode' as const, install: async () => { await script({ version: '2.0.40' }); return '2.0.40' } },
     settings: { snapshot: true, loseConfirmation: () => script({ delay: { 'session.update': requestTimeoutMs + 1000, 'session.switchModel': requestTimeoutMs + 1000 } }) },
     protocol: { promptMethod: 'session.prompt', resumeMethod: 'session.messages', permissionDecision: (record: RecordedRpc): boolean | undefined =>
       record.method === 'session.permission.reply' ? record.params?.decision === 'once' ? true : record.params?.decision === 'reject' ? false : undefined : undefined },

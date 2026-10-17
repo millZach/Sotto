@@ -8,8 +8,10 @@ import { useOptionalAgents } from './AgentContext'
 import { useHeldProviders } from '../state/owlFeature'
 import { newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
+import { OpenCodeModelSources } from './OpenCodeModelSources'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
+import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
 import './providers.css'
 
 const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode' }
@@ -26,8 +28,6 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
   if (update.state === 'failed') return `${update.installed} is installed. The last update did not finish${update.error ? `: ${update.error}` : '.'}${past}`
   if (update.state === 'unchanged') return update.error ? `${update.error}${past}` : `The update ran, but this client still reports ${update.installed}. Try again${update.command ? `, or run ${update.command} yourself to see what it says` : ''}.${past}`
   if (update.channel === 'devin-app') return `${update.installed} is installed. Devin updates with the Devin app.${past}`
-  // Sotto does not ask what OpenCode has published until its updates arrive (#1104), so there is no failed read to report.
-  if (!update.published && update.id === 'opencode') return `${update.installed} is installed.${past}`
   if (!update.published) return `${update.installed} is installed. Sotto could not read the published version. Check again to try.${past}`
   if (update.id === 'muse' && !update.behind && update.installed !== update.published) return `${update.installed} is installed; ${update.published} is published.${past}`
   if (!update.behind) return `${update.installed} is installed, and that is what is published.${past}`
@@ -104,6 +104,22 @@ export function ProvidersSettings(): ReactNode {
     } catch { setErrors(previous => ({ ...previous, [provider]: `Could not update ${PROVIDER_LABELS[provider]}. Try again.` })) }
     finally { inFlight.current.delete(provider); setUpdatePending(previous => ({ ...previous, [provider]: undefined })) }
   }
+  // OpenCode missing, or refused for its version (OpenCode 1 among them), gets its install guide whether or not update
+  // checks are on, as first-run setup offers it. A copy too old to use is most likely in ~/.opencode/bin, where both
+  // generations' install scripts put it and Sotto looks first, so only OpenCode 2's script replaces it.
+  const problem = 'problem' in status ? status.problem : undefined
+  const openCodeInstall = selected !== 'opencode' || connected ? undefined
+    : problem === 'not-installed' ? 'OpenCode 2 is not installed on this computer. Install it with its install script or npm’s @opencode/cli, then connect again.'
+    : problem === 'too-old' ? `Sotto works with OpenCode ${'requiredVersion' in status && status.requiredVersion ? status.requiredVersion : '2.0.31'} or newer. Install OpenCode 2 with its install script, which replaces an older copy in ~/.opencode/bin, where Sotto looks first, then connect again. npm’s @opencode/cli installs a second copy and leaves that one.`
+    : undefined
+  // OpenCode 2's own guide; opencode.ai/docs installs OpenCode 1, which Sotto does not drive.
+  const openOpenCodeGuide = async (): Promise<void> => {
+    setErrors(previous => ({ ...previous, opencode: undefined }))
+    try {
+      const result = await window.sotto?.openExternalLink?.(PROVIDER_INSTALL_GUIDES.opencode)
+      if (!result?.ok) setErrors(previous => ({ ...previous, opencode: 'The OpenCode guide could not be opened. Try again.' }))
+    } catch { setErrors(previous => ({ ...previous, opencode: 'The OpenCode guide could not be opened. Try again.' })) }
+  }
   const copyMuseLogin = async (): Promise<void> => {
     setCopyingLogin(true)
     setErrors(previous => ({ ...previous, muse: undefined }))
@@ -155,13 +171,13 @@ export function ProvidersSettings(): ReactNode {
           tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const next = value === 'configuration' ? 'models' : 'configuration'; setTab(next); document.getElementById(`${tabId}-${next}`)?.focus() } }}>{value === 'configuration' ? 'Configuration' : 'Models'}</button>)}</div>
         <div key={`${selected}-${tab}`} id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} className="provider-detail__body">
           {tab === 'configuration' ? <>
-            <div className="provider-connection"><div><h4>Local connection</h4><p>{selected === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : selected === 'muse' ? 'Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.' : selected === 'opencode' ? 'Uses OpenCode 2 on this computer, in a folder of Sotto’s own, apart from your own OpenCode. That folder starts with no sign-ins.' : `Uses your ${CLIENT_NAMES[selected]} sign-in on this computer.`}</p>
-              {selected === 'opencode' && connected && 'account' in status && status.account && <p>{status.account}.</p>}
+            <div className="provider-connection"><div><h4>Local connection</h4><p>{selected === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : selected === 'muse' ? 'Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.' : selected === 'opencode' ? 'Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.' : `Uses your ${CLIENT_NAMES[selected]} sign-in on this computer.`}</p>
               {selected === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label="Copy Muse login command" onClick={() => void copyMuseLogin()}>{loginFeedback ?? 'Copy'}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>Sign-in steps</Button><span className="tt-visually-hidden" role="status">{loginFeedback ? 'Muse login command copied.' : ''}</span></div>}
             </div>
               <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working) || selectedUpdating} aria-label={`${connected ? 'Disconnect' : status.connection === 'error' ? 'Retry' : 'Connect'} ${label}`}
                 onClick={() => void perform(selected, connected ? 'disconnect' : 'connect')}>{working ? pending[selected] === 'disconnect' ? 'Disconnecting…' : pending[selected] === 'refresh' ? 'Refreshing…' : 'Connecting…' : connected ? 'Disconnect' : status.connection === 'error' ? 'Retry connection' : 'Connect'}</Button>
             </div>
+            {selected === 'opencode' && connected && window.sotto?.opencode ? <OpenCodeModelSources bridge={window.sotto.opencode} /> : null}
             <div className="provider-client" aria-busy={checkingUpdates || selectedUpdating}>
               <div>
                 <h4>Installed client</h4>
@@ -176,10 +192,11 @@ export function ProvidersSettings(): ReactNode {
               </div>
             </div>
             {selected === 'muse' && checkClientUpdates && update && ((update.behind && !update.canInstall) || update.state === 'failed' || update.state === 'unchanged') && <details className="provider-client__steps"><summary>Installation steps</summary><p>{update.channel === 'unknown' || !update.byHand?.length ? 'Update Muse with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.'}</p>{update.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openMuseGuide()}>Open Muse installation guide</Button></details>}
+            {selected === 'opencode' && (openCodeInstall || checkClientUpdates && update && ((update.behind && !update.canInstall) || update.state === 'failed' || update.state === 'unchanged')) && <details className="provider-client__steps"><summary>Installation steps</summary><p>{openCodeInstall ?? (!update?.byHand?.length ? 'Update OpenCode 2 with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.')}</p>{openCodeInstall ? null : update?.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openOpenCodeGuide()}>Open OpenCode installation guide</Button></details>}
             {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.</p>}
             <p className="provider-models__empty">Choose what new threads start with under Agents.</p>
             {selected === 'muse' && <details className="provider-support"><summary>Threads with Muse</summary><p>Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
-            {selected === 'opencode' && <details className="provider-support"><summary>Threads with OpenCode</summary><p>Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable, and Sotto cannot update OpenCode yet. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
+            {selected === 'opencode' && <details className="provider-support"><summary>Threads with OpenCode</summary><p>Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
           </> : models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul> : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
           {detailError && <p role="alert" className="provider-detail__error">{detailError}</p>}
         </div>

@@ -75,7 +75,8 @@ it('starts OpenCode on Sotto’s own folders with none of the account’s keys, 
 })
 
 it.each([
-  ['1.19.3', 'cannot-start', 'Sotto works with OpenCode 2 only'],
+  // OpenCode 1 is too old to use, so setup offers OpenCode 2's install guide for it (#1104).
+  ['1.19.3', 'too-old', 'Sotto works with OpenCode 2 only'],
   ['2.0.30', 'too-old', 'OpenCode 2.0.31 or newer is required, and this client is 2.0.30.'],
   ['3.0.0', 'cannot-start', 'This is OpenCode 3.0.0, and Sotto works with OpenCode 2 only.'],
 ] as const)('refuses OpenCode %s at connect, in words, before any server starts', async (version, problem, said) => {
@@ -172,6 +173,34 @@ it('changes the model and effort on the live session without starting another', 
     expect((await f.driver.requests()).filter(record => record.method === 'session.switchModel').map(record => record.params?.model))
       .toEqual([{ id: 'fixture-model', providerID: 'opencode', variant: 'high' }])
     expect(await f.sessions.starts(id)).toBe(starts)
+  } finally { await f.cleanup() }
+})
+
+it.each(['an update', 'a sign-in'] as const)('lets a settings change finish on its server when %s lands meanwhile, then moves the idle thread on', { timeout: 60_000 }, async change => {
+  // The model switch is held under a longer request deadline, so the change is still in the middle of its command when
+  // the client or the sign-ins change: checking a new client starts a server of its own, which takes a moment. Everything
+  // is scripted before the change starts, so no server reads the script while it is being written.
+  const { f, id } = await open(await opencodeFixture(undefined, 15_000))
+  try {
+    await f.host.refreshThread!(id)
+    await expect.poll(async () => f.holder(id)).toBeDefined()
+    const first = await f.holder(id)
+    // The newer client is on disk before the change starts; the thread's server, already running, is still the old one.
+    await f.script({ delay: { 'session.switchModel': 6_000 }, ...(change === 'an update' ? { version: '2.0.40' } : {}) })
+    let done = false
+    const changing = f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' }).finally(() => { done = true })
+    await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'session.switchModel').length).toBe(1)
+    if (change === 'an update') await f.host.clientUpdated!()
+    else expect((await f.host.signIn.signInWithKey({ sourceId: 'anthropic', key: 'sk-fixture-made-up-key-3c9a' })).status).toBe('ok')
+    // The change was still in the middle of its command when its server became outdated, and that server was left to it.
+    expect(done).toBe(false)
+    const result = await changing
+    expect(result.accepted).toBe(true)
+    expect(result.snapshot?.threads.find(candidate => candidate.id === id)?.reasoningEffort).toBe('high')
+    // Once the change is done the thread is idle, so it moves to a fresh server.
+    await expect.poll(async () => { const holder = await f.holder(id); return holder !== undefined && holder !== first }, { timeout: 15_000 }).toBe(true)
+    expect((await thread(f, id)).reasoningEffort).toBe('high')
+    if (change === 'an update') expect((await f.host.snapshot()).version).toContain('2.0.40')
   } finally { await f.cleanup() }
 })
 
@@ -648,5 +677,30 @@ it('names as signed in only the model sources whose models it offers', async () 
     const snapshot = await f.host.connect()
     expect(snapshot.models.map(model => model.id)).toEqual(['opencode/fixture-model'])
     expect(snapshot.account).toBe('No model source signed in yet; OpenCode Zen’s free models only')
+  } finally { await f.cleanup() }
+})
+
+it('retires a thread that was opening during an update once its opening completes and it is idle', { timeout: 60_000 }, async () => {
+  const { f, id } = await open()
+  try {
+    await expect.poll(async () => f.holder(id)).toBeDefined()
+    const first = await f.holder(id)
+    // On a fresh connection the thread opens when it is shown; its reads are held so the update lands meanwhile.
+    f.host.observeThreads?.([])
+    f.host.disconnect(); await f.host.closed()
+    await f.host.connect()
+    // Each read is held under the request deadline, so the opening lasts about four seconds.
+    await f.script({ delay: { 'session.get': 2_000, 'session.messages': 2_000 } })
+    f.host.observeThreads?.([id])
+    await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'session.get').length, { timeout: 15_000 }).toBe(1)
+    // The newer client is installed with the history read still held.
+    await f.script({ version: '2.0.40', delay: { 'session.messages': 2_000 } })
+    await f.host.clientUpdated!()
+    // The server the opening runs on holds the session once its held read is answered.
+    await expect.poll(async () => { const holder = await f.holder(id); return holder !== undefined && holder !== first }, { timeout: 15_000 }).toBe(true)
+    const opening = await f.holder(id)
+    // The thread is idle once open, so its outdated server stops and the watched thread opens again on a fresh one.
+    await expect.poll(async () => { const holder = await f.holder(id); return holder !== undefined && holder !== opening }, { timeout: 15_000 }).toBe(true)
+    expect((await f.host.snapshot()).version).toContain('2.0.40')
   } finally { await f.cleanup() }
 })

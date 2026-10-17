@@ -258,6 +258,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/folderBrowser.css',
       'src/renderer/src/agents/providerRecovery.css',
       'src/renderer/src/agents/providers.css',
+      'src/renderer/src/agents/opencodeSources.css',
       'src/renderer/src/agents/clientUpdates.css',
       'src/renderer/src/agents/hostUpdates.css',
       'src/renderer/src/features/updates/updateAll.css',

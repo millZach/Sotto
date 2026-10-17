@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { elementContrast } from './support/elementContrast'
 import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
@@ -11,30 +12,19 @@ const evidence = evidenceDirectory('artifacts/opencode-provider')
 const sizes = [[1600, 1000], [1280, 800], [820, 560]] as const
 type Frame = { method?: string; params?: Record<string, unknown> }
 
-/** Resolve color-mix and translucent theme surfaces as Chromium renders them. */
-async function textContrast(locator: Locator): Promise<number> {
-  return locator.evaluate(element => {
-    const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1
-    const context = canvas.getContext('2d')!
-    const rgba = (color: string): number[] => {
-      context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1)
-      return [...context.getImageData(0, 0, 1, 1).data].map((value, index) => index === 3 ? value / 255 : value)
-    }
-    const blend = (front: number[], back: number[]): number[] => front.slice(0, 3).map((value, index) => value * front[3]! + back[index]! * (1 - front[3]!))
-    const ancestors: Element[] = []; let current: Element | null = element
-    while (current) { ancestors.unshift(current); current = current.parentElement }
-    let background = [255, 255, 255]
-    for (const ancestor of ancestors) background = blend(rgba(getComputedStyle(ancestor).backgroundColor), background)
-    const foreground = blend(rgba(getComputedStyle(element).color), background)
-    const luminance = (color: number[]): number => color.map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index]!, 0)
-    return (Math.max(luminance(foreground), luminance(background)) + .05) / (Math.min(luminance(foreground), luminance(background)) + .05)
-  })
-}
-
 async function providerPanel(page: Page): Promise<Locator> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByRole('tab', { name: 'Providers', exact: true }).click()
   return page.getByRole('region', { name: 'Provider configuration', exact: true })
+}
+
+/** Connects OpenCode unless it already is, once the startup connect has had its say. */
+async function connectOpenCode(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const status = async () => (await window.sotto!.agents!.get()).host.providers?.find(provider => provider.id === 'opencode')?.connection
+    for (let tries = 0; tries < 50 && await status() === 'connecting'; tries += 1) await new Promise(resolve => setTimeout(resolve, 200))
+    if (await status() !== 'connected') await window.sotto!.agents!.command({ type: 'connect', provider: 'opencode', notice: false })
+  })
 }
 
 /** Keyboard activation waits for the previous command's lane to release before taking focus. */
@@ -80,11 +70,11 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     const panel = await providerPanel(page)
     await page.getByRole('button', { name: 'OpenCode', exact: true }).focus()
     await page.keyboard.press('Enter')
-    await expect(panel).toContainText('in a folder of Sotto’s own, apart from your own OpenCode')
+    await expect(panel).toContainText('Sotto runs its own OpenCode, with its own folder and its own sign-ins.')
     await expect(panel.locator('svg[data-provider="opencode"]')).toBeVisible()
     await activate(page, panel.getByRole('button', { name: 'Connect OpenCode' }))
     await expect(panel.getByRole('button', { name: 'Disconnect OpenCode' })).toBeVisible()
-    await expect(panel).toContainText('No model source signed in yet; OpenCode Zen’s free models only.')
+    await expect(panel.getByRole('group', { name: 'Model sources' })).toContainText('Sign in to a model source, such as Anthropic, OpenAI or OpenRouter')
     await expect(panel).toContainText('2.0.31')
     const deferUpdates = page.getByRole('button', { name: 'Not now', exact: true })
     if (await deferUpdates.count()) await deferUpdates.click()
@@ -94,10 +84,10 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
         await page.evaluate(appearance => window.sotto!.updateSettings({ appearance, reducedMotion: 'on' }), appearance)
         await expect(panel.getByRole('button', { name: 'Disconnect OpenCode' })).toBeVisible()
         expect(await panel.evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false)
-        const account = panel.locator('.provider-connection p', { hasText: 'No model source signed in yet' })
-        const ratio = await textContrast(account)
+        const account = panel.locator('.oc-empty', { hasText: 'Sign in to a model source' })
+        const ratio = await elementContrast(account)
         expect(ratio).toBeGreaterThanOrEqual(4.5)
-        contrasts.push({ surface: 'OpenCode account line', width, appearance, ratio })
+        contrasts.push({ surface: 'OpenCode model sources line', width, appearance, ratio })
         await page.screenshot({ animations: 'disabled', path: join(evidence, `settings-${width}-${appearance}.png`) })
       }
     }
@@ -131,6 +121,8 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     await model.click()
     const picker = page.getByRole('dialog', { name: 'Choose model' })
     await picker.getByRole('tab', { name: 'OpenCode', exact: true }).click()
+    // OpenCode's models are grouped by model source first (#1137): its free models are OpenCode Zen's.
+    await picker.getByRole('group', { name: 'OpenCode model sources', exact: true }).getByRole('button', { name: /^Show OpenCode Zen models/u }).click()
     await picker.getByRole('option', { name: 'Fixture Model', exact: true }).click()
     await expect(model).toContainText('Fixture Model')
     const prompt = promptField(page)
@@ -171,7 +163,7 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
         expect(layout.pageOverflow).toBeLessThanOrEqual(1)
         expect(layout.cardOverflow).toBeLessThanOrEqual(1)
         expect(layout.composerBottom).toBeLessThanOrEqual(layout.height + 1)
-        const ratio = await textContrast(allow)
+        const ratio = await elementContrast(allow)
         expect(ratio).toBeGreaterThanOrEqual(4.5)
         contrasts.push({ surface: 'Allow once', width, appearance, ratio })
         await page.screenshot({ animations: 'disabled', path: join(evidence, `permission-${width}-${appearance}.png`) })
@@ -243,11 +235,10 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     const reopened = launched.page
     const reopenedPanel = await providerPanel(reopened)
     await reopened.getByRole('button', { name: 'OpenCode', exact: true }).click()
-    const connectAgain = reopenedPanel.getByRole('button', { name: 'Connect OpenCode', exact: true })
     const connected = reopenedPanel.getByRole('button', { name: 'Disconnect OpenCode' })
-    // The panel draws one of the two once it has read the provider; asking before then saw neither.
-    await expect(connectAgain.or(connected)).toBeVisible()
-    if (await connectAgain.isVisible()) await connectAgain.click()
+    // Connect is asked of main directly: the panel can draw Connect for a moment before the startup connect begins, and
+    // a press then lands on a button that is about to turn into Connecting…. The first launch presses it from the keyboard.
+    await connectOpenCode(reopened)
     await expect(connected).toBeVisible()
     await openThreads(reopened)
     await reopened.getByRole('button', { name: 'OpenCode UI check', exact: true }).click()
@@ -290,8 +281,7 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     const restored = launched.page
     const restoredPanel = await providerPanel(restored)
     await restored.getByRole('button', { name: 'OpenCode', exact: true }).click()
-    const reconnect = restoredPanel.getByRole('button', { name: 'Connect OpenCode', exact: true })
-    if (await reconnect.count()) await reconnect.click()
+    await connectOpenCode(restored)
     await expect(restoredPanel.getByRole('button', { name: 'Disconnect OpenCode' })).toBeVisible()
     await openThreads(restored)
     await restored.getByRole('button', { name: 'OpenCode UI check', exact: true }).click()
