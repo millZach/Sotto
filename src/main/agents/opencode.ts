@@ -511,12 +511,9 @@ export class OpenCodeHost implements AgentHost {
       this.exits.add(exit)
       const probe = await starting
       try {
-        const location = locationQuery(this.folders.data)
-        const models = modelListSchema.parse(await probe.client.request('GET', '/api/model', { query: location })).data
-        const fallback = await probe.client.request('GET', '/api/model/default', { query: location }).then(value => defaultModelSchema.parse(value).data ?? undefined, () => undefined)
-        const providers = providerListSchema.parse(await probe.client.request('GET', '/api/provider', { query: location })).data
+        const catalog = await this.readCatalog(probe.client)
         this.assertGeneration(generation)
-        this.applyCatalog(probe.version, models, providers, fallback)
+        this.applyCatalog(probe.version, catalog.models, catalog.providers, catalog.fallback)
       } finally {
         if (this.probe === starting) this.probe = undefined
         await probe.server.stop()
