@@ -102,6 +102,23 @@ describe('Watcher’s first message', () => {
     expect(sessionStorage.getItem(FIRST_MESSAGE_KEY)).toBeNull()
   })
 
+  it('still becomes Watcher’s draft after a second reload while main goes on creating Watcher', async () => {
+    kept('starting', 'Start the release checks.')
+    firstMessage.reload()
+    const first = renderRoom(false)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start Watcher and send' })).toBeEnabled())
+    first.unmount()
+    // The second reload: memory goes again, and only the session says the message is waiting for Watcher.
+    const session = sessionStorage.getItem(FIRST_MESSAGE_KEY)!
+    firstMessage.clear(); sessionStorage.setItem(FIRST_MESSAGE_KEY, session)
+    firstMessage.reload()
+    const { command, connection, publish } = renderRoom(false)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start Watcher and send' })).toBeEnabled())
+    act(() => publish({ ...room(true), observedAt: new Date(NOW + 1_000).toISOString() }))
+    await waitFor(() => expect(connection.threadDrafts.draft('watcher').text).toBe('Start the release checks.'))
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send' }))
+  })
+
   it('keeps nothing it cannot read', () => {
     sessionStorage.setItem(FIRST_MESSAGE_KEY, '{"text":3}')
     firstMessage.reload()

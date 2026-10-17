@@ -43,13 +43,15 @@ function session(): Storage | null {
 let resumed = false
 /**
  * Whether the message went back to the composer that way. Main may still have been creating Watcher when it answered,
- * so if Watcher then appears, the message becomes its draft, unsent, rather than vanish with the first entry.
+ * so if Watcher then appears, the message becomes its draft, unsent, rather than vanish with the first entry. Kept in the
+ * session with the message, so a second reload before Watcher appears still knows it.
  */
 let returned = false
 
 /** The message as the session kept it. A kept start resumes as started; nothing kept, or anything unreadable, is blank. */
 function restored(): FirstMessage {
   resumed = false
+  returned = false
   let raw: string | null = null
   try { raw = session()?.getItem(FIRST_MESSAGE_KEY) ?? null } catch { /* A session that cannot be read keeps nothing. */ }
   if (raw === null) return BLANK
@@ -59,6 +61,7 @@ function restored(): FirstMessage {
       || !['writing', 'starting', 'started'].includes(kept.phase as string)) return BLANK
     const starting = kept.phase !== 'writing' && kept.text.trim() !== ''
     resumed = starting
+    returned = !starting && kept.phase === 'writing' && (kept as { returned?: unknown }).returned === true && kept.text.trim() !== ''
     return { text: kept.text, modelId: kept.modelId, effort: kept.effort as string | null, phase: starting ? 'started' : 'writing', error: null }
   } catch { return BLANK }
 }
@@ -68,7 +71,7 @@ function keep(): void {
   if (store === null) return
   try {
     if (current.text === '' && current.phase === 'writing') store.removeItem(FIRST_MESSAGE_KEY)
-    else store.setItem(FIRST_MESSAGE_KEY, JSON.stringify({ text: current.text, modelId: current.modelId, effort: current.effort, phase: current.phase }))
+    else store.setItem(FIRST_MESSAGE_KEY, JSON.stringify({ text: current.text, modelId: current.modelId, effort: current.effort, phase: current.phase, ...(returned ? { returned: true } : {}) }))
   } catch { /* Kept in this window until it reloads, as before. */ }
 }
 
@@ -116,7 +119,7 @@ export const firstMessage = {
     emit()
   },
   /** Reads the message back from the window's session, as a reloaded window does. */
-  reload(): void { current = restored(); returned = false; emit() },
+  reload(): void { current = restored(); emit() },
   /** Back to an empty first entry, for a test's fresh window. */
   clear(): void { current = BLANK; resumed = false; returned = false; keep(); emit() },
   subscribe(listener: () => void): () => void { listeners.add(listener); return () => { listeners.delete(listener) } },
