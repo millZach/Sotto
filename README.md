@@ -26,7 +26,7 @@ When a failed creation keeps your prompt or screenshots, the error names the pro
 
 ## What it does
 
-An unconfirmed prompt can be checked again. For a prompt sent at once, **Continue with a new message**, on the desktop that owns the thread, sets it aside without resending it and keeps your next draft.
+An unconfirmed prompt can be checked again. For a prompt sent at once, **Continue with a new message**, on the desktop that owns the thread, sets it aside without resending it and keeps your next draft. Normal automatic updates resume once the provider confirms a new message in that thread.
 
 - **One sidebar for every agent.** Each provider keeps its own sign-in and models. Sotto keeps the threads. Stop still reaches running work when its last prompt is unconfirmed. When Sotto starts, a starting screen shows each provider and host as it connects and opens the app once they have; after ten seconds you can open it without the ones that have not answered.
 - **Visuals in the thread.** An agent in a project thread can draw a diagram, or a small interactive page it wrote, where you read its replies, to show how something works. A visual with steps walks you through it one step at a time, lighting the part each step is about; **Read all** shows every step at once. Drawing one asks you nothing; turn it off in Settings.

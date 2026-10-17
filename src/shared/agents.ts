@@ -753,6 +753,8 @@ export const agentDeliverySchema = z.object({
   packetDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   /** The user released the composer; the original delivery is still unconfirmed. */
   setAside: z.boolean().optional(),
+  /** A later explicit prompt was confirmed; normal automatic updates may resume without replaying this one. */
+  updatesResumed: z.boolean().optional(),
   localFeedbackMs: z.number().nonnegative().optional(), providerLatencyMs: z.number().nonnegative().optional(),
 })
 export type AgentDelivery = z.infer<typeof agentDeliverySchema>

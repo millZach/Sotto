@@ -31,7 +31,7 @@ Devin saves a provider session only after its first prompt, so an empty provider
 
 ## Working with threads
 
-An uncertain direct prompt on this desktop offers **Continue with a new message**. It saves the choice to set that exact send aside without claiming delivery or replaying it. A new manual prompt can then go, while the old command and message identities remain available for deduplication and exact native confirmation. It changes no question, permission or follow-up queue entry.
+An uncertain direct prompt on this desktop offers **Continue with a new message**. It saves the choice to set that exact send aside without claiming delivery or replaying it. A new manual prompt can then go, while the old command and message identities remain available for deduplication and exact native confirmation. Confirmation of a new explicit prompt in that thread releases normal automatic updates, including after a restart. A rejection, uncertain new send or answer to a request does not release them. The old prompt remains unconfirmed and cannot be replayed. Setting it aside changes no question, permission or follow-up queue entry.
 
 A **monitoring task** is a provider-confirmed live watch, shown by the pixel creature above the thread composer. It works in threads independently of dictation. There is no elapsed-time threshold. Ordinary commands, long foreground work and unattended background processes do not qualify; short confirmed watches can appear briefly. The indicator is observational and cannot approve or send anything. It disappears for a pending question or permission, an error, a closed thread, interruption, disconnect or task completion. System or app reduced motion holds a still inspection pose.
 

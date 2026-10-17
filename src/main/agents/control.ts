@@ -156,6 +156,7 @@ const savedSchema = z.object({
     options: agentThreadOptionsSchema.optional(), draftDigest: z.string().optional(), draftId: z.uuid().optional(),
     questionsDigest: z.string().optional(), atomicDigest: z.string().optional(),
     setAside: z.boolean().optional(),
+    updatesResumed: z.boolean().optional(), resumesSetAside: z.boolean().optional(),
     /** The images a send or steer carried: while its result is unknown, it owns their content (ADR-0031). */
     attachmentDigests: z.array(attachmentDigestSchema).max(AGENT_MAX_ATTACHMENTS).optional(),
     /** A wake-up's send (ADR-0061): reconciled by its message like any send, with no draft or delivery receipt. */
@@ -689,7 +690,7 @@ export class AgentControl {
       if ((item.type !== 'send' && item.type !== 'steer') || !item.threadId || item.wakeUp) continue
       item.draftId ??= this.state.threadDrafts?.find(draft => draft.threadId === item.threadId && (item.draftDigest
         ? item.draftDigest === followupDigest(draft) : draft.requestId === null))?.draftId ?? randomUUID()
-      this.setDelivery(item.threadId, item.draftId, 'uncertain', { commandId: item.id, messageId: item.messageId, ...(item.setAside ? { setAside: true } : {}) })
+      this.setDelivery(item.threadId, item.draftId, 'uncertain', { commandId: item.id, messageId: item.messageId, ...(item.setAside ? { setAside: true, updatesResumed: item.updatesResumed } : {}) })
     }
     // A headless host connects every provider that is installed and signed in, except the ones the user turned off
     // (ADR-0036). Trying one is how Sotto learns whether it is installed and signed in: a provider that is not
@@ -2705,7 +2706,7 @@ export class AgentControl {
       command = { ...command, draftId: command.draftId ?? randomUUID() }
       if (origin) this.watcherOrigins.set(command, origin)
       const { threadId, draftId } = command
-      if (!this.outbox.some(item => item.threadId === threadId && (origin || this.blocksExplicitPrompt(item, draftId)))) {
+      if (!this.outbox.some(item => item.threadId === threadId && this.blocksExplicitPrompt(item, draftId, Boolean(origin)))) {
         const current = this.state.threadDrafts?.find(item => item.threadId === threadId)
         // An explicit answer retains its owner and request; manual prompt validation will reject it.
         if (!origin && !current?.requestId) {
@@ -2725,7 +2726,7 @@ export class AgentControl {
       }
     }
     const selectionRevision = this.selectionRevision
-    const manualRetryId = (command.type === 'manual-send' || command.type === 'steer') ? this.outbox.find(item => item.threadId === command.threadId && (origin || this.blocksExplicitPrompt(item, command.draftId)))?.id
+    const manualRetryId = (command.type === 'manual-send' || command.type === 'steer') ? this.outbox.find(item => item.threadId === command.threadId && this.blocksExplicitPrompt(item, command.draftId, Boolean(origin)))?.id
       : command.type === 'send' ? this.outbox.find(item => item.threadId === this.state.draftThreadId && this.blocksExplicitPrompt(item, this.manualDraftId ?? undefined))?.id : undefined
     // Host observations bypass this lane: a direct provider send must revoke authority even during model reasoning.
     const laneThreadId = actionThreadId && THREAD_SCOPED_COMMAND_TYPES.has(command.type) ? actionThreadId : ''
@@ -2879,7 +2880,7 @@ export class AgentControl {
       && (!thread.historyStatus || thread.historyStatus === 'ready') && !isThreadClosed(thread)
       && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))
       && !this.outbox.some(item => item.threadId === threadId && item.id !== followup.commandId
-        && (!userFollowup || this.blocksExplicitPrompt(item, followup.draftId))))
+        && this.blocksExplicitPrompt(item, followup.draftId, !userFollowup)))
   }
   private pumpFollowups(): void {
     if (this.disposed) return
@@ -2889,7 +2890,7 @@ export class AgentControl {
     if (!items.length) return
     const recoveringThreads = new Set<string>()
     for (const delivery of this.state.deliveries ?? []) {
-      if (delivery.setAside && delivery.status === 'uncertain') recoveringThreads.add(delivery.threadId)
+      if (delivery.setAside && !delivery.updatesResumed && delivery.status === 'uncertain') recoveringThreads.add(delivery.threadId)
     }
     for (const threadId of new Set(items.map(item => item.threadId))) {
       if (!this.threadAvailable(threadId)) continue
@@ -3088,7 +3089,7 @@ export class AgentControl {
       if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))) throw new Error('Restore this thread and project before steering.')
     }
     validate()
-    if (!this.isUserFollowup(queued) && this.hasUnconfirmedSetAside(command.threadId) || this.outbox.some(item => item.threadId === command.threadId && (!this.isUserFollowup(queued) || this.blocksExplicitPrompt(item, queued.draftId))) || this.pumping.has(command.threadId)) throw new Error('Wait for the pending delivery before steering this message.')
+    if (!this.isUserFollowup(queued) && this.hasUnconfirmedSetAside(command.threadId) || this.outbox.some(item => item.threadId === command.threadId && this.blocksExplicitPrompt(item, queued.draftId, !this.isUserFollowup(queued))) || this.pumping.has(command.threadId)) throw new Error('Wait for the pending delivery before steering this message.')
     await this.followupStore.claim(queued.id, 'steer')
     this.syncFollowups(); this.publish()
     const item = this.followupStore.get().items.find(item => item.id === queued.id)!
@@ -3113,7 +3114,7 @@ export class AgentControl {
   private async steer(command: Extract<AgentCommand, { type: 'steer' }>, turn?: ActiveTurn): Promise<void> {
     const origin = this.watcherOrigins.get(command)
     if (this.state.deliveredDrafts?.some(r => r.threadId === command.threadId && r.draftId === command.draftId)) return
-    const blocked = (): boolean => this.outbox.some(item => item.threadId === command.threadId && (origin || this.blocksExplicitPrompt(item, command.draftId)))
+    const blocked = (): boolean => this.outbox.some(item => item.threadId === command.threadId && this.blocksExplicitPrompt(item, command.draftId, Boolean(origin)))
     if (blocked()) {
       this.acceptSnapshot(await this.readThread(command.threadId))
       if (blocked()) throw new Error('An earlier action is uncertain. Refresh to reconcile it; it will not be replayed.')
@@ -3817,10 +3818,10 @@ export class AgentControl {
     else if (prompt) draftId ??= randomUUID()
     // Stop has its own intent and may pass an unresolved prompt; it cannot settle or replay that prompt.
     const automatic = Boolean(origin) || wakeUp
-    const mayPassSetAside = !automatic && (prompt !== null || command.type === 'configure-thread' || command.type === 'answer')
+    const mayPassSetAside = prompt !== null || !automatic && (command.type === 'configure-thread' || command.type === 'answer')
     if (threadId && automatic && this.hasUnconfirmedSetAside(threadId)
       || command.type !== 'interrupt' && this.outbox.some(item => threadId
-        ? item.threadId === threadId && (!mayPassSetAside || this.blocksExplicitPrompt(item, draftId))
+        ? item.threadId === threadId && (!mayPassSetAside || this.blocksExplicitPrompt(item, draftId, automatic))
         : item.threadId === undefined && (item.provider ?? this.state.configuration.provider) === provider)) {
       throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
     }
@@ -3841,6 +3842,7 @@ export class AgentControl {
       ...(answerQuestions.length ? { questionsDigest: requestQuestionsDigest(answerQuestions) } : {}),
       ...(atomicDigest && draftId ? { draftId, atomicDigest } : {}),
       ...(wakeUp ? { wakeUp: true as const } : {}),
+      ...(prompt && !automatic && threadId && this.hasUnconfirmedSetAside(threadId) ? { resumesSetAside: true } : {}),
       ...(command.type === 'configure-thread' ? { options: agentThreadOptionsSchema.parse({ ...command, ...(startingEffort ? { reasoningEffort: startingEffort } : {}) }) } : {}),
       ...(prompt ? { draftDigest: followupDigest(prompt), ...(draftId ? { draftId } : {}),
         ...(prompt.attachments?.length ? { attachmentDigests: prompt.attachments.map(image => image.digest) } : {}) } : {}),
@@ -4034,12 +4036,20 @@ export class AgentControl {
   }
   private hasUnconfirmedSetAside(threadId: string): boolean {
     return this.pendingSetAsideDeliveries.has(threadId)
-      || (this.state.deliveries ?? []).some(item => item.threadId === threadId && item.setAside && item.status === 'uncertain')
+      || (this.state.deliveries ?? []).some(item => item.threadId === threadId && item.setAside && !item.updatesResumed && item.status === 'uncertain')
   }
-  /** A retained prompt stops replay, but the user's recovery permits a fresh explicit prompt. */
-  private blocksExplicitPrompt(item: Saved['outbox'][number], draftId?: string): boolean {
+  /** Recovery permits fresh explicit prompts; a confirmed one releases automatic updates, never the old revision. */
+  private blocksExplicitPrompt(item: Saved['outbox'][number], draftId?: string, automatic = false): boolean {
     return !item.setAside || this.pendingSetAsideDeliveries.has(item.threadId ?? '') || item.draftId === draftId
-      || (item.type !== 'send' && item.type !== 'steer')
+      || automatic && !item.updatesResumed || (item.type !== 'send' && item.type !== 'steer')
+  }
+  private resumeSetAsideUpdates(threadId: string): void {
+    for (const delivery of this.state.deliveries ?? []) {
+      if (delivery.threadId === threadId && delivery.setAside && !delivery.updatesResumed) {
+        this.setDelivery(threadId, delivery.draftId, delivery.status, { updatesResumed: true })
+      }
+    }
+    this.outbox = this.outbox.map(item => item.threadId === threadId && item.setAside ? { ...item, updatesResumed: true } : item)
   }
   private assertCanSetAside(threadId: string, draftId: string): void {
     this.thread(threadId)
@@ -4094,7 +4104,7 @@ export class AgentControl {
   }
   private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachmentHandle[] = [], draftId?: string, skills?: AgentSkillReference[], files?: AgentFileReference[], origin?: WatcherCommandOrigin): Promise<void> {
     if (draftId && this.state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === draftId)) return
-    const pendingId = retryId ?? this.outbox.find(item => item.threadId === threadId && (origin || this.blocksExplicitPrompt(item, draftId)))?.id
+    const pendingId = retryId ?? this.outbox.find(item => item.threadId === threadId && this.blocksExplicitPrompt(item, draftId, Boolean(origin)))?.id
     if (pendingId) {
       // A retry may discover that the earlier command already succeeded. It is
       // never a new dispatch and must not replace an edited or recovered draft.
@@ -4304,6 +4314,7 @@ export class AgentControl {
         : !this.state.draftAttachments?.length && this.state.draft.trim() === message.text)
       this.outbox = this.outbox.filter(o => o.id !== item.id)
       if (message && item.draftId && item.threadId) {
+        if (item.resumesSetAside) this.resumeSetAsideUpdates(item.threadId)
         this.setDelivery(item.threadId, item.draftId, 'accepted', { commandId: item.id, messageId: item.messageId })
         this.state.deliveredDrafts = this.trimReceipts([...(this.state.deliveredDrafts ?? []).filter(receipt => receipt.threadId !== item.threadId || receipt.draftId !== item.draftId),
           { threadId: item.threadId, draftId: item.draftId }])
