@@ -9,6 +9,7 @@ import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { WATCHER_SYSTEM_PROMPT } from '../../src/main/agents/watcherPrompt'
 import { watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
+import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
 import { questionInstructions } from '../../src/main/agents/questionInstructions'
 import type { AgentHost, WatcherProfileTools } from '../../src/main/agents/host'
 import type { ScopedThreadTools } from '../../src/main/agents/threadToolServer'
@@ -391,6 +392,43 @@ it('admits only Watcher’s own suffixed Muse tool names and shows a folded look
   await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests[0]?.kind).toBe('permission')
   expect(await decided()).toBe(before)
   expect(tools.revoke).not.toHaveBeenCalled()
+})
+
+it.each(['codex', 'claude', 'grok'] as const)('gives a %s Watcher a wake-up’s news through its request note’s channel and never in the message', async provider => {
+  const f = await (provider === 'codex' ? codexFixture(undefined, false, 10_000) : provider === 'claude' ? claudeFixture(undefined, 10_000) : grokFixture(undefined, 10_000))
+  cleanups.push(f.cleanup)
+  const { id, ordinary } = await watcherBesideOrdinary(f, provider)
+  const news = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.\nSynthetic news line'
+  for (const threadId of [id, ordinary]) {
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: WATCHER_WAKE_UP_PROMPT, watcherNews: news })).accepted).toBe(true)
+  }
+  const records = await f.driver.requests()
+  if (provider === 'codex') {
+    const [watcher, other] = records.filter(record => record.method === 'turn/start')
+    expect(watcher!.params!.input).toEqual([expect.objectContaining({ type: 'text', text: WATCHER_WAKE_UP_PROMPT })])
+    expect(watcher!.params!.additionalContext).toEqual({ sotto_watcher_news: { value: news, kind: 'application' } })
+    expect(other!.params).not.toHaveProperty('additionalContext')
+  } else if (provider === 'claude') {
+    const frame = (record: RecordedRpc) => record.params!.frame as { message?: { content?: unknown }; additionalContext?: string | null; prompt?: string }
+    expect(records.filter(record => record.method === 'user').map(record => frame(record).message?.content)).toEqual([WATCHER_WAKE_UP_PROMPT, WATCHER_WAKE_UP_PROMPT])
+    expect(records.filter(record => record.method === 'hook-context').map(record => [frame(record).prompt, frame(record).additionalContext])).toEqual([[WATCHER_WAKE_UP_PROMPT, news]])
+  } else {
+    expect(records.filter(record => record.method === 'session/prompt').map(record => record.params!.prompt))
+      .toEqual([[{ type: 'text', text: WATCHER_WAKE_UP_PROMPT + watcherRequestLine(news) }], [{ type: 'text', text: WATCHER_WAKE_UP_PROMPT }]])
+  }
+})
+
+it('gives a Muse Watcher a wake-up’s news on its request note’s line and shows only the wake-up message', async () => {
+  const f = await museFixture(undefined, 10_000); cleanups.push(f.cleanup)
+  const { id, ordinary } = await watcherBesideOrdinary(f, 'muse')
+  const news = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.\nSynthetic news line'
+  for (const threadId of [id, ordinary]) {
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: WATCHER_WAKE_UP_PROMPT, watcherNews: news })).accepted).toBe(true)
+  }
+  const [watcher, other] = (await f.driver.requests()).filter(record => record.method === 'turn/start')
+  expect(watcher!.params!.input).toEqual([{ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS }, { type: 'text', text: WATCHER_WAKE_UP_PROMPT + watcherRequestLine(news) }])
+  expect(watcher!.params!.displayText).toBe(WATCHER_WAKE_UP_PROMPT)
+  expect(other!.params!.input).toEqual([{ type: 'text', text: WATCHER_WAKE_UP_PROMPT }])
 })
 
 it('keeps Devin unavailable because its adapter cannot attach a scoped Sotto server', async () => {

@@ -30,6 +30,7 @@ import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 import { codexFixture } from '../fixtures/codexFixture'
 import { heldOperation } from '../fixtures/deferred'
 import type { CodexAppServerHost } from '../../src/main/agents/codex'
+import { storedFollowups } from '../fixtures/followupQueue'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
 
@@ -757,7 +758,6 @@ it('refuses a remote mutation before transmission when the master closes during 
   } finally { gate.release(); await start }
 })
 
-
 it('attributes returning paired evidence to its host, queues news after user work and withdraws it on Stop', async () => {
   const f = await master(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
@@ -794,15 +794,17 @@ it('attributes returning paired evidence to its host, queues news after user wor
     }, { timeout: 15_000 })
     const event = f.watcher.state().news!.find(item => item.kind === 'evidence-changed' && item.target.threadId === first.target.threadId)!
     occurrences.push(event.id)
-    await vi.waitFor(() => expect(f.control.shell().followups?.filter(item => item.threadId === f.id).at(-1)?.wakeUp).toBe(true), { timeout: 15_000 })
-    expect(f.control.shell().followups!.filter(item => item.threadId === f.id)[0]!.text).toBe('Synthetic user continuation')
+    await vi.waitFor(() => expect(storedFollowups(f.control).filter(item => item.threadId === f.id).at(-1)?.wakeUp).toBe(true), { timeout: 15_000 })
+    expect(storedFollowups(f.control).filter(item => item.threadId === f.id)[0]!.text).toBe('Synthetic user continuation')
+    // The user's follow-up shows; Sotto's wake-up for Watcher behind it does not.
+    expect(f.control.shell().followups!.filter(item => item.threadId === f.id).map(item => item.text)).toEqual(['Synthetic user continuation'])
   }
   expect(new Set(occurrences).size).toBe(3)
   expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })).toMatchObject({ status: 'ok' })
   expect(await f.watcher.unwatchThread({ target: first.target })).toMatchObject({ status: 'ok' })
   checks = 'passed'; f.router.replace(f.connection)
   await vi.waitFor(() => expect(f.watcher.state().news?.some(item => item.target.threadId === first.target.threadId)).toBe(false))
-  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.wakeUp)).toBe(false))
+  await vi.waitFor(() => expect(storedFollowups(f.control).some(item => item.threadId === f.id && item.wakeUp)).toBe(false))
   expect(f.control.shell().followups!.find(item => item.threadId === f.id)?.text).toBe('Synthetic user continuation')
   expect(f.watcher.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)!.participation[0]).toMatchObject({ automationStopped: true, promptCount: 1 })
   expect((await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic remote worker')!.messages.filter(item => item.role === 'user')).toHaveLength(1)

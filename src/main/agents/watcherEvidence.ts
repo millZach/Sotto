@@ -56,6 +56,18 @@ export class WatcherEvidenceStore {
   identities(target: WatcherThreadTarget): ReadonlySet<string> {
     return new Set([...this.entries.get(targetKey(target))?.values() ?? []].map(item => item.id))
   }
+  /**
+   * A digest of one side of a thread's facts: its pull requests' (link, state, checks, review, auto-merge), which wake
+   * Watcher when they change, or its own (working copy, Git, checkpoints), which only ride with a turn's end. The
+   * turn's own end is in neither: its news is the turn event.
+   */
+  digest(target: WatcherThreadTarget, side: 'pull-request' | 'local'): string {
+    const facts = [...this.entries.get(targetKey(target))?.values() ?? []]
+    if (side === 'local') return observationDigest(facts.filter(item => item.source !== 'github' && item.source !== 'native-turn').map(item => item.id).sort())
+    // What a pull request says, not when it was last seen: a Git read that only sees the same link again changes nothing.
+    return observationDigest(facts.filter(item => item.source === 'github')
+      .map(item => { const { id, observedAt, ...said } = item; void id; void observedAt; return JSON.stringify(said) }).sort())
+  }
   removeMissing(targets: ReadonlySet<string>): void { for (const key of this.entries.keys()) if (!targets.has(key)) this.entries.delete(key) }
   observeThread(thread: AgentThread, target: WatcherThreadTarget, observedAt: string): boolean {
     let changed = false
@@ -82,7 +94,10 @@ export class WatcherEvidenceStore {
       const branchObserved = !!git?.pullRequest && pullRequestKey(git.pullRequest.url) === pullRequestKey(pr.url)
       // A link or Git state read observes association/state, not checks, approval or auto-merge.
       const state = entries?.get(slot + ':state')
-      if (!entries?.has(slot) || state?.pullRequestState !== pr.state && Date.parse(git?.readAt ?? '') > (state ? Date.parse(state.observedAt) : -Infinity)) {
+      // A newer Git read refreshes what it can see: a state that differs from GitHub's, or a link GitHub has not read. It
+      // never replaces GitHub's own read of the link with the link alone.
+      const refreshes = state ? state.pullRequestState !== pr.state : entries?.get(slot)?.availability !== 'available'
+      if (!entries?.has(slot) || refreshes && Date.parse(git?.readAt ?? '') > (state ? Date.parse(state.observedAt) : -Infinity)) {
         changed = this.pullRequest(target, { url: pr.url, head: entries?.get(slot)?.headId ?? null,
           observedAt: git?.readAt ?? ('linkedAt' in pr && typeof pr.linkedAt === 'string' ? pr.linkedAt : observedAt),
           availability: branchObserved ? 'available' : 'unavailable', state: pr.state }) || changed

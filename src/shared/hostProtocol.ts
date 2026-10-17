@@ -341,7 +341,7 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   /** The host's machine facts and running thread count, read on request and never pushed (#1031). */
   z.object({ ...base, op: z.literal('host-facts') }).strict(),
   z.object({ ...base, op: z.literal('usage-read'), query: usageLocalQuerySchema }).strict(),
-  z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(4).optional() }).strict(),
+  z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(usageProviderIdSchema.options.length).optional() }).strict(),
   z.object({ ...base, op: z.literal('usage-clear'), request: usageLocalClearRequestSchema }).strict(),
   /**
    * A provider's sign-in on the host, for the client that asks and for no other (ADR-0037): start one, read where it

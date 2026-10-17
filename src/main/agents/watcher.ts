@@ -25,6 +25,7 @@ import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessa
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
+import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { watcherOwnChanges } from './watcherOwnChanges'
 import { WATCHER_FINAL_OUTCOMES, watcherLatestTurnMessageId, watcherTurnOutcome } from './watcherOutcomes'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts } from '../../shared/watcherHost'
@@ -147,7 +148,7 @@ export class WatcherService implements WatcherControlHooks {
           || (reporting ??= new Set(this.remote?.hosts().flatMap(host => host.workSettled === true ? [host.hostId] : []) ?? [])).has(hostId)
       },
       answers: (target, thread, record) => this.answeringOperation(target, thread, record),
-      restoredEvents: () => options.control.restoredWatcherEvents(),
+      restoredEvents: () => options.control.restoredWatcherEvents(), wakeUpQueued: () => options.control.watcherWakeUpQueued(),
       canDeliver: target => options.control.canDeliverWatcherNews(target),
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
       prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),
@@ -217,6 +218,8 @@ export class WatcherService implements WatcherControlHooks {
   }
   wakeDueAll(events: readonly WatcherEvent[]): boolean[] { return this.wakes.dueAll(events) }
   wakeReady(): boolean { return this.wakes.ready() }
+  /** Watcher's hidden wake-up left its queue; the coordinator has already saved any of its news as untold again. */
+  wakeUpSettled(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void { if (!this.closed) this.wakes.settled(events, outcome) }
   pullRequestObserved(read: PullRequestObservation): void { this.wakes.pullRequest(read) }
   restoreCheckpoint(read: CheckpointObservation): void { this.wakes.restoreCheckpoint(read) }
   checkpointObserved(read: CheckpointObservation): void { this.wakes.checkpoint(read) }

@@ -11,6 +11,7 @@ import type { WatcherHostControl, WatcherHostProjection, WatcherRemoteHosts } fr
 import type { AgentControl } from '../../src/main/agents/control'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
+import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -84,7 +85,10 @@ it('watches without sending, survives request closure and process-state restart,
   expect(f.service.wakeDueAll([news])).toEqual([true])
   await f.control.deliverWakeUp(f.watcherId(), { source: 'watcher', watcher: f.service.state().current!.target, events: [news], omitted: 0 }, { tool: false })
   expect(f.service.wakeReady()).toBe(true)
-  await expect.poll(() => f.native(f.watcherId()).messages.findLast(message => message.role === 'user')?.text).toContain(`Use requestId ${watch.id}`)
+  // The news, with the standing watch's request, travels beside Sotto's short message.
+  const sessionId = f.workspace.registry.byThread(f.watcherId())!.sessionId
+  await expect.poll(() => f.workspace.adapters.codex.commands.findLast(command => command.type === 'send' && command.threadId === sessionId)).toMatchObject({
+    text: WATCHER_WAKE_UP_PROMPT, watcherNews: expect.stringContaining(`Use requestId ${watch.id}`) })
   expect(await f.call('unwatch_thread', { target })).toMatchObject({ status: 'ok', watched: false })
   expect(f.service.wakeDueAll([news])).toEqual([false])
   expect(f.service.state().news).toEqual([])

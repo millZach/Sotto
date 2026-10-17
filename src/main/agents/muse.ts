@@ -1447,8 +1447,10 @@ export class MuseMspHost implements AgentHost {
           if (thread.requests.length) throw new Error('Answer the pending Muse request before sending another prompt.')
           verifyFileMentions(command.text, command.files)
           // Watcher's instructions go ahead of each message to it, and its request note after the words as Grok's does, the
-          // two channels MSP offers; the turn's display text is the message alone (ADR-0073).
-          const note = watcherProfile && command.type === 'send' && command.watcherRequestNote ? watcherRequestLine(command.watcherRequestNote) : ''
+          // two channels MSP offers; the turn's display text is the message alone (ADR-0073). A wake-up's news for Watcher
+          // goes the same way as the note.
+          const watcherNote = command.type === 'send' ? command.watcherRequestNote ?? command.watcherNews : undefined
+          const note = watcherProfile && watcherNote ? watcherRequestLine(watcherNote) : ''
           const parts: Record<string, unknown>[] = [...(watcherProfile && command.type === 'send' ? [{ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS }] : []),
             { type: 'text', text: command.text + note }]
           const display = watcherProfile && command.type === 'send' ? { displayText: command.text } : {}
