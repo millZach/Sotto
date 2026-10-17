@@ -125,6 +125,19 @@ describe('Add a model source', () => {
     expect(document.body.innerHTML).not.toContain(KEY)
   })
 
+  it.each([
+    [0, 'Signed in to ZenMux. OpenCode lists none of its models yet, so none are in the model menu.'],
+    [1, 'Signed in to ZenMux. Its model is in the model menu, under OpenCode.'],
+    [3, 'Signed in to ZenMux. Its 3 models are in the model menu, under OpenCode.'],
+  ])('says how many models a sign-in added when it is %s', async (models, words) => {
+    await mount(bridge({ signInWithKey: vi.fn(async () => ({ status: 'ok' as const, sources: read({ zenmux: { signedIn: { how: 'API key' }, models } }) })) }))
+    await openDialog()
+    const dialog = await pick(/^ZenMux,/u)
+    fireEvent.change(within(dialog).getByLabelText('ZenMux API key'), { target: { value: KEY } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Sign in to ZenMux with this key' }))
+    expect(await screen.findByText(text => text.startsWith('Signed in to ZenMux.'))).toHaveTextContent(`${words} ${SIGN_IN_WORDS.keyUnchecked('ZenMux')}`)
+  })
+
   it('clears a refused key and says why, without saving anything', async () => {
     await mount(bridge({ signInWithKey: vi.fn(async () => ({ status: 'refused' as const, message: SIGN_IN_WORDS.keyRefused('Anthropic') })) }))
     await openDialog()

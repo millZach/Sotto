@@ -137,7 +137,8 @@ export const SIGN_IN_WORDS = {
   catalogUnread: 'Sotto could not read OpenCode’s model list again, so the model menu may be out of date. Each thread still moves to the new sign-ins when it next goes idle. Press Refresh OpenCode to read the list again.',
   signOutFailed: (source: string) => `Sotto could not sign out of ${source}, so it is still signed in. Try again.`,
   unknownSource: 'OpenCode no longer lists that model source, so nothing was signed in. Close this and open it again.',
-  signedIn: (source: string, models: number) => `Signed in to ${source}. ${models === 1 ? 'Its model is' : `Its ${models} models are`} in the model menu, under OpenCode.`,
+  signedIn: (source: string, models: number) => `Signed in to ${source}. ${models === 0 ? 'OpenCode lists none of its models yet, so none are in the model menu.'
+    : `${models === 1 ? 'Its model is' : `Its ${models} models are`} in the model menu, under OpenCode.`}`,
   /** OpenCode keeps a key without trying it (checked against 2.0.31), so a wrong one shows only when a thread uses it. */
   keyUnchecked: (source: string) => `OpenCode tries the key the first time a thread uses one of its models. If ${source} refuses it then, sign out here and paste the key again.`,
   signedOut: (source: string, key: boolean) => `Signed out of ${source}. Its ${key ? 'key' : 'sign-in'} is gone from Sotto’s OpenCode.`,
