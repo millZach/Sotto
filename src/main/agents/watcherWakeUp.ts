@@ -66,6 +66,8 @@ export interface WatcherWakeOptions {
   canDeliver: (target: WatcherThreadTarget) => boolean
   deliver: (news: WatcherNews) => Promise<void>; prune: () => Promise<void>
   remember: (ids: string[]) => Promise<void>; changed?: () => void; failed?: () => void
+  /** Each pass's own read of every thread, for a reader that walks them too (read marks), so none reads them again. */
+  observed?: (snapshot: AgentHostSnapshot) => void
   now?: () => number; schedule?: (callback: () => void, delay: number) => () => void
 }
 /** Event subscriptions and cancellable deadlines only. It owns no provider writer, roster or GitHub poll. */
@@ -475,6 +477,7 @@ export class WatcherWakeUp {
   private observePass(): void {
     if (!this.started || this.closed) return
     const snapshot = this.snapshot(), stamp = new Date(this.now()).toISOString()
+    this.options.observed?.(snapshot)
     const targets = new Set<string>(), watched = new Set(this.watchedTargets().map(targetKey))
     for (const thread of snapshot.threads) {
       if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || !snapshot.hostId) continue

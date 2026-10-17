@@ -5,7 +5,7 @@ import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type P
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_CHANGED, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
-  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema,
+  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_MARK_READ, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema, watcherMarkReadRequestSchema,
   WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomStateSchema, watcherRoomResultSchema,
   watcherPrepareStopAllResultSchema, watcherStopAllRequestSchema, watcherStopAllResultSchema,
   watcherSetLimitRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../shared/watcherRoom'
@@ -377,6 +377,7 @@ export function createSottoBridge(
       readHandover: () => invokeParsed(renderer, WATCHER_READ_HANDOVER, watcherHandoverReadSchema),
       continueWithHandover: request => invokeParsed(renderer, WATCHER_CONTINUE_HANDOVER, watcherRoomResultSchema, watcherContinueHandoverRequestSchema.parse(request)),
       dismissHandover: () => invokeParsed(renderer, WATCHER_DISMISS_HANDOVER, watcherRoomResultSchema),
+      markRead: request => invokeParsed(renderer, WATCHER_MARK_READ, watcherRoomResultSchema, watcherMarkReadRequestSchema.parse(request)),
       onChanged: listener => subscribe(renderer, WATCHER_CHANGED, watcherRoomStateSchema, listener),
     }) } : {}),
     hosts: Object.freeze<import('../shared/hosts').HostsBridge>({ get: () => renderer.invoke(HOSTS_GET) as Promise<HostsState>, command: command => renderer.invoke(HOSTS_COMMAND, hostsCommandSchema.parse(command)) as Promise<HostsState>, onChanged: listener => subscribe(renderer, HOSTS_CHANGED, trustedState<HostsState>('hosts'), listener),

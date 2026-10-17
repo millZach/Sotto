@@ -324,3 +324,95 @@
 .watcher-handover__disclose > svg { transition: transform 150ms ease; }
 .watcher-handover__disclose[aria-expanded='true'] > svg { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { .watcher-handover__disclose > svg { transition: none; } }
+
+/* ---------- What Watcher did, in its conversation (Zach's picks on October 16, 2026) ---------- */
+/* Receipt cards, cards A: one card per action under the reply of the Watcher turn that took it, the watched card's
+   quiet shape: the action and the thread, whose name opens it beside Watcher; where it stands now; then its provider,
+   its computer and its project. The name is a link only here, never found in the reply's words. */
+/* Up into the reply's own margin, leaving its copy control room above the first card. */
+.watcher-receipts { display: grid; gap: 8px; margin: -20px 0 28px; padding: 0; list-style: none; }
+.receipt-card { display: grid; gap: 4px; min-width: 0; padding: 11px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface); }
+.receipt-card__top { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; }
+.receipt-card__glyph { flex: none; color: var(--tt-text-muted); }
+.receipt-card__lead { flex: none; color: var(--tt-text-2); }
+.receipt-card[data-delivery='failed'] :is(.receipt-card__lead, .receipt-card__glyph) { color: var(--watcher-needs-ink); }
+.receipt-card__name { min-width: 0; overflow: hidden; color: var(--tt-text-2); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+/* A thread's name as a link: underlined in the text's own colour, as the needs-you line's names are. */
+.receipt-link { display: inline; min-width: 0; max-width: 100%; overflow: hidden; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-text); font: inherit; font-weight: 500; text-align: left;
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-overflow: ellipsis; text-underline-offset: 3px; white-space: nowrap; cursor: pointer; }
+.receipt-link:hover { text-decoration-color: currentColor; }
+.receipt-card__top > .receipt-link { flex: 0 1 auto; }
+.receipt-outcome { display: inline-flex; flex: none; align-items: center; gap: 6px; margin-left: auto; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.receipt-outcome > .watcher-row__ring { width: 10px; height: 10px; }
+.receipt-outcome[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.receipt-outcome[data-tone='working'] { color: var(--tt-activity); }
+.receipt-outcome:is([data-tone='ready'], [data-tone='landing']) { color: var(--watcher-ready-ink); }
+.receipt-card__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; margin: 0; padding-left: 23px; color: var(--tt-text-muted); font-size: 12.5px; }
+.receipt-card__meta > :not(:first-child)::before { margin: 0 7px; content: '·'; }
+.receipt-card__provider, .receipt-card__machine { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.receipt-card__provider .thread-nav__mark { width: 12px; height: 12px; }
+.receipt-card__machine[data-kind='remote'] > svg { color: var(--tt-accent-text); }
+.receipt-card__unconfirmed { color: var(--watcher-needs-ink); }
+@container thread-pane (width < 470px) {
+  .receipt-card__top { flex-wrap: wrap; row-gap: 2px; }
+  .receipt-card__top > .receipt-outcome { order: 1; flex-basis: calc(100% - 23px); margin-left: 23px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .receipt-outcome > .watcher-row__ring[data-tone='working'] { animation: thread-ring 1.5s linear infinite; }
+}
+
+/* The takeover line: Sotto's own words in Watcher's conversation, one quiet line in the column after the wake-up's mark,
+   when the user sent in a thread Watcher was driving. */
+.sotto-line { display: flex; align-items: baseline; gap: 8px; margin: -4px 0 28px; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.sotto-line__mark { display: inline-grid; flex: none; align-self: center; place-items: center; width: 16px; height: 16px; }
+.sotto-line__glyph { width: 16px; height: 16px; }
+.sotto-line p { flex: 1 1 auto; min-width: 0; margin: 0; }
+.sotto-line time { flex: none; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* ---------- Stop all ---------- */
+/* In Watcher's header beside More Watcher actions, only while threads Watcher started are running: a quiet pill like
+   Watch, whose stop square takes the error ink only on hover, since a press asks first. Narrow panes keep the square. */
+.watcher-stop-all { position: relative; display: flex; }
+.watcher-stop-all__button { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px;
+  background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.watcher-stop-all__button:hover, .watcher-stop-all__button[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.watcher-stop-all__button:hover > svg, .watcher-stop-all__button[aria-expanded='true'] > svg { color: var(--tt-error-text); }
+@container thread-pane (width < 520px) { .watcher-stop-all__button { padding: 0 7px; } .watcher-stop-all__text { display: none; } }
+/* The popover, More Watcher actions' shape: the question, the threads it names with what each is doing, what a stop
+   keeps, then Cancel and the stop on the error plate. After the press, each thread's result. */
+.watcher-stop { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; width: min(344px, calc(100cqw - 24px)); padding: 14px; border: 1px solid var(--tt-hairline); border-radius: 10px;
+  background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); color: var(--tt-text); -webkit-app-region: no-drag; }
+.watcher-stop h2 { margin: 0 0 10px; font-size: 14px; font-weight: 600; line-height: 1.4; }
+/* The heading holds focus while the stop runs, so Escape still reaches the popover; it is not a control, so it has no ring. */
+.watcher-stop h2[tabindex]:focus { outline: none; }
+.watcher-stop__list { display: grid; gap: 2px; margin: 0 0 10px; padding: 0; list-style: none; }
+.watcher-stop__row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; min-height: 30px; font-size: 13px; }
+.watcher-stop__row .thread-nav__mark { width: 14px; height: 14px; }
+.watcher-stop__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.watcher-stop__where { color: var(--tt-text-2); font-weight: 400; }
+.watcher-stop__state { color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; }
+.watcher-stop__state[data-tone='working'] { color: var(--tt-activity); }
+.watcher-stop__state[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.watcher-stop__note { margin: 0 0 14px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.watcher-stop__refused { color: var(--tt-error-text); }
+.watcher-stop__unknown { color: var(--watcher-needs-ink); }
+.watcher-stop__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.watcher-stop__results { display: grid; gap: 8px; margin: 0 0 14px; padding: 0; list-style: none; }
+.watcher-stop__result { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 8px; align-items: start; font-size: 13px; line-height: 1.45; }
+.watcher-stop__result > svg { margin-top: 2px; }
+.watcher-stop__result > span { min-width: 0; }
+.watcher-stop__result[data-result='stopped'] > svg { color: var(--watcher-ready-ink); }
+.watcher-stop__result[data-result='requested'] > svg { color: var(--tt-text-2); }
+.watcher-stop__result[data-result='uncertain'] > svg { color: var(--watcher-needs-ink); }
+.watcher-stop__said { display: block; color: var(--tt-text-2); }
+.watcher-stop__result[data-result='uncertain'] .watcher-stop__said { color: var(--watcher-needs-ink); }
+
+/* ---------- Read marks in All threads (dot A) ---------- */
+/* A dot before a row's name while its thread has news the user has not seen; over the list, how many, and Mark all read. */
+.watcher-row__dot { display: block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); }
+.watcher-row__open > .watcher-row__dot { align-self: center; margin-right: 7px; }
+.watcher-list__news { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; margin: 0 8px 2px; padding: 0 2px 0 6px; color: var(--tt-text-2); font-size: 12.5px; }
+.watcher-list__news-count { display: inline-flex; align-items: center; gap: 7px; }
+.watcher-list__mark-read { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-link); font: inherit; font-size: 12.5px; cursor: pointer; }
+.watcher-list__mark-read:hover { background: var(--tt-hover); color: var(--tt-text); }
+.watcher-list__error { flex: none; margin: 0 14px 4px; color: var(--tt-error-text); font-size: 12.5px; }

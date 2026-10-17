@@ -22,6 +22,7 @@ import { isResumeNoteText } from '../../../shared/restartResume'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
+import { useRepliesKeptInView, WatcherAfterMessage } from '../watcher/WatcherReceipts'
 import { HandoverFromContext, HandoverMessage } from '../watcher/WatcherHandover'
 import { ContinuedFromNote, ContinuedInNotes } from './ContinueThread'
 import { ContinueLinksContext, continuedInByTurn, useContinueEnabled, type ContinueLinks } from './continuations'
@@ -266,6 +267,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}
     {forkHere ? <ForkPress messageId={message.id} at={message.createdAt} /> : null}
   </article>
+  {speaker === 'watcher' ? <WatcherAfterMessage message={message} /> : null}
   {forkHere ? <ForkCard messageId={message.id} at={message.createdAt} /> : null}
   {forkedAt ? <ThreadStartNote view={started} /> : null}</>
 })
@@ -309,10 +311,17 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   // The running turn keeps its live layout, and a page that starts mid-turn has no start to fold from;
   // a finished turn folds under its last written reply.
   const final = !turn.user || running && last ? undefined : written.findLast(message => message.role === 'assistant' && drawn(message))
+  // In Watcher's own pane, a reply that carries receipt cards stays in view where it was written, as a visual does: its
+  // cards say what Watcher did in that turn, and a closed fold would hide them.
+  const kept = useRepliesKeptInView()
+  if (final !== undefined && kept !== null) for (const [at, message] of turn.replies.entries()) {
+    if (message !== final && kept.has(message.id) && !isVisualMessage(message)) visuals.push({ message, at })
+  }
+  visuals.sort((a, b) => a.at - b.at)
   const groups = everything.flatMap(message => placement.after.get(message.id) ?? [])
   // A compaction is where the conversation lost its history, so it stays in view instead of folding with the work.
   const boundaries = groups.filter(group => compactionOf(group))
-  const work = final ? written.filter(message => message !== final && drawn(message)) : []
+  const work = final ? written.filter(message => message !== final && drawn(message) && !visuals.some(visual => visual.message === message)) : []
   // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
   const continued = continuedIn?.length ? <ContinuedInNotes links={continuedIn} /> : null
   if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>{everything.map(plain)}<DelegationCards views={delegations} />{continued}</>

@@ -23,18 +23,23 @@ import { useContinueEnabled } from '../agents/continuations'
 import { effortChoices } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
 import { BrowserPageRouteContext } from '../tools/webLinks'
-import { useWatcherRoom, type WatcherRoom } from './watcherRoom'
+import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
+import { watcherTakeovers } from '../../../shared/watcherRoom'
+import { rowStatus } from '../agents/threadFacts'
+import { threadForTarget, useReadMarksCleared, useWatcherRoom, type WatcherRoom } from './watcherRoom'
+import { placeTakeovers, WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
+import { WatcherStopAll } from './WatcherStopAll'
 import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView, type RoomTab } from './WatcherBeside'
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
 import { WatcherDock } from './WatcherDock'
 import { WatcherGlance } from './WatcherGlance'
 import { watcherProviderOf } from './watcherProviders'
 import { WatcherHandoverOffer, WatcherSendGateContext, watcherSendGate } from './WatcherHandover'
-import { overviewCount, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
+import { overviewCount, statusWord, threadPress, TONES, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
 import { WatcherOwl } from './WatcherOwl'
 import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
-import { WatcherWatchedView, watchedCount } from './WatcherWatched'
+import { unlistedStatus, WatcherWatchedView, watchedCount } from './WatcherWatched'
 import { useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole'
 
 const WATCHER_PROMPT_ID = 'watcher-prompt'
@@ -130,6 +135,8 @@ interface HeaderParts {
   readonly listOpen: boolean
   readonly listButton: React.RefObject<HTMLButtonElement | null>
   readonly onToggleList: () => void
+  /** Stop all, before More Watcher actions, while threads Watcher started are running. */
+  readonly stopAll: ReactNode
 }
 
 /**
@@ -137,7 +144,7 @@ interface HeaderParts {
  * All threads, which opens the Overview over the room; once Watcher runs, Conversation and Watched, and at its end More
  * Watcher actions. The night sky spreads behind the corner. The row is the window's drag strip.
  */
-function WatcherHeader({ room, limit, count, tab, tabIds, listOpen, listButton, onToggleList }: HeaderParts): ReactNode {
+function WatcherHeader({ room, limit, count, tab, tabIds, listOpen, listButton, onToggleList, stopAll }: HeaderParts): ReactNode {
   const started = room?.state?.current != null
   return <header className="thread-workspace__head watcher-head">
     <span className="watcher-head__tile" role="img" aria-label={releaseTrackName('owl')}><SottoMark className="thread-nav__tile" /></span>
@@ -150,7 +157,7 @@ function WatcherHeader({ room, limit, count, tab, tabIds, listOpen, listButton, 
       </button>
       {started && room !== null ? <RoomTabs tab={tab} count={watchedCount(room)} ids={tabIds} /> : null}
     </div>
-    {started && room !== null ? <div className="thread-workspace__actions"><WatcherActions room={room} limit={limit} /></div> : null}
+    {started && room !== null ? <div className="thread-workspace__actions">{stopAll}<WatcherActions room={room} limit={limit} /></div> : null}
   </header>
 }
 
@@ -258,10 +265,13 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
  * The current Watcher's real thread pane: its transcript, its request cards and its composer, under Watcher's header
  * and the needs-you line. The first entry's message reaches it from the room provider (`useFirstMessageDelivery`).
  */
-function WatcherPane({ state, row, header, watched, error, focused, now }: {
+function WatcherPane({ state, row, header, watched, error, focused, now, describe, press }: {
   readonly state: AgentState
   readonly row: ThreadRow
   readonly header: ReactNode
+  /** What a receipt card or a takeover line says of a thread, and what a press on its name does. */
+  readonly describe: WatcherConversation['describe']
+  readonly press: WatcherConversation['press']
   /** The Watched view, when it stands in the conversation's place. */
   readonly watched: ReactNode
   readonly error: string | null
@@ -286,12 +296,35 @@ function WatcherPane({ state, row, header, watched, error, focused, now }: {
   const offer = room?.state?.handover ?? null
   const offered = offer !== null && room?.handover != null
   const gate = useMemo(() => watcherSendGate(room?.handover, room?.settle, offered), [room?.handover, room?.settle, offered])
+  // Each action Watcher took is a receipt card under the reply of the turn that took it, where main's record places it,
+  // and each thread the user took over is a quiet line in the conversation, after the turn it came in (ADR-0073).
+  const receipts = room?.state?.receipts
+  const replies = room?.state?.receiptReplies
+  const byMessage = useMemo(() => {
+    const placed = new Map<string, WatcherOperation[]>()
+    if (receipts === undefined || replies === undefined || replies.length === 0) return placed
+    const operations = new Map(receipts.map(operation => [operation.id, operation] as const))
+    for (const { operationId, messageId } of replies) {
+      const operation = operations.get(operationId)
+      if (operation !== undefined) placed.set(messageId, [...placed.get(messageId) ?? [], operation])
+    }
+    for (const list of placed.values()) list.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+    return placed
+  }, [receipts, replies])
+  const requests = room?.state?.requests
+  const current = room?.state?.current ?? null
+  const takeovers = useMemo(() => requests === undefined ? [] : watcherTakeovers({ current, requests }), [current, requests])
+  const messages = row.thread.messages
+  const lines = useMemo(() => placeTakeovers(messages, takeovers), [messages, takeovers])
+  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press }), [byMessage, lines, describe, press])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
   // system browser.
   return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
-    <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
-      error={error} now={now} watcherHeader={header} watcherBody={watched}
-      notice={offered && room !== null && offer !== null ? <WatcherHandoverOffer key={offer.source.threadId} room={room} offer={offer} composerId={WATCHER_PROMPT_ID} /> : undefined} />
+    <WatcherConversationContext.Provider value={conversation}>
+      <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
+        error={error} now={now} watcherHeader={header} watcherBody={watched}
+        notice={offered && room !== null && offer !== null ? <WatcherHandoverOffer key={offer.source.threadId} room={room} offer={offer} composerId={WATCHER_PROMPT_ID} /> : undefined} />
+    </WatcherConversationContext.Provider>
   </WatcherSendGateContext.Provider></WatcherOwnChangesContext.Provider></BrowserPageRouteContext.Provider>
 }
 
@@ -441,11 +474,39 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     if (refocus) (listOpener.current?.isConnected ? listOpener.current : listButton.current)?.focus()
   }, [])
 
+  // A thread open beside Watcher is being read: its read mark goes as it opens, and any news it gets while open.
+  useReadMarksCleared(room, state, [besideRow?.thread.id ?? null])
+
+  // What a receipt card, a takeover line or Stop all says of a thread: the window's own facts for it, as All threads
+  // shows them, or the room's last word on one this window does not list.
+  const entries = useMemo(() => new Map(groups.flatMap(group => group.entries).map(entry => [entry.overview.thread.id, entry] as const)), [groups])
+  const roomRows = room?.state?.watchedThreads
+  const describe = useCallback((target: WatcherThreadTarget): ConversationThread => {
+    const thread = threadForTarget(state, target)
+    const facts = thread === undefined ? undefined : rowsById.get(thread.id)
+    if (thread !== undefined && facts !== undefined) {
+      const entry = entries.get(thread.id)
+      const group = entry?.overview.group ?? 'Idle'
+      const failed = thread.status === 'error' || thread.lastTurn?.status === 'failed'
+      const remote = thread.remoteHost === true
+      return { threadId: thread.id, title: thread.title, providerId: facts.providerId, provider: facts.provider,
+        computer: remote ? thread.hostLabel ?? 'Paired computer' : 'This computer', remote, project: facts.project?.title,
+        status: entry === undefined ? rowStatus(facts).text : statusWord(entry), tone: TONES[group], ring: failed ? 'failed' : TONES[group] }
+    }
+    const known = roomRows?.find(row => row.target.hostId === target.hostId && row.target.threadId === target.threadId)
+    return { threadId: null, title: known?.title ?? null, providerId: undefined, provider: undefined, computer: undefined, remote: false, project: undefined,
+      status: known === undefined ? null : unlistedStatus(known), tone: 'idle', ring: 'idle' }
+  }, [state, rowsById, entries, roomRows])
+  const press = useCallback((threadId: string) => threadPress(openThread, threadId, false), [openThread])
+
   const error = state?.error ?? agents.error ?? null
   const limit = room?.state?.inFlightLimit ?? app?.settings?.watcherInFlightLimit ?? 4
   const tab = current === null ? 'conversation' : view.tab
+  const stopAll = room === null ? null : <WatcherStopAll room={room} conversation={{ describe, press }}
+    fallbackFocus={() => document.querySelector<HTMLElement>('.watcher-head .watcher-actions > button')?.focus()} />
   const header = <>
-    <WatcherHeader room={room} limit={limit} count={overviewCount(groups)} tab={tab} tabIds={tabIds} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)} />
+    <WatcherHeader room={room} limit={limit} count={overviewCount(groups)} tab={tab} tabIds={tabIds} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
+      stopAll={stopAll} />
     <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} />
   </>
   let watcherContent: ReactNode
@@ -455,7 +516,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   else if (room.error !== null && room.state === null) watcherContent = status(room.error, true)
   else if (current === null) watcherContent = <>{header}<WatcherFirstEntry state={state} room={room} /></>
   else if (watcherRow === undefined) watcherContent = status('Opening Watcher…')
-  else watcherContent = <WatcherPane state={state} row={watcherRow} header={header} error={focusedPane === 'watcher' || besideRow === undefined ? error : null}
+  else watcherContent = <WatcherPane state={state} row={watcherRow} header={header} describe={describe} press={press} error={focusedPane === 'watcher' || besideRow === undefined ? error : null}
     watched={tab === 'watched' ? <WatcherWatchedView room={room} state={state} groups={groups} id={watchedPanel} labelledBy={watchedTab} onOpen={openThread}
       onShowAll={from => toggleList(from, true)} /> : null}
     focused={focusedPane === 'watcher' || besideRow === undefined} now={fixedNow} />
@@ -486,6 +547,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     <WatcherDock updateControl={updateControl} />
     <PageWindowControls />
     {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}
+      marks={room?.readMarks} onMarkRead={room?.markRead ?? null}
       liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
   </div>
 }
