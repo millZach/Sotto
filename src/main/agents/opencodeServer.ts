@@ -171,7 +171,13 @@ export class OpenCodeServer {
       const closed = new Promise<void>(done => child.once('close', () => done()))
       // Written down before anything else can happen to it, and taken off once it and what it left are gone.
       const { ledger } = launch, pid = child.pid
-      const recorded = ledger && pid !== undefined ? recordOpenCodeServer(ledger, { pid, startedAt, owner: process.pid }).catch(() => undefined) : Promise.resolve()
+      const recorded = ledger && pid !== undefined ? recordOpenCodeServer(ledger, { pid, startedAt, owner: process.pid })
+        .then(async () => {
+          // Then the start the system itself reports for it, which is what a later sweep reads (ADR-0087). Only while the
+          // server has not exited: until Node reaps it, its PID cannot be anyone else's.
+          const started = await systemProcessStart(pid)
+          if (started !== undefined && !ended(child)) await recordOpenCodeServer(ledger, { pid, startedAt, started, owner: process.pid })
+        }).catch(() => undefined) : Promise.resolve()
       const forget = (): Promise<void> => recorded.then(() => ledger && pid !== undefined ? rm(serverRecordPath(ledger, pid), { force: true }) : undefined).catch(() => undefined)
       let scanned = '', ready = false
       const fail = (error: Error): void => {
@@ -316,12 +322,12 @@ async function killTree(child: ChildProcess, closed: Promise<void>, startedAt: n
 }
 
 /**
- * A server Sotto started, as it is written down while it runs (ADR-0087): its PID, when Sotto started it, and the Sotto
- * process that did. A crash leaves the record behind, and the next connect ends the server it names, if it is still that
- * server, and what it left.
+ * A server Sotto started, as it is written down while it runs (ADR-0087): its PID, when Sotto started it by Sotto's clock,
+ * on macOS and Linux when the system says it started, and the Sotto process that did. A crash leaves the record behind,
+ * and the next connect ends the server it names, if it is still that server, and what it left.
  */
-export interface OpenCodeServerRecord { readonly pid: number; readonly startedAt: number; readonly owner: number }
-const serverRecordSchema = z.object({ pid: z.number().int().positive(), startedAt: z.number().finite(), owner: z.number().int().positive() })
+export interface OpenCodeServerRecord { readonly pid: number; readonly startedAt: number; readonly started?: number | undefined; readonly owner: number }
+const serverRecordSchema = z.object({ pid: z.number().int().positive(), startedAt: z.number().finite(), started: z.number().finite().optional(), owner: z.number().int().positive() })
 /** Where each server Sotto starts on these folders is written down while it runs: one file per server, named by its PID. */
 export function opencodeServerLedger(folders: OpenCodeFolders): string { return folders.servers }
 const serverRecordPath = (ledger: string, pid: number): string => join(ledger, `${pid}.json`)
@@ -333,10 +339,18 @@ export async function recordOpenCodeServer(ledger: string, record: OpenCodeServe
 const isRunning = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' } }
 /**
  * How far a process's start may sit from the moment Sotto wrote down starting it: a little before, for the coarse clocks
- * process start times are kept on (whole seconds from `ps`), and a little after, for a slow spawn.
+ * process start times are kept on, and a little after, for a slow spawn. Windows stamps a process on the clock Node
+ * reads, so this is all it needs. On macOS and Linux it is only for a record written before `ps` was asked: Linux's `ps`
+ * adds ticks since boot to a boot time kept in whole seconds and drops the fraction again, so it reads up to two seconds
+ * behind the clock, and further on a machine whose clock was stepped after boot.
  */
 const START_BEFORE_MS = 1_500
 const START_AFTER_MS = 10_000
+/**
+ * How far `ps` may read from the start it reported when Sotto wrote the server down: the second it rounds to, once more if
+ * the boot time it adds to is rounded the other way.
+ */
+const SAME_START_MS = 1_000
 /** The process seen holding a recorded server's PID: when it started, and its command line when the system says. */
 export interface ObservedProcess { readonly started: number; readonly command?: string | undefined }
 /**
@@ -345,7 +359,9 @@ export interface ObservedProcess { readonly started: number; readonly command?: 
  */
 export function isRecordedServer(record: OpenCodeServerRecord, seen: ObservedProcess | undefined): boolean {
   if (!seen?.command) return false
-  if (seen.started < record.startedAt - START_BEFORE_MS || seen.started > record.startedAt + START_AFTER_MS) return false
+  // Like with like: the start the system reported then, against what it reports now.
+  if (record.started !== undefined) { if (Math.abs(seen.started - record.started) > SAME_START_MS) return false }
+  else if (seen.started < record.startedAt - START_BEFORE_MS || seen.started > record.startedAt + START_AFTER_MS) return false
   return /(?:^|\s)serve(?:\s|$)/u.test(seen.command) && seen.command.includes('--hostname=127.0.0.1') && seen.command.includes('--port=0')
 }
 /** One line of `ps -o lstart= -o args=` in the C locale: the start time, to the second, and the command line. */
@@ -366,6 +382,10 @@ function processStart(pid: number): Promise<ObservedProcess | undefined> {
     reader.once('error', () => { clearTimeout(timer); resolve(undefined) })
     reader.once('close', () => { clearTimeout(timer); resolve(parseProcessStart(output.split(/\r?\n/u)[0] ?? '')) })
   })
+}
+/** When the system says a process started, on macOS and Linux, as `ps` reads it; undefined on Windows or once it has gone. */
+export async function systemProcessStart(pid: number): Promise<number | undefined> {
+  return process.platform === 'win32' ? undefined : (await processStart(pid))?.started
 }
 const pause = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms).unref() })
 async function gone(pid: number, withinMs: number): Promise<boolean> {

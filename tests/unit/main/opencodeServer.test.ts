@@ -65,6 +65,20 @@ describe('a server a crash left, as the next connect knows it', () => {
     expect(isRecordedServer(record, { started: startedAt })).toBe(false)
     expect(isRecordedServer(record, undefined)).toBe(false)
   })
+  it('matches the start ps reported when Sotto started it, however far ps reads from the clock', () => {
+    // Linux's ps adds ticks since boot to a boot time kept in whole seconds, then drops the fraction again: on a machine
+    // measured for this, it read up to 1.8 s before the clock Sotto wrote down, and a stepped clock moves it further.
+    const reported = Date.parse('2026-10-16T21:48:01')
+    const written = { ...record, started: reported }
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:01 2026 ' + command))).toBe(true)
+    // ps reads a second later than it did: the boot time it adds to was rounded the other way.
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:02 2026 ' + command))).toBe(true)
+    // Any further, and it is another process that took the PID, whatever the clock said.
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:03 2026 ' + command))).toBe(false)
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:47:59 2026 ' + command))).toBe(false)
+    // The command line still has to be OpenCode's server.
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:01 2026 /usr/bin/python3 -m http.server'))).toBe(false)
+  })
 })
 
 describe('where a server says it listens', () => {

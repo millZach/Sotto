@@ -8,7 +8,7 @@ import { expect, it } from 'vitest'
 import { providerIdOfLabel, type ProviderId } from '../../src/shared/agents'
 import { OPENCODE_FORM_UNSHOWN } from '../../src/main/agents/opencodeRequests'
 import { opencodeRules } from '../../src/main/agents/opencode'
-import { ensureOpenCodeFolders, opencodeDatabase, opencodeEnvironment, opencodeFolders, opencodePassword, opencodeServerLedger, recordOpenCodeServer } from '../../src/main/agents/opencodeServer'
+import { ensureOpenCodeFolders, opencodeDatabase, opencodeEnvironment, opencodeFolders, opencodePassword, opencodeServerLedger, recordOpenCodeServer, systemProcessStart } from '../../src/main/agents/opencodeServer'
 import { describeAdapterContract } from './adapterContract'
 import { opencodeFixture, opencodeFixtureSkips } from '../fixtures/fakeOpenCodeFixture'
 import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
@@ -576,14 +576,21 @@ it('ends a server a crash left running when Sotto next connects, and nothing tha
     const other = spawned(['-e', 'setInterval(() => {}, 1000)'])
     const owned = spawned(['-e', 'setInterval(() => {}, 1000)', 'serve', '--hostname=127.0.0.1', '--port=0'])
     const ledger = opencodeServerLedger(folders)
-    await recordOpenCodeServer(ledger, { pid: left, startedAt, owner })
-    await recordOpenCodeServer(ledger, { pid: late, startedAt: startedAt + 3_600_000, owner })
-    await recordOpenCodeServer(ledger, { pid: other, startedAt, owner })
-    await recordOpenCodeServer(ledger, { pid: owned, startedAt, owner: process.pid })
+    // Written down as Sotto writes a server down: by its own clock, and on macOS and Linux by when the system says it started.
+    const started = async (pid: number, offset = 0): Promise<{ started?: number }> => {
+      const reported = await systemProcessStart(pid)
+      return reported === undefined ? {} : { started: reported + offset }
+    }
+    await recordOpenCodeServer(ledger, { pid: left, startedAt, ...await started(left), owner })
+    await recordOpenCodeServer(ledger, { pid: late, startedAt: startedAt + 3_600_000, ...await started(late, 3_600_000), owner })
+    await recordOpenCodeServer(ledger, { pid: other, startedAt, ...await started(other), owner })
+    await recordOpenCodeServer(ledger, { pid: owned, startedAt, ...await started(owned), owner: process.pid })
+    if (process.platform !== 'win32') expect(JSON.parse(await readFile(join(ledger, `${left}.json`), 'utf8'))).toHaveProperty('started')
     // The left server has made its database, so the connect check's server does not race it.
     await expect.poll(() => existsSync(opencodeDatabase(folders)), { timeout: 15_000 }).toBe(true)
     await f.host.connect()
-    await expect.poll(() => running(left), { timeout: 5_000 }).toBe(false)
+    // Connect sweeps before it starts anything; what is left to wait for is this process reaping the server it ended.
+    await expect.poll(() => running(left), { timeout: 30_000 }).toBe(false)
     expect([late, other, owned].map(running)).toEqual([true, true, true])
     // What was swept is no longer written down; the record of a running Sotto's server stays.
     expect((await readdir(ledger)).sort()).toEqual([`${owned}.json`])
