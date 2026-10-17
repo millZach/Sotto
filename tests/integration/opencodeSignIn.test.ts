@@ -277,3 +277,21 @@ it('never lets a catalog read that answers late replace the newer client’s cat
     expect((await f.host.snapshot()).models.map(model => model.id)).toContain('opencode/newer-model')
   } finally { await f.cleanup() }
 })
+
+it('keeps a sign-in its page finished just before Cancel, and follows one OpenCode finished with nobody waiting', async () => {
+  const { f, signIn, requests, ok } = await signInFixture({ oauth: { 'xai:device': { mode: 'auto', code: 'QX7M-4LRT' } } })
+  try {
+    const attempt = waiting(await signIn.startBrowserSignIn({ sourceId: 'xai', methodId: 'device' }))
+    // The page finished in the browser, and Cancel was pressed before the dialog read it.
+    await writeFile(join(f.root, 'approve.json'), JSON.stringify({ integrationID: 'xai' }))
+    expect(await signIn.cancel({ attemptId: attempt.id })).toEqual({ status: 'ok' })
+    expect(await requests('integration.connect.oauth.cancel')).toEqual([])
+    await expect.poll(async () => (await f.host.snapshot()).models.some(model => model.source === 'xAI')).toBe(true)
+    // OpenCode finished a sign-in on its own, as one whose dialog went away does: the next read follows it.
+    expect(ok(await signIn.sources()).sources.find(source => source.id === 'anthropic')?.signedIn).toBeUndefined()
+    const held = JSON.parse(await readFile(join(f.root, 'credentials.json'), 'utf8')) as unknown[]
+    await writeFile(join(f.root, 'credentials.json'), JSON.stringify([...held, { id: 'cred_finished_alone', integrationID: 'anthropic', label: 'Anthropic', active: true, value: { type: 'key', key: 'fixture-unused' } }]))
+    expect(ok(await signIn.sources()).sources.find(source => source.id === 'anthropic')?.signedIn).toBeDefined()
+    await expect.poll(async () => (await f.host.snapshot()).models.some(model => model.source === 'Anthropic')).toBe(true)
+  } finally { await f.cleanup() }
+})

@@ -47,6 +47,8 @@ export class OpenCodeSignIn {
   private server: Promise<SignInServer> | undefined
   private readonly attempts = new Map<string, Attempt>()
   private integrations = new Map<string, Integration>()
+  /** The sources signed in at the last read, to notice a sign-in OpenCode finished with nobody waiting on it. */
+  private signedIn: string | undefined
   private idle: ReturnType<typeof setTimeout> | undefined
   private busy = 0
   private closed = false
@@ -125,7 +127,9 @@ export class OpenCodeSignIn {
     const shown = models.filter(model => model.enabled !== false && model.status !== 'deprecated')
     // Zen's free models are counted under their own provider; every other model under the source that signs it in.
     const counted = shown.map(model => model.providerID === 'opencode' ? 'opencode' : integrationOf.get(model.providerID) ?? model.providerID)
-    return { status: 'ok', ...modelSourcesOf(list, counted) }
+    const sources = modelSourcesOf(list, counted)
+    this.signedIn = sources.sources.filter(source => source.signedIn).map(source => source.id).sort().join(' ')
+    return { status: 'ok', ...sources }
   }
   /** The answer once the sign-ins changed: the sources as they are now, and words for a model list that was not read again. */
   private async afterChange(server: SignInServer): Promise<{ status: 'ok'; sources: ModelSources; warning?: string }> {
@@ -139,9 +143,18 @@ export class OpenCodeSignIn {
     return this.integrations.get(sourceId)
   }
 
+  /**
+   * The sources as OpenCode has them now. A browser sign-in OpenCode finished after its dialog closed changed them with
+   * nobody reading the result, so a change since the last read moves the threads to it as any sign-in does.
+   */
   sources(): Promise<ModelSources> {
-    return this.use(server => this.read(server).catch((): ModelSources => ({ status: 'refused', message: SIGN_IN_WORDS.notRunning })),
-      message => ({ status: 'refused', message }))
+    return this.use(async server => {
+      const before = this.signedIn
+      let now: ModelSources
+      try { now = await this.read(server) } catch { return { status: 'refused', message: SIGN_IN_WORDS.notRunning } }
+      if (before === undefined || before === this.signedIn) return now
+      return (await this.afterChange(server)).sources
+    }, message => ({ status: 'refused', message }))
   }
 
   signInWithKey(request: unknown): Promise<SignInResult> {
@@ -278,11 +291,20 @@ export class OpenCodeSignIn {
       return { status: 'not-opened', message: SIGN_IN_WORDS.pageNotOpened, address: attempt.url }
     }
   }
+  /** Stops a waiting browser sign-in. One its page finished just before is OpenCode's now, so it is followed as finished. */
   async cancel(request: unknown): Promise<SignInDone> {
     const { attemptId } = signInAttemptRequestSchema.parse(request)
     const attempt = this.attempts.get(attemptId)
     if (!attempt) return { status: 'ok' }
     this.attempts.delete(attemptId)
+    const path = `/api/integration/${encodeURIComponent(attempt.sourceId)}/connect/oauth/${encodeURIComponent(attemptId)}`
+    const finished = await attempt.server.client.request('GET', path, { query: this.location })
+      .then(value => attemptStatusSchema.parse(value).data.status === 'complete', () => false)
+    if (finished) {
+      this.log('opencode-sign-in-complete')
+      await this.use(server => this.afterChange(server), () => undefined)
+      return { status: 'ok' }
+    }
     await this.cancelNative(attempt.server, attempt.sourceId, attemptId)
     this.log('opencode-sign-in-cancelled')
     this.rest()

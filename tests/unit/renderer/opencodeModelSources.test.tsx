@@ -261,6 +261,53 @@ describe('Add a model source', () => {
     expect(api.reopen).not.toHaveBeenCalled()
   })
 
+  it('still shows a key OpenCode kept when Cancel was pressed while it was saving', async () => {
+    type Saved = Awaited<ReturnType<OpenCodeSignInBridge['signInWithKey']>>
+    let answer: (value: Saved) => void = () => undefined
+    await mount(bridge({ signInWithKey: vi.fn(() => new Promise<Saved>(resolve => { answer = resolve })) }))
+    await openDialog()
+    const dialog = await pick(/^Anthropic,/u)
+    fireEvent.change(within(dialog).getByLabelText('Anthropic API key'), { target: { value: KEY } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Sign in to Anthropic with this key' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel signing in to Anthropic' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await act(async () => { answer({ status: 'ok', sources: signedAnthropic() }) })
+    const list = screen.getByRole('list', { name: 'Model sources Sotto’s OpenCode can use' })
+    expect(within(list).getByText('Anthropic')).toBeVisible()
+    expect(within(list).getByText('5 models')).toBeVisible()
+    expect(screen.getByText(/^Signed in to Anthropic\. Its 5 models are in the model menu/u)).toBeVisible()
+  })
+
+  it('reads the sign-ins again when a key Cancel was pressed over answers without saying it was saved', async () => {
+    type Saved = Awaited<ReturnType<OpenCodeSignInBridge['signInWithKey']>>
+    let answer: (value: Saved) => void = () => undefined
+    let saved = false
+    const api = await mount(bridge({ signInWithKey: vi.fn(() => new Promise<Saved>(resolve => { answer = resolve })), sources: vi.fn(async () => saved ? signedAnthropic() : read()) }))
+    await openDialog()
+    const dialog = await pick(/^Anthropic,/u)
+    fireEvent.change(within(dialog).getByLabelText('Anthropic API key'), { target: { value: KEY } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Sign in to Anthropic with this key' }))
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    saved = true
+    await act(async () => { answer({ status: 'refused', message: SIGN_IN_WORDS.keyUnknown('Anthropic') }) })
+    await waitFor(() => expect(api.sources).toHaveBeenCalledTimes(2))
+    expect(await within(screen.getByRole('list', { name: 'Model sources Sotto’s OpenCode can use' })).findByText('5 models')).toBeVisible()
+  })
+
+  it('cancels a waiting browser sign-in when the page it is on closes under it', async () => {
+    const api = await mount(bridge({
+      startBrowserSignIn: vi.fn(async () => ({ status: 'waiting' as const, attempt: { id: 'con_8', sourceId: 'openai', mode: 'auto' as const, page: 'auth.openai.com/oauth/authorize' } })),
+    }))
+    await openDialog()
+    const dialog = await pick(/^OpenAI,/u)
+    fireEvent.click(within(dialog).getByRole('radio', { name: /ChatGPT account/u }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open the OpenAI sign-in page in your browser' }))
+    await within(dialog).findByText('Finish signing in on the OpenAI page that opened in your browser.')
+    cleanup()
+    expect(api.cancel).toHaveBeenCalledWith({ attemptId: 'con_8' })
+  })
+
   it('says when the browser did not open the page, shows its address to open by hand, and keeps Open the page again', async () => {
     const address = 'https://accounts.x.ai/oauth2/device?user_code=QX7M-4LRT'
     const api = await mount(bridge({
