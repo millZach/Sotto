@@ -4,7 +4,7 @@ import { watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend,
 import { watcherRefusal, type WatcherService } from './watcher'
 import type { AgentControl } from './control'
 import type { ClientIdentity } from './hostService'
-import { isWatchedRow, takesPartInActiveRequest, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest } from '../../shared/watcherRoom'
+import { isWatchedRow, takesPartInActiveRequest, watcherTakeovers, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest } from '../../shared/watcherRoom'
 
 /** A phone reads the room, never the persisted control record or the desktop's aggregate shell. */
 export class WatcherPhoneService {
@@ -77,6 +77,7 @@ export class WatcherPhoneService {
     draftDeliveries: this.control.watcherSendRecords().deliveries.filter(row => row.threadId === current?.id).map(row => ({ draftId: row.draftId, status: row.status })),
     runtimeMode: room.runtimeMode, ...(standing ? { standingWatches: room.standingWatches } : {}), ownChanges: room.ownChanges,
     receiptGroups, watchedThreads, needsYou, inFlight: room.inFlight, inFlightLimit: room.inFlightLimit,
+    takeovers: watcherTakeovers(room).map(line => ({ target: line.target, title: thread(line.target)?.title ?? 'Unavailable thread', at: line.at })),
     working: room.currentOptions?.status === 'running' || room.inFlight > 0, recoveryNotice: room.recoveryNotice, observedAt: room.observedAt })
   }
   async send(request: WatcherPhoneSend, client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, standing = true): Promise<WatcherPhoneSendResult> {

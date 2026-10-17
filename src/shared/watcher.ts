@@ -230,6 +230,10 @@ export type WatcherDisplayPrompt = z.infer<typeof watcherDisplayPromptSchema>
 export const watcherHandoverProvenanceSchema = z.object({ prefixLength: counter, prefixDigest: z.string().regex(/^[a-f0-9]{64}$/u),
   source: watcherThreadTargetSchema, provider: watcherProviderSchema, counts: handoverCountsSchema }).strict()
 export type WatcherHandoverProvenance = z.infer<typeof watcherHandoverProvenanceSchema>
+/** How many read marks, and read times, the record keeps; past it the oldest go. */
+export const WATCHER_READ_MARKS_MAX = 500
+/** What a read mark says is new: a turn that finished, a question or permission waiting, or a turn that failed. */
+export const watcherReadMarkKindSchema = z.enum(['finished', 'question', 'permission', 'failed'])
 export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, rootUserMessageId: id,
   standingWatchId: z.uuid().optional(),
   displayPrompt: watcherDisplayPromptSchema.optional(),
@@ -273,6 +277,14 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   // Exact negative reads fence late admission. These are scoped identities only, never protocol bodies.
   remoteAbsences: z.array(z.object({ operationId: z.uuid(), master: watcherIdentitySchema, clientId: id, observedAt: time }).strict()).max(1_000).optional(),
   wakeEventIds: z.array(id).max(1_000).optional(),
+  /**
+   * Read marks (CONTEXT.md): the threads whose news the user has not seen, oldest first. `newsId` names the news itself
+   * (the finished or failed turn, or the requests waiting), so the same news never marks a thread twice. Text-free.
+   */
+  readMarks: z.array(z.object({ target: watcherThreadTargetSchema, kind: watcherReadMarkKindSchema, newsId: id, at: time }).strict())
+    .max(WATCHER_READ_MARKS_MAX).optional(),
+  /** When the user last read each thread's news, newest last: what list_threads gives as `userReadAt`. */
+  userReads: z.array(z.object({ target: watcherThreadTargetSchema, readAt: time }).strict()).max(WATCHER_READ_MARKS_MAX).optional(),
 }).strict().superRefine((record, context) => {
   const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
   const unique = (values: string[]) => new Set(values).size === values.length
@@ -315,6 +327,8 @@ export type WatcherRequest = z.infer<typeof watcherRequestSchema>
 export type WatcherPromptTurn = z.infer<typeof watcherPromptTurnSchema>
 export type WatcherOperation = z.infer<typeof watcherOperationSchema>
 export type WatcherRecord = z.infer<typeof watcherRecordSchema>
+export type WatcherReadMark = NonNullable<WatcherRecord['readMarks']>[number]
+export type WatcherReadMarkKind = z.infer<typeof watcherReadMarkKindSchema>
 export function emptyWatcherRecord(): WatcherRecord {
   return { version: 1, current: null, creation: null, history: [], requests: [], operations: [], reservations: [], reads: [] }
 }

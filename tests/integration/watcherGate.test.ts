@@ -158,6 +158,9 @@ it.each([true, false])('keeps a restored Watcher selection, drafts, deliveries, 
   const threadId = randomUUID(), hostId = randomUUID(), draftId = randomUUID(), at = new Date().toISOString()
   const record = emptyWatcherRecord()
   record.current = { target: { hostId, threadId }, projectId: 'project', provider: 'codex', creationOperationId: randomUUID(), createdAt: at }
+  // Read marks and read times are Watcher's too, and stable keeps them as they were (ADR-0072).
+  record.readMarks = [{ target: { hostId, threadId: 'worker' }, kind: 'question', newsId: 'requests:synthetic', at }]
+  record.userReads = [{ target: { hostId, threadId: 'read-worker' }, readAt: at }]
   saved.watcher = identityPresent ? record : emptyWatcherRecord()
   const attachment = { id: randomUUID(), name: 'Synthetic kept.png', mimeType: 'image/png', sizeBytes: 8, digest: 'a'.repeat(64) }
   Object.assign(saved, { activeThreadId: threadId, activeProjectId: 'project', draft: 'Synthetic retained draft',
