@@ -1,3 +1,4 @@
+import { startsThread } from '../../shared/threadStarts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
@@ -1022,8 +1023,8 @@ export class SocketHostService implements HostService {
       this.snapshotEpoch++ // A read already in flight cannot retire this newly acknowledged revision.
       this.notifyState()
       this.refreshRetainedShell()
-    // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, never the host's banner.
-    } else this.publish(command.type === 'continue-agent' ? { ...state, error: before.error } : state, Boolean(retainedId && !state.error))
+    // Continuing an agent or forking at a reply answers where it was asked (#1028): its refusal is this command's alone.
+    } else this.publish(startsThread(command) ? { ...state, error: before.error } : state, Boolean(retainedId && !state.error))
     const acknowledged = this.state()
     // Typing changes no history. Its own acknowledgement settles the save; observed pushes update the rest.
     if (command.type === 'compose' || command.type === 'save-thread-draft') {
@@ -1060,7 +1061,7 @@ export class SocketHostService implements HostService {
     const refreshed = generation === this.generation ? this.state() : acknowledged
     // State refreshes cannot replace this command's own answer outcome.
     return accepted ? { ...refreshed, error: null }
-      : command.type === 'answer' || command.type === 'send' || command.type === 'continue-agent' ? { ...refreshed, error: state.error } : refreshed
+      : command.type === 'answer' || command.type === 'send' || startsThread(command) ? { ...refreshed, error: state.error } : refreshed
   }
   async receipt(commandId: string, answer?: HostAnswerTarget): Promise<HostReceipt> {
     return this.read(hostReceiptSchema, await this.call({ op: 'receipt', commandId, ...(answer ? { answer } : {}) }))
