@@ -18,7 +18,7 @@ const model = (provider: 'claude' | 'codex', native: string, name: string, effor
   id: publicProviderEntityId(provider, 'model', native), name, provider: provider === 'claude' ? 'Claude Code' : 'Codex', providerId: provider, ready,
   reasoningEfforts: efforts, ...(efforts.length ? { defaultReasoningEffort: 'medium' } : {}), runtimeModes: [...MODES] })
 
-function state(claudeReady = true, muse = false): AgentState {
+function state(claudeReady = true, devin = false): AgentState {
   return threadsStateFixture({ cloneOverrides: false,
     configuration: { ...defaultAgentConfiguration(), enabledProviders: ['claude', 'codex'] },
     host: { connected: true, name: 'Agents', version: '', capabilities: caps, projects: [], threads: [],
@@ -26,11 +26,11 @@ function state(claudeReady = true, muse = false): AgentState {
         { id: 'codex', connection: 'connected', name: 'Codex', version: '', capabilities: caps }],
       models: [model('claude', 'opus', 'Opus 5.5', FIVE, claudeReady), model('claude', 'sonnet', 'Sonnet 5.5', FIVE, claudeReady), model('claude', 'haiku', 'Haiku 5.5', [], claudeReady),
         model('codex', 'gpt-6.1-sol', 'GPT-6.1 Sol', FIVE), model('codex', 'gpt-6-astra', 'GPT-6 Astra', FIVE), model('codex', 'gpt-6-luna', 'GPT-6 Luna', ['low', 'medium', 'high']),
-        ...muse ? [{ ...model('codex', 'muse-wonder-full-1.0', 'Muse Wonder Full', FIVE), id: publicProviderEntityId('muse', 'model', 'muse-wonder-full-1.0'), provider: 'Muse', providerId: 'muse' as const }] : []] },
+        ...devin ? [{ ...model('codex', 'swe-1', 'Devin SWE', FIVE), id: publicProviderEntityId('devin', 'model', 'swe-1'), provider: 'Devin', providerId: 'devin' as const }] : []] },
     topLevel: { activeThreadId: null, activeProjectId: null } })
 }
-function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true, muse = false) {
-  const agents = state(claudeReady, muse)
+function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true, devin = false) {
+  const agents = state(claudeReady, devin)
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(agents, vi.fn(async () => agents)))
   const update = vi.fn<(patch: SettingsPatch) => Promise<boolean>>(async () => true)
   const open = vi.fn()
@@ -97,9 +97,9 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
     fireEvent.click(within(orchestrating).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
     fireEvent.click(screen.getByRole('tab', { name: 'Codex' }))
     expect(screen.getByRole('option', { name: 'GPT-6.1 Sol' })).toBeEnabled()
-    fireEvent.click(screen.getByRole('tab', { name: 'Muse' }))
-    expect(screen.getByRole('option', { name: /^Muse Wonder Full/u })).toBeDisabled()
-    expect(screen.getByRole('option', { name: /^Muse Wonder Full/u })).toHaveTextContent('Watcher can’t run on Muse yet')
+    fireEvent.click(screen.getByRole('tab', { name: 'Devin' }))
+    expect(screen.getByRole('option', { name: /^Devin SWE/u })).toBeDisabled()
+    expect(screen.getByRole('option', { name: /^Devin SWE/u })).toHaveTextContent('Watcher can’t run on Devin yet')
     fireEvent.click(screen.getByRole('button', { name: 'Close model picker' }))
     expect(within(orchestrating).getByRole('combobox', { name: /^Choose Watcher’s model\. Now Opus 5\.5/u })).toBeInTheDocument()
     expect(within(orchestrating).getByText('Permissions, Watcher’s own')).toBeInTheDocument()

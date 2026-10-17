@@ -15,6 +15,7 @@ import { pendingSettingsStore, settingValues, usePendingSettings } from '../../a
 import { ProviderMark } from '../../agents/ProviderMark'
 import { ChoiceChip, effortChoices, RUNTIME_LABELS, watcherPermissionFixedReason } from '../../agents/ThreadOptions'
 import { useOptionalApp } from '../../state/AppContext'
+import { useOwlFeature } from '../../state/owlFeature'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
 import { WatcherPermissionChip } from '../../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../../watcher/watcherRoom'
@@ -337,6 +338,8 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   const room = useWatcherRoom()
   const app = useOptionalApp()
   const pending = usePendingSettings(watcher?.id ?? '')
+  // Muse is named only where its own gate shows it (ADR-0072), as Watcher's first entry names it.
+  const watcherProviders = useOwlFeature('muse') ? 'Codex, Claude Code, Grok Build or Muse' : 'Codex, Claude Code or Grok Build'
   const role = read.role
   // While Watcher runs, the card shows what it is on; before it exists, what it will start on.
   const drawn = watcher ? settingValues(state, watcher) : null
@@ -369,7 +372,7 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
           <ModelPicker models={[...catalog]} modelId={shown.modelId} disabled={fixedReason !== undefined} label={`Choose Watcher’s model. Now ${name}`}
             unavailable={item => watcherProviderOf(item) === null ? `Watcher can’t run on ${item.providerId ? PROVIDER_LABELS[item.providerId] : item.provider} yet` : undefined}
             note={watcher ? 'Watcher’s model: the same choice as the model chip under its composer. Another provider’s model starts a new Watcher, and this conversation stays in Watcher history.'
-              : 'Watcher’s model: the same choice as the model chip under its composer. Watcher runs on Codex, Claude Code or Grok Build.'}
+              : `Watcher’s model: the same choice as the model chip under its composer. Watcher runs on ${watcherProviders}.`}
             onChange={id => choose(chosenModelId(catalog, id, shown.modelId), undefined)} /></div>
         <div className="worker-role__field"><span aria-hidden="true">Effort</span>
           {efforts.length > 0 && model ? <EffortPicker key={shown.modelId} value={shown.reasoningEffort ?? model.defaultReasoningEffort ?? ''} options={efforts} disabled={fixedReason !== undefined}
@@ -379,7 +382,7 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
         </div>
         <div className="worker-role__field"><span aria-hidden="true">Permissions, Watcher’s own</span>
           <WatcherPermissionChip model={model} provider={providerName} inForce={watcher?.runtimeMode} disabled={fixedReason !== undefined} fixedReason={fixedReason} flip /></div>
-      </div> : <p className="worker-role__none">Watcher runs on Codex, Claude Code or Grok Build. Connect one to choose its model.</p>}
+      </div> : <p className="worker-role__none">Watcher runs on {watcherProviders}. Connect one to choose its model.</p>}
       {fixedReason ? <p className="worker-role__note">{fixedReason}</p> : null}
       {refusal ? <p className="worker-role__note" role="alert">{refusal}</p> : null}
       {notes.map(note => <p key={note} className="worker-role__note" data-kind="moved">{note}</p>)}

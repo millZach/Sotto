@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, parsePublicProviderEntityId, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
+import { agentRuntimeModeSchema, everyProvider, parsePublicProviderEntityId, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
 import { resolveModel } from './modelCatalog'
 import { nearestRuntimeMode, RUNTIME_MODE_ORDER } from './newThreadDefaults'
 import { effortKey, effortRank } from './reasoningEfforts'
@@ -108,10 +108,13 @@ export const RUNTIME_MODE_WORDS: Readonly<Record<AgentRuntimeMode, string>> = {
   'approval-required': 'Ask for approval', 'auto-accept-edits': 'Allow edits', auto: 'Auto', 'full-access': 'Full access',
 }
 
-/** Watcher runs where its tools do: Codex, Claude Code and Grok Build (ADR-0073, `watcherProviderSchema`). */
-const WATCHER_PROVIDERS: ReadonlySet<ProviderId> = new Set(['codex', 'claude', 'grok'])
+/**
+ * The providers Watcher runs on, as `watcherProviderSchema` names them (ADR-0073, ADR-0079): Orchestrating's model is one
+ * of theirs. A provider is named here once Watcher runs on it; one that is not is never Orchestrating's.
+ */
+const WATCHER_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'muse'])
 /** The order a role with no ready default looks through for one of a provider's own models. */
-const PROVIDER_ORDER: readonly ProviderId[] = ['claude', 'codex', 'grok', 'muse', 'devin']
+const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin'])
 /** Whether a role can run on a model: Orchestrating only on a provider Watcher can run on. */
 export function roleCanUse(role: WorkerRoleId, model: Pick<AgentModel, 'providerId'>): boolean {
   return role !== 'orchestrating' || (model.providerId !== undefined && WATCHER_PROVIDERS.has(model.providerId))

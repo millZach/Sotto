@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { publicProviderEntityId, type AgentModel, type AgentRuntimeMode, type ProviderId } from '../../../src/shared/agents'
-import { capRuntimeMode, fitEffort, isRoleDefault, parseWorkerRoleChoices, roleInForce, roleStartNote, startFromRole, withRoleRow, WORKER_ROLE_IDS,
+import { capRuntimeMode, fitEffort, isRoleDefault, parseWorkerRoleChoices, roleCanUse, roleInForce, roleStartNote, startFromRole, withRoleRow, WORKER_ROLE_IDS,
   type WorkerRoleChoices, type WorkerRoleId } from '../../../src/shared/workerRoles'
 
 const ALL: readonly AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
@@ -65,9 +65,14 @@ describe('worker roles', () => {
     // Grok Build offers no Extra high and no Allow edits: the nearest it offers, never wider.
     expect(table(GROK)).toMatchObject({ orchestrating: ['grok-4.7-build', 'high', undefined], building: ['grok-4.7-build', 'high', 'approval-required'],
       research: ['grok-4.6-build', 'medium', 'approval-required'] })
-    // Watcher cannot run on Muse yet (ADR-0079), and a role with no Muse default takes Muse's own first model.
+    // Watcher runs on Muse (ADR-0079), so Orchestrating takes Muse's own first model, as a role with no Muse default does.
     const muse = table(MUSE)
-    expect(muse.orchestrating).toBeNull()
+    expect(muse.orchestrating).toEqual(['muse-wonder-full-1.0', 'medium', undefined])
+    expect(roleInForce('orchestrating', {}, MUSE).fallback?.index).toBe(-1)
+    expect(roleCanUse('orchestrating', { providerId: 'muse' })).toBe(true)
+    // Devin cannot host Watcher's tools, so Orchestrating never runs there; other roles can.
+    expect(roleCanUse('orchestrating', { providerId: 'devin' })).toBe(false)
+    expect(roleCanUse('research', { providerId: 'devin' })).toBe(true)
     expect(muse).toMatchObject({ building: ['muse-wonder-full-1.0', 'xhigh', 'auto-accept-edits'], research: ['muse-wonder-1.0', 'low', 'approval-required'],
       'computer-use': ['muse-wonder-full-1.0', 'medium', 'full-access'] })
     expect(roleInForce('computer-use', {}, MUSE).fallback?.index).toBe(-1)
