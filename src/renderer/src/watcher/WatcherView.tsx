@@ -26,7 +26,7 @@ import { BrowserPageRouteContext } from '../tools/webLinks'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
 import { watcherTakeovers } from '../../../shared/watcherRoom'
 import { rowStatus } from '../agents/threadFacts'
-import { threadForTarget, useReadMarksCleared, useWatcherRoom, type WatcherRoom } from './watcherRoom'
+import { threadForTarget, useWatcherRoom, type WatcherRoom } from './watcherRoom'
 import { placeTakeovers, WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
 import { WatcherStopAll } from './WatcherStopAll'
 import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView, type RoomTab } from './WatcherBeside'
@@ -474,9 +474,6 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     if (refocus) (listOpener.current?.isConnected ? listOpener.current : listButton.current)?.focus()
   }, [])
 
-  // A thread open beside Watcher is being read: its read mark goes as it opens, and any news it gets while open.
-  useReadMarksCleared(room, state, [besideRow?.thread.id ?? null])
-
   // What a receipt card, a takeover line or Stop all says of a thread: the window's own facts for it, as All threads
   // shows them, or the room's last word on one this window does not list.
   const entries = useMemo(() => new Map(groups.flatMap(group => group.entries).map(entry => [entry.overview.thread.id, entry] as const)), [groups])
@@ -546,8 +543,6 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     </section>
     <WatcherDock updateControl={updateControl} />
     <PageWindowControls />
-    {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}
-      marks={room?.readMarks} onMarkRead={room?.markRead ?? null}
-      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
+    {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
   </div>
 }

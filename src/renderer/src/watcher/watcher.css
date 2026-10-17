@@ -406,13 +406,3 @@
 .watcher-stop__result[data-result='uncertain'] > svg { color: var(--watcher-needs-ink); }
 .watcher-stop__said { display: block; color: var(--tt-text-2); }
 .watcher-stop__result[data-result='uncertain'] .watcher-stop__said { color: var(--watcher-needs-ink); }
-
-/* ---------- Read marks in All threads (dot A) ---------- */
-/* A dot before a row's name while its thread has news the user has not seen; over the list, how many, and Mark all read. */
-.watcher-row__dot { display: block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); }
-.watcher-row__open > .watcher-row__dot { align-self: center; margin-right: 7px; }
-.watcher-list__news { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; margin: 0 8px 2px; padding: 0 2px 0 6px; color: var(--tt-text-2); font-size: 12.5px; }
-.watcher-list__news-count { display: inline-flex; align-items: center; gap: 7px; }
-.watcher-list__mark-read { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-link); font: inherit; font-size: 12.5px; cursor: pointer; }
-.watcher-list__mark-read:hover { background: var(--tt-hover); color: var(--tt-text); }
-.watcher-list__error { flex: none; margin: 0 14px 4px; color: var(--tt-error-text); font-size: 12.5px; }

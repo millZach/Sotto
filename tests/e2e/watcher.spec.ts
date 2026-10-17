@@ -36,7 +36,7 @@ const evidenceRoot = evidenceDirectory('artifacts/watcher-room')
 const permissionEvidence = evidenceDirectory('artifacts/watcher-permission')
 /** The handover after a provider change (ADR-0073, #1026): captures for its note. */
 const handoverEvidence = evidenceDirectory('artifacts/watcher-handover')
-/** Receipt cards, the takeover line, Stop all and read marks (#1120): captures for their note. */
+/** Receipt cards, the takeover line and Stop all (#1120): captures for their note. */
 const polishEvidence = evidenceDirectory('artifacts/watcher-room-polish')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
@@ -64,7 +64,7 @@ function launchOptions(theme: string, appearance: 'dark' | 'light', motion: 'nor
  */
 async function seedRoom(page: Page, options: { readonly current: boolean; readonly history?: boolean; readonly permissionConfirms?: boolean
   readonly ownChanges?: readonly WatcherOwnChange[]; readonly messages?: readonly AgentMessage[]
-  /** More of the projection, from the host's ID and the request's: receipts, takeovers, read marks. */
+  /** More of the projection, from the host's ID and the request's: receipts and takeovers. */
   readonly more?: (hostId: string, requestId: string) => Partial<WatcherRoomState>
   readonly stopResults?: WatcherStandInSeed['stopResults']; readonly stopDelayMs?: number }): Promise<void> {
   const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
@@ -199,7 +199,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose',
       '.receipt-card__lead', '.receipt-card__name', '.receipt-link', '.receipt-outcome', '.receipt-card__meta', '.sotto-line p', '.sotto-line time',
       '.watcher-stop-all__button', '.watcher-stop h2', '.watcher-stop__name', '.watcher-stop__where', '.watcher-stop__state', '.watcher-stop__note', '.watcher-stop__said',
-      '.watcher-stop .tt-button', '.watcher-list__news-count', '.watcher-list__mark-read']
+      '.watcher-stop .tt-button']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0).slice(0, 6)
       .flatMap((element, index) => surfaces(element).map(on => ({ name: `${selector} ${index}${element.getAttribute('data-tone') ? ` (${element.getAttribute('data-tone')})` : ''}`, ink: hex(getComputedStyle(element).color), on }))))
   })
@@ -865,9 +865,9 @@ test.describe("Watcher's room on the built app", () => {
     })
   })
 
-  test('receipt cards, the takeover line, Stop all and read marks, from the keyboard at every size', async () => {
+  test('receipt cards, the takeover line and Stop all, from the keyboard at every size', async () => {
     // Watcher started Visual gate flake and Footer links and stopped Grok voice previews in its reply; the user then sent
-    // in Weekly note, which Watcher was driving; Grok voice previews finished and Streaming WAV stall failed unseen.
+    // in Weekly note, which Watcher was driving.
     const more = (hostId: string, requestId: string): Partial<WatcherRoomState> => {
       const target = (threadId: string) => ({ hostId, threadId })
       const operation = (threadId: string, action: 'start' | 'stop') => ({ id: randomUUID(), requestId, retryKey: randomUUID(), digest: '0'.repeat(64), action, target: target(threadId),
@@ -879,8 +879,7 @@ test.describe("Watcher's room on the built app", () => {
       return { receipts, receiptReplies: receipts.map(item => ({ operationId: item.id, messageId: 'watcher-reply' })),
         requests: [{ id: requestId, watcher: target(CURRENT), rootUserMessageId: 'watcher-ask', state: 'active', createdAt: at(12), closedAt: null, participants }],
         watchedThreads: participants.map(part => ({ target: part.target, title: part.target.threadId, watched: part.state === 'participating', paused: false,
-          status: 'running' as const, connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [part] })),
-        readMarks: [{ target: target('grok-previews'), kind: 'finished', newsId: 'finished:g1', at: at(3) }, { target: target('wav-stall'), kind: 'failed', newsId: 'failed:w1', at: at(2) }] }
+          status: 'running' as const, connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [part] })) }
     }
     await onReleaseTrack('owl', async () => {
       for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance), async (launched) => {
@@ -942,27 +941,6 @@ test.describe("Watcher's room on the built app", () => {
         await page.keyboard.press('Escape')
         // Visual gate flake is still running, so Stop all stays, now for it alone.
         await expect(page.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' })).toBeFocused()
-        // Read marks: a dot before the name of each thread with news unseen, a count, and Mark all read.
-        await resizeContentWindow(launched, 1280, 800)
-        await allThreads(page).click()
-        const list = threadsList(page)
-        await expect(list.locator('.watcher-list__news-count')).toHaveText('2 new')
-        await expect(list.getByRole('button', { name: 'Open Grok voice previews beside Watcher' }).locator('.watcher-row__dot + .watcher-row__title')).toHaveText('Grok voice previews')
-        for (const [width, height] of SIZES) {
-          await resizeContentWindow(launched, width, height)
-          await settle(page)
-          expect(await pageBoundProblems(page), `read marks at ${width}x${height}`).toEqual([])
-          await captureInto(polishEvidence, launched, `polish-read-marks-${appearance}-${width}x${height}.png`)
-          await contrastHolds(page, `polish-read-marks-${appearance}-${width}x${height}`)
-        }
-        const markAll = list.getByRole('button', { name: 'Mark all read, 2 threads' })
-        await markAll.focus()
-        await page.keyboard.press('Enter')
-        await expect(list.locator('.watcher-list__news')).toHaveCount(0)
-        await expect(list.locator('.watcher-row__dot')).toHaveCount(0)
-        await expect(list.getByRole('searchbox', { name: 'Filter threads' })).toBeFocused()
-        await page.keyboard.press('Escape')
-        await expect(list).toHaveCount(0)
       })
     })
   })
@@ -1244,39 +1222,6 @@ test.describe("Watcher's room on the built app", () => {
       await settle(page)
       expect(await pageBoundProblems(page)).toEqual([])
       await capture(launched, 'room-main-sotto-dark-1280x800.png')
-    })
-  })
-
-  test('against main’s own Watcher, a thread that finishes unseen gets a read mark, and opening it clears it for good', async () => {
-    test.setTimeout(4 * 60_000)
-    await withMainWatcher('sotto-e2e-watcher-read-marks-', { reply: 'Done here.' }, async (launched, root) => {
-      const { page } = launched
-      await resizeContentWindow(launched, 1280, 800)
-      await openRoom(page)
-      await page.getByRole('textbox', { name: 'Watcher message' }).click()
-      await page.keyboard.type('Keep an eye on my threads.')
-      await page.getByRole('button', { name: 'Start Watcher and send' }).click()
-      await expect(watcherPane(page).locator('[data-role="assistant"]')).toContainText('Done here.')
-      // A thread the user is not looking at finishes a turn: main marks it, and the record keeps the mark.
-      const worker = await createWorker(page, join(root, 'worker'), 'Unseen worker')
-      await page.evaluate(async threadId => { await window.sotto!.agents!.command({ type: 'manual-send', threadId, text: 'Check the footer links.' }) }, worker.id)
-      await expect.poll(async () => (await mainRoom(page)).readMarks, { timeout: 60_000 })
-        .toEqual([{ target: worker.target, kind: 'finished', newsId: expect.stringMatching(/^finished:/u), at: expect.any(String) }])
-      await allThreads(page).click()
-      const list = threadsList(page)
-      await expect(list.locator('.watcher-list__news-count')).toHaveText('1 new')
-      // Its first exchange may rename it, so the row is found by its mark rather than its title.
-      const marked = list.locator('.watcher-row[data-unread="finished"]')
-      await expect(marked).toHaveCount(1)
-      await expect(marked.locator('.watcher-row__open > .watcher-row__dot')).toHaveCount(1)
-      await marked.locator('.watcher-row__open').click()
-      await expect(beside(page)).toBeVisible()
-      await expect.poll(async () => (await mainRoom(page)).readMarks).toEqual([])
-      // A fresh window reads the same answer from main: the mark stays gone.
-      await page.reload()
-      await openRoom(page)
-      await allThreads(page).click()
-      await expect(threadsList(page).locator('.watcher-row__dot')).toHaveCount(0)
     })
   })
 

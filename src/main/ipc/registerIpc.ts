@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
-  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_MARK_READ, watcherContinueHandoverRequestSchema, watcherMarkReadRequestSchema,
+  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, watcherContinueHandoverRequestSchema,
   watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetLimitRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
 import { externalLinkSchema } from '../../shared/externalLinks'
 import { questionPageOpenSchema, type QuestionPageOpen, type QuestionPageOpenResult } from '../../shared/questionPageOpen'
@@ -517,7 +517,6 @@ export function registerIpc(
       register(WATCHER_READ_HANDOVER, noPayloadSchema, 0, () => watcher.readHandover())
       register(WATCHER_CONTINUE_HANDOVER, watcherContinueHandoverRequestSchema, 1, request => watcher.continueWithHandover(request))
       register(WATCHER_DISMISS_HANDOVER, noPayloadSchema, 0, () => watcher.dismissHandover())
-      register(WATCHER_MARK_READ, watcherMarkReadRequestSchema, 1, request => watcher.markRead(request))
     }
     register(RECOVERY_NOTICE_LIST, noPayloadSchema, 0, () =>
       dependencies.recoveryNotices?.list() ?? [],

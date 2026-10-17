@@ -1,22 +1,15 @@
 import React, { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from 'react'
-import { CheckCheck, ChevronRight, Search } from 'lucide-react'
+import { ChevronRight, Search } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
-import type { WatcherReadMarkKind } from '../../../shared/watcher'
 import { WATCHER_GROUPS, watcherOverview, type WatcherGroup, type WatcherOverviewRow } from '../../../shared/watcherOverview'
 import { ProviderMark } from '../agents/ProviderMark'
 import { RowTime } from '../agents/ThreadSidebar'
 import { rowStatus, type ThreadRow } from '../agents/threadFacts'
 import { WATCHED_BY_WATCHER, WatchedBadge } from './WatcherOwl'
 import { WatchListToggle } from './WatchControls'
-import { useWatchActions, type WatcherReadMarkView, type WatcherReadNews } from './watcherRoom'
+import { useWatchActions } from './watcherRoom'
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
-const NO_MARKS: ReadonlyMap<string, WatcherReadMarkView> = new Map()
-
-/** What a read mark says is new, in the words its row's description and its dot's title use. */
-export const READ_MARK_NEWS: Record<WatcherReadMarkKind, string> = {
-  finished: 'a finished turn', question: 'a question', permission: 'a permission to answer', failed: 'a failed turn',
-}
 
 /** How each group reads: the ring and the status word's tone. Labels say what Sotto knows, not what an agent claims. */
 export const TONES: Record<WatcherGroup, string> = {
@@ -103,10 +96,8 @@ export function openAtRequestLabel(title: string, kind: WaitKind): string {
  * the thread beside Watcher; with Shift, in the Threads room. The owl at its end watches it, or stops, and is the row's
  * last stop (Zach's pick on October 13, 2026, watch B).
  */
-function OverviewRow({ entry, watched, current, mark, liveClock, onOpen }: {
+function OverviewRow({ entry, watched, current, liveClock, onOpen }: {
   readonly entry: OverviewEntry; readonly watched: boolean; readonly current: boolean; readonly liveClock: boolean; readonly onOpen: OpenThread
-  /** What the thread's unseen news is, when it has a read mark (Zach's pick on October 16, 2026, dot A). */
-  readonly mark: WatcherReadMarkKind | undefined
 }): ReactNode {
   const { overview, facts } = entry
   const thread = overview.thread
@@ -118,12 +109,10 @@ function OverviewRow({ entry, watched, current, mark, liveClock, onOpen }: {
   const needs = overview.group === 'Needs you'
   const kind = needs ? waitKind(entry) : null
   const asks = needs ? facts.request?.text.split('\n').find(line => line.trim() !== '')?.trim() ?? (kind === 'failed' ? 'Its last turn failed.' : undefined) : undefined
-  return <li className="watcher-row" data-group={tone} data-current={current || undefined} data-unavailable={overview.available ? undefined : true} data-unread={mark === undefined ? undefined : mark}>
+  return <li className="watcher-row" data-group={tone} data-current={current || undefined} data-unavailable={overview.available ? undefined : true}>
     <span className="watcher-row__ring" data-tone={facts.thread.status === 'error' || facts.thread.lastTurn?.status === 'failed' ? 'failed' : tone} aria-hidden="true" />
     <button type="button" className="watcher-row__open tt-focusable" aria-label={`Open ${thread.title} beside Watcher`} aria-describedby={describedBy} title={thread.title}
-      aria-current={current || undefined} {...threadPress(onOpen, thread.id, false)}>
-      {mark === undefined ? null : <span className="watcher-row__dot" aria-hidden="true" title={`New since you looked: ${READ_MARK_NEWS[mark]}`} />}
-      <span className="watcher-row__title">{thread.title}</span></button>
+      aria-current={current || undefined} {...threadPress(onOpen, thread.id, false)}><span className="watcher-row__title">{thread.title}</span></button>
     <RowTime row={facts} live={liveClock} />
     <span className="watcher-row__meta" aria-hidden="true">
       <span className="watcher-row__marks">
@@ -133,7 +122,7 @@ function OverviewRow({ entry, watched, current, mark, liveClock, onOpen }: {
       {where ? <span className="watcher-row__where">{where}</span> : null}
       <span className="watcher-row__status" data-tone={tone}>{word}{unavailable}</span>
     </span>
-    <span id={describedBy} className="tt-visually-hidden">{[mark === undefined ? '' : `New: ${READ_MARK_NEWS[mark]}`, facts.provider, where, `${word}${unavailable}`, watched ? WATCHED_BY_WATCHER : ''].filter(Boolean).join(', ')}</span>
+    <span id={describedBy} className="tt-visually-hidden">{[facts.provider, where, `${word}${unavailable}`, watched ? WATCHED_BY_WATCHER : ''].filter(Boolean).join(', ')}</span>
     {asks !== undefined && kind !== null ? <div className="watcher-row__asks">
       <span>{asks}</span>
       <button type="button" className="watcher-answer tt-focusable" aria-label={openAtRequestLabel(thread.title, kind)} {...threadPress(onOpen, thread.id, true)}>
@@ -147,9 +136,8 @@ function OverviewRow({ entry, watched, current, mark, liveClock, onOpen }: {
  * A group: its name and count, then its rows. Settled and archived threads stay reachable, folded at the end of Idle;
  * while the filter holds text, the fold shows what it matches, as the Threads sidebar's Settled shelf does.
  */
-function OverviewGroupList({ group, entries, watched, marks, besideId, liveClock, searching, onOpen }: {
+function OverviewGroupList({ group, entries, watched, besideId, liveClock, searching, onOpen }: {
   readonly group: WatcherGroup; readonly entries: readonly OverviewEntry[]; readonly watched: ReadonlySet<string>; readonly besideId: string | null
-  readonly marks: ReadonlyMap<string, WatcherReadMarkView>
   readonly liveClock: boolean; readonly searching: boolean; readonly onOpen: OpenThread
 }): ReactNode {
   const settledId = useId()
@@ -159,8 +147,7 @@ function OverviewGroupList({ group, entries, watched, marks, besideId, liveClock
   const settled = group === 'Idle' ? entries.filter(entry => entry.facts.settledBy !== null) : []
   const shown = group === 'Idle' ? entries.filter(entry => entry.facts.settledBy === null) : entries
   const row = (entry: OverviewEntry): ReactNode => <OverviewRow key={entry.overview.thread.id} entry={entry} watched={watched.has(entry.overview.thread.id)}
-    current={entry.overview.thread.id === besideId} liveClock={liveClock} onOpen={onOpen}
-    mark={entry.overview.thread.id === besideId ? undefined : marks.get(entry.overview.thread.id)?.kind} />
+    current={entry.overview.thread.id === besideId} liveClock={liveClock} onOpen={onOpen} />
   return <section className="watcher-group" data-tone={TONES[group]} aria-labelledby={headingId}>
     <h3 className="watcher-group__label" id={headingId} aria-label={`${group}, ${plural(entries.length, 'thread')}`}>
       <span>{group}</span><span className="watcher-group__count" aria-hidden="true">{entries.length}</span>
@@ -189,13 +176,9 @@ const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), [tabindex]:not([
  * inside itself, and closes on Escape, which returns focus to what opened it, or on a press outside it, which leaves
  * focus where that press put it. A thread opened from it closes it, and closing that thread returns focus there too.
  */
-export function WatcherOverviewList({ groups, watched, marks = NO_MARKS, onMarkRead = null, besideId, liveClock, anchor, opener, onOpen, onClose }: {
+export function WatcherOverviewList({ groups, watched, besideId, liveClock, anchor, opener, onOpen, onClose }: {
   readonly groups: readonly OverviewGroup[]
   readonly watched: ReadonlySet<string>
-  /** Read marks by thread ID: the dot before a row's name, and the count of what is new over the list. */
-  readonly marks?: ReadonlyMap<string, WatcherReadMarkView> | undefined
-  /** Mark all read; hands back main's refusal in its words, or null. Null where the bridge cannot. */
-  readonly onMarkRead?: ((reads: readonly WatcherReadNews[]) => Promise<string | null>) | null
   readonly besideId: string | null
   readonly liveClock: boolean
   /** All threads, which the list drops from. */
@@ -228,19 +211,6 @@ export function WatcherOverviewList({ groups, watched, marks = NO_MARKS, onMarkR
   // Once placed: until then it is measured unseen, and an unseen field cannot take focus.
   const placed = place !== null
   useLayoutEffect(() => { if (placed) filter.current?.focus() }, [placed])
-  // What is new: every listed thread with a read mark, except the one open beside Watcher, which is being read. Mark all
-  // read takes this news, as shown, and no news that came after.
-  const unread = groups.flatMap(group => group.entries).flatMap(entry => {
-    const mark = entry.overview.thread.id === besideId ? undefined : marks.get(entry.overview.thread.id)
-    return mark === undefined ? [] : [{ target: mark.target, newsId: mark.newsId }]
-  })
-  const [markError, setMarkError] = useState<string | null>(null)
-  const markAllRead = async (): Promise<void> => {
-    if (onMarkRead === null || unread.length === 0) return
-    // The button goes with the marks, so focus waits in the filter, where the list opened.
-    filter.current?.focus()
-    setMarkError(await onMarkRead(unread))
-  }
   const needle = query.trim().toLocaleLowerCase()
   const shown = needle === '' ? groups : groups.map(group => ({ group: group.group, entries: group.entries.filter(entry => entry.overview.thread.title.toLocaleLowerCase().includes(needle)) }))
     .filter(group => group.entries.length > 0)
@@ -263,14 +233,8 @@ export function WatcherOverviewList({ groups, watched, marks = NO_MARKS, onMarkR
         <Search size={14} aria-hidden="true" /><span className="tt-visually-hidden">Filter threads</span>
         <input ref={filter} className="tt-focusable" type="search" value={query} placeholder="Filter threads" autoComplete="off" onChange={event => setQuery(event.currentTarget.value)} />
       </label>
-      {unread.length ? <div className="watcher-list__news">
-        <span className="watcher-list__news-count"><span className="watcher-row__dot" aria-hidden="true" />{unread.length} new</span>
-        {onMarkRead === null ? null : <button type="button" className="watcher-list__mark-read tt-focusable" aria-label={`Mark all read, ${plural(unread.length, 'thread')}`}
-          onClick={() => void markAllRead()}><CheckCheck size={14} aria-hidden="true" />Mark all read</button>}
-      </div> : null}
-      {markError === null ? null : <p className="watcher-list__error" role="alert">{markError}</p>}
       <div className="watcher-list__scroll">
-        {shown.map(({ group, entries }) => <OverviewGroupList key={group} group={group} entries={entries} watched={watched} marks={marks} besideId={besideId} liveClock={liveClock} searching={needle !== ''} onOpen={open} />)}
+        {shown.map(({ group, entries }) => <OverviewGroupList key={group} group={group} entries={entries} watched={watched} besideId={besideId} liveClock={liveClock} searching={needle !== ''} onOpen={open} />)}
         {groups.length === 0 ? <p className="watcher-list__none">No other threads yet. Threads you or Watcher start show here.</p>
           : shown.length === 0 ? <p className="watcher-list__none">No thread matches “{query.trim()}”.</p> : null}
       </div>

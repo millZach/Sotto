@@ -71,7 +71,6 @@ function fakeBridge(state: WatcherRoomState) {
     prepareStopAll: vi.fn(async () => ({ status: 'ok' as const, confirmationId: CONFIRMATION, targets: [target('footer-links')], expiresAt: new Date(NOW + 60_000).toISOString() })),
     stopAll: vi.fn(async (): Promise<WatcherStopAllResult> => ({ status: 'ok' as const, state: { ...state, watchedThreads: state.watchedThreads.map(row => ({ ...row, status: 'idle' as const })) },
       results: [{ target: target('footer-links'), status: 'stopped' as const, message: 'Stopped.' }] })),
-    markRead: vi.fn(async () => ok({ ...state, readMarks: [] })),
     onChanged: vi.fn((listener: (next: WatcherRoomState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }),
   }
   return { bridge: bridge as unknown as WatcherBridge & typeof bridge, publish: (next: WatcherRoomState) => { for (const listener of listeners) listener(next) } }
@@ -96,8 +95,6 @@ function renderRoom(room: WatcherRoomState, state: AgentState = agentState()) {
 }
 const paneReady = () => screen.findByRole('tab', { name: /^Watched, / })
 
-// The window is in front unless a test says otherwise: read marks clear only while the user can see it.
-beforeEach(() => { vi.spyOn(document, 'hasFocus').mockReturnValue(true) })
 beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); localStorage.clear(); sessionStorage.clear(); roomView.set({ besideId: null, share: 0.5, tab: 'conversation' }); firstMessage.clear() })
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
 
@@ -244,50 +241,6 @@ describe('Stop all', () => {
   })
 })
 
-describe('read marks', () => {
-  const marked = (): Partial<WatcherRoomState> => ({ readMarks: [{ target: target('footer-links'), kind: 'finished', newsId: 'finished:f1', at }, { target: target('wav-stall'), kind: 'failed', newsId: 'failed:w1', at }] })
-
-  it('put a dot before a row’s name in All threads, count what is new, and Mark all read clears them through main', async () => {
-    const { bridge } = renderRoom(roomState(marked()))
-    await paneReady()
-    fireEvent.click(screen.getByRole('button', { name: /^All threads, \d+\. Show the list$/ }))
-    const list = await screen.findByRole('dialog', { name: 'All threads' })
-    const row = within(list).getByRole('button', { name: 'Open Footer links beside Watcher' })
-    expect(row.querySelector('.watcher-row__dot')).not.toBeNull()
-    expect(row.querySelector('.watcher-row__dot')!.nextElementSibling).toHaveTextContent('Footer links')
-    expect(row).toHaveAccessibleDescription(/^New: a finished turn, /)
-    expect(within(list).getByRole('button', { name: 'Open Streaming WAV stall beside Watcher' })).toHaveAccessibleDescription(/^New: a failed turn, /)
-    expect(within(list).getByRole('button', { name: 'Open Weekly note beside Watcher' }).querySelector('.watcher-row__dot')).toBeNull()
-    expect(list).toHaveTextContent('2 new')
-    fireEvent.click(within(list).getByRole('button', { name: 'Mark all read, 2 threads' }))
-    await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ reads: [{ target: target('wav-stall'), newsId: 'failed:w1' }, { target: target('footer-links'), newsId: 'finished:f1' }] }))
-    await waitFor(() => expect(within(list).queryByText('2 new')).toBeNull())
-    expect(within(list).getByRole('searchbox')).toHaveFocus()
-  })
-
-  it('stay on a thread open while the window is behind another app or minimised, and go once it is in front again', async () => {
-    vi.mocked(document.hasFocus).mockReturnValue(false)
-    const { bridge } = renderRoom(roomState(marked()))
-    await paneReady()
-    act(() => { window.dispatchEvent(new Event('blur')) })
-    // The thread is open beside Watcher, but nobody can see it.
-    act(() => { roomView.set({ besideId: 'footer-links' }) })
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
-    expect(bridge.markRead).not.toHaveBeenCalled()
-    vi.mocked(document.hasFocus).mockReturnValue(true)
-    act(() => { window.dispatchEvent(new Event('focus')) })
-    await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ reads: [{ target: target('footer-links'), newsId: 'finished:f1' }] }))
-  })
-
-  it('go when the thread opens beside Watcher', async () => {
-    const { bridge } = renderRoom(roomState(marked()))
-    await paneReady()
-    fireEvent.click(screen.getByRole('button', { name: /^All threads, \d+\. Show the list$/ }))
-    fireEvent.click(within(await screen.findByRole('dialog', { name: 'All threads' })).getByRole('button', { name: 'Open Footer links beside Watcher' }))
-    await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ reads: [{ target: target('footer-links'), newsId: 'finished:f1' }] }))
-  })
-})
-
 describe('the room’s thread addresses', () => {
   it('answer as a search of the threads would, for threads keyed by host, by their own ID and with no host named', () => {
     const state = agentState()
@@ -300,20 +253,21 @@ describe('the room’s thread addresses', () => {
     }
   })
 
-  it('resolve every read mark without searching the threads once per mark', async () => {
+  it('resolve every watched thread without searching the threads once per thread', async () => {
     mockApp('watcher')
     const state = agentState()
     const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
     const connection = agentContextFixture(state, command, { threadDrafts: new ThreadDraftStore(command) })
     vi.mocked(useAgents).mockReturnValue(connection)
     vi.mocked(useOptionalAgents).mockReturnValue(connection)
-    const marks = state.host.threads.filter(thread => thread.kind !== 'watcher').map(thread => ({ target: target(thread.id), kind: 'finished' as const, newsId: `finished:${thread.id}`, at }))
-    const { bridge } = fakeBridge(roomState({ readMarks: marks }))
+    const rows = state.host.threads.filter(thread => thread.kind !== 'watcher').map(thread => ({ target: target(thread.id), title: thread.title, watched: true,
+      status: 'idle' as const, connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [] }))
+    const { bridge } = fakeBridge(roomState({ watchedThreads: rows }))
     const find = vi.spyOn(state.host.threads, 'find')
     let size = 0
-    const Probe = (): null => { size = useWatcherRoom()?.readMarks.size ?? 0; return null }
+    const Probe = (): null => { size = useWatcherRoom()?.watchedThreadIds.size ?? 0; return null }
     render(<WatcherRoomProvider bridge={bridge}><Probe /></WatcherRoomProvider>)
-    await waitFor(() => expect(size).toBe(marks.length))
+    await waitFor(() => expect(size).toBe(rows.length))
     expect(find).not.toHaveBeenCalled()
   })
 })

@@ -225,46 +225,6 @@ describe('desktop host routing', () => {
     expect(local.command).not.toHaveBeenCalled()
     expect((await router.threadDetail(hostEntityKey(REMOTE, 'thread')))?.threadId).toBe(hostEntityKey(REMOTE, 'thread'))
   })
-  it('tells Watcher’s read marks of each send it routed to a paired host’s thread, and of nothing else (ADR-0073)', async () => {
-    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
-    router.add(local.connection); router.add(remote.connection)
-    const routed = vi.fn()
-    const off = router.watcherHosts().subscribeDispatches!(routed)
-    await router.command({ type: 'manual-send', threadId: hostEntityKey(REMOTE, 'thread'), text: 'Reply' }, desktopWindowClient())
-    await router.command({ type: 'manual-send', threadId: hostEntityKey(LOCAL, 'thread'), text: 'Local' }, desktopWindowClient())
-    await router.command({ type: 'select-thread', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())
-    remote.command.mockResolvedValueOnce({ ...remote.state, error: 'The provider refused it.' })
-    await router.command({ type: 'manual-send', threadId: hostEntityKey(REMOTE, 'thread'), text: 'Refused' }, desktopWindowClient())
-    expect(routed.mock.calls).toEqual([[{ hostId: REMOTE, threadId: 'thread' }, { requests: [] }]])
-    off()
-  })
-  it('gives Watcher’s read marks the routed thread as it was before the send, though the host ends the turn before it answers (ADR-0073)', async () => {
-    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true }), remote = fixture(REMOTE, 'remote')
-    remote.state.host.threads = [{ ...remote.state.host.threads[0]!, lastTurn: { id: 't0', status: 'completed' } }]
-    router.add(remote.connection)
-    const routed = vi.fn()
-    router.watcherHosts().subscribeDispatches!(routed)
-    // A fast host: the turn the send started has ended, and its shell says so, before the command's answer arrives.
-    remote.command.mockImplementationOnce(async () => {
-      remote.state.host.threads = [{ ...remote.state.host.threads[0]!, lastTurn: { id: 't1', status: 'completed' } }]
-      return remote.state
-    })
-    await router.command({ type: 'manual-send', threadId: hostEntityKey(REMOTE, 'thread'), text: 'Reply' }, desktopWindowClient())
-    expect(routed.mock.calls).toEqual([[{ hostId: REMOTE, threadId: 'thread' }, { lastTurn: { id: 't0', status: 'completed' }, requests: [] }]])
-  })
-  it('tells Watcher’s read marks of no follow-up queued on a paired host, no resumed queue and no send into a running turn (ADR-0073)', async () => {
-    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true }), remote = fixture(REMOTE, 'remote')
-    router.add(remote.connection)
-    const routed = vi.fn()
-    router.watcherHosts().subscribeDispatches!(routed)
-    const threadId = hostEntityKey(REMOTE, 'thread')
-    // The host runs these later, or not at all, and this desktop does not hear when.
-    await router.command({ type: 'queue-followup', threadId, draftId: randomUUID(), text: 'Next' }, desktopWindowClient())
-    await router.command({ type: 'resume-followups', threadId }, desktopWindowClient())
-    remote.state.host.threads = [{ ...remote.state.host.threads[0]!, status: 'running', lastTurn: { id: 't1', status: 'running' } }]
-    await router.command({ type: 'manual-send', threadId, text: 'While it works' }, desktopWindowClient())
-    expect(routed).not.toHaveBeenCalled()
-  })
   it('stages an image on the host that runs its thread, or the selected host for the coordinator, and reads it back there (ADR-0031)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     const handle = { id: 'image', name: 'Shot.png', mimeType: 'image/png' as const, sizeBytes: 8, digest: 'a'.repeat(64) }

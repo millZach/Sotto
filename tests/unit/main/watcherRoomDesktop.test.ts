@@ -39,7 +39,6 @@ function fixture(watcherEnabled = true, streamingPublishCost = true) {
     readHandover: vi.fn((): WatcherHandoverRead => ({ status: 'refused', code: 'TARGET_CHANGED', message: 'There is no handover to read.', retryable: false })),
     continueWithHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
     dismissHandover: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
-    markRead: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
   }
   const send = vi.fn((state: WatcherRoomState) => { order.push(`send:${state.recoveryNotice}`); return available })
   const setLimit = vi.fn(async (limit: number) => { current = { ...current, inFlightLimit: limit } })

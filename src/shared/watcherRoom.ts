@@ -3,7 +3,7 @@ import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema
   watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema } from './watcher'
 import { watcherEventSchema } from './watcherNews'
 import { agentRuntimeModeSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
-import { watcherOwnChangeSchema, watcherReadMarkKindSchema, watcherStandingWatchSchema, WATCHER_READ_MARKS_MAX, type WatcherThreadTarget } from './watcher'
+import { watcherOwnChangeSchema, watcherStandingWatchSchema, type WatcherThreadTarget } from './watcher'
 
 /** Private desktop channels. A host may project the same state later without acquiring command authority. */
 export const WATCHER_GET = 'sotto:watcher:get'
@@ -18,7 +18,6 @@ export const WATCHER_UNWATCH_THREAD = 'sotto:watcher:unwatch-thread'
 export const WATCHER_READ_HANDOVER = 'sotto:watcher:read-handover'
 export const WATCHER_CONTINUE_HANDOVER = 'sotto:watcher:continue-handover'
 export const WATCHER_DISMISS_HANDOVER = 'sotto:watcher:dismiss-handover'
-export const WATCHER_MARK_READ = 'sotto:watcher:mark-read'
 export const WATCHER_RENDERER_ARGUMENT = '--sotto-watcher-enabled'
 /** Retained previews per desktop room or authenticated paired phone, never a shared capacity. */
 export const WATCHER_STOP_ALL_PREVIEW_LIMIT = 16
@@ -57,8 +56,6 @@ export const watcherRoomStateSchema = z.object({
    * there: its turn is not in the conversation the window holds.
    */
   receiptReplies: z.array(z.object({ operationId: z.uuid(), messageId: z.string() }).strict()).optional(),
-  /** Read marks (CONTEXT.md): the threads with news the user has not seen, what the news is, and which news it is. */
-  readMarks: z.array(z.object({ target: watcherThreadTargetSchema, kind: watcherReadMarkKindSchema, newsId: z.string().min(1).max(512), at: timestamp }).strict()).optional(),
 }).strict()
 export const watcherOpenRequestSchema = z.object({ provider: watcherProviderSchema,
   modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).optional() }).strict()
@@ -87,13 +84,6 @@ export const watcherHandoverReadSchema = z.union([
 ])
 export type WatcherHandoverRead = z.infer<typeof watcherHandoverReadSchema>
 export type WatcherWatchThreadRequest = z.infer<typeof watcherWatchThreadRequestSchema>
-/**
- * The threads whose news the user has now seen, each with the news the window showed: a mark goes only while it is still
- * that news, so news that came after the window last heard stays new.
- */
-export const watcherMarkReadRequestSchema = z.object({ reads: z.array(z.object({ target: watcherThreadTargetSchema, newsId: z.string().min(1).max(512) }).strict())
-  .min(1).max(WATCHER_READ_MARKS_MAX) }).strict()
-export type WatcherMarkReadRequest = z.infer<typeof watcherMarkReadRequestSchema>
 
 export type WatcherRoomState = z.infer<typeof watcherRoomStateSchema>
 type WatcherRoomRow = WatcherRoomState['watchedThreads'][number]
@@ -187,7 +177,5 @@ export interface WatcherBridge {
   readHandover?(): Promise<WatcherHandoverRead>
   continueWithHandover?(request: WatcherContinueHandoverRequest): Promise<WatcherRoomResult>
   dismissHandover?(): Promise<WatcherRoomResult>
-  /** Read marks (CONTEXT.md): the user has seen these threads' news. Older stand-ins omit it; the real Owl preload supplies it. */
-  markRead?(request: WatcherMarkReadRequest): Promise<WatcherRoomResult>
   onChanged(listener: (state: WatcherRoomState) => void): () => void
 }

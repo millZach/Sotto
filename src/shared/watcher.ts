@@ -235,16 +235,6 @@ export type WatcherDisplayPrompt = z.infer<typeof watcherDisplayPromptSchema>
 export const watcherHandoverProvenanceSchema = z.object({ prefixLength: counter, prefixDigest: z.string().regex(/^[a-f0-9]{64}$/u),
   source: watcherThreadTargetSchema, provider: watcherProviderSchema, counts: handoverCountsSchema }).strict()
 export type WatcherHandoverProvenance = z.infer<typeof watcherHandoverProvenanceSchema>
-/** How many read marks, and read times, the record keeps; past it the oldest go. */
-export const WATCHER_READ_MARKS_MAX = 500
-/** How many dispatched turns read marks wait on at once; past it the oldest go, unmarked. */
-export const WATCHER_READ_DISPATCHES_MAX = 200
-/** How many waiting requests a dispatch names as shown; past it, a digest of them all stands for the set. */
-export const WATCHER_READ_DISPATCH_REQUESTS_MAX = 200
-/** How many steers one dispatch follows into the turns they run as. */
-export const WATCHER_READ_DISPATCH_STEERS_MAX = 8
-/** What a read mark says is new: a turn that finished, a question or permission waiting, or a turn that failed. */
-export const watcherReadMarkKindSchema = z.enum(['finished', 'question', 'permission', 'failed'])
 export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, rootUserMessageId: id,
   standingWatchId: z.uuid().optional(),
   displayPrompt: watcherDisplayPromptSchema.optional(),
@@ -288,23 +278,6 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   // Exact negative reads fence late admission. These are scoped identities only, never protocol bodies.
   remoteAbsences: z.array(z.object({ operationId: z.uuid(), master: watcherIdentitySchema, clientId: id, observedAt: time }).strict()).max(1_000).optional(),
   wakeEventIds: z.array(id).max(1_000).optional(),
-  /**
-   * Read marks (CONTEXT.md): the threads whose news the user has not seen, oldest first. `newsId` names the news itself
-   * (the finished or failed turn, or the requests waiting), so the same news never marks a thread twice. Text-free.
-   */
-  readMarks: z.array(z.object({ target: watcherThreadTargetSchema, kind: watcherReadMarkKindSchema, newsId: id, at: time }).strict())
-    .max(WATCHER_READ_MARKS_MAX).optional(),
-  /**
-   * The turns Sotto dispatched whose end has not been read yet (read marks): the thread, Sotto's message for the turn when
-   * this computer knows it, the thread's newest turn and its waiting requests when the send went, Sotto's messages for the
-   * steers sent into that turn since, Watcher's operation for a send to a paired host, and when. Text-free.
-   */
-  readDispatches: z.array(z.object({ target: watcherThreadTargetSchema, messageId: id.optional(), operationId: z.uuid().optional(), priorTurnId: id.nullable(),
-    steerIds: z.array(id).max(WATCHER_READ_DISPATCH_STEERS_MAX).optional(),
-    requestIds: z.array(id).max(WATCHER_READ_DISPATCH_REQUESTS_MAX), requestsDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
-    at: time }).strict()).max(WATCHER_READ_DISPATCHES_MAX).optional(),
-  /** When the user last read each thread's news, newest last: what list_threads gives as `userReadAt`. */
-  userReads: z.array(z.object({ target: watcherThreadTargetSchema, readAt: time }).strict()).max(WATCHER_READ_MARKS_MAX).optional(),
 }).strict().superRefine((record, context) => {
   const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
   const unique = (values: string[]) => new Set(values).size === values.length
@@ -347,9 +320,6 @@ export type WatcherRequest = z.infer<typeof watcherRequestSchema>
 export type WatcherPromptTurn = z.infer<typeof watcherPromptTurnSchema>
 export type WatcherOperation = z.infer<typeof watcherOperationSchema>
 export type WatcherRecord = z.infer<typeof watcherRecordSchema>
-export type WatcherReadMark = NonNullable<WatcherRecord['readMarks']>[number]
-export type WatcherReadMarkKind = z.infer<typeof watcherReadMarkKindSchema>
-export type WatcherReadDispatch = NonNullable<WatcherRecord['readDispatches']>[number]
 export function emptyWatcherRecord(): WatcherRecord {
   return { version: 1, current: null, creation: null, history: [], requests: [], operations: [], reservations: [], reads: [] }
 }

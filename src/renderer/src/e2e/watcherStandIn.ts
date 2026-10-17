@@ -93,7 +93,6 @@ export function createE2EWatcherBridge(sotto: SottoBridge | undefined): WatcherB
       return { status: 'ok', results, state: publish({ watchedThreads: state.watchedThreads.map(row => stopped.some(item => same(item, row.target))
         ? { ...row, status: 'idle', backgroundWorkCount: 0 } : row) }) }
     },
-    markRead: async ({ reads }) => ({ status: 'ok', state: publish({ readMarks: (state.readMarks ?? []).filter(mark => !reads.some(item => same(item.target, mark.target) && item.newsId === mark.newsId)) }) }),
     onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
 }
