@@ -1,5 +1,6 @@
 import { parsePublicProviderEntityId, threadProviderOf, type AgentHostSnapshot, type AgentMessage, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailDelta, type ProviderId } from '../shared/agents'
 import type { HeldProviders } from '../shared/heldProviders'
+import type { WatcherPhonePrepareStopResult } from '../shared/watcherPhone'
 import type { StoredThreadEvent } from '../shared/threadEvents'
 import { catalogWithoutHeld, heldProviderOfProject } from '../main/agents/heldProviderGate'
 
@@ -192,6 +193,16 @@ export function namesHidden(value: Record<string, unknown>, scope: ProviderScope
       || (key === 'receipt' || key === 'reference') && namesHidden(fields, scope)
   })
 }
+/**
+ * Stop all's preview for a phone that does not know some providers: every thread Stop all will stop stays listed, so the
+ * confirmation names all it stops, and a thread of a provider the phone does not know is listed by its title alone, with
+ * no provider, which the phone can read.
+ */
+export function stopPreviewWithoutProviders(preview: WatcherPhonePrepareStopResult, unknown: HeldProviders): WatcherPhonePrepareStopResult {
+  if (!unknown.size || preview.status !== 'ok') return preview
+  return { ...preview, targets: preview.targets.map(target => unknownProvider(target.provider, unknown) ? { ...target, provider: null } : target) }
+}
+
 /**
  * A Watcher answer, a Watcher projection or a phone's Watcher state without a row that names a provider the client does not
  * know: any object in a list that names one (`namesHidden`) is left out, as a thread, worker, project, card or receipt of

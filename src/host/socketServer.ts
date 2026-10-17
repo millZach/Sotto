@@ -29,7 +29,7 @@ import type { PhoneTerminals } from '../shared/phoneTerminals'
 import type { WatcherHostRead } from '../shared/watcherHost'
 import type { WatcherThreadTarget } from '../shared/watcher'
 import { visibleWatcherState } from '../shared/watcherVisibility'
-import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, type ProviderScope } from './providerPeers'
+import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, type ProviderScope } from './providerPeers'
 import type { HeldProviders } from '../shared/heldProviders'
 import { SIGN_IN_WORDS, type OpenCodeHostCall } from '../shared/opencodeSignIn'
 import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
@@ -733,6 +733,12 @@ export async function startSocketServer(options: SocketServerOptions) {
       // Watching, sending to or answering in a thread of a provider this phone does not know is refused before Watcher hears
       // of it, and every answer is Watcher's phone state filtered for this phone as its shell is (#1107).
       refuseHiddenWatcherInput(peer, 'request' in request ? request.request : undefined)
+      // Stop all stops every thread Watcher drives, so its confirmation lists every one, a thread of a provider this phone
+      // does not know by its title alone; the general filter would leave such a thread out of the list but not out of the stop.
+      if (request.op === 'watcher-phone-prepare-stop-all') {
+        if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
+        return stopPreviewWithoutProviders(phone.prepareStop(peer.client), peer.unknownProviders)
+      }
       return watcherFor(peer, await (async () => { switch (request.op) {
         case 'watcher-phone-set-permission':
         case 'watcher-phone-watch':
@@ -783,9 +789,6 @@ export async function startSocketServer(options: SocketServerOptions) {
           receipts.record(peer.client.clientId, request.id, { digest, receipt, task })
           return task
         }
-        case 'watcher-phone-prepare-stop-all':
-          if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
-          return phone.prepareStop(peer.client)
         case 'watcher-phone-stop-all': {
           if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
           const digest = createHash('sha256').update(JSON.stringify([request.op, request.confirmationId])).digest('hex')

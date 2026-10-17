@@ -104,7 +104,9 @@ it('sends an older phone nothing of OpenCode from its shell, events, details or 
   expect(await peer.call('events', { op: 'events', afterSeq: 0 })).toMatchObject({ ok: true })
   expect(await peer.call('detail', { op: 'detail', threadId: codexThread })).toMatchObject({ ok: true })
   expect(await peer.call('phone-read', { op: 'watcher-phone-read' })).toMatchObject({ ok: true, result: { status: 'ok' } })
-  expect(await peer.call('prepare', { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true })
+  // Stop all stops every thread Watcher drives, so its confirmation lists the OpenCode one too, by its title alone.
+  expect(await peer.call('prepare', { op: 'watcher-phone-prepare-stop-all' })).toMatchObject({ ok: true, result: { status: 'ok', targets: [
+    { hostId, threadId: opencodeThread, title: 'OpenCode work', provider: null }, { hostId, threadId: codexThread, title: 'Codex work', provider: 'codex' }] } })
   expect(await peer.call('watch-codex', { op: 'watcher-phone-watch', request: { target: target(codexThread) } })).toMatchObject({ ok: true })
   const before = peer.messages.length
   publish()
@@ -117,7 +119,8 @@ it('sends an older phone nothing of OpenCode from its shell, events, details or 
     ['answer', { op: 'watcher-phone-answer', request: { target: target(opencodeThread), command: { type: 'answer', threadId: opencodeThread, requestId: 'q', answer: 'Yes' } } }],
   ] as const) expect(await peer.call(id, operation)).toMatchObject({ ok: false, error: { code: 'forbidden' } })
   expect(acted).toEqual(['phone-watch'])
-  expect(peer.messages.filter(named)).toEqual([])
+  // Its fixture thread is named for OpenCode, so the one answer that lists it by title is left out of this check.
+  expect(peer.messages.filter(message => message.id !== 'prepare').filter(named)).toEqual([])
 })
 
 it('sends an older desktop no Watcher row, project or projection of OpenCode, and refuses its reads and directions of OpenCode threads before they run', async () => {
