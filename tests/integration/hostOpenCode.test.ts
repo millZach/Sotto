@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
+import { desktopWindowClient } from '../../src/main/agents/hostService'
+import { publicProviderEntityId } from '../../src/shared/agents'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { HostCredentialEncryption } from '../../src/host/credentials'
 import { SshHostLauncher, type SshCallbacks, type SshHostConfiguration, type SshHostConnection } from '../../src/main/hosts/sshLauncher'
@@ -106,6 +108,30 @@ it('sends OpenCode only to a client whose hello accepts provider-opencode, and h
   const current = await phone.call('hello', { op: 'hello', accepts: ['detail-delta', 'provider-opencode'] }) as { result: { shell: unknown } }
   expect(named(current.result.shell)).toBe(true)
   expect(await phone.call('detail', { op: 'detail', threadId: opencodeThread.id })).toMatchObject({ ok: true })
+})
+
+// A host gives no thread Sotto's tool servers: the browser, visuals, pull request tools and delegation are this computer's
+// own (docs/agent-control.md), so a host's Codex threads have none, and its OpenCode threads have none either.
+it('gives an OpenCode thread on a host none of Sotto’s tool servers, as the host gives no other provider’s threads', { timeout: 90_000 }, async () => {
+  const f = await opencodeFixture()
+  cleanup.push(f.cleanup)
+  const host = await startHeadlessHost({ dataDirectory: await scratch('sotto-host-opencode-tools-'), providers: { opencode: f.host }, reasoner: e2eAgentReasoner, sottoVersion: OWL })
+  cleanup.push(host.close)
+  const client = desktopWindowClient('host-opencode-tools')
+  const command = (value: Parameters<typeof host.service.command>[0]) => host.service.command(value, client)
+  await command({ type: 'configure', patch: { enabledProviders: ['opencode'], provider: 'opencode' } })
+  expect((await command({ type: 'connect', provider: 'opencode' })).error).toBeNull()
+  const created = await command({ type: 'create-project', provider: 'opencode', title: 'Project', path: f.root, useExisting: true })
+  const projectId = created.host.projects.find(project => project.path === f.root)!.id
+  const threadId = randomUUID()
+  expect((await command({ type: 'create-thread', threadId, projectId, title: 'Thread', modelId: publicProviderEntityId('opencode', 'model', f.modelId), workingCopy: 'shared' })).error).toBeNull()
+  await command({ type: 'observe-threads', threadIds: [threadId] })
+  expect((await command({ type: 'manual-send', threadId, text: 'Use whatever tools you have' })).error).toBeNull()
+  await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'session.prompt').length, { timeout: 30_000 }).toBe(1)
+  // Its server was asked to add no MCP server and was never asked which it had, and the thread is not marked as missing
+  // tools it was never offered.
+  expect((await f.driver.requests()).filter(record => record.method?.startsWith('experimental.mcp.') === true || record.method === 'mcp.list')).toEqual([])
+  expect(host.service.shell().host.threads.find(thread => thread.id === threadId)?.sottoToolsWithheld).toBeUndefined()
 })
 
 /** SSH that reaches the headless host running in this process, as the launch script would have started it. */
