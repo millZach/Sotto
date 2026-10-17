@@ -16,6 +16,7 @@ import { devinFixture } from '../fixtures/devinFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { opencodeFixture } from '../fixtures/fakeOpenCodeFixture'
 import { callVisualize } from '../fixtures/visualToolCall'
+import { headerList } from '../fixtures/mcpHeaders'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
@@ -160,7 +161,7 @@ describe.each(factories)('%s visual tool', (provider, factory) => {
       expect(entry.default_tools_approval_mode).toBe('approve')
       expect(entry.tool_timeout_sec).toBeUndefined()
       expect(Object.keys(start.config.mcp_servers).sort()).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
-      given = { url: entry.url, headers: Object.entries(entry.http_headers).map(([name, value]) => ({ name, value })) }
+      given = { url: entry.url, headers: headerList(entry.http_headers) }
     } else if (provider === 'claude') {
       const launch = records.find(record => record.method === 'launch' && (record.params?.frame as { args: string[] }).args.includes('--mcp-config'))
       const args = (launch!.params!.frame as { args: string[] }).args
@@ -168,7 +169,7 @@ describe.each(factories)('%s visual tool', (provider, factory) => {
       const entry = config.mcpServers[VISUAL_MCP_SERVER]!
       const allowed = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--print'))
       expect(allowed).toEqual([...browserToolDefinitions.map(tool => `mcp__sotto_browser__${tool.name}`), `mcp__${VISUAL_MCP_SERVER}__visualize`])
-      given = { url: entry.url, headers: Object.entries(entry.headers).map(([name, value]) => ({ name, value })) }
+      given = { url: entry.url, headers: headerList(entry.headers) }
     } else if (provider === 'opencode') {
       const names = records.filter(record => record.method === 'experimental.mcp.add').map(record => record.params?.server)
       expect(names.sort()).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
@@ -176,7 +177,7 @@ describe.each(factories)('%s visual tool', (provider, factory) => {
       expect(rules).toContainEqual({ action: `${VISUAL_MCP_SERVER}_visualize`, resource: '*', effect: 'allow' })
       const entry = await opencodeGiven(fixture, VISUAL_MCP_SERVER)
       expect(entry.codemode).toBe(false)
-      given = { url: entry.url, headers: Object.entries(entry.headers).map(([name, value]) => ({ name, value })) }
+      given = { url: entry.url, headers: headerList(entry.headers) }
     } else {
       const servers = records.filter(record => record.method === 'session/new').map(record => record.params?.mcpServers as { name: string; type: string; url: string; headers: { name: string; value: string }[] }[]).find(value => value?.length)!
       expect(servers.map(server => server.name)).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
