@@ -383,6 +383,8 @@
 .watcher-stop { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; width: min(344px, calc(100cqw - 24px)); padding: 14px; border: 1px solid var(--tt-hairline); border-radius: 10px;
   background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); color: var(--tt-text); -webkit-app-region: no-drag; }
 .watcher-stop h2 { margin: 0 0 10px; font-size: 14px; font-weight: 600; line-height: 1.4; }
+/* The heading holds focus while the stop runs, so Escape still reaches the popover; it is not a control, so it has no ring. */
+.watcher-stop h2[tabindex]:focus { outline: none; }
 .watcher-stop__list { display: grid; gap: 2px; margin: 0 0 10px; padding: 0; list-style: none; }
 .watcher-stop__row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; min-height: 30px; font-size: 13px; }
 .watcher-stop__row .thread-nav__mark { width: 14px; height: 14px; }

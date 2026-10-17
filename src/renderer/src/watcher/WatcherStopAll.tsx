@@ -91,9 +91,11 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
     document.addEventListener('pointerdown', away, true)
     return () => document.removeEventListener('pointerdown', away, true)
   }, [open, phase?.kind])
-  // Focus goes into the popover as each step draws: Cancel to ask, Close once it is done.
+  // Focus goes into the popover as each step draws: Cancel to ask, its heading while it stops (the press that stopped is
+  // gone, and focus left on nothing would never reach Escape), Close once it is done.
   useEffect(() => {
     if (!shown) return
+    if (phase?.kind === 'stopping') { panel.current?.querySelector<HTMLElement>('h2')?.focus(); return }
     if (phase?.kind === 'confirm' || phase?.kind === 'done' || phase?.kind === 'refused' || phase?.kind === 'unknown') panel.current?.querySelector<HTMLButtonElement>('[data-autofocus]')?.focus()
   }, [phase?.kind, shown])
   if (room.stopAll === null || (running.length === 0 && phase === null)) return null
@@ -154,7 +156,7 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
     const { targets } = phase
     const stopping = phase.kind === 'stopping'
     body = <>
-      <h2 id={titleId}>{targets.length === 0 ? 'Watcher has no running threads to stop.' : stopQuestion(targets.length)}</h2>
+      <h2 id={titleId} tabIndex={stopping ? -1 : undefined}>{targets.length === 0 ? 'Watcher has no running threads to stop.' : stopQuestion(targets.length)}</h2>
       {targets.length ? <ul className="watcher-stop__list">{targets.map(target => {
         const facts = conversation.describe(target)
         return <li key={`${target.hostId}:${target.threadId}`} className="watcher-stop__row">

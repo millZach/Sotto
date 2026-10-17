@@ -1,5 +1,6 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentCommand, AgentState, AgentThread } from '../../../src/shared/agents'
@@ -194,9 +195,18 @@ describe('Stop all', () => {
     let answer: (result: WatcherStopAllResult) => void = () => undefined
     bridge.stopAll.mockImplementationOnce(() => new Promise<WatcherStopAllResult>(resolve => { answer = resolve }))
     await paneReady()
-    fireEvent.click(screen.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Stop 1 thread' }))
-    fireEvent.keyDown(await screen.findByRole('button', { name: 'Stopping…' }), { key: 'Escape' })
+    // From the keyboard: Stop all, then Tab to the stop and Enter. The stop's own button goes as it is pressed.
+    const user = userEvent.setup()
+    screen.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus())
+    await user.keyboard('{Tab}')
+    expect(screen.getByRole('button', { name: 'Stop 1 thread' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+    await screen.findByRole('button', { name: 'Stopping…' })
+    // Focus stays in the popover, so Escape, pressed wherever focus is, reaches it.
+    await waitFor(() => expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true))
+    await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const button = screen.getByRole('button', { name: 'Stop all, show its progress' })
     await waitFor(() => expect(button).toHaveFocus())

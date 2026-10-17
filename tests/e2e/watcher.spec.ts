@@ -66,7 +66,7 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
   readonly ownChanges?: readonly WatcherOwnChange[]; readonly messages?: readonly AgentMessage[]
   /** More of the projection, from the host's ID and the request's: receipts, takeovers, read marks. */
   readonly more?: (hostId: string, requestId: string) => Partial<WatcherRoomState>
-  readonly stopResults?: WatcherStandInSeed['stopResults'] }): Promise<void> {
+  readonly stopResults?: WatcherStandInSeed['stopResults']; readonly stopDelayMs?: number }): Promise<void> {
   const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
   expect(hostId, 'the window names its host').toBeTruthy()
   const target = (threadId: string) => ({ hostId: hostId!, threadId })
@@ -88,6 +88,7 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
     created: identity,
     ...options.permissionConfirms === false ? { permissionConfirms: false } : {},
     ...options.stopResults ? { stopResults: options.stopResults } : {},
+    ...options.stopDelayMs ? { stopDelayMs: options.stopDelayMs } : {},
   }
   if (options.more) {
     const more = options.more(hostId!, requestId)
@@ -964,6 +965,35 @@ test.describe("Watcher's room on the built app", () => {
         await expect(list).toHaveCount(0)
       })
     })
+  })
+
+  test('Stop all, confirmed from the keyboard, answers Escape while its stop is still going and keeps what came of it', async () => {
+    await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedRoom(page, { current: true, stopResults: {}, stopDelayMs: 4_000 })
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      const stopAll = page.getByRole('button', { name: 'Stop all threads Watcher started, 2 threads' })
+      await stopAll.focus()
+      await page.keyboard.press('Enter')
+      const ask = page.getByRole('dialog', { name: 'Stop the 2 threads Watcher started?' })
+      await expect(ask.getByRole('button', { name: 'Cancel' })).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(ask.getByRole('button', { name: 'Stop 2 threads' })).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(ask.getByRole('button', { name: 'Stopping…' })).toBeVisible()
+      // The stop is still going and focus is still in the popover, so Escape reaches it.
+      expect(await page.evaluate(() => document.querySelector('.watcher-stop')?.contains(document.activeElement) === true)).toBe(true)
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Stop all, show its progress' })).toBeFocused()
+      // What came of it waits for the button.
+      const show = page.getByRole('button', { name: 'Stop all, show what it did' })
+      await expect(show).toBeVisible({ timeout: 15_000 })
+      await show.press('Enter')
+      await expect(page.getByRole('dialog', { name: 'Stopped 2 threads.' })).toBeVisible()
+    }))
   })
 
   test('the receipt cards hold still with reduced motion', async () => {

@@ -19,6 +19,8 @@ export const watcherStandInSeedSchema = z.object({
    * refuses, as it did before the room offered it.
    */
   stopResults: z.record(z.string(), z.object({ status: z.enum(['stopped', 'requested', 'refused', 'uncertain']), message: z.string() }).strict()).optional(),
+  /** How long Stop all's stop takes to answer, so a run can act while it is still going. */
+  stopDelayMs: z.number().int().min(0).max(60_000).optional(),
 }).strict()
 export type WatcherStandInSeed = z.infer<typeof watcherStandInSeedSchema>
 
@@ -85,6 +87,7 @@ export function createE2EWatcherBridge(sotto: SottoBridge | undefined): WatcherB
       targets: stopAllRunning(state), expiresAt: new Date(Date.now() + 60_000).toISOString() }),
     stopAll: async () => {
       if (seed.stopResults === undefined) return NOT_HERE
+      if (seed.stopDelayMs) await new Promise(resolve => setTimeout(resolve, seed.stopDelayMs))
       const results = stopAllRunning(state).map(target => ({ target, ...seed.stopResults?.[target.threadId] ?? { status: 'stopped' as const, message: 'Stopped.' } }))
       const stopped = results.filter(result => result.status === 'stopped').map(result => result.target)
       return { status: 'ok', results, state: publish({ watchedThreads: state.watchedThreads.map(row => stopped.some(item => same(item, row.target))
