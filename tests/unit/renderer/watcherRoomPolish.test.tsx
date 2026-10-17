@@ -12,7 +12,8 @@ import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import { useAgents, useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { SidebarChromeProvider } from '../../../src/renderer/src/agents/SidebarFrame'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
-import { WatcherRoomProvider } from '../../../src/renderer/src/watcher/watcherRoom'
+import { threadAddressIndex, threadForTarget, useWatcherRoom, WatcherRoomProvider } from '../../../src/renderer/src/watcher/watcherRoom'
+import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
@@ -255,5 +256,35 @@ describe('read marks', () => {
     fireEvent.click(screen.getByRole('button', { name: /^All threads, \d+\. Show the list$/ }))
     fireEvent.click(within(await screen.findByRole('dialog', { name: 'All threads' })).getByRole('button', { name: 'Open Footer links beside Watcher' }))
     await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ targets: [target('footer-links')] }))
+  })
+})
+
+describe('the room’s thread addresses', () => {
+  it('answer as a search of the threads would, for threads keyed by host, by their own ID and with no host named', () => {
+    const state = agentState()
+    const remote = '9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d'
+    state.host.threads.push({ ...state.host.threads[0]!, id: hostEntityKey(remote, 'far'), hostId: remote },
+      { ...state.host.threads[0]!, id: 'local-host', hostId: HOST })
+    const idOf = threadAddressIndex(state)
+    for (const address of [target('footer-links'), target('local-host'), { hostId: remote, threadId: 'far' }, { hostId: remote, threadId: 'footer-links' }, target('missing')]) {
+      expect(idOf(address)).toBe(threadForTarget(state, address)?.id)
+    }
+  })
+
+  it('resolve every read mark without searching the threads once per mark', async () => {
+    mockApp('watcher')
+    const state = agentState()
+    const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
+    const connection = agentContextFixture(state, command, { threadDrafts: new ThreadDraftStore(command) })
+    vi.mocked(useAgents).mockReturnValue(connection)
+    vi.mocked(useOptionalAgents).mockReturnValue(connection)
+    const marks = state.host.threads.filter(thread => thread.kind !== 'watcher').map(thread => ({ target: target(thread.id), kind: 'finished' as const, at }))
+    const { bridge } = fakeBridge(roomState({ readMarks: marks }))
+    const find = vi.spyOn(state.host.threads, 'find')
+    let size = 0
+    const Probe = (): null => { size = useWatcherRoom()?.readMarks.size ?? 0; return null }
+    render(<WatcherRoomProvider bridge={bridge}><Probe /></WatcherRoomProvider>)
+    await waitFor(() => expect(size).toBe(marks.length))
+    expect(find).not.toHaveBeenCalled()
   })
 })

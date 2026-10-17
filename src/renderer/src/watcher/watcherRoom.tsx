@@ -88,6 +88,29 @@ export function threadForTarget(state: AgentState | null, target: WatcherThreadT
   })
 }
 
+/**
+ * This window's thread IDs by their owning host's address: what threadForTarget finds, from one pass over the threads
+ * instead of a search per address. The room resolves every mark and watched thread on each update, and with hundreds
+ * of each a search apiece was most of the work while a thread streamed. The first thread that would match wins, as
+ * with threadForTarget; one whose host this window cannot name answers for any host.
+ */
+export function threadAddressIndex(state: AgentState | null): (target: WatcherThreadTarget) => string | undefined {
+  if (state === null) return () => undefined
+  const localHostId = state.hostId ?? state.host.hostId
+  const exact = new Map<string, { readonly id: string; readonly at: number }>()
+  const anyHost = new Map<string, { readonly id: string; readonly at: number }>()
+  for (const [at, thread] of state.host.threads.entries()) {
+    const key = parseHostEntityKey(thread.id)
+    const hostId = key !== null ? key.hostId : thread.hostId ?? localHostId
+    const map = hostId === undefined ? anyHost : exact
+    const slot = hostId === undefined ? key?.id ?? thread.id : JSON.stringify([hostId, key?.id ?? thread.id])
+    if (!map.has(slot)) map.set(slot, { id: thread.id, at })
+  }
+  return target => {
+    const found = exact.get(JSON.stringify([target.hostId, target.threadId])), loose = anyHost.get(target.threadId)
+    return found === undefined ? loose?.id : loose === undefined || found.at < loose.at ? found.id : loose.id
+  }
+}
 /** The owning host's address for a thread in this window, whichever way the window keys its threads. */
 export function targetForThread(state: AgentState, thread: AgentThread): WatcherThreadTarget | null {
   const key = parseHostEntityKey(thread.id)
@@ -148,17 +171,20 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
     return result.message
   }, [])
   const current = state?.current ?? null
-  const currentThreadId = current === null ? null : threadForTarget(agentState, current.target)?.id ?? null
-  const watchedKey = state === null || agentState === null ? '' : JSON.stringify(watchedTargets(state).map(target => threadForTarget(agentState, target)?.id).filter(Boolean))
+  // One index per thread list: every address below is a lookup, not a search through the threads.
+  const threads = agentState?.host.threads, stateHostId = agentState?.hostId, hostHostId = agentState?.host.hostId
+  const idOf = useMemo(() => threadAddressIndex(agentState), [threads, stateHostId, hostHostId])
+  const currentThreadId = current === null ? null : idOf(current.target) ?? null
+  const watchedKey = state === null || agentState === null ? '' : JSON.stringify(watchedTargets(state).map(idOf).filter(Boolean))
   const watchedThreadIds = useMemo<ReadonlySet<string>>(() => watchedKey === '' ? NONE : new Set(JSON.parse(watchedKey) as string[]), [watchedKey])
   const pausedKey = state === null || agentState === null ? '' : JSON.stringify(state.watchedThreads.filter(entry => entry.watched === true && entry.paused === true)
-    .map(entry => threadForTarget(agentState, entry.target)?.id).filter(Boolean))
+    .map(entry => idOf(entry.target)).filter(Boolean))
   const pausedThreadIds = useMemo<ReadonlySet<string>>(() => pausedKey === '' ? NONE : new Set(JSON.parse(pausedKey) as string[]), [pausedKey])
   const standingKey = state === null || agentState === null ? '' : JSON.stringify(watchedRows(state).filter(entry => hasStandingWatch(state, entry.target))
-    .map(entry => threadForTarget(agentState, entry.target)?.id).filter(Boolean))
+    .map(entry => idOf(entry.target)).filter(Boolean))
   const standingThreadIds = useMemo<ReadonlySet<string>>(() => standingKey === '' ? NONE : new Set(JSON.parse(standingKey) as string[]), [standingKey])
   const marksKey = state === null || agentState === null || !state.readMarks?.length ? '' : JSON.stringify(state.readMarks.flatMap(mark => {
-    const id = threadForTarget(agentState, mark.target)?.id
+    const id = idOf(mark.target)
     return id === undefined ? [] : [[id, { target: mark.target, kind: mark.kind }]]
   }))
   const readMarks = useMemo<ReadonlyMap<string, WatcherReadMarkView>>(() => marksKey === '' ? NO_MARKS
