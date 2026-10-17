@@ -134,7 +134,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true })),
     devin: adapter('devin', () => options.providers?.devin ?? new DevinAcpHost(directory)),
     muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory)),
-    opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory)),
+    opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, { heldProviders: held })),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,

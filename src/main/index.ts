@@ -757,7 +757,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(opencodeFixtureRoot ? { providers: {
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(),
       ...(!heldProviders.has('opencode') ? { opencode: new OpenCodeHost(userDataPath, {
-        executable: opencodeFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeOpenCodeServer.mjs'), opencodeFixtureRoot],
+        executable: opencodeFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeOpenCodeServer.mjs'), opencodeFixtureRoot], heldProviders,
       }) } : {}),
     } } : {}),
     ...(nativeFixtureRoot ? { providers: {

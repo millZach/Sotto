@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { publicProviderEntityId, type AgentModel, type AgentRuntimeMode, type ProviderId } from '../../../src/shared/agents'
-import { capRuntimeMode, fitEffort, isRoleDefault, parseWorkerRoleChoices, roleCanUse, roleInForce, roleStartNote, startFromRole, withRoleRow, WORKER_ROLE_IDS,
+import { capRuntimeMode, fitEffort, isRoleDefault, parseWorkerRoleChoices, roleCanUse, roleInForce, roleStartNote, startFromRole, watcherProvidersInWords, withRoleRow, WORKER_ROLE_IDS,
   type WorkerRoleChoices, type WorkerRoleId } from '../../../src/shared/workerRoles'
 
 const ALL: readonly AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
@@ -169,5 +169,12 @@ describe('worker roles', () => {
     expect(roleStartNote(held, models, { wanted: 'full-access', startedOn: 'auto', by: 'delegating-thread' })).toContain('Its permission, Full access, was held to Auto, the delegating thread\'s own, since a delegated thread gets no more.')
     expect(startFromRole('research', {}, models, { reasoningEffort: 'low', runtimeMode: 'auto' })).toMatchObject({ modelId: id('claude', 'haiku'), reasoningEffort: 'low', runtimeMode: 'auto', named: ['effort', 'permission'] })
     expect(startFromRole('building', {}, [])).toMatchObject({ modelId: undefined, roleModelId: undefined })
+  })
+})
+
+describe('Watcher’s providers in words', () => {
+  it('names those this run does not hold, so stable never names Muse and Owl does', () => {
+    expect(watcherProvidersInWords(new Set(['muse', 'opencode']))).toBe('Codex, Claude Code or Grok Build')
+    expect(watcherProvidersInWords(new Set())).toBe('Codex, Claude Code, Grok Build or Muse')
   })
 })

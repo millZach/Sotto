@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
-import { providerIdOfLabel } from '../../src/shared/agents'
+import { providerIdOfLabel, type ProviderId } from '../../src/shared/agents'
 import { OPENCODE_FORM_UNSHOWN } from '../../src/main/agents/opencodeRequests'
 import { opencodeRules } from '../../src/main/agents/opencode'
 import { ensureOpenCodeFolders, opencodeDatabase, opencodeEnvironment, opencodeFolders, opencodePassword, opencodeServerLedger, recordOpenCodeServer } from '../../src/main/agents/opencodeServer'
@@ -348,8 +348,11 @@ it('stops a server with its whole process tree, so a tool it started does not ou
   }
 })
 
-it('refuses Watcher in words before any OpenCode process starts', async () => {
-  const f = await opencodeFixture()
+it.each([
+  ['stable, with Muse held', undefined, 'Choose a Codex, Claude Code or Grok Build model for Watcher.'],
+  ['Owl, with nothing held', new Set<ProviderId>(), 'Choose a Codex, Claude Code, Grok Build or Muse model for Watcher.'],
+] as const)('refuses Watcher in words before any OpenCode process starts, naming Watcher’s providers on %s', async (_run, heldProviders, choose) => {
+  const f = await opencodeFixture(undefined, undefined, {}, heldProviders ? { heldProviders } : {})
   try {
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
@@ -357,8 +360,8 @@ it('refuses Watcher in words before any OpenCode process starts', async () => {
     let revoked: string | undefined
     f.host.useLaunchProfiles!({ profileFor: async () => ({ kind: 'watcher' as const, server: { name: 'sotto_threads', type: 'http' as const, url: 'http://127.0.0.1:9/mcp', headers: [] }, toolNames: [], revoke: reason => { revoked = reason } }) })
     await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: randomUUID(), projectId: f.projectId, modelId: f.modelId, title: 'Watcher' }))
-      .rejects.toThrow('OpenCode cannot host Watcher. Nothing was sent.')
-    expect(revoked).toContain('OpenCode cannot host Watcher')
+      .rejects.toThrow(`OpenCode cannot host Watcher. Nothing was sent. ${choose}`)
+    expect(revoked).toBe(`OpenCode cannot host Watcher. Nothing was sent. ${choose}`)
     expect((await f.driver.requests()).filter(record => record.method === 'fixture/process')).toHaveLength(before)
   } finally { await f.cleanup() }
 })

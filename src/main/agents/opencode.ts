@@ -4,7 +4,9 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
+import { watcherProvidersInWords } from '../../shared/workerRoles'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -31,7 +33,8 @@ import { WatcherProfileRefusal } from './watcherProfile'
 const SERVER_LOST = 'OpenCode stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 const TURN_FAILED = 'OpenCode could not finish this turn. Nothing else was lost. Send a message to carry on.'
 const SOURCE_REFUSED = 'The model source refused this turn: it may need signing in to in OpenCode, or its free models may not allow it. Nothing else was lost. Choose another model or sign in, then send again.'
-const WATCHER_REFUSED = 'OpenCode cannot host Watcher. Nothing was sent. Choose a Codex, Claude Code or Grok Build model for Watcher.'
+/** Watcher's refusal names the providers Watcher runs on this run, so a stable build never names a held one. */
+const watcherRefused = (held: HeldProviders): string => `OpenCode cannot host Watcher. Nothing was sent. Choose a ${watcherProvidersInWords(held)} model for Watcher.`
 /** OpenCode Zen's provider ID: the model source a folder with no sign-ins offers, its free models (ADR-0087). */
 const ZEN = 'opencode'
 const ZEN_NAME = 'OpenCode Zen'
@@ -188,6 +191,8 @@ export interface OpenCodeHostOptions {
   sessionIdleMs?: number
   /** Stable event names only: nothing OpenCode prints or sends reaches it. */
   log?: (event: OpenCodeServerEvent) => void
+  /** The providers held to Owl on this run, read once at start (ADR-0072). Absent holds every one. */
+  heldProviders?: HeldProviders
 }
 
 /**
@@ -318,8 +323,9 @@ export class OpenCodeHost implements AgentHost {
     }
     this.assertGeneration(generation)
     if (!profile) return
-    try { profile.revoke(WATCHER_REFUSED) } catch { /* The refusal stands whatever the revocation does. */ }
-    throw new WatcherProfileRefusal(WATCHER_REFUSED)
+    const refused = watcherRefused(this.options.heldProviders ?? heldProvidersOf({}))
+    try { profile.revoke(refused) } catch { /* The refusal stands whatever the revocation does. */ }
+    throw new WatcherProfileRefusal(refused)
   }
 
   /**

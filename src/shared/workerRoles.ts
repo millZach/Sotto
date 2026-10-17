@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, everyProvider, parsePublicProviderEntityId, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
+import { agentRuntimeModeSchema, everyProvider, parsePublicProviderEntityId, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
 import { resolveModel } from './modelCatalog'
 import { nearestRuntimeMode, RUNTIME_MODE_ORDER } from './newThreadDefaults'
 import { effortKey, effortRank } from './reasoningEfforts'
@@ -113,6 +113,14 @@ export const RUNTIME_MODE_WORDS: Readonly<Record<AgentRuntimeMode, string>> = {
  * of theirs. A provider is named here once Watcher runs on it; one that is not is never Orchestrating's.
  */
 export const WATCHER_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'muse'])
+/**
+ * Watcher's providers in words, less those held to Owl on this run (ADR-0072): "Codex, Claude Code or Grok Build" on
+ * stable, with Muse added on Owl. Every sentence that names where Watcher can run asks this.
+ */
+export function watcherProvidersInWords(held: ReadonlySet<ProviderId>): string {
+  const named = [...WATCHER_PROVIDERS].filter(id => !held.has(id)).map(id => PROVIDER_LABELS[id])
+  return named.length < 2 ? named.join('') : `${named.slice(0, -1).join(', ')} or ${named.at(-1)}`
+}
 /**
  * The order a role with no ready default looks through for one of a provider's own models. OpenCode comes last: a fresh
  * one offers only OpenCode Zen's free models, which no role names as a default.
