@@ -20,13 +20,13 @@ const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
 
 /** A fixture whose host has Sotto's browser server and, unless left out, the visual tool, as `src/main/index.ts` wires them. */
-async function withTools(options: { visuals?: boolean; idle?: boolean } = {}) {
+async function withTools(options: { visuals?: boolean; idle?: boolean; admitsVisuals?: (threadId: string) => boolean } = {}) {
   const f = await opencodeFixture(undefined, undefined, options.idle ? { reaperSweepMs: 50, sessionIdleMs: 300 } : {})
   cleanup.push(f.cleanup)
   const browser = new BrowserAgentServer(browserToolDefinitions, async () => ({ content: [] })); cleanup.push(() => browser.close())
   f.host.useBrowserTools(browser)
   if (options.visuals !== false) {
-    const visuals = new VisualToolServer({ enabled: () => true, admits: () => true, add: async () => ({ added: false, reason: 'unknown-thread' }) }); cleanup.push(() => visuals.close())
+    const visuals = new VisualToolServer({ enabled: () => true, admits: options.admitsVisuals ?? (() => true), add: async () => ({ added: false, reason: 'unknown-thread' }) }); cleanup.push(() => visuals.close())
     f.host.useThreadTools([visuals])
   }
   return { f, browser }
@@ -41,6 +41,14 @@ async function open(f: Fixture) {
 }
 const thread = async (f: Fixture, id: string) => (await f.host.snapshot()).threads.find(candidate => candidate.id === id)!
 const of = (records: readonly RecordedRpc[], method: string) => records.filter(record => record.method === method)
+/** The rule set OpenCode was last given for a thread's provider session: at its creation, or by a change since. */
+const rulesSent = (records: readonly RecordedRpc[]) => [...of(records, 'session.create'), ...of(records, 'session.update')].filter(record => record.params?.permissions).at(-1)?.params?.permissions
+/** The effect of the last of `rules` that matches `action`, as OpenCode reads a rule set; none leaves it to OpenCode's own config. */
+function effectOf(rules: readonly { action: string; effect: string }[], action: string): string | undefined {
+  const matches = (pattern: string) => new RegExp('^' + pattern.split('*').map(part => part.replace(/[.+?^$()|[\]\\{}]/gu, '\\$&')).join('.*') + '$', 'u').test(action)
+  return rules.filter(candidate => matches(candidate.action)).at(-1)?.effect
+}
+const browserAllows = browserToolDefinitions.map(tool => ({ action: `sotto_browser_${tool.name}`, resource: '*', effect: 'allow' }))
 const PROMPT = { instruction: 'Name this coding conversation in a few words.', material: 'First message:\nSide-writing marker 41b9' }
 
 it('gives a thread’s own server Sotto’s tool servers with its token, allows their tools by name, and takes them off when its session ends', { timeout: 60_000 }, async () => {
@@ -156,6 +164,34 @@ it('writes nothing when a provider session appears beside the side call', async 
   const id = await open(f)
   await f.scriptAlso({ generate: { text: 'Fixture title', session: true } })
   await expect(f.host.writeShortText!(id, PROMPT)).resolves.toBeNull()
+})
+
+it('allows only the tools of the servers this thread was given, so a project server named like an absent one is still asked about', async () => {
+  // Visuals are on, but this thread may not draw one: Sotto's visual server is not given to it.
+  const { f } = await withTools({ admitsVisuals: () => false })
+  await open(f)
+  await expect.poll(async () => of(await f.driver.requests(), 'fixture/mcp-connected').map(record => record.params)).toEqual([{ server: 'sotto_browser', status: 'connected' }])
+  await expect.poll(async () => rulesSent(await f.driver.requests())).toEqual([...opencodeRules('approval-required'), ...browserAllows])
+  const rules = rulesSent(await f.driver.requests()) as { action: string; effect: string }[]
+  // A project's own MCP server called `sotto_visual` with a `visualize` tool falls through the session's rules to the
+  // project's config and OpenCode's own prompt; the browser the thread was given is Sotto's to answer.
+  expect(effectOf(rules, `${VISUAL_MCP_SERVER}_visualize`)).toBeUndefined()
+  expect(effectOf(rules, 'sotto_browser_browser_open')).toBe('allow')
+})
+
+it('allows Sotto’s tools on a provider session made before the thread had them, when that session is opened again', async () => {
+  const f = await opencodeFixture(); cleanup.push(f.cleanup)
+  const id = await open(f)
+  expect(of(await f.driver.requests(), 'session.create')[0]!.params?.permissions).toEqual(opencodeRules('approval-required'))
+  f.host.disconnect(); await f.adapter.closed()
+  const browser = new BrowserAgentServer(browserToolDefinitions, async () => ({ content: [] })); cleanup.push(() => browser.close())
+  f.host.useBrowserTools(browser)
+  f.host.observeThreads([id]); await f.host.connect(); await f.host.refreshThread!(id)
+  await expect.poll(async () => of(await f.driver.requests(), 'fixture/mcp-connected').length).toBe(1)
+  // Its rule set keeps its mode and gains the allows, by a change to the live provider session; no session is made.
+  await expect.poll(async () => of(await f.driver.requests(), 'session.update').at(-1)?.params?.permissions).toEqual([...opencodeRules('approval-required'), ...browserAllows])
+  expect(of(await f.driver.requests(), 'session.create')).toHaveLength(1)
+  expect((await thread(f, id)).runtimeMode).toBe('approval-required')
 })
 
 it('waits for a thread’s server to stop when Sotto disconnects while its tool servers are being taken off', { timeout: 60_000 }, async () => {

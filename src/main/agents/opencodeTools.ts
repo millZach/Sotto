@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer'
+import type { BrowserAgentTools } from './browserAgentServer'
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 
 /**
@@ -18,12 +18,17 @@ export interface OpenCodeToolServer {
     readonly codemode: false
     readonly timeout?: { readonly execution: number }
   }
+  /**
+   * The permission actions OpenCode names this server's tools by: `<server>_<tool>`, the name the model is offered and
+   * the action a permission request carries (checked against 2.0.31). Never sent to OpenCode as part of the server.
+   */
+  readonly actions: readonly string[]
 }
 
 /** A thread server's MCP config for one of Sotto's servers: loopback HTTP with the thread's bearer token (ADR-0087). */
-export function opencodeToolServer(server: Pick<ThreadMcpServer, 'name' | 'url' | 'headers'>, waitMs?: number): OpenCodeToolServer {
+export function opencodeToolServer(server: Pick<ThreadMcpServer, 'name' | 'url' | 'headers'>, tools: readonly { readonly name: string }[], waitMs?: number): OpenCodeToolServer {
   return { name: server.name, config: { type: 'remote', url: server.url, headers: Object.fromEntries(server.headers.map(header => [header.name, header.value])),
-    oauth: false, codemode: false, ...(waitMs ? { timeout: { execution: waitMs } } : {}) } }
+    oauth: false, codemode: false, ...(waitMs ? { timeout: { execution: waitMs } } : {}) }, actions: tools.map(tool => `${server.name}_${tool.name}`) }
 }
 
 /**
@@ -31,19 +36,9 @@ export function opencodeToolServer(server: Pick<ThreadMcpServer, 'name' | 'url' 
  * answers for the thread (the host setup tools while a setup runs, the visual tool while visuals are on, ADR-0056).
  */
 export async function opencodeToolServers(browser: BrowserAgentTools | undefined, scoped: readonly ScopedThreadTools[], threadId: string): Promise<OpenCodeToolServer[]> {
-  const servers = browser ? [opencodeToolServer(await browser.mcpServer(threadId), BROWSER_TOOL_WAIT_MS)] : []
-  for (const { server, tools } of await scopedThreadServers(scoped, threadId)) servers.push(opencodeToolServer(server, tools.timeoutMs))
+  const servers = browser ? [opencodeToolServer(await browser.mcpServer(threadId), browser.definitions, BROWSER_TOOL_WAIT_MS)] : []
+  for (const { server, tools } of await scopedThreadServers(scoped, threadId)) servers.push(opencodeToolServer(server, tools.definitions, tools.timeoutMs))
   return servers
-}
-
-/**
- * The permission actions OpenCode names Sotto's tools by: `<server>_<tool>`, the name the model is offered and the action
- * a permission request carries (checked against 2.0.31). Every server a thread's own OpenCode server is given is Sotto's
- * and that thread's alone, because each thread has a server of its own and runtime MCP servers are per process.
- */
-export function opencodeToolActions(browser: BrowserAgentTools | undefined, scoped: readonly ScopedThreadTools[]): string[] {
-  return [...(browser ? browser.definitions.map(tool => `${BROWSER_MCP_SERVER}_${tool.name}`) : []),
-    ...scoped.flatMap(entry => entry.definitions.map(tool => `${entry.name}_${tool.name}`))]
 }
 
 const mcpListSchema = z.looseObject({ data: z.array(z.looseObject({ name: z.string(), status: z.looseObject({ status: z.string() }).optional() })) })
