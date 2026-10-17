@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { OpenCodeTooOld, opencodeVersionRefusal, orphanedDescendants } from '../../../src/main/agents/opencodeServer'
+import { isRecordedServer, loopbackServerUrl, OpenCodeTooOld, opencodeVersionRefusal, orphanedDescendants, parseProcessStart } from '../../../src/main/agents/opencodeServer'
 
 describe('which OpenCode Sotto drives (ADR-0087)', () => {
   it.each([
@@ -43,5 +43,35 @@ describe('the processes a server that has exited leaves behind', () => {
   })
   it('never names Sotto itself', () => {
     expect(orphanedDescendants([{ pid: process.pid, parent: 10, created: started + 1 }], 10, started)).toEqual([])
+  })
+})
+
+describe('a server a crash left, as the next connect knows it', () => {
+  const startedAt = Date.parse('2026-10-16T21:48:03.400')
+  const record = { pid: 4242, startedAt, owner: 99 }
+  const command = '/home/zach/.opencode/bin/opencode serve --hostname=127.0.0.1 --port=0'
+  it('reads a start time and command line from ps, to the second', () => {
+    expect(parseProcessStart('Fri Oct 16 21:48:03 2026 ' + command)).toEqual({ started: Date.parse('2026-10-16T21:48:03'), command })
+    expect(parseProcessStart('Fri Oct  6 09:01:02 2026 sleep 1')).toEqual({ started: Date.parse('2026-10-06T09:01:02'), command: 'sleep 1' })
+    expect(parseProcessStart('')).toBeUndefined()
+  })
+  it('is the process with its PID only when it started then and runs OpenCode’s server', () => {
+    expect(isRecordedServer(record, parseProcessStart('Fri Oct 16 21:48:03 2026 ' + command))).toBe(true)
+    // Started an hour later: another process took the PID.
+    expect(isRecordedServer(record, parseProcessStart('Fri Oct 16 22:48:03 2026 ' + command))).toBe(false)
+    // Started then, but not OpenCode's server.
+    expect(isRecordedServer(record, parseProcessStart('Fri Oct 16 21:48:03 2026 /usr/bin/python3 -m http.server'))).toBe(false)
+    // A command line the system will not show is no proof.
+    expect(isRecordedServer(record, { started: startedAt })).toBe(false)
+    expect(isRecordedServer(record, undefined)).toBe(false)
+  })
+})
+
+describe('where a server says it listens', () => {
+  it.each([['http://127.0.0.1:4096', 'http://127.0.0.1:4096'], ['http://127.0.0.1:4096/', 'http://127.0.0.1:4096'], ['http://localhost:51', 'http://localhost:51'], ['http://[::1]:7', 'http://[::1]:7']])('takes %s', (said, url) => {
+    expect(loopbackServerUrl(said)).toBe(url)
+  })
+  it.each(['http://10.0.0.2:4096', 'http://127.0.0.1.nip.io:4096', 'http://127.0.0.1:4096/api', 'ftp://127.0.0.1:21', 'not a url'])('refuses %s', said => {
+    expect(loopbackServerUrl(said)).toBeUndefined()
   })
 })

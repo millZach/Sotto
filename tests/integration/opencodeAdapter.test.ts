@@ -1,11 +1,14 @@
 // @vitest-environment node
+import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import { providerIdOfLabel } from '../../src/shared/agents'
 import { OPENCODE_FORM_UNSHOWN } from '../../src/main/agents/opencodeRequests'
 import { opencodeRules } from '../../src/main/agents/opencode'
+import { ensureOpenCodeFolders, opencodeDatabase, opencodeEnvironment, opencodeFolders, opencodePassword, opencodeServerLedger, recordOpenCodeServer } from '../../src/main/agents/opencodeServer'
 import { describeAdapterContract } from './adapterContract'
 import { opencodeFixture, opencodeFixtureSkips } from '../fixtures/fakeOpenCodeFixture'
 import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
@@ -544,4 +547,54 @@ it.each([
     await f.cleanup()
   }
   expect(left).toEqual([])
+})
+
+it('ends a server a crash left running when Sotto next connects, and nothing that is not its own', { timeout: 60_000 }, async () => {
+  const f = await opencodeFixture()
+  const strays: ChildProcess[] = []
+  const spawned = (args: string[], env: NodeJS.ProcessEnv = process.env): number => {
+    const child = spawn(process.execPath, args, { env, stdio: 'ignore', windowsHide: true, detached: process.platform !== 'win32' })
+    strays.push(child); return child.pid!
+  }
+  try {
+    const folders = opencodeFolders(join(f.root, 'opencode'))
+    await ensureOpenCodeFolders(folders)
+    // The Sotto that started them has gone.
+    const gone = spawn(process.execPath, ['-e', ''], { stdio: 'ignore', windowsHide: true })
+    const owner = gone.pid!
+    await new Promise(done => gone.once('close', done))
+    const startedAt = Date.now()
+    // A server Sotto started before it crashed, still running.
+    const left = spawned([resolve('tests/fixtures/fakeOpenCodeServer.mjs'), f.root, 'serve', '--hostname=127.0.0.1', '--port=0'], opencodeEnvironment(process.env, folders, opencodePassword()))
+    // Processes that are not servers the crashed Sotto left: one started an hour before its record says, one that is no
+    // OpenCode server, and one whose Sotto is still running.
+    const late = spawned(['-e', 'setInterval(() => {}, 1000)', 'serve', '--hostname=127.0.0.1', '--port=0'])
+    const other = spawned(['-e', 'setInterval(() => {}, 1000)'])
+    const owned = spawned(['-e', 'setInterval(() => {}, 1000)', 'serve', '--hostname=127.0.0.1', '--port=0'])
+    const ledger = opencodeServerLedger(folders)
+    await recordOpenCodeServer(ledger, { pid: left, startedAt, owner })
+    await recordOpenCodeServer(ledger, { pid: late, startedAt: startedAt + 3_600_000, owner })
+    await recordOpenCodeServer(ledger, { pid: other, startedAt, owner })
+    await recordOpenCodeServer(ledger, { pid: owned, startedAt, owner: process.pid })
+    // The left server has made its database, so the connect check's server does not race it.
+    await expect.poll(() => existsSync(opencodeDatabase(folders)), { timeout: 15_000 }).toBe(true)
+    await f.host.connect()
+    await expect.poll(() => running(left), { timeout: 5_000 }).toBe(false)
+    expect([late, other, owned].map(running)).toEqual([true, true, true])
+    // What was swept is no longer written down; the record of a running Sotto's server stays.
+    expect((await readdir(ledger)).sort()).toEqual([`${owned}.json`])
+    await rm(join(ledger, `${owned}.json`))
+    // A thread's server is written down while it runs, and its record goes with it.
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Written down' })
+    const serving = await f.holder(id)
+    expect(await readdir(ledger)).toEqual([`${serving}.json`])
+    expect(JSON.parse(await readFile(join(ledger, `${serving}.json`), 'utf8'))).toMatchObject({ pid: serving, owner: process.pid })
+    f.host.disconnect(); await f.host.closed()
+    expect(await readdir(ledger)).toEqual([])
+  } finally {
+    for (const child of strays) if (child.pid !== undefined && running(child.pid)) process.kill(child.pid)
+    await f.cleanup()
+  }
 })

@@ -13,7 +13,7 @@ import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHos
 import { opencodeReasoningActivity, opencodeStepFilesActivity, opencodeTextMessageId, opencodeToolActivity, opencodeToolOutput, opencodeToolStatus, type OpenCodeTool } from './opencodeActivity'
 import { locationQuery, OpenCodeClient, OpenCodeRejected, type OpenCodeEvent } from './opencodeClient'
 import { OPENCODE_DECLINED, OPENCODE_FORM_UNSHOWN, opencodeFormAnswer, opencodeFormPending, opencodeFormSchema, opencodePermissionDecision, opencodePermissionPending, opencodePermissionSchema, type OpenCodePending } from './opencodeRequests'
-import { ensureOpenCodeFolders, findOpenCodeExecutable, OPENCODE_CLI_VERSION, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
+import { endServersLeftBehind, ensureOpenCodeFolders, findOpenCodeExecutable, OPENCODE_CLI_VERSION, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
@@ -323,7 +323,8 @@ export class OpenCodeHost implements AgentHost {
     return withFirstServerLock(this.folders, async () => {
       const password = opencodePassword()
       const server = await OpenCodeServer.start({ executable, ...(this.options.args ? { args: this.options.args } : {}), cwd,
-        env: opencodeEnvironment(this.environment, this.folders, password), timeoutMs: this.options.startTimeoutMs ?? 30_000, log: this.options.log })
+        env: opencodeEnvironment(this.environment, this.folders, password), timeoutMs: this.options.startTimeoutMs ?? 30_000, log: this.options.log,
+        ledger: this.folders.servers })
       try {
         const client = new OpenCodeClient(server.url, password, this.timeoutMs)
         const info = infoSchema.parse(await client.request('GET', '/api/info'))
@@ -422,6 +423,9 @@ export class OpenCodeHost implements AgentHost {
     this.disconnect(); await this.closed()
     const generation = this.generation
     await mkdir(this.userDataDirectory, { recursive: true })
+    // Servers a Sotto that crashed left running on this folder are ended before any of this run's start (ADR-0087).
+    await endServersLeftBehind(this.folders.servers, this.options.log)
+    this.assertGeneration(generation)
     const executable = this.options.executable ?? await findOpenCodeExecutable(this.environment)
     if (!executable || !isAbsolute(executable)) throw new ProviderUnavailable('not-installed', 'Install OpenCode 2, then connect again. Your threads and drafts are kept.')
     let tooOld: string | undefined
