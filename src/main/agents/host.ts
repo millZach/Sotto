@@ -53,7 +53,13 @@ export type AgentHostCommand =
      * thread's adapter gives it to the model through the provider's own context channel for this turn, never in the
      * user's text, so the message is sent, echoed and shown as typed. Every other thread ignores it.
      */
-    readonly watcherRequestNote?: string }
+    readonly watcherRequestNote?: string
+    /**
+     * A wake-up's news for the current Watcher (ADR-0073), set only by the coordinator on that wake-up's send. It
+     * travels exactly as the request note does, through the same channel, beside a short message of Sotto's that no
+     * one is shown. Every other thread ignores it.
+     */
+    readonly watcherNews?: string }
   | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }

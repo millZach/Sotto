@@ -9,6 +9,7 @@ import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { WATCHER_SYSTEM_PROMPT } from '../../src/main/agents/watcherPrompt'
 import { watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
+import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
 import { questionInstructions } from '../../src/main/agents/questionInstructions'
 import type { AgentHost, WatcherProfileTools } from '../../src/main/agents/host'
 import type { ScopedThreadTools } from '../../src/main/agents/threadToolServer'
@@ -302,6 +303,30 @@ it('gives a Grok Watcher its request note as one Sotto line after the user’s w
   expect(prompts).toEqual([[{ type: 'text', text: typed + watcherRequestLine(note) }], [{ type: 'text', text: typed }]])
   // Grok's own echo is what Sotto reads back, so the coordinator's snapshot is where the line comes off (see watcherRequestNote.test.ts).
   expect(watcherTextAsTyped((await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.find(message => message.role === 'user')!.text, request)).toBe(typed)
+})
+
+it.each(['codex', 'claude', 'grok'] as const)('gives a %s Watcher a wake-up’s news through its request note’s channel and never in the message', async provider => {
+  const f = await (provider === 'codex' ? codexFixture(undefined, false, 10_000) : provider === 'claude' ? claudeFixture(undefined, 10_000) : grokFixture(undefined, 10_000))
+  cleanups.push(f.cleanup)
+  const { id, ordinary } = await watcherBesideOrdinary(f, provider)
+  const news = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.\nSynthetic news line'
+  for (const threadId of [id, ordinary]) {
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: WATCHER_WAKE_UP_PROMPT, watcherNews: news })).accepted).toBe(true)
+  }
+  const records = await f.driver.requests()
+  if (provider === 'codex') {
+    const [watcher, other] = records.filter(record => record.method === 'turn/start')
+    expect(watcher!.params!.input).toEqual([expect.objectContaining({ type: 'text', text: WATCHER_WAKE_UP_PROMPT })])
+    expect(watcher!.params!.additionalContext).toEqual({ sotto_watcher_news: { value: news, kind: 'application' } })
+    expect(other!.params).not.toHaveProperty('additionalContext')
+  } else if (provider === 'claude') {
+    const frame = (record: RecordedRpc) => record.params!.frame as { message?: { content?: unknown }; additionalContext?: string | null; prompt?: string }
+    expect(records.filter(record => record.method === 'user').map(record => frame(record).message?.content)).toEqual([WATCHER_WAKE_UP_PROMPT, WATCHER_WAKE_UP_PROMPT])
+    expect(records.filter(record => record.method === 'hook-context').map(record => [frame(record).prompt, frame(record).additionalContext])).toEqual([[WATCHER_WAKE_UP_PROMPT, news]])
+  } else {
+    expect(records.filter(record => record.method === 'session/prompt').map(record => record.params!.prompt))
+      .toEqual([[{ type: 'text', text: WATCHER_WAKE_UP_PROMPT + watcherRequestLine(news) }], [{ type: 'text', text: WATCHER_WAKE_UP_PROMPT }]])
+  }
 })
 
 it('keeps Devin unavailable because its adapter cannot attach a scoped Sotto server', async () => {

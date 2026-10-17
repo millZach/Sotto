@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
-import { terminalOutput } from './support/terminal'
+import { terminalOutput, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Full app, real controller/IPC/files/PTY/browser/Git/worktrees; coding providers are explicit fixtures.
@@ -132,9 +132,7 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await panel.getByRole('tab', { name: 'Terminal', exact: true }).click()
     await panel.getByRole('button', { name: 'Start terminal' }).click()
     // A running PTY and mounted xterm do not mean PowerShell has started accepting commands.
-    await expect.poll(() => terminalOutput(page, first), {
-      message: 'PowerShell must print its initial prompt before the daily command is typed',
-    }).toMatch(/PS [\s\S]*> /u)
+    await waitForShellPrompt(() => threadTerminal(page, first))
     await expect(panel.locator('.terminal-view')).not.toHaveAttribute('data-replaying', 'true')
     const terminalInput = panel.locator('.xterm-helper-textarea')
     await terminalInput.focus()
@@ -190,7 +188,9 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     expect(git(repository, '--git-dir', remote, 'for-each-ref', '--format=%(refname)', 'refs/heads')).toBe('')
     await pane(first).getByRole('button', { name: 'More Git actions', exact: true }).click()
     const createPullRequest = page.getByRole('menuitem', { name: /^Create PR(?:\.|$)/u })
-    await expect(createPullRequest).toBeEnabled()
+    // Create PR waits for the pane's Git status to see the commit, which a loaded desktop can take more than the default
+    // five seconds to read. The deadline is generous on purpose; it ends as soon as the action is enabled.
+    await expect(createPullRequest).toBeEnabled({ timeout: 30_000 })
     await createPullRequest.click()
     await expect(pane(first).locator('.git-action-notice')).toContainText('Created PR #74', { timeout: 90_000 })
     const branch = git(working, 'branch', '--show-current')
