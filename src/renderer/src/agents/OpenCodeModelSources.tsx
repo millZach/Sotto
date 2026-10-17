@@ -58,15 +58,15 @@ export function OpenCodeModelSources({ bridge, pollMs = 2_000 }: { readonly brid
       const result = await bridge.signOut({ sourceId: source.id })
       if (result.status === 'ok') {
         setRead(result.sources)
-        setNotice(SIGN_IN_WORDS.signedOut(source.name, key))
+        setNotice([SIGN_IN_WORDS.signedOut(source.name, key), result.warning ?? ''].filter(Boolean).join(' '))
         refocus.current = true
       } else setError(result.message)
     } catch { setError(SIGN_IN_WORDS.signOutFailed(source.name)) } finally { setSigningOut(null) }
   }
-  const signedIn = (next: ModelSources, source: ModelSource, method: ModelSourceMethod): void => {
+  const signedIn = (next: ModelSources, source: ModelSource, method: ModelSourceMethod, warning?: string): void => {
     setRead(next); setOpen(false); setError(null)
     const count = next.status === 'ok' ? next.sources.find(item => item.id === source.id)?.models ?? 0 : 0
-    setNotice([SIGN_IN_WORDS.signedIn(source.name, count), method.kind === 'key' ? SIGN_IN_WORDS.keyUnchecked(source.name) : ''].filter(Boolean).join(' '))
+    setNotice([SIGN_IN_WORDS.signedIn(source.name, count), method.kind === 'key' ? SIGN_IN_WORDS.keyUnchecked(source.name) : '', warning ?? ''].filter(Boolean).join(' '))
   }
   return <div className="oc-sources" role="group" aria-labelledby={headingId} aria-busy={read === null}>
     <h4 id={headingId}>Model sources</h4>
@@ -100,8 +100,14 @@ interface Flow {
   answers: Record<string, string>
   error: string | null
   attempt: SignInAttempt | null
+  /** Finish handed OpenCode the pasted code and it is still taking it, so the sign-in is read again until it says. */
+  taking: boolean
+  /** The page's address when the browser did not open it, to open by hand. */
+  unopened: string | null
 }
-const freshFlow = (source: ModelSource, method = 0): Flow => ({ source, method, phase: 'form', key: '', code: '', answers: defaults(source.methods[method]), error: null, attempt: null })
+const freshFlow = (source: ModelSource, method = 0): Flow => ({ source, method, phase: 'form', key: '', code: '', answers: defaults(source.methods[method]), error: null, attempt: null, taking: false, unopened: null })
+/** Back to the form after a sign-in ended without saving anything, saying why. */
+const ended = (flow: Flow, error: string): Flow => ({ ...flow, phase: 'form', attempt: null, code: '', taking: false, unopened: null, error })
 function defaults(method: ModelSourceMethod | undefined): Record<string, string> {
   const answers: Record<string, string> = {}
   for (const field of method?.form ?? []) {
@@ -128,12 +134,13 @@ function sentAnswers(method: ModelSourceMethod, answers: Record<string, string>)
 function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose, onSignedIn }: {
   readonly bridge: OpenCodeSignInBridge; readonly sources: readonly ModelSource[]; readonly pollMs: number
   readonly fallbackFocus: RefObject<HTMLButtonElement | null>
-  readonly onClose: () => void; readonly onSignedIn: (next: ModelSources, source: ModelSource, method: ModelSourceMethod) => void
+  readonly onClose: () => void; readonly onSignedIn: (next: ModelSources, source: ModelSource, method: ModelSourceMethod, warning?: string) => void
 }): ReactNode {
   const [query, setQuery] = useState('')
   const [flow, setFlowState] = useState<Flow | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copiedAddress, setCopiedAddress] = useState(false)
   const flowRef = useRef<Flow | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -141,6 +148,8 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
   const setFlow = useCallback((next: Flow | null): void => { flowRef.current = next; setFlowState(next) }, [])
   const close = useCallback((): void => {
     const attempt = flowRef.current?.attempt
+    // A start still answering finds no flow, so it cancels its sign-in and opens no page.
+    flowRef.current = null
     if (attempt) void bridge.cancel({ attemptId: attempt.id }).catch(() => undefined)
     onClose()
   }, [bridge, onClose])
@@ -159,16 +168,36 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
     if (flowRef.current !== current) return
     const method = current.source.methods[current.method]!
     if (result.status === 'pending') return
-    if (result.status === 'ok') { flowRef.current = null; onSignedIn(result.sources, current.source, method); return }
-    setFlow({ ...current, phase: 'form', attempt: null, code: '', error: result.message })
+    if (result.status === 'ok') { flowRef.current = null; onSignedIn(result.sources, current.source, method, result.warning); return }
+    setFlow(ended(current, result.message))
   }, [onSignedIn, setFlow])
-  // A browser sign-in that finishes by itself is read again every couple of seconds while it waits.
+  // A browser sign-in that finishes by itself is read again every couple of seconds while it waits, and so is a pasted
+  // code once Finish has handed it to OpenCode and OpenCode is still taking it.
   useEffect(() => {
-    if (!flow?.attempt || flow.phase !== 'waiting' || flow.attempt.mode === 'code') return
+    if (!flow?.attempt || flow.phase !== 'waiting' || flow.attempt.mode === 'code' && !flow.taking) return
     const current = flow
     const timer = setInterval(() => { void bridge.wait({ attemptId: current.attempt!.id }).then(result => finish(result, current), () => undefined) }, pollMs)
     return () => clearInterval(timer)
   }, [flow, bridge, pollMs, finish])
+  // When its page expires, a waiting sign-in is read once more; one still not done is cancelled, and the dialog says so.
+  const expiresAt = flow?.phase === 'waiting' ? flow.attempt?.expiresAt : undefined
+  const waitingId = flow?.phase === 'waiting' ? flow.attempt?.id : undefined
+  useEffect(() => {
+    if (expiresAt === undefined || !waitingId) return
+    const expire = (): void => {
+      const current = flowRef.current
+      if (current?.attempt?.id !== waitingId) return
+      void bridge.cancel({ attemptId: waitingId }).catch(() => undefined)
+      setFlow(ended(current, SIGN_IN_WORDS.expired(current.source.name)))
+    }
+    const timer = setTimeout(() => {
+      void bridge.wait({ attemptId: waitingId }).then(result => {
+        const current = flowRef.current
+        if (result.status === 'pending') expire(); else if (current?.attempt?.id === waitingId) finish(result, current)
+      }, expire)
+    }, Math.min(Math.max(0, expiresAt - Date.now()), 2_147_483_647))
+    return () => clearTimeout(timer)
+  }, [expiresAt, waitingId, bridge, finish, setFlow])
 
   const common = useMemo(() => COMMON_MODEL_SOURCES.flatMap(id => sources.filter(source => source.id === id)), [sources])
   const matches = (source: ModelSource): boolean => { const words = query.trim().toLowerCase(); return !words || `${source.name} ${source.id}`.toLowerCase().includes(words) }
@@ -228,38 +257,47 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
     const result = await bridge.signInWithKey({ sourceId: source.id, key, ...(sentAnswers(method, current.answers) ? { answer: sentAnswers(method, current.answers)! } : {}) })
     if (flowRef.current !== current) return
     // The key leaves the field either way: a refused one is pasted again, and an accepted one is OpenCode's.
-    if (result.status === 'ok') { flowRef.current = null; onSignedIn(result.sources, source, method) }
+    if (result.status === 'ok') { flowRef.current = null; onSignedIn(result.sources, source, method, result.warning) }
     else setFlow({ ...current, key: '', error: result.message })
   })
   const useExternal = (): Promise<void> => run(async current => {
     const result = await bridge.useExternalSignIn({ sourceId: source.id, methodId: method.id, ...(sentAnswers(method, current.answers) ? { answer: sentAnswers(method, current.answers)! } : {}) })
     if (flowRef.current !== current) return
-    if (result.status === 'ok') { flowRef.current = null; onSignedIn(result.sources, source, method) } else setFlow({ ...current, error: result.message })
+    if (result.status === 'ok') { flowRef.current = null; onSignedIn(result.sources, source, method, result.warning) } else setFlow({ ...current, error: result.message })
   })
+  /** Opens the waiting sign-in's page from main; a browser that does not open leaves its address to open by hand. */
+  const openPage = async (attemptId: string): Promise<void> => {
+    const result = await bridge.reopen({ attemptId })
+    if (flowRef.current?.attempt?.id !== attemptId) return
+    if (result.status === 'not-opened') update({ error: result.message, unopened: result.address })
+    else if (result.status === 'refused') update({ error: result.message })
+    else if (flowRef.current.unopened || flowRef.current.error) update({ error: null, unopened: null })
+  }
   const startBrowser = (): Promise<void> => run(async current => {
     const result = await bridge.startBrowserSignIn({ sourceId: source.id, methodId: method.id, ...(sentAnswers(method, current.answers) ? { answer: sentAnswers(method, current.answers)! } : {}) })
+    // A dialog closed, or a step left, while this started: the sign-in is cancelled, and its page never opens.
     if (flowRef.current !== current) { if (result.status === 'waiting') void bridge.cancel({ attemptId: result.attempt.id }).catch(() => undefined); return }
-    if (result.status === 'waiting') setFlow({ ...current, phase: 'waiting', attempt: result.attempt, error: null, code: '' })
-    else setFlow({ ...current, error: result.message })
+    if (result.status !== 'waiting') { setFlow({ ...current, error: result.message }); return }
+    setFlow({ ...current, phase: 'waiting', attempt: result.attempt, error: null, code: '', taking: false, unopened: null })
+    await openPage(result.attempt.id)
   })
   const finishCode = (): Promise<void> => run(async current => {
     if (!current.attempt || !current.code.trim()) return
     const result = await bridge.finish({ attemptId: current.attempt.id, code: current.code.trim() })
-    if (result.status === 'pending') return
-    if (result.status === 'refused' && flowRef.current === current && result.message === SIGN_IN_WORDS.codeRefused(source.name)) { setFlow({ ...current, code: '', error: result.message }); return }
+    if (result.status === 'pending') { if (flowRef.current === current) setFlow({ ...current, taking: true }); return }
+    if (result.status === 'refused' && flowRef.current === current && result.message === SIGN_IN_WORDS.codeRefused(source.name)) { setFlow({ ...current, code: '', taking: false, error: result.message }); return }
     finish(result, current)
   })
   const stopWaiting = (): Promise<void> => run(async current => {
     if (current.attempt) await bridge.cancel({ attemptId: current.attempt.id }).catch(() => undefined)
-    if (flowRef.current === current) setFlow({ ...current, phase: 'form', attempt: null, code: '' })
+    if (flowRef.current === current) setFlow({ ...current, phase: 'form', attempt: null, code: '', taking: false, unopened: null })
   })
-  const openAgain = (): Promise<void> => run(async current => {
-    if (!current.attempt) return
-    const result = await bridge.reopen({ attemptId: current.attempt.id })
-    if (result.status === 'refused' && flowRef.current === current) update({ error: result.message })
-  })
+  const openAgain = (): Promise<void> => run(async current => { if (current.attempt) await openPage(current.attempt.id) })
   const copyCode = async (code: string): Promise<void> => {
     try { await writeClipboard(code); setCopied(true); setTimeout(() => setCopied(false), 1_500) } catch { update({ error: 'The code could not be copied. Select it and copy it yourself.' }) }
+  }
+  const copyAddress = async (address: string): Promise<void> => {
+    try { await writeClipboard(address); setCopiedAddress(true); setTimeout(() => setCopiedAddress(false), 1_500) } catch { update({ error: 'The address could not be copied. Select it and copy it yourself.' }) }
   }
 
   const error = flow.error ? <p className="provider-detail__error" role="alert" id={errorId}>{flow.error}</p> : null
@@ -289,23 +327,29 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
   } else if (flow.phase === 'waiting' && flow.attempt) {
     const attempt = flow.attempt, until = expiry(attempt.expiresAt)
     const status = (words: string): ReactNode => <p className="oc-wait__status" role="status"><span className="oc-pulse" aria-hidden="true" />{words}</p>
+    // Where the page is: in the browser, or, when the browser did not open it, at the address shown to open by hand.
+    const where = flow.unopened ? 'at the address below' : 'that opened in your browser'
+    const address = flow.unopened ? <div className="oc-address"><code>{flow.unopened}</code>
+      <Button variant="secondary" aria-label={`Copy the ${source.name} sign-in page address`} onClick={() => void copyAddress(flow.unopened!)}><Copy aria-hidden="true" size={14} />{copiedAddress ? 'Copied' : 'Copy address'}</Button></div> : null
     body = <><div className="oc-wait" role="group" aria-label={`Signing in to ${source.name}`}>
       {attempt.mode === 'code' ? <>
-        <p>Approve on the {source.name} page that opened in your browser, then paste the code it shows.</p>
+        <p>Approve on the {source.name} page {where}, then paste the code it shows.</p>
+        {address}
         <label className="oc-field">Code from the {source.name} page
           <input data-autofocus className="tt-input" type="text" value={flow.code} placeholder="Paste the code" autoComplete="off" spellCheck={false}
             onChange={event => update({ code: event.target.value })} onKeyDown={event => { if (event.key === 'Enter' && flow.code.trim()) { event.preventDefault(); void finishCode() } }} /></label>
         <div className="oc-actions-inline"><Button variant="primary" aria-label={`Finish signing in to ${source.name} with this code`} disabled={busy || !flow.code.trim()} onClick={() => void finishCode()}>Finish signing in</Button></div>
+        {flow.taking ? status(`Waiting for ${source.name} to take the code. This updates by itself.`) : null}
         {until ? <p className="oc-wait__status">The code works until {until}.</p> : null}
       </> : attempt.code ? <>
-        <p>Enter this code on the {source.name} page that opened in your browser.</p>
+        <p>Enter this code on the {source.name} page {where}.</p>
         <div className="oc-code"><code>{attempt.code}</code>
           <Button data-autofocus variant="secondary" aria-label={`Copy the code ${attempt.code}`} onClick={() => void copyCode(attempt.code!)}><Copy aria-hidden="true" size={14} />{copied ? 'Copied' : 'Copy code'}</Button></div>
-        <p className="oc-site">{attempt.page}</p>
+        {address ?? <p className="oc-site">{attempt.page}</p>}
         {status(`Waiting for ${source.name}. This updates by itself once you enter the code.${until ? ` It expires at ${until}.` : ''}`)}
       </> : <>
-        <p>Finish signing in on the {source.name} page that opened in your browser.</p>
-        <p className="oc-site">{attempt.page}</p>
+        <p>Finish signing in on the {source.name} page {where}.</p>
+        {address ?? <p className="oc-site">{attempt.page}</p>}
         {status(`Waiting for ${source.name}. This updates by itself when you are done.${until ? ` It expires at ${until}.` : ''}`)}
       </>}
     </div>{error}</>

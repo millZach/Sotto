@@ -151,7 +151,7 @@ describe('Add a model source', () => {
   it('shows a device code large with Copy code and the page, waits, and closes once the page has finished', async () => {
     let finished = false
     const api = await mount(bridge({
-      startBrowserSignIn: vi.fn(async () => ({ status: 'waiting' as const, attempt: { id: 'con_1', sourceId: 'xai', mode: 'auto' as const, code: 'QX7M-4LRT', page: 'accounts.x.ai/oauth2/device', expiresAt: Date.UTC(2026, 9, 16, 15, 52) } })),
+      startBrowserSignIn: vi.fn(async () => ({ status: 'waiting' as const, attempt: { id: 'con_1', sourceId: 'xai', mode: 'auto' as const, code: 'QX7M-4LRT', page: 'accounts.x.ai/oauth2/device', expiresAt: Date.now() + 15 * 60_000 } })),
       wait: vi.fn(async () => finished ? { status: 'ok' as const, sources: read({ xai: { signedIn: { how: 'SuperGrok subscription' }, models: 8 } }) } : { status: 'pending' as const }),
     }), 20)
     await openDialog()
@@ -207,6 +207,80 @@ describe('Add a model source', () => {
     fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(api.cancel).toHaveBeenCalledTimes(2)
+  })
+
+  it('opens the page once the dialog has the sign-in, keeps checking a pasted code OpenCode is still taking, and finishes', async () => {
+    let taken = false
+    const api = await mount(bridge({
+      startBrowserSignIn: vi.fn(async () => ({ status: 'waiting' as const, attempt: { id: 'con_4', sourceId: 'gitlab', mode: 'code' as const, page: 'gitlab.com/oauth/authorize' } })),
+      finish: vi.fn(async () => ({ status: 'pending' as const })),
+      wait: vi.fn(async () => taken ? { status: 'ok' as const, sources: read({ gitlab: { signedIn: { how: 'GitLab account' }, models: 3 } }) } : { status: 'pending' as const }),
+    }), 20)
+    await openDialog()
+    const dialog = await pick(/^GitLab Duo,/u)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' }))
+    fireEvent.change(await within(dialog).findByLabelText('Code from the GitLab Duo page'), { target: { value: 'abc' } })
+    expect(api.reopen).toHaveBeenCalledWith({ attemptId: 'con_4' })
+    // A code mode is not read again until Finish has handed OpenCode the code.
+    expect(api.wait).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Finish signing in to GitLab Duo with this code' }))
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('Waiting for GitLab Duo to take the code. This updates by itself.')
+    await waitFor(() => expect(api.wait).toHaveBeenCalledWith({ attemptId: 'con_4' }))
+    act(() => { taken = true })
+    expect(await screen.findByText('Signed in to GitLab Duo. Its 3 models are in the model menu, under OpenCode.')).toBeVisible()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('notices a waiting sign-in has expired, cancels it and says so', async () => {
+    const api = await mount(bridge({
+      startBrowserSignIn: vi.fn(async () => ({ status: 'waiting' as const, attempt: { id: 'con_5', sourceId: 'gitlab', mode: 'code' as const, page: 'gitlab.com/oauth/authorize', expiresAt: Date.now() + 150 } })),
+    }), 20)
+    await openDialog()
+    const dialog = await pick(/^GitLab Duo,/u)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' }))
+    await within(dialog).findByLabelText('Code from the GitLab Duo page')
+    expect(await within(dialog).findByRole('alert', {}, { timeout: 3_000 })).toHaveTextContent(SIGN_IN_WORDS.expired('GitLab Duo'))
+    expect(api.cancel).toHaveBeenCalledWith({ attemptId: 'con_5' })
+    expect(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' })).toHaveTextContent('Open sign-in page again')
+  })
+
+  it('cancels a browser sign-in that starts after the dialog closed, and never opens its page', async () => {
+    let answer: (value: Awaited<ReturnType<OpenCodeSignInBridge['startBrowserSignIn']>>) => void = () => undefined
+    const api = await mount(bridge({ startBrowserSignIn: vi.fn(() => new Promise(resolve => { answer = resolve })) }))
+    await openDialog()
+    const dialog = await pick(/^GitLab Duo,/u)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' }))
+    await waitFor(() => expect(api.startBrowserSignIn).toHaveBeenCalled())
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await act(async () => { answer({ status: 'waiting', attempt: { id: 'con_6', sourceId: 'gitlab', mode: 'code', page: 'gitlab.com/oauth/authorize' } }) })
+    await waitFor(() => expect(api.cancel).toHaveBeenCalledWith({ attemptId: 'con_6' }))
+    expect(api.reopen).not.toHaveBeenCalled()
+  })
+
+  it('says when the browser did not open the page, shows its address to open by hand, and keeps Open the page again', async () => {
+    const address = 'https://accounts.x.ai/oauth2/device?user_code=QX7M-4LRT'
+    const api = await mount(bridge({
+      startBrowserSignIn: vi.fn(async () => ({ status: 'waiting' as const, attempt: { id: 'con_7', sourceId: 'xai', mode: 'auto' as const, code: 'QX7M-4LRT', page: 'accounts.x.ai/oauth2/device' } })),
+      reopen: vi.fn(async () => ({ status: 'not-opened' as const, message: SIGN_IN_WORDS.pageNotOpened, address })),
+    }))
+    await openDialog()
+    const dialog = await pick(/^xAI,/u)
+    fireEvent.click(within(dialog).getByRole('radio', { name: /SuperGrok subscription/u }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open the xAI sign-in page in your browser' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Your browser did not open the sign-in page. Nothing was saved. Open this address in your browser yourself, or press Open the page again.')
+    expect(within(dialog).getByText(address).tagName).toBe('CODE')
+    expect(within(dialog).queryByText(/page that opened in your browser/u)).toBeNull()
+    expect(within(dialog).getByText('Enter this code on the xAI page at the address below.')).toBeVisible()
+    expect(within(dialog).getByRole('button', { name: 'Copy the xAI sign-in page address' })).toBeVisible()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open the xAI sign-in page again' }))
+    await waitFor(() => expect(api.reopen).toHaveBeenCalledTimes(2))
+  })
+
+  it('says when the model menu could not follow a sign-out', async () => {
+    await mount(bridge({ sources: vi.fn(async () => signedAnthropic()), signOut: vi.fn(async () => ({ status: 'ok' as const, sources: read(), warning: SIGN_IN_WORDS.catalogUnread })) }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign out of Anthropic' }))
+    expect(await screen.findByText(`Signed out of Anthropic. Its key is gone from Sotto’s OpenCode. ${SIGN_IN_WORDS.catalogUnread}`)).toBeVisible()
   })
 
   it('draws the question a method asks first, such as GitHub.com or Enterprise and its address', async () => {

@@ -71,5 +71,7 @@
 .oc-code { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .oc-code code { padding: 6px 12px; border: 1px solid var(--tt-code-border); border-radius: 8px; background: var(--tt-code-bg); color: var(--tt-text); font: 600 21px/1.25 var(--tt-font-mono); letter-spacing: .06em; user-select: all; }
 .oc-site { color: var(--tt-text-2) !important; font: 13px/1.5 var(--tt-font-mono) !important; overflow-wrap: anywhere; }
+.oc-address { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px; }
+.oc-address code { padding: 6px 10px; border: 1px solid var(--tt-code-border); border-radius: 8px; background: var(--tt-code-bg); color: var(--tt-text); font: 12.5px/1.5 var(--tt-font-mono); overflow-wrap: anywhere; user-select: all; }
 .oc-actions-inline { display: flex; flex-wrap: wrap; gap: 8px; }
 .oc-dialog .provider-detail__error { margin: 14px 0 0; font-size: 13.5px; }
