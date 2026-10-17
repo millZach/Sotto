@@ -250,6 +250,8 @@ export class OpenCodeHost implements AgentHost {
   private readonly processes = new Map<string, ThreadServer>()
   private readonly holds = new Map<string, number>()
   private readonly exits = new Set<Promise<void>>()
+  /** Servers whose thread's session is ending: out of `processes`, and still taking their tool servers off. */
+  private readonly stopping = new Set<ThreadServer>()
   private executable: string | undefined
   /** The connect check's short-lived server while it starts or answers, so a disconnect stops it too. */
   private probe: Promise<{ server: OpenCodeServer }> | undefined
@@ -502,8 +504,12 @@ export class OpenCodeHost implements AgentHost {
     this.folds.delete(id); this.log.release(id)
     if (!entry) return
     this.processes.delete(id)
-    await this.removeToolServers(entry)
-    await this.closeProcess(entry)
+    // Tracked whole, so a disconnect while the tool servers are being taken off stops the server and waits for it.
+    this.stopping.add(entry)
+    const stopped = this.removeToolServers(entry).then(() => this.closeProcess(entry))
+    const exit: Promise<void> = stopped.catch(() => undefined).finally(() => { this.stopping.delete(entry); this.exits.delete(exit) })
+    this.exits.add(exit)
+    await stopped
   }
   /** Stop the server a thread that was never made started, unless another has taken its place. */
   private dropServer(id: string, entry: ThreadServer): void {
@@ -1323,7 +1329,7 @@ export class OpenCodeHost implements AgentHost {
     }
     this.activeTurns.clear()
     if (ended) void this.persist().catch(() => undefined)
-    for (const entry of this.processes.values()) void this.closeProcess(entry)
+    for (const entry of [...this.processes.values(), ...this.stopping]) void this.closeProcess(entry)
     this.processes.clear()
     this.probeClosed.abort()
     if (this.probe) { void this.probe.then(probe => probe.server.stop(), () => undefined); this.probe = undefined }

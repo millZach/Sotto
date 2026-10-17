@@ -157,3 +157,17 @@ it('writes nothing when a provider session appears beside the side call', async 
   await f.scriptAlso({ generate: { text: 'Fixture title', session: true } })
   await expect(f.host.writeShortText!(id, PROMPT)).resolves.toBeNull()
 })
+
+it('waits for a thread’s server to stop when Sotto disconnects while its tool servers are being taken off', { timeout: 60_000 }, async () => {
+  const { f } = await withTools({ visuals: false, idle: true })
+  const id = await open(f)
+  await expect.poll(async () => of(await f.driver.requests(), 'fixture/mcp-connected').length).toBe(1)
+  const pid = (await f.holder(id))!
+  expect(f.running(pid)).toBe(true)
+  // OpenCode holds the removal: the idle session's end is still taking its tool servers off when Sotto disconnects.
+  await f.scriptAlso({ delay: { 'experimental.mcp.remove': 10_000 } })
+  f.host.observeThreads([])
+  await expect.poll(async () => of(await f.driver.requests(), 'experimental.mcp.remove').length, { timeout: 20_000 }).toBe(1)
+  f.host.disconnect(); await f.adapter.closed()
+  expect(f.running(pid)).toBe(false)
+})
