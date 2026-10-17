@@ -32,6 +32,16 @@ A two-axis review found problems, each fixed in its own commit with a test that 
 - A first message returned to the composer after a reload still becomes Watcher's draft after a second reload (`watcherFirstMessage.test.tsx`).
 - Main and the window place cards and takeover lines by one shared rule for a shown reply (`isShownReply`).
 
+## October 17: read marks removed and proof repeated
+
+Read marks are deferred to #1144, in a separate pull request after #1142's live events. They are not part of this delivery. The saved code remains on `feat/watcher-read-marks` at `03d0bc98f`; the follow-up retains its eight review acceptance cases.
+
+At `4d48b1da5`, the removal revision, a fresh `npm run build` succeeded and `npx playwright test tests/e2e/watcher.spec.ts tests/e2e/watcher-gate.spec.ts` passed all 26 tests. The run repeated the sizes, themes, keyboard, reduced-motion and contrast journeys above; its receipt, takeover and Stop all captures replace the cited images. The fresh readings contain no read-mark-only entries. The lowest measured text contrast was 5.64:1. The receipt and takeover view, Stop all confirmation and per-thread results were visually inspected at 820x560.
+
+The removal worker's full suite passed 12,003 tests, skipped 339 and timed out once in the real archive case of `stableHostPromotion.test.mjs` while memory was heavily contended. An isolated rerun of that entire file passed all seven tests in 32.40 seconds; no deadline changed. The worker also recorded clean typecheck, lint, 1,031 focused Watcher tests and 189 notice components.
+
+Performance comparisons and the existing performance guards on the final integrated merge candidate remain required. These functional results do not clear that gate. Design baselines were not regenerated; these are fresh evidence of the approved room behavior.
+
 ## Not checked
 
 - Receipt cards, the takeover line and Stop all against main's own Watcher in the running app: those journeys use the stand-in projection, and main's placement of receipts and its takeover lines are covered by the unit tests. No live provider turn was run.
