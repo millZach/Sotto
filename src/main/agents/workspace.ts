@@ -24,7 +24,7 @@ import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type 
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual } from './threadStore'
-import { readHandover, type Handover, type HandoverStore } from './handover'
+import { readHandover, type Handover } from './handover'
 import { continuedPromptWords, continuedWordsOnly } from './continueThread'
 import { placeVisuals } from './visualPlacement'
 import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
@@ -326,7 +326,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * message as `shown` makes it. Undefined when the record cannot be read; with Keep local history off it is what this
    * run kept in memory, and says so.
    */
-  watcherHandover(threadId: string, shown: (message: AgentMessage) => AgentMessage): Handover | undefined {
+  watcherHandover(threadId: string, shown: (message: AgentMessage) => AgentMessage | null): Handover | undefined {
     if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
     return this.handoverOf(threadId, shown)
   }
@@ -340,20 +340,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!thread || !this.threadVisible(threadId) || thread.kind === 'watcher' || thread.kind === 'watcher-history') return undefined
     return this.handoverOf(threadId, message => continuedWordsOnly(thread, message))
   }
-  private handoverOf(threadId: string, shown: (message: AgentMessage) => AgentMessage): Handover | undefined {
+  private handoverOf(threadId: string, shown: (message: AgentMessage) => AgentMessage | null): Handover | undefined {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     if (!thread?.providerId || this.storeUnavailable) return undefined
     this.applyEvents()
-    const store = this.threadStore
-    const view: HandoverStore = {
-      ephemeral: store.ephemeral,
-      readMessages: (id, options) => { const window = store.readMessages(id, options); return { ...window, messages: window.messages.map(shown) } },
-      messageIdentities: id => store.messageIdentities(id),
-      message: (id, messageId) => { const found = store.message(id, messageId); return found === undefined ? undefined : shown(found) },
-      wakeUps: id => store.wakeUps(id),
-      activityCount: id => store.activityCount(id),
-    }
-    return readHandover(view, { source: { threadId, title: thread.title, provider: thread.providerId } })
+    // Each message is shown once it is marked as a wake-up or not, so a hidden wake-up is known by its provenance.
+    return readHandover(this.threadStore, { source: { threadId, title: thread.title, provider: thread.providerId }, shown })
   }
   async setWatcherKind(threadId: string, kind: 'watcher' | 'watcher-history'): Promise<void> {
     if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)

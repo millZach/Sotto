@@ -5,7 +5,7 @@ import { printable, type BabysitChange, type BabysitCheckNews, type BabysitNews,
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { watcherNewsSchema, type WatcherNews } from '../../shared/watcherNews'
 import { RESUME_NOTE, restartNewsSchema, type RestartNews } from '../../shared/restartResume'
-import { foldWatcherNews, watcherNewsText } from './watcherNews'
+import { foldWatcherNews, watcherNewsText, WATCHER_WAKE_UP_PROMPT } from './watcherNews'
 import { delegationNewsSchema, type DelegationNews } from '../../shared/delegation'
 import { delegationNewsText, foldDelegationNews } from './delegationNews'
 
@@ -71,14 +71,28 @@ export function foldWakeUpNews(earlier: readonly WakeUpNews[], later: WakeUpNews
   if (isDelegationNews(later)) return [...restart, ...prs, ...workers, foldDelegationNews(delegations[0], later)]
   return [...restart, ...foldNews(prs, later), ...workers, ...delegations]
 }
+/**
+ * A waiting wake-up's message: a resume note, pull request news and delegation news, in Sotto's words, as before. Watcher's news is not
+ * in it but beside it (`watcherWakeUpNote`), so a wake-up holding only that sends Watcher a short message instead.
+ */
 export function queuedWakeUpText(news: readonly WakeUpNews[], options: WakeUpOptions): string {
   const restart = news.some(isRestartNews) ? RESUME_NOTE : ''
   const prs = news.filter(isBabysitNews)
-  const watcher = news.filter(isWatcherNews).map(watcherNewsText).join('\n\n')
   const delegation = news.filter(isDelegationNews).map(delegationNewsText).join('\n\n')
-  const room = AGENT_TEXT_MAX - [restart, watcher, delegation].reduce((used, part) => used + (part ? part.length + 2 : 0), 0)
-  return [...restart ? [restart] : [], ...prs.length ? [wakeUpText(prs, options, room)] : [], ...watcher ? [watcher] : [], ...delegation ? [delegation] : []].join('\n\n')
+  if (!restart && !prs.length && !delegation) return news.some(isWatcherNews) ? WATCHER_WAKE_UP_PROMPT : ''
+  const room = AGENT_TEXT_MAX - [restart, delegation].reduce((used, part) => used + (part ? part.length + 2 : 0), 0)
+  return [...restart ? [restart] : [], ...prs.length ? [wakeUpText(prs, options, room)] : [], ...delegation ? [delegation] : []].join('\n\n')
 }
+/**
+ * Watcher's news in a wake-up, as the note its send carries (ADR-0073): the provider's own per-turn context channel,
+ * as the request note goes, so the conversation, the queue and the phone show none of it.
+ */
+export function watcherWakeUpNote(news: readonly WakeUpNews[]): string | undefined {
+  return news.filter(isWatcherNews).map(watcherNewsText).join('\n\n') || undefined
+}
+/** A wake-up holding nothing but Watcher's news: Sotto's own background action, shown nowhere. */
+export const isWatcherOnlyWakeUp = (item: { readonly wakeUp?: true | undefined; readonly news?: readonly WakeUpNews[] | undefined }): boolean =>
+  item.wakeUp === true && !!item.news?.length && item.news.every(isWatcherNews)
 
 const sameAddress = (left: string, right: string): boolean => (pullRequestKey(left) ?? left) === (pullRequestKey(right) ?? right)
 type Change<Kind extends BabysitChange['kind']> = Extract<BabysitChange, { kind: Kind }>

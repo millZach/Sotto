@@ -1204,7 +1204,9 @@ export class GrokAcpHost implements AgentHost {
           // Grok Build reads nothing model-visible from a prompt but its blocks, and its hooks drop added context, so a
           // Watcher's request note is one bracketed line after the user's words. Sotto's snapshot takes that exact line
           // off again before the message is shown anywhere (`watcherMessagesAsTyped`).
-          const requestLine = command.watcherRequestNote && await this.launchProfile(command.threadId) ? watcherRequestLine(command.watcherRequestNote) : ''
+          // A wake-up's news for Watcher goes the same way; its whole message is Sotto's, and shown nowhere.
+          const note = command.watcherRequestNote ?? command.watcherNews
+          const requestLine = note && await this.launchProfile(command.threadId) ? watcherRequestLine(note) : ''
           const nativeText = skillText + requestLine
           this.assertGeneration(generation)
           // Direct sends run beside configure-thread; a mode change that began during the awaits above owns the session now.
