@@ -32,10 +32,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -52,6 +56,7 @@ import com.millzach.sotto.app.AppModel
 import com.millzach.sotto.core.AgentNames
 import com.millzach.sotto.core.ComputerStatus
 import com.millzach.sotto.core.HostedThread
+import com.millzach.sotto.core.ProviderMarks
 import com.millzach.sotto.core.Stamp
 import com.millzach.sotto.core.ThreadState
 
@@ -101,6 +106,20 @@ fun SectionHeading(title: String, count: Int? = null, modifier: Modifier = Modif
         Spacer(Modifier.weight(1f))
         if (count != null) Text("$count", style = figtree(13, FontWeight.SemiBold), color = p.muted)
     }
+}
+
+/// A provider's mark (core/ProviderMarks.kt), as tall as the words beside it and in their colour, as the iPhone draws it.
+/// Decorative: the words beside it name the provider. A provider without a mark on Android draws nothing.
+@Composable
+fun ProviderMark(providerID: String?, tint: Color, size: Dp = 13.dp) {
+    val mark = ProviderMarks.mark(providerID) ?: return
+    val vector = remember(mark, size) {
+        ImageVector.Builder(defaultWidth = size * (mark.width / mark.height), defaultHeight = size, viewportWidth = mark.width, viewportHeight = mark.height)
+            .apply { mark.shapes.forEach { shape -> addPath(pathData = addPathNodes(shape.path), fill = SolidColor(Color.Black), fillAlpha = shape.alpha) } }
+            .build()
+    }
+    // A tint keeps each shape's own opacity, so the inner square stays at its 35%.
+    Icon(vector, contentDescription = null, tint = tint, modifier = Modifier.size(size))
 }
 
 @Composable
