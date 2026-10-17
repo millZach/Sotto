@@ -60,20 +60,24 @@ export function stateWithoutProviders<T extends AgentState>(state: T, unknown: H
   }
 }
 
-/** Whether a shell names any of the providers at all, read without copying anything. */
+/**
+ * Whether a shell names any of the providers at all, read without copying anything. A part a shell leaves out, as a stand-in
+ * service's may, names none.
+ */
 function namesAny(state: AgentState, unknown: HeldProviders): boolean {
-  const { host, configuration } = state
-  return host.threads.some(thread => { const provider = threadProviderOf(thread); return provider !== undefined && unknown.has(provider) })
-    || host.models.some(model => (model.providerId !== undefined && unknown.has(model.providerId)) || unknownModelId(model.id, unknown))
-    || host.projects.some(project => (project.providerId !== undefined && unknown.has(project.providerId)) || unknownModelId(project.id, unknown))
+  const host: Partial<AgentHostSnapshot> = state.host ?? {}
+  const configuration: Partial<AgentState['configuration']> = state.configuration ?? {}
+  return (host.threads ?? []).some(thread => { const provider = threadProviderOf(thread); return provider !== undefined && unknown.has(provider) })
+    || (host.models ?? []).some(model => (model.providerId !== undefined && unknown.has(model.providerId)) || unknownModelId(model.id, unknown))
+    || (host.projects ?? []).some(project => (project.providerId !== undefined && unknown.has(project.providerId)) || unknownModelId(project.id, unknown))
     || (host.providers?.some(row => unknown.has(row.id)) ?? false)
     || (host.clientHosts?.some(client => client.models.some(model => model.providerId !== undefined && unknown.has(model.providerId))
       || (client.providers?.some(row => unknown.has(row.id)) ?? false) || (client.clientUpdates?.some(update => unknown.has(update.id)) ?? false)
       || (client.enabledProviders?.some(id => unknown.has(id)) ?? false) || (client.clientUpdateRun?.line?.some(id => unknown.has(id)) ?? false)) ?? false)
-    || unknown.has(configuration.provider)
+    || (configuration.provider !== undefined && unknown.has(configuration.provider))
     || (configuration.enabledProviders?.some(id => unknown.has(id)) ?? false)
     || (configuration.disconnectedProviders?.some(id => unknown.has(id)) ?? false)
-    || unknownModelId(configuration.defaultModelId, unknown) || unknownModelId(configuration.newThreadModelId, unknown)
+    || unknownModelId(configuration.defaultModelId ?? '', unknown) || unknownModelId(configuration.newThreadModelId ?? '', unknown)
     || (state.installedProviders?.some(id => unknown.has(id)) ?? false)
     || (state.clientUpdates?.some(update => unknown.has(update.id)) ?? false)
     || (state.clientUpdateRun?.line?.some(id => unknown.has(id)) ?? false)

@@ -325,7 +325,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     const provider = service.threadProvider?.(threadId)
     return provider !== undefined && peer.unknownProviders.has(provider)
   }
-  const hiddenThread = (peer: Peer, threadId: string): boolean => unknownProviderThread(peer, threadId) || isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? ''))
+  /** A thread a phone is not shown: Watcher's own, and the ones Watcher's phone exclusions name. */
+  const hiddenFromPhone = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? ''))
+  const hiddenThread = (peer: Peer, threadId: string): boolean => unknownProviderThread(peer, threadId) || hiddenFromPhone(peer, threadId)
   /**
    * A shell without the providers a peer does not know (#1107): made once per read and set of providers, however many
    * such peers are sent it, and the read itself for a peer that knows them all or a shell that names none of them.
@@ -344,7 +346,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   const shell = (peer: Peer, read: AgentState = service.shell()) => {
     const original = withoutUnknown(read, peer.unknownProviders)
     const visible = isPhonePeer(peer) ? visibleWatcherState(original, false) : original
-    const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenThread(peer, thread.id)).map(thread => thread.projectId),
+    // `original` names no thread of a provider this peer does not know, so only a phone's own rule is asked here.
+    const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenFromPhone(peer, thread.id)).map(thread => thread.projectId),
       ...service.watcherPhoneExclusions?.().projectIds ?? []]) : new Set<string>()
     const state = hiddenProjects.size ? { ...visible, host: { ...visible.host, projects: visible.host.projects.filter(project =>
       !hiddenProjects.has(project.id) || visible.host.threads.some(thread => thread.projectId === project.id)) } } : visible
