@@ -72,7 +72,8 @@ it('starts OpenCode on Sotto’s own folders with none of the account’s keys, 
 })
 
 it.each([
-  ['1.19.3', 'cannot-start', 'Sotto works with OpenCode 2 only'],
+  // OpenCode 1 is too old to use, so setup offers OpenCode 2's install guide for it (#1104).
+  ['1.19.3', 'too-old', 'Sotto works with OpenCode 2 only'],
   ['2.0.30', 'too-old', 'OpenCode 2.0.31 or newer is required, and this client is 2.0.30.'],
   ['3.0.0', 'cannot-start', 'This is OpenCode 3.0.0, and Sotto works with OpenCode 2 only.'],
 ] as const)('refuses OpenCode %s at connect, in words, before any server starts', async (version, problem, said) => {

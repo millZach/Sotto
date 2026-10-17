@@ -30,7 +30,7 @@ async function mount(opencode: boolean, change: (state: AgentState) => void = ()
   render(<AppProvider bridge={createBridge({ getUpdateStatus: async () => ({ currentVersion: '0.1.37-owl.20261016.1', releaseTrack: 'owl', owlFeatures: { watcher: false, opencode }, phase: { phase: 'unsupported' }, checkedAt: null }) as never })} createController={createController}><ProvidersSettings /></AppProvider>)
   await screen.findByRole('button', { name: 'Codex' })
 }
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
 describe('OpenCode in provider settings', () => {
   it('offers OpenCode under its own mark in Owl, says its folder is Sotto’s own and that no model source is signed in yet', async () => {
@@ -42,13 +42,26 @@ describe('OpenCode in provider settings', () => {
     expect(screen.getByText('No model source signed in yet; OpenCode Zen’s free models only.')).toBeVisible()
   })
 
-  it('says only what is installed, since Sotto reads no published OpenCode version yet', async () => {
+  it('shows OpenCode’s installed and published versions and its update like any other client', async () => {
     await mount(true, state => {
-      state.clientUpdates = [{ id: 'opencode', installed: '2.0.31', behind: false, channel: 'self-update', canInstall: false, checkedAt: '2026-10-16T12:00:00.000Z', state: 'idle' }]
+      state.clientUpdates = [{ id: 'opencode', installed: '2.0.31', published: '2.0.40', behind: true, channel: 'self-update', command: 'opencode upgrade', byHand: ['opencode upgrade'], canInstall: true, checkedAt: '2026-10-16T12:00:00.000Z', state: 'idle' }]
     })
     fireEvent.click(await screen.findByRole('button', { name: 'OpenCode' }))
-    expect(screen.getByText('2.0.31 is installed.')).toBeVisible()
-    expect(screen.queryByText(/could not read the published version/)).toBeNull()
+    expect(screen.getByText('2.0.31 is installed; 2.0.40 is published. Your threads keep working while it installs.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Update' })).toBeEnabled()
+    expect(screen.queryByText(/cannot update OpenCode yet/u)).toBeNull()
+  })
+
+  it('names the command a package manager updates OpenCode with, and the OpenCode 2 guide', async () => {
+    await mount(true, state => {
+      state.clientUpdates = [{ id: 'opencode', installed: '2.0.31', published: '2.0.40', behind: true, channel: 'unknown', command: 'brew upgrade opencode-v2', byHand: ['brew upgrade opencode-v2'], canInstall: false, checkedAt: '2026-10-16T12:00:00.000Z', state: 'idle' }]
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'OpenCode' }))
+    expect(screen.getByText('2.0.31 is installed; 2.0.40 is published. Sotto cannot update this copy. Update it with brew upgrade opencode-v2.')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Update' })).toBeNull()
+    fireEvent.click(screen.getByText('Installation steps'))
+    expect(screen.getByText('brew upgrade opencode-v2', { selector: 'code' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Open OpenCode installation guide' })).toBeVisible()
   })
 
   it('offers nothing of OpenCode while its Owl feature is off', async () => {

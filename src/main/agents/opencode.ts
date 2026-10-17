@@ -13,7 +13,7 @@ import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHos
 import { opencodeReasoningActivity, opencodeStepFilesActivity, opencodeTextMessageId, opencodeToolActivity, opencodeToolOutput, opencodeToolStatus, type OpenCodeTool } from './opencodeActivity'
 import { locationQuery, OpenCodeClient, OpenCodeRejected, type OpenCodeEvent } from './opencodeClient'
 import { OPENCODE_DECLINED, OPENCODE_FORM_UNSHOWN, opencodeFormAnswer, opencodeFormPending, opencodeFormSchema, opencodePermissionDecision, opencodePermissionPending, opencodePermissionSchema, type OpenCodePending } from './opencodeRequests'
-import { ensureOpenCodeFolders, findOpenCodeExecutable, OPENCODE_CLI_VERSION, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
+import { ensureOpenCodeFolders, findOpenCodeExecutable, OPENCODE_CLI_VERSION, parseOpenCodeVersion, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
@@ -149,6 +149,8 @@ const modelSelectedSchema = ofSession.extend({ model: modelRefSchema })
 
 interface ThreadServer {
   ready: Promise<ThreadServer>
+  /** The client it started on: see `clientUpdated`. */
+  readonly revision: number
   server?: OpenCodeServer
   client?: OpenCodeClient
   readonly abort: AbortController
@@ -223,6 +225,12 @@ export class OpenCodeHost implements AgentHost {
   private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
   private readonly reaper: SessionReaper
   private generation = 0
+  /**
+   * Bumped when the client on disk changes. A thread server started before is an
+   * outdated process (CONTEXT.md): each stops as soon as its thread is not busy, and its next action starts a fresh one.
+   */
+  private revision = 0
+  private readonly outdated = new Set<string>()
   private state: AgentHostSnapshot = {
     connected: false, name: 'OpenCode', version: '', projects: [], models: [], threads: [],
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, configureThreadModel: true, skills: false, steer: true, compact: false },
@@ -254,7 +262,7 @@ export class OpenCodeHost implements AgentHost {
     certifyActivityView(this.state, this.threads.values())
     return { ...this.state, threads: [...this.threads.values()].map(thread => this.log.activityThread(thread, historyFromEvents)) }
   }
-  private emit(streaming = false): void { this.publisher.publish(streaming) }
+  private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated() }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return this.activityListeners.add(listener, options)
@@ -335,7 +343,7 @@ export class OpenCodeHost implements AgentHost {
     const current = this.processes.get(id); if (current) return current.ready
     if (!this.state.connected || !this.executable) return Promise.reject(new Error('Connect OpenCode before managing threads.'))
     const generation = this.generation
-    const entry = { abort: new AbortController(), closing: false } as ThreadServer
+    const entry = { abort: new AbortController(), closing: false, revision: this.revision } as ThreadServer
     entry.ready = (async () => {
       await this.refuseWatcher(id)
       this.assertGeneration(generation)
@@ -385,6 +393,26 @@ export class OpenCodeHost implements AgentHost {
     }
     this.emit()
   }
+  /** Stops each outdated thread server whose thread is not busy; a thread being shown opens again on a fresh one. */
+  private stopOutdated(): void {
+    if (!this.outdated.size) return
+    for (const id of [...this.outdated]) {
+      const entry = this.processes.get(id)
+      if (!entry || entry.revision === this.revision) { this.outdated.delete(id); continue }
+      if (this.busy(id)) continue
+      this.outdated.delete(id)
+      const generation = this.generation
+      void this.stopSession(id).then(() => {
+        if (generation !== this.generation || !this.observed.has(id) || !this.aliases[id]?.sessionConfirmed) return
+        return this.open(id)
+      }).catch(() => { if (generation === this.generation && this.processes.get(id) === entry) this.outdated.add(id) })
+    }
+  }
+  /** Every thread server started before now moves to a fresh one as its thread goes idle. */
+  private renew(): void {
+    this.revision += 1
+    for (const [id, entry] of this.processes) if (entry.revision < this.revision) this.outdated.add(id)
+  }
   private async stopSession(id: string): Promise<void> {
     const entry = this.processes.get(id)
     if (this.loaded.delete(id)) this.emit()
@@ -401,6 +429,7 @@ export class OpenCodeHost implements AgentHost {
       held = false
       const left = (this.holds.get(id) ?? 1) - 1
       if (left > 0) this.holds.set(id, left); else this.holds.delete(id)
+      this.stopOutdated()
     }
   }
 
@@ -419,6 +448,9 @@ export class OpenCodeHost implements AgentHost {
       const said = await readOpenCodeVersion(executable, this.options.args ?? [], opencodeEnvironment(this.environment, this.folders, opencodePassword()))
       const refusal = opencodeVersionRefusal(said ?? '')
       if (refusal instanceof OpenCodeTooOld) tooOld = refusal.version
+      // OpenCode 1 is older than the floor too: setup offers its install guide for it, as for any client too old to use.
+      const reported = parseOpenCodeVersion(said ?? '')
+      if (refusal && reported && reported.generation < 2) tooOld = reported.version
       if (refusal) throw refusal
       this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read()
       this.threads.clear(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
@@ -484,6 +516,45 @@ export class OpenCodeHost implements AgentHost {
     const signedIn = [...new Set(models.map(model => model.providerID).filter(id => id !== ZEN))].map(sourceOf)
     const account = signedIn.length ? `Signed in to ${signedIn.join(', ')}` : 'No model source signed in yet; OpenCode Zen’s free models only'
     this.state.account = account.length > 80 ? `${account.slice(0, 79)}…` : account
+  }
+
+  /** The catalog as a server reads it now: the models, the default and the providers that name each model's source. */
+  private async readCatalog(client: OpenCodeClient): Promise<{ models: NativeModel[]; providers: { id: string; name: string }[]; fallback: NativeModel | undefined }> {
+    const location = locationQuery(this.folders.data)
+    const models = modelListSchema.parse(await client.request('GET', '/api/model', { query: location })).data
+    const fallback = await client.request('GET', '/api/model/default', { query: location }).then(value => defaultModelSchema.parse(value).data ?? undefined, () => undefined)
+    const providers = providerListSchema.parse(await client.request('GET', '/api/provider', { query: location })).data
+    return { models, providers, fallback }
+  }
+  /**
+   * A new client is on disk (ADR-0042, ADR-0038): it is found again and checked on a server of its own, the catalog is read
+   * from it, and every thread server moves to it as its thread goes idle. Working threads finish on the old one.
+   */
+  async clientUpdated(): Promise<void> {
+    if (!this.state.connected) return
+    const generation = this.generation
+    const executable = this.options.executable ?? await findOpenCodeExecutable(this.environment).catch(() => undefined)
+    if (generation !== this.generation || !this.state.connected) return
+    if (!executable || !isAbsolute(executable)) throw new Error('OpenCode was updated, but Sotto cannot find it now. Threads that are working carry on and nothing was lost. Check the OpenCode install, then connect OpenCode again.')
+    const said = await readOpenCodeVersion(executable, this.options.args ?? [], opencodeEnvironment(this.environment, this.folders, opencodePassword()))
+    const refusal = opencodeVersionRefusal(said ?? '')
+    if (generation !== this.generation || !this.state.connected) return
+    if (refusal) throw new Error(`OpenCode was updated, but Sotto cannot run the new version. ${refusal.message} Threads that are working carry on and nothing was lost.`)
+    const previous = this.executable
+    this.executable = executable
+    let started: { server: OpenCodeServer; client: OpenCodeClient; version: string } | undefined
+    try {
+      started = await this.startServer(this.folders.data)
+      const catalog = await this.readCatalog(started.client)
+      if (generation !== this.generation || !this.state.connected) return
+      this.applyCatalog(started.version, catalog.models, catalog.providers, catalog.fallback)
+    } catch (error) {
+      if (generation !== this.generation || !this.state.connected) return
+      this.executable = previous
+      throw new Error('OpenCode was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect OpenCode again to try the new version.', { cause: error })
+    } finally { await started?.server.stop() }
+    this.renew()
+    this.emit()
   }
 
   /** Early start (#769): a thread OpenCode already has opens its session; a draft gets the server its first send would use. */
@@ -1109,6 +1180,7 @@ export class OpenCodeHost implements AgentHost {
     for (const entry of this.processes.values()) void this.closeProcess(entry)
     this.processes.clear()
     if (this.probe) { void this.probe.then(probe => probe.server.stop(), () => undefined); this.probe = undefined }
+    this.outdated.clear()
     this.state.connected = false; this.emit()
   }
   async closed(): Promise<void> { await Promise.all([...this.exits]); await Promise.allSettled(this.loading.values()); await this.writing }
