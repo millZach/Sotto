@@ -792,8 +792,12 @@ import XCTest
         // The frame comes from one snapshot, never a second look: what a press did leaves by itself after eight seconds,
         // and on a loaded simulator it went between `exists` and `frame`, which XCTest fails as a missing match.
         for (element, gap) in dock where element.exists {
-            guard let frame = try? element.snapshot().frame else { continue }
-            bottom = min(bottom, frame.minY - gap)
+            do {
+                let frame = try element.snapshot().frame
+                bottom = min(bottom, frame.minY - gap)
+            } catch {
+                XCTAssertFalse(element.exists, "A dock element that is still present must provide its frame: \(error)")
+            }
         }
         return (top, bottom)
     }
@@ -1273,9 +1277,9 @@ import XCTest
         // What a press did is said for eight seconds, so it is read straight after the press: on a loaded simulator the
         // waits that follow it have outlasted it.
         XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["watch-undo"].exists, "With Undo")
-        XCTAssertTrue(waitUntilGone(stop), "Stop watching takes its card off Watched")
+        XCTAssertTrue(app.buttons["watch-undo"].waitForExistence(timeout: 8), "With Undo")
         capture("watcher-watched-stopped-dark")
+        XCTAssertTrue(waitUntilGone(stop), "Stop watching takes its card off Watched")
         // Watch a thread offers it again.
         let add = app.buttons["watcher-watch-a-thread"]
         revealInWatcher(add)
