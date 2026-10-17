@@ -3,6 +3,7 @@ import { Check, Copy } from 'lucide-react'
 import { writeClipboard } from '../../agents/richActions'
 import { PROVIDER_LABELS, type AgentProviderStatus, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
 import type { HostSetupChoice, HostsBridge, HostStatus } from '../../../../shared/hosts'
+import { opencodeNotOnHost } from '../../../../shared/opencodeSignIn'
 import { HOST_PROVIDER_JOB_WORDS, HOST_PROVIDERS, hostProviderJobCase, PROVIDER_SIGN_IN_COMMANDS, PROVIDER_SIGN_IN_SHAPES, type HostProviderAction, type HostProviderId, type HostProviderJobCase, type HostProviderJobState } from '../../../../shared/hostProviders'
 import { useHeldProviders } from '../../state/owlFeature'
 import { Button } from '../../components/Button'
@@ -253,6 +254,9 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
   const own = job?.hostId === host.id ? job : undefined
   const opencodeBridge = useMemo(() => heldProviders.has('opencode') ? undefined : hostOpenCodeBridge(bridge, host.id), [bridge, host.id, heldProviders])
   const opencodeConnected = providers.some(item => item.id === 'opencode' && item.connection === 'connected')
+  // A host from before #1107, or one whose OpenCode is held, sends no OpenCode row: it gets no tile to connect (#1143).
+  const opencodeOnHost = providers.some(item => item.id === 'opencode')
+  const shownProviders = HOST_PROVIDER_ORDER.filter(provider => !heldProviders.has(provider) && (provider !== 'opencode' || opencodeOnHost))
   const view = useHostClientUpdates(host.id, updates, HOST_PROVIDER_ORDER)
   const [sending, setSending] = useState(false)
   const [refusal, setRefusal] = useState<TileUpdates['refusal']>()
@@ -292,11 +296,12 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
     </div>
     {open ? <div id={gridId} className="host-providers__panel">
       <ul ref={grid} className="host-providers__grid" aria-label={`Providers on ${host.name}`}>
-        {HOST_PROVIDER_ORDER.filter(provider => !heldProviders.has(provider)).map(provider => <ProviderTile key={provider} host={host} provider={provider} bridge={bridge}
+        {shownProviders.map(provider => <ProviderTile key={provider} host={host} provider={provider} bridge={bridge}
           status={providers.find(item => item.id === provider)} job={own?.provider === provider ? own : undefined}
           onSignIn={setSigningIn} onAgent={(id, jobCase) => setAgent({ provider: id, jobCase })} updates={tileUpdates} />)}
       </ul>
       {opencodeBridge && opencodeConnected ? <OpenCodeModelSources bridge={opencodeBridge} host={host.name} /> : null}
+      {heldProviders.has('opencode') || opencodeOnHost ? null : <p className="host-providers__foot">{opencodeNotOnHost(host.name)}</p>}
       <p className="host-providers__foot">{host.name} connects each provider that is signed in when its host starts. A provider you disconnect stays off.</p>
     </div> : null}
     {signingIn ? <HostProviderSignIn host={host} provider={signingIn} bridge={bridge} onClose={() => setSigningIn(null)} /> : null}

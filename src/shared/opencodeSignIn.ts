@@ -226,6 +226,12 @@ export const HOST_ANSWER_LOST = {
   page: (host: string): string => `${host} did not answer, so the sign-in page did not open. Nothing was saved. Press Open the page again.`,
 } as const
 
+/**
+ * A host that sends no OpenCode row, one from before #1107 or one whose OpenCode is held: it has no OpenCode tile, and this
+ * says what would give it one. This computer's version of the host is an Owl one whenever this computer offers OpenCode.
+ */
+export const opencodeNotOnHost = (host: string): string =>
+  `OpenCode does not run on ${host}’s host. To use it there, put this computer’s version of the host on ${host}, stop the host and connect again.`
 /** A host from before #1107 does not list `opencode-sign-in`: its tile says so, and nothing is sent to it. */
 export const opencodeHostNeedsUpdate = (host: string): string =>
   `The host on ${host} cannot sign OpenCode in to model sources from here. Nothing was changed. Put this computer’s version of the host on ${host}, stop the host and connect again.`

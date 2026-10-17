@@ -6,7 +6,7 @@ import { HOST_PROVIDER_ORDER, HostProviders } from '../../../src/renderer/src/fe
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import type { AgentProviderStatus, ProviderId } from '../../../src/shared/agents'
 import type { HostsBridge, HostStatus } from '../../../src/shared/hosts'
-import { hostKeySentence, opencodeHostNeedsUpdate, opencodeSignInComesBack, SIGN_IN_WORDS, type ModelSources } from '../../../src/shared/opencodeSignIn'
+import { hostKeySentence, opencodeHostNeedsUpdate, opencodeNotOnHost, opencodeSignInComesBack, SIGN_IN_WORDS, type ModelSources } from '../../../src/shared/opencodeSignIn'
 
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn(),
@@ -107,6 +107,25 @@ it('says in words that an older host needs an update before its OpenCode signs i
   const { bridge: hosts } = bridge(() => ({ status: 'refused', message: opencodeHostNeedsUpdate('forge') }))
   await open(hosts)
   expect(await screen.findByRole('alert')).toHaveTextContent('The host on forge cannot sign OpenCode in to model sources from here. Nothing was changed. Put this computer’s version of the host on forge, stop the host and connect again.')
+})
+
+it('draws no OpenCode tile for a host that sends no OpenCode, and says what would put it there', async () => {
+  const { bridge: hosts, opencodeSignIn } = bridge()
+  // A host from before #1107, or one whose OpenCode is held, sends no OpenCode row at all.
+  await open(hosts, [FORGE[0]!])
+  expect(within(screen.getByRole('list', { name: 'Providers on forge' })).getAllByRole('heading').map(heading => heading.textContent)).not.toContain('OpenCode')
+  expect(screen.queryByRole('button', { name: 'Connect OpenCode on forge' })).toBeNull()
+  expect(screen.getByText(opencodeNotOnHost('forge'))).toBeVisible()
+  expect(opencodeNotOnHost('forge')).toBe('OpenCode does not run on forge’s host. To use it there, put this computer’s version of the host on forge, stop the host and connect again.')
+  expect(opencodeSignIn).not.toHaveBeenCalled()
+  // A host that sends it has its tile and no such line, and a stable build says nothing of OpenCode either way.
+  cleanup()
+  await open(hosts)
+  expect(screen.queryByText(opencodeNotOnHost('forge'))).toBeNull()
+  cleanup()
+  owl(false)
+  await open(hosts, [FORGE[0]!])
+  expect(screen.queryByText(opencodeNotOnHost('forge'))).toBeNull()
 })
 
 it('shows no Model sources while OpenCode on the host is not connected, and nothing of OpenCode at all on stable', async () => {
