@@ -105,21 +105,23 @@ for (const surface of ['tools', 'drawer', 'workspace'] as const) {
       expect(folder.startsWith(launched.userData)).toBe(true)
       await writeFile(join(folder, 'terminal-basics.cjs'), `
 const e = '\\x1b';
-// Each paint is numbered, so the journey can tell a fresh paint from the one before it.
-let paints=0;
-const paint = () => process.stdout.write(e+'[3J'+e+'[2J'+e+'[H'+[
+// Every line of a paint ends with its number, so the journey can tell a fresh paint from the one before it wherever
+// search scrolled the screen. The fixture also notes how many paints it made and how many Ctrl+L asked for, so the
+// journey knows which paint is the newest.
+let paints=0, asked=0;
+const paint = () => { require('fs').writeFileSync(require('path').join(__dirname, 'fixture-paints.json'), JSON.stringify({ paints: ++paints, asked })); process.stdout.write(e+'[3J'+e+'[2J'+e+'[H'+[
  'Search check ready', 'alpha needle one', 'beta needle two', 'gamma needle three',
  'URL https://example.com/terminal',
  'OSC '+e+']8;;https://example.com/docs'+e+'\\\\'+'project docs'+e+']8;;'+e+'\\\\',
  'Unsafe '+e+']8;;file:///tmp/blocked'+e+'\\\\'+'blocked file'+e+']8;;'+e+'\\\\',
- 'CJK 界 emoji 😀', 'GRID='+process.stdout.columns+'x'+process.stdout.rows+' PAINT='+(++paints)
-].join('\\r\\n')+'\\r\\n');
+ 'CJK 界 emoji 😀', 'GRID='+process.stdout.columns+'x'+process.stdout.rows
+].map(line => line+' PAINT='+paints).join('\\r\\n')+'\\r\\n'); };
 // After the capture redraw, follow later PTY sizes instead of keeping a screen from the old grid.
 let repaintOnResize=false;
 process.stdout.on('resize', () => { if(repaintOnResize) paint(); });
 paint();
 process.stdin.setRawMode(true); process.stdin.resume(); let line='';
-process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x03') process.exit(0); if(c==='\\x0c') {repaintOnResize=true;paint();continue;} if(c==='\\x02') {process.stdout.write('\\r\\n'+('many-match\\r\\n').repeat(1001));continue;} if(c==='\\r') {process.stdout.write('INPUT='+line+'\\r\\n');line='';} else line+=c; } });
+process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x03') process.exit(0); if(c==='\\x0c') {repaintOnResize=true;asked++;paint();continue;} if(c==='\\x02') {process.stdout.write('\\r\\n'+('many-match\\r\\n').repeat(1001));continue;} if(c==='\\r') {process.stdout.write('INPUT='+line+'\\r\\n');line='';} else line+=c; } });
 `, 'utf8')
       await app.evaluate(({ shell }) => {
         const state = globalThis as typeof globalThis & { terminalOpenedLinks?: string[] }
@@ -317,33 +319,78 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
         expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(560)
       }).toPass()
       await namedLink.press('Escape'); await find.focus()
-      /** The newest fixture paint the screen shows. The last line of every paint names its number. */
+      /** The newest fixture paint the screen shows. Every line of a paint names its number. */
       const shownPaint = () => scope.locator('.xterm-rows > div').evaluateAll(rows => Math.max(0, ...rows.map(row => Number(/PAINT=(\d+)/u.exec(row.textContent ?? '')?.[1] ?? 0))))
+      /** The fixture's own record of how many paints it made and how many of them Ctrl+L asked for. */
+      const fixturePaints = async (): Promise<{ paints: number; asked: number }> => {
+        let record: { paints: number; asked: number } | undefined
+        // The fixture may be writing the file as it is read; read it again until it parses.
+        await expect(async () => { record = JSON.parse(await readFile(join(folder, 'fixture-paints.json'), 'utf8')) }).toPass()
+        return record!
+      }
+      // Note every count search shows, with the newest paint the screen showed at that moment.
+      type CountsView = HTMLElement & { fixtureCounts: { text: string; paint: number }[] }
+      await search.evaluate(bar => {
+        const view = bar.parentElement as CountsView, count = bar.querySelector('output')!
+        view.fixtureCounts = []
+        new MutationObserver(records => {
+          if (!records.some(record => count.contains(record.target))) return
+          const paint = Math.max(0, ...[...view.querySelectorAll('.xterm-rows > div')].map(row => Number(/PAINT=(\d+)/u.exec(row.textContent ?? '')?.[1] ?? 0)))
+          view.fixtureCounts.push({ text: count.textContent ?? '', paint })
+        }).observe(view, { subtree: true, childList: true, characterData: true })
+      })
+      const counts = () => search.evaluate(bar => (bar.parentElement as CountsView).fixtureCounts)
+      /**
+       * The count search shows once the screen shows the fixture's newest paint, made after the Ctrl+L that followed
+       * `asked`, and search has counted again since that paint arrived (the addon recounts after a write). The query is
+       * never typed again, so the count is the one Sotto and the addon arrived at by themselves.
+       */
+      const countAfterPaint = async (asked: number): Promise<string> => {
+        let text = ''
+        await expect(async () => {
+          const fixture = await fixturePaints()
+          expect(fixture.asked, 'the fixture made the paint Ctrl+L asked for').toBeGreaterThan(asked)
+          expect(await shownPaint(), 'the screen shows the fixture\'s newest paint').toBe(fixture.paints)
+          const last = (await counts()).at(-1)
+          expect(last?.paint, 'search counted again after that paint arrived').toBe(fixture.paints)
+          text = last!.text
+        }).toPass({ timeout: 15_000 })
+        return text
+      }
+      /** The count search shows after Sotto's own refresh, the first count after the `seen` counts before it. */
+      const countAfterRefresh = async (seen: number): Promise<string> => {
+        await expect.poll(async () => (await counts()).length, { message: 'search counted again for the new theme' }).toBeGreaterThan(seen)
+        return (await counts()).at(-1)!.text
+      }
       /**
        * Search counts the fixture's three matches. When the grid has fewer rows than a paint has lines, ConPTY can send
-       * the next paint's scrollback clear ahead of the line feed that ended the paint before it, so one line of that
-       * paint outlives the clear and search counts it too (#1135). The PTY's own output shows that order, so it is
-       * ConPTY's and not Sotto's. Any count but three asks for another paint and searches that one.
+       * the next paint's scrollback clear ahead of the line feed that ended the paint before it, so one needle line of
+       * that paint outlives the clear and search counts four (#1135). The PTY's own output shows that order, so it is
+       * ConPTY's and not Sotto's. Only that count asks for a fresh paint, whose count is checked the same way; any other
+       * count fails.
        */
-      const expectFixtureMatches = async (): Promise<void> => {
-        await expect(async () => {
-          if (/of 3$/u.test(await search.locator('output').textContent() ?? '')) return
-          const shown = await shownPaint()
-          await input.press('Control+l')
-          await expect.poll(shownPaint).toBeGreaterThan(shown)
-          await find.fill(''); await find.fill('needle')
-          await expect(search.locator('output')).toHaveText(/of 3$/u, { timeout: 1_000 })
-        }).toPass({ timeout: 30_000 })
+      const expectFixtureMatches = async (count: string): Promise<void> => {
+        for (let fresh = 0; !/^\d+ of 3$/u.test(count); fresh++) {
+          expect(count, 'search counts the fixture\'s three matches, or four with a line ConPTY kept from the paint before').toMatch(/^\d+ of 4$/u)
+          expect(fresh, 'a fresh paint drops the line ConPTY kept').toBeLessThan(5)
+          const { asked } = await fixturePaints()
+          await input.press('Control+l'); await find.focus()
+          count = await countAfterPaint(asked)
+        }
       }
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+        const { asked } = await fixturePaints()
         await resizeWindow(launched, width, height)
         await input.press('Control+l')
         await find.focus()
+        await expectFixtureMatches(await countAfterPaint(asked))
         for (const appearance of ['dark', 'light'] as const) {
+          const rethemed = await page.locator('html').getAttribute('data-theme') !== appearance, seen = (await counts()).length
           await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
           await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
           await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
-          await expectFixtureMatches()
+          // A new theme makes Sotto search again, so its highlights take the theme's colours; that count must hold too.
+          if (rethemed) await expectFixtureMatches(await countAfterRefresh(seen))
           await expectHighlightOnText(scope)
           const box = await search.boundingBox(), bounds = await scope.locator('.terminal-view__screen').boundingBox()
           expect(box!.x).toBeGreaterThanOrEqual(bounds!.x)
