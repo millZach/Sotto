@@ -133,7 +133,8 @@ it.each(['approval-required', 'auto-accept-edits', 'full-access'] as const)('cre
     expect((await f.driver.requests()).filter(record => record.method === 'session.update').map(record => record.params?.permissions)).toEqual([opencodeRules(next)])
     // OpenCode has no mode that matches Automatic, so it is never offered.
     await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'auto' })).rejects.toThrow('not supported')
-    expect(opencodeRules('approval-required')).toEqual([{ action: 'shell', resource: '*', effect: 'ask' }, { action: 'edit', resource: '*', effect: 'ask' }, { action: 'external_directory', resource: '*', effect: 'ask' }])
+    expect(opencodeRules('approval-required')).toEqual(['shell', 'edit', 'external_directory', 'webfetch', 'websearch', 'subagent'].map(action => ({ action, resource: '*', effect: 'ask' })))
+    expect(opencodeRules('auto-accept-edits').filter(item => item.effect === 'ask').map(item => item.action)).toEqual(['shell', 'external_directory', 'webfetch', 'websearch', 'subagent'])
     expect(opencodeRules('auto-accept-edits')).toContainEqual({ action: 'edit', resource: '*', effect: 'allow' })
     expect(opencodeRules('full-access')).toEqual([{ action: '*', resource: '*', effect: 'allow' }])
   } finally { await f.cleanup() }

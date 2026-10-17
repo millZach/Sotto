@@ -38,9 +38,11 @@ const ZEN_NAME = 'OpenCode Zen'
 
 /**
  * Sotto's permission modes as OpenCode session rule sets (ADR-0087). The last matching rule wins, and OpenCode's own
- * agent rules still apply, so **Ask for approval** asks for every command, edit and step outside the project folder that
- * those rules do not already decide. There is no Automatic: OpenCode has no mode of its own that matches it. Nothing is
- * denied outright, since OpenCode Zen's free models refuse a session whose rules take a tool away.
+ * agent rules still apply, so **Ask for approval** asks for every command, edit, step outside the project folder, web
+ * fetch, web search and subagent that those rules do not already decide, as Claude Code and Devin ask before reaching the
+ * web; **Auto-accept edits** allows edits and asks the rest. A session's rules win over a project's own `opencode.json`
+ * for the actions they name (checked against 2.0.31). There is no Automatic: OpenCode has no mode of its own that matches
+ * it. Nothing is denied outright, since OpenCode Zen's free models refuse a session whose rules take a tool away.
  */
 export const opencodeRuntimeModes = ['approval-required', 'auto-accept-edits', 'full-access'] as const
 type OpenCodeMode = typeof opencodeRuntimeModes[number]
@@ -49,7 +51,8 @@ export interface OpenCodeRule { readonly action: string; readonly resource: stri
 const rule = (action: string, effect: OpenCodeRule['effect']): OpenCodeRule => ({ action, resource: '*', effect })
 export function opencodeRules(mode: OpenCodeMode): OpenCodeRule[] {
   if (mode === 'full-access') return [rule('*', 'allow')]
-  return [rule('shell', 'ask'), rule('edit', mode === 'auto-accept-edits' ? 'allow' : 'ask'), rule('external_directory', 'ask')]
+  return [rule('shell', 'ask'), rule('edit', mode === 'auto-accept-edits' ? 'allow' : 'ask'), rule('external_directory', 'ask'),
+    rule('webfetch', 'ask'), rule('websearch', 'ask'), rule('subagent', 'ask')]
 }
 function modeOfRules(rules: readonly { action: string; resource: string; effect: string }[] | undefined): OpenCodeMode | undefined {
   if (!rules) return undefined

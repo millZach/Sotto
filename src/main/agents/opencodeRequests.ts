@@ -45,7 +45,7 @@ export const OPENCODE_FORM_UNSHOWN = 'Sotto could not show this question to the 
 
 const ACTIONS: Readonly<Record<string, string>> = {
   edit: 'Edit', shell: 'Run a command', bash: 'Run a command', read: 'Read', webfetch: 'Fetch a web page', websearch: 'Search the web',
-  external_directory: 'Work outside the project folder', glob: 'Search files', grep: 'Search file contents',
+  external_directory: 'Work outside the project folder', glob: 'Search files', grep: 'Search file contents', subagent: 'Start a subagent',
 }
 /** What the action is, in one sentence the request card shows. */
 function permissionText(permission: OpenCodePermission): string {
