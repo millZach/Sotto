@@ -1150,6 +1150,8 @@ export class OpenCodeHost implements AgentHost {
         if (!alias) throw new Error('This OpenCode thread has no provider session. Do not repeat its creation automatically.')
         const readForSend = this.readsBeforeSend.take(command.threadId, command)
         this.reaper.touch(command.threadId)
+        // A thread in the middle of a command is busy, so an update or a sign-in leaves its server to it until it ends (ADR-0038).
+        release = this.hold(command.threadId)
         if (command.type === 'configure-thread') {
           await this.open(command.threadId); this.assertGeneration(generation)
           const entry = await this.threadProcess(command.threadId)
@@ -1185,7 +1187,6 @@ export class OpenCodeHost implements AgentHost {
           }
           settled = true
         } else if (command.type === 'send' || command.type === 'steer') {
-          release = this.hold(command.threadId)
           if (command.skills?.length) throw providerTakesNoSkills('opencode')
           await this.open(command.threadId); this.assertGeneration(generation)
           const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments)

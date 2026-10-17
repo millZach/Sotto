@@ -176,6 +176,34 @@ it('changes the model and effort on the live session without starting another', 
   } finally { await f.cleanup() }
 })
 
+it.each(['an update', 'a sign-in'] as const)('lets a settings change finish on its server when %s lands meanwhile, then moves the idle thread on', { timeout: 60_000 }, async change => {
+  // The model switch is held under a longer request deadline, so the change is still in the middle of its command when
+  // the client or the sign-ins change: checking a new client starts a server of its own, which takes a moment. Everything
+  // is scripted before the change starts, so no server reads the script while it is being written.
+  const { f, id } = await open(await opencodeFixture(undefined, 15_000))
+  try {
+    await f.host.refreshThread!(id)
+    await expect.poll(async () => f.holder(id)).toBeDefined()
+    const first = await f.holder(id)
+    // The newer client is on disk before the change starts; the thread's server, already running, is still the old one.
+    await f.script({ delay: { 'session.switchModel': 6_000 }, ...(change === 'an update' ? { version: '2.0.40' } : {}) })
+    let done = false
+    const changing = f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' }).finally(() => { done = true })
+    await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'session.switchModel').length).toBe(1)
+    if (change === 'an update') await f.host.clientUpdated!()
+    else expect((await f.host.signIn.signInWithKey({ sourceId: 'anthropic', key: 'sk-fixture-made-up-key-3c9a' })).status).toBe('ok')
+    // The change was still in the middle of its command when its server became outdated, and that server was left to it.
+    expect(done).toBe(false)
+    const result = await changing
+    expect(result.accepted).toBe(true)
+    expect(result.snapshot?.threads.find(candidate => candidate.id === id)?.reasoningEffort).toBe('high')
+    // Once the change is done the thread is idle, so it moves to a fresh server.
+    await expect.poll(async () => { const holder = await f.holder(id); return holder !== undefined && holder !== first }, { timeout: 15_000 }).toBe(true)
+    expect((await thread(f, id)).reasoningEffort).toBe('high')
+    if (change === 'an update') expect((await f.host.snapshot()).version).toContain('2.0.40')
+  } finally { await f.cleanup() }
+})
+
 it('answers a permission once or with a reject, never always, and shows the diff it would apply', async () => {
   const { f, id } = await open()
   try {
