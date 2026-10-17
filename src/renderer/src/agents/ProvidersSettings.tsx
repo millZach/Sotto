@@ -104,6 +104,13 @@ export function ProvidersSettings(): ReactNode {
     } catch { setErrors(previous => ({ ...previous, [provider]: `Could not update ${PROVIDER_LABELS[provider]}. Try again.` })) }
     finally { inFlight.current.delete(provider); setUpdatePending(previous => ({ ...previous, [provider]: undefined })) }
   }
+  // OpenCode missing, or refused for its version (OpenCode 1 among them), gets its install guide whether or not update
+  // checks are on, as first-run setup offers it.
+  const problem = 'problem' in status ? status.problem : undefined
+  const openCodeInstall = selected !== 'opencode' || connected ? undefined
+    : problem === 'not-installed' ? 'OpenCode 2 is not installed on this computer. Install it with its install script or npm’s @opencode/cli, then connect again.'
+    : problem === 'too-old' ? `Sotto works with OpenCode ${'requiredVersion' in status && status.requiredVersion ? status.requiredVersion : '2.0.31'} or newer. Install OpenCode 2 with its install script or npm’s @opencode/cli, then connect again.`
+    : undefined
   // OpenCode 2's own guide; opencode.ai/docs installs OpenCode 1, which Sotto does not drive.
   const openOpenCodeGuide = async (): Promise<void> => {
     setErrors(previous => ({ ...previous, opencode: undefined }))
@@ -184,7 +191,7 @@ export function ProvidersSettings(): ReactNode {
               </div>
             </div>
             {selected === 'muse' && checkClientUpdates && update && ((update.behind && !update.canInstall) || update.state === 'failed' || update.state === 'unchanged') && <details className="provider-client__steps"><summary>Installation steps</summary><p>{update.channel === 'unknown' || !update.byHand?.length ? 'Update Muse with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.'}</p>{update.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openMuseGuide()}>Open Muse installation guide</Button></details>}
-            {selected === 'opencode' && checkClientUpdates && update && ((update.behind && !update.canInstall) || update.state === 'failed' || update.state === 'unchanged') && <details className="provider-client__steps"><summary>Installation steps</summary><p>{!update.byHand?.length ? 'Update OpenCode 2 with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.'}</p>{update.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openOpenCodeGuide()}>Open OpenCode installation guide</Button></details>}
+            {selected === 'opencode' && (openCodeInstall || checkClientUpdates && update && ((update.behind && !update.canInstall) || update.state === 'failed' || update.state === 'unchanged')) && <details className="provider-client__steps"><summary>Installation steps</summary><p>{openCodeInstall ?? (!update?.byHand?.length ? 'Update OpenCode 2 with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.')}</p>{openCodeInstall ? null : update?.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openOpenCodeGuide()}>Open OpenCode installation guide</Button></details>}
             {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.</p>}
             <p className="provider-models__empty">Choose what new threads start with under Agents.</p>
             {selected === 'muse' && <details className="provider-support"><summary>Threads with Muse</summary><p>Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}

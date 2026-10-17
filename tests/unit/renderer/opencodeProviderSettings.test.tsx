@@ -70,6 +70,27 @@ describe('OpenCode in provider settings', () => {
     expect(screen.getByRole('button', { name: 'Open OpenCode installation guide' })).toBeVisible()
   })
 
+  it.each([
+    ['missing', { problem: 'not-installed' as const, version: '', error: 'Could not connect OpenCode. Install OpenCode 2, then connect again. Your threads and drafts are kept.' },
+      'OpenCode 2 is not installed on this computer. Install it with its install script or npm’s @opencode/cli, then connect again.'],
+    ['refused for its version', { problem: 'too-old' as const, version: '1.19.3', requiredVersion: '2.0.31', error: 'Could not connect OpenCode. This is OpenCode 1.19.3, and Sotto works with OpenCode 2 only.' },
+      'Sotto works with OpenCode 2.0.31 or newer. Install OpenCode 2 with its install script or npm’s @opencode/cli, then connect again.'],
+  ])('offers OpenCode 2’s install guide when OpenCode is %s, with no update to show', async (_kind, problem, words) => {
+    const openExternalLink = vi.fn(async () => ({ ok: true }))
+    vi.stubGlobal('sotto', { ...window.sotto, openExternalLink })
+    await mount(true, state => {
+      state.configuration = { ...state.configuration, checkClientUpdates: false }
+      const opencode = state.host.providers!.find(provider => provider.id === 'opencode')!
+      Object.assign(opencode, { connection: 'error', account: undefined, ...problem })
+      state.clientUpdates = []
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'OpenCode' }))
+    fireEvent.click(screen.getByText('Installation steps'))
+    expect(screen.getByText(words)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Open OpenCode installation guide' }))
+    expect(openExternalLink).toHaveBeenCalledWith('https://opencode.ai/v2/docs/')
+  })
+
   it('offers nothing of OpenCode while its Owl feature is off', async () => {
     await mount(false)
     expect(screen.queryByRole('button', { name: 'OpenCode' })).toBeNull()
