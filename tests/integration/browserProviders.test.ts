@@ -199,7 +199,7 @@ describe.each(factories)('%s visual tool', (provider, factory) => {
     await create('Visuals off')
     if (provider === 'opencode') {
       // OpenCode is given its servers beside the start: once the browser's is in, the visual tool would have been too. Its
-      // rule set still names `visualize` among Sotto's tools, an allow for a tool this thread's server was never given.
+      // rule set allows only the browser's tools, so a `visualize` of a project's own server is still asked about.
       await opencodeGiven(fixture, 'sotto_browser', before)
       expect((await fixture.driver.requests()).slice(before).filter(record => record.method === 'experimental.mcp.add').map(record => record.params?.server)).toEqual(['sotto_browser'])
     } else expect(JSON.stringify((await fixture.driver.requests()).slice(before))).not.toContain(VISUAL_MCP_SERVER)
