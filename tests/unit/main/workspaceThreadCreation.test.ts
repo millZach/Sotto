@@ -167,8 +167,11 @@ describe("durable project/thread organization", () => {
     const project = snapshot.projects.find(project => project.providerId === 'codex')!
     const model = snapshot.models.find(model => model.providerId === 'codex')!
     const status: GitStatus = { isRepository: true, branch: 'main', upstream: 'origin/main', hasRemote: true, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-10-16T00:00:00.000Z' }
-    let fetchIntervalMs = 0
-    f.host.setGitStatus({ read: async () => status, readRemote: async () => true, invalidate: () => undefined }, { pollIntervalMs: () => fetchIntervalMs, foreground: () => false })
+    let fetchIntervalMs = 0, removing = false
+    const ranIn: string[] = []
+    // The project's folder is held while a removal runs there (ADR-0027): a fetch typing starts then is not started at all.
+    const runInFolder = <Result>(cwd: string, work: () => Promise<Result>): Promise<Result> | undefined => { ranIn.push(cwd); return removing ? undefined : work() }
+    f.host.setGitStatus({ read: async () => status, readRemote: async () => true, invalidate: () => undefined, runInFolder }, { pollIntervalMs: () => fetchIntervalMs, foreground: () => false })
     const fetching = deferred()
     const prefetch = vi.spyOn(ThreadWorktrees.prototype, 'prefetchOriginBase').mockReturnValue(fetching.promise)
     const create = (threadId: string, selection: { workingCopy: 'independent' | 'shared'; startFromOrigin?: boolean; baseBranch?: string; existingWorktreePath?: string }) =>
@@ -182,6 +185,11 @@ describe("durable project/thread organization", () => {
     await f.host.startThreadSession('origin')
     expect(prefetch).not.toHaveBeenCalled()
     fetchIntervalMs = 30_000
+    removing = true
+    await f.host.startThreadSession('origin')
+    expect(ranIn).toEqual([project.path])
+    expect(prefetch).not.toHaveBeenCalled()
+    removing = false
     // Typing returns while the fetch is still running, so a send typed meanwhile does not queue behind it.
     for (const threadId of ['origin', 'local-base', 'shared', 'previous']) await f.host.startThreadSession(threadId)
     expect(prefetch.mock.calls).toEqual([[project.path, 'main']])

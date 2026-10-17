@@ -3762,12 +3762,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * A new worktree set to start from origin fetches its base while the first message is typed, outside the thread's
    * lane so the send queues behind nothing; the send uses that fetch while it runs and for two minutes after. A fetch
    * that fails says nothing here: the send fetches again and reports its own failure. With the Git fetch interval
-   * Off, Sotto fetches nothing it was not asked for, so only the send fetches.
+   * Off, Sotto fetches nothing it was not asked for, so only the send fetches. It runs in the project's folder under
+   * the status reader's hold, so a folder being removed gets none and its removal waits for one running (ADR-0027).
    */
   private prefetchOriginBase(thread: AgentThread, project: AgentProject | undefined): void {
     const worktree = thread.worktree
     if (this.gitStatusOptions.pollIntervalMs() <= 0 || !project || worktree?.mode !== 'independent' || worktree.path || !worktree.startFromOrigin || worktree.existingWorktreePath || worktree.checkoutBranch) return
-    void this.worktrees.prefetchOriginBase(project.path, worktree.baseBranch).catch(() => undefined)
+    const fetch = (): Promise<void> => this.worktrees.prefetchOriginBase(project.path, worktree.baseBranch)
+    void (this.gitStatus?.runInFolder ? this.gitStatus.runInFolder(project.path, fetch) : fetch())?.catch(() => undefined)
   }
   async clientUpdated(provider: ProviderId): Promise<void> { await this.inner.clientUpdated?.(provider) }
   disconnect(provider?: ProviderId): void {

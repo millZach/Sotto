@@ -462,8 +462,9 @@ export class ThreadWorktrees {
   private async resolveOriginBase(repositoryRoot: string, baseBranch: string): Promise<OriginBase> {
     const key = await this.originFetchKey(repositoryRoot, baseBranch)
     const running = this.usableOriginFetch(key)
-    if (running) { try { return await running } catch { /* Fetched again below. */ } }
-    // Sends that waited on the same failed fetch make one fetch between them, not one each racing for the ref.
+    // Only an answer that fetched is used: origin without the branch, or no origin, may have changed since it was asked.
+    if (running) { try { const answer = await running; if (answer === 'fetched') return answer } catch { /* Asked again below. */ } }
+    // Sends that waited on the same fetch, failed or fruitless, make one fetch between them, not one each racing for the ref.
     return this.usableOriginFetch(key) ?? this.trackOriginFetch(key, repositoryRoot, baseBranch, 'send')
   }
 

@@ -132,6 +132,12 @@ export interface GitStatusSource {
   /** Resolves once no Git or gh process this source started runs in `cwd` or a folder inside it. */
   idle?(cwd: string): Promise<void>
   /**
+   * Runs `work`, Git that Sotto starts in `cwd` outside a thread's order of work (a new worktree's early origin fetch,
+   * ADR-0057), under the same `hold` as this source's own remote half: undefined, having started nothing, for a folder
+   * held for removal or one inside it; otherwise `work`'s promise, which `idle` waits for.
+   */
+  runInFolder?<Result>(cwd: string, work: () => Promise<Result>): Promise<Result> | undefined
+  /**
    * A Git action ran in `folder` (a working folder or its repository's common Git directory): the next remote read of
    * that repository fetches again and asks GitHub again instead of trusting its caches, and no read of it begun before
    * now is shared with a caller after it. Other repositories keep their answers (#820). A folder last read as no
@@ -253,6 +259,9 @@ export class GitStatusReader implements GitStatusSource {
       const count = (this.held.get(key) ?? 1) - 1
       if (count > 0) this.held.set(key, count); else this.held.delete(key)
     }
+  }
+  runInFolder<Result>(cwd: string, work: () => Promise<Result>): Promise<Result> | undefined {
+    return this.isHeld(this.folderKey(cwd)) ? undefined : this.tracked(cwd, work())
   }
   async idle(cwd: string): Promise<void> {
     const key = this.folderKey(cwd)

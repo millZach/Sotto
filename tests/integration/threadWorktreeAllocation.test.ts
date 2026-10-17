@@ -12,6 +12,21 @@ import { fixture, removeTestCheckout } from '../fixtures/threadWorktreeFixture'
 
 afterEach(() => { vi.restoreAllMocks() })
 
+/**
+ * Runs `then` once `count` more sends have looked for a running origin fetch to use, so each is already waiting on the
+ * one it found: a fetch held until then is let go after the sends joined it by construction, not by how long Git takes.
+ */
+function onceSendsLook(service: ThreadWorktrees, count: number, then: () => void): void {
+  type Looks = { usableOriginFetch(key: string): unknown }
+  const look = (ThreadWorktrees.prototype as unknown as Looks).usableOriginFetch
+  let left = count
+  vi.spyOn(service as unknown as Looks, 'usableOriginFetch').mockImplementation(function (this: ThreadWorktrees, key: string) {
+    const found = look.call(this, key)
+    if (--left === 0) setImmediate(then)
+    return found
+  })
+}
+
 describe("independent working-copy allocation", () => {
   it('coordinates setup and inspection without adding Git subprocesses to their existing validation', async () => {
     const f = await fixture()
@@ -262,18 +277,13 @@ describe("independent working-copy allocation", () => {
     const remoteReads: string[] = []
     let fetched: string | undefined
     let held: { readonly read: string; readonly until: Promise<void> } | undefined
-    // A send reads which repository it is in just before it looks for a fetch to use, so a held fetch is let go only
-    // once that many sends are past that read.
-    let sendsPast: { count: number; readonly then: () => void } | undefined
     const service = new ThreadWorktrees(f.root, async (cwd, args, options) => {
       if (args[0] === 'ls-remote' || args[0] === 'fetch') {
         remoteReads.push(`${args[0]}${options?.quiet ? ' (quiet)' : ''}`)
         if (args[0] === 'fetch') fetched = args.at(-1)
         if (held?.read === args[0]) await held.until
       }
-      const output = await git(cwd, args, options)
-      if (args.includes('--git-common-dir') && sendsPast && --sendsPast.count === 0) setImmediate(sendsPast.then)
-      return output
+      return git(cwd, args, options)
     })
     // Typing fetches the base without asking for a sign-in; a send while it runs waits for it rather than racing it.
     const typing = deferred<void>()
@@ -282,7 +292,7 @@ describe("independent working-copy allocation", () => {
     await vi.waitFor(() => expect(remoteReads).toEqual(['ls-remote (quiet)', 'fetch (quiet)']))
     let clock = performance.now()
     const now = vi.spyOn(performance, 'now').mockImplementation(() => clock)
-    sendsPast = { count: 1, then: typing.resolve }
+    onceSendsLook(service, 1, typing.resolve)
     const sent = await service.allocate(f.project, 'independent', { baseBranch: 'base', startFromOrigin: true })
     await typed
     expect(sent).toMatchObject({ originBase: 'fetched' })
@@ -325,7 +335,7 @@ describe("independent working-copy allocation", () => {
     held = { read: 'ls-remote', until: failing.promise }
     const failed = service.prefetchOriginBase(f.project, 'other')
     await vi.waitFor(() => expect(remoteReads).toEqual(['ls-remote (quiet)']))
-    sendsPast = { count: 2, then: failing.resolve }
+    onceSendsLook(service, 2, failing.resolve)
     const sends = [1, 2].map(() => service.allocate(f.project, 'independent', { baseBranch: 'other', startFromOrigin: true }))
     await expect(failed).rejects.toThrow('could not be fetched')
     for (const send of sends) await expect(send).rejects.toThrow('could not be fetched')
@@ -335,6 +345,28 @@ describe("independent working-copy allocation", () => {
     const plain = join(f.root, 'plain'); await mkdir(plain)
     await service.prefetchOriginBase(plain)
     expect(remoteReads).toEqual([])
+  })
+  it('asks origin again when the fetch typing started, which a send waited on, found no such branch', async () => {
+    const f = await fixture()
+    const remote = join(f.root, 'origin'); await mkdir(remote)
+    await initializeBareGitRepository(remote)
+    await git(f.project, ['remote', 'add', 'origin', remote])
+    await git(f.project, ['push', 'origin', 'HEAD:refs/heads/base'])
+    const remoteReads: string[] = []
+    const { promise: answered, resolve: answer } = deferred<void>()
+    const service = new ThreadWorktrees(f.root, async (cwd, args, options) => {
+      if (args[0] === 'ls-remote' || args[0] === 'fetch') remoteReads.push(`${args[0]}${options?.quiet ? ' (quiet)' : ''}`)
+      // Typing's look finds no such branch on origin, as it would have just before a teammate pushed it.
+      if (args[0] === 'ls-remote' && options?.quiet) { await answered; throw Object.assign(new Error('No such branch yet.'), { code: 2 }) }
+      return git(cwd, args, options)
+    })
+    const typed = service.prefetchOriginBase(f.project, 'base')
+    await vi.waitFor(() => expect(remoteReads).toEqual(['ls-remote (quiet)']))
+    onceSendsLook(service, 1, answer)
+    const sent = await service.allocate(f.project, 'independent', { baseBranch: 'base', startFromOrigin: true })
+    await typed
+    expect(sent).toMatchObject({ originBase: 'fetched', baseCommit: (await git(f.project, ['rev-parse', 'refs/remotes/origin/base'])).trim() })
+    expect(remoteReads).toEqual(['ls-remote (quiet)', 'ls-remote', 'fetch'])
   })
   it('checks out a new worktree with a worker per core unless the user set their own count', async () => {
     const f = await fixture()
