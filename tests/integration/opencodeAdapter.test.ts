@@ -146,8 +146,8 @@ it('finds the provider session a creation made when its answer was lost, and mak
     await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Lost answer' }))
       .resolves.toEqual({ accepted: false, uncertain: true })
     // OpenCode chooses the provider session's ID, so Sotto finds it by the mark it left in the session's metadata.
-    // The fake answers a second after the adapter gave up; the session it made is there by the next read.
-    await new Promise(resolve => setTimeout(resolve, 2500))
+    // The fake answers a second after the adapter gave up; the next read waits for the session it made to be there.
+    await expect.poll(async () => (await f.nativeSessions()).filter(session => session.title === 'Lost answer').length, { timeout: 10_000 }).toBe(1)
     await f.host.refreshThread!(id)
     expect((await thread(f, id)).status).toBe('idle')
     const creations = (await f.driver.requests()).filter(record => record.method === 'session.create')

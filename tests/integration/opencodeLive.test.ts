@@ -55,7 +55,8 @@ it.skipIf(!live)('runs, asks, resumes and stops a thread on OpenCode 2 itself', 
     // A long answer is stopped.
     await host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'long', text: 'Write the numbers from 1 to 400 in words, one per line.' })
     await expect.poll(async () => (await thread()).status, { timeout: 60_000, interval: 250 }).toBe('running')
-    await new Promise(resolve => setTimeout(resolve, 3_000))
+    // Stop lands on a turn that is streaming: the model has begun its answer.
+    await expect.poll(async () => (await thread()).messages.some(message => message.role === 'assistant' && /one/iu.test(message.text) && !before.some(([id]) => id === message.id)), { timeout: 120_000, interval: 100 }).toBe(true)
     expect(await host.execute({ type: 'interrupt', threadId: id, commandId: randomUUID() })).toEqual({ accepted: true })
     await expect.poll(async () => (await thread()).lastTurn?.status, { timeout: 60_000, interval: 250 }).toBe('interrupted')
     expect(events.every(event => /^opencode-server-[a-z]+$/u.test(event))).toBe(true)
