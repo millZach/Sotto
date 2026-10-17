@@ -67,3 +67,24 @@ it('presents command permission scope once while retaining exact internal action
   expect(detailed.request.context).toEqual({ toolCallId: 'tool', details: JSON.stringify(detailedInput) })
   expect(detailed.actionDetails).toBe(JSON.stringify(detailedInput))
 })
+
+// A Sotto tool is named by Devin's tool-name meta when it has one, never by a title that disagrees with it, and never by
+// a command's title, which is the command text (#1086 review).
+describe('which tool a Devin permission is for', () => {
+  const sotto = new Set(['mcp__sotto_visual__visualize', 'mcp__sotto_browser__browser_open'])
+  const ask = (toolCall: Record<string, unknown>) => () => devinPending(7, 'session/request_permission', permission, 'thread', { toolCallId: 'tool', ...toolCall }, sotto)
+
+  it('refuses a call whose meta names another tool, even when its title names a Sotto tool', () => {
+    expect(ask({ title: 'mcp__sotto_visual__visualize', rawInput: { title: 'x' }, _meta: { 'cognition.ai/toolName': 'mcp__other__exfil' } })).toThrow()
+  })
+
+  it('names a Sotto tool by its meta, whatever the title says', () => {
+    expect(ask({ title: 'Visualize', rawInput: { title: 'x' }, _meta: { 'cognition.ai/toolName': 'mcp__sotto_visual__visualize' } })()!.request.text).toBe('Use Sotto’s visualize tool')
+  })
+
+  it('reads a command whose text looks like a Sotto tool name as a command, not as that tool', () => {
+    const pending = ask({ kind: 'execute', title: 'mcp__sotto_browser__browser_open', rawInput: { command: 'mcp__sotto_browser__browser_open' } })()!
+    expect(pending.request.text).toBe('mcp__sotto_browser__browser_open')
+    expect(pending.request.context).toEqual({ toolCallId: 'tool', command: 'mcp__sotto_browser__browser_open' })
+  })
+})

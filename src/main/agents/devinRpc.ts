@@ -7,11 +7,12 @@ import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
 /**
  * Devin's floor: the oldest client Sotto connects (ADR-0042), and what a host's tile says an update needs
- * (ADR-0035). The reason: 3000.10.31 is the version whose ACP `session/load` replay, standard elicitation for
- * questions and the ask-before-everything profile Sotto writes for it were checked (ADR-0016, ADR-0017, ADR-0022);
- * earlier versions changed exactly those. Move it only after checking a newer one against the adapter contract.
+ * (ADR-0035). The reason: 3000.11.92 is the version whose readback of the owned profiles, integration lists and
+ * attaching of tool servers passed on `session/new` and `session/load` were checked (ADR-0017, ADR-0022, ADR-0056).
+ * 3000.10.31, the floor before it, started supplied servers but never attached them, so its threads could not have
+ * Sotto's tools. Move it only after checking a newer one against the adapter contract.
  */
-export const DEVIN_CLI_VERSION = '3000.10.31'
+export const DEVIN_CLI_VERSION = '3000.11.92'
 export const DEVIN_ACP_VERSION = 1
 export class DevinUncertain extends Error {}
 /**

@@ -5,17 +5,25 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { devinOtelDefaults as otelDefaults } from './devinOtel.mjs'
 
-// Synthetic ACP peer grounded in the native 3000.10.31 experiment. Only fixture data is recorded.
+// Synthetic ACP peer grounded in the native 3000.10.31 experiment, answering in the shapes 3000.11.92 uses (#1040).
+// Only fixture data is recorded.
 const root = process.argv[2]
 const path = name => join(root, name)
 const read = (name, fallback) => { try { return JSON.parse(readFileSync(path(name), 'utf8')) } catch { return fallback } }
 const write = (name, value) => writeFileSync(path(name), JSON.stringify(value))
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify(frame) + '\n')
 const violate = reason => appendFileSync(path('violations.jsonl'), JSON.stringify({ reason }) + '\n')
+// The version this fake answers as, and whether it is older than a given one, for the shapes that changed between them.
+const fakeVersion = () => read('script.json', {}).cliVersion ?? '3000.11.92'
+const olderThan = target => {
+ const [a, b] = [fakeVersion(), target].map(version => version.split('.').map(Number))
+ for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index] < b[index]
+ return false
+}
 // Every process Sotto starts says what it is, so a test can count the processes a send costs.
 record({ method: 'fixture/spawn', params: { kind: process.argv.includes('--version') ? 'version' : process.argv.includes('plugins') ? 'plugins'
  : process.argv.includes('mcp') ? 'mcp' : 'acp' } })
-if (process.argv.includes('--version')) { process.stdout.write('devin ' + (read('script.json', {}).cliVersion ?? '3000.10.31') + ' (b98cc431)\n'); process.exit(0) }
+if (process.argv.includes('--version')) { process.stdout.write('devin ' + fakeVersion() + ' (7f4e64980e22)\n'); process.exit(0) }
 if (process.argv.includes('plugins') && process.argv.includes('list')) { process.stdout.write('No plugins installed.\n'); process.exit(0) }
 if (process.argv.includes('mcp') && process.argv.includes('list')) {
  process.stdout.write(read('integrations.json', {}).enabledMcp
@@ -61,6 +69,10 @@ function applyScriptedPolicyChange(script, operation) {
 function sessionInfo(session) {
  return { modes: { currentModeId: session.mode ?? 'accept-edits', availableModes: MODES.map(mode => ({ id: mode.value, name: mode.name })) }, configOptions: configOptions(session) }
 }
+// The ACP HTTP server shape, and only to a client that said it takes them.
+const validServers = (servers, script) => Array.isArray(servers) && (!servers.length || !script.noHttpMcp) && servers.every(server => server?.type === 'http'
+ && typeof server.name === 'string' && /^http:\/\/127\.0\.0\.1:\d+\//u.test(server.url) && Array.isArray(server.headers)
+ && server.headers.every(header => typeof header?.name === 'string' && typeof header.value === 'string'))
 const released = name => new Promise(resolve => { const timer = setInterval(() => { if (existsSync(path(name))) { clearInterval(timer); resolve() } }, 10) })
 function update(sessionId, value) { send({ method: 'session/update', params: { sessionId, update: value } }) }
 function saveMessage(sessionId, message) {
@@ -124,7 +136,9 @@ createInterface({ input: process.stdin }).on('line', line => {
  if (frame.method === 'initialize') {
   if (p.protocolVersion !== 1 || p.clientInfo?.name !== 'sotto' || p.clientCapabilities?.terminal !== false) violate('Untruthful or unsupported ACP initialization')
   const initialized = () => result(frame.id, { protocolVersion: script.protocolVersion ?? 1, agentInfo: { name: 'affogato', title: 'Devin Agent', version: '0.0.0-dev' },
-   agentCapabilities: { loadSession: true, promptCapabilities: { image: true, audio: false, embeddedContext: true }, sessionCapabilities: { list: {}, delete: {} } },
+   agentCapabilities: { loadSession: true, promptCapabilities: { image: true, audio: false, embeddedContext: true }, sessionCapabilities: { list: {}, delete: {} },
+    // 3000.11.1 and later attach servers passed on session/new and session/load; `noHttpMcp` answers as a client that cannot.
+    ...(script.noHttpMcp ? {} : { mcpCapabilities: { http: !olderThan('3000.11.1'), sse: !olderThan('3000.11.1') } }) },
    authMethods: [{ id: 'devin-browser', name: 'Log in with browser' }] })
   // A Devin that takes this long to answer its first start, as a cold CLI can; later starts answer at once.
   if (script.delayInitialize) { write('script.json', { ...script, delayInitialize: 0 }); setTimeout(initialized, script.delayInitialize) } else initialized()
@@ -132,14 +146,21 @@ createInterface({ input: process.stdin }).on('line', line => {
   const configPath = process.argv[process.argv.indexOf('--config') + 1]
   let config = {}
   try { config = JSON.parse(readFileSync(configPath, 'utf8')) } catch { violate('Missing owned config') }
-  // 3000.10.31 accepts the profile's `otel` block and leaves it out of the readback. A script can answer as 3000.11.3
-  // does instead: `otel: 'profile'` reads back the profile's block filled in with defaults, `otel: 'default'` the CLI's
-  // own default block whatever the profile says, and an object exactly that. `newBlock` adds a block Sotto never checked.
+  // 3000.11.92 reads the profile's `otel` block back filled in with defaults, as `otel: 'profile'` does and the default
+  // here does. `otel: 'default'` reads back the CLI's own default block whatever the profile says, `otel: 'absent'` leaves
+  // it out as 3000.10.31 did, and an object is read back exactly. `newBlock` adds a block Sotto never checked. The
+  // defaults 3000.11.92 adds to every readback come with it, and `readback` overrides any of them.
   const { otel, ...older } = config
-  const readOtel = script.otel === 'profile' ? { enabled: true, ...otelDefaults, ...otel } : script.otel === 'default' ? { enabled: true, ...otelDefaults } : script.otel
-  result(frame.id, { config: { ...older, ...(readOtel ? { otel: readOtel } : {}), ...(script.newBlock ? { future_block: { enabled: true } } : {}) }, configPath })
+  // An older version reads back as it did: no `otel` before 3000.11.1, and none of 3000.11.92's new defaults before that.
+  const readOtel = script.otel === undefined && olderThan('3000.11.1') ? undefined : script.otel === undefined || script.otel === 'profile' ? { enabled: true, ...otelDefaults, ...otel }
+   : script.otel === 'default' ? { enabled: true, ...otelDefaults } : script.otel === 'absent' ? undefined : script.otel
+  const agent = { model: null, preferred_family_models: {}, show_history_on_continue: true, thinking: { mode: 'auto' }, model_mixture: null, compaction_threshold_tokens: null, codex_tools: false }
+  const defaults = olderThan('3000.11.92') ? { proxy: { mode: 'system', url: null, no_proxy: null }, disabled_tools: [], keymap: {}, agent }
+   : { proxy: { mode: 'system', url: null, no_proxy: null, gzip: true }, disabled_tools: [], keymap: {}, typewriter: true, local_tools_bypass_permissions: false,
+    agent: { ...agent, subagent_model: null } }
+  result(frame.id, { config: { ...defaults, ...older, ...script.readback, ...(readOtel ? { otel: readOtel } : {}), ...(script.newBlock ? { future_block: { enabled: true } } : {}) }, configPath })
  } else if (frame.method === 'session/new') {
-  if (!p.cwd || !Array.isArray(p.mcpServers) || p.mcpServers.length) violate('Invalid session setup')
+  if (!p.cwd || !validServers(p.mcpServers, script)) violate('Invalid session setup')
   const sessionId = randomUUID(); const session = { cwd: p.cwd, model: 'fixture-model', messages: [] }
   write(nativePath(sessionId), session); acquire(sessionId)
   applyScriptedPolicyChange(script, 'new')
@@ -151,6 +172,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (held) write('script.json', { ...script, holdLoad: false })
   void (async () => {
    if (held) await released('release-load')
+   if (!validServers(p.mcpServers, script)) violate('Invalid session setup')
    const session = read(nativePath(p.sessionId), null)
    if (!session || script.rejectLoad) { reject(frame.id, -32016); return }
    // Native Devin first persists a session when it receives its first prompt.
@@ -223,6 +245,17 @@ const control = setInterval(() => {
     send({ id, method: 'session/request_permission', params: { sessionId, toolCall: { toolCallId: id }, options: [
      { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }, { optionId: 'deny-once', name: 'Deny', kind: 'reject_once' }] } })
    }
+  }
+  // A call to one of the session's MCP tools, asked about as the asking profiles' `mcp__*` rule makes Devin ask. Which field
+  // carries the tool's name has not been seen on a real turn: `nameIn` puts it in the meta, the title or neither.
+  if (command.type === 'mcp-permission') {
+   const id = `${process.pid}-${++serial}`
+   pending.set(id, { kind: 'permission', sessionId })
+   update(sessionId, { sessionUpdate: 'tool_call', toolCallId: id, kind: 'other', title: command.nameIn === 'title' ? command.tool : 'MCP tool', rawInput: command.input,
+    _meta: { ...(command.nameIn === 'meta' ? { 'cognition.ai/toolName': command.tool } : {}), ...(command.truncated ? { 'cognition.ai/toolInputTruncated': true } : {}) } })
+   send({ id, method: 'session/request_permission', params: { sessionId, toolCall: { toolCallId: id }, options: [
+    { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }, { optionId: 'allow-server', name: 'Allow all tools on this server', kind: 'allow_always' },
+    { optionId: 'deny-once', name: 'Deny', kind: 'reject_once' }] } })
   }
   if (command.type === 'permission' || command.type === 'question') {
    const id = `${process.pid}-${++serial}`

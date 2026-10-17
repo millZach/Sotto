@@ -107,6 +107,17 @@ it('reads the replay once the stream has been silent for the grace period, and a
   expect(await loads(f)).toBeGreaterThan(loaded)
 })
 
+// A slow configured poll is not the wait's pace: a send whose first replay read comes before Devin saved its prompt, as on
+// a loaded runner, reads again at the busy pace and is accepted before its deadline (#1086, #1097).
+it('reads the replay again when the first read comes before the prompt is saved, however slow the poll is set', async () => {
+  f = await devinFixture(undefined, 5000, 60_000)
+  const id = await opened(f)
+  await f.script({ delayPrompt: 1_000 })
+  const loaded = await loads(f)
+  expect(await send(f, id)).toEqual({ accepted: true })
+  expect(await loads(f)).toBeGreaterThanOrEqual(loaded + 2)
+})
+
 it('reads the replay of a held session only to confirm a dispatch no replay has confirmed yet', async () => {
   f = await streamOnly()
   const id = await opened(f)

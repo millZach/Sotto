@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
+import { DEVIN_CLI_VERSION } from '../../src/main/agents/devinRpc'
 import { devinFixture } from '../fixtures/devinFixture'
 
 let f: Awaited<ReturnType<typeof devinFixture>>
@@ -132,18 +133,20 @@ it('still refuses when the catalog folder itself carries native configuration', 
 
 it('connects to a client newer than the checked version and records which one it checked (ADR-0042)', async () => {
   f.host.disconnect(); await f.host.closed()
-  await f.script({ cliVersion: '3000.11.02' })
+  await f.script({ cliVersion: '3000.12.02' })
   const snapshot = await f.host.connect()
   expect(snapshot.connected).toBe(true)
-  expect(snapshot.verifiedVersion).toBe('3000.10.31')
+  expect(snapshot.verifiedVersion).toBe(DEVIN_CLI_VERSION)
 })
 
-it('names the checked CLI version when the installed version is older than it', async () => {
+it.each(['2999.1.1', '3000.10.31', '3000.11.3'])('names the checked CLI version when the installed version %s is older than it', async version => {
   f.host.disconnect(); await f.host.closed()
-  await f.script({ cliVersion: '2999.1.1' })
+  await f.script({ cliVersion: version })
   const snapshot = await f.host.connect()
   expect(snapshot.connected).toBe(false)
-  expect(snapshot.error).toContain('3000.10.31')
+  // 3000.10.31 was the floor before Devin threads took Sotto's tools (#1040): its users are told what to install.
+  expect(snapshot).toMatchObject({ problem: 'too-old', version, requiredVersion: DEVIN_CLI_VERSION,
+    error: `This Devin version is older than the one Sotto checked. Your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} or newer before connecting.` })
   expect((await f.host.snapshot()).connected).toBe(false)
   expect(await prompts()).toHaveLength(0)
 })
