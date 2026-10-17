@@ -57,8 +57,14 @@ describe('where a receipt shows in Watcher’s conversation', () => {
     const placed = watcherReceiptReplies(record({ asked: 'u1' }, [operation('a', 'asked')]), thread([user('u1'), user('u2'), reply('r1')]))
     expect(placed).toEqual([{ operationId: 'a', messageId: 'r1' }])
     // A wake-up's turn is never crossed for a reply: the card waits under the turn's own message.
-    expect(watcherReceiptReplies(record({ asked: 'u1' }, [operation('a', 'asked')]), thread([user('u1'), wakeUp('w1'), reply('r2')])))
+    expect(watcherReceiptReplies(record({ asked: 'u1', woke: 'w1' }, [operation('a', 'asked')]), thread([user('u1'), wakeUp('w1'), reply('r2')])))
       .toEqual([{ operationId: 'a', messageId: 'u1' }])
+  })
+
+  it('stays under its own message when its turn ended with no shown reply and a later instruction got one', () => {
+    // u1 started a worker through a tool and its turn ended without words; u2, a turn of its own, got r2.
+    const placed = watcherReceiptReplies(record({ first: 'u1', second: 'u2' }, [operation('a', 'first')]), thread([user('u1'), user('u2'), reply('r2')]))
+    expect(placed).toEqual([{ operationId: 'a', messageId: 'u1' }])
   })
 
   it('places nothing without a recorded turn, for another Watcher, or for a turn no longer in the conversation', () => {
