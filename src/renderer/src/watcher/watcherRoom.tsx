@@ -234,12 +234,38 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   </WatcherRoomContext.Provider>
 }
 
+/** Whether the user can see this window now: it is shown, not minimised or in the tray, and it has the focus. */
+function windowAttended(): boolean {
+  return typeof document === 'undefined' || (document.visibilityState !== 'hidden' && document.hasFocus())
+}
+
+/** Whether the user can see this window now, kept as it gains and loses the focus or is hidden and shown. */
+export function useWindowAttended(): boolean {
+  const [attended, setAttended] = useState(windowAttended)
+  useEffect(() => {
+    const update = (): void => setAttended(windowAttended())
+    update()
+    window.addEventListener('focus', update)
+    window.addEventListener('blur', update)
+    document.addEventListener('visibilitychange', update)
+    return () => {
+      window.removeEventListener('focus', update)
+      window.removeEventListener('blur', update)
+      document.removeEventListener('visibilitychange', update)
+    }
+  }, [])
+  return attended
+}
+
 /**
  * Takes the read marks of the threads the user is reading now, once each: a thread opened beside Watcher, or selected on
- * the Threads page, has its news seen. A refusal leaves the mark, and it is tried again when the thread is opened again.
+ * the Threads page, has its news seen, but only while the user can see the window. A thread left open in a minimised
+ * window, or one behind another app, keeps its mark until the window is in front again. A refusal leaves the mark, and
+ * it is tried again when the thread is opened again.
  */
 export function useReadMarksCleared(room: WatcherRoom | null, state: AgentState | null, threadIds: readonly (string | null)[]): void {
-  const marked = room === null ? '' : threadIds.filter((id): id is string => id !== null && room.readMarks.has(id)).join('\n')
+  const attended = useWindowAttended()
+  const marked = room === null || !attended ? '' : threadIds.filter((id): id is string => id !== null && room.readMarks.has(id)).join('\n')
   const latest = useRef({ room, state })
   useEffect(() => { latest.current = { room, state } })
   useEffect(() => {

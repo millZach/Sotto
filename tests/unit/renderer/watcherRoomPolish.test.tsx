@@ -94,6 +94,8 @@ function renderRoom(room: WatcherRoomState, state: AgentState = agentState()) {
 }
 const paneReady = () => screen.findByRole('tab', { name: /^Watched, / })
 
+// The window is in front unless a test says otherwise: read marks clear only while the user can see it.
+beforeEach(() => { vi.spyOn(document, 'hasFocus').mockReturnValue(true) })
 beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); localStorage.clear(); sessionStorage.clear(); roomView.set({ besideId: null, share: 0.5, tab: 'conversation' }); firstMessage.clear() })
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
 
@@ -231,6 +233,20 @@ describe('read marks', () => {
     await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ targets: [target('wav-stall'), target('footer-links')] }))
     await waitFor(() => expect(within(list).queryByText('2 new')).toBeNull())
     expect(within(list).getByRole('searchbox')).toHaveFocus()
+  })
+
+  it('stay on a thread open while the window is behind another app or minimised, and go once it is in front again', async () => {
+    vi.mocked(document.hasFocus).mockReturnValue(false)
+    const { bridge } = renderRoom(roomState(marked()))
+    await paneReady()
+    act(() => { window.dispatchEvent(new Event('blur')) })
+    // The thread is open beside Watcher, but nobody can see it.
+    act(() => { roomView.set({ besideId: 'footer-links' }) })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    expect(bridge.markRead).not.toHaveBeenCalled()
+    vi.mocked(document.hasFocus).mockReturnValue(true)
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ targets: [target('footer-links')] }))
   })
 
   it('go when the thread opens beside Watcher', async () => {
