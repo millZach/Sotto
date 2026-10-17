@@ -12,6 +12,7 @@ import { useRoomWatcherThreadId } from '../watcher/watcherRoom'
 import { useAgents, type AgentConnection } from './AgentContext'
 import { draftThreads, gateOnCreation, overlayDraftThreads, useDraftThreads } from './draftThreads'
 import { describeThreads, organizeWorkspace, type ThreadRow } from './threadFacts'
+import { useContinueEnabled } from './continuations'
 import { NewThreadDialog } from './NewThreadDialog'
 import { beginNewThread, unusedNewThread, type ThreadCreationStart } from './newThread'
 import { newThreadChord, newThreadChordLabel, newThreadChordPressed } from './newThreadShortcut'
@@ -119,7 +120,8 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   useEffect(() => { publishedRef.current = published; draftThreads.reconcile(published) }, [published])
   // Derived facts are shared with the ones on screen: an update that did not touch a thread leaves its row,
   // its folder and its pane label at the same reference, so the memoised sidebar and panes below skip it.
-  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now), [state, now]))
+  const continued = useContinueEnabled()
+  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued]))
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
   const labels = useShared(useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.thread.id, { title: row.thread.title, providerId: row.providerId, provider: row.provider }] as const)), [rows]))
   // Delegated threads sit under the thread that delegated to them (ADR-0081; Owl only).

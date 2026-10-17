@@ -20,6 +20,7 @@ import { WatcherService } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
 import { DelegationService } from './delegation'
+import { ContinueService } from './continueThread'
 import { AgentControl } from './control'
 import { TurnRecorder } from './turns'
 import { ConfiguredAgentReasoner } from './reasoning'
@@ -62,6 +63,10 @@ export interface AgentRuntimeOptions {
   streamingPublishCost?: boolean
   /** The Owl list's answer for delegation between threads (ADR-0081), read once by the process owner. Absent fails closed. */
   delegationEnabled?: boolean
+  /** The Owl list's answer for continuing a thread on another provider (ADR-0089), read once by the process owner. Absent fails closed. */
+  continueEnabled?: boolean
+  /** The Owl list's answer for continuing an agent as its own thread and forking at a reply (#1028), read once. Absent fails closed. */
+  threadStartsEnabled?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -146,6 +151,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()
+  if (options.threadStartsEnabled === true) agentHost.allowThreadStarts()
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined
   let gitHubRateLimit: GitHubRateLimit | undefined
@@ -187,6 +193,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const agentControl: AgentControl = new AgentControl({
     directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
+    ...(options.threadStartsEnabled === true ? { threadStartsEnabled: true } : {}),
     historyEnabled: options.historyEnabled,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
@@ -214,6 +221,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       limit: () => options.settings().watcherInFlightLimit, otherStartsInFlight: () => watcher?.startsInFlight() ?? 0,
       tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId) })
   }
+  // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
+  const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
+    ? new ContinueService({ control: agentControl, host: agentHost }) : undefined
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
     if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher); agentHost.useWatcherTools(watcherTools) }
@@ -270,6 +280,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     watcherStopped = true
     watcher?.close()
     delegation?.close()
+    continuation?.close()
     closingWatcherTools = watcherTools?.close()
   }
   let stoppingProviders: Promise<void> | undefined
@@ -330,6 +341,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     await restartResume?.freeze()
     watcher?.close()
     delegation?.close()
+    continuation?.close()
     const closingWatcherTools = watcherTools?.close()
     void babysitter?.close()
     agentControl.dispose()
@@ -341,9 +353,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (watcher) await watcher.recover()
   if (delegation) await delegation.recover()
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
+    ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(usage ? { usage, mayClearUsage: client => (options.authority?.mayGrant(client) ?? mayGrantLocally(client)).allowed } : {}),
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),
     ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher) } : {}) })
   babysitter?.begin()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, prepareForShutdown, close }
 }

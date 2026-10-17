@@ -42,4 +42,6 @@
 .model-picker__models > button > span { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .model-picker__models > button > span > small { color: var(--tt-text-muted); font-size: 11.5px; }
 .model-picker__empty { margin: 0; padding: 12px 10px; color: var(--tt-text-muted); font-size: 13px; }
+/* Over another provider's models where picking one starts a new thread there (ADR-0089). */
+.model-picker__heading { flex: none; margin: 0; padding: 9px 16px 0; color: var(--tt-text-2); font-size: 12px; font-weight: 600; }
 .model-picker__note { flex: none; margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }

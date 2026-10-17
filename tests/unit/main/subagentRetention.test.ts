@@ -57,7 +57,7 @@ describe('provider subagent cache retention', () => {
     for (let index = 0; index < MAX_AGENT_ACTIVITIES; index++) projection.item(thread, codexItemSchema.parse({ type: 'commandExecution', id: `ordinary-${index}`, status: 'completed', command: 'echo done' }), { turnId: 'turn', phase: 'history' })
     expect(thread.activities).toHaveLength(MAX_AGENT_ACTIVITIES)
     expect(thread.activities.every(row => row.agents === undefined)).toBe(true)
-    const identities = [...cache<{ agent: ObservedAgent }>(projection, 'children').values()].map(owner => owner.agent)
+    const identities = [...cache<{ agent: ObservedAgent }>(projection, 'owners').values()].map(owner => owner.agent)
     expectCompact(identities)
     projection.childNotification('native-0', 'turn/completed', { turn: { status: 'failed', error: { message: 'Late failure' } } })
     expect(thread.activities.at(-1)!.agents![0]).toMatchObject({ id: identities[0]!.id, assignmentId: identities[0]!.assignmentId, status: 'failed', message: 'Late failure' })

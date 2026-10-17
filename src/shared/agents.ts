@@ -30,6 +30,8 @@ export const AGENT_ATTACHMENT_CONTENT = 'sotto:agents:attachment-content'
 export const AGENT_THREAD_DETAIL = 'sotto:agents:thread-detail'
 /** Asked for by the window when it opens a thread whose detail it has not been sent. */
 export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
+/** The words of a started thread's handover, read only when the user asks to read them (#1028). */
+export const AGENT_START_HANDOVER = 'sotto:agents:start-handover'
 export { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 /** How many thread providers Sotto has: the cap on every list that names each provider at most once. */
 export const PROVIDER_COUNT = providerIdSchema.options.length
@@ -262,6 +264,50 @@ export type HandoverCounts = z.infer<typeof handoverCountsSchema>
 /** The handover a user message carried ahead of the user's own words: its words as sent, and the provider of the thread it came from. */
 export const agentMessageHandoverSchema = z.object({ text: z.string(), provider: providerIdSchema, counts: handoverCountsSchema }).strict()
 export type AgentMessageHandover = z.infer<typeof agentMessageHandoverSchema>
+/**
+ * Text-free proof that a continued thread's first message began with a handover of the thread it continues (ADR-0089):
+ * how many characters were the handover and their digest, and what it carried, never any of the words. Every
+ * user-facing copy shows the handover apart from the user's words by this record alone.
+ */
+export const threadHandoverProofSchema = z.object({ prefixLength: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  prefixDigest: z.string().regex(/^[0-9a-f]{64}$/u), counts: handoverCountsSchema,
+  /** The first message's Sotto message ID, once its send said it: the only message a copy without the words may split. */
+  messageId: id.optional() }).strict()
+export type ThreadHandoverProof = z.infer<typeof threadHandoverProofSchema>
+/**
+ * The thread a **continued thread** continues (ADR-0089): its Sotto thread ID, its provider, when, and the proof of the
+ * handover its first message carried, once that message was sent.
+ */
+export const threadContinuedFromSchema = z.object({ threadId: id, provider: providerIdSchema, at: z.string().datetime(),
+  handover: threadHandoverProofSchema.optional() }).strict()
+export type ThreadContinuedFrom = z.infer<typeof threadContinuedFromSchema>
+/** One thread that continues this one on another provider (ADR-0089): its Sotto thread ID, its provider and when. */
+export const threadContinuedInSchema = z.object({ threadId: id, provider: providerIdSchema, at: z.string().datetime() }).strict()
+export type ThreadContinuedIn = z.infer<typeof threadContinuedInSchema>
+/** The most continuations a thread's record names, the newest kept, so a record cannot grow without end. */
+export const THREAD_CONTINUED_IN_MAX = 100
+/**
+ * Where a thread began when it began from another thread rather than empty (#1028): one of that thread's agents continued
+ * as a thread of its own (`agent`), or that thread forked at one of its replies (`turn`). The source is named by its Sotto
+ * thread ID alone (ADR-0002). A `fork` is the provider's own copy of the conversation, bound to this thread when it was
+ * made; a `handover` goes ahead of this thread's first message, and `handover.sent` names that message once it has gone.
+ */
+export const agentThreadStartSchema = z.object({
+  threadId: id,
+  from: z.enum(['agent', 'turn']),
+  route: z.enum(['fork', 'handover']),
+  at: z.string().datetime(),
+  /** The agent's title as its roster showed it, for an agent. */
+  agentTitle: z.string().max(240).optional(),
+  /** The agent's observational identity and the assignment a handover carries, for an agent. Never a provider address. */
+  agentId: id.optional(), assignmentId: id.optional(),
+  /** The reply a fork carries the conversation up to, for a turn. */
+  messageId: id.optional(),
+  /** What a handover carries, as counts only: `thin` when it holds an agent's task and result alone. */
+  handover: z.object({ thin: z.boolean(), counts: handoverCountsSchema,
+    sent: z.object({ messageId: id, prefixLength: z.number().int().positive(), prefixDigest: z.string().regex(/^[a-f0-9]{64}$/u) }).strict().optional() }).strict().optional(),
+}).strict()
+export type AgentThreadStart = z.infer<typeof agentThreadStartSchema>
 export const agentMessageSchema = z.object({
   // A projected message combines bounded events and can exceed any one event's limit.
   id, role: z.enum(['user', 'assistant']), text: z.string(), createdAt: z.string(),
@@ -365,6 +411,18 @@ export const agentThreadSchema = z.object({
    * the thread's own record so it survives a restart; absent on every thread no other thread started, and from older hosts.
    */
   delegatedBy: id.optional(),
+  /**
+   * The thread this one continues on another provider (ADR-0089), and the threads that continue this one, newest last.
+   * Sotto's record, kept on each thread's own record so the links survive a restart; absent on every other thread, and
+   * from older hosts. A value this build cannot read drops the link rather than the thread.
+   */
+  continuedFrom: threadContinuedFromSchema.optional().catch(undefined),
+  continuedIn: z.array(threadContinuedInSchema).max(THREAD_CONTINUED_IN_MAX).optional().catch(undefined),
+  /**
+   * The thread this one began from, when it was an agent continued as its own thread or a fork at a reply (#1028). Sotto's
+   * record, kept on the thread's own record; absent on every other thread, and from older hosts.
+   */
+  startedFrom: agentThreadStartSchema.optional().catch(undefined),
   /** Who named this thread: the user by hand, Sotto through the thread's own provider, or the stand-in/provider name.
    * Absent on threads saved before Sotto recorded it, which counts as `default`. */
   titleSource: z.enum(['user', 'default', 'generated']).optional(),
@@ -1015,6 +1073,15 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     workingCopy: z.enum(['independent', 'shared']).optional(),
     baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() }).strict(),
+  /**
+   * One of a thread's agents continued as a thread of its own (#1028). `threadId` is the agent's thread, so the command goes
+   * to that thread's host, and `newThreadId` the thread to make, which the window mints. A Codex agent is forked by Codex
+   * itself; a Claude Code agent, or a Codex agent with `handover`, starts from a thin handover of its task and result that
+   * goes with the new thread's first message. Nothing is sent to any provider until that message.
+   */
+  z.object({ type: z.literal('continue-agent'), threadId: id, agentId: id, newThreadId: z.uuid(), modelId: providerEntityId.optional(),
+    handover: z.literal(true).optional(), workingCopy: z.enum(['independent', 'shared']).optional(),
+    baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional() }).strict(),
   z.object({ type: z.enum(['retry-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
   /** Read the thread's folder again, remote and all. `background` is a read the window made on its own (it regained focus,
    * a draft began), which asks GitHub only as the timer would: never while its rate limit is paused or below the reserve (#820). */
@@ -1095,7 +1162,14 @@ export interface AgentBridge {
   threadDetail?(threadId: string): Promise<AgentThreadDetail | null>
   /** Whole details and the deltas between them; a delta the window cannot apply sends it back to `threadDetail`. */
   onThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
+  /**
+   * The words of the handover a thread that began from another goes with on its first message, as its provider will read
+   * them, or null once it has none (#1028). Read on the thread's own host, and only when the user asks.
+   */
+  startHandover?(threadId: string): Promise<AgentStartHandover | null>
 }
+export const agentStartHandoverSchema = z.object({ text: z.string() }).strict()
+export type AgentStartHandover = z.infer<typeof agentStartHandoverSchema>
 
 /**
  * The agent bridge as the preload exposes it (`window.sotto.agents`): what
