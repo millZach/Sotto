@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
@@ -10,7 +10,7 @@ import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from 
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { compareClientVersions } from './clientVersions'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
-import { opencodeReasoningActivity, opencodeTextMessageId, opencodeToolActivity, opencodeToolOutput, opencodeToolStatus, type OpenCodeTool } from './opencodeActivity'
+import { opencodeReasoningActivity, opencodeStepFilesActivity, opencodeTextMessageId, opencodeToolActivity, opencodeToolOutput, opencodeToolStatus, type OpenCodeTool } from './opencodeActivity'
 import { locationQuery, OpenCodeClient, OpenCodeRejected, type OpenCodeEvent } from './opencodeClient'
 import { OPENCODE_DECLINED, OPENCODE_FORM_UNSHOWN, opencodeFormAnswer, opencodeFormPending, opencodeFormSchema, opencodePermissionDecision, opencodePermissionPending, opencodePermissionSchema, type OpenCodePending } from './opencodeRequests'
 import { ensureOpenCodeFolders, findOpenCodeExecutable, OPENCODE_CLI_VERSION, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
@@ -126,6 +126,8 @@ const historyEntrySchema = z.looseObject({
   time: z.looseObject({ created: z.number().optional(), completed: z.number().optional() }).optional(),
   content: z.array(z.looseObject({ type: z.string() })).optional(),
   outcome: z.string().optional(),
+  /** The files the step changed, relative to the provider session's folder. */
+  snapshot: z.looseObject({ files: z.array(z.string()).optional() }).optional(),
 })
 type HistoryEntry = z.infer<typeof historyEntrySchema>
 const historyPageSchema = z.looseObject({ data: z.array(historyEntrySchema), cursor: z.looseObject({ next: z.string().nullable().optional() }).optional() })
@@ -138,6 +140,8 @@ const stepStartedSchema = ofSession.extend({ assistantMessageID: z.string().min(
 const executionEndSchema = ofSession.extend({ error: z.looseObject({ type: z.string().optional() }).optional() })
 const tokensSchema = z.looseObject({ input: z.number().default(0), output: z.number().default(0), cache: z.looseObject({ read: z.number().default(0) }).optional() })
 const usageSchema = ofSession.extend({ tokens: tokensSchema })
+/** A finished step: what it cost, and the files it changed, relative to the provider session's folder (2.0.31). */
+const stepEndedSchema = ofSession.extend({ assistantMessageID: z.string().min(1), tokens: tokensSchema.optional(), files: z.array(z.string()).default([]) })
 const repliedSchema = ofSession.extend({ requestID: z.string().min(1) })
 const formSettledSchema = ofSession.extend({ id: z.string().min(1) })
 const permissionsChangedSchema = ofSession.extend({ permissions: z.array(ruleSchema) })
@@ -694,6 +698,22 @@ export class OpenCodeHost implements AgentHost {
     this.fold(id).reasoning.set(activity.id, text)
     thread.activities = mergeAgentActivities(thread.activities, [activity])
   }
+  /**
+   * The files one step changed, as OpenCode lists them when the step ends (ADR-0087): one file-change record per step,
+   * under the same ID live and in history. A file an edit tool in the same turn already reported is not shown twice.
+   */
+  private recordStepFiles(id: string, assistantMessageId: string, files: readonly string[], at: number | undefined, placement?: Placement): void {
+    const alias = this.aliases[id]
+    if (!alias || !files.length) return
+    const thread = this.thread(id)
+    const { turnId, afterMessageId } = this.placed(id, placement)
+    const key = (path: string): string => process.platform === 'win32' ? path.toLowerCase() : path
+    const reported = new Set((thread.activities ?? []).filter(record => record.kind === 'file-change' && record.turnId === turnId && record.id.startsWith('opencode-tool-'))
+      .flatMap(record => (record.changes ?? []).map(change => key(resolve(alias.cwd, change.path)))))
+    const paths = [...new Set(files.map(file => resolve(alias.cwd, file)))].filter(path => !reported.has(key(path)))
+    if (!paths.length) return
+    thread.activities = mergeAgentActivities(thread.activities, [opencodeStepFilesActivity(assistantMessageId, paths, turnId, iso(at), afterMessageId)])
+  }
 
   /**
    * A provider session's history into what the thread said, through the same append path as the live stream. Returns
@@ -728,6 +748,7 @@ export class OpenCodeHost implements AgentHost {
               startedAt: iso(tool.data.time?.created ?? at), ...(status !== 'running' && tool.data.time?.completed ? { completedAt: iso(tool.data.time.completed) } : {}) }, placement())
           }
         }
+        this.recordStepFiles(id, entry.id, entry.snapshot?.files ?? [], entry.time?.completed ?? at, placement())
       } else if (entry.type === 'idle') unfinished = undefined
     }
     return unfinished
@@ -811,8 +832,11 @@ export class OpenCodeHost implements AgentHost {
           this.emit(true); return
         }
         case 'session.step.ended': {
-          const parsed = usageSchema.safeParse(data)
-          if (parsed.success) this.usage(thread, parsed.data.tokens, 'latest')
+          const parsed = stepEndedSchema.safeParse(data)
+          if (parsed.success) {
+            if (parsed.data.tokens) this.usage(thread, parsed.data.tokens, 'latest')
+            this.recordStepFiles(id, parsed.data.assistantMessageID, parsed.data.files, event.created)
+          }
           this.emit(true); return
         }
         case 'session.usage.updated': this.usage(thread, usageSchema.parse(data).tokens, 'total'); this.emit(true); return

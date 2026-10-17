@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import { providerIdOfLabel } from '../../src/shared/agents'
 import { OPENCODE_FORM_UNSHOWN } from '../../src/main/agents/opencodeRequests'
@@ -444,5 +444,32 @@ it('restores each turn’s activity under its own prompt when the thread’s mes
     restarted.host.observeThreads?.([id]); await restarted.host.connect()
     await expect.poll(async () => (await thread(restarted!, id)).activities?.filter(activity => activity.kind === 'command').length ?? 0).toBe(2)
     expect(placed((await thread(restarted, id)).activities)).toEqual(placed(before.activities))
+  } finally { await (restarted ?? f).cleanup() }
+})
+
+it('shows the files a step changed as a file change, live and restored, without repeating one an edit tool reported', async () => {
+  const { f, id } = await open()
+  let restarted: Fixture | undefined
+  try {
+    await send(f, id, 'first')
+    // A shell command changed a file: only the step's own list says so.
+    await f.action(id, { type: 'tool', name: 'shell', input: { command: 'npm run format' }, output: 'formatted', files: ['src/notes.txt'] })
+    await expect.poll(async () => (await thread(f, id)).activities?.some(activity => activity.kind === 'file-change')).toBe(true)
+    // A write tool reported its own file; the step names it again, and it is shown once.
+    await f.action(id, { type: 'tool', name: 'write', input: { path: join(f.root, 'probe.txt'), content: 'hi' }, output: 'Wrote file', files: ['probe.txt'] })
+    await expect.poll(async () => (await thread(f, id)).activities?.filter(activity => activity.kind === 'file-change').length).toBe(2)
+    await f.driver.completeTurn(id, 'Done')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    const changes = (activities: Awaited<ReturnType<typeof thread>>['activities']) => activities?.filter(activity => activity.kind === 'file-change')
+      .map(activity => [activity.title, activity.turnId, activity.status, activity.changes?.map(change => [resolve(change.path), change.kind])])
+    const live = changes((await thread(f, id)).activities)
+    expect(live).toEqual([
+      ['File changes', 'first', 'completed', [[resolve(f.root, 'src', 'notes.txt'), 'update']]],
+      ['Write file', 'first', 'completed', [[resolve(f.root, 'probe.txt'), 'Write']]],
+    ])
+    restarted = await f.driver.restart()
+    restarted.host.observeThreads?.([id]); await restarted.host.connect()
+    await expect.poll(async () => changes((await thread(restarted!, id)).activities)?.length ?? 0).toBe(2)
+    expect(changes((await thread(restarted, id)).activities)).toEqual(live)
   } finally { await (restarted ?? f).cleanup() }
 })

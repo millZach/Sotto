@@ -127,10 +127,10 @@ function reply(session, text) {
   emit('session.text.delta', { sessionID: session.id, assistantMessageID, ordinal: 0, delta: text.slice(half) })
   emit('session.text.ended', { sessionID: session.id, assistantMessageID, ordinal: 0, text })
   const tokens = { input: 10, output: 2, reasoning: 0, cache: { read: 4, write: 0 } }
-  emit('session.step.ended', { sessionID: session.id, assistantMessageID, finish: 'stop', cost: 0, tokens })
+  emit('session.step.ended', { sessionID: session.id, assistantMessageID, finish: 'stop', cost: 0, tokens, snapshot: 'fixture-snapshot', files: [] })
   emit('session.usage.updated', { sessionID: session.id, cost: 0, tokens })
   session.messages.push({ id: assistantMessageID, time: { created: started, completed: now() }, type: 'assistant', agent: 'build', model: session.model,
-    content: [{ type: 'text', text }], finish: 'stop', cost: 0, tokens })
+    content: [{ type: 'text', text }], snapshot: { start: 'fixture-snapshot', end: 'fixture-snapshot', files: [] }, finish: 'stop', cost: 0, tokens })
   save()
 }
 function tool(session, action) {
@@ -141,8 +141,12 @@ function tool(session, action) {
   const state = action.running ? { status: 'running', input: action.input ?? {}, metadata: {} }
     : { status: 'completed', input: action.input ?? {}, content: [{ type: 'text', text: action.output ?? '' }], metadata: {} }
   if (!action.running) emit('session.tool.success', { sessionID: session.id, assistantMessageID, id: callId, content: state.content, metadata: {}, executed: false })
+  // A finished step names the files it changed, relative to the session's folder, live and in history alike (2.0.31).
+  const files = action.files ?? []
+  if (!action.running) emit('session.step.ended', { sessionID: session.id, assistantMessageID, finish: 'tool-calls', cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } }, snapshot: 'fixture-snapshot', files })
   session.messages.push({ id: assistantMessageID, time: { created: started }, type: 'assistant', agent: 'build', model: session.model,
-    content: [{ type: 'tool', id: callId, name: action.name, executed: false, state, time: { created: started } }] })
+    content: [{ type: 'tool', id: callId, name: action.name, executed: false, state, time: { created: started } }],
+    ...(action.running ? {} : { snapshot: { start: 'fixture-snapshot', end: 'fixture-snapshot', files } }) })
   save()
 }
 

@@ -57,10 +57,26 @@ export function opencodeToolActivity(tool: OpenCodeTool, turnId: string, afterMe
   }
   const path = field(tool.input, 'path', 'filePath', 'file')
   if (['write', 'edit', 'patch', 'apply_patch', 'multiedit'].includes(tool.name) && path) {
-    return { ...base, kind: 'file-change', title: tool.name === 'write' ? 'Write file' : 'Edit file', changes: [{ path: bounded(path), kind: tool.name }] }
+    // The change's kind in the words the thread shows: a write wrote the file, the rest edited it.
+    return { ...base, kind: 'file-change', title: tool.name === 'write' ? 'Write file' : 'Edit file', changes: [{ path: bounded(path), kind: tool.name === 'write' ? 'Write' : 'edit' }] }
   }
   const detail = tool.input && Object.keys(tool.input).length ? JSON.stringify(tool.input) : undefined
   return { ...base, ...(detail ? { text: bounded(detail) } : {}) }
+}
+
+/** A record holds at most this many changes, as every activity record does. */
+const MAX_CHANGES = 200
+/**
+ * The files one step changed, from the list OpenCode keeps with the step's snapshot, as one file-change record under the
+ * ID live events and history share. OpenCode says only that each file changed, not how, so each reads as edited.
+ */
+export function opencodeStepFilesActivity(assistantMessageId: string, paths: readonly string[], turnId: string, at: string, afterMessageId?: string): AgentActivity {
+  return {
+    id: `opencode-files-${assistantMessageId}`, turnId, sequence: 0, kind: 'file-change', status: 'completed', title: 'File changes',
+    startedAt: at, completedAt: at, timingSource: 'provider', ...(afterMessageId ? { afterMessageId } : {}),
+    changes: paths.slice(0, MAX_CHANGES).map(path => ({ path: bounded(path), kind: 'update' })),
+    ...(paths.length > MAX_CHANGES ? { truncated: true } : {}),
+  }
 }
 
 /** One run of reasoning as an activity record, under the ID live events and history share. */
