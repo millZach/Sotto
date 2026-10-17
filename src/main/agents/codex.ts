@@ -42,7 +42,10 @@ import { ReadsBeforeSend } from './readsBeforeSend'
 import { CodexProcess, Uncertain, type RpcApply, type RpcFrame, type RpcRejected } from './codexProcess'
 import { codexTurnIdentitySchema, compatibleClient, identityTurn, messageIdentity, messageOrigin, reconcileMessageIdentities, type CodexTurnIdentity, type IdentityItem } from './codexMessageIdentity'
 import { markSendStage } from './sendStages'
-import type { WatcherLaunchProfile, ThreadLaunchProfiles } from './host'
+import type { WatcherLaunchProfile, ThreadLaunchProfiles, WorkerRoleSource } from './host'
+import { CodexRoleFiles, codexTakesRoles, malformedCodexRole, narrowerMode, type CodexRoleFilesEvent } from './subagentRoles'
+import { capRuntimeMode, subagentRoleInstructions } from '../../shared/workerRoles'
+import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { questionInstructions } from './questionInstructions'
@@ -167,9 +170,13 @@ const PAGED_READ_PAGES = 100
 const turnKey = (id: string, nativeId: string): string => `${id}\n${nativeId}`
 type ModelList = AgentHostSnapshot['models']
 
+/** What happened to Sotto's own Codex role files (#1042), as stable event names; never a path, a model or Codex's words. */
+export type CodexAdapterEvent = 'codex-role-malformed' | CodexRoleFilesEvent
+
 export interface CodexAppServerHostOptions {
   /** Immutable startup Owl answer; stable never installs a collector or reads account limits. */
   usageEnabled?: boolean
+  logEvent?: (event: CodexAdapterEvent) => void
   userDataPath: string; executable?: string; args?: string[]; codexHome?: string; requestTimeoutMs?: number; pollIntervalMs?: number
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
   reaperSweepMs?: number; sessionIdleMs?: number
@@ -251,6 +258,37 @@ export class CodexAppServerHost implements AgentHost {
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
   private threadTools: readonly ScopedThreadTools[] = []
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
+  private workerRoles: WorkerRoleSource | undefined
+  private readonly roleFiles: CodexRoleFiles
+  /** The widest permission a thread's role files were written for at its load (#1042). */
+  private readonly roleModes = new Map<string, AgentRuntimeMode>()
+  /** Worker roles on (#1042): role files written at each load, and written again when Settings change. */
+  useWorkerRoles(roles: WorkerRoleSource): void {
+    this.workerRoles = roles
+    roles.onChange(() => { void this.roleFiles.rewrite(roles.table(), this.state.models).catch(() => undefined) })
+  }
+  /**
+   * A load's role table (#1042): Sotto's role files for the roles on a ready Codex model, added to `config` as
+   * `agents.sotto_<role>`, and the instructions that name them. Nothing for Watcher, which starts its workers through its
+   * own tools, or while worker roles are off.
+   */
+  private async launchRoles(id: string, mode: AgentRuntimeMode, config: Record<string, unknown>): Promise<string | undefined> {
+    this.roleModes.delete(id)
+    if (!this.workerRoles || this.watcherProfiles.has(id)) return undefined
+    const table = this.workerRoles.table()
+    const written = codexTakesRoles(this.state.version) ? await this.roleFiles.write(table, mode, this.state.models) : undefined
+    if (written) { config.agents = written.agents; this.roleModes.set(id, written.widest) }
+    const canDelegate = DELEGATE_MCP_SERVER in ((config.mcp_servers as Record<string, unknown> | undefined) ?? {})
+    return subagentRoleInstructions(table, { provider: 'codex', agents: written?.kinds ?? new Set(), agentTool: 'codex', canDelegate })
+  }
+  /**
+   * Role files keep the permission a thread was loaded with, so a thread whose confirmed permission is narrower lets its
+   * app-server go: its next action loads it again with role files held to the new one (#1042).
+   */
+  private releaseNarrowedRoles(id: string): void {
+    const loaded = this.roleModes.get(id), mode = this.aliases[id]?.runtimeMode
+    if (loaded && mode && narrowerMode(mode, loaded)) { this.roleModes.delete(id); this.stopSession(id) }
+  }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
@@ -331,6 +369,7 @@ export class CodexAppServerHost implements AgentHost {
 
   constructor(private readonly options: CodexAppServerHostOptions) {
     this.usageEnabled = options.usageEnabled === true
+    this.roleFiles = new CodexRoleFiles(join(options.userDataPath, 'codex-roles'), runtimePolicy, event => options.logEvent?.(event))
     this.usage = new NativeUsage(options.userDataPath, 'codex', options.usageEnabled)
     if (options.usageEnabled) {
       this.subscribeUsage = listener => this.usage.subscribeUsage(listener)
@@ -1079,12 +1118,16 @@ export class CodexAppServerHost implements AgentHost {
     const operation = (async () => {
       await this.watcher?.pollThread(alias.codexThreadId)
       await this.runtimeServer(id)
+      const configuration = await this.threadConfiguration(id, alias.pendingSettings ? undefined : alias.reasoningEffort)
+      // An unconfirmed settings change may land either way, so its role files are held to the narrower of the two.
+      const mode = alias.runtimeMode ?? 'auto-accept-edits'
+      const roles = await this.launchRoles(id, alias.pendingSettings ? capRuntimeMode(alias.pendingSettings.runtimeMode, mode) : mode, configuration.config)
+      const developerInstructions = [await this.projectInstructions(alias.cwd, id), roles].filter(Boolean).join('\n\n')
       // Resume restores the conversation, never its transcript: turns are read when the
       // thread is opened, so resuming costs the same for a long thread and a short one.
       await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true,
         ...(!alias.pendingSettings ? { model: alias.modelId, modelProvider: 'openai', ...runtimePolicy(alias.runtimeMode) } : {}),
-        ...await this.threadConfiguration(id, alias.pendingSettings ? undefined : alias.reasoningEffort),
-        developerInstructions: await this.projectInstructions(alias.cwd, id) }, async value => {
+        ...configuration, developerInstructions }, async value => {
         if (alias.pendingSettings) return this.applySettings(id, value)
         this.applyThread(id, threadResponse.parse(value).thread); await this.persist(); this.live.add(id); this.log.pin(id)
         // Resume carries no transcript, so a loading thread stays loading until its turns arrive.
@@ -1318,6 +1361,9 @@ export class CodexAppServerHost implements AgentHost {
     this.live.add(id); this.log.pin(id); await this.persist(); this.emit()
     const confirmation = this.settingsConfirmations.get(id)
     if (confirmation?.desired === desired) confirmation.settle(true)
+    // A change confirmed after its command gave up, or found on a later read, narrows the roles here; the command that is
+    // still waiting for this one does it once it has its answer.
+    else this.releaseNarrowedRoles(id)
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
   executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> { return this.executeNative(command, guard) }
@@ -1406,8 +1452,11 @@ export class CodexAppServerHost implements AgentHost {
     } catch (error) { this.creating.delete(request.threadId); throw error }
     this.reaper.touch(request.threadId)
     try {
+      // A fork is a load like any other, so it carries the role files and table its own permission allows (#1042).
+      const configuration = await this.threadConfiguration(request.threadId, request.reasoningEffort)
+      const roles = await this.launchRoles(request.threadId, request.runtimeMode ?? 'auto-accept-edits', configuration.config)
       await this.rpc('thread/fork', { threadId: nativeSource, ...(lastTurnId ? { lastTurnId } : {}), cwd, model: request.modelId, modelProvider: 'openai',
-        developerInstructions, ...runtimePolicy(request.runtimeMode), ...await this.threadConfiguration(request.threadId, request.reasoningEffort),
+        developerInstructions: [developerInstructions, roles].filter(Boolean).join('\n\n'), ...runtimePolicy(request.runtimeMode), ...configuration,
         // Durable, so the copy outlives this app-server; without its turns, which are read back the way every thread's are.
         ephemeral: false, excludeTurns: true }, async value => {
         const response = settingsResponse.parse(value)
@@ -1504,9 +1553,14 @@ export class CodexAppServerHost implements AgentHost {
         try { server = await this.runtimeServer(command.threadId) }
         catch (error) { this.creating.delete(command.threadId); throw error }
         this.reaper.touch(command.threadId)
+        let configuration: { config: Record<string, unknown> }, roles: string | undefined
+        try {
+          configuration = await this.threadConfiguration(command.threadId, command.reasoningEffort)
+          roles = await this.launchRoles(command.threadId, command.runtimeMode ?? 'auto-accept-edits', configuration.config)
+        } catch (error) { this.creating.delete(command.threadId); this.stopSession(command.threadId); throw error }
         await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
-          developerInstructions,
-          ...runtimePolicy(command.runtimeMode), ...await this.threadConfiguration(command.threadId, command.reasoningEffort), ephemeral: false, historyMode: 'legacy' }, async value => {
+          developerInstructions: [developerInstructions, roles].filter(Boolean).join('\n\n'),
+          ...runtimePolicy(command.runtimeMode), ...configuration, ephemeral: false, historyMode: 'legacy' }, async value => {
           const response = settingsResponse.parse(value)
           const policy = runtimePolicy(command.runtimeMode)
           const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
@@ -1599,6 +1653,7 @@ export class CodexAppServerHost implements AgentHost {
             confirmation.settle(false)
             if (this.settingsConfirmations.get(id) === confirmation) this.settingsConfirmations.delete(id)
           }
+          this.releaseNarrowedRoles(id)
           // Codex's own notification confirmed the effective values and applySettings emitted them: that snapshot
           // is the reconciliation, so the coordinator does not read the whole transcript again.
           return { accepted: true, snapshot: this.current(command.historyFromEvents) }
@@ -1749,6 +1804,8 @@ export class CodexAppServerHost implements AgentHost {
   }
   /** A notification or request from `server`; its responses to Sotto's own requests were settled by the process. */
   private async frame(server: CodexProcess, frame: RpcFrame): Promise<void> {
+    // Codex dropped one of Sotto's role files (#1042). The message names a path, so only the event is logged.
+    if (malformedCodexRole(frame.method, frame.params)) { this.options.logEvent?.('codex-role-malformed'); return }
     if (this.usageEnabled && frame.method === 'account/rateLimits/updated') {
       this.quota = mergeCodexQuota(this.quota, frame.params, new Date().toISOString()); return
     }

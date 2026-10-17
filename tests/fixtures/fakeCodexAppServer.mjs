@@ -123,6 +123,30 @@ const served = (method, threadId) => appendFileSync(file('servers.jsonl'), JSON.
 const emit = message => process.stdout.write(JSON.stringify(message) + '\n')
 const notify = (method, params) => emit({ method, params })
 const record = message => appendFileSync(file('requests.jsonl'), JSON.stringify(message) + '\n')
+/** The keys a role file may hold in Sotto's use, and the sandbox values Codex 0.162.1 knows (codex-roles check). */
+const ROLE_KEYS = new Set(['model', 'model_reasoning_effort', 'sandbox_mode', 'approval_policy', 'approvals_reviewer', 'developer_instructions'])
+const SANDBOXES = new Set(['read-only', 'workspace-write', 'danger-full-access'])
+/**
+ * Codex validates each `agents.<name>` role as a thread loads: a missing description, a `config_file` that is not a
+ * file, or a file with a key or value it does not take is dropped with a warning naming the role. `script.malformedRole`
+ * forces one. Only `key = "string"` lines are read, which is all Sotto writes.
+ */
+function checkRoles(threadId, config, script) {
+  const roles = config?.agents && typeof config.agents === 'object' ? config.agents : {}
+  for (const [name, role] of Object.entries(roles)) {
+    let problem = script.malformedRole === name ? `agent role \`${name}\` is malformed` : undefined
+    if (!problem && typeof role?.description !== 'string') problem = `agent role \`${name}\` must define a description`
+    if (!problem && (typeof role.config_file !== 'string' || !existsSync(role.config_file))) problem = `agents.${name}.config_file must point to an existing file at ${role.config_file}`
+    if (!problem) for (const line of readFileSync(role.config_file, 'utf8').split('\n').filter(Boolean)) {
+      const match = /^([a-z_]+) = ("(?:[^"\\]|\\.)*")$/.exec(line)
+      if (!match || !ROLE_KEYS.has(match[1]) || match[1] === 'sandbox_mode' && !SANDBOXES.has(JSON.parse(match[2]))) { problem = `unknown field in ${role.config_file}`; break }
+    }
+    if (!problem) continue
+    const message = `Ignoring malformed agent role definition: ${problem}`
+    notify('configWarning', { summary: message, details: null })
+    notify('warning', { threadId, message })
+  }
+}
 // Each process numbers its own requests, as Codex's do; starting from its own base keeps them apart in requests.jsonl.
 let requestId = read('script.json', {}).requestIdBase ?? process.pid * 1000
 const pending = new Map()
@@ -268,6 +292,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     loadedThreads.add(thread.id); owns(thread.id)
     save()
     served(method, thread.id)
+    checkRoles(thread.id, params.config, script)
     notify('thread/started', { thread })
     reply({ thread, model: params.model, cwd: params.cwd, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
       reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, ...script.threadStartSettings })
@@ -294,6 +319,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     loadedThreads.add(thread.id); owns(thread.id)
     save()
     served(method, thread.id)
+    checkRoles(thread.id, params.config, script)
     notify('thread/started', { thread: { ...thread, turns: [] } })
     reply({ thread: { ...thread, turns: [] }, model: thread.model, cwd: thread.cwd, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
       reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } })
@@ -313,6 +339,8 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
         for (const key of ['model', 'approvalPolicy', 'approvalsReviewer', 'sandbox']) if (params[key] !== undefined) thread[key] = params[key]
         if (params.config && 'model_reasoning_effort' in params.config) thread.reasoningEffort = params.config.model_reasoning_effort ?? 'low'
         if (params.config && 'features.default_mode_request_user_input' in params.config) thread.defaultModeRequestUserInput = params.config['features.default_mode_request_user_input'] === true
+        // A thread already loaded keeps the roles it was loaded with; only a fresh load reads them again.
+        checkRoles(thread.id, params.config, script)
         // A turn whose app-server crashed never finished, and a new app-server reads it back idle, the turn interrupted.
         // A clean restart keeps what this fixture has always done there, a running thread, which tests of recovery pin.
         const owner = state.owners?.[thread.id]
