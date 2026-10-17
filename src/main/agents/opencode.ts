@@ -153,6 +153,8 @@ interface ThreadServer {
   client?: OpenCodeClient
   readonly abort: AbortController
   closing: boolean
+  /** This server took a creation whose answer was lost, and may still be making that provider session. */
+  createUnsettled?: boolean
 }
 type Pending = OpenCodePending
 interface Fold {
@@ -220,6 +222,8 @@ export class OpenCodeHost implements AgentHost {
   private readonly observed = new Set<string>()
   private readonly loaded = new OpenSessions(id => this.threads.get(id))
   private readonly loading = new Map<string, Promise<void>>()
+  /** Each thread's creation while it runs, so opening the thread meanwhile waits for it rather than making another session. */
+  private readonly creating = new Map<string, Promise<void>>()
   private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
   private readonly reaper: SessionReaper
   private generation = 0
@@ -336,6 +340,8 @@ export class OpenCodeHost implements AgentHost {
     if (!this.state.connected || !this.executable) return Promise.reject(new Error('Connect OpenCode before managing threads.'))
     const generation = this.generation
     const entry = { abort: new AbortController(), closing: false } as ThreadServer
+    // Tracked from its start, so a server no thread goes on to use is stopped once it has sat idle.
+    this.reaper.touch(id)
     entry.ready = (async () => {
       await this.refuseWatcher(id)
       this.assertGeneration(generation)
@@ -392,6 +398,10 @@ export class OpenCodeHost implements AgentHost {
     if (!entry) return
     this.processes.delete(id)
     await this.closeProcess(entry)
+  }
+  /** Stop the server a thread that was never made started, unless another has taken its place. */
+  private dropServer(id: string, entry: ThreadServer): void {
+    if (this.processes.get(id) === entry) void this.stopSession(id)
   }
   private hold(id: string): () => void {
     this.holds.set(id, (this.holds.get(id) ?? 0) + 1)
@@ -540,28 +550,42 @@ export class OpenCodeHost implements AgentHost {
   /** Open this thread's provider session on its own server, once per connection, and read its history back. */
   private open(id: string): Promise<void> {
     const generation = this.generation
-    const alias = this.aliases[id]
-    if (!alias || !this.state.connected) return Promise.resolve()
+    if (!this.aliases[id] || !this.state.connected) return Promise.resolve()
     this.reaper.touch(id)
     if (this.loaded.has(id)) return Promise.resolve()
     const pending = this.loading.get(id); if (pending) return pending
     const work = (async () => {
-      const entry = await this.threadProcess(id)
+      // A creation still running is waited for, never repeated: a thread's provider session is made once (ADR-0087).
+      await this.creating.get(id)?.then(() => undefined, () => undefined)
       this.assertGeneration(generation)
-      const client = entry.client!
+      const alias = this.aliases[id]
+      if (!alias || this.loaded.has(id)) return
+      let entry = await this.threadProcess(id)
+      this.assertGeneration(generation)
       let session: NativeSession | undefined
       if (alias.sessionId) {
-        try { session = sessionReplySchema.parse(await client.request('GET', `/api/session/${alias.sessionId}`)).data }
+        try { session = sessionReplySchema.parse(await entry.client!.request('GET', `/api/session/${alias.sessionId}`)).data }
         catch (error) { if (!(error instanceof OpenCodeRejected && error.status === 404)) throw error }
         if (!session) throw new Error('OpenCode no longer has this thread’s provider session. Nothing was changed.')
       } else {
         // A creation whose answer was lost: the provider session it made, if it made one, carries this thread's mark.
         session = await this.markedSession(entry, alias)
+        if (!session && entry.createUnsettled) {
+          // The server that took it may still be making it, so only a server that never saw it can say it was not made.
+          // The thread has no provider session yet, so nothing else runs on the server that is stopped for this.
+          if (this.processes.get(id) === entry) this.processes.delete(id)
+          await this.closeProcess(entry)
+          this.assertGeneration(generation)
+          entry = await this.threadProcess(id)
+          this.assertGeneration(generation)
+          session = await this.markedSession(entry, alias)
+        }
         if (session) { alias.sessionId = session.id; alias.sessionConfirmed = true; await this.persist() }
         else session = await this.createSession(entry, alias)
       }
       this.assertGeneration(generation)
       if (this.processes.get(id) !== entry) throw new OpenCodeUncertain('The thread’s OpenCode server changed before its session could open.')
+      const client = entry.client!
       const entries: HistoryEntry[] = []
       let cursor: string | undefined
       for (let page = 0; page < 500; page++) {
@@ -583,10 +607,18 @@ export class OpenCodeHost implements AgentHost {
     return work
   }
   private async createSession(entry: ThreadServer, alias: Alias): Promise<NativeSession> {
-    const session = sessionReplySchema.parse(await entry.client!.request('POST', '/api/session', { body: {
+    const body = {
       title: alias.title, model: this.modelRef(alias.modelId, alias.reasoningEffort), location: { directory: alias.cwd },
       permissions: opencodeRules(alias.runtimeMode), metadata: { [CREATE_MARK]: { thread: alias.createToken } },
-    } })).data
+    }
+    let session: NativeSession
+    try { session = sessionReplySchema.parse(await entry.client!.request('POST', '/api/session', { body })).data }
+    catch (error) {
+      // A refusal made nothing. Anything else was sent and its answer lost or unreadable: the session may exist, or yet be made.
+      if (error instanceof OpenCodeRejected) throw error
+      entry.createUnsettled = true
+      throw error instanceof OpenCodeUncertain ? error : new OpenCodeUncertain('OpenCode sent a reply Sotto cannot read.')
+    }
     alias.sessionId = session.id; alias.sessionConfirmed = true
     await this.persist()
     return session
@@ -927,20 +959,35 @@ export class OpenCodeHost implements AgentHost {
           runtimeMode: command.runtimeMode ? opencodeMode(command.runtimeMode) : 'approval-required', ...(reasoningEffort ? { reasoningEffort } : {}),
         }
         this.assertGeneration(generation)
-        release = this.hold(command.threadId)
-        const entry = await this.threadProcess(command.threadId, alias.cwd)
-        this.assertGeneration(generation)
-        this.aliases[command.threadId] = alias; await this.persist()
-        watcherGuard?.()
-        let session: NativeSession
-        try { session = await this.createSession(entry, alias) } catch (error) {
-          if (error instanceof OpenCodeUncertain) { this.thread(command.threadId); this.emit(); throw error }
-          delete this.aliases[command.threadId]; await this.persist().catch(() => undefined)
-          throw new Error('OpenCode refused to create this thread. Nothing was created. Check the model and folder, then try again.', { cause: error })
+        const id = command.threadId
+        release = this.hold(id)
+        const entry = await this.threadProcess(id, alias.cwd)
+        try {
+          this.assertGeneration(generation)
+          // Checked before anything is saved or sent, so a refusal leaves no record of a thread that never was.
+          watcherGuard?.()
+        } catch (error) { this.dropServer(id, entry); throw error }
+        this.aliases[id] = alias
+        // From here the thread exists: opening it meanwhile waits for this creation rather than making a second session.
+        const creation = (async () => {
+          await this.persist()
+          const session = await this.createSession(entry, alias)
+          this.confirmSession(id, alias, session)
+          await this.persist()
+          this.loaded.add(id); this.log.pin(id); this.reaper.touch(id)
+        })()
+        this.creating.set(id, creation)
+        const settledCreation = (): void => { if (this.creating.get(id) === creation) this.creating.delete(id) }
+        void creation.then(settledCreation, settledCreation)
+        try { await creation } catch (error) {
+          // A lost answer keeps the record: the next read finds the session by its mark, or makes the one never made.
+          if (error instanceof OpenCodeUncertain) { this.thread(id); this.emit(); throw error }
+          delete this.aliases[id]; await this.persist().catch(() => undefined)
+          // Nothing was created, so the server started for it has nothing to serve.
+          this.dropServer(id, entry)
+          if (error instanceof OpenCodeRejected) throw new Error('OpenCode refused to create this thread. Nothing was created. Check the model and folder, then try again.', { cause: error })
+          throw error
         }
-        this.confirmSession(command.threadId, alias, session)
-        await this.persist()
-        this.loaded.add(command.threadId); this.log.pin(command.threadId); this.reaper.touch(command.threadId)
       } else {
         const alias = this.aliases[command.threadId]
         if (!alias) throw new Error('This OpenCode thread has no provider session. Do not repeat its creation automatically.')
@@ -1094,7 +1141,7 @@ export class OpenCodeHost implements AgentHost {
     try { this.finishDisconnect() } finally { this.disconnecting = false }
   }
   private finishDisconnect(): void {
-    this.generation++; this.reaper.dispose(); this.loaded.clear(); this.loading.clear()
+    this.generation++; this.reaper.dispose(); this.loaded.clear(); this.loading.clear(); this.creating.clear()
     // A pending permission is OpenCode's to settle when its server ends; Sotto sends no decision for it here.
     this.pending.clear()
     for (const thread of this.threads.values()) thread.requests = []

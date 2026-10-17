@@ -474,3 +474,74 @@ it('shows the files a step changed as a file change, live and restored, without 
     expect(changes((await thread(restarted, id)).activities)).toEqual(live)
   } finally { await (restarted ?? f).cleanup() }
 })
+
+it('makes one provider session when a thread is read while its creation is still answering', async () => {
+  const f = await opencodeFixture()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await f.script({ delay: { 'session.create': 1000 } })
+    const id = randomUUID()
+    const creating = f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'In flight' })
+    await expect.poll(async () => (await f.driver.requests()).some(record => record.method === 'session.create')).toBe(true)
+    // Sotto's store opens the thread while OpenCode is still making its provider session.
+    f.host.observeThreads?.([id])
+    const reading = f.host.refreshThread!(id)
+    await expect(creating).resolves.toEqual({ accepted: true })
+    await reading
+    expect((await thread(f, id)).status).toBe('idle')
+    expect((await f.driver.requests()).filter(record => record.method === 'session.create')).toHaveLength(1)
+    expect((await f.nativeSessions()).filter(session => session.title === 'In flight')).toHaveLength(1)
+  } finally { await f.cleanup() }
+})
+
+it('makes no second provider session when a thread is read at once after its creation answer was lost', { timeout: 60_000 }, async () => {
+  const f = await opencodeFixture()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await f.script({ delay: { 'session.create': 4000 } })
+    const id = randomUUID()
+    await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Lost then read' }))
+      .resolves.toEqual({ accepted: false, uncertain: true })
+    const took = ((await f.driver.requests()).find(record => record.method === 'session.create') as { process?: number } | undefined)?.process
+    expect(took).toBeTypeOf('number')
+    // Read at once: the server that took the creation may still be making the session its lost answer was for.
+    await f.host.refreshThread!(id)
+    expect((await thread(f, id)).status).toBe('idle')
+    // That server has gone, so it cannot finish a second session later, and the thread has one.
+    expect(running(took!)).toBe(false)
+    expect((await f.nativeSessions()).filter(session => session.title === 'Lost then read')).toHaveLength(1)
+    await expect(send(f, id, 'first')).resolves.toEqual({ accepted: true })
+  } finally { await f.cleanup() }
+})
+
+it.each([
+  ['OpenCode refuses its creation', 'refused'],
+  ['Watcher’s check fails before it is created', 'guard'],
+] as const)('stops the server of a thread that was never made when %s, and keeps no record of it', async (_case, how) => {
+  const f = await opencodeFixture()
+  let left: number[] = []
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    if (how === 'refused') await f.script({ refuse: { 'session.create': 400 } })
+    const before = await f.processes()
+    const id = randomUUID()
+    const command = { type: 'create-thread' as const, commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Never made' }
+    if (how === 'refused') await expect(f.host.execute(command)).rejects.toThrow('OpenCode refused to create this thread. Nothing was created.')
+    else await expect(f.host.executeFromWatcher!(command, () => { throw new Error('Watcher no longer holds this grant.') })).rejects.toThrow('Watcher no longer holds this grant.')
+    const started = (await f.processes()).filter(pid => !before.includes(pid))
+    expect(started).toHaveLength(1)
+    // Nothing is left of it once the adapter says its work is done.
+    await f.host.closed()
+    left = started.filter(running)
+    expect(JSON.parse(await readFile(join(f.root, 'opencode-threads.json'), 'utf8').catch(() => '{}'))).not.toHaveProperty(id)
+    expect((await f.host.snapshot()).threads.some(candidate => candidate.id === id)).toBe(false)
+    expect((await f.driver.requests()).filter(record => record.method === 'session.create')).toHaveLength(how === 'refused' ? 1 : 0)
+  } finally {
+    for (const pid of left) process.kill(pid)
+    await f.cleanup()
+  }
+  expect(left).toEqual([])
+})
