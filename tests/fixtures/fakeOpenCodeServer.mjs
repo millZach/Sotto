@@ -297,8 +297,12 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
   if (name === 'experimental.mcp.add') {
     const server = decodeURIComponent(sessionId)
     if (script().mcp?.refuse) { fail(400, 'InvalidRequestError'); return }
+    // `script.mcp.hold` names a file in the root: the next add, and only that one, waits for it before it connects.
+    const hold = script().mcp?.hold
+    if (hold) writeFileSync(path('script.json'), JSON.stringify({ ...script(), mcp: { ...script().mcp, hold: undefined } }))
+    const released = () => new Promise(resolve => { const check = () => { if (!hold || existsSync(path(hold))) resolve(); else setTimeout(check, 20) }; check() })
     // OpenCode holds the request while it connects, and answers 204 whether or not the server connected.
-    void connectMcp(body.config).then(status => {
+    void released().then(() => connectMcp(body.config)).then(status => {
       mcpOf(query['location[directory]']).set(server, status)
       record({ method: 'fixture/mcp-connected', params: { server, status } })
       send(204)

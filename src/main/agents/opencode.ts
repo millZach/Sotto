@@ -389,8 +389,16 @@ export class OpenCodeHost implements AgentHost {
     if (entry.toolsFolder === folder || entry.closing) return
     // Servers given for another folder are not this one's, so their tools are allowed no longer.
     entry.toolsFolder = folder; delete entry.toolActions
-    entry.tools = this.addToolServers(id, entry, folder).catch(() => { if (!entry.closing && entry.toolsFolder === folder) this.withholdTools(id, true) })
+    entry.tools = this.addToolServers(id, entry, folder).catch(() => { if (this.ownsTools(id, entry, folder)) this.withholdTools(id, true) })
       .then(() => this.syncToolRules(id, entry).catch(() => undefined))
+  }
+  /**
+   * Whether what this server hears about its tool servers for `folder` is still the thread's to show: it is the thread's
+   * server, not stopping, and still meant to have them for that folder. A server whose session ended is not, even while
+   * its tool servers are still being taken off, since the thread's next server may have started beside it.
+   */
+  private ownsTools(id: string, entry: ThreadServer, folder: string): boolean {
+    return this.processes.get(id) === entry && !entry.closing && entry.toolsFolder === folder
   }
   /**
    * Sotto's tool servers reach an OpenCode thread as remote MCP servers on that thread's own server, each with the thread's
@@ -404,7 +412,8 @@ export class OpenCodeHost implements AgentHost {
    */
   private async addToolServers(id: string, entry: ThreadServer, folder: string): Promise<void> {
     const generation = this.generation
-    const stale = (): boolean => entry.closing || generation !== this.generation || entry.toolsFolder !== folder || !entry.client
+    const stale = (): boolean => !this.ownsTools(id, entry, folder) || generation !== this.generation || !entry.client
+    if (stale()) return
     this.withholdTools(id, false)
     const given = new Map<string, readonly string[]>()
     for (let round = 0; round < 2; round++) {
@@ -432,7 +441,7 @@ export class OpenCodeHost implements AgentHost {
   private syncToolRules(id: string, entry: ThreadServer): Promise<void> {
     return this.changeRules(entry, () => {
       const alias = this.aliases[id], held = entry.sessionRules
-      if (!alias?.sessionId || !held || entry.closing) return undefined
+      if (!alias?.sessionId || !held || entry.closing || this.processes.get(id) !== entry) return undefined
       const wanted = [...held.filter(candidate => !isToolRule(candidate)).map(({ action, resource, effect }) => ({ action, resource, effect })), ...opencodeToolRules(entry.toolActions ?? [])]
       return sameRules(wanted, held) ? undefined : { alias, rules: wanted }
     })

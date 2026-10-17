@@ -5,7 +5,8 @@
  * stateless generation route on that server. `opencodeLive.test.ts` checks the same on OpenCode itself.
  */
 import { randomUUID } from 'node:crypto'
-import { realpath } from 'node:fs/promises'
+import { realpath, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { BrowserAgentServer } from '../../src/main/agents/browserAgentServer'
 import { opencodeRules } from '../../src/main/agents/opencode'
@@ -240,4 +241,26 @@ it('stops a thread’s server within moments when OpenCode keeps saying it is no
   await expect.poll(async () => of(await f.driver.requests(), 'experimental.mcp.remove').length, { timeout: 20_000 }).toBeGreaterThan(0)
   // The whole removal is held to its few seconds, retries included, and the server stops whatever OpenCode said.
   await expect.poll(() => f.sessions.stopped(id), { timeout: 10_000 }).toBe(true)
+})
+
+it('keeps a thread’s new server’s answer about its tools when the server before it hears back about its own late', { timeout: 60_000 }, async () => {
+  const { f, browser } = await withTools({ visuals: false, idle: true })
+  // The first server's add waits until the test lets it go, and then finds the thread's old token refused.
+  await f.script({ mcp: { hold: 'release-first-add' } })
+  const id = await open(f)
+  const first = (await f.holder(id))!
+  await expect.poll(async () => of(await f.driver.requests(), 'experimental.mcp.add').length).toBe(1)
+  // Its idle session ends, and OpenCode holds the removal of its tool servers as the thread's next server starts.
+  await f.scriptAlso({ delay: { 'experimental.mcp.remove': 2_500 } })
+  f.host.observeThreads([])
+  await expect.poll(async () => of(await f.driver.requests(), 'experimental.mcp.remove').length, { timeout: 20_000 }).toBe(1)
+  browser.revoke(id)
+  f.host.observeThreads([id]); void f.host.refreshThread!(id)
+  await expect.poll(async () => of(await f.driver.requests(), 'fixture/mcp-connected').map(record => [(record as { process?: number }).process === first, (record.params as { status: string }).status]))
+    .toEqual([[false, 'connected']])
+  await writeFile(join(f.root, 'release-first-add'), '')
+  await expect.poll(() => f.running(first), { timeout: 20_000 }).toBe(false)
+  // What the first server heard is not the thread's any more: the new server's tools stand.
+  expect((await thread(f, id)).sottoToolsWithheld).toBeUndefined()
+  await expect.poll(async () => rulesSent(await f.driver.requests())).toEqual([...opencodeRules('approval-required'), ...browserAllows])
 })
