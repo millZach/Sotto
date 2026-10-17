@@ -366,14 +366,6 @@ it.each([
   } finally { await f.cleanup() }
 })
 
-it('writes no side text until #1106 proves OpenCode’s side call safe', async () => {
-  const { f, id } = await open()
-  try {
-    await expect(f.host.writeShortText!(id, { instruction: 'Name it.', material: 'Marker material' })).resolves.toBeNull()
-    expect(JSON.stringify(await f.driver.requests())).not.toContain('Marker material')
-  } finally { await f.cleanup() }
-})
-
 it('ends the tools of a server that exits by itself, since a tool it started outlives it', { timeout: 60_000 }, async () => {
   const { f, id } = await open()
   let child: number | undefined
