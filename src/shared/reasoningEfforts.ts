@@ -14,6 +14,11 @@ export function effortKey(id: string): string {
 /** The levels whose place is known. Anything else keeps its place beside the provider's own neighbours. */
 const EFFORT_RANK: Readonly<Record<string, number>> = { none: 0, minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5, extrahigh: 5, max: 6 }
 
+/** A level's place among the levels Sotto knows, least thorough first, or undefined for one it does not know. */
+export function effortRank(id: string): number | undefined {
+  return EFFORT_RANK[effortKey(id)]
+}
+
 /**
  * A provider's reported levels in Sotto's order. Ids come back verbatim, because each one goes back to
  * the provider unchanged when a thread starts, and a repeated id is dropped. The list is reversed as a

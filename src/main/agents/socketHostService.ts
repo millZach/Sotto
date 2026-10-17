@@ -343,6 +343,8 @@ export class SocketHostService implements HostService {
         }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, message.detail)
         else if (message.event === 'detail-delta') this.applyDelta(message.threadId, message.delta)
+        // Sent only to a client whose hello accepts `host-update` (ADR-0088), which this one does not ask for yet.
+        else if (message.event === 'host-update-step') return
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
       } else {
         const pending = this.pending.get(message.id)
