@@ -413,6 +413,44 @@ describe('provider model picker', () => {
       expect(screen.queryByRole('button', { name: 'Back to model sources' })).not.toBeInTheDocument()
     })
 
+    it('keeps a menu above its chip pinned to the chip as a step changes its height, and changes sides only when it no longer fits', async () => {
+      // jsdom lays nothing out, so the menu is 80px plus 40px a row, in a 560px window.
+      const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('model-picker__dialog') ? 80 + 40 * this.querySelectorAll('.model-picker__models button').length : 0
+      })
+      const width = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(336)
+      const windowHeight = innerHeight
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 560 })
+      try {
+        const user = userEvent.setup()
+        render(<ModelPicker models={sourced} modelId="anthropic/claude-sonnet-5" disabled={false} onChange={vi.fn()} />)
+        const chip = screen.getByRole('combobox', { name: 'Thread model' })
+        let at = { top: 330, bottom: 360 }
+        chip.getBoundingClientRect = () => ({ ...at, left: 100, right: 300, width: 200, height: 30, x: 100, y: at.top, toJSON: () => ({}) })
+        await user.click(chip)
+        const menu = screen.getByRole('dialog', { name: 'Choose model' })
+        // Three sources make 200px: more than the 178px below the chip, so it opens above, its foot 6px over the chip.
+        expect(menu.style.bottom).toBe(`${560 - 324}px`)
+        expect(menu.style.top).toBe('auto')
+        await user.click(screen.getByRole('button', { name: /^Show Anthropic models/u }))
+        // Two models make 160px, which would fit below; it stays above with its foot where it was, and its top moves.
+        expect(menu.style.bottom).toBe(`${560 - 324}px`)
+        expect(menu.style.top).toBe('auto')
+        await user.keyboard('{Escape}')
+        expect(menu.style.bottom).toBe(`${560 - 324}px`)
+        // The chip moves up until the menu no longer fits above it: only then does it move below.
+        at = { top: 150, bottom: 180 }
+        await user.click(screen.getByRole('button', { name: /^Show Anthropic models/u }))
+        fireEvent(window, new Event('resize'))
+        expect(menu.style.top).toBe('186px')
+        expect(menu.style.bottom).toBe('auto')
+      } finally {
+        height.mockRestore()
+        width.mockRestore()
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: windowHeight })
+      }
+    })
+
     it('leaves a provider without model sources as it was: one list, and Escape left to the dialog', async () => {
       const user = userEvent.setup()
       render(<ModelPicker models={models} modelId="astra" disabled={false} onChange={vi.fn()} />)

@@ -192,22 +192,27 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
     if (!element.open) element.setAttribute('open', '')
     // Anchored over the chip, below it only when there is room, and kept inside the window as it resizes. Where it fits
     // on neither side, as in a small window with the composer mid-way down, it takes the roomier side and is shortened to
-    // fit there, so it never covers the chip it came from.
+    // fit there, so it never covers the chip it came from. Once open it keeps its side and holds the chip's edge: a menu
+    // above its chip keeps its foot there and grows and shrinks upward, one below keeps its head there and grows
+    // downward. It changes sides only when it no longer fits on its own.
+    let side: 'below' | 'above' | undefined
     const place = (): void => {
       const anchor = trigger.current?.getBoundingClientRect()
       if (!anchor) return
       element.style.maxHeight = ''
       const width = element.offsetWidth || 336
       const natural = element.offsetHeight || 360
-      const below = innerHeight - anchor.bottom - 22
-      const above = anchor.top - 22
-      const downward = natural <= below || (natural > above && below > above)
-      const room = Math.max(downward ? below : above, 160)
-      if (natural > room) element.style.maxHeight = `${room}px`
-      const height = Math.min(natural, room)
-      const top = downward ? anchor.bottom + 6 : anchor.top - height - 6
+      const room = { below: innerHeight - anchor.bottom - 22, above: anchor.top - 22 }
+      if (!side || natural > room[side]) side = natural <= room.below ? 'below' : natural <= room.above ? 'above' : room.below > room.above ? 'below' : 'above'
+      const fit = Math.max(room[side], 160)
+      if (natural > fit) element.style.maxHeight = `${fit}px`
+      const height = Math.min(natural, fit)
+      const top = Math.max(16, Math.min(side === 'below' ? anchor.bottom + 6 : anchor.top - height - 6, innerHeight - height - 16))
       element.style.left = `${Math.max(16, Math.min(anchor.left, innerWidth - width - 16))}px`
-      element.style.top = `${Math.max(16, Math.min(top, innerHeight - height - 16))}px`
+      // The edge against the chip is the one set, so the menu's own height moves only its far edge. The other is set to
+      // auto, since a modal dialog's own style pins both to the window.
+      element.style.top = side === 'below' ? `${top}px` : 'auto'
+      element.style.bottom = side === 'above' ? `${innerHeight - top - height}px` : 'auto'
     }
     place()
     placeMenu.current = place
