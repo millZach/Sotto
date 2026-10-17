@@ -4,6 +4,8 @@ import { watcherRefusalSchema, watcherThreadTargetSchema, watcherPhoneOriginSche
 export { watcherPhoneOriginSchema } from './watcher'
 import { watcherStopAllPreviewSchema } from './watcherRoom'
 
+/** How many takeover lines a phone's page carries, the newest, as it carries the newest five hundred receipts. */
+export const WATCHER_PHONE_TAKEOVERS_MAX = 500
 /** Optional host-v1 phone features, offered only by the Owl desktop running Watcher. */
 export const WATCHER_PHONE_FEATURE = 'watcher-phone' as const
 export const WATCHER_PHONE_STOP_FEATURE = 'watcher-phone-stop-all' as const
@@ -44,7 +46,7 @@ export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
    * Takeover lines (CONTEXT.md), oldest first: each thread the user took over from the current Watcher by sending there,
    * its title as the room shows it and when. Optional for older phones, which ignore it (protocol version 1, additive).
    */
-  takeovers: z.array(z.object({ target: watcherThreadTargetSchema, title: z.string(), at: z.string() }).strict()).optional(),
+  takeovers: z.array(z.object({ target: watcherThreadTargetSchema, title: z.string(), at: z.string() }).strict()).max(WATCHER_PHONE_TAKEOVERS_MAX).optional(),
 }).strict()
 export const watcherPhoneResultSchema = z.union([z.object({ status: z.literal('ok'), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])
 export const watcherPhoneManageOutcomeSchema = z.union([z.object({ status: z.literal('ok') }).strict(), watcherRefusalSchema])

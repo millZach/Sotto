@@ -1,5 +1,5 @@
 import type { AgentCommand, AgentThread } from '../../shared/agents'
-import { watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend, type WatcherPhoneResult,
+import { WATCHER_PHONE_TAKEOVERS_MAX, watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend, type WatcherPhoneResult,
   type WatcherPhoneSendResult, type WatcherPhonePrepareStopResult, type WatcherPhoneStopResult } from '../../shared/watcherPhone'
 import { watcherRefusal, type WatcherService } from './watcher'
 import type { AgentControl } from './control'
@@ -77,8 +77,15 @@ export class WatcherPhoneService {
     draftDeliveries: this.control.watcherSendRecords().deliveries.filter(row => row.threadId === current?.id).map(row => ({ draftId: row.draftId, status: row.status })),
     runtimeMode: room.runtimeMode, ...(standing ? { standingWatches: room.standingWatches } : {}), ownChanges: room.ownChanges,
     receiptGroups, watchedThreads, needsYou, inFlight: room.inFlight, inFlightLimit: room.inFlightLimit,
-    takeovers: watcherTakeovers(room).map(line => ({ target: line.target, title: thread(line.target)?.title ?? 'Unavailable thread', at: line.at })),
+    takeovers: this.takeovers(room, snapshot),
     working: room.currentOptions?.status === 'running' || room.inFlight > 0, recoveryNotice: room.recoveryNotice, observedAt: room.observedAt })
+  }
+  /** The newest takeover lines, as many as the page carries receipts, each titled from one index of the threads. */
+  private takeovers(room: ReturnType<WatcherService['state']>, snapshot: ReturnType<WatcherService['phoneSnapshot']>): NonNullable<WatcherPhoneState['takeovers']> {
+    const lines = watcherTakeovers(room).slice(-WATCHER_PHONE_TAKEOVERS_MAX)
+    if (lines.length === 0) return []
+    const titles = new Map(snapshot.threads.map(row => [JSON.stringify([row.hostId ?? snapshot.hostId, row.id]), row.title] as const))
+    return lines.map(line => ({ target: line.target, title: titles.get(JSON.stringify([line.target.hostId, line.target.threadId])) ?? 'Unavailable thread', at: line.at }))
   }
   async send(request: WatcherPhoneSend, client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, standing = true): Promise<WatcherPhoneSendResult> {
     if (request.origin.clientId !== client.clientId || request.origin.hostId !== this.control.hostId() || client.transport !== 'socket') {

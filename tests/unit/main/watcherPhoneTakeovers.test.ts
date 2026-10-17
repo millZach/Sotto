@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { WatcherPhoneService } from '../../../src/main/agents/watcherPhone'
 import type { AgentControl } from '../../../src/main/agents/control'
 import type { WatcherService } from '../../../src/main/agents/watcher'
@@ -28,4 +28,24 @@ it('carries the takeover lines to the phone, as protocol version 1 adds them, wi
   const { takeovers: _lines, ...older } = state
   void _lines
   expect(watcherPhoneStateSchema.parse(older)).toEqual(older)
+})
+
+it('carries the newest five hundred takeover lines, as it carries receipts, and titles them without a search per line', () => {
+  const lines = Array.from({ length: 600 }, (_, index) => ({ requestId: REQUEST, startedBy: 'watcher' as const, generation: 1, state: 'taken-over' as const,
+    target: { hostId: HOST, threadId: `worker-${index}` }, promptCount: 1, takeover: { reason: 'user-send' as const, at: new Date(Date.parse(AT) + index * 1_000).toISOString() } }))
+  const room: WatcherRoomState = { current: { target: watcher, projectId: 'project', provider: 'codex', creationOperationId: '33333333-3333-4333-8333-333333333333', createdAt: AT },
+    currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [],
+    requests: [{ id: REQUEST, watcher, rootUserMessageId: 'u1', state: 'active', createdAt: AT, closedAt: null, participants: lines }],
+    watchedThreads: [], inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: AT }
+  const threads = lines.map(line => ({ id: line.target.threadId, projectId: 'project', title: `Task ${line.target.threadId}`, modelId: 'codex:gpt', status: 'idle' as const, messages: [], requests: [] }))
+  const snapshot = { ...emptyDesktopState(HOST).host, threads }
+  const service = new WatcherPhoneService({ hostId: () => HOST, threadDetail: () => null, watcherSendRecords: () => ({ deliveries: [], followups: [] }) } as unknown as AgentControl,
+    { state: () => room, phoneSnapshot: () => snapshot } as unknown as WatcherService)
+  const find = vi.spyOn(threads, 'find')
+  const state = service.state(false)
+  expect(state.takeovers).toHaveLength(500)
+  expect(state.takeovers?.[0]).toMatchObject({ target: { threadId: 'worker-100' }, title: 'Task worker-100' })
+  expect(state.takeovers?.at(-1)).toMatchObject({ target: { threadId: 'worker-599' }, title: 'Task worker-599' })
+  // The page's other parts find their few threads; the lines do not search once each.
+  expect(find.mock.calls.length).toBeLessThan(10)
 })
