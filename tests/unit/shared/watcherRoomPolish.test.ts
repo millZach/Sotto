@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { isShownReply, stopAllRunning, watcherTakeovers, type WatcherRoomState } from '../../../src/shared/watcherRoom'
 
@@ -57,5 +58,15 @@ describe('a shown reply', () => {
     expect(isShownReply({ ...reply, text: '', attachments: [{ id: 'a', name: 'shot.png', mimeType: 'image/png', sizeBytes: 1 }] as never })).toBe(true)
     expect(isShownReply({ ...reply, id: 'visual:1', visual: { kind: 'diagram' } as never })).toBe(false)
     expect(isShownReply({ ...reply, role: 'user' })).toBe(false)
+  })
+})
+
+describe('where cards and takeover lines are placed', () => {
+  it('uses the shared rule in main and in the window, with no copy of its own', () => {
+    for (const file of ['../../../src/main/agents/watcherReceiptReplies.ts', '../../../src/renderer/src/watcher/WatcherReceipts.tsx']) {
+      const source = readFileSync(new URL(file, import.meta.url), 'utf8')
+      expect(source, file).toMatch(/import \{[^}]*\bisShownReply\b[^}]*\} from '[./]+shared\/watcherRoom'/u)
+      expect(source, file).not.toMatch(/isVisualMessage|role === 'assistant'/u)
+    }
   })
 })
