@@ -58,7 +58,7 @@ import { migrateWorkspaceThreadKinds } from './watcherRecords'
 import { WatcherLaunchProfiles, WATCHER_DISABLED } from './watcherLaunchProfiles'
 import { WatcherProfileRefusal } from './watcherProfile'
 import { assertWatcherPermission } from './watcherProviderTools'
-import type { WatcherProfileTools } from './host'
+import type { WatcherProfileTools, WorkerRoleSource } from './host'
 
 /**
  * Fold a run of appends to one message into the first of them, so a reply streamed over one write
@@ -600,6 +600,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   useWatcherTools(tools: WatcherProfileTools): void { this.launchProfiles.useTools(tools) }
   useBrowserTools(tools: BrowserAgentTools): void { this.inner.useBrowserTools?.(tools) }
+  useWorkerRoles(roles: WorkerRoleSource): void { this.inner.useWorkerRoles?.(roles) }
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.inner.useThreadTools?.(this.watcherEnabled ? tools : tools.filter(tool => tool.name !== 'sotto_threads')) }
   readonly concurrentProviders: boolean
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
