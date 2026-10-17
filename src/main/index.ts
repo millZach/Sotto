@@ -11,7 +11,9 @@ import { VISUALIZE_TOOL, VisualToolServer } from './agents/visualTools'
 import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { registerDelegationIpc } from './agents/delegationIpc'
+import { registerContinueIpc } from './agents/continueThreadIpc'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
+import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
 import { installVisualSandbox, type VisualContentsLike } from './agents/visualSandbox'
 import { startDeadProxy, VISUAL_SCHEME_PRIVILEGES } from './agents/visualSeal'
 import { FIGTREE_FONT_FACES } from '../shared/figtreeFonts'
@@ -584,6 +586,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const heldProviders = heldProvidersOf(owlFeatures)
   const usageEnabled = owlFeatures.usage
   const delegationEnabled = owlFeatures['thread-delegation']
+  const continueEnabled = owlFeatures['continue-on-provider']
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || releasesHeldProvider(heldProviders))
   // With Update all on, the host version the update this computer is downloading brings, which a host may run before
   // Sotto restarts (ADR-0077 decision 6). It stays undefined on stable, where hosts follow the running version alone.
@@ -647,7 +650,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     createWindow: options => {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
       const featureArguments = mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
-        ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : [])] : []
+        ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : [])] : []
       const window = new BrowserWindow(featureArguments.length
         ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...(options.webPreferences?.additionalArguments ?? []), ...featureArguments] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
@@ -713,7 +716,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
-    delegationEnabled,
+    delegationEnabled, continueEnabled,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,
@@ -846,6 +849,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   quitHandles.pullRequestTools = pullRequestTools
   // Let a thread delegate work to threads it starts (ADR-0081): an Owl feature, so stable offers no server and keeps its records.
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
+  // Continue a thread on another provider (ADR-0089): an Owl feature, so stable builds no service and registers no bridge.
+  const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
   const delegationTools = delegationService ? new DelegationToolServer(delegationService) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
   agentHost.useThreadTools([hostSetupTools, visualTools, pullRequestTools, ...(delegationTools ? [delegationTools] : [])])
@@ -1396,6 +1401,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       // The delegating thread's cards read delegation's own record (#1029); stable built no service, so nothing is registered.
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
         (channel, payload) => { windows.sendToMain(channel, payload) })
+      const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         report: () => { logOperational('checkpoint-unavailable') } })
       agentHost.setMutationGuard(checkpointIntegration.canMutate)
@@ -1589,6 +1595,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupSubagents()
         cleanupUsage()
         cleanupDelegations()
+        cleanupContinue()
         cleanupTerminals()
         worktreeCleanup?.dispose()
         cleanupTools()

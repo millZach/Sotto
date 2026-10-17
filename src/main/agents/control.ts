@@ -960,10 +960,14 @@ export class AgentControl {
   }
   /**
    * Display only; every native state, receipt and history reader keeps the complete provider message. Watcher's
-   * conversation shows the user's messages as typed and none of Sotto's news for Watcher (ADR-0073).
+   * conversation shows the user's messages as typed and none of Sotto's news for Watcher (ADR-0073), and a continued
+   * thread's first message the user's words beside its handover (ADR-0089). Read for a thread a window or phone is
+   * reading, never for every thread on every publish.
    */
   private presentedMessages(thread: AgentThread): readonly AgentMessage[] {
-    if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') return thread.messages
+    if (thread.kind !== 'watcher' && thread.kind !== 'watcher-history') {
+      return thread.continuedFrom?.handover !== undefined && this.continuationDisplay ? this.continuationDisplay(thread) : thread.messages
+    }
     // An unchanged history is shown as the same array, so a publish neither copies it again nor rebuilds what reads it. Only
     // a history a window holds is kept: an offscreen read keeps no text, as the display itself keeps none (ADR-0073).
     const retained = this.watcherMessageDisplay?.isRetained(this.state.host.hostId, thread.id) ?? true
@@ -997,6 +1001,13 @@ export class AgentControl {
     const rest = { ...thread.summary }
     delete rest.lastUser
     return shown ? { ...rest, lastUser: { ...last, text: shown.text } } : rest
+  }
+  /** How a continued thread's first message is shown (ADR-0089); set only while the Owl list turns continuing on. */
+  private continuationDisplay: ((thread: AgentThread) => readonly AgentMessage[]) | undefined
+  /** Shows a continued thread's handover beside the user's words in every detail read from now on. Returns the unhook. */
+  useContinuationDisplay(display: (thread: AgentThread) => readonly AgentMessage[]): () => void {
+    this.continuationDisplay = display
+    return () => { if (this.continuationDisplay === display) this.continuationDisplay = undefined }
   }
   /** Which threads main pushes detail for: what the window says it is looking at, plus work it must see land. */
   private detailTargets(): string[] {

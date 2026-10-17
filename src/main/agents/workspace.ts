@@ -16,7 +16,7 @@ import { cloneActivitySnapshot, immutableActivities, immutableModels, isImmutabl
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, THREAD_CONTINUED_IN_MAX, WAKE_UP_MESSAGE_IDS_MAX, type ThreadContinuedFrom, type ThreadContinuedIn, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink, type UsageRecordedUserMessage } from './usageHistory/sink'
@@ -26,6 +26,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { confirmedSettingsSnapshot, type AgentHost, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual } from './threadStore'
 import { readHandover, type Handover } from './handover'
+import { continuedPromptWords, continuedWordsOnly } from './continueThread'
 import { placeVisuals } from './visualPlacement'
 import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
@@ -335,6 +336,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   watcherHandover(threadId: string, shown: (message: AgentMessage) => AgentMessage | null): Handover | undefined {
     if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
+    return this.handoverOf(threadId, shown)
+  }
+  /**
+   * A handover of an ordinary thread for a thread that continues it on another provider (ADR-0089), read from Sotto's own
+   * record (ADR-0016). A thread that itself continued another carries its first message's words without the handover it
+   * began with. Undefined when the record cannot be read; with Keep local history off it says what it holds.
+   */
+  threadHandover(threadId: string): Handover | undefined {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (!thread || !this.threadVisible(threadId) || thread.kind === 'watcher' || thread.kind === 'watcher-history') return undefined
+    return this.handoverOf(threadId, message => continuedWordsOnly(thread, message))
+  }
+  private handoverOf(threadId: string, shown: (message: AgentMessage) => AgentMessage | null): Handover | undefined {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     if (!thread?.providerId || this.storeUnavailable) return undefined
     this.applyEvents()
@@ -356,6 +370,42 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (thread.delegatedBy !== undefined) throw new Error('This thread was delegated by another thread.')
     thread.delegatedBy = delegatingThreadId
     this.dirty = true; await this.flush(); this.publish()
+  }
+  /**
+   * Records the thread this one continues on another provider (ADR-0089), on its own record, before its first message
+   * goes, so the handover that message carries is told apart from the user's words from its first echo. The continued
+   * thread keeps the source's title: one the user typed stays theirs, and any other is kept as Sotto's, so naming from
+   * the first message, which begins with the handover, never renames it. Set again only by a retry of the same continuation.
+   */
+  async setContinuedFrom(threadId: string, from: ThreadContinuedFrom): Promise<void> {
+    await this.initialize(); const thread = this.thread(threadId)
+    if (thread.continuedFrom !== undefined && thread.continuedFrom.threadId !== from.threadId) throw new Error('This thread continues another thread.')
+    const previous = { continuedFrom: thread.continuedFrom, titleSource: thread.titleSource, titledFromFirstMessage: thread.titledFromFirstMessage }
+    thread.continuedFrom = from
+    if (thread.titleSource !== 'user') { thread.titleSource = 'generated'; delete thread.titledFromFirstMessage }
+    this.dirty = true
+    try { await this.flush() } catch (error) { Object.assign(thread, previous); if (previous.titledFromFirstMessage === undefined) delete thread.titledFromFirstMessage; throw error }
+    this.publish()
+  }
+  /** Records which message carried a continued thread's handover, once its send named it (ADR-0089). */
+  async noteContinuedMessage(threadId: string, messageId: string): Promise<void> {
+    await this.initialize(); const thread = this.thread(threadId)
+    const handover = thread.continuedFrom?.handover
+    if (!thread.continuedFrom || !handover || handover.messageId === messageId) return
+    const previous = thread.continuedFrom
+    thread.continuedFrom = { ...previous, handover: { ...handover, messageId } }
+    this.dirty = true
+    try { await this.flush() } catch (error) { thread.continuedFrom = previous; throw error }
+    this.publish()
+  }
+  /** Records a thread that continues this one (ADR-0089), newest last, on this thread's own record. */
+  async addContinuedIn(threadId: string, link: ThreadContinuedIn): Promise<void> {
+    await this.initialize(); const thread = this.thread(threadId)
+    const previous = thread.continuedIn
+    thread.continuedIn = [...(previous ?? []).filter(item => item.threadId !== link.threadId), link].slice(-THREAD_CONTINUED_IN_MAX)
+    this.dirty = true
+    try { await this.flush() } catch (error) { if (previous === undefined) delete thread.continuedIn; else thread.continuedIn = previous; throw error }
+    this.publish()
   }
   /** One message of a thread as Sotto's record holds it, read by its ID alone: a delegation's reply (ADR-0081). */
   threadMessage(threadId: string, messageId: string): AgentMessage | undefined {
@@ -2553,8 +2603,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         // The Git action and the linked pull requests are Sotto's record, not the provider's: a provider update keeps them.
         ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
         ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
-        // The thread that delegated to this one is Sotto's record too (ADR-0081).
+        // The thread that delegated to this one is Sotto's record too (ADR-0081), and so are a continuation's links (ADR-0089).
         ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
+        ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
+        ...(old?.continuedIn ? { continuedIn: old.continuedIn } : {}),
         ...(old?.babysitting ? { babysitting: old.babysitting } : {}),
         ...(old?.babysitEnded ? { babysitEnded: old.babysitEnded } : {}),
         ...(old?.wakeUpMessageIds ? { wakeUpMessageIds: old.wakeUpMessageIds } : {}),
@@ -3409,7 +3461,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (command.type === 'send') markSendStage(command.commandId, 'prepared')
       watcherGuard?.()
       const result = await (watcherGuard && this.inner.executeFromWatcher ? this.inner.executeFromWatcher(dispatched, watcherGuard) : this.inner.execute(dispatched))
-      if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, command.text)
+      // A continued thread's first message begins with its handover; its branch is named from the user's words (ADR-0089).
+      if (command.type === 'send' && firstSend && result.accepted) this.nameBranch(thread.id, continuedPromptWords(thread, command.text))
       if (command.type === 'configure-thread') {
         const [confirmed, snapshot] = confirmedSettingsSnapshot(result)
         if (!snapshot || this.deliveryStopped) return confirmed

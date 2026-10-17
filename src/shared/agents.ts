@@ -256,6 +256,28 @@ export type HandoverCounts = z.infer<typeof handoverCountsSchema>
 /** The handover a user message carried ahead of the user's own words: its words as sent, and the provider of the thread it came from. */
 export const agentMessageHandoverSchema = z.object({ text: z.string(), provider: providerIdSchema, counts: handoverCountsSchema }).strict()
 export type AgentMessageHandover = z.infer<typeof agentMessageHandoverSchema>
+/**
+ * Text-free proof that a continued thread's first message began with a handover of the thread it continues (ADR-0089):
+ * how many characters were the handover and their digest, and what it carried, never any of the words. Every
+ * user-facing copy shows the handover apart from the user's words by this record alone.
+ */
+export const threadHandoverProofSchema = z.object({ prefixLength: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  prefixDigest: z.string().regex(/^[0-9a-f]{64}$/u), counts: handoverCountsSchema,
+  /** The first message's Sotto message ID, once its send said it: the only message a copy without the words may split. */
+  messageId: id.optional() }).strict()
+export type ThreadHandoverProof = z.infer<typeof threadHandoverProofSchema>
+/**
+ * The thread a **continued thread** continues (ADR-0089): its Sotto thread ID, its provider, when, and the proof of the
+ * handover its first message carried, once that message was sent.
+ */
+export const threadContinuedFromSchema = z.object({ threadId: id, provider: providerIdSchema, at: z.string().datetime(),
+  handover: threadHandoverProofSchema.optional() }).strict()
+export type ThreadContinuedFrom = z.infer<typeof threadContinuedFromSchema>
+/** One thread that continues this one on another provider (ADR-0089): its Sotto thread ID, its provider and when. */
+export const threadContinuedInSchema = z.object({ threadId: id, provider: providerIdSchema, at: z.string().datetime() }).strict()
+export type ThreadContinuedIn = z.infer<typeof threadContinuedInSchema>
+/** The most continuations a thread's record names, the newest kept, so a record cannot grow without end. */
+export const THREAD_CONTINUED_IN_MAX = 100
 export const agentMessageSchema = z.object({
   // A projected message combines bounded events and can exceed any one event's limit.
   id, role: z.enum(['user', 'assistant']), text: z.string(), createdAt: z.string(),
@@ -359,6 +381,13 @@ export const agentThreadSchema = z.object({
    * the thread's own record so it survives a restart; absent on every thread no other thread started, and from older hosts.
    */
   delegatedBy: id.optional(),
+  /**
+   * The thread this one continues on another provider (ADR-0089), and the threads that continue this one, newest last.
+   * Sotto's record, kept on each thread's own record so the links survive a restart; absent on every other thread, and
+   * from older hosts. A value this build cannot read drops the link rather than the thread.
+   */
+  continuedFrom: threadContinuedFromSchema.optional().catch(undefined),
+  continuedIn: z.array(threadContinuedInSchema).max(THREAD_CONTINUED_IN_MAX).optional().catch(undefined),
   /** Who named this thread: the user by hand, Sotto through the thread's own provider, or the stand-in/provider name.
    * Absent on threads saved before Sotto recorded it, which counts as `default`. */
   titleSource: z.enum(['user', 'default', 'generated']).optional(),
