@@ -229,8 +229,13 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
       .map(activity => [activity.kind, activity.command ?? activity.changes?.map(change => change.path).join(', '), activity.turnId])
     const live = await placed()
     expect(live).toEqual([
-      ['command', 'npm run format', firstTurn], ['file-change', join(projectPath, 'notes.txt'), firstTurn], ['file-change', join(projectPath, 'probe.txt'), secondTurn],
+      ['command', 'npm run format', firstTurn], ['file-change', join(projectPath, 'notes.txt'), firstTurn],
+      // The two commands that asked first: OpenCode starts and calls a tool before it asks, as 2.0.31 does.
+      ['command', 'npm run build', firstTurn], ['command', 'rm -rf build', firstTurn],
+      ['file-change', join(projectPath, 'probe.txt'), secondTurn],
     ])
+    const asked = (await detail()).activities?.filter(activity => activity.kind === 'command' && activity.command !== 'npm run format').map(activity => activity.status)
+    expect(asked).toEqual(['completed', 'failed'])
 
     // Restart on the same profile: the history comes back from OpenCode, each turn's activity under its own prompt.
     await closeSotto(launched); launched = undefined
@@ -239,8 +244,11 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     const reopenedPanel = await providerPanel(reopened)
     await reopened.getByRole('button', { name: 'OpenCode', exact: true }).click()
     const connectAgain = reopenedPanel.getByRole('button', { name: 'Connect OpenCode', exact: true })
-    if (await connectAgain.count()) await connectAgain.click()
-    await expect(reopenedPanel.getByRole('button', { name: 'Disconnect OpenCode' })).toBeVisible()
+    const connected = reopenedPanel.getByRole('button', { name: 'Disconnect OpenCode' })
+    // The panel draws one of the two once it has read the provider; asking before then saw neither.
+    await expect(connectAgain.or(connected)).toBeVisible()
+    if (await connectAgain.isVisible()) await connectAgain.click()
+    await expect(connected).toBeVisible()
     await openThreads(reopened)
     await reopened.getByRole('button', { name: 'OpenCode UI check', exact: true }).click()
     await expect(reopened.getByLabel('Thread transcript')).toContainText('Second synthetic OpenCode reply')

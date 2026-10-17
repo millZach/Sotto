@@ -1,23 +1,33 @@
 {
-  "threadId": "host:668eeaff-c412-4b2b-874a-2eb804729852:09e0b6f6-e28c-4b9c-bd4d-3b9b7b5de5c1",
-  "nativeId": "ses_1449559e80002f6df6917bdb6c",
-  "firstTurn": "b0994d3d-61bb-4a59-ad7f-177190708786",
-  "secondTurn": "bd4fa832-6f71-4649-ac3b-272e9f77950b",
+  "threadId": "host:9f086296-3784-431b-bbab-55da67dbfc44:8989936c-206a-4fce-ad66-334de146cc63",
+  "nativeId": "ses_1449559e8000fee38726dd73eb",
+  "firstTurn": "4184e549-1345-4f4d-99a0-865ae6e9010d",
+  "secondTurn": "5bc93755-cff7-413e-8371-3c84d2017a1e",
   "activities": [
     [
       "command",
       "npm run format",
-      "b0994d3d-61bb-4a59-ad7f-177190708786"
+      "4184e549-1345-4f4d-99a0-865ae6e9010d"
     ],
     [
       "file-change",
-      "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-opencode-y0xayf\\opencode-fixture\\project\\notes.txt",
-      "b0994d3d-61bb-4a59-ad7f-177190708786"
+      "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-opencode-RImY5O\\opencode-fixture\\project\\notes.txt",
+      "4184e549-1345-4f4d-99a0-865ae6e9010d"
+    ],
+    [
+      "command",
+      "npm run build",
+      "4184e549-1345-4f4d-99a0-865ae6e9010d"
+    ],
+    [
+      "command",
+      "rm -rf build",
+      "4184e549-1345-4f4d-99a0-865ae6e9010d"
     ],
     [
       "file-change",
-      "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-opencode-y0xayf\\opencode-fixture\\project\\probe.txt",
-      "bd4fa832-6f71-4649-ac3b-272e9f77950b"
+      "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-opencode-RImY5O\\opencode-fixture\\project\\probe.txt",
+      "5bc93755-cff7-413e-8371-3c84d2017a1e"
     ]
   ],
   "decisions": [

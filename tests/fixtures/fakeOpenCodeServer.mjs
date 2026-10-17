@@ -175,6 +175,14 @@ function check() {
       metadata: { files: action.files ?? [{ file: 'fixture.txt', patch: 'Index: fixture.txt\n+hi\n', status: 'added', additions: 1, deletions: 0 }] },
       source: { type: 'tool', messageID: id('msg'), id: `call_${randomUUID()}` } }
     session.permissionsPending = [...(session.permissionsPending ?? []), permission]; save()
+    // As OpenCode 2.0.31 does (turn2 and turn3 captures): the tool starts and is called, then asks.
+    const tool = { sessionID: session.id, assistantMessageID: permission.source.messageID, id: permission.source.id }
+    const name = action.tool ?? (permission.action === 'edit' ? 'write' : permission.action), input = action.input ?? { command: action.text }
+    emit('session.tool.input.started', { ...tool, name })
+    emit('session.tool.called', { ...tool, input })
+    // History holds the asking tool as running until the reply settles it, as a provider session's messages do.
+    session.messages.push({ id: permission.source.messageID, time: { created: now() }, type: 'assistant', agent: 'build', model: session.model,
+      content: [{ type: 'tool', id: permission.source.id, name, executed: false, state: { status: 'running', input, metadata: {} }, time: { created: now() } }] })
     emit('permission.asked', permission)
   } else if (action.type === 'question' || action.type === 'form') {
     const form = { id: id('frm'), sessionID: session.id, title: 'Questions', metadata: { kind: 'question' },
@@ -294,6 +302,12 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
     if (!permission) { fail(404, 'PermissionNotFoundError'); return }
     session.permissionsPending = session.permissionsPending.filter(item => item !== permission); save()
     emit('permission.replied', { sessionID: session.id, requestID: permission.id, reply: body.decision })
+    const asked = session.messages.find(message => message.id === permission.source.messageID)?.content?.find(part => part.id === permission.source.id)
+    if (asked) asked.state = body.decision === 'reject'
+      ? { status: 'error', input: asked.state.input, error: { type: 'permission.rejected', message: body.message ?? 'Rejected' }, metadata: {} }
+      : { status: 'completed', input: asked.state.input, content: [{ type: 'text', text: 'Done' }], metadata: {} }
+    save()
+    if (body.decision === 'once') emit('session.tool.success', { sessionID: session.id, assistantMessageID: permission.source.messageID, id: permission.source.id, content: [{ type: 'text', text: 'Done' }], metadata: { truncated: false }, executed: false })
     if (body.decision === 'reject') emit('session.tool.failed', { sessionID: session.id, assistantMessageID: permission.source.messageID, id: permission.source.id, error: { type: 'permission.rejected', message: body.message ?? 'Rejected' } })
     send(204); return
   }

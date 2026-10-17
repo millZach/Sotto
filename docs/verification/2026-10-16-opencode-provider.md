@@ -26,7 +26,7 @@ Built with `npm run build`, then driven with `npx playwright test tests/e2e/open
 - Restarting on the same profile reads the history back from OpenCode, with each turn's command and file changes under its own prompt, matching what was shown live (`journey.json`). [First turn restored](../../artifacts/opencode-provider/restored-first-turn-1280-dark.png), [the stopped turn restored](../../artifacts/opencode-provider/restored-thread-1280-dark.png).
 - Stable (Owl off) starts no OpenCode process and shows no OpenCode provider, model, project or thread; its saved threads and projects are byte for byte the same afterwards. With Owl back, the thread and its history return under the same ID. [Stable providers](../../artifacts/opencode-provider/stable-providers.png).
 
-What the captures also show, outside this change: the fake's replies carry its fixed clock, so they read 5:00 am beside prompts sent at 8:30 pm; a file change shows the absolute path, as every provider's does; Installed client says Sotto could not read the published version, because updating OpenCode is #1104; and at 820x560 the Settings footer sits over the last line until the page scrolls, as it does on every provider.
+What the captures also show, outside this change: the fake's replies carry its fixed clock, so they read 5:00 am beside prompts sent at 8:30 pm; a file change shows the absolute path, as every provider's does; Installed client says only what is installed, since Sotto reads no published OpenCode version until #1104; and at 820x560 the Settings footer sits over the last line until the page scrolls, as it does on every provider.
 
 The Muse, providers-this-computer, host-provider-tiles and model-menu-wheel journeys were run again on the same build.
 
