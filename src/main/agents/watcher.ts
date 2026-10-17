@@ -393,7 +393,8 @@ export class WatcherService implements WatcherControlHooks {
         connected: thread.clientConnected !== false }
     }
     const next = this.readMarks.track(this.view().readMarks ?? [], threads(), now())
-    if (next !== null) void this.options.control.updateWatcher(record => { record.readMarks = next }).catch(() => undefined)
+    // A mark that cannot be saved is lost, never the pass it rode in on: the wake-ups' news must still go.
+    if (next !== null) try { void this.options.control.updateWatcher(record => { record.readMarks = next }).catch(() => undefined) } catch { /* Not saved. */ }
   }
   /** The user has seen these threads' news (read marks): their marks go, and the room is told. */
   async markRead(input: WatcherMarkReadRequest): Promise<WatcherRoomResult> {

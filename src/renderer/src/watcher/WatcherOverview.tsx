@@ -264,7 +264,7 @@ export function WatcherOverviewList({ groups, watched, marks = NO_MARKS, onMarkR
       </label>
       {unread.length ? <div className="watcher-list__news">
         <span className="watcher-list__news-count"><span className="watcher-row__dot" aria-hidden="true" />{unread.length} new</span>
-        {onMarkRead === null ? null : <button type="button" className="watcher-list__mark-read tt-focusable" aria-label={`Mark all ${plural(unread.length, 'thread')} read`}
+        {onMarkRead === null ? null : <button type="button" className="watcher-list__mark-read tt-focusable" aria-label={`Mark all read, ${plural(unread.length, 'thread')}`}
           onClick={() => void markAllRead()}><CheckCheck size={14} aria-hidden="true" />Mark all read</button>}
       </div> : null}
       {markError === null ? null : <p className="watcher-list__error" role="alert">{markError}</p>}

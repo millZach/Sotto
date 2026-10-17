@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentCommand, AgentState, AgentThread } from '../../../src/shared/agents'
@@ -47,10 +47,11 @@ function renderRoom(current: boolean) {
   vi.mocked(useAgents).mockReturnValue(connection)
   vi.mocked(useOptionalAgents).mockReturnValue(connection)
   const ok = (next: WatcherRoomState): WatcherRoomResult => ({ status: 'ok', state: next })
+  const listeners = new Set<(next: WatcherRoomState) => void>()
   const bridge = { get: vi.fn(async () => ok(room(current))), open: vi.fn(async () => ok(room(true))), setLimit: vi.fn(), prepareStopAll: vi.fn(), stopAll: vi.fn(),
-    onChanged: vi.fn(() => () => undefined) } as unknown as WatcherBridge
+    onChanged: vi.fn((listener: (next: WatcherRoomState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }) } as unknown as WatcherBridge
   const view = render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
-  return { ...view, command }
+  return { ...view, command, connection, publish: (next: WatcherRoomState) => { for (const listener of listeners) listener(next) } }
 }
 
 beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); sessionStorage.clear(); roomView.set({ besideId: null, share: 0.5, tab: 'conversation' }); firstMessage.clear() })
@@ -87,6 +88,18 @@ describe('Watcher’s first message', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Start Watcher and send' })).toBeEnabled())
     expect(promptText(field)).toBe('Start the release checks.')
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send' }))
+  })
+
+  it('becomes Watcher’s draft, unsent, when main was still creating Watcher as the window reloaded', async () => {
+    kept('starting', 'Start the release checks.')
+    firstMessage.reload()
+    const { command, connection, publish } = renderRoom(false)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start Watcher and send' })).toBeEnabled())
+    // Main finishes creating it: the first entry goes, and the words wait in Watcher's own composer.
+    act(() => publish({ ...room(true), observedAt: new Date(NOW + 1_000).toISOString() }))
+    await waitFor(() => expect(connection.threadDrafts.draft('watcher').text).toBe('Start the release checks.'))
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send' }))
+    expect(sessionStorage.getItem(FIRST_MESSAGE_KEY)).toBeNull()
   })
 
   it('keeps nothing it cannot read', () => {

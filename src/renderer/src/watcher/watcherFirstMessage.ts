@@ -41,6 +41,11 @@ function session(): Storage | null {
  * says there is no Watcher, starting did not finish, and the message goes back to the composer rather than wait.
  */
 let resumed = false
+/**
+ * Whether the message went back to the composer that way. Main may still have been creating Watcher when it answered,
+ * so if Watcher then appears, the message becomes its draft, unsent, rather than vanish with the first entry.
+ */
+let returned = false
 
 /** The message as the session kept it. A kept start resumes as started; nothing kept, or anything unreadable, is blank. */
 function restored(): FirstMessage {
@@ -73,7 +78,7 @@ export const firstMessage = {
   get: (): FirstMessage => current,
   update(patch: Partial<FirstMessage>): void {
     current = { ...current, ...patch }
-    if (patch.phase !== undefined) resumed = false
+    if (patch.phase !== undefined) { resumed = false; returned = false }
     keep()
     emit()
   },
@@ -83,6 +88,17 @@ export const firstMessage = {
     const text = current.text.trim()
     current = BLANK
     resumed = false
+    returned = false
+    keep()
+    emit()
+    return text === '' ? null : text
+  },
+  /** A message that went back to the composer after a reload, taken once to become Watcher's draft; null otherwise. */
+  takeReturned(): string | null {
+    if (!returned || current.phase !== 'writing') return null
+    const text = current.text.trim()
+    current = BLANK
+    returned = false
     keep()
     emit()
     return text === '' ? null : text
@@ -94,14 +110,15 @@ export const firstMessage = {
   noWatcher(): void {
     if (!resumed || current.phase !== 'started') return
     resumed = false
+    returned = true
     current = { ...current, phase: 'writing' }
     keep()
     emit()
   },
   /** Reads the message back from the window's session, as a reloaded window does. */
-  reload(): void { current = restored(); emit() },
+  reload(): void { current = restored(); returned = false; emit() },
   /** Back to an empty first entry, for a test's fresh window. */
-  clear(): void { current = BLANK; resumed = false; keep(); emit() },
+  clear(): void { current = BLANK; resumed = false; returned = false; keep(); emit() },
   subscribe(listener: () => void): () => void { listeners.add(listener); return () => { listeners.delete(listener) } },
 }
 
@@ -117,7 +134,15 @@ export function useFirstMessageDelivery(agents: AgentConnection | null, watcherT
   const phase = useFirstMessage().phase
   const state = agents?.state ?? null
   useEffect(() => {
-    if (phase !== 'started' || agents === null || state === null || watcherThreadId === null) return
+    if (agents === null || state === null || watcherThreadId === null) return
+    // Gone back to the composer while main was still creating Watcher: it is Watcher's draft now, sent by the user.
+    // The room names Watcher's thread only once the window has it.
+    if (phase === 'writing') {
+      const kept = firstMessage.takeReturned()
+      if (kept !== null) agents.threadDrafts.edit(watcherThreadId, { text: kept })
+      return
+    }
+    if (phase !== 'started') return
     const row = describeThreads(state, Date.now()).find(item => item.thread.id === watcherThreadId)
     if (row === undefined) return
     const text = firstMessage.take()

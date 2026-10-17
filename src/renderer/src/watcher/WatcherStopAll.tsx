@@ -55,8 +55,9 @@ export function stopSummary(results: readonly StopResult[], describe: (target: W
 /**
  * Stop all in Watcher's header (Zach's pick on October 16, 2026), shown only while threads Watcher started are running.
  * A press asks main which threads it would stop and asks the user first, naming each with what it is doing; the stop
- * then says what became of each, including one still waiting on its computer to confirm. Escape, Cancel or Close, and
- * a press outside, put it away and focus returns to the button.
+ * then says what became of each, including one still waiting on its computer to confirm. Escape, Cancel or Close put it
+ * away and focus returns to the button; a press outside puts it away and leaves focus where that press put it. While the
+ * stop runs it stays, so its results are not lost.
  */
 export function WatcherStopAll({ room, conversation, fallbackFocus }: {
   readonly room: WatcherRoom
@@ -78,7 +79,7 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
     if (!open) return
     const away = (event: PointerEvent): void => {
       const target = event.target as Node
-      if (!panel.current?.contains(target) && !button.current?.contains(target)) setPhase(null)
+      if (!panel.current?.contains(target) && !button.current?.contains(target)) setPhase(current => current?.kind === 'stopping' ? current : null)
     }
     document.addEventListener('pointerdown', away, true)
     return () => document.removeEventListener('pointerdown', away, true)
@@ -121,7 +122,7 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
     <div className="watcher-stop__actions"><Button variant="secondary" data-autofocus onClick={close}>Close</Button></div>
   </>
   else if (phase.kind === 'done') body = <>
-    <h2 id={titleId} role="status">{stopSummary(phase.results, conversation.describe)}</h2>
+    <div role="status"><h2 id={titleId}>{stopSummary(phase.results, conversation.describe)}</h2></div>
     {phase.results.length ? <ul className="watcher-stop__results">{phase.results.map(result => {
       const facts = conversation.describe(result.target)
       const kind = result.status === 'stopped' ? 'stopped' : result.status === 'requested' ? 'requested' : 'uncertain'
@@ -155,11 +156,13 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
   }
   return <div className="watcher-stop-all" onKeyDown={event => {
     if (!open || event.key !== 'Escape' || event.nativeEvent.isComposing) return
-    event.preventDefault(); event.stopPropagation(); close()
+    event.preventDefault(); event.stopPropagation()
+    if (phase.kind === 'stopping') return
+    close()
   }}>
     <button ref={button} type="button" className="watcher-stop-all__button tt-focusable" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined}
       aria-label={`Stop all threads Watcher started, ${plural(count, 'thread')}`} title="Stop all threads Watcher started"
-      onClick={() => { if (open) close(); else void prepare() }}>
+      onClick={() => { if (phase?.kind === 'stopping') return; if (open) close(); else void prepare() }}>
       <Square size={13} aria-hidden="true" /><span className="watcher-stop-all__text">Stop all</span>
     </button>
     {open ? <div ref={panel} id={panelId} className="watcher-stop" role="dialog" aria-labelledby={titleId}

@@ -568,7 +568,8 @@ test.describe("Watcher's room on the built app", () => {
       await press('ArrowRight', 'Watcher')
       await press('ArrowRight', 'Threads')
       await press('ArrowLeft', 'Watcher')
-      // Tab from All threads: the header (its tabs, one stop on the one shown, then More Watcher actions), the needs-you
+      // Tab from All threads: the header (its tabs, one stop on the one shown, then Stop all while threads Watcher started run,
+      // then More Watcher actions), the needs-you
       // line, the conversation, the composer, then the floating switch's row.
       await allThreads(page).focus()
       const order: string[] = []
@@ -578,7 +579,7 @@ test.describe("Watcher's room on the built app", () => {
       }
       recorded.set('tab-order', order)
       const indexOf = (name: string | RegExp): number => order.findIndex(entry => typeof name === 'string' ? entry === name : name.test(entry))
-      expect(order.slice(0, 2)).toEqual(['Conversation', 'More Watcher actions'])
+      expect(order.slice(0, 3)).toEqual(['Conversation', 'Stop all threads Watcher started, 2 threads', 'More Watcher actions'])
       expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(indexOf('More Watcher actions'))
       expect(indexOf('Watcher message')).toBeGreaterThan(indexOf(/^Open Streaming WAV stall/))
       expect(indexOf('History')).toBeGreaterThan(indexOf('Watcher message'))
@@ -953,7 +954,7 @@ test.describe("Watcher's room on the built app", () => {
           await captureInto(polishEvidence, launched, `polish-read-marks-${appearance}-${width}x${height}.png`)
           await contrastHolds(page, `polish-read-marks-${appearance}-${width}x${height}`)
         }
-        const markAll = list.getByRole('button', { name: 'Mark all 2 threads read' })
+        const markAll = list.getByRole('button', { name: 'Mark all read, 2 threads' })
         await markAll.focus()
         await page.keyboard.press('Enter')
         await expect(list.locator('.watcher-list__news')).toHaveCount(0)
@@ -1213,6 +1214,39 @@ test.describe("Watcher's room on the built app", () => {
       await settle(page)
       expect(await pageBoundProblems(page)).toEqual([])
       await capture(launched, 'room-main-sotto-dark-1280x800.png')
+    })
+  })
+
+  test('against main’s own Watcher, a thread that finishes unseen gets a read mark, and opening it clears it for good', async () => {
+    test.setTimeout(4 * 60_000)
+    await withMainWatcher('sotto-e2e-watcher-read-marks-', { reply: 'Done here.' }, async (launched, root) => {
+      const { page } = launched
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      await page.getByRole('textbox', { name: 'Watcher message' }).click()
+      await page.keyboard.type('Keep an eye on my threads.')
+      await page.getByRole('button', { name: 'Start Watcher and send' }).click()
+      await expect(watcherPane(page).locator('[data-role="assistant"]')).toContainText('Done here.')
+      // A thread the user is not looking at finishes a turn: main marks it, and the record keeps the mark.
+      const worker = await createWorker(page, join(root, 'worker'), 'Unseen worker')
+      await page.evaluate(async threadId => { await window.sotto!.agents!.command({ type: 'manual-send', threadId, text: 'Check the footer links.' }) }, worker.id)
+      await expect.poll(async () => (await mainRoom(page)).readMarks, { timeout: 60_000 })
+        .toEqual([{ target: worker.target, kind: 'finished', at: expect.any(String) }])
+      await allThreads(page).click()
+      const list = threadsList(page)
+      await expect(list.locator('.watcher-list__news-count')).toHaveText('1 new')
+      // Its first exchange may rename it, so the row is found by its mark rather than its title.
+      const marked = list.locator('.watcher-row[data-unread="finished"]')
+      await expect(marked).toHaveCount(1)
+      await expect(marked.locator('.watcher-row__open > .watcher-row__dot')).toHaveCount(1)
+      await marked.locator('.watcher-row__open').click()
+      await expect(beside(page)).toBeVisible()
+      await expect.poll(async () => (await mainRoom(page)).readMarks).toEqual([])
+      // A fresh window reads the same answer from main: the mark stays gone.
+      await page.reload()
+      await openRoom(page)
+      await allThreads(page).click()
+      await expect(threadsList(page).locator('.watcher-row__dot')).toHaveCount(0)
     })
   })
 

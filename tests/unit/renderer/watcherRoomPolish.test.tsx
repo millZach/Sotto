@@ -173,6 +173,20 @@ describe('Stop all', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'More Watcher actions' })).toHaveFocus())
   })
 
+  it('stays while the stop runs, so Escape cannot lose what came of each thread', async () => {
+    const { bridge } = renderRoom(roomState())
+    let answer: (result: WatcherStopAllResult) => void = () => undefined
+    bridge.stopAll.mockImplementationOnce(() => new Promise<WatcherStopAllResult>(resolve => { answer = resolve }))
+    await paneReady()
+    fireEvent.click(screen.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop 1 thread' }))
+    const stopping = await screen.findByRole('button', { name: 'Stopping…' })
+    fireEvent.keyDown(stopping, { key: 'Escape' })
+    fireEvent.pointerDown(document.body)
+    expect(screen.getByRole('dialog', { name: 'Stop the thread Watcher started?' })).toBeInTheDocument()
+    await act(async () => { answer({ status: 'ok', state: roomState(), results: [{ target: target('footer-links'), status: 'stopped', message: 'Stopped.' }] }) })
+    expect(await screen.findByRole('dialog', { name: 'Stopped Footer links.' })).toHaveTextContent('Stopped.')
+  })
   it('names a thread still waiting on its computer to confirm', async () => {
     const { bridge } = renderRoom(roomState())
     bridge.stopAll.mockResolvedValueOnce({ status: 'ok', state: roomState(), results: [{ target: target('footer-links'), status: 'requested', message: 'Stop requested.' }] })
@@ -200,7 +214,7 @@ describe('read marks', () => {
     expect(within(list).getByRole('button', { name: 'Open Streaming WAV stall beside Watcher' })).toHaveAccessibleDescription(/^New: a failed turn, /)
     expect(within(list).getByRole('button', { name: 'Open Weekly note beside Watcher' }).querySelector('.watcher-row__dot')).toBeNull()
     expect(list).toHaveTextContent('2 new')
-    fireEvent.click(within(list).getByRole('button', { name: 'Mark all 2 threads read' }))
+    fireEvent.click(within(list).getByRole('button', { name: 'Mark all read, 2 threads' }))
     await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ targets: [target('wav-stall'), target('footer-links')] }))
     await waitFor(() => expect(within(list).queryByText('2 new')).toBeNull())
     expect(within(list).getByRole('searchbox')).toHaveFocus()
