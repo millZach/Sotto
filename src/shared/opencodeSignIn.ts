@@ -130,27 +130,35 @@ export type SignInDone = z.infer<typeof signInDoneSchema>
  * main checks and opens, and never hands the window. A key crosses the connection once, in `key`, and goes no further than
  * the host's OpenCode.
  */
-export const opencodeHostCallSchema = z.discriminatedUnion('action', [
+/**
+ * The calls the window's request to main (`hostOpenCodeCallSchema`) and main's request to the host share, one schema each, so
+ * the two cannot drift apart. Each boundary adds its own way to open a waiting sign-in's page: the window has main `reopen`
+ * it, and main asks the host for its address with `page`.
+ */
+export const OPENCODE_SIGN_IN_CALLS = [
   z.object({ action: z.literal('sources') }).strict(),
   z.object({ action: z.literal('key'), request: signInKeyRequestSchema }).strict(),
   z.object({ action: z.literal('browser'), request: signInMethodRequestSchema }).strict(),
   z.object({ action: z.literal('external'), request: signInMethodRequestSchema }).strict(),
   z.object({ action: z.literal('wait'), request: signInAttemptRequestSchema }).strict(),
   z.object({ action: z.literal('finish'), request: signInFinishRequestSchema }).strict(),
-  z.object({ action: z.literal('page'), request: signInAttemptRequestSchema }).strict(),
   z.object({ action: z.literal('cancel'), request: signInAttemptRequestSchema }).strict(),
   z.object({ action: z.literal('sign-out'), request: signOutRequestSchema }).strict(),
-])
+] as const
+export const opencodeHostCallSchema = z.discriminatedUnion('action', [...OPENCODE_SIGN_IN_CALLS,
+  z.object({ action: z.literal('page'), request: signInAttemptRequestSchema }).strict()])
 export type OpenCodeHostCall = z.infer<typeof opencodeHostCallSchema>
 /** A waiting sign-in's page as a host answers `page`: its https address, for this computer's main to open, or a refusal. */
 export const signInPageSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('ok'), address: z.string().max(4_096).regex(/^https:\/\//u) }).strict(), refused])
 export type SignInPage = z.infer<typeof signInPageSchema>
-/** What a host answers each call with, by action. */
-export const OPENCODE_HOST_ANSWERS = {
+/** What each shared call is answered with, by action, at both boundaries. */
+export const OPENCODE_SIGN_IN_ANSWERS = {
   sources: modelSourcesSchema, key: signInResultSchema, browser: signInStartSchema, external: signInResultSchema, wait: signInWaitSchema,
-  finish: signInWaitSchema, page: signInPageSchema, cancel: signInDoneSchema, 'sign-out': signInResultSchema,
-} as const satisfies Record<OpenCodeHostCall['action'], z.ZodType>
+  finish: signInWaitSchema, cancel: signInDoneSchema, 'sign-out': signInResultSchema,
+} as const satisfies Record<z.infer<(typeof OPENCODE_SIGN_IN_CALLS)[number]>['action'], z.ZodType>
+/** What a host answers each call with, by action: the shared answers, and the page's address for `page`. */
+export const OPENCODE_HOST_ANSWERS = { ...OPENCODE_SIGN_IN_ANSWERS, page: signInPageSchema } as const satisfies Record<OpenCodeHostCall['action'], z.ZodType>
 export type OpenCodeHostAnswer<A extends OpenCodeHostCall['action']> = z.infer<(typeof OPENCODE_HOST_ANSWERS)[A]>
 
 export interface OpenCodeSignInBridge {

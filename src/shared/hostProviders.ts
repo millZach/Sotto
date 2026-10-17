@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { PROVIDER_COUNT, PROVIDER_LABELS, providerIdSchema, type AgentProviderStatus, type ProviderId, type ProviderProblem } from './agents'
 import type { HeldProviders } from './heldProviders'
-import { modelSourcesSchema, signInAttemptRequestSchema, signInDoneSchema, signInFinishRequestSchema, signInKeyRequestSchema, signInMethodRequestSchema, signInResultSchema, signInStartSchema, signInWaitSchema, signOutRequestSchema } from './opencodeSignIn'
+import { OPENCODE_SIGN_IN_ANSWERS, OPENCODE_SIGN_IN_CALLS, signInAttemptRequestSchema, signInDoneSchema } from './opencodeSignIn'
 
 /**
  * A host's providers from this computer (ADR-0037): the tiles under a connected host's row in Settings > Hosts, the
@@ -212,23 +212,11 @@ export const HOSTS_OPENCODE_SIGN_IN = 'hosts:opencode-sign-in'
  * (`OpenCodeSignInBridge`), each naming the saved host it goes to. `reopen` has this computer's main ask the host for the
  * page and open it here (ADR-0037); the window never asks for the address itself.
  */
-export const hostOpenCodeCallSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('sources') }).strict(),
-  z.object({ action: z.literal('key'), request: signInKeyRequestSchema }).strict(),
-  z.object({ action: z.literal('browser'), request: signInMethodRequestSchema }).strict(),
-  z.object({ action: z.literal('external'), request: signInMethodRequestSchema }).strict(),
-  z.object({ action: z.literal('wait'), request: signInAttemptRequestSchema }).strict(),
-  z.object({ action: z.literal('finish'), request: signInFinishRequestSchema }).strict(),
-  z.object({ action: z.literal('reopen'), request: signInAttemptRequestSchema }).strict(),
-  z.object({ action: z.literal('cancel'), request: signInAttemptRequestSchema }).strict(),
-  z.object({ action: z.literal('sign-out'), request: signOutRequestSchema }).strict(),
-])
+export const hostOpenCodeCallSchema = z.discriminatedUnion('action', [...OPENCODE_SIGN_IN_CALLS,
+  z.object({ action: z.literal('reopen'), request: signInAttemptRequestSchema }).strict()])
 export type HostOpenCodeCall = z.infer<typeof hostOpenCodeCallSchema>
 export const hostOpenCodeSignInRequestSchema = z.object({ id: z.uuid(), call: hostOpenCodeCallSchema }).strict()
 export type HostOpenCodeSignInRequest = z.infer<typeof hostOpenCodeSignInRequestSchema>
 /** What each of those calls is answered with: the desktop's own dialog's answers, and `reopen` as Open the page again's. */
-export const HOST_OPENCODE_ANSWERS = {
-  sources: modelSourcesSchema, key: signInResultSchema, browser: signInStartSchema, external: signInResultSchema, wait: signInWaitSchema,
-  finish: signInWaitSchema, reopen: signInDoneSchema, cancel: signInDoneSchema, 'sign-out': signInResultSchema,
-} as const satisfies Record<HostOpenCodeCall['action'], z.ZodType>
+export const HOST_OPENCODE_ANSWERS = { ...OPENCODE_SIGN_IN_ANSWERS, reopen: signInDoneSchema } as const satisfies Record<HostOpenCodeCall['action'], z.ZodType>
 export type HostOpenCodeAnswer<A extends HostOpenCodeCall['action']> = z.infer<(typeof HOST_OPENCODE_ANSWERS)[A]>

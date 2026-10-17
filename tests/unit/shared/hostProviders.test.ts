@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { HOST_OPENCODE_ANSWERS, HOST_PROVIDERS, PROVIDER_SIGN_IN_SHAPES, heldOnHost, hostOpenCodeSignInRequestSchema, hostProviderActionSchema, hostSignInRequestSchema, isProviderSignInPage } from '../../../src/shared/hostProviders'
-import { isOpenCodeSignInPage } from '../../../src/shared/opencodeSignIn'
+import { HOST_OPENCODE_ANSWERS, HOST_PROVIDERS, PROVIDER_SIGN_IN_SHAPES, heldOnHost, hostOpenCodeCallSchema, hostOpenCodeSignInRequestSchema, hostProviderActionSchema, hostSignInRequestSchema, isProviderSignInPage } from '../../../src/shared/hostProviders'
+import { isOpenCodeSignInPage, OPENCODE_HOST_ANSWERS, opencodeHostCallSchema } from '../../../src/shared/opencodeSignIn'
 import { hostsCommandSchema } from '../../../src/shared/hosts'
 
 describe('the pages a host sign-in may open (ADR-0037)', () => {
@@ -43,5 +43,21 @@ describe('the providers a host offers', () => {
     // A page Sotto opens for a host's OpenCode is https, with no user name or password in it.
     expect(isOpenCodeSignInPage('https://sign-in.fixture.invalid/xai/device?user_code=QX7M')).toBe(true)
     for (const page of ['http://sign-in.fixture.invalid/', 'https://user:pass@sign-in.fixture.invalid/', 'javascript:alert(1)', 'not a page']) expect(isOpenCodeSignInPage(page), page).toBe(false)
+  })
+
+  // One schema for each call both boundaries take, so the window's request and the host's cannot drift apart. Each keeps its
+  // own way to open the page: the window asks main to `reopen` it, and main asks the host for its address with `page`.
+  it('shares every sign-in call with the host request but opening the page, which is reopen here and page on the host', () => {
+    const byAction = (schema: typeof hostOpenCodeCallSchema | typeof opencodeHostCallSchema) =>
+      new Map(schema.options.map(option => [option.shape.action.value as string, option]))
+    const window = byAction(hostOpenCodeCallSchema), host = byAction(opencodeHostCallSchema)
+    const shared = [...window.keys()].filter(action => host.has(action))
+    expect(shared.sort()).toEqual(['browser', 'cancel', 'external', 'finish', 'key', 'sign-out', 'sources', 'wait'])
+    for (const action of shared) {
+      expect(window.get(action), action).toBe(host.get(action))
+      expect(HOST_OPENCODE_ANSWERS[action as keyof typeof HOST_OPENCODE_ANSWERS], action).toBe(OPENCODE_HOST_ANSWERS[action as keyof typeof OPENCODE_HOST_ANSWERS])
+    }
+    expect([...window.keys()].filter(action => !host.has(action))).toEqual(['reopen'])
+    expect([...host.keys()].filter(action => !window.has(action))).toEqual(['page'])
   })
 })
