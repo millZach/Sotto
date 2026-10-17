@@ -9,7 +9,7 @@ import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission 
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
-  type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
+  type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherReadMark, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX } from '../../shared/watcher'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherMarkReadRequestSchema, type WatcherMarkReadRequest, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
@@ -28,7 +28,7 @@ import type { CheckpointObservation, PullRequestObservation } from './watcherEvi
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { watcherOwnChanges } from './watcherOwnChanges'
-import { markThreadsRead, recordDispatch, recordSteer, trackDispatches, type ReadMarkThread } from './watcherReadMarks'
+import { markThreadsRead, recordDispatch, recordSteer, trackDispatches, unmarkThreadsRead, type ReadMarkThread } from './watcherReadMarks'
 import { watcherReceiptReplies } from './watcherReceiptReplies'
 import { WATCHER_FINAL_OUTCOMES, watcherLatestTurnMessageId, watcherTurnOutcome } from './watcherOutcomes'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts, type WatcherDispatchBefore, watcherDispatchBefore } from '../../shared/watcherHost'
@@ -464,8 +464,22 @@ export class WatcherService implements WatcherControlHooks {
     if (!parsed.success) return watcherRefusal('INVALID_INPUT', 'Sotto could not tell which threads to mark read. Nothing changed.')
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing changed. Reopen Sotto.')
     const exists = (target: WatcherThreadTarget): boolean => Boolean(this.owningSnapshot(target.hostId)?.threads.some(thread => thread.id === target.threadId))
-    try { await this.options.control.updateWatcher(record => { markThreadsRead(record, parsed.data.reads, now(), exists) }) }
-    catch { return watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not save that these threads are read. They still show as new. Try again.', true) }
+    const at = now(), targets = parsed.data.reads.map(item => item.target)
+    let taken: WatcherReadMark[] = [], readsBefore: NonNullable<WatcherRecord['userReads']> = []
+    try {
+      await this.options.control.updateWatcher(record => {
+        const marks = record.readMarks ?? []
+        readsBefore = record.userReads ?? []
+        markThreadsRead(record, parsed.data.reads, at, exists)
+        const kept = new Set(record.readMarks ?? [])
+        taken = marks.filter(mark => !kept.has(mark))
+      })
+    } catch {
+      // The record changed in memory before its save failed: what the read took goes back, so the room says what is true.
+      try { if (taken.length || readsBefore.length) this.options.control.mutateWatcher(record => unmarkThreadsRead(record, taken, readsBefore, targets, at)) } catch { /* Nothing to put back. */ }
+      this.publish()
+      return watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not save that these threads are read. They still show as new. Try again.', true)
+    }
     this.publish()
     return this.get()
   }

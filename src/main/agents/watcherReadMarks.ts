@@ -165,3 +165,19 @@ export function markThreadsRead(record: WatcherRecord, reads: readonly ReadNews[
     ...targets.map(target => ({ target, readAt: at }))].slice(-WATCHER_READ_MARKS_MAX)
   return (record.readMarks?.length ?? 0) !== before
 }
+
+/**
+ * Puts back what a read took, after its save failed: `updateWatcher` changes the record in memory before it saves, and
+ * the room must say what is true. Each mark comes back unless newer news has taken its thread's place since, and each
+ * thread's read time goes back to what it was. Edits `record` in place.
+ */
+export function unmarkThreadsRead(record: WatcherRecord, taken: readonly WatcherReadMark[], readsBefore: NonNullable<WatcherRecord['userReads']>,
+  targets: readonly WatcherThreadTarget[], at: string): void {
+  const present = new Set((record.readMarks ?? []).map(mark => key(mark.target)))
+  const back = taken.filter(mark => !present.has(key(mark.target)))
+  if (back.length) record.readMarks = [...record.readMarks ?? [], ...back].slice(-WATCHER_READ_MARKS_MAX)
+  const read = new Set(targets.map(key))
+  const kept = (record.userReads ?? []).filter(entry => !(read.has(key(entry.target)) && entry.readAt === at))
+  const known = new Set(kept.map(entry => key(entry.target)))
+  record.userReads = [...kept, ...readsBefore.filter(entry => read.has(key(entry.target)) && !known.has(key(entry.target)))].slice(-WATCHER_READ_MARKS_MAX)
+}

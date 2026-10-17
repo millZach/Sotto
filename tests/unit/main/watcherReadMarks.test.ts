@@ -39,12 +39,13 @@ function service(options: { record?: WatcherRecord; remote?: AgentThread[] } = {
   let notify: ((target: { hostId: string; threadId: string }, before: WatcherDispatchBefore) => void) | undefined
   const providers = (['codex', 'claude', 'grok'] as const).map(id => ({ id, connection: 'connected' }))
   const local = (): AgentHostSnapshot => ({ ...emptyDesktopState(HOST).host, connected: true, providers, threads } as AgentHostSnapshot)
-  let writes = 0
+  let writes = 0, failing = false
   const update = (change: (next: WatcherRecord) => void): void => { const next = structuredClone(record); change(next); record = watcherRecordSchema.parse(next) }
   const control = {
     watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherSnapshot: local, hostId: () => HOST,
     useWatcher: () => () => undefined, subscribe: () => () => undefined, refreshWatcherObservation: () => undefined,
-    updateWatcher: async (change: (next: WatcherRecord) => void) => { writes++; update(change) }, mutateWatcher: update,
+    // As main's own: the change is made in memory, then saved, and a failed save leaves the change in memory.
+    updateWatcher: async (change: (next: WatcherRecord) => void) => { writes++; update(change); if (failing) throw new Error('Synthetic save failure') }, mutateWatcher: update,
     restoredWatcherEvents: () => [], watcherWakeUpQueued: () => false, canDeliverWatcherNews: () => false, pruneWatcherWakeUps: async () => undefined,
     deliverWakeUp: async () => undefined, watcherSendRecords: () => ({ deliveries: [], followups: [] }), hasPendingThreadWork: () => false,
     configuration: () => ({}), cancelWatcherQueue: async () => undefined,
@@ -61,7 +62,7 @@ function service(options: { record?: WatcherRecord; remote?: AgentThread[] } = {
   }
   watcher.wakes.start()
   return {
-    watcher, record: () => record, writes: () => writes,
+    watcher, record: () => record, writes: () => writes, failSaves: (on: boolean) => { failing = on },
     pass(...next: AgentThread[]): void { threads = next; watcher.wakes.observe() },
     remotePass(...next: AgentThread[]): void { remoteThreads = next; watcher.wakes.observe() },
     /** A send through the coordinator: read before it goes, then dispatched once the provider took it. */
@@ -322,6 +323,24 @@ describe('reading a thread', () => {
     expect(markThreadsRead(record, [{ target: target('a'), newsId: 'finished:t1' }], '2026-10-17T10:05:00.000Z', () => false)).toBe(true)
     expect(markThreadsRead(record, [{ target: target('a'), newsId: 'finished:t1' }], '2026-10-17T10:06:00.000Z', item => item.threadId === 'a')).toBe(false)
     expect(record.userReads).toEqual([{ target: target('a'), readAt: '2026-10-17T10:06:00.000Z' }])
+  })
+
+  it('puts the mark and the read time back when the read cannot be saved, and the room says so', async () => {
+    const room = service()
+    room.pass(thread('worker', turn('t0', 'completed')))
+    room.send('worker')
+    room.pass(thread('worker', turn('t1', 'completed')))
+    await room.read('worker')
+    const readsBefore = room.record().userReads
+    room.send('worker')
+    room.pass(thread('worker', turn('t2', 'completed')))
+    const published: number[] = []
+    room.watcher.subscribe(state => published.push(state.readMarks?.length ?? 0))
+    room.failSaves(true)
+    expect(await room.read('worker')).toMatchObject({ status: 'refused', message: expect.stringMatching(/still show as new/u) })
+    expect(room.marks()).toEqual([['worker', 'finished']])
+    expect(room.record().userReads).toEqual(readsBefore)
+    expect(published.at(-1)).toBe(1)
   })
 
   it('keeps a read time only for a thread that had a mark or exists', async () => {
