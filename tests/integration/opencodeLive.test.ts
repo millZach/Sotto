@@ -197,3 +197,42 @@ it.skipIf(!live)('gives a thread Sotto’s tools, and writes side text that list
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
 })
+
+it.skipIf(!live)('allows Sotto’s browser tools on a thread given only the browser’s server, once OpenCode 2 itself has connected it', { timeout: 300_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-opencode-live-'))
+  const project = join(root, 'project'), userData = join(root, 'sotto')
+  const environment = await scratchHome(root)
+  const executable = process.env.SOTTO_OPENCODE_EXECUTABLE
+  const host = new OpenCodeHost(userData, { ...(executable ? { executable } : {}), requestTimeoutMs: 60_000, environment })
+  // Only the browser's server: OpenCode answers its add before it has connected it, and no second server's add hides that.
+  const browser = new BrowserAgentServer(browserToolDefinitions, async () => ({ content: [] }))
+  host.useBrowserTools(browser)
+  let observer: OpenCodeServer | undefined
+  try {
+    execFileSync('git', ['init', '-q', project]); await writeFile(join(project, 'README.md'), 'Live probe\n')
+    await host.connect()
+    await host.execute({ type: 'create-project', commandId: randomUUID(), projectId: 'live', title: 'Live', path: project })
+    const id = randomUUID()
+    await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: 'live', modelId: MODEL, title: 'Live browser only' })
+    host.observeThreads([id])
+    // A server of the test's own on the same folder reads the provider session's rule set as OpenCode holds it.
+    const password = opencodePassword()
+    observer = await OpenCodeServer.start({ executable: executable ?? 'opencode', cwd: project, env: opencodeEnvironment(environment, opencodeFolders(join(userData, 'opencode')), password), timeoutMs: 60_000 })
+    const client = new OpenCodeClient(observer.url, password, 60_000)
+    const rules = async (): Promise<{ action: string; effect: string }[]> => {
+      const listed = ((await client.request('GET', '/api/session')) as { data: { id: string; title?: string }[] }).data.find(session => session.title === 'Live browser only')
+      if (!listed) return []
+      return ((await client.request('GET', `/api/session/${listed.id}`)) as { data: { permissions?: { action: string; effect: string }[] } }).data.permissions ?? []
+    }
+    const browserAllows = browserToolDefinitions.map(tool => `sotto_browser_${tool.name}`)
+    // The mode's own rules are there from the start; the allows join them once the server is connected.
+    await expect.poll(async () => (await rules()).map(rule => `${rule.action} ${rule.effect}`), { timeout: 60_000, interval: 500 })
+      .toEqual(expect.arrayContaining(['shell ask', ...browserAllows.map(action => `${action} allow`)]))
+    expect((await host.snapshot()).threads.find(candidate => candidate.id === id)!.sottoToolsWithheld).toBeUndefined()
+  } finally {
+    await observer?.stop()
+    host.disconnect(); await host.closed()
+    await browser.close()
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  }
+})

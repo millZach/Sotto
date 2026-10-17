@@ -42,8 +42,11 @@ export async function opencodeToolServers(browser: BrowserAgentTools | undefined
 }
 
 const mcpListSchema = z.looseObject({ data: z.array(z.looseObject({ name: z.string(), status: z.looseObject({ status: z.string() }).optional() })) })
-/** The names of the servers OpenCode lists as connected, from `GET /api/mcp`; an answer Sotto cannot read lists none. */
-export function connectedToolServers(value: unknown): ReadonlySet<string> {
+/**
+ * Each server OpenCode lists in `GET /api/mcp`, by name, with its status: `connected`, `pending` while it is connecting,
+ * `failed`, `needs_auth` or `disabled` (2.0.31's OpenAPI document). An answer Sotto cannot read gives none.
+ */
+export function toolServerStatuses(value: unknown): ReadonlyMap<string, string | undefined> | undefined {
   const parsed = mcpListSchema.safeParse(value)
-  return new Set(parsed.success ? parsed.data.data.filter(server => server.status?.status === 'connected').map(server => server.name) : [])
+  return parsed.success ? new Map(parsed.data.data.map(server => [server.name, server.status?.status])) : undefined
 }

@@ -17,7 +17,7 @@ import { opencodeReasoningActivity, opencodeStepFilesActivity, opencodeTextMessa
 import { locationQuery, OpenCodeClient, OpenCodeRejected, type OpenCodeEvent } from './opencodeClient'
 import { OPENCODE_DECLINED, OPENCODE_FORM_UNSHOWN, opencodeFormAnswer, opencodeFormPending, opencodeFormSchema, opencodePermissionDecision, opencodePermissionPending, opencodePermissionSchema, type OpenCodePending } from './opencodeRequests'
 import { endServersLeftBehind, ensureOpenCodeFolders, findOpenCodeExecutable, OPENCODE_CLI_VERSION, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
-import { connectedToolServers, opencodeToolServers, type OpenCodeToolServer } from './opencodeTools'
+import { opencodeToolServers, toolServerStatuses, type OpenCodeToolServer } from './opencodeTools'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
@@ -206,8 +206,13 @@ const freshFold = (): Fold => ({ texts: new Map(), reasoning: new Map(), tools: 
 /** Where a record from OpenCode goes in a thread: its Sotto turn, and the message it follows. */
 interface Placement { readonly turnId: string; readonly afterMessageId: string | undefined }
 const iso = (at: number | undefined): string => at !== undefined && Number.isFinite(at) ? new Date(at).toISOString() : new Date().toISOString()
-/** How long OpenCode may take to connect one of Sotto's tool servers: it holds the request while it connects. */
+/**
+ * How long OpenCode may take to connect one of Sotto's tool servers, from its add to its listing as connected: it may hold
+ * the add while it connects, or answer it at once and list the server as pending until it has.
+ */
 const TOOL_CONNECT_TIMEOUT_MS = 45_000
+/** How often the tool servers OpenCode lists as pending are read again. */
+const TOOL_SETTLE_POLL_MS = 250
 /**
  * How long a send waits for its server's tool servers before it goes without them. Sotto's servers answer at once, so they
  * are in place well inside this; a connect that hangs never holds a prompt longer, and the tools join a later step.
@@ -404,7 +409,8 @@ export class OpenCodeHost implements AgentHost {
    * Sotto's tool servers reach an OpenCode thread as remote MCP servers on that thread's own server, each with the thread's
    * bearer token (ADR-0087), as Grok Build and Muse get them: the same servers, asked for at each start, so a renewed token
    * reaches a new server. OpenCode keeps them for the folder until the process ends and writes nothing down. A server it
-   * refuses or does not list as connected leaves the thread marked as without Sotto's tools, as a Muse thread is.
+   * refuses, or does not list as connected once it has stopped connecting it, leaves the thread marked as without Sotto's
+   * tools, as a Muse thread is.
    *
    * A mark an earlier server left is cleared before the servers are asked for, since a scoped server answers no thread
    * marked so (`admitsVisuals`, `admitsBabysitting`), and they are asked again once the first ones connect, so a scoped
@@ -419,16 +425,30 @@ export class OpenCodeHost implements AgentHost {
     for (let round = 0; round < 2; round++) {
       const servers: OpenCodeToolServer[] = (await opencodeToolServers(this.browserTools, this.threadTools, id)).filter(server => !given.has(server.name))
       if (stale() || !servers.length) return
-      const client = entry.client!, location = locationQuery(folder)
+      const client = entry.client!, location = locationQuery(folder), deadline = Date.now() + TOOL_CONNECT_TIMEOUT_MS
       entry.toolServers = [...new Set([...entry.toolServers ?? [], ...servers.map(server => server.name)])]
       const added = await Promise.all(servers.map(server => client.request('PUT', `/api/experimental/mcp/${encodeURIComponent(server.name)}`,
         { query: location, body: { config: server.config }, timeoutMs: TOOL_CONNECT_TIMEOUT_MS }).then(() => true, () => false)))
       if (stale()) return
-      const connected = added.every(Boolean) ? connectedToolServers(await client.request('GET', '/api/mcp', { query: location }).catch(() => undefined)) : new Set<string>()
+      const connected = added.every(Boolean) ? await this.connectedOnceSettled(client, location, servers.map(server => server.name), deadline, stale) : new Set<string>()
       if (stale()) return
       for (const server of servers) if (connected.has(server.name)) given.set(server.name, server.actions)
       entry.toolActions = [...given.values()].flat()
       if (!servers.every(server => connected.has(server.name))) { this.withholdTools(id, true); return }
+    }
+  }
+  /**
+   * Which of `names` OpenCode lists as connected once each has settled. OpenCode may answer an add before it has connected
+   * the server and list it as pending meanwhile (2.0.31), so the list is read again until none of them is pending, or
+   * `deadline` passes, or the server is no longer the thread's. A list it cannot give ends the wait with none connected.
+   */
+  private async connectedOnceSettled(client: OpenCodeClient, location: Record<string, string>, names: readonly string[], deadline: number, stale: () => boolean): Promise<ReadonlySet<string>> {
+    for (;;) {
+      const statuses = toolServerStatuses(await client.request('GET', '/api/mcp', { query: location }).catch(() => undefined))
+      if (!statuses) return new Set()
+      const connected = new Set(names.filter(name => statuses.get(name) === 'connected'))
+      if (!names.some(name => statuses.get(name) === 'pending') || Date.now() >= deadline || stale()) return connected
+      await new Promise<void>(resolve => { const timer = setTimeout(resolve, TOOL_SETTLE_POLL_MS); timer.unref() })
     }
   }
   /**

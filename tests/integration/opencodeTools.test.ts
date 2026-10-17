@@ -264,3 +264,21 @@ it('keeps a thread’s new server’s answer about its tools when the server bef
   expect((await thread(f, id)).sottoToolsWithheld).toBeUndefined()
   await expect.poll(async () => rulesSent(await f.driver.requests())).toEqual([...opencodeRules('approval-required'), ...browserAllows])
 })
+
+for (const [what, mcp, withheld] of [['connects', { pendingMs: 1_500 }, undefined], ['cannot connect', { pendingMs: 1_500, fail: true }, true]] as const) {
+  it(`waits for OpenCode to finish connecting a tool server it lists as pending, and then ${withheld ? 'marks the thread as without Sotto’s tools when it' : 'allows its tools when it'} ${what}`, async () => {
+    const { f } = await withTools({ visuals: false })
+    await f.script({ mcp })
+    const shown: boolean[] = []
+    f.host.subscribe(snapshot => { for (const item of snapshot.threads) shown.push(item.sottoToolsWithheld === true) })
+    const id = await open(f)
+    await expect.poll(async () => of(await f.driver.requests(), 'fixture/mcp-connected').map(record => record.params)).toEqual([{ server: 'sotto_browser', status: withheld ? 'failed' : 'connected' }])
+    await expect.poll(async () => rulesSent(await f.driver.requests())).toEqual([...opencodeRules('approval-required'), ...withheld ? [] : browserAllows])
+    await expect.poll(async () => (await thread(f, id)).sottoToolsWithheld).toBe(withheld)
+    if (!withheld) {
+      // It was never shown as without them while OpenCode was still connecting.
+      expect(shown).not.toContain(true)
+      expect(threadTakesSottoTools({ ...await thread(f, id), providerId: 'opencode' })).toBe(true)
+    }
+  })
+}

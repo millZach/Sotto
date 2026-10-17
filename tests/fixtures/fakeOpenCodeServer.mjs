@@ -300,6 +300,15 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
     // `script.mcp.hold` names a file in the root: the next add, and only that one, waits for it before it connects.
     const hold = script().mcp?.hold
     if (hold) writeFileSync(path('script.json'), JSON.stringify({ ...script(), mcp: { ...script().mcp, hold: undefined } }))
+    // `script.mcp.pendingMs`: the add is answered at once and the server listed as pending until it connects that much
+    // later, as OpenCode 2.0.31 answers an add for a server that connects without trouble.
+    const pendingMs = script().mcp?.pendingMs
+    if (pendingMs) {
+      const servers = mcpOf(query['location[directory]'])
+      servers.set(server, 'pending'); send(204)
+      setTimeout(() => void connectMcp(body.config).then(status => { servers.set(server, status); record({ method: 'fixture/mcp-connected', params: { server, status } }) }), pendingMs)
+      return
+    }
     const released = () => new Promise(resolve => { const check = () => { if (!hold || existsSync(path(hold))) resolve(); else setTimeout(check, 20) }; check() })
     // OpenCode holds the request while it connects, and answers 204 whether or not the server connected.
     void released().then(() => connectMcp(body.config)).then(status => {
