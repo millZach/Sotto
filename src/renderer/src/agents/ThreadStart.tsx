@@ -2,6 +2,7 @@ import React, { createContext, useContext, useId, useRef, useState, type ReactNo
 import { ChevronRight, CornerUpLeft, GitFork } from 'lucide-react'
 import { PROVIDER_LABELS, type AgentMessageHandover, type AgentThread, type AgentThreadStart, type HandoverCounts, type ProviderId } from '../../../shared/agents'
 import { SottoMark } from '../components/SottoMark'
+import { handoverLedger } from '../watcher/WatcherHandover'
 import { useOwlFeature } from '../state/owlFeature'
 import { clockLabel } from './threadFacts'
 import './threadStart.css'
@@ -50,10 +51,19 @@ const named = (title: string | undefined): ReactNode => title ? <strong>{title}<
 /** The agent by its title, which is not kept while Keep local history is off. */
 const agentNamed = (title: string | undefined): ReactNode => title ? <>the agent <strong>{title}</strong></> : 'one of its agents'
 
-/** The note at the head of a thread an agent was continued into: where it came from and what came with it. */
+/**
+ * Sotto's note on where a thread began: at the head of a thread an agent was continued into, and under the last reply a
+ * fork copied, where the fork's own conversation begins. A fork that started from a handover has the handover's card instead.
+ */
 export function ThreadStartNote({ view }: { readonly view: ThreadStartView }): ReactNode {
   const { start, sourceTitle, sourceProvider } = view
-  if (start.from !== 'agent') return null
+  if (start.from === 'turn') {
+    if (start.route !== 'fork') return null
+    const provider = sourceProvider ? PROVIDER_LABELS[sourceProvider] : 'the provider'
+    const back = view.openSource && sourceTitle ? <> <button type="button" className="thread-start-note__open tt-focusable" onClick={view.openSource}>Open {sourceTitle}</button></> : null
+    return <div className="thread-start-note" role="note"><GitFork size={15} aria-hidden="true" />
+      <p>Forked from {named(sourceTitle)} at {provider}’s reply above. What follows is this thread’s own. Files weren’t rewound.{back}</p></div>
+  }
   const agent = agentNamed(start.agentTitle)
   const open = view.openSource && sourceTitle ? <> <button type="button" className="thread-start-note__open tt-focusable" onClick={view.openSource}>Open {sourceTitle}</button></> : null
   if (start.route === 'fork') {
@@ -93,7 +103,8 @@ export function StartHandoverCard({ view, handover, createdAt }: { readonly view
   const counts = handover?.counts ?? view.start.handover?.counts
   if (!counts) return null
   const thin = view.start.handover?.thin !== false
-  const { carried, leftOut } = thinLedger(counts, view.sourceProvider)
+  // A thin handover carries an agent's task and result; a fork's carries the conversation up to its reply.
+  const ledger = thin ? thinLedger(counts, view.sourceProvider) : handoverLedger(counts)
   const toggle = async (): Promise<void> => {
     if (open) { setOpen(false); return }
     if (text !== null) { setOpen(true); return }
@@ -108,7 +119,7 @@ export function StartHandoverCard({ view, handover, createdAt }: { readonly view
   }
   const from = view.start.from === 'agent'
     ? <>From {agentNamed(view.start.agentTitle)} in {named(view.sourceTitle)}.</>
-    : <>From {named(view.sourceTitle)}.</>
+    : <>From {named(view.sourceTitle)}, up to {view.sourceProvider ? PROVIDER_LABELS[view.sourceProvider] : 'its provider'}’s reply.</>
   return <article className="thread-message thread-start-handover" data-role="user" data-from="sotto" aria-label="Handover this thread started from"
     onKeyDown={event => {
       if (!open || event.key !== 'Escape') return
@@ -118,7 +129,7 @@ export function StartHandoverCard({ view, handover, createdAt }: { readonly view
       <time dateTime={createdAt}>{clockLabel(Date.parse(createdAt))}</time></header>
     <p className="thread-start-handover__lead">{from} Context, not a new request.{handover ? null : ' It goes with your first message.'}</p>
     <p className="thread-start-handover__ledger">{counts.historyKept ? null : 'Keep local history was off, so it held only what Sotto had kept since it last started. '}
-      {handover ? 'Carried' : 'Carries'} {carried}. {handover ? 'Left out' : 'Leaves out'} {leftOut}.</p>
+      {handover ? 'Carried' : 'Carries'} {ledger.carried}.{ledger.leftOut === null ? '' : ` ${handover ? 'Left out' : 'Leaves out'} ${ledger.leftOut}.`}</p>
     <button ref={button} type="button" className="thread-start-handover__disclose tt-focusable" aria-expanded={open} aria-controls={open ? regionId : undefined}
       disabled={reading} onClick={() => void toggle()}><ChevronRight size={14} aria-hidden="true" />{open ? 'Hide the handover' : reading ? 'Reading the handover…' : 'Read the handover, word for word'}</button>
     {open && text !== null ? <div id={regionId} className="thread-start-handover__text tt-focusable" tabIndex={0} role="region" aria-label="The handover, word for word">{text}</div> : null}
