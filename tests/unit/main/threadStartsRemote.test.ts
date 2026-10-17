@@ -7,7 +7,7 @@ import { SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { AgentCommand } from '../../../src/shared/agents'
 import type { HostOperation } from '../../../src/shared/hostProtocol'
-import { AGENT_FORK_GONE } from '../../../src/shared/threadStarts'
+import { AGENT_FORK_GONE, THREAD_STARTS_UNSUPPORTED } from '../../../src/shared/threadStarts'
 
 // Continuing an agent on a paired host (#1028): the host's own feature says it can, an older host is refused here in
 // plain words, and a refusal answers the command alone rather than the window's banner.
@@ -31,17 +31,19 @@ function remote(features: string[], answer: string | null = null) {
   const router = new DesktopHostRouter(emptyDesktopState)
   router.add(connection); router.select(REMOTE)
   const continueAgent: AgentCommand = { type: 'continue-agent', threadId: hostEntityKey(REMOTE, 'thread'), agentId: 'codex-agent-1', newThreadId }
-  return { router, call, service, continueAgent }
+  const forkThread: AgentCommand = { type: 'fork-thread', threadId: hostEntityKey(REMOTE, 'thread'), messageId: 'reply', newThreadId }
+  return { router, call, service, continueAgent, forkThread }
 }
 
 describe('continuing an agent on a paired host', () => {
   it('tells the user an older host cannot yet, and sends it nothing', async () => {
-    const { router, call, continueAgent } = remote([])
+    const { router, call, continueAgent, forkThread } = remote([])
     const answer = await router.command(continueAgent, desktopWindowClient())
-    expect(answer.error).toBe('This host can’t continue an agent as a thread yet, and nothing was made. Update Sotto on the host, then try again.')
+    expect(answer.error).toBe('This host can’t start a thread from another yet, and nothing was made. Update Sotto on the host, then try again.')
+    expect((await router.command(forkThread, desktopWindowClient())).error).toBe(THREAD_STARTS_UNSUPPORTED)
     expect(call.mock.calls.some(([operation]) => operation.op === 'command')).toBe(false)
     expect(router.shell().error).toBeNull()
-    await expect(router.startHandover(hostEntityKey(REMOTE, 'thread'))).rejects.toThrow('can’t continue an agent as a thread yet')
+    await expect(router.startHandover(hostEntityKey(REMOTE, 'thread'))).rejects.toThrow(THREAD_STARTS_UNSUPPORTED)
   })
 
   it('sends the command to a host that offers it, under the host’s own IDs, and keeps its refusal off the banner', async () => {
@@ -49,6 +51,14 @@ describe('continuing an agent on a paired host', () => {
     const answer = await router.command(continueAgent, desktopWindowClient())
     expect(call).toHaveBeenCalledWith({ op: 'command', command: { type: 'continue-agent', threadId: 'thread', agentId: 'codex-agent-1', newThreadId } }, expect.any(String))
     expect(answer.error).toBe(AGENT_FORK_GONE)
+    expect(router.shell().error).toBeNull()
+  })
+
+  it('forks at a reply on the host that holds the thread, under its own IDs', async () => {
+    const { router, call, forkThread } = remote(['thread-starts'], 'Wait for this turn to finish, or stop it, before forking. A fork carries finished turns, and nothing was made.')
+    const answer = await router.command(forkThread, desktopWindowClient())
+    expect(call).toHaveBeenCalledWith({ op: 'command', command: { type: 'fork-thread', threadId: 'thread', messageId: 'reply', newThreadId } }, expect.any(String))
+    expect(answer.error).toMatch(/^Wait for this turn to finish/u)
     expect(router.shell().error).toBeNull()
   })
 

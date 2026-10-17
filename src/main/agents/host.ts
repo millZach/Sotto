@@ -125,6 +125,8 @@ export interface AgentContinuation {
   readonly baseBranch?: string | undefined
   readonly startFromOrigin?: boolean | undefined
 }
+/** Fork from here (#1028, E5b): a new thread `threadId` with `sourceThreadId`'s conversation up to its reply `messageId`. */
+export interface ReplyFork extends Omit<AgentContinuation, 'agentId' | 'handover'> { readonly messageId: string }
 /** Which of a first message's characters were the handover it went with (#1028): a length and its digest, never the words. */
 export interface StartHandoverSent { readonly messageId: string; readonly prefixLength: number; readonly prefixDigest: string }
 /**
@@ -283,6 +285,8 @@ export interface AgentHost {
   forkThread?(request: ThreadForkRequest): Promise<AgentHostResult>
   /** Continue one of a thread's agents as a thread of its own (#1028). The workspace makes the thread; refusals make nothing. */
   continueAgent?(request: AgentContinuation): Promise<AgentHostResult>
+  /** Fork a thread at one of its replies (#1028, E5b). The workspace makes the thread; refusals make nothing. */
+  forkAtReply?(request: ReplyFork): Promise<AgentHostResult>
   /**
    * The handover a thread that began from another goes with on its first message (#1028), built afresh from Sotto's own
    * record. Undefined once it has gone, or when Sotto no longer holds what it carries.

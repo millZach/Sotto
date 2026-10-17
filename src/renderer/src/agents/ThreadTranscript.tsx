@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, u
 import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
-import { isThreadBusy, isVisualMessage, type AgentFollowup, type AgentMessage, type AgentState, type ThreadContinuedIn } from '../../../shared/agents'
+import { hostForThread, isThreadBusy, isVisualMessage, type AgentFollowup, type AgentMessage, type AgentState, type ThreadContinuedIn } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
@@ -26,6 +26,7 @@ import { HandoverFromContext, HandoverMessage } from '../watcher/WatcherHandover
 import { ContinuedFromNote, ContinuedInNotes } from './ContinueThread'
 import { ContinueLinksContext, continuedInByTurn, useContinueEnabled, type ContinueLinks } from './continuations'
 import { StartHandoverCard, ThreadStartContext, ThreadStartNote, threadStartView, useThreadStartView, useThreadStarts } from './ThreadStart'
+import { ForkCard, ForkContext, ForkPress, useForkOptions, type ForkOptions } from './ForkFromHere'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { ThreadGreeting } from './ThreadGreeting'
 import type { DelegationView } from '../../../shared/delegation'
@@ -34,6 +35,8 @@ import { useDelegations, useDelegationsEnabled } from './delegations'
 import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
+/** No message is left behind while no fork card is open. */
+const NOTHING_AFTER: ReadonlySet<string> = new Set()
 
 export const TRANSCRIPT_PAGE = 80
 /** Within this many pixels of the end, the reader is following the conversation. */
@@ -223,13 +226,15 @@ function WakeUpWho({ text }: { readonly text: string }): ReactNode {
  * structure of the one before it, so a message the update did not touch is the same object and is not redrawn
  * while the agent streams into the message below it. `threadId` is how a submitted attachment finds its preview.
  */
-const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy }: {
+const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy, forkable }: {
   readonly message: AgentMessage; readonly provider: string; readonly writing: boolean; readonly streamText: boolean
   readonly threadId: string | undefined
   /** Watcher's conversation names its replies Watcher, with the owl, whatever provider it runs on. */
   readonly speaker?: 'watcher' | undefined
   /** A brief the delegating thread sent: that thread's name, shown in the user's place (ADR-0081). */
   readonly delegatedBy?: string | undefined
+  /** A finished turn's newest written reply, which offers Fork from here where the transcript does (#1028, E5b). */
+  readonly forkable?: boolean | undefined
 }): ReactNode {
   const article = useRef<HTMLElement>(null)
   // A wake-up babysitting sent is Sotto's, told by the host's mark and never by its text, and shows every word the
@@ -241,9 +246,14 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   // The handover Watcher's first message carried goes ahead of the user's words, as Sotto's (ADR-0073), and so does the one
   // a thread that began from another started with (#1028).
   const started = useThreadStartView()
+  // Fork from here (#1028, E5b): offered on a finished turn's reply; what follows the open one is not carried.
+  const fork = useForkOptions()
+  const forkHere = forkable === true && fork !== null && !writing
+  const forkedAt = started !== null && started !== 'off' && started.start.from === 'turn' && started.start.route === 'fork' && started.start.messageId === message.id
   return <>{message.handover && message.role === 'user' ? started === 'off' ? null : started ? <StartHandoverCard view={started} handover={message.handover} createdAt={message.createdAt} />
     : <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
-  <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={article}>
+  <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={article}
+    data-not-carried={fork?.after.has(message.id) || undefined}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
       : brief ? <><span className="thread-message__who"><GitFork size={13} aria-hidden="true" />{delegatedBy}</span><span>delegated</span></>
       : <span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : 'System'}</span>}
@@ -254,7 +264,10 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
     {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}
-  </article></>
+    {forkHere ? <ForkPress messageId={message.id} at={message.createdAt} /> : null}
+  </article>
+  {forkHere ? <ForkCard messageId={message.id} at={message.createdAt} /> : null}
+  {forkedAt ? <ThreadStartNote view={started} /> : null}</>
 })
 
 /**
@@ -274,10 +287,12 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   /** The threads that continue this one, made while this turn was the newest (ADR-0089), as notes under it. */
   readonly continuedIn?: readonly ThreadContinuedIn[] | undefined
 }): ReactNode {
+  // A fork carries finished turns, so only a finished turn's newest written reply offers one (#1028, E5b).
+  const forkableId = running && last ? undefined : turn.replies.findLast(message => message.role === 'assistant' && !isVisualMessage(message) && !isWakeUpMessage(message) && drawn(message))?.id
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
   const article = (message: AgentMessage): ReactNode => isDrawableVisual(message) ? <VisualCard visual={message.visual} threadId={threadId} />
     : drawn(message) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} speaker={speaker}
-      delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} />
+      delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} forkable={message.id === forkableId} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
     {article(message)}
     <ActivityGroups groups={placement.after.get(message.id)} context={context} />
@@ -529,6 +544,28 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     sourceTitle === undefined ? undefined : { title: sourceTitle, providerId: sourceProvider }, command, window.sotto?.agents?.startHandover),
   [startKey, thread.id, thread.providerId, sourceTitle, sourceProvider, command])
   const startHandoverWaiting = startView?.start.route === 'handover' && startView.start.handover !== undefined && startView.start.handover.sent === undefined
+  // A fork's note goes under the last reply it copied, where its own conversation begins, or at the head while that
+  // reply is not among the messages shown.
+  const startNoteAtHead = startView !== null && (startView.start.from === 'agent' || !messages.some(message => message.id === startView.start.messageId))
+  // Fork from here (#1028, E5b; Owl only): one reply's card open at a time, and what follows it marked as not carried.
+  // While none is open the options keep their identity, so a streaming update redraws no reply for them.
+  const [forkAt, setForkAt] = useState<string | null>(null)
+  useEffect(() => { setForkAt(null) }, [thread.id])
+  const forkMessages = forkAt === null ? null : messages
+  const forkAfter = useMemo<ReadonlySet<string>>(() => {
+    const index = forkAt === null || forkMessages === null ? -1 : forkMessages.findIndex(message => message.id === forkAt)
+    return index < 0 ? NOTHING_AFTER : new Set(forkMessages!.slice(index + 1).map(message => message.id))
+  }, [forkAt, forkMessages])
+  const forkModels = startsOn && !watcher ? hostForThread(state.host, thread).models : undefined
+  const forkRepository = thread.worktree?.git?.isRepository === true, forkBranch = thread.worktree?.git?.branch ?? null
+  const forkBusy = thread.status === 'running'
+  const forkOptions = useMemo<ForkOptions | null>(() => forkModels === undefined || thread.providerId === undefined || thread.kind === 'watcher' || thread.kind === 'watcher-history' ? null : {
+    threadId: thread.id, threadTitle: thread.title, provider: thread.providerId, projectId: thread.projectId, remote: thread.remoteHost === true,
+    where: thread.remoteHost ? thread.hostLabel ?? 'The host' : 'This computer', models: forkModels, modelId: thread.modelId, command,
+    ...(forkRepository ? { sourceBranch: { currentBranch: forkBranch } } : {}),
+    workingCopyOptions: thread.remoteHost ? undefined : window.sotto?.agents?.workingCopyOptions,
+    openAt: forkAt, open: setForkAt, after: forkAfter, busy: forkBusy },
+  [forkModels, thread.id, thread.title, thread.providerId, thread.projectId, thread.remoteHost, thread.hostLabel, thread.modelId, thread.kind, command, forkRepository, forkBranch, forkAt, forkAfter, forkBusy])
   // Continuing on another provider (ADR-0089; Owl only): where this thread came from, where it went, and its handover's source.
   const continueOn = useContinueEnabled() && !watcher
   const continuedIn = useShared(useMemo(() => continueOn ? continuedInByTurn(thread.continuedIn, messages) : undefined, [continueOn, thread.continuedIn, messages]))
@@ -661,12 +698,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
             : null}
         {/* Where this thread continues from, above its first message (ADR-0089; Owl only). */}
         {hidden === 0 && !thread.earlierAvailable ? <ContinuedFromNote thread={thread} state={state} command={command} /> : null}
-        {startView ? <ThreadStartNote view={startView} /> : null}
+        {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
-        {thread.messages.length || showsActivity ? <ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><DelegationCardProvider world={cardWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
+        {thread.messages.length || showsActivity ? <ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><DelegationCardProvider world={cardWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
           <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegationCards.size ? delegationCards : undefined} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} />
-        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationCardProvider></ThreadStartContext.Provider>
+        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationCardProvider></ForkContext.Provider></ThreadStartContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.compaction?.status === 'running' ? 'Compacting the context.' : thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
