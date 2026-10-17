@@ -16,7 +16,7 @@ describe('which OpenCode Sotto finds, and which it refuses', () => {
   it('drives OpenCode 2 from 2.0.31 and refuses OpenCode 1 or an older 2 in words that say what to install', () => {
     expect(opencodeVersionRefusal('opencode v2.0.31')).toBeUndefined()
     expect(opencodeVersionRefusal('opencode v2.1.0')).toBeUndefined()
-    expect(opencodeVersionRefusal('1.19.3')?.message).toBe('This is OpenCode 1.19.3, and Sotto works with OpenCode 2 only. Install it from opencode.ai/v2/install or npm\'s @opencode/cli; opencode.ai/install and npm\'s opencode-ai give OpenCode 1.')
+    expect(opencodeVersionRefusal('1.19.3')?.message).toBe('This is OpenCode 1.19.3, and Sotto works with OpenCode 2 only. Install it from opencode.ai/v2/install, which replaces OpenCode 1 in ~/.opencode/bin, where Sotto looks first; opencode.ai/install and npm\'s opencode-ai give OpenCode 1.')
     const old = opencodeVersionRefusal('opencode v2.0.30')
     expect(old).toBeInstanceOf(OpenCodeTooOld)
     expect(old?.message).toBe('OpenCode 2.0.31 or newer is required, and this client is 2.0.30.')

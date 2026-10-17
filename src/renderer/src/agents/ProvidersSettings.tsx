@@ -105,11 +105,12 @@ export function ProvidersSettings(): ReactNode {
     finally { inFlight.current.delete(provider); setUpdatePending(previous => ({ ...previous, [provider]: undefined })) }
   }
   // OpenCode missing, or refused for its version (OpenCode 1 among them), gets its install guide whether or not update
-  // checks are on, as first-run setup offers it.
+  // checks are on, as first-run setup offers it. A copy too old to use is most likely in ~/.opencode/bin, where both
+  // generations' install scripts put it and Sotto looks first, so only OpenCode 2's script replaces it.
   const problem = 'problem' in status ? status.problem : undefined
   const openCodeInstall = selected !== 'opencode' || connected ? undefined
     : problem === 'not-installed' ? 'OpenCode 2 is not installed on this computer. Install it with its install script or npm’s @opencode/cli, then connect again.'
-    : problem === 'too-old' ? `Sotto works with OpenCode ${'requiredVersion' in status && status.requiredVersion ? status.requiredVersion : '2.0.31'} or newer. Install OpenCode 2 with its install script or npm’s @opencode/cli, then connect again.`
+    : problem === 'too-old' ? `Sotto works with OpenCode ${'requiredVersion' in status && status.requiredVersion ? status.requiredVersion : '2.0.31'} or newer. Install OpenCode 2 with its install script, which replaces an older copy in ~/.opencode/bin, where Sotto looks first, then connect again. npm’s @opencode/cli installs a second copy and leaves that one.`
     : undefined
   // OpenCode 2's own guide; opencode.ai/docs installs OpenCode 1, which Sotto does not drive.
   const openOpenCodeGuide = async (): Promise<void> => {
