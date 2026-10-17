@@ -86,6 +86,19 @@ describe('read marks', () => {
     expect(marks.track(marked, pass(finished('a', 't1'), finished('b', 't2')), AT)).toBeNull()
   })
 
+  it('earns nothing for history a fork or continued thread imports, and a mark for the first turn that runs in it', () => {
+    const marks = new WatcherReadMarks()
+    // Fork from here: the fork first shows empty, then its copied history brings a completed turn that never ran here.
+    marks.track([], pass(thread('fork')), AT)
+    expect(marks.track([], pass(finished('fork', 'copied-turn')), AT)).toBeNull()
+    // A continued thread on another provider, the same: empty, then its imported history with a failed turn in it.
+    marks.track([], pass(thread('continued')), AT)
+    expect(marks.track([], pass(failing('continued', 'imported-turn')), AT)).toBeNull()
+    // A real turn in the fork, seen running, earns its mark when it finishes.
+    marks.track([], pass(running('fork', 'own-turn')), AT)
+    expect(marks.track([], pass(finished('fork', 'own-turn')), AT)?.map(mark => [mark.target.threadId, mark.kind])).toEqual([['fork', 'finished']])
+  })
+
   it('goes when the user reads the thread, records when, and the same news never marks it again', () => {
     const marks = new WatcherReadMarks()
     marks.track([], pass(running('a', 't1')), AT)
