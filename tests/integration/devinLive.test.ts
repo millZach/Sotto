@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest'
 import { DevinRejected, DevinRpc, devinEnvironment, findDevinExecutable, readDevinVersion } from '../../src/main/agents/devinRpc'
 import { DevinAcpHost } from '../../src/main/agents/devin'
 import { devinPolicyPath } from '../../src/main/agents/devinPolicy'
+import { VisualToolServer } from '../../src/main/agents/visualTools'
+import { ThreadToolServer } from '../../src/main/agents/threadToolServer'
 
 describe("requires SOTTO_DEVIN_LIVE=1", () => {
   it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1')('verifies native Devin identity, decisions, questions, interrupt, and restart in a disposable Git project', async () => {
@@ -228,4 +230,99 @@ describe("requires SOTTO_DEVIN_LIVE=1", () => {
       await rm(root, { recursive: true, force: true })
     }
   }, 120_000)
+})
+
+// #1040: Devin threads get Sotto's tools from CLI 3000.11.92, and the owned profiles (version 3) let a thread's own Sotto
+// servers through without Devin's question. Two real turns, so it spends. The first runs in the session the thread was
+// made in: it calls Sotto's `visualize`, which must run without a request, then `ping` on a decoy server whose name only a
+// folded match would take for Sotto's (`sotto-visual`), which Devin must still ask about; the test denies it, as the user
+// would. The second calls `visualize` again after Sotto restarts with a new visual server and loads the session, which
+// settles that a loaded session gets the servers its load passed. SOTTO_DEVIN_EXECUTABLE points it at a Devin CLI unpacked
+// from its zip, such as 3000.11.92, without installing it.
+describe("requires SOTTO_DEVIN_LIVE=1", () => {
+  it.skipIf(process.env['SOTTO_DEVIN_LIVE'] !== '1')('gives a native Devin thread Sotto’s tools in a new session and in a loaded one', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-devin-live-'))
+    if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-devin-live-')) throw new Error('Unexpected temporary directory')
+    const cwd = join(root, 'project'); const data = join(root, 'sotto')
+    await mkdir(cwd); await mkdir(data)
+    execFileSync('git', ['init', '--quiet', cwd], { windowsHide: true, stdio: 'ignore' })
+    const executable = process.env['SOTTO_DEVIN_EXECUTABLE'] || await findDevinExecutable()
+    if (!executable) throw new Error('Devin CLI was not found')
+    // Each tool hears the Sotto thread; only the titles it was given are kept, never the session or the reply.
+    const drawn: { threadId: string; title: string }[] = []
+    const pinged: string[] = []
+    const visualServer = (): VisualToolServer => new VisualToolServer({ enabled: () => true, admits: () => true, add: async (threadId, input) => {
+      drawn.push({ threadId, title: input.title })
+      return { added: true, visual: { id: randomUUID(), title: input.title, kind: input.kind, source: input.source }, anchor: 'assistant' }
+    } })
+    const decoyServer = (): ThreadToolServer => new ThreadToolServer({ name: 'sotto-visual', serverName: 'decoy', instructions: 'ping answers ok.',
+      unavailable: 'Unavailable.', failed: 'Failed.' }, [{ name: 'ping', description: 'Answers ok. Harmless.', inputSchema: { type: 'object', properties: {} } }],
+    async threadId => { pinged.push(threadId); return { content: [{ type: 'text', text: 'ok' }] } })
+    let visuals = visualServer()
+    let decoy = decoyServer()
+    const start = (): DevinAcpHost => {
+      const made = new DevinAcpHost(data, { executable })
+      made.useThreadTools([visuals, { name: 'sotto-visual', definitions: decoy.definitions, mcpServer: threadId => decoy.mcpServer(threadId) }])
+      return made
+    }
+    let host = start()
+    const id = randomUUID()
+    const thread = async () => (await host.snapshot()).threads.find(thread => thread.id === id)!
+    const send = async (text: string): Promise<void> => {
+      expect(await host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: id, text })).toEqual({ accepted: true })
+    }
+    const drawsUnasked = async (title: string): Promise<void> => {
+      await expect.poll(() => drawn.filter(call => call.title === title).length, { timeout: 90_000 }).toBe(1)
+      expect((await thread()).requests.filter(request => request.text === 'Use Sotto’s visualize tool')).toEqual([])
+    }
+    let stage = 'connect'
+    try {
+      const connected = await host.connect()
+      expect(connected.connected, connected.error ?? 'refused without a reason').toBe(true)
+      expect(JSON.parse(await readFile(devinPolicyPath(data, 'nothing'), 'utf8')).permissions.allow).toContain('mcp__sotto_visual__*')
+      const model = connected.models.find(item => item.ready)!
+      await host.execute({ type: 'create-project', commandId: randomUUID(), projectId: 'live', title: 'Synthetic tools check', path: cwd })
+      await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: 'live', title: 'Synthetic tools check', modelId: model.id })
+      host.observeThreads([id])
+      expect((await thread()).sottoToolsWithheld).toBeUndefined()
+      stage = 'new-session-calls'
+      await send('Call the visualize tool exactly once with title "Sotto live check one", kind "diagram" and source "flowchart LR\n  A --> B". After it returns, call the ping tool exactly once with no arguments. Use no other tool. If a call is refused, do not retry it. Then reply DONE.')
+      // The decoy is not one of Sotto's servers, so the profile's `mcp__*` ask still holds for it, folded name or not. The
+      // model may call the two in either order, so whichever comes first is waited for; the decoy's request is denied.
+      const asked = async () => (await thread()).requests.filter(request => request.kind === 'permission')
+      await expect.poll(async () => drawn.length > 0 || (await asked()).length > 0, { timeout: 90_000 }).toBe(true)
+      if (!drawn.length) {
+        const [request] = await asked()
+        expect(request!.text).toBe('Use Sotto’s ping tool')
+        await host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: request!.id, answer: '', approved: false })
+        await drawsUnasked('Sotto live check one')
+      } else {
+        await drawsUnasked('Sotto live check one')
+        await expect.poll(async () => (await asked()).length, { timeout: 90_000 }).toBe(1)
+        const [request] = await asked()
+        expect(request!.text).toBe('Use Sotto’s ping tool')
+        await host.execute({ type: 'answer', commandId: randomUUID(), threadId: id, requestId: request!.id, answer: '', approved: false })
+      }
+      await expect.poll(async () => (await thread()).status, { timeout: 90_000 }).toBe('idle')
+      expect(pinged).toEqual([])
+      stage = 'restart'
+      host.disconnect(); await host.closed()
+      // New servers at new addresses with new tokens: a call after the load can only reach what the load passed.
+      await visuals.close(); await decoy.close(); visuals = visualServer(); decoy = decoyServer()
+      host = start(); host.observeThreads([id])
+      expect((await host.connect()).connected).toBe(true)
+      stage = 'loaded-session-call'
+      await send('Call the visualize tool exactly once with title "Sotto live check two", kind "diagram" and source "flowchart LR\n  A --> B". Use no other tool, then reply DONE.')
+      await drawsUnasked('Sotto live check two')
+      await expect.poll(async () => (await thread()).status, { timeout: 90_000 }).toBe('idle')
+      expect(drawn.every(call => call.threadId === id)).toBe(true)
+      console.info('devin-live-tools', { version: await readDevinVersion(executable), drawn: drawn.length, decoyAsked: true })
+    } catch (error) {
+      console.info('devin-live-tools-failure', { stage, drawn: drawn.length, pinged: pinged.length, code: error instanceof DevinRejected ? error.code : undefined, operation: error instanceof DevinRejected ? error.operation : undefined })
+      throw error
+    } finally {
+      host.disconnect(); await host.closed(); await visuals.close(); await decoy.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 420_000)
 })

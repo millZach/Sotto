@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
-import type { AgentModel } from '../../../shared/agents'
+import type { AgentModel, ProviderId } from '../../../shared/agents'
 import { catalogEntry, resolveModel } from '../../../shared/modelCatalog'
 import { moveListboxFocus } from './listboxKeys'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
@@ -36,6 +36,14 @@ export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
   })
 }
 
+/** A provider the menu lists without models, and why: one the user turned on that cannot take the choice now. */
+export interface UnavailablePickerProvider { readonly name: string; readonly providerId?: ProviderId | undefined; readonly reason: string }
+/**
+ * Providers whose models start a new thread rather than change this one (ADR-0089): the heading over their models and
+ * the note under them, in place of the menu's own.
+ */
+export interface PickerContinuation { readonly providers: ReadonlySet<string>; readonly heading: (provider: string) => string; readonly note: string }
+
 /**
  * The model control: a chip carrying the provider's mark and the model's name, which opens a compact menu
  * anchored over it. The menu is two columns. On the left a rail of provider marks, one tile each and no
@@ -44,16 +52,23 @@ export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
  * -- the reminder that a new thread may still change provider, or that this one may not. The wheel over the
  * rail steps through the providers as its arrow keys do. A single provider has no rail. Escape, a click
  * outside or a choice closes the menu and returns focus to the chip; a choice shows on the chip at once while
- * the owner saves it.
+ * the owner saves it. A provider in `unavailable` has a tile whose panel says why it cannot be chosen now; one in
+ * `continueOn` heads its models with where they start.
  */
-export function ModelPicker({ models, modelId, disabled, onChange, note }: {
+export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = [], continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
   readonly note?: string | undefined
+  readonly unavailable?: readonly UnavailablePickerProvider[] | undefined
+  readonly continueOn?: PickerContinuation | undefined
+  /** The chip's accessible name, where it chooses something other than this thread's own model. */
+  readonly label?: string | undefined
+  /** Opens the menu as the chip appears, where a press elsewhere asked for it. */
+  readonly openOnMount?: boolean | undefined
 }): ReactNode {
   // A long-context variant the catalog does not list (`opus[1m]`) shows as its base model's entry, by that name.
   const current = resolveModel(models, modelId)
   const currentEntryId = catalogEntry(models, modelId)?.id
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(openOnMount && !disabled)
   const [provider, setProvider] = useState('')
   const [query, setQuery] = useState('')
   const trigger = useRef<HTMLButtonElement>(null)
@@ -70,10 +85,12 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
       if (group) group.push(model)
       else result.set(model.provider, [model])
     }
-    return [...result].map(([name, items]) => ({ name, providerId: items[0]?.providerId, models: newestModelsFirst(items) }))
-  }, [models, open])
+    return [...[...result].map(([name, items]) => ({ name, providerId: items[0]?.providerId, models: newestModelsFirst(items), reason: undefined as string | undefined })),
+      ...unavailable.filter(item => !result.has(item.name)).map(item => ({ name: item.name, providerId: item.providerId, models: [] as AgentModel[], reason: item.reason as string | undefined }))]
+  }, [models, open, unavailable])
   const selectedProvider = groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
+  const continuing = selectedProvider !== undefined && continueOn?.providers.has(selectedProvider.name) === true
   // Each turn of the wheel over the rail steps one provider and stops at either end. A turn ends when the wheel
   // rests for a moment or turns the other way, so a mouse notch is a step and so is a touchpad swipe with its
   // momentum, whose small movements add up to one. A turn is kept across renders, since the owner may hand over a
@@ -135,7 +152,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
   }, [open])
   const name = current?.name ?? (modelId || 'Choose a model')
   return <div className="model-picker">
-    <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={OPTION_CHIP_NAMES.model} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
+    <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
       title={name} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); wheelTurn.current = restingWheel(); setOpen(true) }}>
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}<span>{name}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
@@ -160,12 +177,14 @@ export function ModelPicker({ models, modelId, disabled, onChange, note }: {
           }} />
           <button type="button" aria-label="Close model picker" title="Close model picker" onClick={() => setOpen(false)}><X size={15} aria-hidden="true" /></button>
         </header>
+        {continuing ? <p className="model-picker__heading">{continueOn!.heading(selectedProvider!.name)}</p> : null}
         <div ref={list} role="listbox" aria-label={`${selectedProvider?.name ?? ''} models`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
           {filtered.map(model => <button type="button" role="option" key={model.id} aria-selected={model.id === currentEntryId} disabled={disabled || !model.ready}
             onClick={() => { onChange(model.id); setOpen(false) }}><span>{model.name}{!model.ready && <small>Unavailable</small>}</span>{model.id === currentEntryId && <Check size={14} aria-hidden="true" />}</button>)}
-          {!filtered.length && <p className="model-picker__empty">No matching models.</p>}
+          {selectedProvider?.reason !== undefined ? <p className="model-picker__empty" role="note">{selectedProvider.reason}</p>
+            : !filtered.length && <p className="model-picker__empty">No matching models.</p>}
         </div>
-        {note ? <p className="model-picker__note">{note}</p> : null}
+        {continuing ? <p className="model-picker__note">{continueOn!.note}</p> : note ? <p className="model-picker__note">{note}</p> : null}
       </div>
     </dialog>}
   </div>

@@ -15,6 +15,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { VISUAL_PAGE_OPEN, visualPageRequestSchema, visualPageResultSchema, type VisualPagesBridge } from '../shared/visualPages'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
 import { DELEGATIONS_READ, DELEGATIONS_CHANGED, DELEGATION_RENDERER_ARGUMENT, delegationsReadSchema, delegationsRequestSchema, delegationsChangedSchema, type DelegationsBridge } from '../shared/delegation'
+import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
 import { createToolsBridges } from './tools'
 import { createCloudIphoneBridge } from './cloudIphone'
@@ -296,6 +297,7 @@ export function createSottoBridge(
   watcherEnabled = false,
   usageEnabled = false,
   delegationEnabled = false,
+  continueEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -337,6 +339,11 @@ export function createSottoBridge(
     ...(delegationEnabled ? { delegations: Object.freeze<DelegationsBridge>({
       read: request => invokeParsed(renderer, DELEGATIONS_READ, delegationsReadSchema, delegationsRequestSchema.parse(request)),
       onChanged: listener => subscribe(renderer, DELEGATIONS_CHANGED, delegationsChangedSchema, listener),
+    }) } : {}),
+    // Continue a thread on another provider (ADR-0089): only while the Owl list turns it on, so stable's window has no such bridge.
+    ...(continueEnabled ? { continueThread: Object.freeze<ContinueBridge>({
+      read: request => invokeParsed(renderer, CONTINUE_READ, continueReadSchema, continueReadRequestSchema.parse(request)),
+      start: request => invokeParsed(renderer, CONTINUE_START, continueStartSchema, continueStartRequestSchema.parse(request)),
     }) } : {}),
     ...(watcherEnabled ? { watcher: Object.freeze<WatcherBridge>({
       get: () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema),
@@ -548,7 +555,7 @@ export function exposeRendererBridge(
   const platform = parsePlatformArgument(arguments_)
   if (rendererRole === 'main') {
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
-      arguments_.includes(DELEGATION_RENDERER_ARGUMENT)))
+      arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

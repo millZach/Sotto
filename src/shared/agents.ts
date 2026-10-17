@@ -259,6 +259,28 @@ export type HandoverCounts = z.infer<typeof handoverCountsSchema>
 export const agentMessageHandoverSchema = z.object({ text: z.string(), provider: providerIdSchema, counts: handoverCountsSchema }).strict()
 export type AgentMessageHandover = z.infer<typeof agentMessageHandoverSchema>
 /**
+ * Text-free proof that a continued thread's first message began with a handover of the thread it continues (ADR-0089):
+ * how many characters were the handover and their digest, and what it carried, never any of the words. Every
+ * user-facing copy shows the handover apart from the user's words by this record alone.
+ */
+export const threadHandoverProofSchema = z.object({ prefixLength: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  prefixDigest: z.string().regex(/^[0-9a-f]{64}$/u), counts: handoverCountsSchema,
+  /** The first message's Sotto message ID, once its send said it: the only message a copy without the words may split. */
+  messageId: id.optional() }).strict()
+export type ThreadHandoverProof = z.infer<typeof threadHandoverProofSchema>
+/**
+ * The thread a **continued thread** continues (ADR-0089): its Sotto thread ID, its provider, when, and the proof of the
+ * handover its first message carried, once that message was sent.
+ */
+export const threadContinuedFromSchema = z.object({ threadId: id, provider: providerIdSchema, at: z.string().datetime(),
+  handover: threadHandoverProofSchema.optional() }).strict()
+export type ThreadContinuedFrom = z.infer<typeof threadContinuedFromSchema>
+/** One thread that continues this one on another provider (ADR-0089): its Sotto thread ID, its provider and when. */
+export const threadContinuedInSchema = z.object({ threadId: id, provider: providerIdSchema, at: z.string().datetime() }).strict()
+export type ThreadContinuedIn = z.infer<typeof threadContinuedInSchema>
+/** The most continuations a thread's record names, the newest kept, so a record cannot grow without end. */
+export const THREAD_CONTINUED_IN_MAX = 100
+/**
  * Where a thread began when it began from another thread rather than empty (#1028): one of that thread's agents continued
  * as a thread of its own (`agent`), or that thread forked at one of its replies (`turn`). The source is named by its Sotto
  * thread ID alone (ADR-0002). A `fork` is the provider's own copy of the conversation, bound to this thread when it was
@@ -384,6 +406,13 @@ export const agentThreadSchema = z.object({
    */
   delegatedBy: id.optional(),
   /**
+   * The thread this one continues on another provider (ADR-0089), and the threads that continue this one, newest last.
+   * Sotto's record, kept on each thread's own record so the links survive a restart; absent on every other thread, and
+   * from older hosts. A value this build cannot read drops the link rather than the thread.
+   */
+  continuedFrom: threadContinuedFromSchema.optional().catch(undefined),
+  continuedIn: z.array(threadContinuedInSchema).max(THREAD_CONTINUED_IN_MAX).optional().catch(undefined),
+  /**
    * The thread this one began from, when it was an agent continued as its own thread or a fork at a reply (#1028). Sotto's
    * record, kept on the thread's own record; absent on every other thread, and from older hosts.
    */
@@ -427,6 +456,9 @@ export const agentThreadSchema = z.object({
   /** The thread's provider client builds its session without Sotto's tool servers: a Muse client that did not grant
    * session tool servers (ADR-0079). Absent otherwise, and from hosts that predate it. Never saved. */
   sottoToolsWithheld: z.literal(true).optional(),
+  /** A Devin thread whose host gives Devin Sotto's tool servers, from Devin CLI 3000.11.92 (#1040). Absent from hosts that
+   * predate it, whose Devin threads have none, so a Devin thread without it is read as having none. Never saved. */
+  sottoToolsGiven: z.literal(true).optional(),
   /** Provider activity time; omitted when unknown, never the time Sotto observed the thread. */
   updatedAt: z.string().optional(),
   /** Explicit lifecycle metadata. Null clears a prior value; omission means unknown. */
@@ -933,18 +965,25 @@ const SHORT_TEXT_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['code
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
   return providerId === undefined || SHORT_TEXT_PROVIDERS.has(providerId)
 }
-/** The providers that take Sotto's tool servers. A provider is named here once it does; one that is not gets none. */
-const SOTTO_TOOLS_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'muse'])
 /**
- * Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. Muse takes them
- * when its client grants session tool servers (ADR-0079); Devin's client ignores them.
+ * The providers that take Sotto's tool servers. A provider is named here once it does; one that is not gets none. Devin's
+ * threads take them only where their host says it gives them (`threadTakesSottoTools`).
  */
+const SOTTO_TOOLS_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'devin', 'muse'])
+/** Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. */
 export function providerTakesSottoTools(providerId: ProviderId | undefined): boolean {
   return providerId === undefined || SOTTO_TOOLS_PROVIDERS.has(providerId)
 }
-/** Whether this thread's agent gets Sotto's tool servers: its provider takes them and its client did not withhold them. */
-export function threadTakesSottoTools(thread: Pick<AgentThread, 'providerId' | 'sottoToolsWithheld'> | undefined): boolean {
-  return providerTakesSottoTools(thread?.providerId) && thread?.sottoToolsWithheld !== true
+/**
+ * Whether this thread's agent gets Sotto's tool servers. Every listed provider takes them: Muse when its client grants
+ * session tool servers (ADR-0079), and Devin from CLI 3000.11.92, which attaches the servers a session is opened with
+ * (ADR-0056). A client that cannot take them marks its threads `sottoToolsWithheld`, and a Devin thread counts only when
+ * its host says it gives them (`sottoToolsGiven`).
+ */
+export function threadTakesSottoTools(thread: Pick<AgentThread, 'providerId' | 'sottoToolsWithheld' | 'sottoToolsGiven'> | undefined): boolean {
+  if (!providerTakesSottoTools(thread?.providerId) || thread?.sottoToolsWithheld === true) return false
+  // A host older than Devin taking Sotto's tools never says either way, and its Devin threads have none (#1086).
+  return thread?.providerId !== 'devin' || thread.sottoToolsGiven === true
 }
 /** The same facts, from the summary the shell carries or from the history a full state holds. */
 export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>): AgentThreadSummary {

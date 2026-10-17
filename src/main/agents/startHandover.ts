@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto'
 import type { AgentHostSnapshot, AgentThread } from '../../shared/agents'
 import { startHandoverPrefix } from '../../shared/threadStarts'
 import type { StartHandoverSent } from './host'
-import { recordedPrefix } from './watcherHandover'
+import { handoverPrefixProof, splitHandover } from './watcherHandover'
 
 /**
  * The handover a thread that began from another goes with on its first message (#1028), ahead of the user's words in the
@@ -11,12 +10,10 @@ import { recordedPrefix } from './watcherHandover'
  * never by the words.
  */
 
-const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
-
 /** What goes ahead of the user's words, and the record that tells the two apart afterwards. */
 export function startHandoverSend(text: string, messageId: string): { prefix: string; sent: StartHandoverSent } {
   const prefix = startHandoverPrefix(text)
-  return { prefix, sent: { messageId, prefixLength: prefix.length, prefixDigest: sha256(prefix) } }
+  return { prefix, sent: { messageId, ...handoverPrefixProof(prefix) } }
 }
 
 /**
@@ -33,12 +30,12 @@ function shownThread(thread: AgentThread, from: AgentThread['providerId']): Agen
   const cached = shownThreads.get(thread)
   if (cached && cached.from === from) return cached.shown
   const index = thread.messages.findIndex(message => message.id === sent.messageId && message.role === 'user' && !message.handover)
-  const message = index < 0 ? undefined : thread.messages[index]!
-  const prefix = message ? recordedPrefix(message.text, sent) : undefined
+  const message = index < 0 || !from ? undefined : thread.messages[index]!
+  const split = message ? splitHandover(message, { ...sent, provider: from!, counts }) : undefined
   let shown = thread
-  if (message && prefix !== undefined && from) {
+  if (split && split !== message) {
     const messages = thread.messages.slice()
-    messages[index] = { ...message, text: message.text.slice(prefix.length), handover: { text: prefix.trimEnd(), provider: from, counts } }
+    messages[index] = split
     shown = { ...thread, messages }
   }
   shownThreads.set(thread, { from, shown })

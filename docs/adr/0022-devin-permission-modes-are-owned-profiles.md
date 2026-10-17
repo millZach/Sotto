@@ -1,5 +1,7 @@
 # A Devin permission mode is an owned profile, not a provider mode
 
+October 16, 2026 amendment (#1040): every allowance's profile, version 3, also allows the thread's own Sotto tool servers by their exact names (`mcp__sotto_browser__*`, `mcp__sotto_visual__*`, `mcp__sotto_pull_requests__*`, `mcp__sotto_delegate__*`), so `nothing` no longer asks about those, while every other MCP tool, edit, command and fetch asks as below. Zach's call; see ADR-0017's amendment of that date.
+
 Accepted September 22, 2026 following Zach's explicit decision. Devin threads offered one permission
 setting, "Ask for approval", because the Sotto-owned profile pinned by ADR-0017 asks before every edit,
 command and fetch. Zach asked for the rest of Devin's modes. This records what the modes turned out to
