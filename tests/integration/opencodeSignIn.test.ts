@@ -295,3 +295,26 @@ it('keeps a sign-in its page finished just before Cancel, and follows one OpenCo
     await expect.poll(async () => (await f.host.snapshot()).models.some(model => model.source === 'Anthropic')).toBe(true)
   } finally { await f.cleanup() }
 })
+
+it('follows a sign-out that deleted some of a source’s sign-ins before OpenCode refused the rest', { timeout: 60_000 }, async () => {
+  const { f, signIn } = await signInFixture()
+  try {
+    okResult(await signIn.signInWithKey({ sourceId: 'anthropic', key: KEY }))
+    // OpenCode holds two sign-ins for it, as a key pasted again beside an account's sign-in leaves.
+    const held = JSON.parse(await readFile(join(f.root, 'credentials.json'), 'utf8')) as { id: string }[]
+    await writeFile(join(f.root, 'credentials.json'), JSON.stringify([...held, { ...held[0]!, id: 'cred_second' }]))
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Outdated by part of a sign-out' })
+    f.host.observeThreads?.([id])
+    await expect.poll(async () => f.holder(id)).toBeDefined()
+    const before = await f.holder(id)
+    // The first sign-in is deleted and the second is refused.
+    await f.script({ refuse: { 'credential.remove': [500, 1, 1] } })
+    expect(await signIn.signOut({ sourceId: 'anthropic' })).toEqual({ status: 'refused', message: SIGN_IN_WORDS.signOutFailed('Anthropic') })
+    // What was deleted is gone from the threads too: the idle thread's server stops, and it opens again on a fresh one.
+    await expect.poll(async () => f.holder(id), { timeout: 10_000 }).not.toBe(before)
+    // Signing out again deletes the rest.
+    expect(await signIn.signOut({ sourceId: 'anthropic' })).toMatchObject({ status: 'ok' })
+  } finally { await f.cleanup() }
+})

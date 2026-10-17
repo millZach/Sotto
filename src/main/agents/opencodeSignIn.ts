@@ -321,11 +321,18 @@ export class OpenCodeSignIn {
       await this.read(server).catch(() => undefined)
       const integration = this.integrations.get(sourceId)
       if (!integration) return { status: 'refused', message: SIGN_IN_WORDS.unknownSource }
+      let deleted = 0
       try {
-        for (const credential of credentialsOf(integration)) await server.client.request('DELETE', `/api/credential/${encodeURIComponent(credential)}`)
+        for (const credential of credentialsOf(integration)) { await server.client.request('DELETE', `/api/credential/${encodeURIComponent(credential)}`); deleted += 1 }
       } catch {
         this.log('opencode-sign-in-failed')
-        return { status: 'refused', message: SIGN_IN_WORDS.signOutFailed(integration.name) }
+        if (!deleted) return { status: 'refused', message: SIGN_IN_WORDS.signOutFailed(integration.name) }
+        // Some of its sign-ins are gone, so the threads move to what is left, and the list says whether any is.
+        const after = await this.afterChange(server)
+        const gone = after.sources.status === 'ok' && !after.sources.sources.some(source => source.id === sourceId && source.signedIn)
+        if (!gone) return { status: 'refused', message: SIGN_IN_WORDS.signOutFailed(integration.name) }
+        this.log('opencode-sign-out')
+        return after
       }
       this.log('opencode-sign-out')
       return await this.afterChange(server)

@@ -9,7 +9,8 @@ import { URL } from 'node:url'
 // server-sent events captured from OpenCode 2.0.31 (.zstack/opencode-provider/v2-captures, not committed). Files in the
 // root steer it, as with the other fakes: `script.json` (version, infoVersion, models, modelsByVersion (the models a
 // process of that version lists, as a newer client's catalog may differ), providers, delay by operation,
-// refuse by operation (the HTTP status the next such request is refused with, once, or `[status, times]` in a row),
+// refuse by operation (the HTTP status the next such request is refused with, once, or `[status, times]` in a row, or
+// `[status, times, after]` once `after` have gone through),
 // loseAnswer by operation (the next such request is done and its connection then cut, so its answer never arrives),
 // migrationMs, unavailable, printPassword, pageSize, eventStream: 'refuse' to answer the event stream with an error
 // before its first frame;
@@ -238,8 +239,9 @@ const refusalOf = name => {
   const current = script()
   const asked = current.refuse?.[name]
   if (!asked) return 0
-  // `[status, times]` refuses that many in a row.
-  const [status, times] = Array.isArray(asked) ? asked : [asked, 1]
+  // `[status, times]` refuses that many in a row, and `[status, times, after]` lets `after` through first.
+  const [status, times, after = 0] = Array.isArray(asked) ? asked : [asked, 1]
+  if (after > 0) { writeFileSync(path('script.json'), JSON.stringify({ ...current, refuse: { ...current.refuse, [name]: [status, times, after - 1] } })); return 0 }
   writeFileSync(path('script.json'), JSON.stringify({ ...current, refuse: { ...current.refuse, [name]: times > 1 ? [status, times - 1] : 0 } }))
   return status
 }
