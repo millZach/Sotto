@@ -398,6 +398,9 @@ export const agentThreadSchema = z.object({
   /** The thread's provider client builds its session without Sotto's tool servers: a Muse client that did not grant
    * session tool servers (ADR-0079). Absent otherwise, and from hosts that predate it. Never saved. */
   sottoToolsWithheld: z.literal(true).optional(),
+  /** A Devin thread whose host gives Devin Sotto's tool servers, from Devin CLI 3000.11.92 (#1040). Absent from hosts that
+   * predate it, whose Devin threads have none, so a Devin thread without it is read as having none. Never saved. */
+  sottoToolsGiven: z.literal(true).optional(),
   /** Provider activity time; omitted when unknown, never the time Sotto observed the thread. */
   updatedAt: z.string().optional(),
   /** Explicit lifecycle metadata. Null clears a prior value; omission means unknown. */
@@ -904,18 +907,25 @@ const SHORT_TEXT_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['code
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
   return providerId === undefined || SHORT_TEXT_PROVIDERS.has(providerId)
 }
-/** The providers that take Sotto's tool servers. A provider is named here once it does; one that is not gets none. */
-const SOTTO_TOOLS_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'muse'])
 /**
- * Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. Muse takes them
- * when its client grants session tool servers (ADR-0079); Devin's client ignores them.
+ * The providers that take Sotto's tool servers. A provider is named here once it does; one that is not gets none. Devin's
+ * threads take them only where their host says it gives them (`threadTakesSottoTools`).
  */
+const SOTTO_TOOLS_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'devin', 'muse'])
+/** Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. */
 export function providerTakesSottoTools(providerId: ProviderId | undefined): boolean {
   return providerId === undefined || SOTTO_TOOLS_PROVIDERS.has(providerId)
 }
-/** Whether this thread's agent gets Sotto's tool servers: its provider takes them and its client did not withhold them. */
-export function threadTakesSottoTools(thread: Pick<AgentThread, 'providerId' | 'sottoToolsWithheld'> | undefined): boolean {
-  return providerTakesSottoTools(thread?.providerId) && thread?.sottoToolsWithheld !== true
+/**
+ * Whether this thread's agent gets Sotto's tool servers. Every listed provider takes them: Muse when its client grants
+ * session tool servers (ADR-0079), and Devin from CLI 3000.11.92, which attaches the servers a session is opened with
+ * (ADR-0056). A client that cannot take them marks its threads `sottoToolsWithheld`, and a Devin thread counts only when
+ * its host says it gives them (`sottoToolsGiven`).
+ */
+export function threadTakesSottoTools(thread: Pick<AgentThread, 'providerId' | 'sottoToolsWithheld' | 'sottoToolsGiven'> | undefined): boolean {
+  if (!providerTakesSottoTools(thread?.providerId) || thread?.sottoToolsWithheld === true) return false
+  // A host older than Devin taking Sotto's tools never says either way, and its Devin threads have none (#1086).
+  return thread?.providerId !== 'devin' || thread.sottoToolsGiven === true
 }
 /** The same facts, from the summary the shell carries or from the history a full state holds. */
 export function threadSummaryOf(thread: Pick<AgentThread, 'messages' | 'activities' | 'summary'>): AgentThreadSummary {

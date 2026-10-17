@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { watcherToolSchemas, type WatcherToolName } from '../../shared/watcher'
-import { ThreadToolServer, type ThreadToolDefinition, type ThreadMcpServer, type ThreadToolResult } from './threadToolServer'
+import { ThreadToolServer, type ThreadToolCallContext, type ThreadToolDefinition, type ThreadMcpServer, type ThreadToolResult } from './threadToolServer'
 import { watcherRefusal, type WatcherService } from './watcher'
 import type { WatcherProfileTools } from './host'
 
@@ -35,7 +35,7 @@ export class WatcherToolServer implements WatcherProfileTools {
     this.transport = new ThreadToolServer({ name: this.name, serverName: 'Sotto threads',
       instructions: 'Use explicit Sotto host and thread IDs. Use the requestId supplied with the user’s Watcher instruction. Native project reads use your own tools. No tool answers a request, approves a permission or changes policy. Read receipts instead of replaying uncertain delivery.',
       unavailable: 'Watcher’s thread tools are unavailable.', failed: 'This Watcher call could not be completed. Check its receipt before trying again.' },
-    this.definitions, (threadId, name, args) => this.call(threadId, name, args), threadId => this.service.isCurrent(threadId) ? this.definitions : [])
+    this.definitions, (threadId, name, args, context) => this.call(threadId, name, args, context), threadId => this.service.isCurrent(threadId) ? this.definitions : [])
   }
   async mcpServer(threadId: string): Promise<ThreadMcpServer | undefined> {
     if (!this.service.isCurrent(threadId)) return undefined
@@ -43,19 +43,22 @@ export class WatcherToolServer implements WatcherProfileTools {
     if (!this.service.isCurrent(threadId)) { this.revoke(threadId); return undefined }
     return server
   }
-  async call(threadId: string, name: string, args: unknown): Promise<ThreadToolResult> {
+  /** `context` says how long the calling client waits, when it says (Muse, ADR-0079); a call is answered inside it. */
+  async call(threadId: string, name: string, args: unknown, context: ThreadToolCallContext = {}): Promise<ThreadToolResult> {
     let result: unknown
     if (!this.service.isCurrent(threadId)) result = watcherRefusal('NOT_CURRENT_WATCHER', 'Only the current Watcher can use these tools.')
     else if (!Object.hasOwn(watcherToolSchemas, name)) result = watcherRefusal('INVALID_INPUT', 'That tool is unavailable. Watcher cannot answer requests or change permissions.')
     else if (this.running >= 8) result = watcherRefusal('IN_FLIGHT_LIMIT', 'Watcher already has eight tool calls in progress. Wait for one to finish.', true)
     else {
+      // A call answered inside its client's wait keeps its place until its work ends, so calls answered early cannot pile up.
       this.running++
       try {
-        result = await this.service.invoke(threadId, name as WatcherToolName, args)
+        const call = this.service.startCall(threadId, name as WatcherToolName, args, context)
+        void call.settled.finally(() => { this.running-- })
+        result = await call.answer
         // Validate what main exposes, as well as what the caller supplied.
         result = watcherToolSchemas[name as WatcherToolName].output.parse(result)
       } catch { result = watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher result could not be read safely. Check its receipt before trying again.', true) }
-      finally { this.running-- }
     }
     return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result as Record<string, unknown>,
       ...((result as { status: string }).status === 'refused' ? { isError: true } : {}) }
