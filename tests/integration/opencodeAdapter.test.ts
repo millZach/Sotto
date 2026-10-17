@@ -365,3 +365,61 @@ it('writes no side text until #1106 proves OpenCode’s side call safe', async (
     expect(JSON.stringify(await f.driver.requests())).not.toContain('Marker material')
   } finally { await f.cleanup() }
 })
+
+it('ends the tools of a server that exits by itself, since a tool it started outlives it', { timeout: 60_000 }, async () => {
+  const { f, id } = await open()
+  let child: number | undefined
+  try {
+    await send(f, id, 'first')
+    await f.action(id, { type: 'child' })
+    await expect.poll(async () => (await f.driver.requests()).some(record => record.method === 'fixture/child')).toBe(true)
+    child = (await f.driver.requests()).find(record => record.method === 'fixture/child')!.params!.pid as number
+    expect(running(child)).toBe(true)
+    // The server ends on its own, not by Sotto's stop: its process tree is gone with it, but the tool is still running.
+    await f.action(id, { type: 'exit' })
+    await expect.poll(async () => (await thread(f, id)).lastTurn).toEqual({ id: 'first', status: 'interrupted' })
+    await f.host.closed()
+    const tool = child
+    await expect.poll(() => running(tool), { timeout: 15_000 }).toBe(false)
+  } finally {
+    if (child !== undefined && running(child)) process.kill(child)
+    await f.cleanup()
+  }
+})
+
+it('stops a thread’s server when its event stream fails before the first event', { timeout: 60_000 }, async () => {
+  const f = await opencodeFixture()
+  let left: number[] = []
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await f.script({ eventStream: 'refuse' })
+    const before = await f.processes()
+    const result = await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: randomUUID(), projectId: f.projectId, modelId: f.modelId, title: 'No stream' })
+      .catch((error: unknown) => error)
+    expect(result).not.toEqual({ accepted: true })
+    const started = (await f.processes()).filter(pid => !before.includes(pid))
+    expect(started).toHaveLength(1)
+    // Nothing is left of it once the adapter says its work is done.
+    await f.host.closed()
+    left = started.filter(running)
+  } finally {
+    // A server left running holds the fixture's folder open; the assertion below, not the cleanup, reports it.
+    for (const pid of left) process.kill(pid)
+    await f.cleanup()
+  }
+  expect(left).toEqual([])
+})
+
+it('stops the connect check’s server when Sotto disconnects while it is still answering', { timeout: 60_000 }, async () => {
+  const f = await opencodeFixture(undefined, 30_000)
+  try {
+    await f.script({ delay: { 'model.list': 20_000 } })
+    const connecting = f.host.connect().then(() => undefined, (error: unknown) => error)
+    await expect.poll(async () => (await f.driver.requests()).some(record => record.method === 'model.list'), { timeout: 15_000 }).toBe(true)
+    const [probe] = await f.processes()
+    f.host.disconnect(); await f.host.closed()
+    expect(running(probe!)).toBe(false)
+    expect(await connecting).toBeInstanceOf(Error)
+  } finally { await f.cleanup() }
+})

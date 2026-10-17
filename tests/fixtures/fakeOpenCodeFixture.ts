@@ -39,7 +39,15 @@ export async function opencodeFixture(root?: string, requestTimeoutMs = 3000, se
     const names = await readdir(join(root, 'holders')).catch(() => [] as string[])
     return names.includes(native) ? Number(await readFile(join(root, 'holders', native), 'utf8')) : undefined
   }
-  return { host: adapter, adapter, root, events, projectId: 'project', modelId: 'opencode/fixture-model', realId, script, action, holder, restartStatus: 'idle' as const, skips: opencodeFixtureSkips,
+  /** Every fake server process this root has started, by PID, as each recorded itself. */
+  const processes = async (): Promise<number[]> => (await requests()).filter(record => record.method === 'fixture/process').map(record => (record.params as { pid: number }).pid)
+  /** The provider sessions the fake's database holds, as every server process shares them. */
+  const nativeSessions = async (): Promise<{ id: string; title?: string; metadata?: unknown }[]> => {
+    const text = await readLog(join(root, 'native-sessions.json'))
+    // A server may be writing the file as it is read; a torn read counts as not there yet, and the caller polls again.
+    try { return text ? Object.values((JSON.parse(text) as { sessions: Record<string, { id: string; title?: string; metadata?: unknown }> }).sessions) : [] } catch { return [] }
+  }
+  return { host: adapter, adapter, root, events, projectId: 'project', modelId: 'opencode/fixture-model', realId, script, action, holder, processes, nativeSessions, running, restartStatus: 'idle' as const, skips: opencodeFixtureSkips,
     // A settings change comes back with the snapshot the adapter itself confirmed (#318), and its answer can be lost.
     settings: { snapshot: true, loseConfirmation: () => script({ delay: { 'session.update': requestTimeoutMs + 1000, 'session.switchModel': requestTimeoutMs + 1000 } }) },
     protocol: { promptMethod: 'session.prompt', resumeMethod: 'session.messages', permissionDecision: (record: RecordedRpc): boolean | undefined =>

@@ -129,7 +129,7 @@ export class OpenCodeServer {
   readonly closed: Promise<void>
   private exited = false
   private stopping: Promise<void> | undefined
-  private constructor(private readonly child: ChildProcess, readonly url: string, private readonly log: OpenCodeServerLaunch['log'], closed: Promise<void>) {
+  private constructor(private readonly child: ChildProcess, readonly url: string, private readonly log: OpenCodeServerLaunch['log'], closed: Promise<void>, private readonly startedAt: number) {
     this.closed = closed
     void closed.then(() => { this.exited = true })
   }
@@ -138,6 +138,8 @@ export class OpenCodeServer {
 
   static start(launch: OpenCodeServerLaunch): Promise<OpenCodeServer> {
     return new Promise((resolve, reject) => {
+      // Before the spawn, so every process the server starts is newer than this.
+      const startedAt = Date.now()
       const child = spawn(launch.executable, [...(launch.args ?? []), 'serve', '--hostname=127.0.0.1', '--port=0'], {
         cwd: launch.cwd, env: withCliPath(launch.env, launch.executable), windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'],
         // A process group of its own elsewhere, so stopping it reaches every tool it started.
@@ -150,7 +152,7 @@ export class OpenCodeServer {
         if (ready) return
         ready = true; clearTimeout(timer)
         launch.log?.('opencode-server-failed')
-        void killTree(child, closed)
+        void killTree(child, closed, startedAt)
         reject(error)
       }
       const timer = setTimeout(() => fail(new OpenCodeUncertain('OpenCode did not start in time.')), launch.timeoutMs)
@@ -161,7 +163,7 @@ export class OpenCodeServer {
         const match = READY.exec(scanned)
         if (!match) return
         ready = true; clearTimeout(timer); scanned = ''
-        const server = new OpenCodeServer(child, match[1]!.replace(/\/+$/u, ''), launch.log, closed)
+        const server = new OpenCodeServer(child, match[1]!.replace(/\/+$/u, ''), launch.log, closed, startedAt)
         void closed.then(() => { if (!server.stopping) launch.log?.('opencode-server-exited') })
         resolve(server)
       })
@@ -172,33 +174,109 @@ export class OpenCodeServer {
     })
   }
 
-  /** Stop the server and everything it started. Resolves once the server has exited. */
+  /**
+   * Stop the server and everything it started. Resolves once the server and what it left are gone. A server that already
+   * exited on its own still has its tools to end: they outlive their leader (ADR-0087).
+   */
   stop(): Promise<void> {
     if (this.stopping) return this.stopping
     this.log?.('opencode-server-stopped')
-    this.stopping = this.exited ? Promise.resolve() : killTree(this.child, this.closed)
+    this.stopping = killTree(this.child, this.closed, this.startedAt)
     return this.stopping
   }
 }
 
-/** End a process and its descendants: `taskkill /T /F` on Windows, its process group elsewhere. */
-async function killTree(child: ChildProcess, closed: Promise<void>): Promise<void> {
+/** One row of the process table, as Windows keeps it: who started each process, and when. */
+export interface ProcessRow { readonly pid: number; readonly parent: number; readonly created: number }
+/**
+ * Process creation times are stamped on the system's coarse clock, which may read a little behind the precise one Node
+ * reads, so a process started just after another can look a few milliseconds older.
+ */
+const CLOCK_SLACK_MS = 50
+/**
+ * The processes a server that has exited leaves behind: those whose parent chain leads to its PID, which Windows still
+ * records in each one's parent after the server is gone (ADR-0087). Each must be newer than its parent, so a process
+ * left by an earlier owner of the PID, or started by a later one, is never named, and nor is Sotto itself.
+ */
+export function orphanedDescendants(rows: readonly ProcessRow[], root: number, startedAt: number): number[] {
+  const children = new Map<number, ProcessRow[]>()
+  for (const row of rows) {
+    if (row.pid === row.parent || row.pid === process.pid) continue
+    const list = children.get(row.parent); if (list) list.push(row); else children.set(row.parent, [row])
+  }
+  // A process holding the server's PID now took it after the server ended: what it started is its own.
+  const reused = rows.find(row => row.pid === root)
+  const found = new Set<number>()
+  const walk = (pid: number, after: number, before: number): void => {
+    for (const row of children.get(pid) ?? []) {
+      if (row.created < after - CLOCK_SLACK_MS || row.created >= before || found.has(row.pid)) continue
+      found.add(row.pid)
+      walk(row.pid, row.created, Number.POSITIVE_INFINITY)
+    }
+  }
+  walk(root, startedAt, reused ? reused.created : Number.POSITIVE_INFINITY)
+  return [...found]
+}
+
+const PROCESS_QUERY = "Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate | ForEach-Object { if ($_.CreationDate) { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() } }"
+/** The process table, read once through PowerShell's CIM query; empty when it cannot be read. Windows only. */
+function processTable(): Promise<ProcessRow[]> {
+  return new Promise(resolve => {
+    let output = ''
+    const reader = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', PROCESS_QUERY], { windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'ignore'] })
+    const timer = setTimeout(() => { reader.kill(); resolve([]) }, 15_000); timer.unref()
+    reader.stdout.setEncoding('utf8')
+    reader.stdout.on('data', (chunk: string) => { output += chunk })
+    reader.once('error', () => { clearTimeout(timer); resolve([]) })
+    reader.once('close', () => {
+      clearTimeout(timer)
+      resolve(output.split(/\r?\n/u).flatMap(line => {
+        const [pid, parent, created] = line.trim().split(' ').map(Number)
+        return Number.isInteger(pid) && Number.isInteger(parent) && Number.isFinite(created) ? [{ pid: pid!, parent: parent!, created: created! }] : []
+      }))
+    })
+  })
+}
+
+/** End what an exited server left running, on Windows, where nothing else reaches it once its leader is gone. */
+async function endOrphans(root: number, startedAt: number): Promise<void> {
+  for (const pid of orphanedDescendants(await processTable(), root, startedAt)) {
+    try { process.kill(pid) } catch { /* Ended meanwhile. */ }
+  }
+}
+
+/** Whether a child process has exited. */
+const ended = (child: ChildProcess): boolean => child.exitCode !== null || child.signalCode !== null
+
+/**
+ * End a process and its descendants: `taskkill /T /F` on Windows, its process group elsewhere. A leader that already
+ * exited has no tree for taskkill to walk, so on Windows its descendants are found by their recorded parents; elsewhere
+ * its process group outlives it and still reaches them.
+ */
+async function killTree(child: ChildProcess, closed: Promise<void>, startedAt: number): Promise<void> {
   const pid = child.pid
   if (pid === undefined) return
   if (process.platform === 'win32') {
-    await new Promise<void>(resolve => {
-      const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, shell: false, stdio: 'ignore' })
-      killer.once('error', () => resolve()); killer.once('close', () => resolve())
-    })
-    // taskkill can miss a process that is already ending; the child itself is the last resort.
-    const late = setTimeout(() => { try { child.kill() } catch { /* Gone. */ } }, 2_000); late.unref()
-    await closed; clearTimeout(late)
+    let whole = false
+    if (!ended(child)) {
+      whole = await new Promise<boolean>(resolve => {
+        const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, shell: false, stdio: 'ignore' })
+        killer.once('error', () => resolve(false)); killer.once('close', code => resolve(code === 0))
+      })
+      // taskkill can miss a process that is already ending; the child itself is the last resort.
+      const late = setTimeout(() => { try { child.kill() } catch { /* Gone. */ } }, 2_000); late.unref()
+      await closed; clearTimeout(late)
+    } else await closed
+    // The leader was gone before taskkill could walk its tree, or ended while it did.
+    if (!whole) await endOrphans(pid, startedAt)
     return
   }
-  const signal = (name: NodeJS.Signals): void => { try { process.kill(-pid, name) } catch { try { child.kill(name) } catch { /* Gone. */ } } }
+  const signal = (name: NodeJS.Signals): void => {
+    try { process.kill(-pid, name) } catch { if (!ended(child)) { try { child.kill(name) } catch { /* Gone. */ } } }
+  }
   signal('SIGTERM')
   const hard = setTimeout(() => signal('SIGKILL'), 1_000); hard.unref()
   await closed; clearTimeout(hard)
-  // Children that ignored SIGTERM may outlive the leader; the group gets the hard stop either way.
+  // Children that ignored SIGTERM, or outlived a leader that exited on its own, are still in its group: the hard stop reaches them.
   signal('SIGKILL')
 }

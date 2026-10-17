@@ -8,7 +8,8 @@ import { URL } from 'node:url'
 // A scripted OpenCode 2 server (`opencode serve`), in the shape Sotto's OpenCode adapter speaks: the HTTP routes and the
 // server-sent events captured from OpenCode 2.0.31 (.zstack/opencode-provider/v2-captures, not committed). Files in the
 // root steer it, as with the other fakes: `script.json` (version, infoVersion, models, providers, delay by operation,
-// migrationMs, unavailable, printPassword, pageSize), `control.json` (one driver action at a time, taken by the process
+// migrationMs, unavailable, printPassword, pageSize, eventStream: 'refuse' to answer the event stream with an error before
+// its first frame), `control.json` (one driver action at a time, taken by the process
 // holding its session). Every request is recorded in requests.jsonl under its OpenAPI operation name, with the process
 // that took it. Sessions are shared by every process through native-sessions.json under a lock, as OpenCode's database is.
 // A process holding a session writes `holders/<sessionId>` with its PID, so a test can see when that server has gone.
@@ -234,6 +235,7 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
   if (name === 'model.default') { send(200, { location: { directory: query['location[directory]'] }, data: (script().models ?? MODELS)[0] ?? null }); return }
   if (name === 'provider.list') { send(200, { location: { directory: query['location[directory]'] }, data: script().providers ?? PROVIDERS }); return }
   if (name === 'event.subscribe') {
+    if (script().eventStream === 'refuse') { fail(500, 'InternalServerError'); return }
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
     response.write(`data: ${JSON.stringify({ id: id('evt'), type: 'server.connected', data: {} })}\n\n`)
     response.write(': heartbeat\n\n')

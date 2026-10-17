@@ -211,6 +211,8 @@ export class OpenCodeHost implements AgentHost {
   private readonly exits = new Set<Promise<void>>()
   private executable: string | undefined
   private clientRevision = 0
+  /** The connect check's short-lived server while it starts or answers, so a disconnect stops it too. */
+  private probe: Promise<{ server: OpenCodeServer }> | undefined
   private writing = Promise.resolve()
   private readonly log = new ThreadMessageLog()
   private history: ThreadHistorySource | undefined
@@ -349,13 +351,19 @@ export class OpenCodeHost implements AgentHost {
       return entry
     })()
     this.processes.set(id, entry)
-    entry.ready.catch(() => { if (this.processes.get(id) === entry) this.processes.delete(id) })
+    entry.ready.catch(() => {
+      if (this.processes.get(id) === entry) this.processes.delete(id)
+      // A server that started but never became ready, such as one whose event stream failed first, is stopped too.
+      if (!entry.closing) this.closeProcess(entry)
+    })
     return entry.ready
   }
-  private closeProcess(entry: ThreadServer): void {
+  /** Stop a thread's server, whether its start finished or failed after it was allocated. Resolves once it is gone. */
+  private closeProcess(entry: ThreadServer): Promise<void> {
     entry.closing = true; entry.abort.abort()
-    const exit = entry.ready.then(ready => ready.server?.stop(), () => undefined).finally(() => { this.exits.delete(exit) })
+    const exit: Promise<void> = entry.ready.then(() => undefined, () => undefined).then(() => entry.server?.stop()).finally(() => { this.exits.delete(exit) })
     this.exits.add(exit)
+    return exit
   }
   /** A thread's server ended without Sotto stopping it: a running turn ends as interrupted, and nothing is answered. */
   private processLost(id: string, entry: ThreadServer): void {
@@ -382,8 +390,7 @@ export class OpenCodeHost implements AgentHost {
     this.folds.delete(id); this.log.release(id)
     if (!entry) return
     this.processes.delete(id)
-    this.closeProcess(entry)
-    await entry.ready.then(ready => ready.server?.closed, () => undefined)
+    await this.closeProcess(entry)
   }
   private hold(id: string): () => void {
     this.holds.set(id, (this.holds.get(id) ?? 0) + 1)
@@ -416,7 +423,12 @@ export class OpenCodeHost implements AgentHost {
       this.threads.clear(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
       this.assertGeneration(generation)
       this.executable = executable
-      const probe = await this.startServer(this.folders.data)
+      const starting = this.startServer(this.folders.data)
+      this.probe = starting
+      // Its exit is tracked with the thread servers', so `closed()` waits for it however it ends.
+      const exit: Promise<void> = starting.then(started => started.server.closed.then(() => started.server.stop()), () => undefined).finally(() => { this.exits.delete(exit) })
+      this.exits.add(exit)
+      const probe = await starting
       try {
         const location = locationQuery(this.folders.data)
         const models = modelListSchema.parse(await probe.client.request('GET', '/api/model', { query: location })).data
@@ -424,7 +436,10 @@ export class OpenCodeHost implements AgentHost {
         const providers = providerListSchema.parse(await probe.client.request('GET', '/api/provider', { query: location })).data
         this.assertGeneration(generation)
         this.applyCatalog(probe.version, models, providers, fallback)
-      } finally { await probe.server.stop() }
+      } finally {
+        if (this.probe === starting) this.probe = undefined
+        await probe.server.stop()
+      }
       if (!this.state.models.length) throw new ProviderUnavailable('cannot-start', 'OpenCode is set up but listed no models, so there is nothing to start a thread with. Your threads and drafts are kept. Run opencode in a terminal to see why, then connect it again.', this.state.version)
       this.log.forgetAll()
       for (const id of Object.keys(this.aliases)) { this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? []) }
@@ -1055,8 +1070,10 @@ export class OpenCodeHost implements AgentHost {
     }
     this.activeTurns.clear()
     if (ended) void this.persist().catch(() => undefined)
-    for (const entry of this.processes.values()) this.closeProcess(entry)
-    this.processes.clear(); this.state.connected = false; this.emit()
+    for (const entry of this.processes.values()) void this.closeProcess(entry)
+    this.processes.clear()
+    if (this.probe) { void this.probe.then(probe => probe.server.stop(), () => undefined); this.probe = undefined }
+    this.state.connected = false; this.emit()
   }
   async closed(): Promise<void> { await Promise.all([...this.exits]); await Promise.allSettled(this.loading.values()); await this.writing }
 }
