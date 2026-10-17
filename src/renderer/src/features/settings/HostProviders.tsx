@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { writeClipboard } from '../../agents/richActions'
-import { PROVIDER_LABELS, type AgentProviderStatus, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
+import { everyProvider, PROVIDER_LABELS, type AgentProviderStatus, type ClientUpdateRun, type ProviderClientUpdate, type ProviderId } from '../../../../shared/agents'
 import type { HostSetupChoice, HostsBridge, HostStatus } from '../../../../shared/hosts'
 import { HOST_PROVIDER_JOB_WORDS, hostProviderJobCase, PROVIDER_SIGN_IN_COMMANDS, PROVIDER_SIGN_IN_SHAPES, type HostProviderAction, type HostProviderJobCase, type HostProviderJobState } from '../../../../shared/hostProviders'
 import { useHeldProviders } from '../../state/owlFeature'
@@ -16,7 +16,7 @@ import type { HostClientUpdatesView } from './hostClientUpdateWords'
 import './hostProviders.css'
 
 /** The order the tiles are in: the providers the prototype drew, in its order (ADR-0037). */
-export const HOST_PROVIDER_ORDER: readonly ProviderId[] = ['claude', 'codex', 'grok', 'devin', 'muse']
+export const HOST_PROVIDER_ORDER: readonly ProviderId[] = everyProvider(['claude', 'codex', 'grok', 'devin', 'muse'])
 
 /**
  * What one tile says. `kind` decides its dot and its actions: Disconnect when connected, Connect when turned off, Sign in
