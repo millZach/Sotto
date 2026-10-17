@@ -164,6 +164,10 @@ const savedSchema = z.object({
   })),
 })
 type Saved = z.infer<typeof savedSchema>
+/** A late echo can settle delivery without completing the user's choice to continue with a fresh message. */
+function setAsideUpdatesHeld(item: Pick<AgentDelivery, 'setAside' | 'updatesResumed'>): boolean {
+  return item.setAside === true && item.updatesResumed !== true
+}
 /** A write handed to the store: the state it carries, serialized and by outbox, and its landing. */
 type QueuedWrite = { serialized: string; outbox: Saved['outbox']; written: Promise<void> }
 /** A wake-up about to go holds news of babysitting that ended quietly or by the switch since it was told. */
@@ -383,7 +387,7 @@ export class AgentControl {
   answerWatcherPhoneCard(command: Extract<AgentCommand, { type: 'answer' }>, client: ClientIdentity, decisionId: string, connectionGuard: () => void): Promise<AgentState> {
     if (!this.watcherHooks || client.transport !== 'socket') throw new Error('Watcher phone cards are unavailable.')
     const guard = () => { connectionGuard(); this.guardClientGrant(client) }
-    const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard })
+    const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard, userAnswer: true })
     return this.commandShell(parsed, client, decisionId)
   }
   /** User-requested setup only, never exposed as a tool. */
@@ -795,11 +799,12 @@ export class AgentControl {
   pendingThreadWorkReason(threadId: string): CheckoutPendingWork | null {
     // A wake-up still waiting is Sotto's news, not the user's work: it holds nothing back until it starts to send.
     const items = this.followupStore.peek().items.filter(item => item.threadId === threadId && !isWaitingWakeUp(item))
-    const deliveries = (this.state.deliveries ?? []).filter(item => item.threadId === threadId)
+    const deliveries = (this.state.deliveries ?? []).filter(item => item.threadId === threadId && !(item.setAside && item.updatesResumed))
     if (items.some(item => item.status === 'uncertain') || deliveries.some(item => item.status === 'uncertain')) return 'uncertain-send'
     if (items.some(item => item.status === 'failed')) return 'failed-followups'
     if (items.some(item => item.status === 'paused')) return 'paused-followups'
-    if (items.length || this.outbox.some(item => item.threadId === threadId) || deliveries.some(item => ['queued', 'submitting'].includes(item.status))) return 'pending-work'
+    if (items.length || this.outbox.some(item => item.threadId === threadId && !(item.setAside && item.updatesResumed))
+      || deliveries.some(item => ['queued', 'submitting'].includes(item.status) || setAsideUpdatesHeld(item))) return 'pending-work'
     return null
   }
   /**
@@ -2074,8 +2079,8 @@ export class AgentControl {
     const delivery: AgentDelivery = { threadId, draftId, createdAt: previous?.createdAt ?? now, ...previous,
       ...patch, status: previous?.status === 'accepted' ? 'accepted' : status, updatedAt: now }
     const others = (this.state.deliveries ?? []).filter(item => item !== previous)
-    const settled = this.trimReceipts([...others, delivery].filter(item => item.status === 'accepted' || item.status === 'failed'))
-    this.state.deliveries = [...others, delivery].filter(item => item.status !== 'accepted' && item.status !== 'failed' || settled.includes(item))
+    const settled = this.trimReceipts([...others, delivery].filter(item => !setAsideUpdatesHeld(item) && (item.status === 'accepted' || item.status === 'failed')))
+    this.state.deliveries = [...others, delivery].filter(item => setAsideUpdatesHeld(item) || item.status !== 'accepted' && item.status !== 'failed' || settled.includes(item))
   }
   private async saveThreadDraft(command: Extract<AgentCommand, { type: 'save-thread-draft' }>, order?: number, privateReply = false): Promise<AgentState> {
     let failure: string | null = null
@@ -2869,7 +2874,7 @@ export class AgentControl {
   }
   private followupReady(threadId: string, followup: Readonly<QueuedFollowup>): boolean {
     const userFollowup = this.isUserFollowup(followup)
-    if (this.pendingSetAsideDeliveries.has(threadId) || !userFollowup && this.hasUnconfirmedSetAside(threadId)) return false
+    if (this.pendingSetAsideDeliveries.has(threadId) || !userFollowup && this.hasSetAsideUpdateHold(threadId)) return false
     const thread = this.state.host.threads.find(t => t.id === threadId)
     const reviewed = thread && this.followupStore.peek().items.find(item => item.id === followup.id)?.resumeAfterTurnId === (thread.lastTurn?.id ?? UNKNOWN_TURN)
     return Boolean(thread && isThreadProviderConnected(this.state.host, thread) && (thread.status === 'idle' || thread.status === 'error' && reviewed)
@@ -2890,7 +2895,7 @@ export class AgentControl {
     if (!items.length) return
     const recoveringThreads = new Set<string>()
     for (const delivery of this.state.deliveries ?? []) {
-      if (delivery.setAside && !delivery.updatesResumed && delivery.status === 'uncertain') recoveringThreads.add(delivery.threadId)
+      if (setAsideUpdatesHeld(delivery)) recoveringThreads.add(delivery.threadId)
     }
     for (const threadId of new Set(items.map(item => item.threadId))) {
       if (!this.threadAvailable(threadId)) continue
@@ -3089,7 +3094,7 @@ export class AgentControl {
       if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))) throw new Error('Restore this thread and project before steering.')
     }
     validate()
-    if (!this.isUserFollowup(queued) && this.hasUnconfirmedSetAside(command.threadId) || this.outbox.some(item => item.threadId === command.threadId && this.blocksExplicitPrompt(item, queued.draftId, !this.isUserFollowup(queued))) || this.pumping.has(command.threadId)) throw new Error('Wait for the pending delivery before steering this message.')
+    if (!this.isUserFollowup(queued) && this.hasSetAsideUpdateHold(command.threadId) || this.outbox.some(item => item.threadId === command.threadId && this.blocksExplicitPrompt(item, queued.draftId, !this.isUserFollowup(queued))) || this.pumping.has(command.threadId)) throw new Error('Wait for the pending delivery before steering this message.')
     await this.followupStore.claim(queued.id, 'steer')
     this.syncFollowups(); this.publish()
     const item = this.followupStore.get().items.find(item => item.id === queued.id)!
@@ -3817,12 +3822,12 @@ export class AgentControl {
     if (wakeUp) draftId = undefined
     else if (prompt) draftId ??= randomUUID()
     // Stop has its own intent and may pass an unresolved prompt; it cannot settle or replay that prompt.
-    const automatic = Boolean(origin) || wakeUp
+    const automatic = Boolean(origin) && !(command.type === 'answer' && origin?.userAnswer) || wakeUp
     const mayPassSetAside = prompt !== null || !automatic && (command.type === 'configure-thread' || command.type === 'answer')
-    if (threadId && automatic && this.hasUnconfirmedSetAside(threadId)
-      || command.type !== 'interrupt' && this.outbox.some(item => threadId
+    if (command.type !== 'interrupt' && (threadId && automatic && this.hasSetAsideUpdateHold(threadId)
+      || this.outbox.some(item => threadId
         ? item.threadId === threadId && (!mayPassSetAside || this.blocksExplicitPrompt(item, draftId, automatic))
-        : item.threadId === undefined && (item.provider ?? this.state.configuration.provider) === provider)) {
+        : item.threadId === undefined && (item.provider ?? this.state.configuration.provider) === provider))) {
       throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
     }
     const answerId = command.type === 'answer' ? command.requestId : undefined
@@ -3842,8 +3847,8 @@ export class AgentControl {
       ...(answerQuestions.length ? { questionsDigest: requestQuestionsDigest(answerQuestions) } : {}),
       ...(atomicDigest && draftId ? { draftId, atomicDigest } : {}),
       ...(wakeUp ? { wakeUp: true as const } : {}),
-      ...(prompt && !automatic && threadId && this.hasUnconfirmedSetAside(threadId) ? { resumesSetAside: (this.state.deliveries ?? [])
-        .filter(item => item.threadId === threadId && item.setAside && !item.updatesResumed && item.status === 'uncertain').map(item => item.draftId) } : {}),
+      ...(prompt && !automatic && threadId && this.hasSetAsideUpdateHold(threadId) ? { resumesSetAside: (this.state.deliveries ?? [])
+        .filter(item => item.threadId === threadId && setAsideUpdatesHeld(item)).map(item => item.draftId) } : {}),
       ...(command.type === 'configure-thread' ? { options: agentThreadOptionsSchema.parse({ ...command, ...(startingEffort ? { reasoningEffort: startingEffort } : {}) }) } : {}),
       ...(prompt ? { draftDigest: followupDigest(prompt), ...(draftId ? { draftId } : {}),
         ...(prompt.attachments?.length ? { attachmentDigests: prompt.attachments.map(image => image.digest) } : {}) } : {}),
@@ -4035,9 +4040,9 @@ export class AgentControl {
       this.publishedDetail.delete(threadId); this.detailSnapshots.delete(threadId); this.publish()
     }
   }
-  private hasUnconfirmedSetAside(threadId: string): boolean {
+  private hasSetAsideUpdateHold(threadId: string): boolean {
     return this.pendingSetAsideDeliveries.has(threadId)
-      || (this.state.deliveries ?? []).some(item => item.threadId === threadId && item.setAside && !item.updatesResumed && item.status === 'uncertain')
+      || (this.state.deliveries ?? []).some(item => item.threadId === threadId && setAsideUpdatesHeld(item))
   }
   /** Recovery permits fresh explicit prompts; a confirmed one releases automatic updates, never the old revision. */
   private blocksExplicitPrompt(item: Saved['outbox'][number], draftId?: string, automatic = false): boolean {

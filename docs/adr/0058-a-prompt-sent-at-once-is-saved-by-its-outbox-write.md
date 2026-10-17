@@ -4,6 +4,8 @@ October 17, 2026 amendment: an uncertain direct send must not trap every later m
 
 Zach chose to resume normal automatic updates after a new message. The fresh explicit prompt's outbox records the exact set-aside revisions it follows. Its exact native confirmation releases those prompts' automatic-update holds durably, including across restart, without retiring their uncertain evidence or replay fences. A late confirmation cannot release a newer recovery hold. A failed or uncertain fresh send, a request answer and a message in another thread release nothing. Existing permission, turn, Stop and news-freshness guards still apply.
 
+The original's late echo settles its delivery, but leaves the recovery hold until a fresh explicit prompt confirms. That hold survives settled-receipt trimming. Once released, retained delivery/outbox evidence is replay protection rather than pending work, so a standing watch can resume. Guarded Stop remains independent, and the paired phone's explicit answer keeps its connection and Can answer checks without being classified as an automatic continuation.
+
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. Assignment growth described below is historical; assignments are removed from live coordinator state. Drafts, deliveries, user follow-up queues and the compact outbox write remain.
 
 ## Status

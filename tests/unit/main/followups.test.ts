@@ -764,6 +764,42 @@ it('does not resume updates on another thread when a new message is confirmed', 
   expect(f.control.get().deliveries?.find(item => item.draftId === draftId)?.updatesResumed).not.toBe(true)
 })
 
+it.each([false, true])('keeps recovery updates held after the original late echo until a fresh prompt confirms (restart %s)', async restart => {
+  const f = await fixture(); const draftId = randomUUID(); let control = f.control
+  f.host.result = { accepted: false, uncertain: true }
+  await control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Original unknown prompt' })
+  await control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+  const old = f.host.attempts[0]!
+  if (old.type !== 'send') throw new Error('Expected the original send')
+  f.host.state.threads.find(thread => thread.id === 'workshop')!.messages.push({ id: old.messageId, commandId: old.commandId, role: 'user', text: old.text, createdAt: new Date().toISOString() })
+  complete(f.host)
+  if (restart) { control.dispose(); await control.privacyChanged(); control = f.create(); await control.start(); await control.command({ type: 'connect' }) }
+  delete f.host.result
+  control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+    guardOperation: () => undefined, preserveUserQueue: () => false })
+  expect((await control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic before fresh message' }, { guard: () => undefined })).error).toMatch(/unknown result/)
+  expect(f.host.attempts).toHaveLength(1)
+  expect(control.get().deliveries?.find(item => item.draftId === draftId)).toMatchObject({ status: 'accepted', setAside: true })
+  await control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Fresh user message' })
+  complete(f.host)
+  expect((await control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic after fresh message' }, { guard: () => undefined })).error).toBeNull()
+  expect(f.host.attempts).toHaveLength(3)
+})
+
+it('lets a guarded delegation Stop pass a set-aside prompt without releasing updates', async () => {
+  const f = await fixture(), draftId = randomUUID(), guard = vi.fn()
+  f.host.result = { accepted: false, uncertain: true }
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unconfirmed prompt' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+  delete f.host.result
+  f.host.update('workshop', { status: 'running' })
+  f.control.useDelegation({ userCommand: () => undefined, observe: () => undefined, observedThreadIds: () => [], messageIdFor: () => undefined, guardFor: () => undefined })
+  expect((await f.control.commandFromDelegation({ type: 'interrupt', threadId: 'workshop' }, guard)).error).toBeNull()
+  expect(f.host.attempts.at(-1)).toMatchObject({ type: 'interrupt', threadId: 'workshop' })
+  expect(guard.mock.calls.length).toBeGreaterThanOrEqual(2)
+  expect(f.control.get().deliveries?.find(item => item.draftId === draftId)?.updatesResumed).not.toBe(true)
+})
+
 it('does not let a late confirmation release a newer recovery hold', async () => {
   const f = await fixture(); f.host.result = { accepted: false, uncertain: true }
   const original = randomUUID(), earlier = randomUUID(), newer = randomUUID()
