@@ -33,15 +33,15 @@ describe('Owl feature startup answers', () => {
   ] as const)('reads %s once (packaged %s, overrides %s, alias %s)', (version, isPackaged, overrides, watcherOverride, expected) => {
     // The other features follow the track: overrides here name only Watcher.
     const track = getReleaseTrack(version) === 'owl'
-    expect(owlFeaturesForRun({ version, isPackaged, overrides, watcherOverride })).toEqual({ watcher: expected, muse: track, usage: track, 'resume-after-restart': track, 'update-all': track, 'streaming-publish-cost': track, 'thread-delegation': track, 'continue-on-provider': track })
+    expect(owlFeaturesForRun({ version, isPackaged, overrides, watcherOverride })).toEqual({ watcher: expected, muse: track, usage: track, 'resume-after-restart': track, 'update-all': track, 'streaming-publish-cost': track, 'thread-delegation': track, 'continue-on-provider': track, 'continue-agent-thread': track })
   })
 
   it.each([
-    ['0.1.36', 'watcher=1,muse=1,usage=1,resume-after-restart=1,update-all=1,streaming-publish-cost=1,thread-delegation=1,continue-on-provider=1', false, true],
-    ['0.1.37-owl.20261011.1', 'watcher=0,muse=0,usage=0,resume-after-restart=0,update-all=0,streaming-publish-cost=0,thread-delegation=0,continue-on-provider=0', true, false],
+    ['0.1.36', 'watcher=1,muse=1,usage=1,resume-after-restart=1,update-all=1,streaming-publish-cost=1,thread-delegation=1,continue-on-provider=1,continue-agent-thread=1', false, true],
+    ['0.1.37-owl.20261011.1', 'watcher=0,muse=0,usage=0,resume-after-restart=0,update-all=0,streaming-publish-cost=0,thread-delegation=0,continue-on-provider=0,continue-agent-thread=0', true, false],
   ] as const)('keeps all packaged %s answers on their track despite overrides', (version, overrides, packaged, development) => {
-    expect(owlFeaturesForRun({ version, isPackaged: true, overrides })).toEqual({ watcher: packaged, muse: packaged, usage: packaged, 'resume-after-restart': packaged, 'update-all': packaged, 'streaming-publish-cost': packaged, 'thread-delegation': packaged, 'continue-on-provider': packaged })
-    expect(owlFeaturesForRun({ version, isPackaged: false, overrides })).toEqual({ watcher: development, muse: development, usage: development, 'resume-after-restart': development, 'update-all': development, 'streaming-publish-cost': development, 'thread-delegation': development, 'continue-on-provider': development })
+    expect(owlFeaturesForRun({ version, isPackaged: true, overrides })).toEqual({ watcher: packaged, muse: packaged, usage: packaged, 'resume-after-restart': packaged, 'update-all': packaged, 'streaming-publish-cost': packaged, 'thread-delegation': packaged, 'continue-on-provider': packaged, 'continue-agent-thread': packaged })
+    expect(owlFeaturesForRun({ version, isPackaged: false, overrides })).toEqual({ watcher: development, muse: development, usage: development, 'resume-after-restart': development, 'update-all': development, 'streaming-publish-cost': development, 'thread-delegation': development, 'continue-on-provider': development, 'continue-agent-thread': development })
   })
 
   it('passes a snapshot of every answer through update status and keeps the Watcher alias consistent', async () => {

@@ -65,6 +65,8 @@ export const codexItemSchema = z.preprocess(value => {
   kind: z.string().optional(), agentThreadId: z.string().optional(), agentPath: z.string().optional(),
 }))
 type Item = z.infer<typeof codexItemSchema>
+/** One agent as a conversation observed it: where it was last reported, and its compact identity. */
+type Child = { thread: ActivityConversation; turnId: string; activityId: string; agent: ObservedAgent; path?: string }
 type Context = { turnId: string; afterMessageId?: string | undefined; phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; terminal?: boolean | undefined }
 const opaque = (...parts: string[]): string => createHash('sha256').update(JSON.stringify(parts)).digest('hex')
 const codexActivityId = (turnId: string, itemId: string): string => `codex-activity-${opaque(turnId, itemId)}`
@@ -88,7 +90,16 @@ const contentText = (value: unknown[] | null | undefined): string | undefined =>
 /** Observational native activity. Never sends commands, reads child transcripts or creates threads. */
 export class CodexActivityProjection {
   private readonly summaries = new Map<string, Map<number, string>>()
-  private readonly children = new Map<string, { thread: ActivityConversation; turnId: string; activityId: string; agent: ObservedAgent; path?: string }>()
+  /**
+   * Each conversation's agents, by native thread ID. A fork carries its source's history, which names the source's agents
+   * too (#1028), so an agent is looked up in the conversation that is reading it, never in another.
+   */
+  private readonly agentsOf = new WeakMap<ActivityConversation, Map<string, Child>>()
+  /**
+   * The conversation each native agent's own notifications reach: the first to see it, or the one that saw it live. A
+   * fork that reads its source's history later does not take the source's agents from it.
+   */
+  private readonly owners = new Map<string, Child>()
   /** Multi-agent v2 agent paths to native child thread IDs, per conversation, so a nested agent finds its parent. */
   private readonly paths = new WeakMap<ActivityConversation, Map<string, string>>()
   private readonly terminalTurns = new WeakMap<ActivityConversation, Set<string>>()
@@ -228,7 +239,7 @@ export class CodexActivityProjection {
       const ids = [...new Set([...(item.receiverThreadIds ?? []), ...Object.keys(item.agentsStates ?? {})])]
       const assignment = item.tool === 'spawnAgent' || (item.tool === 'sendInput' && item.prompt != null)
       activity.agents = ids.map(child => {
-        const owner = this.children.get(child)
+        const owner = this.child(thread, child)
         const prior = previous?.agents?.find(agent => agent.id === agentId(child)) ?? owner?.agent
         const assignmentId = assignment ? id : prior?.assignmentId
         const sameAssignment = prior?.assignmentId === assignmentId
@@ -237,7 +248,7 @@ export class CodexActivityProjection {
         const observedAt = context.phase === 'history' ? prior?.observedAt : iso(this.now())
         const agent: ObservedAgent = { ...(sameAssignment ? prior : {}), id: agentId(child), status: childStatus,
           ...(assignmentId ? { assignmentId } : {}),
-          ...(item.senderThreadId && this.children.has(item.senderThreadId) ? { parentId: agentId(item.senderThreadId) } : {}),
+          ...(item.senderThreadId && this.child(thread, item.senderThreadId) ? { parentId: agentId(item.senderThreadId) } : {}),
           ...(assignment && item.prompt != null ? { prompt: item.prompt, title: item.prompt.split(/\r?\n/u)[0]!.slice(0, 1_000) } : {}),
           ...(assignment && item.model ? { model: item.model } : {}),
           ...(observedAt ? { observedAt } : {}),
@@ -245,7 +256,7 @@ export class CodexActivityProjection {
           ...(item.agentsStates?.[child]?.message != null ? { message: item.agentsStates[child]!.message! } : {}),
           ...(isTerminalActivity(mappedStatus(childStatus, 'unknown')) && observedAt ? { completedAt: sameAssignment && prior?.completedAt ? prior.completedAt : observedAt } : {}),
         }
-        this.children.set(child, { thread, turnId: context.turnId, activityId: id, agent: compactAgentIdentity(agent) })
+        this.setChild(thread, child, { thread, turnId: context.turnId, activityId: id, agent: compactAgentIdentity(agent) }, context.phase !== 'history')
         return agent
       })
     }
@@ -268,7 +279,7 @@ export class CodexActivityProjection {
     if (!status) return
     const paths = this.paths.get(thread) ?? new Map<string, string>()
     paths.set(path, child); this.paths.set(thread, paths)
-    const prior = this.children.get(child)?.agent
+    const prior = this.child(thread, child)?.agent
     const itemActivityId = codexActivityId(context.turnId, item.id)
     const priorFinished = !!prior && isTerminalActivity(mappedStatus(prior.status, 'unknown'))
     // The same item reported again, started and then completed, is the same assignment. Arriving after the agent
@@ -293,7 +304,7 @@ export class CodexActivityProjection {
       ...(assignment && observedAt ? { startedAt: observedAt, timingSource: 'observed' as const } : {}),
       ...(isTerminalActivity(status) && observedAt ? { completedAt: !assignment && prior?.completedAt ? prior.completedAt : observedAt } : {}),
     }
-    this.children.set(child, { thread, turnId: context.turnId, activityId: id, agent: compactAgentIdentity(agent), path })
+    this.setChild(thread, child, { thread, turnId: context.turnId, activityId: id, agent: compactAgentIdentity(agent), path }, context.phase !== 'history')
     this.put(thread, { id, turnId: record?.turnId ?? context.turnId, sequence: 0, kind: 'subagent', title, status,
       ...(context.afterMessageId ? { afterMessageId: context.afterMessageId } : {}),
       ...(observedAt && !record ? { startedAt: observedAt, timingSource: 'observed' as const } : {}),
@@ -361,8 +372,21 @@ export class CodexActivityProjection {
       title: willRetry ? 'Codex is retrying' : 'Codex error', status: 'failed', error: message, afterMessageId: thread.messages.at(-1)?.id })
   }
 
+  /** The native thread of one of this conversation's agents, by its roster identity (#1028); undefined when its history names none. */
+  agentThread(thread: ActivityConversation, id: string): string | undefined {
+    for (const native of this.agentsOf.get(thread)?.keys() ?? []) if (agentId(native) === id) return native
+    return undefined
+  }
+  private child(thread: ActivityConversation, native: string): Child | undefined { return this.agentsOf.get(thread)?.get(native) }
+  private setChild(thread: ActivityConversation, native: string, entry: Child, live: boolean): void {
+    const own = this.agentsOf.get(thread) ?? new Map<string, Child>()
+    own.set(native, entry); this.agentsOf.set(thread, own)
+    const owner = this.owners.get(native)
+    if (!owner || owner.thread === thread || live) this.owners.set(native, entry)
+  }
+
   childNotification(child: string, method: string, params: unknown): ActivityConversation | undefined {
-    const owner = this.children.get(child)
+    const owner = this.owners.get(child)
     if (!owner) return undefined
     if (method === 'item/started' || method === 'item/completed') {
       const nested = z.object({ turnId: z.string(), item: codexItemSchema, startedAtMs: z.number().nullish(), completedAtMs: z.number().nullish() }).safeParse(params)

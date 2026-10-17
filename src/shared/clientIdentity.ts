@@ -64,7 +64,9 @@ export function clientAgentState(state: AgentState): AgentState {
         return { ...thread, id: hostEntityKey(own, thread.id), projectId: hostEntityKey(own, thread.projectId),
           ...(thread.delegatedBy ? { delegatedBy: hostEntityKey(own, thread.delegatedBy) } : {}),
           ...(thread.continuedFrom ? { continuedFrom: keyedLinks(thread.continuedFrom, own) } : {}),
-          ...(thread.continuedIn ? { continuedIn: keyedLinks(thread.continuedIn, own) } : {}) }
+          ...(thread.continuedIn ? { continuedIn: keyedLinks(thread.continuedIn, own) } : {}),
+          // So is the thread one began from (#1028), so its note opens it.
+          ...(thread.startedFrom ? { startedFrom: keyedLinks(thread.startedFrom, own) } : {}) }
       }) } }
 }
 

@@ -19,7 +19,7 @@ import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignm
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import type { AgentThread, ProviderId } from '../../shared/agents'
-import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
+import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema } from '../../shared/hostProtocol'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
@@ -984,7 +984,8 @@ export class SocketHostService implements HostService {
       this.snapshotEpoch++ // A read already in flight cannot retire this newly acknowledged revision.
       this.notifyState()
       this.refreshRetainedShell()
-    } else this.publish(state, Boolean(retainedId && !state.error))
+    // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, never the host's banner.
+    } else this.publish(command.type === 'continue-agent' ? { ...state, error: before.error } : state, Boolean(retainedId && !state.error))
     const acknowledged = this.state()
     // Typing changes no history. Its own acknowledgement settles the save; observed pushes update the rest.
     if (command.type === 'compose' || command.type === 'save-thread-draft') {
@@ -1021,7 +1022,7 @@ export class SocketHostService implements HostService {
     const refreshed = generation === this.generation ? this.state() : acknowledged
     // State refreshes cannot replace this command's own answer outcome.
     return accepted ? { ...refreshed, error: null }
-      : command.type === 'answer' || command.type === 'send' ? { ...refreshed, error: state.error } : refreshed
+      : command.type === 'answer' || command.type === 'send' || command.type === 'continue-agent' ? { ...refreshed, error: state.error } : refreshed
   }
   async receipt(commandId: string, answer?: HostAnswerTarget): Promise<HostReceipt> {
     return this.read(hostReceiptSchema, await this.call({ op: 'receipt', commandId, ...(answer ? { answer } : {}) }))
@@ -1131,6 +1132,12 @@ export class SocketHostService implements HostService {
   async hostFacts(): Promise<HostMachineReport> {
     this.offers('host-facts')
     return this.read(hostMachineReportSchema, await this.call({ op: 'host-facts' }, undefined, undefined, 10000))
+  }
+  /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
+  get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }
+  async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
+    this.offers('thread-starts')
+    return this.read(hostStartHandoverSchema, await this.call({ op: 'start-handover', threadId })).handover
   }
   get supportsUsage(): boolean { return this.features.includes('usage-dashboard') }
   async usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
