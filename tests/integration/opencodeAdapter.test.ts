@@ -659,3 +659,28 @@ it('names as signed in only the model sources whose models it offers', async () 
     expect(snapshot.account).toBe('No model source signed in yet; OpenCode Zen’s free models only')
   } finally { await f.cleanup() }
 })
+
+it('retires a thread that was opening during an update once its opening completes and it is idle', { timeout: 60_000 }, async () => {
+  const { f, id } = await open()
+  try {
+    await expect.poll(async () => f.holder(id)).toBeDefined()
+    const first = await f.holder(id)
+    // On a fresh connection the thread opens when it is shown; its reads are held so the update lands meanwhile.
+    f.host.observeThreads?.([])
+    f.host.disconnect(); await f.host.closed()
+    await f.host.connect()
+    // Each read is held under the request deadline, so the opening lasts about four seconds.
+    await f.script({ delay: { 'session.get': 2_000, 'session.messages': 2_000 } })
+    f.host.observeThreads?.([id])
+    await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'session.get').length, { timeout: 15_000 }).toBe(1)
+    // The newer client is installed with the history read still held.
+    await f.script({ version: '2.0.40', delay: { 'session.messages': 2_000 } })
+    await f.host.clientUpdated!('opencode')
+    // The server the opening runs on holds the session once its held read is answered.
+    await expect.poll(async () => { const holder = await f.holder(id); return holder !== undefined && holder !== first }, { timeout: 15_000 }).toBe(true)
+    const opening = await f.holder(id)
+    // The thread is idle once open, so its outdated server stops and the watched thread opens again on a fresh one.
+    await expect.poll(async () => { const holder = await f.holder(id); return holder !== undefined && holder !== opening }, { timeout: 15_000 }).toBe(true)
+    expect((await f.host.snapshot()).version).toContain('2.0.40')
+  } finally { await f.cleanup() }
+})

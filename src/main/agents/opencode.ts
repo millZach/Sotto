@@ -751,7 +751,12 @@ export class OpenCodeHost implements AgentHost {
       this.settleEndedTurn(id, session, ended)
       await this.persist()
       this.loaded.add(id); this.log.pin(id); this.reaper.touch(id); this.touched(id); this.emit()
-    })().finally(() => { if (this.loading.get(id) === work) this.loading.delete(id) })
+    })().finally(() => {
+      if (this.loading.get(id) !== work) return
+      this.loading.delete(id)
+      // An update or a sign-in change while it opened left its server outdated; it retires now if the thread is idle.
+      this.stopOutdated()
+    })
     this.loading.set(id, work)
     return work
   }
