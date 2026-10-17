@@ -22,8 +22,9 @@ function fixture(): AgentState {
     },
   })
 }
-async function mount(opencode: boolean) {
+async function mount(opencode: boolean, change: (state: AgentState) => void = () => undefined) {
   const state = fixture()
+  change(state)
   const command = vi.fn<(command: AgentCommand) => Promise<AgentState | null>>().mockResolvedValue(state)
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, command))
   render(<AppProvider bridge={createBridge({ getUpdateStatus: async () => ({ currentVersion: '0.1.37-owl.20261016.1', releaseTrack: 'owl', owlFeatures: { watcher: false, opencode }, phase: { phase: 'unsupported' }, checkedAt: null }) as never })} createController={createController}><ProvidersSettings /></AppProvider>)
@@ -39,6 +40,15 @@ describe('OpenCode in provider settings', () => {
     fireEvent.click(button)
     expect(screen.getByText(/in a folder of Sotto’s own, apart from your own OpenCode/)).toBeVisible()
     expect(screen.getByText('No model source signed in yet; OpenCode Zen’s free models only.')).toBeVisible()
+  })
+
+  it('says only what is installed, since Sotto reads no published OpenCode version yet', async () => {
+    await mount(true, state => {
+      state.clientUpdates = [{ id: 'opencode', installed: '2.0.31', behind: false, channel: 'self-update', canInstall: false, checkedAt: '2026-10-16T12:00:00.000Z', state: 'idle' }]
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'OpenCode' }))
+    expect(screen.getByText('2.0.31 is installed.')).toBeVisible()
+    expect(screen.queryByText(/could not read the published version/)).toBeNull()
   })
 
   it('offers nothing of OpenCode while its Owl feature is off', async () => {

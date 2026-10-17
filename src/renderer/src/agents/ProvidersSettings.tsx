@@ -26,6 +26,8 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
   if (update.state === 'failed') return `${update.installed} is installed. The last update did not finish${update.error ? `: ${update.error}` : '.'}${past}`
   if (update.state === 'unchanged') return update.error ? `${update.error}${past}` : `The update ran, but this client still reports ${update.installed}. Try again${update.command ? `, or run ${update.command} yourself to see what it says` : ''}.${past}`
   if (update.channel === 'devin-app') return `${update.installed} is installed. Devin updates with the Devin app.${past}`
+  // Sotto does not ask what OpenCode has published until its updates arrive (#1104), so there is no failed read to report.
+  if (!update.published && update.id === 'opencode') return `${update.installed} is installed.${past}`
   if (!update.published) return `${update.installed} is installed. Sotto could not read the published version. Check again to try.${past}`
   if (update.id === 'muse' && !update.behind && update.installed !== update.published) return `${update.installed} is installed; ${update.published} is published.${past}`
   if (!update.behind) return `${update.installed} is installed, and that is what is published.${past}`
