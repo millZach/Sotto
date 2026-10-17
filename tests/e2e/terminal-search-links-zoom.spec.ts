@@ -53,7 +53,8 @@ async function expectHighlightOnText(scope: Locator): Promise<void> {
  * screen, and follows the link when the button comes up while that link is still current. A click before the hover
  * resolved, or after a repaint ended the link under a pointer that never moved, is an ordinary click (#1135). So each
  * try arrives from the space just left of the text, waits for the cursor, and notes whether xterm still showed the link
- * when the button came up. Only a click xterm could not have followed is tried again, so no link opens twice.
+ * when the button went down and when it came up. Only a click xterm could not have followed is tried again, so no link
+ * opens twice.
  */
 async function clickTerminalLink(page: Page, scope: Locator, text: string, { modifier = false, link = true }: { modifier?: boolean; link?: boolean } = {}): Promise<void> {
   const screen = scope.locator('.xterm-screen')
@@ -66,15 +67,22 @@ async function clickTerminalLink(page: Page, scope: Locator, text: string, { mod
     await page.mouse.move(point.x, point.y)
     if (link) await expect(screen, `xterm shows "${text}" as a link`).toHaveClass(pointer, { timeout: 1_000 })
     else await expect(screen, `xterm does not offer "${text}" as a link`).not.toHaveClass(pointer, { timeout: 1_000 })
-    // A capture listener runs before xterm's own mouseup handler, so it sees the link that handler will follow.
+    // Capture listeners run before xterm's own mousedown and mouseup handlers, so they see the link each one reads. xterm
+    // follows a link only when the same link was current at both, so a click it might have followed shows it at both.
     await screen.evaluate(element => {
-      delete (element as HTMLElement).dataset.linkAtMouseUp
-      element.addEventListener('mouseup', () => { (element as HTMLElement).dataset.linkAtMouseUp = String(element.classList.contains('xterm-cursor-pointer')) }, { capture: true, once: true })
+      const screen = element as HTMLElement
+      delete screen.dataset.linkAtMouseDown; delete screen.dataset.linkAtMouseUp
+      const note = (key: 'linkAtMouseDown' | 'linkAtMouseUp') => () => { screen.dataset[key] = String(screen.classList.contains('xterm-cursor-pointer')) }
+      screen.addEventListener('mousedown', note('linkAtMouseDown'), { capture: true, once: true })
+      screen.addEventListener('mouseup', note('linkAtMouseUp'), { capture: true, once: true })
     })
     if (modifier) await page.keyboard.down('Control')
     try { await page.mouse.click(point.x, point.y) }
     finally { if (modifier) await page.keyboard.up('Control') }
-    expect(await screen.getAttribute('data-link-at-mouse-up'), `xterm ${link ? 'still showed' : 'did not show'} "${text}" as a link when the click ended`).toBe(String(link))
+    const shown = await screen.evaluate(element => [(element as HTMLElement).dataset.linkAtMouseDown, (element as HTMLElement).dataset.linkAtMouseUp])
+    // With a link, a click xterm could not have followed (no link at one end or both) is tried again; one it might have
+    // followed is never clicked again, so a link opens at most once.
+    expect(shown, `xterm ${link ? 'still showed' : 'did not show'} "${text}" as a link while the button went down and came up`).toEqual([String(link), String(link)])
   }).toPass({ timeout: 10_000 })
 }
 
