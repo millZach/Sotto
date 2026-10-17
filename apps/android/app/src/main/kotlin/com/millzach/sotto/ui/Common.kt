@@ -49,14 +49,14 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.millzach.sotto.app.AppModel
+import com.millzach.sotto.core.AgentNames
 import com.millzach.sotto.core.ComputerStatus
 import com.millzach.sotto.core.HostedThread
 import com.millzach.sotto.core.Stamp
 import com.millzach.sotto.core.ThreadState
 
 object Words {
-    fun provider(id: String?): String =
-        mapOf("claude" to "Claude Code", "codex" to "Codex", "grok" to "Grok Build", "devin" to "Devin", "muse" to "Muse")[id ?: ""] ?: "The agent"
+    fun provider(id: String?): String = AgentNames.name(id)
 
     // "4 min. ago", or nothing when the host did not say.
     fun ago(iso: String?): String? {
