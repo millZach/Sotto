@@ -423,3 +423,26 @@ it('stops the connect check’s server when Sotto disconnects while it is still 
     expect(await connecting).toBeInstanceOf(Error)
   } finally { await f.cleanup() }
 })
+
+it('restores each turn’s activity under its own prompt when the thread’s messages are already known', async () => {
+  const { f, id } = await open()
+  let restarted: Fixture | undefined
+  try {
+    for (const [turn, command] of [['first', 'npm test'], ['second', 'npm run build']] as const) {
+      await send(f, id, turn, `Run ${command}`)
+      await f.action(id, { type: 'tool', name: 'shell', input: { command }, output: 'ok' })
+      await expect.poll(async () => (await thread(f, id)).activities?.some(activity => activity.command === command)).toBe(true)
+      await f.driver.completeTurn(id, `Ran ${command}`)
+      await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    }
+    const before = await thread(f, id)
+    const placed = (activities: typeof before.activities) => activities?.filter(activity => activity.kind === 'command').map(activity => [activity.command, activity.turnId, activity.afterMessageId])
+    expect(placed(before.activities)).toEqual([['npm test', 'first', 'first'], ['npm run build', 'second', 'second']])
+    restarted = await f.driver.restart()
+    // Sotto's own store already holds the thread's messages, as it does after any restart.
+    restarted.host.useThreadHistory!({ messageIdentities: threadId => threadId === id ? before.messages.map(({ id: messageId, role }) => ({ id: messageId, role })) : [] })
+    restarted.host.observeThreads?.([id]); await restarted.host.connect()
+    await expect.poll(async () => (await thread(restarted!, id)).activities?.filter(activity => activity.kind === 'command').length ?? 0).toBe(2)
+    expect(placed((await thread(restarted, id)).activities)).toEqual(placed(before.activities))
+  } finally { await (restarted ?? f).cleanup() }
+})

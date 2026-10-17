@@ -161,6 +161,8 @@ interface Fold {
   readonly started: Map<string, number>
 }
 const freshFold = (): Fold => ({ texts: new Map(), reasoning: new Map(), tools: new Map(), started: new Map() })
+/** Where a record from OpenCode goes in a thread: its Sotto turn, and the message it follows. */
+interface Placement { readonly turnId: string; readonly afterMessageId: string | undefined }
 const iso = (at: number | undefined): string => at !== undefined && Number.isFinite(at) ? new Date(at).toISOString() : new Date().toISOString()
 
 export interface OpenCodeHostOptions {
@@ -658,26 +660,37 @@ export class OpenCodeHost implements AgentHost {
       ...(origin?.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}),
     }
   }
-  private recordUser(id: string, inboxId: string, text: string, at: number | undefined): void {
-    const alias = this.aliases[id]; if (!alias) return
-    this.log.add(id, this.userMessage(alias, inboxId, text, at))
+  /** Record a user's message; returns the Sotto message ID it is recorded under. */
+  private recordUser(id: string, inboxId: string, text: string, at: number | undefined): string | undefined {
+    const alias = this.aliases[id]; if (!alias) return undefined
+    const message = this.userMessage(alias, inboxId, text, at)
+    this.log.add(id, message)
     const origin = alias.origins.find(candidate => candidate.inboxId === inboxId)
     if (origin && !origin.confirmed) { origin.confirmed = true; void this.persist().catch(() => undefined) }
+    return message.id
   }
-  private recordText(id: string, assistantMessageId: string, ordinal: number, text: string, at?: number): void {
+  /** Record a block of a reply; returns the message ID it is recorded under. */
+  private recordText(id: string, assistantMessageId: string, ordinal: number, text: string, at?: number): string {
     const messageId = opencodeTextMessageId(assistantMessageId, ordinal)
     this.fold(id).texts.set(messageId, text)
     const started = this.fold(id).started.get(assistantMessageId)
     this.log.add(id, { id: messageId, role: 'assistant', text, createdAt: started !== undefined ? iso(started) : this.log.message(id, messageId)?.createdAt ?? iso(at) })
+    return messageId
   }
-  private recordTool(id: string, tool: OpenCodeTool): void {
+  /** Where a live record goes: the running turn, after the newest message. History says its own place instead. */
+  private placed(id: string, placement?: Placement): Placement {
+    return placement ?? { turnId: this.turnOf(id), afterMessageId: this.log.lastMessageId(id) }
+  }
+  private recordTool(id: string, tool: OpenCodeTool, placement?: Placement): void {
     const thread = this.thread(id)
+    const { turnId, afterMessageId } = this.placed(id, placement)
     this.fold(id).tools.set(tool.id, tool)
-    thread.activities = mergeAgentActivities(thread.activities, [opencodeToolActivity(tool, this.turnOf(id), this.log.lastMessageId(id))])
+    thread.activities = mergeAgentActivities(thread.activities, [opencodeToolActivity(tool, turnId, afterMessageId)])
   }
-  private recordReasoning(id: string, assistantMessageId: string, ordinal: number, text: string, done: boolean, at?: number): void {
+  private recordReasoning(id: string, assistantMessageId: string, ordinal: number, text: string, done: boolean, at?: number, placement?: Placement): void {
     const thread = this.thread(id)
-    const activity = opencodeReasoningActivity(assistantMessageId, ordinal, text, done, this.turnOf(id), iso(at), this.log.lastMessageId(id))
+    const { turnId, afterMessageId } = this.placed(id, placement)
+    const activity = opencodeReasoningActivity(assistantMessageId, ordinal, text, done, turnId, iso(at), afterMessageId)
     this.fold(id).reasoning.set(activity.id, text)
     thread.activities = mergeAgentActivities(thread.activities, [activity])
   }
@@ -688,18 +701,23 @@ export class OpenCodeHost implements AgentHost {
    */
   private foldHistory(id: string, entries: readonly HistoryEntry[]): string | undefined {
     let unfinished: string | undefined
+    // Each record goes under the user message it follows in the history, never under the newest one the log knows:
+    // Sotto's own store may already hold every message of the thread before the history is read.
+    let turnId = 'native-history', afterMessageId: string | undefined
+    const placement = (): Placement => ({ turnId, afterMessageId })
     for (const entry of entries) {
       const at = entry.time?.created
       if (entry.type === 'user') {
-        this.recordUser(id, entry.id, entry.text ?? '', at)
-        unfinished = this.log.lastUserMessageId(id)
+        const messageId = this.recordUser(id, entry.id, entry.text ?? '', at)
+        if (messageId) { turnId = messageId; afterMessageId = messageId }
+        unfinished = messageId
       } else if (entry.type === 'assistant') {
         const ordinals = { text: 0, reasoning: 0 }
         if (at !== undefined) this.fold(id).started.set(entry.id, at)
         for (const part of entry.content ?? []) {
           const text = typeof part.text === 'string' ? part.text : undefined
-          if (part.type === 'text' && text !== undefined) this.recordText(id, entry.id, ordinals.text++, text, at)
-          else if (part.type === 'reasoning' && text !== undefined) this.recordReasoning(id, entry.id, ordinals.reasoning++, text, true, at)
+          if (part.type === 'text' && text !== undefined) afterMessageId = this.recordText(id, entry.id, ordinals.text++, text, at)
+          else if (part.type === 'reasoning' && text !== undefined) this.recordReasoning(id, entry.id, ordinals.reasoning++, text, true, at, placement())
           else if (part.type === 'tool') {
             const tool = toolPartSchema.safeParse(part)
             if (!tool.success) continue
@@ -707,7 +725,7 @@ export class OpenCodeHost implements AgentHost {
             const output = opencodeToolOutput(tool.data.state.content)
             this.recordTool(id, { id: tool.data.id, name: tool.data.name, input: tool.data.state.input, status,
               ...(output ? { output } : {}), ...(tool.data.state.error?.message ? { error: tool.data.state.error.message } : {}),
-              startedAt: iso(tool.data.time?.created ?? at), ...(status !== 'running' && tool.data.time?.completed ? { completedAt: iso(tool.data.time.completed) } : {}) })
+              startedAt: iso(tool.data.time?.created ?? at), ...(status !== 'running' && tool.data.time?.completed ? { completedAt: iso(tool.data.time.completed) } : {}) }, placement())
           }
         }
       } else if (entry.type === 'idle') unfinished = undefined
