@@ -47,6 +47,8 @@ import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { questionInstructions } from './questionInstructions'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
+import { AGENT_FORK_ARCHIVED, AGENT_FORK_GONE, FORK_SOURCE_MISSING, FORKED_THREAD_SOURCE_MISSING } from '../../shared/threadStarts'
+import type { ThreadForkRequest } from './host'
 
 /** What a thread shows when its own app-server stopped under a running turn. */
 const SESSION_ENDED = 'Codex stopped before this reply finished, so it may be cut short. Send a message to carry on.'
@@ -129,6 +131,12 @@ class Rejected extends Error {
   readonly unknownVariant: string | undefined
   /** JSON-RPC's own "method not found". */
   readonly methodNotFound: boolean
+  /** The thread Codex keeps archived, which it will not fork until it is unarchived. */
+  readonly archivedThreadId: string | undefined
+  /** The thread whose rollout a fork's history lives in, when that rollout is gone. */
+  readonly missingLineageId: string | undefined
+  /** The turn `lastTurnId` named that the thread does not have. */
+  readonly unknownTurnId: string | undefined
   constructor(value: unknown) {
     super('Codex rejected the operation. Review the thread before retrying.')
     const error = z.object({ code: z.literal(-32600), message: z.string() }).safeParse(value)
@@ -138,7 +146,12 @@ class Rejected extends Error {
       ? /^thread (\S+) is not materialized yet; includeTurns is unavailable before first user message$/.exec(error.data.message)?.[1]
       : undefined
     this.missingThreadId = error.success ? /^no rollout found for thread id (\S+)$/.exec(error.data.message)?.[1] : undefined
+    // Codex 0.162.1's refusals of `thread/fork` and of reading a fork, as the e5-fork spike found them (#1028).
+    this.archivedThreadId = error.success ? /^session (\S+) is archived\b/.exec(error.data.message)?.[1] : undefined
+    this.missingLineageId = error.success ? /^invalid paginated history lineage for (\S+): missing source rollout$/.exec(error.data.message)?.[1] : undefined
+    this.unknownTurnId = error.success ? /^turn not found: (\S+)$/.exec(error.data.message)?.[1] : undefined
     if (this.missingThreadId) this.message = 'Codex could not find this thread’s saved session. Create a new thread to continue.'
+    if (this.missingLineageId) this.message = FORKED_THREAD_SOURCE_MISSING
   }
 }
 /** A request Codex made of Sotto, with the process that made it: only that process can take its answer. */
@@ -147,6 +160,11 @@ type HeldRequest = CodexPendingRequest & { server: CodexProcess }
 type Runtime = { server: CodexProcess; clientRevision: number; configStamp: string | undefined; reloadSupported: boolean; watcher: boolean; refreshing?: Promise<void> }
 /** A request's key among every process's: each app-server numbers its own requests from the start. */
 const heldKey = (server: CodexProcess, id: string | number): string => `rpc:${server.nonce}:${JSON.stringify(id)}`
+/** A paginated history read: turns a page, and at most this many pages (10,000 turns), so a read always ends. */
+const PAGED_READ_TURNS = 100
+const PAGED_READ_PAGES = 100
+/** A native turn or item of one thread: a fork carries its source's own IDs (#1028), so the thread is part of the key. */
+const turnKey = (id: string, nativeId: string): string => `${id}\n${nativeId}`
 type ModelList = AgentHostSnapshot['models']
 
 export interface CodexAppServerHostOptions {
@@ -256,6 +274,10 @@ export class CodexAppServerHost implements AgentHost {
   private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
   private readonly dispatching = new Set<string>()
   private readonly runningTurns = new Map<string, string>()
+  /**
+   * Turns that have ended, when each began, and each file change's summary, by thread and native ID together
+   * (`turnKey`): a fork carries its source's own turn and item IDs (#1028), so an ID alone names two threads' turns.
+   */
   private readonly terminalTurns = new Set<string>()
   private readonly turnDates = new Map<string, string>()
   private readonly fileSummaries = new Map<string, string>()
@@ -272,6 +294,8 @@ export class CodexAppServerHost implements AgentHost {
   }, () => adapterItemCount(this.log, this.threads.values()))
   private readonly unconfirmedDispatchSessionIds = new Set<string>()
   private readonly creating = new Set<string>()
+  /** Forks Sotto gave up on before Codex answered (#1028): a late answer leaves Codex's copy unbound. */
+  private readonly abandonedForks = new Set<string>()
   /**
    * The provider's own app-server: the version, models, account, skills and settings reads. It never holds a
    * thread, so it never runs a turn, and one that stops is started again when next needed.
@@ -587,7 +611,7 @@ export class CodexAppServerHost implements AgentHost {
     if (thread && (turnId || thread.status === 'running')) {
       thread.status = 'error'
       if (turnId) {
-        this.terminalTurns.add(turnId); this.runningTurns.delete(id)
+        this.terminalTurns.add(turnKey(id, turnId)); this.runningTurns.delete(id)
         thread.lastTurn = { id: turnId, status: 'failed' }
         this.activity.turn(thread, { id: turnId, status: 'failed', error: { message: SESSION_ENDED } }, true)
       }
@@ -910,7 +934,8 @@ export class CodexAppServerHost implements AgentHost {
             this.applyThread(id, threadResponse.parse(value).thread, z.object({ thread: z.object({ turns: z.array(z.unknown()) }) }).safeParse(value).success); await this.persist(); applied = true
             this.settleRead(id)
           }
-          try { await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: true }, apply) }
+          if (alias.historyMode === 'paginated') await this.readPaged(id, apply)
+          else try { await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: true }, apply) }
           catch (error) {
             // Codex has live metadata but no transcript before the first message.
             // Read that metadata only for this exact response on a pristine thread.
@@ -958,7 +983,7 @@ export class CodexAppServerHost implements AgentHost {
   private async confirmNewestTurn(id: string, generation: number): Promise<boolean> {
     const alias = this.aliases[id]!, thread = this.ensureThread(id)
     const newest = alias.messageIdentities.at(-1)
-    if (!this.turnsListSupported || !this.histories.has(id) || !newest || !this.terminalTurns.has(newest.turnId) || alias.historyMode === 'paginated'
+    if (!this.turnsListSupported || !this.histories.has(id) || !newest || !this.terminalTurns.has(turnKey(id, newest.turnId)) || alias.historyMode === 'paginated'
       || alias.pendingSettings || alias.pendingRollback || compactionPending(alias.compaction) || this.unconfirmedDispatchSessionIds.has(id)
       || this.pendingLogMessages.has(id) || this.runningTurns.has(id) || thread.status !== 'idle' || thread.requests.length || thread.historyStatus) return false
     const revision = this.revisions.get(id)
@@ -1069,7 +1094,8 @@ export class CodexAppServerHost implements AgentHost {
       // Codex refused the resume, so the thread's app-server holds nothing: it is let go rather than kept for a watched thread.
       const runtime = this.runtimes.get(id)
       if (error instanceof Rejected && runtime && !this.live.has(id)) { this.runtimes.delete(id); this.endServer(runtime.server) }
-      if (error instanceof Rejected && error.missingThreadId === alias.codexThreadId) {
+      // A fork whose source rollout is gone cannot be opened again (#1028): the thread says so in place of its history.
+      if (error instanceof Rejected && (error.missingThreadId === alias.codexThreadId || error.missingLineageId !== undefined)) {
         const thread = this.ensureThread(id)
         thread.status = 'error'; thread.historyStatus = 'error'; thread.historyError = error.message
         this.emit()
@@ -1143,7 +1169,7 @@ export class CodexAppServerHost implements AgentHost {
       thread.activities = bracketCompaction(thread.activities, { before: thread.usage.contextUsed })
     }
     if (item.type === 'fileChange') {
-      this.fileSummaries.set(item.id, (item.changes ?? []).map(c => `${c.kind?.type ?? 'change'}: ${c.path}`).join('\n'))
+      this.fileSummaries.set(turnKey(id, item.id), (item.changes ?? []).map(c => `${c.kind?.type ?? 'change'}: ${c.path}`).join('\n'))
       return
     }
     if (item.type !== 'userMessage' && item.type !== 'agentMessage') return
@@ -1159,15 +1185,15 @@ export class CodexAppServerHost implements AgentHost {
     if (item.type === 'agentMessage' && lifecycle.phase === 'history' && !lifecycle.terminal &&
       known?.complete && known.digest !== input.digest && this.log.has(id, known.id)) return
     if (lifecycle.phase !== 'history' && (lifecycle.phase === 'started' && known?.complete ||
-      turnId && this.terminalTurns.has(turnId) && (known?.complete || identities?.sealed))) return
+      turnId && this.terminalTurns.has(turnKey(id, turnId)) && (known?.complete || identities?.sealed))) return
     if (!origin && item.type === 'userMessage' && known) origin = alias.origins.find(o => o.messageId === known.id && o.turnId === turnId && o.digest === input.digest && (!item.clientId || o.messageId === item.clientId))
     const record = identities ? messageIdentity(alias.messageIdentities, identities, input, origin,
-      createdAt ?? this.turnDates.get(turnId!) ?? alias.createdAt, item.type === 'userMessage' || lifecycle.phase === 'completed' || lifecycle.terminal === true) : undefined
+      createdAt ?? this.turnDates.get(turnKey(id, turnId!)) ?? alias.createdAt, item.type === 'userMessage' || lifecycle.phase === 'completed' || lifecycle.terminal === true) : undefined
     if (origin) {
       origin.itemId ??= item.id; origin.turnId = turnId
     }
     this.addMessage(id, { id: record?.id ?? origin?.messageId ?? item.id, role: input.role, text,
-      createdAt: record?.createdAt ?? origin?.createdAt ?? createdAt ?? this.turnDates.get(turnId ?? '') ?? alias.createdAt, ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) })
+      createdAt: record?.createdAt ?? origin?.createdAt ?? createdAt ?? this.turnDates.get(turnKey(id, turnId ?? '')) ?? alias.createdAt, ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) })
     if (item.type === 'userMessage' && turnId) this.activity.anchor(thread, turnId, record?.id ?? item.id)
     if (origin) this.unconfirmedDispatchSessionIds.delete(id)
   }
@@ -1201,10 +1227,10 @@ export class CodexAppServerHost implements AgentHost {
       }
     }
     const createdAt = turnCreatedAt(alias, turn)
-    this.turnDates.set(turn.id, createdAt)
+    this.turnDates.set(turnKey(id, turn.id), createdAt)
     // A delayed start response must never resurrect a turn whose completion already arrived.
-    if (turn.status === 'inProgress' && this.terminalTurns.has(turn.id)) return
-    if (live && this.terminalTurns.has(turn.id) && this.aliases[id]!.messageIdentities.find(t => t.turnId === turn.id)?.sealed) return
+    if (turn.status === 'inProgress' && this.terminalTurns.has(turnKey(id, turn.id))) return
+    if (live && this.terminalTurns.has(turnKey(id, turn.id)) && this.aliases[id]!.messageIdentities.find(t => t.turnId === turn.id)?.sealed) return
     if (turn.items.length && turn.itemsView === 'full') this.reconcileTurn(id, alias.messageIdentities, alias.origins, turn)
     let anchor = this.log.lastMessageId(id)
     for (const item of turn.items) {
@@ -1220,7 +1246,7 @@ export class CodexAppServerHost implements AgentHost {
     }
     if (turn.status === 'inProgress') { this.runningTurns.set(id, turn.id); thread.status = 'running' }
     else {
-      this.terminalTurns.add(turn.id)
+      this.terminalTurns.add(turnKey(id, turn.id))
       if (!this.runningTurns.has(id) || this.runningTurns.get(id) === turn.id) {
         this.runningTurns.delete(id); thread.status = turn.status === 'failed' ? 'error' : 'idle'
       }
@@ -1339,6 +1365,110 @@ export class CodexAppServerHost implements AgentHost {
       if (!sent) { delete alias.pendingRollback; await this.persist() }
       throw error
     } finally { this.dispatching.delete(id); this.scheduleOutdatedStop() }
+  }
+  /**
+   * A new thread that is Codex's own copy of a conversation (#1028): one of a thread's agents, whose native thread the
+   * parent's history names, or the thread itself up to the turn that holds a reply. Codex writes the copy (`thread/fork`,
+   * durable, without its turns in the answer); the new thread is bound to it when the answer comes, as creation binds,
+   * and its turns are read back as any thread's are. The task a sub-agent was given travels in the copy, encrypted, and
+   * Sotto never reads it. No turn starts and the model is not asked anything.
+   */
+  async forkThread(request: ThreadForkRequest): Promise<AgentHostResult> {
+    const generation = this.generation
+    if (!this.state.connected) throw new Error('Connect to Codex before continuing.')
+    if (this.aliases[request.threadId]) return { accepted: true }
+    if (this.creating.has(request.threadId)) return { accepted: false, uncertain: true }
+    const sourceId = request.source.threadId, source = this.aliases[sourceId]
+    if (!source || source.kind === 'personal' || await this.checkLaunchProfile(sourceId)) throw new Error('That Codex thread is unavailable.')
+    if (!this.state.models.some(model => model.id === request.modelId && model.ready)) throw new Error('Choose an available Codex model.')
+    validateThreadOptions(this.state, request)
+    // Its own history names a thread's agents and holds its turns, so it is read first when this connection has not.
+    await this.open(sourceId)
+    if (generation !== this.generation) throw new Error('Codex connection changed.')
+    let nativeSource = source.codexThreadId, lastTurnId: string | undefined
+    if (request.source.agentId !== undefined) {
+      const child = this.activity.agentThread(this.ensureThread(sourceId), request.source.agentId)
+      if (!child) throw new Error(AGENT_FORK_GONE)
+      nativeSource = child
+    } else if (request.source.messageId !== undefined) {
+      const messageId = request.source.messageId
+      const turn = source.messageIdentities.find(identity => identity.messages.some(message => message.id === messageId || message.nativeIds.includes(messageId)))
+      if (!turn || source.rewoundTurnIds.includes(turn.turnId)) throw new Error('Codex doesn’t have that reply in this thread any more, so nothing was made. Refresh the thread and try again.')
+      if (!this.terminalTurns.has(turnKey(sourceId, turn.turnId))) throw new Error('That turn is still running, so nothing was made. Fork from it once it finishes.')
+      lastTurnId = turn.turnId
+    }
+    const cwd = await existingWorkingDirectory(request.workingDirectory ?? source.cwd)
+    this.creating.add(request.threadId)
+    let server: CodexProcess, developerInstructions: string
+    try {
+      developerInstructions = await this.projectInstructions(cwd, request.threadId)
+      server = await this.runtimeServer(request.threadId)
+    } catch (error) { this.creating.delete(request.threadId); throw error }
+    this.reaper.touch(request.threadId)
+    try {
+      await this.rpc('thread/fork', { threadId: nativeSource, ...(lastTurnId ? { lastTurnId } : {}), cwd, model: request.modelId, modelProvider: 'openai',
+        developerInstructions, ...runtimePolicy(request.runtimeMode), ...await this.threadConfiguration(request.threadId, request.reasoningEffort),
+        // Durable, so the copy outlives this app-server; without its turns, which are read back the way every thread's are.
+        ephemeral: false, excludeTurns: true }, async value => {
+        const response = settingsResponse.parse(value)
+        const policy = runtimePolicy(request.runtimeMode)
+        const sandboxType = policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess'
+        // An answer that comes after Sotto gave up on the fork leaves Codex's copy where it is, bound to nothing.
+        if (this.abandonedForks.delete(request.threadId) || generation !== this.generation) { this.creating.delete(request.threadId); this.stopSession(request.threadId); return }
+        if (response.model !== request.modelId || response.approvalPolicy !== policy.approvalPolicy || response.approvalsReviewer !== policy.approvalsReviewer
+          || response.sandbox.type !== sandboxType || request.reasoningEffort !== undefined && response.reasoningEffort !== request.reasoningEffort) throw new Error('Codex did not confirm the requested thread options.')
+        this.aliases[request.threadId] = { codexThreadId: response.thread.id, projectId: source.projectId, cwd, title: request.title, modelId: request.modelId,
+          runtimeMode: request.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
+          ...(response.thread.historyMode ? { historyMode: response.thread.historyMode } : {}),
+          createdAt: new Date().toISOString(), origins: [], messageIdentities: [], rewoundMessageIds: [], rewoundTurnIds: [] }
+        this.providerSessionIds.set(response.thread.id, request.threadId)
+        await this.persist(); this.creating.delete(request.threadId); this.ensureThread(request.threadId); this.live.add(request.threadId)
+        this.reaper.touch(request.threadId); this.watcher?.observe(response.thread.id); this.emit()
+      }, () => { this.creating.delete(request.threadId); this.stopSession(request.threadId) }, server)
+    } catch (error) {
+      this.creating.delete(request.threadId)
+      if (error instanceof Rejected) {
+        if (error.archivedThreadId !== undefined) throw new Error(AGENT_FORK_ARCHIVED, { cause: error })
+        if (error.missingLineageId !== undefined) throw new Error(FORK_SOURCE_MISSING, { cause: error })
+        if (error.missingThreadId !== undefined && request.source.agentId !== undefined) throw new Error(AGENT_FORK_GONE, { cause: error })
+        if (error.unknownTurnId !== undefined) throw new Error('Codex doesn’t have that turn in this thread any more, so nothing was made. Refresh the thread and try again.', { cause: error })
+        throw error
+      }
+      // Codex may have made a copy it did not confirm. It is never made again for this thread, and a late answer binds nothing.
+      if (error instanceof Uncertain && !this.aliases[request.threadId]) { this.abandonedForks.add(request.threadId); this.stopSession(request.threadId); return { accepted: false, uncertain: true } }
+      throw error
+    }
+    if (!this.aliases[request.threadId]) throw new Error('Codex connection changed before the copy was bound, so Sotto made no thread for it. It may have kept the copy, which Sotto leaves alone. Try again.')
+    // The copy's turns, read back the way a thread's are when it is first opened.
+    try { await this.sync(request.threadId) }
+    catch {
+      const thread = this.ensureThread(request.threadId)
+      thread.historyStatus = 'error'; thread.historyError = 'Codex made the copy, but its history could not be read yet. Refresh this thread to read it.'
+      this.emit()
+    }
+    return { accepted: true }
+  }
+  /**
+   * A paginated thread's whole history: Codex 0.162.1 answers `thread/read` for one with its metadata but no turns, and
+   * pages the turns out with `thread/turns/list` (the e5-fork spike, #1028). A forked sub-agent is the only such thread
+   * Sotto holds; the threads it starts keep legacy history. The pages are put together and applied as one read.
+   */
+  private async readPaged(id: string, apply: (value: unknown) => Promise<void>): Promise<void> {
+    const alias = this.aliases[id]!
+    let thread: Record<string, unknown> | undefined
+    await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: false }, value => { thread = z.object({ thread: z.record(z.string(), z.unknown()) }).parse(value).thread })
+    const turns: unknown[] = []
+    let cursor: string | undefined
+    for (let page = 0; page < PAGED_READ_PAGES; page++) {
+      let next: string | null | undefined
+      await this.rpc('thread/turns/list', { threadId: alias.codexThreadId, sortDirection: 'asc', itemsView: 'full', limit: PAGED_READ_TURNS, ...(cursor ? { cursor } : {}) }, value => {
+        const answer = z.object({ data: z.array(z.unknown()), nextCursor: z.string().nullish() }).parse(value)
+        turns.push(...answer.data); next = answer.nextCursor
+      })
+      if (!next) break
+      cursor = next
+    }
+    await apply({ thread: { ...thread, turns } })
   }
   private async executeNative(command: AgentHostCommand, watcherGuard?: () => void): Promise<AgentHostResult> {
     const generation = this.generation
@@ -1533,7 +1663,7 @@ export class CodexAppServerHost implements AgentHost {
           if (turnId) await this.rpc('turn/interrupt', { threadId: alias.codexThreadId, turnId }, () => {
             this.ensureThread(id).lastTurn = { id: turnId, status: 'interrupted' }
             this.activity.turn(this.ensureThread(id), { id: turnId, status: 'interrupted' }, true)
-            this.terminalTurns.add(turnId); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
+            this.terminalTurns.add(turnKey(id, turnId)); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
           }, undefined, undefined, watcherGuard)
         } else {
           validatePromptAttachments(this.state, alias.modelId, command.attachments)
@@ -1654,7 +1784,7 @@ export class CodexAppServerHost implements AgentHost {
       const id = params.success ? this.sessionId(params.data.threadId) : undefined
       const item = z.object({ itemId: z.string().optional() }).safeParse(frame.params)
       const parsed = id ? pendingRequest(frame.id, frame.method, frame.params, id,
-        this.fileSummaries.get(item.success ? item.data.itemId ?? '' : '')) : undefined
+        this.fileSummaries.get(turnKey(id!, item.success ? item.data.itemId ?? '' : ''))) : undefined
       if (!parsed) {
         try { server.write({ id: frame.id, error: { code: -32601, message: 'Sotto does not handle this request.' } }) } catch { /* A closed process asks nothing more. */ }
         // A session's app-server can ask for a child whose ID Sotto cannot resolve. Its ownership
@@ -1718,11 +1848,11 @@ export class CodexAppServerHost implements AgentHost {
     if (params.turn?.durationMs !== undefined) { this.usage.elapsed(id, params.turn.durationMs); this.ensureThread(id) }
     if (params.item) this.applyItem(id, params.item, params.turnId, undefined, { phase: frame.method === 'item/started' ? 'started' : 'completed', startedAtMs: params.startedAtMs, completedAtMs: params.completedAtMs })
     if (frame.method === 'item/agentMessage/delta' && params.itemId && params.delta !== undefined
-      && !this.completedMessages.has(JSON.stringify([id, params.turnId, params.itemId])) && !this.terminalTurns.has(params.turnId ?? '')) {
+      && !this.completedMessages.has(JSON.stringify([id, params.turnId, params.itemId])) && !this.terminalTurns.has(turnKey(id, params.turnId ?? ''))) {
       const messageId = params.turnId ? this.stableMessageId(id, params.turnId, params.itemId) : params.itemId
       const previous = this.log.message(id, messageId)
       this.addMessage(id, { id: messageId, role: 'assistant', text: (previous?.text ?? '') + params.delta,
-        createdAt: previous?.createdAt ?? this.turnDates.get(params.turnId ?? '') ?? this.aliases[id]!.createdAt })
+        createdAt: previous?.createdAt ?? this.turnDates.get(turnKey(id, params.turnId ?? '')) ?? this.aliases[id]!.createdAt })
     }
     if (['item/commandExecution/outputDelta', 'item/fileChange/outputDelta', 'item/reasoning/summaryTextDelta', 'item/plan/delta', 'item/mcpToolCall/progress'].includes(frame.method!)) {
       this.activity.delta(this.ensureThread(id), frame.method!, params)
@@ -1738,7 +1868,7 @@ export class CodexAppServerHost implements AgentHost {
       if (!params.willRetry) {
         this.ensureThread(id).status = 'error'
         if (params.turnId) {
-          this.terminalTurns.add(params.turnId); this.runningTurns.delete(id)
+          this.terminalTurns.add(turnKey(id, params.turnId)); this.runningTurns.delete(id)
           this.ensureThread(id).lastTurn = { id: params.turnId, status: 'failed' }
           this.activity.turn(this.ensureThread(id), { id: params.turnId, status: 'failed', error: params.error }, true)
         }

@@ -34,7 +34,7 @@ import { externalLinkSchema } from '../shared/externalLinks'
 import { questionPageOpenResultSchema, questionPageOpenSchema } from '../shared/questionPageOpen'
 import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
-import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema } from '../shared/agents'
+import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -273,6 +273,7 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     gitPullRequest: (request: import('../shared/gitPullRequests').GitPullRequestRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST, gitPullRequestResultSchema, gitPullRequestRequestSchema.parse(request)),
     hostFolders: (request: import('../shared/hostFolders').HostFoldersClientRequest) => invokeParsed(renderer, AGENT_HOST_FOLDERS, hostFoldersResultSchema, hostFoldersClientRequestSchema.parse(request)),
     threadDetail: (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
+    startHandover: (threadId: string) => invokeParsed(renderer, AGENT_START_HANDOVER, agentStartHandoverSchema.nullable(), agentThreadDetailRequestSchema.parse(threadId)),
     // Whole details and the deltas between them share this channel, so the shape they share is the guard.
     onThreadDetail: (listener: (update: import('../shared/agents').AgentThreadDetailUpdate) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
       trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),

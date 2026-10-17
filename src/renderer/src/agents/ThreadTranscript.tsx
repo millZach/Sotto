@@ -25,6 +25,7 @@ import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
 import { HandoverFromContext, HandoverMessage } from '../watcher/WatcherHandover'
 import { ContinuedFromNote, ContinuedInNotes } from './ContinueThread'
 import { ContinueLinksContext, continuedInByTurn, useContinueEnabled, type ContinueLinks } from './continuations'
+import { StartHandoverCard, ThreadStartContext, ThreadStartNote, threadStartView, useThreadStartView, useThreadStarts } from './ThreadStart'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { ThreadGreeting } from './ThreadGreeting'
 import type { DelegationView } from '../../../shared/delegation'
@@ -237,8 +238,11 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   const markdown = useMemo(() => wakeUp ? wakeUpMarkdown(message.text) : message.text, [wakeUp, message.text])
   // A brief the delegating thread sent here is that thread's, never the user's (ADR-0081).
   const brief = delegatedBy !== undefined && message.role === 'user' && !wakeUp
-  // The handover Watcher's first message carried goes ahead of the user's words, as Sotto's (ADR-0073).
-  return <>{message.handover && message.role === 'user' ? <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
+  // The handover Watcher's first message carried goes ahead of the user's words, as Sotto's (ADR-0073), and so does the one
+  // a thread that began from another started with (#1028).
+  const started = useThreadStartView()
+  return <>{message.handover && message.role === 'user' ? started === 'off' ? null : started ? <StartHandoverCard view={started} handover={message.handover} createdAt={message.createdAt} />
+    : <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
   <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={article}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
       : brief ? <><span className="thread-message__who"><GitFork size={13} aria-hidden="true" />{delegatedBy}</span><span>delegated</span></>
@@ -515,6 +519,16 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const ids = new Set(delegations.received.map(view => view.briefMessageId))
     return ids.size && delegatingTitle !== undefined ? { ids, from: delegatingTitle } : undefined
   }, [delegations.received, delegatingTitle])
+  // A thread that began from another (#1028; Owl only) says where it began, and shows the handover it starts from.
+  // Its view changes only when where it began does, so the messages that read it are not redrawn on every update.
+  const startsOn = useThreadStarts()
+  const startKey = startsOn && !watcher && thread.startedFrom ? JSON.stringify(thread.startedFrom) : undefined
+  const startSource = startKey === undefined ? undefined : state.host.threads.find(item => item.id === thread.startedFrom!.threadId)
+  const sourceTitle = startSource?.title, sourceProvider = startSource?.providerId
+  const startView = useMemo(() => startKey === undefined ? null : threadStartView({ id: thread.id, startedFrom: JSON.parse(startKey) as NonNullable<typeof thread.startedFrom>, providerId: thread.providerId },
+    sourceTitle === undefined ? undefined : { title: sourceTitle, providerId: sourceProvider }, command, window.sotto?.agents?.startHandover),
+  [startKey, thread.id, thread.providerId, sourceTitle, sourceProvider, command])
+  const startHandoverWaiting = startView?.start.route === 'handover' && startView.start.handover !== undefined && startView.start.handover.sent === undefined
   // Continuing on another provider (ADR-0089; Owl only): where this thread came from, where it went, and its handover's source.
   const continueOn = useContinueEnabled() && !watcher
   const continuedIn = useShared(useMemo(() => continueOn ? continuedInByTurn(thread.continuedIn, messages) : undefined, [continueOn, thread.continuedIn, messages]))
@@ -630,7 +644,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // A thread nothing has been sent to greets above its composer instead. Watcher's own conversation, a working,
   // failed, compacting, settled or archived thread, one with a request or older history to show, and one whose summary
   // counts messages not drawn yet keep the line in the transcript.
-  const greets = empty && greetingSlot !== undefined && !watcher && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
+  const greets = empty && greetingSlot !== undefined && !watcher && startView === null && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
     && thread.status === 'idle' && !isThreadClosed(thread) && (thread.summary?.messageCount ?? 0) === 0
     && thread.compaction?.status !== 'running' && thread.requests.length === 0 && !thread.earlierAvailable
   return <div className="thread-transcript">
@@ -647,12 +661,14 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
             : null}
         {/* Where this thread continues from, above its first message (ADR-0089; Owl only). */}
         {hidden === 0 && !thread.earlierAvailable ? <ContinuedFromNote thread={thread} state={state} command={command} /> : null}
-        {thread.messages.length || showsActivity ? <DelegationCardProvider world={cardWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
+        {startView ? <ThreadStartNote view={startView} /> : null}
+        {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
+        {thread.messages.length || showsActivity ? <ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><DelegationCardProvider world={cardWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
           <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegationCards.size ? delegationCards : undefined} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} />
-        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationCardProvider>
+        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationCardProvider></ThreadStartContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
-            : thread.historyStatus === 'error' || !empty || greets ? null
+            : thread.historyStatus === 'error' || !empty || greets || startView ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.compaction?.status === 'running' ? 'Compacting the context.' : thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
         {/* A prompt on its way sits where it will be read, and the working line under it counts from the press. */}
         {sending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
