@@ -1,6 +1,6 @@
 // @vitest-environment node
 // #1042 over the fake providers: each thread's own sub-agents follow the worker roles. Claude Code gets one agent per
-// role at `initialize`, Codex gets Sotto's role files in `thread/start` and `thread/resume`, Grok Build gets the table in
+// role at `initialize`, Codex gets Sotto's role files in `thread/start`, `thread/resume` and `thread/fork`, Grok Build gets the table in
 // its rules, and each thread's instructions name the agent, the model or the delegation for every kind of work.
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
@@ -154,6 +154,20 @@ describe('Codex threads', () => {
     for (const mode of ['full-access', 'approval-required']) {
       await expect.poll(() => readFile(join(f.root, 'codex-roles', mode, 'sotto_computer_use.toml'), 'utf8')).toContain('model_reasoning_effort = "low"')
     }
+  })
+
+  it('passes them when a thread is forked, held to the fork\'s own permission', async () => {
+    const { f, id, agents } = await codex(TABLE, 'full-access')
+    await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic turn to fork' })
+    await f.driver.completeTurn(id, 'Synthetic reply')
+    await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
+    const forkId = randomUUID()
+    expect(await f.host.forkThread!({ commandId: randomUUID(), threadId: forkId, title: 'Synthetic fork', modelId: f.modelId, runtimeMode: 'approval-required',
+      source: { threadId: id } })).toEqual({ accepted: true })
+    const fork = (await f.driver.requests()).find(record => record.method === 'thread/fork')!
+    expect(agents(fork)!.sotto_computer_use!.config_file).toBe(join(f.root, 'codex-roles', 'approval-required', 'sotto_computer_use.toml'))
+    expect(await readFile(agents(fork)!.sotto_computer_use!.config_file, 'utf8')).toContain('sandbox_mode = "read-only"\napproval_policy = "untrusted"')
+    expect(fork.params!.developerInstructions).toContain('call spawn_agent with agent_type "sotto_computer_use"')
   })
 
   it('lets the app-server go when a narrowing is confirmed after its command gave up', async () => {

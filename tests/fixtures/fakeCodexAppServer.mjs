@@ -179,6 +179,17 @@ function complete(thread, text, status = 'completed') {
   save()
   notify('turn/completed', { threadId: thread.id, turn })
 }
+/**
+ * The source a fork's history depends on, when its rollout is gone (`rolloutMissing`): a fork's turns live in its
+ * source's rollout, so without it Codex can neither read nor resume the fork (the e5-fork spike, #1028).
+ */
+function lineageMissing(thread) {
+  for (let current = thread, depth = 0; current && depth < 16; current = state.threads[current.forkedFromId], depth++) {
+    if (current.rolloutMissing) return current.id
+    if (!current.forkedFromId) return undefined
+  }
+  return undefined
+}
 /** A thread's turns the way a read hands them back; `historyItemIds` reconstructs message item IDs as Codex's legacy history does. */
 function historyTurns(thread, script) {
   const turns = JSON.parse(JSON.stringify(thread.turns))
@@ -285,8 +296,36 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     notify('thread/started', { thread })
     reply({ thread, model: params.model, cwd: params.cwd, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
       reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, ...script.threadStartSettings })
+  } else if (method === 'thread/fork') {
+    // Codex 0.162.1's durable fork, as the e5-fork spike found it (#1028): a new thread whose history points into its
+    // source's, under the source's own turn IDs, up to `lastTurnId` when given. Sotto asks for a durable fork without
+    // its turns in the answer and reads them back, so anything else is recorded as a violation.
+    if (params.ephemeral !== false || params.excludeTurns !== true) {
+      appendFileSync(file('violations.jsonl'), JSON.stringify({ method, reason: 'Sotto forks durably (ephemeral: false) and reads the turns back (excludeTurns: true).' }) + '\n')
+    }
+    const source = state.threads[params.threadId]
+    const refuse = message => setTimeout(() => emit({ id, error: { code: -32600, message } }), delay)
+    if (!source) { refuse(`no rollout found for thread id ${params.threadId}`); return }
+    if (source.archived) { refuse(`session ${source.id} is archived. Run \`codex unarchive ${source.id}\` to unarchive it first.`); return }
+    if (lineageMissing(source)) { refuse(`invalid paginated history lineage for ${lineageMissing(source)}: missing source rollout`); return }
+    const end = params.lastTurnId === undefined ? source.turns.length : source.turns.findIndex(turn => turn.id === params.lastTurnId) + 1
+    if (end === 0) { refuse(`turn not found: ${params.lastTurnId}`); return }
+    const thread = { id: randomUUID(), forkedFromId: source.id, historyMode: source.historyMode ?? 'legacy', cwd: params.cwd ?? source.cwd, model: params.model ?? source.model,
+      createdAt: Math.floor(Date.now() / 1000), status: { type: 'idle' }, turns: JSON.parse(JSON.stringify(source.turns.slice(0, end))),
+      defaultModeRequestUserInput: params.config?.['features.default_mode_request_user_input'] === true,
+      approvalPolicy: params.approvalPolicy ?? source.approvalPolicy, approvalsReviewer: params.approvalsReviewer ?? source.approvalsReviewer,
+      sandbox: params.sandbox ?? source.sandbox, reasoningEffort: params.config?.model_reasoning_effort ?? source.reasoningEffort ?? 'low' }
+    state.threads[thread.id] = thread
+    loadedThreads.add(thread.id); owns(thread.id)
+    save()
+    served(method, thread.id)
+    checkRoles(thread.id, params.config, script)
+    notify('thread/started', { thread: { ...thread, turns: [] } })
+    reply({ thread: { ...thread, turns: [] }, model: thread.model, cwd: thread.cwd, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
+      reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' } })
   } else if (method === 'thread/resume' || method === 'thread/read') {
     const thread = state.threads[params.threadId]
+    if (thread && lineageMissing(thread)) { setTimeout(() => emit({ id, error: { code: -32600, message: `invalid paginated history lineage for ${lineageMissing(thread)}: missing source rollout` } }), delay); return }
     if (thread) {
       // typeInProvider also materializes a thread through the fixture's native session log.
       const hasNativeLog = existsSync(join(process.env.CODEX_HOME, 'sessions', '2026', '09', '10', `rollout-2026-09-10-${thread.id}.jsonl`))
@@ -311,7 +350,11 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
         loadedThreads.add(thread.id); owns(thread.id)
         save()
       }
-      const history = { ...JSON.parse(JSON.stringify(thread)), turns: method === 'thread/resume' && params.excludeTurns ? [] : historyTurns(thread, script) }
+      // Codex 0.162.1 answered a whole read of a paginated thread it had not loaded with no turns, and thread/turns/list
+      // with them (the e5-fork spike, #1028). Sotto reads a paginated thread's turns from the list, so this fake never
+      // hands them to a whole read.
+      const unpaged = thread.historyMode === 'paginated' && method === 'thread/read'
+      const history = { ...JSON.parse(JSON.stringify(thread)), turns: method === 'thread/resume' && params.excludeTurns || unpaged ? [] : historyTurns(thread, script) }
       reply({ thread: history, model: thread.model, approvalPolicy: thread.approvalPolicy, approvalsReviewer: thread.approvalsReviewer,
         reasoningEffort: thread.reasoningEffort, sandbox: { type: thread.sandbox === 'read-only' ? 'readOnly' : thread.sandbox === 'danger-full-access' ? 'dangerFullAccess' : 'workspaceWrite' }, ...(method === 'thread/resume' ? script.threadResumeSettings : {}) })
     }
@@ -323,6 +366,7 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
     if (script.withoutTurnsList) { setTimeout(() => emit({ id, error: { code: -32601, message: 'Method not found' } }), delay); return }
     const thread = state.threads[params.threadId]
     if (!thread) { setTimeout(() => emit({ id, error: { code: -32000, message: 'Unknown thread' } }), delay); return }
+    if (lineageMissing(thread)) { setTimeout(() => emit({ id, error: { code: -32600, message: `invalid paginated history lineage for ${lineageMissing(thread)}: missing source rollout` } }), delay); return }
     const turns = historyTurns(thread, script)
     if (params.sortDirection !== 'asc') turns.reverse()
     const start = params.cursor ? Number(params.cursor) : 0

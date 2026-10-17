@@ -1,6 +1,6 @@
 import { canonicalModelId, servedModelName } from '../../../../shared/modelCatalog'
 import {
-  USAGE_TOKEN_FIELDS, usageWindowLength,
+  USAGE_TOKEN_FIELDS, usageProviderIdSchema, usageWindowLength,
   type UsageActivityAggregate, type UsageClient, type UsageClientAggregate, type UsageDashboardRead, type UsageDailyAggregate,
   type UsageFieldTotal, type UsageHostRead, type UsageHourlyAggregate, type UsageLocalRead, type UsageModelAggregate,
   type UsageProviderAggregate, type UsageProviderId, type UsageQuotaRead, type UsageQuotaWindow, type UsageSource,
@@ -9,7 +9,7 @@ import {
 
 /* ---------- Names ---------- */
 
-export const USAGE_PROVIDERS: readonly UsageProviderId[] = ['codex', 'claude', 'grok', 'devin']
+export const USAGE_PROVIDERS: readonly UsageProviderId[] = usageProviderIdSchema.options
 export const PROVIDER_NAMES: Record<UsageProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin' }
 export const PROVIDER_ORDER = Object.keys(PROVIDER_NAMES) as UsageProviderId[]
 /** What a provider's limits belong to, when its client does not name the plan. */

@@ -197,8 +197,8 @@ const scopedNames = (servers: readonly { tools: ScopedThreadTools }[]): string =
 /** `client` is the client generation the CLI was launched from: see `clientUpdated`. */
 type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>; answered: Set<string>; answerWrites: Map<string, 'pending' | 'failed'>; clientRevision: number; watcher: boolean
   /**
-   * A Watcher's request note and the words of the prompt it was written with. Only that prompt's UserPromptSubmit hook
-   * takes it as context: a steer, or a turn Claude Code starts itself, never does.
+   * A Watcher's request note, or a wake-up's news for it, and the words of the prompt it was written with. Only that
+   * prompt's UserPromptSubmit hook takes it as context: a steer, or a turn Claude Code starts itself, never does.
    */
   requestNote?: { readonly note: string; readonly text: string } | undefined
   /**
@@ -940,8 +940,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
         try {
           markSendStage(command.commandId, 'written')
           if (this.usageEnabled) this.usageGroups.set(id, { id: origin.uuid, startedAt: new Date().toISOString() })
-          // Only this prompt's own note, or none: a wake-up or an ordinary send never carries an earlier request's.
-          runtime.requestNote = runtime.watcher && command.watcherRequestNote ? { note: command.watcherRequestNote, text: nativeText } : undefined
+          // Only this prompt's own note, or none: a send never carries an earlier request's note or news.
+          const note = command.watcherRequestNote ?? command.watcherNews
+          runtime.requestNote = runtime.watcher && note ? { note, text: nativeText } : undefined
           const delivery = runtime.protocol.write({ type: 'user', uuid: origin.uuid, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content } })
           this.emit(); await delivery
         }

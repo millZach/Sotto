@@ -6,7 +6,7 @@ import { createServer } from 'node:net'
 import { z } from 'zod'
 import { parseSshResolution, validateSshHost, type SshHostConfiguration, type SshRoute, type ValidatedSshHostConfiguration } from './sshConfiguration'
 import { CONTROL_OPTIONS, openSshVersion, spawnSsh, sshExecutable, tooOld, type SpawnSsh } from './sshProcess'
-import { HOST_DOWNLOAD_TIMEOUT_MS, HOST_STOP_DRAIN_MS, HOST_STOP_REPLY_MS, LAUNCH_SCRIPT_SOURCE, launchScriptCommand, type LaunchOperation } from './launchScript'
+import { HOST_DOWNLOAD_TIMEOUT_MS, HOST_READY_TIMEOUT_MS, HOST_STOP_DRAIN_MS, HOST_STOP_REPLY_MS, LAUNCH_SCRIPT_SOURCE, launchScriptCommand, type LaunchOperation } from './launchScript'
 import { AskpassBroker, type AskpassQuestion } from './sshAskpass'
 import { LAUNCH_REASONS, SshFailure, classifySshExit, failureFix, type SshFailureCode } from './sshFailure'
 import { tailscaleHold, type TailscaleHold } from './tailscaleApproval'
@@ -416,7 +416,7 @@ export class SshHostLauncher {
     if (tooOld(version)) throw SshFailure.sshTooOld(version.text, this.platform())
     recentEnough.set(spawner, (recentEnough.get(spawner) ?? new Set<string>()).add(executable))
   }
-  private readyTimeout(): number { return this.dependencies.readyTimeoutMs ?? 30_000 }
+  private readyTimeout(): number { return this.dependencies.readyTimeoutMs ?? HOST_READY_TIMEOUT_MS }
   /** `keepalive` is `signing-in` for a command sent while Sotto connects, which may wait for a Tailscale approval, and `live` otherwise. */
   private baseArguments(configuration: ValidatedSshHostConfiguration, keepalive: 'live' | 'signing-in' = 'live'): string[] {
     // Windows' OpenSSH starts the askpass helper through cmd.exe, which keeps only the first line of a

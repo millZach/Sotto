@@ -8,8 +8,12 @@ import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext
 import { WorkerRolesSettings } from '../../../src/renderer/src/features/settings/WorkerRolesSettings'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
+import { useHeldProviders } from '../../../src/renderer/src/state/owlFeature'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn() }))
+// Muse is held to Owl unless a test says otherwise, as on a run whose Owl answer for it is off.
+vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/owlFeature')>(),
+  useHeldProviders: vi.fn(() => new Set(['muse'])) }))
 
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
 const MODES = ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] as const
@@ -18,7 +22,7 @@ const model = (provider: 'claude' | 'codex', native: string, name: string, effor
   id: publicProviderEntityId(provider, 'model', native), name, provider: provider === 'claude' ? 'Claude Code' : 'Codex', providerId: provider, ready,
   reasoningEfforts: efforts, ...(efforts.length ? { defaultReasoningEffort: 'medium' } : {}), runtimeModes: [...MODES] })
 
-function state(claudeReady = true, muse = false): AgentState {
+function state(claudeReady = true, devin = false): AgentState {
   return threadsStateFixture({ cloneOverrides: false,
     configuration: { ...defaultAgentConfiguration(), enabledProviders: ['claude', 'codex'] },
     host: { connected: true, name: 'Agents', version: '', capabilities: caps, projects: [], threads: [],
@@ -26,11 +30,11 @@ function state(claudeReady = true, muse = false): AgentState {
         { id: 'codex', connection: 'connected', name: 'Codex', version: '', capabilities: caps }],
       models: [model('claude', 'opus', 'Opus 5.5', FIVE, claudeReady), model('claude', 'sonnet', 'Sonnet 5.5', FIVE, claudeReady), model('claude', 'haiku', 'Haiku 5.5', [], claudeReady),
         model('codex', 'gpt-6.1-sol', 'GPT-6.1 Sol', FIVE), model('codex', 'gpt-6-astra', 'GPT-6 Astra', FIVE), model('codex', 'gpt-6-luna', 'GPT-6 Luna', ['low', 'medium', 'high']),
-        ...muse ? [{ ...model('codex', 'muse-wonder-full-1.0', 'Muse Wonder Full', FIVE), id: publicProviderEntityId('muse', 'model', 'muse-wonder-full-1.0'), provider: 'Muse', providerId: 'muse' as const }] : []] },
+        ...devin ? [{ ...model('codex', 'swe-1', 'Devin SWE', FIVE), id: publicProviderEntityId('devin', 'model', 'swe-1'), provider: 'Devin', providerId: 'devin' as const }] : []] },
     topLevel: { activeThreadId: null, activeProjectId: null } })
 }
-function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true, muse = false) {
-  const agents = state(claudeReady, muse)
+function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true, devin = false) {
+  const agents = state(claudeReady, devin)
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(agents, vi.fn(async () => agents)))
   const update = vi.fn<(patch: SettingsPatch) => Promise<boolean>>(async () => true)
   const open = vi.fn()
@@ -38,7 +42,7 @@ function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true, 
   return { update, open }
 }
 const card = (name: string) => screen.getByRole('article', { name })
-afterEach(() => { cleanup(); vi.clearAllMocks(); firstMessage.clear() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); firstMessage.clear(); vi.mocked(useHeldProviders).mockImplementation(() => new Set(['muse'])) })
 
 describe('Settings, under Watcher: worker roles (#1041)', () => {
   it('shows each role on its default with its defaults in order', () => {
@@ -91,20 +95,31 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
     expect(open).toHaveBeenCalledWith('settings-agents')
   })
 
-  it('lists every model for Orchestrating, those Watcher cannot run on yet not choosable, beside a drawing of its composer', () => {
+  it('lists every provider for Orchestrating, saying why Watcher cannot run on one yet, beside a drawing of its composer', () => {
     show({}, true, true)
     const orchestrating = card('Orchestrating')
     fireEvent.click(within(orchestrating).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
     fireEvent.click(screen.getByRole('tab', { name: 'Codex' }))
     expect(screen.getByRole('option', { name: 'GPT-6.1 Sol' })).toBeEnabled()
-    fireEvent.click(screen.getByRole('tab', { name: 'Muse' }))
-    expect(screen.getByRole('option', { name: /^Muse Wonder Full/u })).toBeDisabled()
-    expect(screen.getByRole('option', { name: /^Muse Wonder Full/u })).toHaveTextContent('Watcher can’t run on Muse yet')
+    fireEvent.click(screen.getByRole('tab', { name: 'Devin' }))
+    expect(screen.queryByRole('option', { name: /^Devin SWE/u })).toBeNull()
+    expect(screen.getByRole('note')).toHaveTextContent('Watcher can’t run on Devin yet.')
     fireEvent.click(screen.getByRole('button', { name: 'Close model picker' }))
     expect(within(orchestrating).getByRole('combobox', { name: /^Choose Watcher’s model\. Now Opus 5\.5/u })).toBeInTheDocument()
     expect(within(orchestrating).getByText('Permissions, Watcher’s own')).toBeInTheDocument()
     expect(orchestrating.querySelector('.worker-role__composer')).toHaveAttribute('aria-hidden', 'true')
     expect(within(orchestrating).getByText(/Watcher’s composer shows these three\. A change in either place changes both\./u)).toBeInTheDocument()
+  })
+
+  it('names Muse among Watcher’s providers only while Muse is not held to Owl on this run', () => {
+    show()
+    fireEvent.click(within(card('Orchestrating')).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
+    expect(screen.getByText(/Watcher runs on Codex, Claude Code or Grok Build\.$/u)).toBeInTheDocument()
+    cleanup()
+    vi.mocked(useHeldProviders).mockReturnValue(new Set())
+    show()
+    fireEvent.click(within(card('Orchestrating')).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
+    expect(screen.getByText(/Watcher runs on Codex, Claude Code, Grok Build or Muse\.$/u)).toBeInTheDocument()
   })
 
   it('lets a change to Orchestrating replace the first message’s own pick before Watcher exists', () => {

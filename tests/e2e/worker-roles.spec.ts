@@ -1,5 +1,5 @@
 /**
- * Worker roles (#1041, ADR-0087) as the window shows them and as a start uses them, on the Owl track, with the real Claude
+ * Worker roles (#1041, ADR-0088) as the window shows them and as a start uses them, on the Owl track, with the real Claude
  * and Codex adapters over the fake CLIs in `tests/fixtures/` (`SOTTO_E2E_NATIVE_FIXTURE_ROOT` in `src/main/index.ts`),
  * which list Opus, Sonnet and Haiku, and GPT-6.1 Sol, GPT-6 Astra and GPT-6 Luna. Settings, under Watcher, has a card
  * per role on its default: Orchestrating, Building and UI on Opus, Code review on GPT-6.1 Sol because Muse is not set

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, parsePublicProviderEntityId, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
+import { agentRuntimeModeSchema, everyProvider, parsePublicProviderEntityId, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
 import { resolveModel } from './modelCatalog'
 import { nearestRuntimeMode, RUNTIME_MODE_ORDER } from './newThreadDefaults'
 import { effortKey, effortRank } from './reasoningEfforts'
@@ -108,10 +108,13 @@ export const RUNTIME_MODE_WORDS: Readonly<Record<AgentRuntimeMode, string>> = {
   'approval-required': 'Ask for approval', 'auto-accept-edits': 'Allow edits', auto: 'Auto', 'full-access': 'Full access',
 }
 
-/** Watcher runs where its tools do: Codex, Claude Code and Grok Build (ADR-0073, `watcherProviderSchema`). */
-const WATCHER_PROVIDERS: ReadonlySet<ProviderId> = new Set(['codex', 'claude', 'grok'])
+/**
+ * The providers Watcher runs on, as `watcherProviderSchema` names them (ADR-0073, ADR-0079): Orchestrating's model is one
+ * of theirs. A provider is named here once Watcher runs on it; one that is not is never Orchestrating's.
+ */
+export const WATCHER_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'muse'])
 /** The order a role with no ready default looks through for one of a provider's own models. */
-const PROVIDER_ORDER: readonly ProviderId[] = ['claude', 'codex', 'grok', 'muse', 'devin']
+const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin'])
 /** Whether a role can run on a model: Orchestrating only on a provider Watcher can run on. */
 export function roleCanUse(role: WorkerRoleId, model: Pick<AgentModel, 'providerId'>): boolean {
   return role !== 'orchestrating' || (model.providerId !== undefined && WATCHER_PROVIDERS.has(model.providerId))
@@ -209,7 +212,10 @@ export function roleInForce(id: WorkerRoleId, choices: WorkerRoleChoices, models
   const choiceReady = usable(id, chosen)
   const start: RoleStartChoice | undefined = choice && choiceReady
     ? { model: chosen!, modelId: choice.modelId, reasoningEffort: fitEffort(choice.reasoningEffort, chosen), runtimeMode: fitRuntimeMode(choice.runtimeMode ?? role.permission, chosen), from: 'choice' }
-    : fallback ? { model: fallback.model, modelId: fallback.model.id, reasoningEffort: fallback.reasoningEffort, runtimeMode: fallback.runtimeMode, from: 'default' } : undefined
+    // While a chosen model's provider is away, the default in force starts on the permission the user chose, as near as
+    // its model offers at or below it, never on the role's own wider one.
+    : fallback ? { model: fallback.model, modelId: fallback.model.id, reasoningEffort: fallback.reasoningEffort,
+      runtimeMode: choice ? fitRuntimeMode(choice.runtimeMode ?? role.permission, fallback.model) : fallback.runtimeMode, from: 'default' } : undefined
   return { role, choice, choiceReady, fallback, start }
 }
 
@@ -268,13 +274,21 @@ export function startFromRole(role: WorkerKind, choices: WorkerRoleChoices, mode
 }
 
 /**
- * A role's permission the ceiling held back: what the role wanted, what the start got, and which limit held it, the
- * user's new-thread default or, for a delegation, the delegating thread's own permission when that is the narrower.
+ * A role's permission a ceiling held back: what the role wanted, what the start got, and which limit held it: the
+ * user's new-thread default; for a delegation, the delegating thread's own permission when that is the narrower; for a
+ * start on a paired host, what that host lets this computer give a thread there when that is the narrower.
  */
 export interface HeldPermission {
   readonly wanted: AgentRuntimeMode
   readonly startedOn: AgentRuntimeMode
-  readonly by?: 'new-thread-default' | 'delegating-thread'
+  readonly by?: 'new-thread-default' | 'delegating-thread' | 'paired-host'
+  /** That limit's own mode when the model does not offer it, so the start took the nearest mode the model does. */
+  readonly unoffered?: AgentRuntimeMode | undefined
+}
+/** Each limit as a receipt names it. */
+const HELD_BY: Readonly<Record<NonNullable<HeldPermission['by']>, string>> = {
+  'new-thread-default': "the user's new-thread default", 'delegating-thread': "the delegating thread's own permission",
+  'paired-host': 'the most that host lets this computer give a thread there',
 }
 /**
  * What a start by role says in its receipt, for the agent that asked to pass on: the role, what the request named in
@@ -293,9 +307,13 @@ export function roleStartNote(start: RoleStart, models: readonly AgentModel[], h
     parts.push(`This request named its ${list(start.named.map(field => words[field]))}${model}, which overrides ${role.name} for this start only.`)
     if (rest.length) parts.push(`Its ${list(rest)} came from the role.`)
   }
-  if (held) parts.push(held.by === 'delegating-thread'
-    ? `Its permission, ${RUNTIME_MODE_WORDS[held.wanted]}, was held to ${RUNTIME_MODE_WORDS[held.startedOn]}, the delegating thread's own, since a delegated thread gets no more.`
-    : `Its permission, ${RUNTIME_MODE_WORDS[held.wanted]}, was held to the user's new-thread default, ${RUNTIME_MODE_WORDS[held.startedOn]}.`)
+  if (held) {
+    const wanted = RUNTIME_MODE_WORDS[held.wanted], startedOn = RUNTIME_MODE_WORDS[held.startedOn]
+    parts.push(held.unoffered ? `Its permission, ${wanted}, was held to ${startedOn}: ${HELD_BY[held.by ?? 'new-thread-default']} is ${RUNTIME_MODE_WORDS[held.unoffered]}, which this model does not offer, so it starts on the nearest mode the model does.`
+      : held.by === 'delegating-thread' ? `Its permission, ${wanted}, was held to ${startedOn}, the delegating thread's own, since a delegated thread gets no more.`
+      : held.by === 'paired-host' ? `Its permission, ${wanted}, was held to ${startedOn}, the most that host lets this computer give a thread it starts there.`
+        : `Its permission, ${wanted}, was held to the user's new-thread default, ${startedOn}.`)
+  }
   return parts.join(' ')
 }
 

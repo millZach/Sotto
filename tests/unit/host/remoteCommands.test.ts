@@ -1,14 +1,17 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
+import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_HOST_UPDATE_ACTIONS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
-import { hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
+import { HOST_UPDATE_REQUEST_ACTIONS, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
 const HOST_LOCAL = ['credential', 'check-reasoning', 'update-client', 'open-thread-folder']
 /** Fields only the desktop window sends, which its router reads and never forwards to a host (ADR-0074). */
 // The desktop's router reads these and never sends them on: the host a patch or Update all's press names (ADR-0074, ADR-0077).
-const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'], 'queue-client-updates': ['hostId'] }
+// A desktop window names the machine a command acts on and its router never sends the name on (ADR-0074, ADR-0077):
+// a settings save, Update all, and Settings > Providers' presses on this computer's own clients.
+const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'], 'queue-client-updates': ['hostId'],
+  connect: ['hostId'], disconnect: ['hostId'], refresh: ['hostId'], 'check-client-updates': ['hostId'], 'update-client': ['hostId'] }
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]
@@ -88,9 +91,26 @@ describe('remote command allow-list', () => {
       // A thread's Files, Changes and Agents: reads only, never commands (ADR-0025, October 5 amendment).
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
       // The machine's host facts: numbers and the system's own name, read only by a desktop that lists host-facts (#1031).
-      'host-facts']
+      'host-facts',
+      // A started thread's handover, read only on a listener that offers thread-starts, and only when the user asks (#1028).
+      'start-handover',
+      // A host update the host runs on itself: a recorded desktop whose remote-answer policy lets it answer (ADR-0088).
+      'host-update']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
+  })
+  it('lets only a recorded desktop that may answer have its host update itself, naming a version and never a URL or path (ADR-0088)', () => {
+    expect([...REMOTE_HOST_UPDATE_ACTIONS]).toEqual([...HOST_UPDATE_REQUEST_ACTIONS])
+    expect(remoteHostUpdateRefusal({ desktop: true, mayAnswer: true })).toBeNull()
+    // A phone, a desktop the launch script never recorded, and a desktop whose grant was revoked with --deny-answers.
+    expect(remoteHostUpdateRefusal({ desktop: false, mayAnswer: true })).toBe('forbidden')
+    expect(remoteHostUpdateRefusal({ desktop: false, mayAnswer: false })).toBe('forbidden')
+    expect(remoteHostUpdateRefusal({ desktop: true, mayAnswer: false })).toBe('forbidden')
+    const base = { v: 1, id: 'update', session: 'session', op: 'host-update' }
+    for (const action of HOST_UPDATE_REQUEST_ACTIONS) expect(hostRequestSchema.safeParse({ ...base, action }).success, action).toBe(true)
+    expect(hostRequestSchema.safeParse({ ...base, action: 'install', version: '0.2.0', file: 'Sotto-host-0.2.0-linux-x64.tar.gz', sha256: 'a'.repeat(64) }).success).toBe(true)
+    for (const extra of [{ releasesUrl: 'http://127.0.0.1:1' }, { installPath: '/tmp' }, { op: 'host-update', action: 'rollback' }, { sha256: 'not hex' }, { node: '/usr/bin/node' }])
+      expect(hostRequestSchema.safeParse({ ...base, action: 'fetch', ...extra }).success, JSON.stringify(extra)).toBe(false)
   })
   it('admits numeric Usage reads and refreshes, and requires the answer policy for Clear', () => {
     for (const operation of ['usage-read', 'usage-refresh'] as const) {
@@ -116,6 +136,15 @@ describe('remote command allow-list', () => {
       expect(remoteCommandRefusal(command, { mayAnswer: false, clientUpdates: true }), command.type).toBeNull()
     }
     expect(remoteCommandRefusal({ type: 'update-client', provider: 'codex' }, { mayAnswer: true, clientUpdates: true })).toBe('forbidden')
+  })
+  it('takes Continue as a thread only on a listener that offers thread-starts, with no field beyond its own (#1028)', () => {
+    const command = { type: 'continue-agent', threadId: 'thread', agentId: 'codex-agent-1', newThreadId: '7a4c2e1f-0b3d-4e5f-8a9b-1c2d3e4f5a6b', modelId: 'codex:model', workingCopy: 'shared' } as AgentCommand
+    expect(remoteCommandRefusal(command, { mayAnswer: true })).toBe('forbidden')
+    expect(remoteCommandRefusal(command, { mayAnswer: false, threadStarts: true })).toBeNull()
+    expect(remoteCommandRefusal({ ...command, approved: true } as unknown as AgentCommand, { mayAnswer: true, threadStarts: true })).toBe('forbidden')
+    const base = { v: 1, id: 'read', session: 'session' }
+    expect(hostRequestSchema.safeParse({ ...base, op: 'start-handover', threadId: 'thread' }).success).toBe(true)
+    expect(hostRequestSchema.safeParse({ ...base, op: 'start-handover', threadId: 'thread', text: 'words' }).success).toBe(false)
   })
   it('takes the user’s Babysit pull request and Stop babysitting without the answer policy, and no field beyond the pull request (ADR-0061)', () => {
     const url = 'https://github.com/o/r/pull/42'

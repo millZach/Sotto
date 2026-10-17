@@ -5,7 +5,7 @@ import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { RUNTIME_MODE_ORDER } from '../../../../shared/newThreadDefaults'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
-import { capRuntimeMode, defaultModel, fitEffort, fitRuntimeMode, roleInForce, withRoleRow, WORKER_ROLES,
+import { capRuntimeMode, defaultModel, fitEffort, fitRuntimeMode, roleInForce, withRoleRow, WATCHER_PROVIDERS, WORKER_ROLES,
   type RoleInForce, type WorkerRoleChoice, type WorkerRoleChoices, type WorkerRoleId } from '../../../../shared/workerRoles'
 import { useOptionalAgents, type AgentConnection } from '../../agents/AgentContext'
 import { EffortPicker, effortLabel } from '../../agents/EffortPicker'
@@ -15,6 +15,7 @@ import { pendingSettingsStore, settingValues, usePendingSettings } from '../../a
 import { ProviderMark } from '../../agents/ProviderMark'
 import { ChoiceChip, effortChoices, RUNTIME_LABELS, watcherPermissionFixedReason } from '../../agents/ThreadOptions'
 import { useOptionalApp } from '../../state/AppContext'
+import { useHeldProviders } from '../../state/owlFeature'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
 import { WatcherPermissionChip } from '../../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../../watcher/watcherRoom'
@@ -337,6 +338,10 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   const room = useWatcherRoom()
   const app = useOptionalApp()
   const pending = usePendingSettings(watcher?.id ?? '')
+  // A provider held to Owl on this run is not named (ADR-0072): the card asks the held set, as Settings, Providers does.
+  const held = useHeldProviders()
+  const named = [...WATCHER_PROVIDERS].filter(id => !held.has(id)).map(id => PROVIDER_LABELS[id])
+  const watcherProviders = named.length < 2 ? named.join('') : `${named.slice(0, -1).join(', ')} or ${named.at(-1)}`
   const role = read.role
   // While Watcher runs, the card shows what it is on; before it exists, what it will start on.
   const drawn = watcher ? settingValues(state, watcher) : null
@@ -360,16 +365,20 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   }
   const name = model?.name ?? shown?.modelId ?? ''
   const mirrorMode = room?.state?.runtimeMode ?? room?.state?.currentOptions?.runtimeMode ?? 'approval-required'
+  // Every provider's models are offered; a provider Watcher does not run on keeps its tile, saying why, as the
+  // composer's picker says why a provider cannot take a choice now.
+  const watcherModels = catalog.filter(item => watcherProviderOf(item) !== null)
+  const refused = [...new Map(catalog.filter(item => watcherProviderOf(item) === null).map(item => [item.provider, {
+    name: item.provider, providerId: item.providerId, reason: `Watcher can’t run on ${item.providerId ? PROVIDER_LABELS[item.providerId] : item.provider} yet.` }])).values()]
   return <article className="worker-role worker-role--wide" data-chosen={status === 'chosen' || status === 'away'} aria-labelledby={headId}>
     <div className="worker-role__main">
       <header className="worker-role__head"><WatcherOwl size={15} /><h4 id={headId}>{role.name}</h4><Tag status={status} /></header>
       <p className="worker-role__what">{role.what}</p>
       {shown ? <div className="worker-role__fields">
         <div className="worker-role__field worker-role__field--full" data-away={status === 'away' || undefined}><span aria-hidden="true">Model</span>
-          <ModelPicker models={[...catalog]} modelId={shown.modelId} disabled={fixedReason !== undefined} label={`Choose Watcher’s model. Now ${name}`}
-            unavailable={item => watcherProviderOf(item) === null ? `Watcher can’t run on ${item.providerId ? PROVIDER_LABELS[item.providerId] : item.provider} yet` : undefined}
+          <ModelPicker models={watcherModels} modelId={shown.modelId} disabled={fixedReason !== undefined} label={`Choose Watcher’s model. Now ${name}`} unavailable={refused}
             note={watcher ? 'Watcher’s model: the same choice as the model chip under its composer. Another provider’s model starts a new Watcher, and this conversation stays in Watcher history.'
-              : 'Watcher’s model: the same choice as the model chip under its composer. Watcher runs on Codex, Claude Code or Grok Build.'}
+              : `Watcher’s model: the same choice as the model chip under its composer. Watcher runs on ${watcherProviders}.`}
             onChange={id => choose(chosenModelId(catalog, id, shown.modelId), undefined)} /></div>
         <div className="worker-role__field"><span aria-hidden="true">Effort</span>
           {efforts.length > 0 && model ? <EffortPicker key={shown.modelId} value={shown.reasoningEffort ?? model.defaultReasoningEffort ?? ''} options={efforts} disabled={fixedReason !== undefined}
@@ -379,7 +388,7 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
         </div>
         <div className="worker-role__field"><span aria-hidden="true">Permissions, Watcher’s own</span>
           <WatcherPermissionChip model={model} provider={providerName} inForce={watcher?.runtimeMode} disabled={fixedReason !== undefined} fixedReason={fixedReason} flip /></div>
-      </div> : <p className="worker-role__none">Watcher runs on Codex, Claude Code or Grok Build. Connect one to choose its model.</p>}
+      </div> : <p className="worker-role__none">Watcher runs on {watcherProviders}. Connect one to choose its model.</p>}
       {fixedReason ? <p className="worker-role__note">{fixedReason}</p> : null}
       {refusal ? <p className="worker-role__note" role="alert">{refusal}</p> : null}
       {notes.map(note => <p key={note} className="worker-role__note" data-kind="moved">{note}</p>)}

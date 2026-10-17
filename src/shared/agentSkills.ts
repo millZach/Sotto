@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { hasMentionToken } from './mentions'
+import { providerIdSchema } from './providerIds'
 
 /** Native catalog identity, not a path the renderer may ask Sotto to read. */
 export const agentSkillReferenceSchema = z.object({
@@ -14,7 +15,7 @@ export const agentSkillSchema = agentSkillReferenceSchema.extend({
   nativeSource: z.string().optional(),
 })
 export const agentSkillCatalogSchema = z.object({
-  threadId: z.string(), providerId: z.enum(['codex', 'claude', 'grok', 'devin', 'muse']), cwd: z.string(),
+  threadId: z.string(), providerId: providerIdSchema, cwd: z.string(),
   status: z.enum(['ready', 'error', 'unsupported']), skills: z.array(agentSkillSchema),
   errors: z.array(z.object({ path: z.string(), message: z.string() })), error: z.string().optional(),
   maxSkillsPerMessage: z.number().int().nonnegative().optional(), invocationNotice: z.string().optional(),

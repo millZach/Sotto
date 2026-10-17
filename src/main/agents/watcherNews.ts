@@ -1,3 +1,4 @@
+import type { AgentMessage } from '../../shared/agents'
 import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_TARGETS_MAX, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { observationDigest, targetKey } from './watcherEvidence'
 
@@ -38,8 +39,13 @@ const words: Record<WatcherEvent['kind'], string> = {
   'delivery-changed': 'Sotto observed a new delivery receipt. Read the operation for its state.',
   'evidence-changed': 'Sotto observed changed evidence. Read the thread for the sourced facts.',
 }
+const NEWS_OPENING = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.'
+/**
+ * Watcher's news as its provider reads it: the text the wake-up carries beside its message, through the same per-turn
+ * context channel as the request note (ADR-0073), never in the message itself.
+ */
 export function watcherNewsText(news: WatcherNews): string {
-  const opening = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.'
+  const opening = NEWS_OPENING
   const lines = news.events.map(event => `${JSON.stringify(event.target)}: ${words[event.kind]}${(event.kind === 'turn-finished' || event.kind === 'turn-failed') && event.backgroundWorkCount
     ? ` Background work or monitoring is still running (${event.backgroundWorkCount}), so the turn is not done until Sotto sends work-settled news for it.` : ''}${event.operationId && event.kind !== 'delivery-changed'
     ? ` This turn answers operation ${event.operationId}; read_operation gives its outcome and reply.` : ''} Use requestId ${event.requestId} for this thread. [${event.id}]`)
@@ -52,4 +58,39 @@ export function watcherNewsText(news: WatcherNews): string {
     count--
   }
   return opening
+}
+
+/**
+ * The message a wake-up holding only Watcher's news sends, since a provider turn starts from one. The news itself goes
+ * beside it in the turn's note, and no one is shown either: Watcher's reply is what the user reads.
+ */
+export const WATCHER_WAKE_UP_PROMPT = 'Sotto has news of watched threads. It is in the note that comes with this message.'
+
+/**
+ * A message of Watcher's conversation as the user is shown it: without Sotto's news for Watcher. Only a message the host
+ * recorded as Sotto's wake-up is read, never one the user sent. One that held nothing but Watcher's news, today's short
+ * message or an earlier build's news text, is not shown at all (`null`); one that also carried a resume note or pull
+ * request news keeps that part, without the news after it (an earlier build's text, or Grok Build's line).
+ */
+export function watcherWakeUpShown(message: AgentMessage): AgentMessage | null {
+  if (message.role !== 'user' || message.wakeUp !== true) return message
+  const { text } = message
+  if (text === WATCHER_WAKE_UP_PROMPT || text.startsWith(`${WATCHER_WAKE_UP_PROMPT}\n\n[${NEWS_OPENING}`) || text.startsWith(NEWS_OPENING)) return null
+  for (const boundary of [`\n\n[${NEWS_OPENING}`, `\n\n${NEWS_OPENING}`]) {
+    const at = text.indexOf(boundary)
+    if (at > 0) return { ...message, text: text.slice(0, at) }
+  }
+  return message
+}
+/** Watcher's conversation without its wake-ups' news, the same array when there is none to take out. */
+export function watcherWakeUpsAsShown(messages: readonly AgentMessage[]): readonly AgentMessage[] {
+  if (!messages.some(message => message.wakeUp === true)) return messages
+  let shown: AgentMessage[] | undefined
+  for (const [index, message] of messages.entries()) {
+    const next = watcherWakeUpShown(message)
+    if (next === message) { shown?.push(message); continue }
+    shown ??= messages.slice(0, index)
+    if (next) shown.push(next)
+  }
+  return shown ?? messages
 }

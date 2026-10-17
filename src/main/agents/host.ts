@@ -4,7 +4,7 @@ import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
-import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentRuntimeMode, AgentThreadOptions, ProviderId } from '../../shared/agents'
+import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentRuntimeMode, AgentThreadOptions, HandoverCounts, ProviderId } from '../../shared/agents'
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -60,7 +60,13 @@ export type AgentHostCommand =
      * thread's adapter gives it to the model through the provider's own context channel for this turn, never in the
      * user's text, so the message is sent, echoed and shown as typed. Every other thread ignores it.
      */
-    readonly watcherRequestNote?: string }
+    readonly watcherRequestNote?: string
+    /**
+     * A wake-up's news for the current Watcher (ADR-0073), set only by the coordinator on that wake-up's send. It
+     * travels exactly as the request note does, through the same channel, beside a short message of Sotto's that no
+     * one is shown. Every other thread ignores it.
+     */
+    readonly watcherNews?: string }
   | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
@@ -85,6 +91,42 @@ export interface AgentHostResult {
    */
   readonly error?: string
 }
+/**
+ * A new thread that is the provider's own copy of another thread's conversation (#1028): one of the source thread's agents
+ * (`agentId`, its observational identity in the roster) or the source thread up to one of its replies (`messageId`). The
+ * adapter that owns the source resolves its own identifiers and binds the new thread to the copy when it is made, the way
+ * creation does (ADR-0002); nothing is sent to the model.
+ */
+export interface ThreadForkRequest {
+  readonly commandId: string
+  readonly threadId: string
+  readonly title: string
+  readonly modelId: string
+  readonly reasoningEffort?: string | undefined
+  readonly runtimeMode?: AgentRuntimeMode | undefined
+  readonly providerMode?: string | undefined
+  readonly workingDirectory?: string | undefined
+  readonly source: { readonly threadId: string; readonly agentId?: string | undefined; readonly messageId?: string | undefined }
+}
+/**
+ * One of a thread's agents continued as a thread of its own (#1028), by Sotto thread IDs: `threadId` is the thread to
+ * make and `sourceThreadId` the agent's. `handover` starts it from a thin handover even where the provider could copy.
+ */
+export interface AgentContinuation {
+  readonly threadId: string
+  readonly sourceThreadId: string
+  readonly agentId: string
+  readonly handover?: boolean | undefined
+  readonly modelId: string
+  readonly reasoningEffort?: string | undefined
+  readonly runtimeMode?: AgentRuntimeMode | undefined
+  readonly providerMode?: string | undefined
+  readonly workingCopy?: 'independent' | 'shared' | undefined
+  readonly baseBranch?: string | undefined
+  readonly startFromOrigin?: boolean | undefined
+}
+/** Which of a first message's characters were the handover it went with (#1028): a length and its digest, never the words. */
+export interface StartHandoverSent { readonly messageId: string; readonly prefixLength: number; readonly prefixDigest: string }
 /**
  * A settings change's result as a host layer passes it up: the result without its snapshot, and the snapshot only
  * when the provider confirmed the change. One on any other result is dropped rather than trusted.
@@ -234,6 +276,20 @@ export interface AgentHost {
   /** Explicit checkpoint rewind; compare exact authored history before any native mutation.
    * Throws only for definitive rejection; possible unconfirmed native writes return uncertain. */
   rollbackThread?(threadId: string, removedUserMessages: number, expectedUserMessageIds: readonly string[]): Promise<AgentHostResult>
+  /**
+   * Make a new thread that is the provider's own copy of an agent's conversation or of a thread up to a reply (#1028). Throws
+   * a refusal in plain words when the provider cannot; uncertain when it may have made a copy it did not confirm.
+   */
+  forkThread?(request: ThreadForkRequest): Promise<AgentHostResult>
+  /** Continue one of a thread's agents as a thread of its own (#1028). The workspace makes the thread; refusals make nothing. */
+  continueAgent?(request: AgentContinuation): Promise<AgentHostResult>
+  /**
+   * The handover a thread that began from another goes with on its first message (#1028), built afresh from Sotto's own
+   * record. Undefined once it has gone, or when Sotto no longer holds what it carries.
+   */
+  startHandover?(threadId: string): { readonly text: string; readonly counts: HandoverCounts } | undefined
+  /** The first message went with the handover (`sent`), did not go after all (`null`), or goes without it (`'drop'`). */
+  markStartHandover?(threadId: string, sent: StartHandoverSent | null | 'drop'): Promise<void>
   /** Scope is constructed only by WorkspaceHost for an unstarted local thread. */
   listThreadSkills?(threadId: string, forceReload?: boolean, scope?: AgentSkillScope): Promise<AgentSkillCatalog>
   readonly concurrentProviders?: boolean
@@ -250,6 +306,8 @@ export interface AgentHost {
   watcherThreadIds?(): readonly string[]
   /** Saved threads held behind an immutable Owl gate, for dormant drafts and history preservation. */
   dormantThreadIds?(): readonly string[]
+  /** The held provider of each saved thread hidden for it, so a refusal names that provider rather than another held one. */
+  dormantThreadProviders?(): ReadonlyMap<string, ProviderId>
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }, watcherGuard?: () => void): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */

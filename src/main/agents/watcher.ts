@@ -2,9 +2,9 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf,
-  type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread, type HandoverCounts } from '../../shared/agents'
+  type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentThread, type HandoverCounts } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
-import { capRuntimeMode, roleStartNote, startFromRole, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { capRuntimeMode, roleStartNote, startFromRole, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
@@ -26,6 +26,7 @@ import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessa
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
+import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { watcherOwnChanges } from './watcherOwnChanges'
 import { WATCHER_FINAL_OUTCOMES, watcherLatestTurnMessageId, watcherTurnOutcome } from './watcherOutcomes'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts } from '../../shared/watcherHost'
@@ -86,6 +87,20 @@ const HOST_WITHOUT_OUTCOMES = 'This host does not report outcomes, so Sotto cann
 /** A start's worker role as its receipt says it (#1041). */
 type RoleReceipt = { readonly id: WorkerKind; readonly named: RoleField[]; readonly note: string }
 const ROLE_STARTS_KEPT = 500
+/**
+ * How long before a client's own limit on one tool call Watcher's tools answer, when the client declares that limit
+ * (`Sotto-Tool-Wait`, Muse's 300 seconds, ADR-0079). A call still under way then carries on, and its answer says how
+ * to read the result: a start or send by its receipt, which never sends it twice; anything else by reading again.
+ */
+const CLIENT_WAIT_MARGIN_MS = 5_000
+const STILL_DELIVERING = 'Sotto is still carrying this out, so its result is not known yet. Nothing was lost, and it will not be sent twice. Read its receipt with read_operation for how it went. Do not send it again.'
+const STILL_ADMITTING = 'Sotto is still checking this call, so its result is not known yet. Nothing was lost, and it will not be sent twice. Call it again with the same retryKey to read its receipt.'
+const STILL_WATCHING = 'Sotto is still carrying this out, so its result is not known yet. It may still finish, and calling it again is safe. Read list_threads to see where it stands.'
+const STILL_READING = 'This read took longer than your provider waits for a tool call. Nothing changed. Read again.'
+/** What a call that may outlast its client's wait has reached: the operation its start, send, stop or settle admitted. */
+interface CallProgress { operationId?: string }
+const MUTATIONS: ReadonlySet<WatcherToolName> = new Set(['start_thread', 'send_to_thread', 'stop_thread', 'settle_thread'])
+const LATE: unique symbol = Symbol('late')
 function refuse(code: WatcherRefusal['code'], message: string, retryable = false): never { throw new Refusal({ ...watcherRefusal(code, message, retryable), ...(code === 'CURSOR_EXPIRED' ? { restartCursor: 'restart' } : {}) }) }
 
 /** One main-owned admission transaction; provider work always runs after this lane is released. */
@@ -147,7 +162,7 @@ export class WatcherService implements WatcherControlHooks {
           || (reporting ??= new Set(this.remote?.hosts().flatMap(host => host.workSettled === true ? [host.hostId] : []) ?? [])).has(hostId)
       },
       answers: (target, thread, record) => this.answeringOperation(target, thread, record),
-      restoredEvents: () => options.control.restoredWatcherEvents(),
+      restoredEvents: () => options.control.restoredWatcherEvents(), wakeUpQueued: () => options.control.watcherWakeUpQueued(),
       canDeliver: target => options.control.canDeliverWatcherNews(target),
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
       prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),
@@ -217,6 +232,8 @@ export class WatcherService implements WatcherControlHooks {
   }
   wakeDueAll(events: readonly WatcherEvent[]): boolean[] { return this.wakes.dueAll(events) }
   wakeReady(): boolean { return this.wakes.ready() }
+  /** Watcher's hidden wake-up left its queue; the coordinator has already saved any of its news as untold again. */
+  wakeUpSettled(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void { if (!this.closed) this.wakes.settled(events, outcome) }
   pullRequestObserved(read: PullRequestObservation): void { this.wakes.pullRequest(read) }
   restoreCheckpoint(read: CheckpointObservation): void { this.wakes.restoreCheckpoint(read) }
   checkpointObserved(read: CheckpointObservation): void { this.wakes.checkpoint(read) }
@@ -242,8 +259,11 @@ export class WatcherService implements WatcherControlHooks {
   /** The widest a new worker may start on: the new-thread default, narrowed by a paired master's ceiling, as the model offers it. */
   private ceiling(model: AgentModel | undefined, pairedCeiling?: WatcherHostControl['ceiling']) {
     const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
-    const desired = pairedCeiling && RUNTIME_MODE_ORDER.indexOf(pairedCeiling) < RUNTIME_MODE_ORDER.indexOf(configured) ? pairedCeiling : configured
-    return resolveNewThreadPermission(model, desired)
+    const paired = pairedCeiling !== undefined && RUNTIME_MODE_ORDER.indexOf(pairedCeiling) < RUNTIME_MODE_ORDER.indexOf(configured)
+    const desired = paired ? pairedCeiling : configured
+    // Which limit this is, for a receipt that says what held a role's permission back.
+    const by: NonNullable<HeldPermission['by']> = paired ? 'paired-host' : 'new-thread-default'
+    return { ...resolveNewThreadPermission(model, desired), by, limit: desired }
   }
   private permission(model: AgentModel | undefined, explicit?: WatcherToolInput<'start_thread'>['permission'], pairedCeiling?: WatcherHostControl['ceiling']) {
     const ceiling = this.ceiling(model, pairedCeiling)
@@ -762,7 +782,8 @@ export class WatcherService implements WatcherControlHooks {
       const result = await this.options.control.commandForWatcherRoom({ type: 'create-thread', threadId: identity.target.threadId,
         projectId: identity.projectId, title: 'Watcher', modelId: model.id, runtimeMode, workingCopy: 'shared',
         ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) })
-      if (result.error) refuse('PROVIDER_UNAVAILABLE', 'Watcher’s thread could not be created. Check its provider and reopen Watcher.', true)
+      // The provider's own refusal says what to do, as a Muse that cannot take Watcher's tools does (ADR-0079).
+      if (result.error) refuse('PROVIDER_UNAVAILABLE', result.error.length <= 2_000 ? result.error : 'Watcher’s thread could not be created. Check its provider and reopen Watcher.', true)
       thread = result.host.threads.find(item => item.id === identity.target.threadId)
     }
     if (!thread || thread.kind !== 'watcher' || thread.providerId !== identity.provider || thread.projectId !== identity.projectId) {
@@ -1150,7 +1171,36 @@ export class WatcherService implements WatcherControlHooks {
       refuse('REQUEST_NOT_ACTIVE', 'Only the user gives Watcher a thread to watch, with Watch or by asking in a message to Watcher. Nothing was watched.')
     }
   }
-  async invoke(threadId: string, name: WatcherToolName, args: unknown): Promise<unknown> {
+  /**
+   * One sotto_threads call. A client that declares how long it waits for a call (`waitMs`) is answered before that, and the
+   * call carries on: a start or send still under way answers with its receipt, which read_operation reads (ADR-0079).
+   */
+  invoke(threadId: string, name: WatcherToolName, args: unknown, context: { readonly waitMs?: number } = {}): Promise<unknown> {
+    return this.startCall(threadId, name, args, context).answer
+  }
+  /**
+   * The same call, with when its work truly ends: `answer` may come first, inside the client's wait, while `settled` waits
+   * for the work itself. The tool server holds the call's place in its in-flight count until then.
+   */
+  startCall(threadId: string, name: WatcherToolName, args: unknown, context: { readonly waitMs?: number } = {}): { readonly answer: Promise<unknown>; readonly settled: Promise<void> } {
+    const progress: CallProgress = {}
+    const work = this.invokeNow(threadId, name, args, progress)
+    const settled = work.then(() => undefined, () => undefined)
+    if (context.waitMs === undefined) return { answer: work, settled }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<typeof LATE>(resolve => { timer = setTimeout(() => resolve(LATE), Math.max(context.waitMs! - CLIENT_WAIT_MARGIN_MS, context.waitMs! / 2)) })
+    const answer = Promise.race([work, late]).then(result => result === LATE ? this.stillWorking(name, progress) : result)
+      .finally(() => { clearTimeout(timer) })
+    return { answer, settled }
+  }
+  /** The answer to a call its client would otherwise give up on: where it stands, and how to read how it ends. */
+  private stillWorking(name: WatcherToolName, progress: CallProgress): unknown {
+    if (!MUTATIONS.has(name)) return watcherRefusal('PROVIDER_UNAVAILABLE', name === 'watch_thread' || name === 'unwatch_thread' ? STILL_WATCHING : STILL_READING, true)
+    const operation = progress.operationId ? this.record().operations.find(item => item.id === progress.operationId) : undefined
+    return operation ? { ...watcherRefusal('DELIVERY_UNCERTAIN', STILL_DELIVERING, true), receipt: this.receipt(operation) }
+      : watcherRefusal('DELIVERY_UNCERTAIN', STILL_ADMITTING, true)
+  }
+  private async invokeNow(threadId: string, name: WatcherToolName, args: unknown, progress: CallProgress): Promise<unknown> {
     this.invocations++
     try {
       this.checkCaller(threadId)
@@ -1208,11 +1258,11 @@ export class WatcherService implements WatcherControlHooks {
         }
         return await this.dispatchRead(call, operation)
       }
-      return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>)
+      return await this.mutate(threadId, name, parsed.data as WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, undefined, undefined, progress)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'This Watcher call could not be completed. Check the operation receipt before trying again.', true) }
     finally { this.invocations-- }
   }
-  private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void): Promise<unknown> {
+  private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress): Promise<unknown> {
     const admitted = await this.transaction(async () => {
       if (imported && this.record().remoteAbsences?.some(item => item.operationId === imported.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
       if (imported && this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was sent. Reopen Sotto.')
@@ -1294,12 +1344,13 @@ export class WatcherService implements WatcherControlHooks {
         if (create.reasoningEffort && !model.reasoningEfforts?.includes(create.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this worker model offers.')
         const roleEffort = byRole?.reasoningEffort && !byRole.named.includes('effort') && model.reasoningEfforts?.includes(byRole.reasoningEffort) ? byRole.reasoningEffort : undefined
         // A permission the request named keeps its refusal. One the role gave is held to the ceiling instead.
-        let explicit = create.permission, held: { wanted: AgentRuntimeMode; startedOn: AgentRuntimeMode } | undefined
+        let explicit = create.permission, held: HeldPermission | undefined
         if (byRole?.runtimeMode && !explicit) {
           const ceiling = this.ceiling(model, pairedCeiling)
           if (ceiling.providerMode === undefined && ceiling.runtimeMode) {
             const mode = capRuntimeMode(byRole.runtimeMode, ceiling.runtimeMode)
-            if (mode !== byRole.runtimeMode) held = { wanted: byRole.runtimeMode, startedOn: mode }
+            // A limit the model does not offer starts on the nearest mode it does, and the receipt says that is why.
+            if (mode !== byRole.runtimeMode) held = { wanted: byRole.runtimeMode, startedOn: mode, by: ceiling.by, ...(ceiling.nearestFit ? { unoffered: ceiling.limit } : {}) }
             explicit = { kind: 'runtime', mode }
           }
         }
@@ -1378,6 +1429,7 @@ export class WatcherService implements WatcherControlHooks {
       if (roleResult) this.rememberRoleStart(operation.id, roleResult)
       return { operation, retry: false }
     })
+    if (progress) progress.operationId = admitted.operation.id
     if (admitted.retry) { const active = this.active.get(admitted.operation.id); if (active) return await active; return this.operationResult(name, admitted.operation, input) }
     const running = admitted.operation.target.hostId !== this.hostId() ? this.executeRemote(name, admitted.operation, input) : this.executeOperation(name, admitted.operation, input)
     this.active.set(admitted.operation.id, running)
@@ -1545,6 +1597,13 @@ export class WatcherService implements WatcherControlHooks {
     const host = this.remote?.hosts().find(item => item.hostId === hostId)
     if (!host?.connected) refuse('HOST_DISCONNECTED', 'That host is disconnected. Its pending slots remain held. Reconnect it to continue.', true)
     if (!host.reads || mutation && !host.control) refuse('HOST_FEATURE_UNAVAILABLE', 'Update this host before Watcher directs its threads. Nothing was sent.')
+    if (!this.takesMaster(host)) refuse('HOST_FEATURE_UNAVAILABLE', 'Update Sotto on this host before Watcher on Muse reads or directs its threads. Nothing was sent.')
+  }
+  /** An older host refuses a Watcher identity that names Muse, so a Watcher on Muse asks only hosts that list `watcher-muse`. */
+  private takesMaster(host: { readonly muse?: boolean }): boolean { return this.view().current?.provider !== 'muse' || host.muse === true }
+  private takingHost(hostId: string | undefined) {
+    const host = this.remote?.hosts().find(item => item.hostId === hostId)
+    return host && this.takesMaster(host) ? host : undefined
   }
   private async executeRemote(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, confirmedStop?: () => void): Promise<unknown> {
     const request = this.record().requests.find(item => item.id === operation.requestId)!
@@ -1677,7 +1736,7 @@ export class WatcherService implements WatcherControlHooks {
   private async reconcileRemoteNow(hostId?: string, force = true): Promise<void> {
     const master = this.record().current
     if (!master || !this.remote || this.closed) return
-    for (const host of this.remote.hosts().filter(item => item.reads && item.connected && (!hostId || item.hostId === hostId))) {
+    for (const host of this.remote.hosts().filter(item => item.reads && item.connected && this.takesMaster(item) && (!hostId || item.hostId === hostId))) {
       const owned = this.record().requests.filter(request => key(request.watcher) === key(master.target))
       if (!host.standingWatch && !owned.some(request => request.participants.some(item => item.target.hostId === host.hostId)
         || this.record().operations.some(item => item.requestId === request.id && item.target.hostId === host.hostId))) continue
@@ -2037,8 +2096,8 @@ export class WatcherService implements WatcherControlHooks {
         let defaultPermission: ReturnType<WatcherService['permission']> | null = null
         try { defaultPermission = this.permission(model) } catch { /* Explicitly incomparable. */ }
         return { provider: model.providerId, modelId: model.id, reasoningEfforts: model.reasoningEfforts ?? [], defaultPermission, permissionComparable: defaultPermission !== null }
-      }), controlAvailable: snapshot.hostId === this.hostId() || Boolean(this.remote?.hosts().find(item => item.hostId === snapshot.hostId)?.control),
-      readsAvailable: snapshot.hostId === this.hostId() || Boolean(this.remote?.hosts().find(item => item.hostId === snapshot.hostId)?.reads),
+      }), controlAvailable: snapshot.hostId === this.hostId() || Boolean(this.takingHost(snapshot.hostId)?.control),
+      readsAvailable: snapshot.hostId === this.hostId() || Boolean(this.takingHost(snapshot.hostId)?.reads),
       readOnlyProfileAvailable: true, freshness: snapshot.connected ? 'fresh' : 'stale' })))
     const page = this.page('projects', rows, input.cursor, input.limit)
     return { status: 'ok', projects: page.rows, nextCursor: page.nextCursor, observedAt: now(), staleHosts: [] }

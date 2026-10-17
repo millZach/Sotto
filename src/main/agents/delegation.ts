@@ -562,7 +562,9 @@ export class DelegationService {
     const index = (value: AgentRuntimeMode) => RUNTIME_MODE_ORDER.indexOf(value)
     const own = caller.providerMode ? 'approval-required' : caller.runtimeMode ?? 'approval-required'
     const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
-    return { mode, held: { wanted, startedOn: mode, by: index(own) < index(configured) ? 'delegating-thread' : 'new-thread-default' } }
+    const thread = index(own) < index(configured)
+    // A limit the model does not offer starts on the nearest mode it does, and the receipt says that is why.
+    return { mode, held: { wanted, startedOn: mode, by: thread ? 'delegating-thread' : 'new-thread-default', ...(ceiling.nearestFit ? { unoffered: thread ? own : configured } : {}) } }
   }
   private humanTurnRunning(thread: AgentThread): boolean {
     if (!isThreadTurnRunning(thread)) return false

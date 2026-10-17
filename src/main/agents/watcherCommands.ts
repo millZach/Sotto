@@ -3,6 +3,7 @@ import type { AgentCommand, AgentHostSnapshot } from '../../shared/agents'
 import type { AgentHostCommand } from './host'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
+import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 
 /** Main-owned capability. This object never crosses IPC or a socket. */
 export interface WatcherCommandOrigin {
@@ -27,6 +28,8 @@ export interface WatcherControlHooks {
   /** Whether each queued event may still go, answered in one pass that reads the snapshot and the record once. */
   wakeDueAll?(events: readonly WatcherEvent[]): boolean[]
   wakeReady?(): boolean
+  /** Watcher's hidden wake-up left its queue with this outcome, holding these events (hiddenWakeUp.ts). */
+  wakeUpSettled?(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void
   pullRequestObserved?(read: PullRequestObservation): void
   restoreCheckpoint?(read: CheckpointObservation): void
   checkpointObserved?(read: CheckpointObservation): void

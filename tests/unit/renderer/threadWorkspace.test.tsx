@@ -423,7 +423,7 @@ describe('Threads project folders', () => {
     expect(within(screen.getByRole('region', { name: 'Settled' })).getByRole('button', { name: 'Restore Streaming WAV stall' })).toBeVisible()
   })
 
-  it('adds a project from a folder, or opens the project that already has it', async () => {
+  it('adds a project from a folder, or opens the project that already has it, and opens a new thread there', async () => {
     const choose = vi.fn(async () => 'D:\\Work\\new-app')
     ;(window as { sotto?: unknown }).sotto = { agents: { chooseProjectDirectory: choose } }
     const { live } = mount(threadsStateFixture())
@@ -435,6 +435,9 @@ describe('Threads project folders', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add project' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Browse with File Explorer' }))
     await waitFor(() => expect(live.command).toHaveBeenCalledWith({ type: 'select-project', projectId: 'workshop' }))
+    // Either way a new thread opens in the project, as its own pen would open one.
+    await waitFor(() => expect(live.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', projectId: 'workshop', title: 'New thread' })))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'New thread' })).toBeVisible())
   })
 
   it('starts a new thread in a chosen project at once, with no dialog to fill in', async () => {

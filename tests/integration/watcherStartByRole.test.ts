@@ -16,14 +16,14 @@ const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 const ALL_MODES: AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
 
-async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode } = {}) {
+async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode; otherModes?: AgentRuntimeMode[] } = {}) {
   const workspace = await workspaceFixture(undefined, { history: true })
   cleanups.push(workspace.remove)
   // Codex offers every mode and a second model, so only the ceiling narrows a permission and a named model can differ.
   const codex = workspace.adapters.codex.state
   codex.models[0]!.runtimeModes = [...ALL_MODES]
   codex.models.push({ id: 'fake:other', provider: 'Fake', name: 'Synthetic other model', ready: true,
-    reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium', runtimeModes: [...ALL_MODES] })
+    reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium', runtimeModes: [...options.otherModes ?? ALL_MODES] })
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => true, watcherEnabled: true } })
   let choices: WorkerRoleChoices = {}, reads = 0
@@ -101,6 +101,15 @@ it('holds a role\'s wider permission to the new-thread default, and the receipt 
   expect(result.role!.note).toContain('Its permission, Full access, was held to the user\'s new-thread default, Ask for approval.')
 })
 
+it('says the model does not offer the default\'s mode when that, not the default itself, held a role\'s permission', async () => {
+  // The other model offers no Allow edits, so a new-thread default of Allow edits starts it on the nearest it offers below.
+  const f = await fixture({ newThread: 'auto-accept-edits', otherModes: ['approval-required', 'auto', 'full-access'] })
+  f.setChoices({ 'computer-use': { modelId: f.other.id, reasoningEffort: 'low', runtimeMode: 'full-access' } })
+  const result = f.ok(await f.call(f.start({ role: 'computer-use' })))
+  expect(f.created(result.target.threadId)).toMatchObject({ runtimeMode: 'approval-required' })
+  expect(result.role!.note).toContain('Its permission, Full access, was held to Ask for approval: the user\'s new-thread default is Allow edits, which this model does not offer, so it starts on the nearest mode the model does.')
+})
+
 it('lets a named model override the role for this start only, with effort and permission still from the role', async () => {
   const f = await fixture({ newThread: 'full-access' })
   f.setChoices({ building: { modelId: f.base.id, reasoningEffort: 'high', runtimeMode: 'auto' } })
@@ -148,6 +157,37 @@ it('returns the original receipt for a retry after the role\'s setting changed, 
   // The saved operation keeps today's shape: its digest is of the concrete start, with no role in it.
   const saved = f.control.watcherRecord().operations.find(item => item.id === first.receipt.operationId)!
   expect(JSON.stringify(saved)).not.toContain('building')
+})
+
+/** A paired host that takes every start and answers with its receipt, holding new threads to `permissionCeiling`. */
+function acceptingHost(f: Awaited<ReturnType<typeof fixture>>, permissionCeiling: AgentRuntimeMode) {
+  const hostId = randomUUID()
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId, control: true, reads: true, connected: true, permissionCeiling }],
+    read: async () => { throw new Error('Synthetic host has no reads') },
+    control: async (_hostId, request) => {
+      const { operation, call } = request
+      if (call.name !== 'start_thread') throw new Error('Synthetic host takes starts only')
+      return { status: 'ok', receipt: { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'accepted',
+        receiptId: operation.receiptId, cardId: operation.cardId }, limits: { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }, target: operation.target,
+        effectiveChoices: { modelId: call.input.modelId!, reasoningEffort: call.input.reasoningEffort ?? null, permission: call.input.permission!, workingCopy: call.input.workingCopy },
+        creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId! }
+    },
+    snapshot: id => id === hostId ? { ...f.control.watcherSnapshot(), hostId, threads: [] } : undefined,
+    subscribe: () => () => undefined,
+  }
+  f.service.useRemoteHosts(remote)
+  return hostId
+}
+
+it('names the paired host, not the new-thread default, when the host\'s limit held a role\'s permission', async () => {
+  const f = await fixture({ newThread: 'full-access' })
+  f.setChoices({ 'computer-use': { modelId: f.base.id, reasoningEffort: 'low' } })
+  const hostId = acceptingHost(f, 'approval-required')
+  const result = f.ok(await f.call(f.start({ role: 'computer-use', project: { hostId, projectId: f.project.id } })))
+  expect(result.effectiveChoices.permission).toEqual({ kind: 'runtime', mode: 'approval-required' })
+  expect(result.role!.note).toContain('Its permission, Full access, was held to Ask for approval, the most that host lets this computer give a thread it starts there.')
+  expect(result.role!.note).not.toContain('new-thread default')
 })
 
 it('sends a paired host the concrete start, with no role key an older host would refuse', async () => {
