@@ -24,6 +24,8 @@ export interface WatcherLaunchProfile {
   readonly kind: 'watcher'
   readonly server: Readonly<Omit<ThreadMcpServer, 'headers'>> & { readonly headers: readonly Readonly<{ name: string; value: string }>[] }
   readonly toolNames: readonly string[]
+  /** Watcher's system prompt when its tools ask for more than the base one, as with worker roles on (#1041). */
+  readonly instructions?: string
   /** Revokes this session's server admission; recovery requires a fresh admission. */
   revoke(reason: string): void
 }
@@ -31,7 +33,11 @@ export interface ThreadLaunchProfiles {
   profileFor(threadId: string): Promise<WatcherLaunchProfile | undefined>
 }
 /** Ticket 3 supplies the server; ticket 2 consumes only this thread-bound capability. */
-export interface WatcherProfileTools extends ScopedThreadTools { revoke(threadId: string): void }
+export interface WatcherProfileTools extends ScopedThreadTools {
+  /** The system prompt Watcher runs on with these tools; undefined keeps the base one. */
+  readonly instructions?: string | undefined
+  revoke(threadId: string): void
+}
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }

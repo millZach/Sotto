@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf,
   type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentThread, type HandoverCounts } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
+import { capRuntimeMode, roleStartNote, startFromRole, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
@@ -83,6 +84,9 @@ function cutUtf8(text: string, bytes: number): string {
 }
 const HANDOVER_UNREADABLE = 'Sotto could not read the last Watcher’s history, so there is no handover to show. Nothing was sent. Its conversation is still in Watcher history on the Threads page; put the offer away to start the new Watcher without it.'
 const HOST_WITHOUT_OUTCOMES = 'This host does not report outcomes, so Sotto cannot say how this ended. Update Sotto on that host, or read the thread.'
+/** A start's worker role as its receipt says it (#1041). */
+type RoleReceipt = { readonly id: WorkerKind; readonly named: RoleField[]; readonly note: string }
+const ROLE_STARTS_KEPT = 500
 /**
  * How long before a client's own limit on one tool call Watcher's tools answer, when the client declares that limit
  * (`Sotto-Tool-Wait`, Muse's 300 seconds, ADR-0079). A call still under way then carries on, and its answer says how
@@ -132,11 +136,21 @@ export class WatcherService implements WatcherControlHooks {
     acceptedDraftId?: string; sendingCommandId?: string } | null = null
   /** Drafts chosen to carry a handover that another send to the new Watcher overtook. */
   private readonly overtakenHandovers = new Set<string>()
+  /**
+   * What each recent start by worker role was given, for its receipt (#1041). In memory only and never in the saved
+   * record, so the record keeps its shape; a retry after a restart reads its receipt without this block.
+   */
+  private readonly roleStarts = new Map<string, RoleReceipt>()
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
     limit: () => number; historyEnabled: () => boolean; workerHost?: boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void
     /** Delegation's starts in flight, which share Watcher's starts-only limit (ADR-0081 decision 5). */
     otherStartsInFlight?: () => number
+    /**
+     * The user's worker roles, present only while that Owl feature is on (#1041). Read once per start that names a role,
+     * when it is asked, never on publish or observe.
+     */
+    roles?: () => WorkerRoleChoices
     /** This computer's host facts and running threads, read as a host reads its own (#1031). Without it they read unknown. */
     machineFacts?: () => Promise<HostMachineReport> }) {
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), record: () => this.record(),
@@ -242,10 +256,17 @@ export class WatcherService implements WatcherControlHooks {
     return Boolean(snapshot && isThreadProviderConnected(snapshot, thread) && thread.clientConnected !== false)
   }
   private pending(thread: AgentThread): void { if (thread.requests.length) refuse('PENDING_USER_REQUEST', 'This thread needs your answer. Open its own request card. Nothing was sent.') }
-  private permission(model: AgentModel | undefined, explicit?: WatcherToolInput<'start_thread'>['permission'], pairedCeiling?: WatcherHostControl['ceiling']) {
+  /** The widest a new worker may start on: the new-thread default, narrowed by a paired master's ceiling, as the model offers it. */
+  private ceiling(model: AgentModel | undefined, pairedCeiling?: WatcherHostControl['ceiling']) {
     const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
-    const desired = pairedCeiling && RUNTIME_MODE_ORDER.indexOf(pairedCeiling) < RUNTIME_MODE_ORDER.indexOf(configured) ? pairedCeiling : configured
-    const ceiling = resolveNewThreadPermission(model, desired)
+    const paired = pairedCeiling !== undefined && RUNTIME_MODE_ORDER.indexOf(pairedCeiling) < RUNTIME_MODE_ORDER.indexOf(configured)
+    const desired = paired ? pairedCeiling : configured
+    // Which limit this is, for a receipt that says what held a role's permission back.
+    const by: NonNullable<HeldPermission['by']> = paired ? 'paired-host' : 'new-thread-default'
+    return { ...resolveNewThreadPermission(model, desired), by, limit: desired }
+  }
+  private permission(model: AgentModel | undefined, explicit?: WatcherToolInput<'start_thread'>['permission'], pairedCeiling?: WatcherHostControl['ceiling']) {
+    const ceiling = this.ceiling(model, pairedCeiling)
     if (ceiling.providerMode !== undefined) {
       const mode = model?.providerModes?.find(item => item.id === ceiling.providerMode)
       if (mode?.allows !== 'nothing' || explicit && (explicit.kind !== 'provider' || explicit.choiceId !== ceiling.providerMode)) {
@@ -1302,23 +1323,50 @@ export class WatcherService implements WatcherControlHooks {
         if (!watch) refuse('REQUEST_NOT_ACTIVE', 'This thread is no longer watched. Nothing was sent.')
         if (imported && imported.generation !== watch.generation) refuse('THREAD_TAKEN_OVER', 'This watch changed. Read the thread before sending again.')
       }
+      let roleResult: RoleReceipt | undefined
       if (start) {
         const create = input as WatcherToolInput<'start_thread'>
         const snapshot = this.owningSnapshot(owner)!
         const project = snapshot.projects.find(item => item.id === create.project.projectId)
         if (!project) refuse('UNKNOWN_TARGET', 'That project is unavailable. Read the project list again.')
         if (this.reservedProject(project.path)) refuse('RESERVED_THREAD', 'This project has a special job and is not a worker project.')
-        const model = resolveModel(snapshot.models, create.modelId)
+        const pairedCeiling = request.remoteOrigin?.ceiling ?? (remote ? this.remote?.hosts().find(host => host.hostId === owner)?.permissionCeiling : undefined)
+        // A start by worker role reads the user's Settings here, once, and only when a start is asked (#1041). What the
+        // request named wins; a retry of a recorded start returned above and never resolves the role again.
+        const byRole = !imported && create.role && this.options.roles ? startFromRole(create.role, this.options.roles(), snapshot.models, { modelId: create.modelId,
+          reasoningEffort: create.reasoningEffort, runtimeMode: create.permission?.kind === 'runtime' ? create.permission.mode : undefined }) : undefined
+        const modelId = byRole ? byRole.modelId : create.modelId
+        if (!modelId) refuse(byRole ? 'PROVIDER_UNAVAILABLE' : 'INVALID_INPUT', byRole
+          ? 'No ready model can do that kind of work. Connect a provider in Settings, under Providers. Nothing was started.'
+          : 'Name the worker model for this start. Nothing was started.')
+        const model = resolveModel(snapshot.models, modelId)
         if (!model?.ready) refuse('PROVIDER_UNAVAILABLE', 'Choose a ready worker model. Sotto will not switch accounts.')
         if (create.reasoningEffort && !model.reasoningEfforts?.includes(create.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this worker model offers.')
-        const permission = this.permission(model, create.permission, request.remoteOrigin?.ceiling
-          ?? (remote ? this.remote?.hosts().find(host => host.hostId === owner)?.permissionCeiling : undefined))
+        const roleEffort = byRole?.reasoningEffort && !byRole.named.includes('effort') && model.reasoningEfforts?.includes(byRole.reasoningEffort) ? byRole.reasoningEffort : undefined
+        // A permission the request named keeps its refusal. One the role gave is held to the ceiling instead.
+        let explicit = create.permission, held: HeldPermission | undefined
+        if (byRole?.runtimeMode && !explicit) {
+          const ceiling = this.ceiling(model, pairedCeiling)
+          if (ceiling.providerMode === undefined && ceiling.runtimeMode) {
+            const mode = capRuntimeMode(byRole.runtimeMode, ceiling.runtimeMode)
+            // A limit the model does not offer starts on the nearest mode it does, and the receipt says that is why.
+            if (mode !== byRole.runtimeMode) held = { wanted: byRole.runtimeMode, startedOn: mode, by: ceiling.by, ...(ceiling.nearestFit ? { unoffered: ceiling.limit } : {}) }
+            explicit = { kind: 'runtime', mode }
+          }
+        }
+        const permission = this.permission(model, explicit, pairedCeiling)
         if (!imported) {
           const configuration = this.options.control.configuration()
           const reference = resolveModel(this.options.control.watcherSnapshot().models, configuration.newThreadModelId)?.reasoningEfforts ?? model.reasoningEfforts ?? []
-          const effort = create.reasoningEffort ?? (configuration.newThreadReasoningEffort
+          const effort = create.reasoningEffort ?? roleEffort ?? (configuration.newThreadReasoningEffort
             ? nearestReasoningEffort(configuration.newThreadReasoningEffort, reference, model.reasoningEfforts ?? []) : undefined)
-          input = watcherToolSchemas.start_thread.input.parse({ ...create, ...(effort !== undefined ? { reasoningEffort: effort } : {}), permission })
+          // The concrete start carries no role, so its digest and a paired host's packet keep their shape.
+          const { role: _role, ...concrete } = create; void _role
+          input = watcherToolSchemas.start_thread.input.parse({ ...concrete, modelId, ...(effort !== undefined ? { reasoningEffort: effort } : {}), permission })
+        }
+        if (byRole) {
+          const named = create.permission?.kind === 'provider' && !byRole.named.includes('permission') ? [...byRole.named, 'permission' as const] : byRole.named
+          roleResult = { id: byRole.role, named: [...named], note: roleStartNote({ ...byRole, named }, snapshot.models, held) }
         }
         this.checkRemoteCeiling(request.id, permission.kind === 'runtime' ? permission.mode : undefined)
         this.prunePages()
@@ -1378,6 +1426,7 @@ export class WatcherService implements WatcherControlHooks {
         next.operations.push(operation)
         if (start && !next.reservations.some(item => key(item.target) === key(target))) next.reservations.push({ target, requestId: request.id, operationId: operation.id, generation: participant.generation, reason: 'creation' })
       })
+      if (roleResult) this.rememberRoleStart(operation.id, roleResult)
       return { operation, retry: false }
     })
     if (progress) progress.operationId = admitted.operation.id
@@ -1395,16 +1444,19 @@ export class WatcherService implements WatcherControlHooks {
       let command: WatcherCommand
       if (name === 'start_thread') {
         const create = input as WatcherToolInput<'start_thread'>
+        // Admission named the model of every start it let through, by role or by name.
+        const modelId = create.modelId
+        if (!modelId) throw new Error('model-missing')
         const choices = await this.resolveCopies(create)
         const pairedCeiling = this.record().requests.find(item => item.id === operation.requestId)?.remoteOrigin?.ceiling
-        const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, create.modelId), create.permission, pairedCeiling)
+        const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), create.permission, pairedCeiling)
         const createOrigin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {
           origin.guard()
-          this.permission(resolveModel(this.options.control.watcherSnapshot().models, create.modelId), permission, pairedCeiling)
+          this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), permission, pairedCeiling)
           this.checkRemoteCeiling(operation.requestId, permission.kind === 'runtime' ? permission.mode : undefined)
         } }
         const created = await this.options.control.commandFromWatcher({ type: 'create-thread', threadId: operation.target.threadId,
-          projectId: create.project.projectId, title: create.title, titleSource: 'user', modelId: create.modelId,
+          projectId: create.project.projectId, title: create.title, titleSource: 'user', modelId,
           ...(create.reasoningEffort ? { reasoningEffort: create.reasoningEffort } : {}),
           ...(permission.kind === 'runtime' ? { runtimeMode: permission.mode } : { providerMode: permission.choiceId }), ...choices }, createOrigin)
         if (created.error) throw new Error('creation-failed')
@@ -1516,6 +1568,14 @@ export class WatcherService implements WatcherControlHooks {
     const participant = record.requests.find(item => item.id === operation.requestId)!.participants.find(item => key(item.target) === key(operation.target))!
     participant.promptCount = Math.max(0, participant.promptCount - 1)
   }
+  private rememberRoleStart(operationId: string, role: RoleReceipt): void {
+    this.roleStarts.set(operationId, role)
+    for (const kept of this.roleStarts.keys()) { if (this.roleStarts.size <= ROLE_STARTS_KEPT) break; this.roleStarts.delete(kept) }
+  }
+  private roleBlock(operationId: string): { role: RoleReceipt } | Record<string, never> {
+    const role = this.roleStarts.get(operationId)
+    return role ? { role } : {}
+  }
   private operationResult(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>): unknown {
     const base = { receipt: this.receipt(operation), limits: this.limits(operation) }
     if (operation.refusalCode) return { ...watcherRefusal(operation.refusalCode, operation.refusalCode === 'THREAD_TAKEN_OVER'
@@ -1527,7 +1587,7 @@ export class WatcherService implements WatcherControlHooks {
       return { status: 'ok', ...base, target: operation.target, creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId!,
         effectiveChoices: { modelId: thread.modelId, reasoningEffort: thread.reasoningEffort ?? null,
           permission: thread.providerMode ? { kind: 'provider', choiceId: thread.providerMode } : { kind: 'runtime', mode: thread.runtimeMode ?? 'approval-required' },
-          workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) } }
+          workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) }, ...this.roleBlock(operation.id) }
     }
     if (name === 'send_to_thread') return { status: 'ok', ...base, delivery: operation.delivery }
     return { status: 'ok', ...base, state: this.operationState(operation.target), ...(name === 'stop_thread' ? { stopRequested: true } : {}) }
@@ -1590,7 +1650,8 @@ export class WatcherService implements WatcherControlHooks {
           this.recoveryNotice = 'The host confirmed the operation, but its latest state could not be read. Reconnect to refresh it.'
         })
       }
-      return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.record().operations.find(item => item.id === operation.id)!) } : parsed
+      return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.record().operations.find(item => item.id === operation.id)!),
+        ...(name === 'start_thread' ? this.roleBlock(operation.id) : {}) } : parsed
     } catch (error) {
       if (error instanceof Refusal) {
         await this.options.control.updateWatcher(record => this.recordRemoteRefusal(record, operation.id, error.result.code))

@@ -13,6 +13,7 @@ import { pendingSettingsStore, permissionPatch, settingValues, settingValuesFor,
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../watcher/watcherRoom'
 import { watcherProviderOf, type WatcherProvider } from '../watcher/watcherProviders'
+import { useSaveOrchestrating } from '../watcher/orchestratingRole'
 import './threadChips.css'
 
 export const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
@@ -184,18 +185,34 @@ export function unconfirmedSettingText(provider: string, wanted: string, error: 
  * the line that says what is still in force (`describedBy`), so the words are the ones on screen, said once. A `foot`
  * is a line under the list that holds in every choice; it sits outside the listbox, so it is read, never chosen.
  */
-export function ChoiceChip({ label, placeholder, value, options, disabled, pending, describedBy, onChange, foot, fixedReason }: {
+export function ChoiceChip({ label, placeholder, value, options, disabled, pending, describedBy, onChange, foot, fixedReason, flip = false }: {
   readonly label: string; readonly placeholder: string; readonly value: string; readonly options: readonly ChoiceOption[]
   readonly disabled: boolean; readonly pending: boolean; readonly describedBy?: string | undefined; readonly onChange: (id: string) => void
   readonly foot?: string | undefined
   /** Why the chip cannot be pressed now, on its tooltip while it is disabled. */
   readonly fixedReason?: string | undefined
+  /**
+   * Opens below the chip when there is no room above it inside the area that scrolls it, as on a Settings page where the
+   * chip can sit near the top. The composer's chips never need it: they sit at the bottom of their pane.
+   */
+  readonly flip?: boolean
 }): ReactNode {
   const [open, setOpen] = useState(false)
+  const [below, setBelow] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const listId = useId()
+  useLayoutEffect(() => {
+    if (!open || !flip) { setBelow(false); return }
+    const menu = panel.current ?? list.current, chip = trigger.current
+    if (!menu || !chip) return
+    let top = 0
+    for (let parent = chip.parentElement; parent; parent = parent.parentElement) {
+      if (/(auto|scroll)/u.test(getComputedStyle(parent).overflowY)) { top = parent.getBoundingClientRect().top; break }
+    }
+    setBelow(chip.getBoundingClientRect().top - menu.offsetHeight - 6 < top + 8)
+  }, [open, flip])
   useEffect(() => {
     if (!open) return
     const dismiss = (event: PointerEvent): void => {
@@ -209,7 +226,7 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
   }, [open])
   const current = options.find(option => option.id === value && !option.disabled)
   const choose = (id: string): void => { onChange(id); setOpen(false); trigger.current?.focus() }
-  const listbox = <div ref={list} id={listId} role="listbox" aria-label={label} className={foot ? 'thread-chip-menu__options' : 'thread-chip-menu__list'} onKeyDown={event => moveListboxFocus(event, list.current)}>
+  const listbox = <div ref={list} id={listId} role="listbox" aria-label={label} className={foot ? 'thread-chip-menu__options' : 'thread-chip-menu__list'} data-below={!foot && below ? 'true' : undefined} onKeyDown={event => moveListboxFocus(event, list.current)}>
     {options.map(option => <button type="button" role="option" key={option.id} aria-selected={option.id === value} disabled={option.disabled} onClick={() => choose(option.id)}>
       <span>{option.label}{option.description ? <small>{option.description}</small> : null}</span>{option.id === value && <Check size={14} aria-hidden="true" />}</button>)}
   </div>
@@ -225,7 +242,7 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
       {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
       <span>{current?.label ?? (value ? capitalise(value) : placeholder)}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
-    {!open ? null : foot ? <div ref={panel} className="thread-chip-menu__list thread-chip-menu__list--foot">{listbox}<p className="thread-chip-menu__foot">{foot}</p></div> : listbox}
+    {!open ? null : foot ? <div ref={panel} className="thread-chip-menu__list thread-chip-menu__list--foot" data-below={below ? 'true' : undefined}>{listbox}<p className="thread-chip-menu__foot">{foot}</p></div> : listbox}
   </div>
 }
 
@@ -289,6 +306,9 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   // Watcher keeps its provider; another provider's model is a new Watcher, which main makes and which offers the last
   // one's handover (ADR-0073). Only where the room can open one.
   const room = useWatcherRoom()
+  // Watcher's model and effort are the Orchestrating role (#1041): a press here saves it for the next Watcher too.
+  const saveOrchestrating = useSaveOrchestrating()
+  const orchestrating = watcher ? saveOrchestrating : null
   const open = watcher ? room?.open ?? null : null
   const settle = room?.settle
   const others = open === null ? [] : state.host.models.filter(model => model.ready && canCreateWith(state, model)
@@ -424,11 +444,18 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         if (continuing && continuations.some(model => model.id === pressed)) { continuing.onContinue(pressed); return }
         const picked = others.find(model => model.id === pressed)
         const provider = picked === undefined ? null : watcherProviderOf(picked)
-        if (picked !== undefined && provider !== null) { void replace(provider, picked.id); return }
+        if (picked !== undefined && provider !== null) {
+          orchestrating?.(picked.id, picked.defaultReasoningEffort ?? null, state.host.models)
+          void replace(provider, picked.id); return
+        }
         const id = chosenModelId(models, pressed, modelId, thread.modelId); press('model', id, { modelId: id })
+        orchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, state.host.models)
       }} />
       {efforts.length > 0 && <EffortPicker key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
-        disabled={fixed || modelDisabled} onChange={reasoningEffort => press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)}
+        disabled={fixed || modelDisabled} onChange={reasoningEffort => {
+          press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
+          orchestrating?.(modelId, reasoningEffort, state.host.models)
+        }}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
       {watcher
