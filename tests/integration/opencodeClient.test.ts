@@ -32,6 +32,22 @@ it('stops retrying a request OpenCode is not ready for once the thread’s serve
   expect(after).toBeLessThan(10)
 })
 
+it('stops waiting to retry a request OpenCode is not ready for as soon as its caller gives up', async () => {
+  const unavailable = await serving(response => { response.writeHead(503, { 'content-type': 'application/json' }); response.end('{"_tag":"ServiceUnavailableError"}') })
+  const client = new OpenCodeClient(unavailable.url, 'fixture-password', 5_000)
+  const caller = new AbortController()
+  const asking = client.request('GET', '/api/model', { signal: caller.signal }).then(() => undefined, (error: unknown) => error)
+  // By the fourth try the wait between tries is a second long.
+  await expect.poll(() => unavailable.requests(), { interval: 10 }).toBeGreaterThanOrEqual(4)
+  const gaveUp = Date.now()
+  caller.abort()
+  const settled = await asking
+  expect(settled).toBeInstanceOf(OpenCodeUncertain)
+  // It ends with its caller rather than at the end of that wait.
+  expect(Date.now() - gaveUp).toBeLessThan(400)
+  expect(unavailable.requests()).toBe(4)
+})
+
 it('reads events whatever pieces the stream arrives in, a long one included', async () => {
   const big = 'x'.repeat(4 * 1024 * 1024)
   const frames = [

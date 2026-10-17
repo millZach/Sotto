@@ -48,6 +48,8 @@ export type RunLike = (executable: string, args: readonly string[], asNode?: boo
 // A client a version manager installed is that manager's to update: npm here would install a second copy elsewhere.
 // mise is read before these, and only its installs folder makes a client mise's (see `miseToolOf`).
 const MANAGED_ELSEWHERE = [`${sep}.bun${sep}`, `${sep}pnpm${sep}`, `${sep}.pnpm${sep}`, `${sep}.volta${sep}`, `${sep}.mise${sep}`, `${sep}mise${sep}installs${sep}`, `${sep}.asdf${sep}`, 'homebrew', 'linuxbrew']
+/** The managers above that are not Homebrew, whose own Node may hold an npm global root of its own. */
+const OTHER_PACKAGE_MANAGERS = MANAGED_ELSEWHERE.filter(marker => marker !== 'homebrew' && marker !== 'linuxbrew')
 
 /** The client's own home, when its own installer owns the binary there: `~/.local/bin/claude.exe`. */
 function ownHome(provider: ProviderId, environment: NodeJS.ProcessEnv): readonly string[] {
@@ -247,6 +249,16 @@ export async function opencodeManager(executable: string, platform: NodeJS.Platf
 }
 
 /**
+ * npm may hoist OpenCode's program package (`@opencode/cli-<target>`, which the install script also downloads) beside
+ * `@opencode/cli`: a program there stands for the `@opencode/cli` beside it, which is what npm updates.
+ */
+function opencodePlatformPackage(path: string): string[] {
+  const parts = path.split(sep)
+  const at = parts.findIndex((part, index) => part.toLowerCase() === 'node_modules' && parts[index + 1]?.toLowerCase() === '@opencode' && /^cli-/iu.test(parts[index + 2] ?? ''))
+  return at < 0 ? [] : [join(parts.slice(0, at + 2).join(sep), 'cli', 'bin', basename(path))]
+}
+
+/**
  * Which channel owns this install, from the path it was found at and from what is installed where.
  *
  * The evidence, in order: mise, then a manager Sotto will not drive, then npm, then the client's own home. npm shows
@@ -270,13 +282,19 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
     if (miseTool) return { channel: 'mise', miseTool }
   }
   if (provider === 'opencode') {
-    // npm's copy is npm's even under a manager's Node (`/opt/homebrew/lib/node_modules/@opencode/cli`), so npm is asked
-    // before the manager (mise was asked above). Only the program's own prefix counts, so an npm package elsewhere on the
-    // machine never claims a copy Homebrew owns.
     const real = await realpath(executable).catch(() => executable)
-    for (const path of new Set([executable, real])) if (await npmPackageFolder(CLIENT_PACKAGES.opencode!, path, undefined)) return { channel: 'npm' }
+    // bun, pnpm, Volta and asdf lay a global package out the way npm does, so they are asked before npm: `npm install -g`
+    // over their copy would install a second one and leave theirs as it was (ADR-0042).
+    if ([executable, real].some(path => OTHER_PACKAGE_MANAGERS.some(marker => path.toLowerCase().includes(marker)))) return { channel: 'unknown' }
+    // npm's copy is npm's even under Homebrew's Node (`/opt/homebrew/lib/node_modules/@opencode/cli`), so npm is asked
+    // before Homebrew (mise was asked above). Only the program's own prefix counts, so an npm package elsewhere on the
+    // machine never claims a copy Homebrew, the install script or a system package put there.
+    for (const path of new Set([executable, real, ...[executable, real].flatMap(opencodePlatformPackage)])) {
+      if (await npmPackageFolder(CLIENT_PACKAGES.opencode!, path, undefined)) return { channel: 'npm' }
+    }
     const byHand = await opencodeManager(executable)
     if (byHand) return { channel: 'unknown', byHand }
+    return inOwnHome ? { channel: 'self-update' } : { channel: 'unknown' }
   }
   if (MANAGED_ELSEWHERE.some(marker => lower.includes(marker))) return { channel: 'unknown' }
   if (provider === 'muse') {

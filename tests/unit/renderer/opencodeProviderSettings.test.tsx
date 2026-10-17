@@ -74,7 +74,8 @@ describe('OpenCode in provider settings', () => {
     ['missing', { problem: 'not-installed' as const, version: '', error: 'Could not connect OpenCode. Install OpenCode 2, then connect again. Your threads and drafts are kept.' },
       'OpenCode 2 is not installed on this computer. Install it with its install script or npm’s @opencode/cli, then connect again.'],
     ['refused for its version', { problem: 'too-old' as const, version: '1.19.3', requiredVersion: '2.0.31', error: 'Could not connect OpenCode. This is OpenCode 1.19.3, and Sotto works with OpenCode 2 only.' },
-      'Sotto works with OpenCode 2.0.31 or newer. Install OpenCode 2 with its install script or npm’s @opencode/cli, then connect again.'],
+      // Sotto looks in ~/.opencode/bin first, where OpenCode 1's install script put it too, so only OpenCode 2's script replaces it.
+      'Sotto works with OpenCode 2.0.31 or newer. Install OpenCode 2 with its install script, which replaces an older copy in ~/.opencode/bin, where Sotto looks first, then connect again. npm’s @opencode/cli installs a second copy and leaves that one.'],
   ])('offers OpenCode 2’s install guide when OpenCode is %s, with no update to show', async (_kind, problem, words) => {
     const openExternalLink = vi.fn(async () => ({ ok: true }))
     vi.stubGlobal('sotto', { ...window.sotto, openExternalLink })

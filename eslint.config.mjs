@@ -145,6 +145,7 @@ export default tseslint.config(
       'artifacts/muse-provider/**',
       'artifacts/opencode-provider/**',
       'artifacts/opencode-sign-in/**',
+      'artifacts/opencode-model-menu/**',
       'artifacts/starting-screen/**',
       'node_modules/**',
       'out/**',

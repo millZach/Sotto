@@ -80,9 +80,11 @@ describe('provider lists', () => {
       .toEqual([true, true, true, true, true, true])
   })
 
-  it('gives OpenCode neither side writing nor Sotto’s tools until #1106 does', () => {
-    expect(providerWritesShortText('opencode')).toBe(false)
-    expect(providerTakesSottoTools('opencode')).toBe(false)
+  it('gives OpenCode side writing and Sotto’s tools, unless its thread’s server withheld them (#1106)', () => {
+    expect(providerWritesShortText('opencode')).toBe(true)
+    expect(providerTakesSottoTools('opencode')).toBe(true)
+    expect(threadTakesSottoTools({ providerId: 'opencode' })).toBe(true)
+    expect(threadTakesSottoTools({ providerId: 'opencode', sottoToolsWithheld: true })).toBe(false)
   })
 
   it('names the provider a list that must name every provider leaves out', () => {

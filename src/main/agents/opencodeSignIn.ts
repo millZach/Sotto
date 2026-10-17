@@ -47,9 +47,13 @@ export class OpenCodeSignIn {
   private server: Promise<SignInServer> | undefined
   private readonly attempts = new Map<string, Attempt>()
   private integrations = new Map<string, Integration>()
+  /** The sources signed in at the last read, to notice a sign-in OpenCode finished with nobody waiting on it. */
+  private signedIn: string | undefined
   private idle: ReturnType<typeof setTimeout> | undefined
   private busy = 0
   private closed = false
+  /** A new client is on disk, and the server still runs the old one until nothing needs it. */
+  private outdated = false
   constructor(private readonly options: OpenCodeSignInOptions) {}
 
   private get location(): Record<string, string> { return locationQuery(this.options.location) }
@@ -73,7 +77,7 @@ export class OpenCodeSignIn {
       starting.then(server => {
         void server.closed.then(() => {
           if (this.server !== starting) return
-          this.server = undefined
+          this.server = undefined; this.outdated = false
           for (const [id, attempt] of this.attempts) if (attempt.server === server) this.attempts.delete(id)
         })
       }, () => { if (this.server === starting) this.server = undefined })
@@ -89,6 +93,7 @@ export class OpenCodeSignIn {
     if (this.busy || !this.server) return
     const now = (this.options.now ?? Date.now)()
     for (const [id, attempt] of this.attempts) if (attempt.expiresAt <= now) this.attempts.delete(id)
+    if (this.outdated && !this.attempts.size) { void this.stop(); return }
     const idleMs = this.options.idleMs ?? 60_000
     const waitMs = this.attempts.size ? Math.max(idleMs, Math.min(...[...this.attempts.values()].map(attempt => attempt.expiresAt - now))) : idleMs
     this.idle = setTimeout(() => { if (this.busy) return; if (this.attempts.size) this.rest(); else void this.stop() }, Math.min(waitMs, 2_147_483_647))
@@ -96,11 +101,16 @@ export class OpenCodeSignIn {
   }
   private async stop(): Promise<void> {
     const server = this.server
-    this.server = undefined; this.attempts.clear()
+    this.server = undefined; this.attempts.clear(); this.outdated = false
     await server?.then(running => running.stop(), () => undefined)
   }
   /** Stops everything: the server and any sign-in waiting on it. A disconnect or a quit calls this. */
   async close(): Promise<void> { clearTimeout(this.idle); await this.stop() }
+  /**
+   * A new client is on disk (ADR-0042): the server moves to it at once when nothing uses it, and otherwise once nothing
+   * does and no browser sign-in waits on it, since OpenCode keeps a waiting sign-in in that server's memory (ADR-0038).
+   */
+  renew(): void { if (!this.server) return; this.outdated = true; this.rest() }
   /** OpenCode was connected again: sign-ins may run once more. */
   reopen(): void { this.closed = false }
   /** OpenCode was disconnected: nothing runs until it connects again. */
@@ -117,7 +127,9 @@ export class OpenCodeSignIn {
     const shown = models.filter(model => model.enabled !== false && model.status !== 'deprecated')
     // Zen's free models are counted under their own provider; every other model under the source that signs it in.
     const counted = shown.map(model => model.providerID === 'opencode' ? 'opencode' : integrationOf.get(model.providerID) ?? model.providerID)
-    return { status: 'ok', ...modelSourcesOf(list, counted) }
+    const sources = modelSourcesOf(list, counted)
+    this.signedIn = sources.sources.filter(source => source.signedIn).map(source => source.id).sort().join(' ')
+    return { status: 'ok', ...sources }
   }
   /** The answer once the sign-ins changed: the sources as they are now, and words for a model list that was not read again. */
   private async afterChange(server: SignInServer): Promise<{ status: 'ok'; sources: ModelSources; warning?: string }> {
@@ -131,9 +143,18 @@ export class OpenCodeSignIn {
     return this.integrations.get(sourceId)
   }
 
+  /**
+   * The sources as OpenCode has them now. A browser sign-in OpenCode finished after its dialog closed changed them with
+   * nobody reading the result, so a change since the last read moves the threads to it as any sign-in does.
+   */
   sources(): Promise<ModelSources> {
-    return this.use(server => this.read(server).catch((): ModelSources => ({ status: 'refused', message: SIGN_IN_WORDS.notRunning })),
-      message => ({ status: 'refused', message }))
+    return this.use(async server => {
+      const before = this.signedIn
+      let now: ModelSources
+      try { now = await this.read(server) } catch { return { status: 'refused', message: SIGN_IN_WORDS.notRunning } }
+      if (before === undefined || before === this.signedIn) return now
+      return (await this.afterChange(server)).sources
+    }, message => ({ status: 'refused', message }))
   }
 
   signInWithKey(request: unknown): Promise<SignInResult> {
@@ -278,11 +299,20 @@ export class OpenCodeSignIn {
     const attempt = this.attempts.get(attemptId)
     return attempt ? { status: 'ok', address: attempt.url } : { status: 'refused', message: SIGN_IN_WORDS.notRunning }
   }
+  /** Stops a waiting browser sign-in. One its page finished just before is OpenCode's now, so it is followed as finished. */
   async cancel(request: unknown): Promise<SignInDone> {
     const { attemptId } = signInAttemptRequestSchema.parse(request)
     const attempt = this.attempts.get(attemptId)
     if (!attempt) return { status: 'ok' }
     this.attempts.delete(attemptId)
+    const path = `/api/integration/${encodeURIComponent(attempt.sourceId)}/connect/oauth/${encodeURIComponent(attemptId)}`
+    const finished = await attempt.server.client.request('GET', path, { query: this.location })
+      .then(value => attemptStatusSchema.parse(value).data.status === 'complete', () => false)
+    if (finished) {
+      this.log('opencode-sign-in-complete')
+      await this.use(server => this.afterChange(server), () => undefined)
+      return { status: 'ok' }
+    }
     await this.cancelNative(attempt.server, attempt.sourceId, attemptId)
     this.log('opencode-sign-in-cancelled')
     this.rest()
@@ -299,11 +329,18 @@ export class OpenCodeSignIn {
       await this.read(server).catch(() => undefined)
       const integration = this.integrations.get(sourceId)
       if (!integration) return { status: 'refused', message: SIGN_IN_WORDS.unknownSource }
+      let deleted = 0
       try {
-        for (const credential of credentialsOf(integration)) await server.client.request('DELETE', `/api/credential/${encodeURIComponent(credential)}`)
+        for (const credential of credentialsOf(integration)) { await server.client.request('DELETE', `/api/credential/${encodeURIComponent(credential)}`); deleted += 1 }
       } catch {
         this.log('opencode-sign-in-failed')
-        return { status: 'refused', message: SIGN_IN_WORDS.signOutFailed(integration.name) }
+        if (!deleted) return { status: 'refused', message: SIGN_IN_WORDS.signOutFailed(integration.name) }
+        // Some of its sign-ins are gone, so the threads move to what is left, and the list says whether any is.
+        const after = await this.afterChange(server)
+        const gone = after.sources.status === 'ok' && !after.sources.sources.some(source => source.id === sourceId && source.signedIn)
+        if (!gone) return { status: 'refused', message: SIGN_IN_WORDS.signOutFailed(integration.name) }
+        this.log('opencode-sign-out')
+        return after
       }
       this.log('opencode-sign-out')
       return await this.afterChange(server)

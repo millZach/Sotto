@@ -224,3 +224,97 @@ it('moves every thread server to the new sign-ins after a sign-out even when the
     await expect.poll(async () => f.holder(id), { timeout: 10_000 }).toBeDefined()
   } finally { await f.cleanup() }
 })
+
+const running = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' } }
+
+it('moves the sign-in server to a new client at once when nothing needs it, and once a waiting browser sign-in has ended', { timeout: 60_000 }, async () => {
+  // A long idle time, so only the update can be what stops the server.
+  const f = await opencodeFixture(undefined, undefined, {}, { openExternal: async () => undefined, signInIdleMs: 60_000 })
+  try {
+    await f.script({ oauth: { 'xai:device': { mode: 'auto', code: 'QX7M-4LRT' } } })
+    await f.host.connect()
+    const signIn = f.host.signIn
+    const records = async (method: string) => (await f.driver.requests()).filter(record => record.method === method) as { process?: number; params?: Record<string, unknown> }[]
+    const servedBy = async (method = 'integration.list'): Promise<number> => (await records(method)).at(-1)!.process!
+    const versionOf = async (pid: number) => (await records('fixture/process')).find(record => record.params?.pid === pid)?.params?.version
+    expect((await signIn.sources()).status).toBe('ok')
+    const idle = await servedBy()
+    await f.script({ version: '2.0.40', oauth: { 'xai:device': { mode: 'auto', code: 'QX7M-4LRT' } } })
+    await f.host.clientUpdated!()
+    // Nothing used it, so it stopped at once, and the next sign-in runs on the new client.
+    await expect.poll(() => running(idle)).toBe(false)
+    const attempt = waiting(await signIn.startBrowserSignIn({ sourceId: 'xai', methodId: 'device' }))
+    const holding = await servedBy('integration.connect.oauth')
+    expect(await versionOf(holding)).toBe('2.0.40')
+    // A browser sign-in waits on the server's memory, so a later update leaves the server to it until it ends.
+    await f.host.clientUpdated!()
+    expect(await signIn.wait({ attemptId: attempt.id })).toEqual({ status: 'pending' })
+    expect(running(holding)).toBe(true)
+    expect(await signIn.cancel({ attemptId: attempt.id })).toEqual({ status: 'ok' })
+    await expect.poll(() => running(holding)).toBe(false)
+    expect((await signIn.sources()).status).toBe('ok')
+    expect(await servedBy()).not.toBe(holding)
+  } finally { await f.cleanup() }
+})
+
+it('never lets a catalog read that answers late replace the newer client’s catalog', { timeout: 60_000 }, async () => {
+  const f = await opencodeFixture(undefined, undefined, {}, { openExternal: async () => undefined, signInIdleMs: 60_000 })
+  try {
+    await f.host.connect()
+    const signIn = f.host.signIn
+    expect((await signIn.sources()).status).toBe('ok')
+    // The newer client lists a model the older one does not, and the sign-in server, still on the older one, reads its
+    // model list slowly after a sign-in.
+    const newer = { id: 'newer-model', modelID: 'newer-model', providerID: 'opencode', name: 'Newer Model', capabilities: { tools: true, input: ['text'], output: ['text'] },
+      variants: [], enabled: true, status: 'active', limit: { context: 200000, output: 32000 } }
+    await f.script({ version: '2.0.40', modelsByVersion: { '2.0.40': [newer] }, delay: { 'model.list': 2_000 } })
+    const listed = (await f.driver.requests()).filter(record => record.method === 'model.list').length
+    const signing = signIn.signInWithKey({ sourceId: 'anthropic', key: KEY })
+    await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'model.list').length).toBeGreaterThan(listed)
+    await f.host.clientUpdated!()
+    expect((await signing).status).toBe('ok')
+    await expect.poll(async () => (await f.host.snapshot()).version).toContain('2.0.40')
+    expect((await f.host.snapshot()).models.map(model => model.id)).toContain('opencode/newer-model')
+  } finally { await f.cleanup() }
+})
+
+it('keeps a sign-in its page finished just before Cancel, and follows one OpenCode finished with nobody waiting', async () => {
+  const { f, signIn, requests, ok } = await signInFixture({ oauth: { 'xai:device': { mode: 'auto', code: 'QX7M-4LRT' } } })
+  try {
+    const attempt = waiting(await signIn.startBrowserSignIn({ sourceId: 'xai', methodId: 'device' }))
+    // The page finished in the browser, and Cancel was pressed before the dialog read it.
+    await writeFile(join(f.root, 'approve.json'), JSON.stringify({ integrationID: 'xai' }))
+    expect(await signIn.cancel({ attemptId: attempt.id })).toEqual({ status: 'ok' })
+    expect(await requests('integration.connect.oauth.cancel')).toEqual([])
+    await expect.poll(async () => (await f.host.snapshot()).models.some(model => model.source === 'xAI')).toBe(true)
+    // OpenCode finished a sign-in on its own, as one whose dialog went away does: the next read follows it.
+    expect(ok(await signIn.sources()).sources.find(source => source.id === 'anthropic')?.signedIn).toBeUndefined()
+    const held = JSON.parse(await readFile(join(f.root, 'credentials.json'), 'utf8')) as unknown[]
+    await writeFile(join(f.root, 'credentials.json'), JSON.stringify([...held, { id: 'cred_finished_alone', integrationID: 'anthropic', label: 'Anthropic', active: true, value: { type: 'key', key: 'fixture-unused' } }]))
+    expect(ok(await signIn.sources()).sources.find(source => source.id === 'anthropic')?.signedIn).toBeDefined()
+    await expect.poll(async () => (await f.host.snapshot()).models.some(model => model.source === 'Anthropic')).toBe(true)
+  } finally { await f.cleanup() }
+})
+
+it('follows a sign-out that deleted some of a source’s sign-ins before OpenCode refused the rest', { timeout: 60_000 }, async () => {
+  const { f, signIn } = await signInFixture()
+  try {
+    okResult(await signIn.signInWithKey({ sourceId: 'anthropic', key: KEY }))
+    // OpenCode holds two sign-ins for it, as a key pasted again beside an account's sign-in leaves.
+    const held = JSON.parse(await readFile(join(f.root, 'credentials.json'), 'utf8')) as { id: string }[]
+    await writeFile(join(f.root, 'credentials.json'), JSON.stringify([...held, { ...held[0]!, id: 'cred_second' }]))
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Outdated by part of a sign-out' })
+    f.host.observeThreads?.([id])
+    await expect.poll(async () => f.holder(id)).toBeDefined()
+    const before = await f.holder(id)
+    // The first sign-in is deleted and the second is refused.
+    await f.script({ refuse: { 'credential.remove': [500, 1, 1] } })
+    expect(await signIn.signOut({ sourceId: 'anthropic' })).toEqual({ status: 'refused', message: SIGN_IN_WORDS.signOutFailed('Anthropic') })
+    // What was deleted is gone from the threads too: the idle thread's server stops, and it opens again on a fresh one.
+    await expect.poll(async () => f.holder(id), { timeout: 10_000 }).not.toBe(before)
+    // Signing out again deletes the rest.
+    expect(await signIn.signOut({ sourceId: 'anthropic' })).toMatchObject({ status: 'ok' })
+  } finally { await f.cleanup() }
+})

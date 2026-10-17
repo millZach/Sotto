@@ -2,12 +2,13 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
+import { agentProjectSchema, OPENCODE_ZEN_SOURCE, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { watcherProvidersInWords } from '../../shared/workerRoles'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import type { BrowserAgentTools } from './browserAgentServer'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { compareClientVersions } from './clientVersions'
@@ -16,6 +17,7 @@ import { opencodeReasoningActivity, opencodeStepFilesActivity, opencodeTextMessa
 import { locationQuery, OpenCodeClient, OpenCodeRejected, type OpenCodeEvent } from './opencodeClient'
 import { OPENCODE_DECLINED, OPENCODE_FORM_UNSHOWN, opencodeFormAnswer, opencodeFormPending, opencodeFormSchema, opencodePermissionDecision, opencodePermissionPending, opencodePermissionSchema, type OpenCodePending } from './opencodeRequests'
 import { endServersLeftBehind, ensureOpenCodeFolders, findOpenCodeExecutable, OPENCODE_CLI_VERSION, parseOpenCodeVersion, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
+import { opencodeToolServers, toolServerStatuses, type OpenCodeToolServer } from './opencodeTools'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
@@ -24,6 +26,8 @@ import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotP
 import { ReadsBeforeSend } from './readsBeforeSend'
 import { markSendStage } from './sendStages'
 import { SessionReaper } from './sessionReaper'
+import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
+import type { ScopedThreadTools } from './threadToolServer'
 import { ThreadMessageLog } from './threadMessageLog'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -45,7 +49,8 @@ const watcherRefused = (held: HeldProviders): string => `OpenCode cannot host Wa
 const ZEN = 'opencode'
 /** How long a thread server is kept for a prompt whose answer was lost, in case OpenCode is still taking it. */
 const UNCONFIRMED_PROMPT_HOLD_MS = 60_000
-const ZEN_NAME = 'OpenCode Zen'
+const ZEN_NAME = OPENCODE_ZEN_SOURCE
+
 
 /**
  * Sotto's permission modes as OpenCode session rule sets (ADR-0087). The last matching rule wins, and OpenCode's own
@@ -65,9 +70,20 @@ export function opencodeRules(mode: OpenCodeMode): OpenCodeRule[] {
   return [rule('shell', 'ask'), rule('edit', mode === 'auto-accept-edits' ? 'allow' : 'ask'), rule('external_directory', 'ask'),
     rule('webfetch', 'ask'), rule('websearch', 'ask'), rule('subagent', 'ask')]
 }
+/**
+ * The rules after a mode's that let the model call Sotto's own tools with no prompt of OpenCode's, as Codex's `approve`,
+ * Claude Code's allowed tools and Grok Build's one-time allow do (ADR-0020, ADR-0087): each by its own action name, so
+ * nothing else is widened. They come last, since the last matching rule wins, and they take no tool away.
+ */
+export function opencodeToolRules(actions: readonly string[]): OpenCodeRule[] { return actions.map(action => rule(action, 'allow')) }
+/** One of Sotto's tool allows, which says nothing of the thread's mode. Sotto's servers all go by `sotto_` names. */
+const isToolRule = (candidate: { action: string; effect: string }): boolean => candidate.effect === 'allow' && candidate.action.startsWith('sotto_')
+/** Whether two rule sets say the same, rule for rule. */
+const sameRules = (left: readonly HeldRule[], right: readonly HeldRule[]): boolean =>
+  JSON.stringify(left.map(({ action, resource, effect }) => [action, resource, effect])) === JSON.stringify(right.map(({ action, resource, effect }) => [action, resource, effect]))
 function modeOfRules(rules: readonly { action: string; resource: string; effect: string }[] | undefined): OpenCodeMode | undefined {
   if (!rules) return undefined
-  const key = JSON.stringify(rules.map(({ action, resource, effect }) => [action, resource, effect]))
+  const key = JSON.stringify(rules.filter(candidate => !isToolRule(candidate)).map(({ action, resource, effect }) => [action, resource, effect]))
   return opencodeRuntimeModes.find(mode => JSON.stringify(opencodeRules(mode).map(({ action, resource, effect }) => [action, resource, effect])) === key)
 }
 function opencodeMode(mode: AgentRuntimeMode): OpenCodeMode {
@@ -121,6 +137,8 @@ const modelListSchema = z.looseObject({ data: z.array(modelSchema) })
 const defaultModelSchema = z.looseObject({ data: modelSchema.nullable().optional() })
 const providerListSchema = z.looseObject({ data: z.array(z.looseObject({ id: z.string().min(1), name: z.string().min(1), activation: z.string().optional() })) })
 const ruleSchema = z.looseObject({ action: z.string(), resource: z.string(), effect: z.string() })
+/** A rule as a provider session reports it. */
+interface HeldRule { readonly action: string; readonly resource: string; readonly effect: string }
 const modelRefSchema = z.looseObject({ id: z.string().min(1), providerID: z.string().min(1), variant: z.string().optional() })
 const sessionSchema = z.looseObject({
   id: z.string().min(1), model: modelRefSchema.optional(), outcome: z.enum(['succeeded', 'failed', 'interrupted']).optional(),
@@ -173,6 +191,17 @@ interface ThreadServer {
   closing: boolean
   /** This server took a creation whose answer was lost, and may still be making that provider session. */
   createUnsettled?: boolean
+  /** Sotto's tool servers being given to this server, for the folder `toolsFolder`; it never rejects. */
+  tools?: Promise<void>
+  toolsFolder?: string
+  /** The names of the tool servers this server was given, which are taken off again when the thread's session ends. */
+  toolServers?: readonly string[]
+  /** The permission actions of the tool servers this server was given and connected, the only ones its rule set allows. */
+  toolActions?: readonly string[]
+  /** The rule set the thread's provider session holds, as this server made, read or changed it last. */
+  sessionRules?: readonly HeldRule[]
+  /** Changes to the provider session's rule set, one at a time; it never rejects. */
+  rules?: Promise<void>
 }
 type Pending = OpenCodePending
 interface Fold {
@@ -188,6 +217,21 @@ const freshFold = (): Fold => ({ texts: new Map(), reasoning: new Map(), tools: 
 /** Where a record from OpenCode goes in a thread: its Sotto turn, and the message it follows. */
 interface Placement { readonly turnId: string; readonly afterMessageId: string | undefined }
 const iso = (at: number | undefined): string => at !== undefined && Number.isFinite(at) ? new Date(at).toISOString() : new Date().toISOString()
+/**
+ * How long OpenCode may take to connect one of Sotto's tool servers, from its add to its listing as connected: it may hold
+ * the add while it connects, or answer it at once and list the server as pending until it has.
+ */
+const TOOL_CONNECT_TIMEOUT_MS = 45_000
+/** How often the tool servers OpenCode lists as pending are read again. */
+const TOOL_SETTLE_POLL_MS = 250
+/**
+ * How long a send waits for its server's tool servers before it goes without them. Sotto's servers answer at once, so they
+ * are in place well inside this; a connect that hangs never holds a prompt longer, and the tools join a later step.
+ */
+const TOOL_SEND_GRACE_MS = 2_000
+/** How long taking the tool servers off may take, retries included, as a thread's session ends; its server is stopped whatever the answer. */
+const TOOL_REMOVE_TIMEOUT_MS = 3_000
+const generatedSchema = z.looseObject({ data: z.looseObject({ text: z.string() }) })
 
 export interface OpenCodeHostOptions {
   executable?: string
@@ -237,6 +281,8 @@ export class OpenCodeHost implements AgentHost {
   private readonly processes = new Map<string, ThreadServer>()
   private readonly holds = new Map<string, number>()
   private readonly exits = new Set<Promise<void>>()
+  /** Servers whose thread's session is ending: out of `processes`, and still taking their tool servers off. */
+  private readonly stopping = new Set<ThreadServer>()
   private executable: string | undefined
   /** The connect check's short-lived server while it starts or answers, so a disconnect stops it too. */
   private probe: Promise<{ server: OpenCodeServer }> | undefined
@@ -323,6 +369,7 @@ export class OpenCodeHost implements AgentHost {
       id, projectId: alias.projectId, workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId,
       runtimeMode: alias.runtimeMode, ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}),
       status: alias.sessionConfirmed ? 'idle' : 'error', messages: [], requests: [],
+      ...(this.toolsWithheld.has(id) ? { sottoToolsWithheld: true as const } : {}),
     })
     return this.threads.get(id)!
   }
@@ -364,6 +411,132 @@ export class OpenCodeHost implements AgentHost {
     throw new WatcherProfileRefusal(refused)
   }
 
+  private browserTools: BrowserAgentTools | undefined
+  useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
+  private threadTools: readonly ScopedThreadTools[] = []
+  useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
+  /** Threads whose server could not be given every one of Sotto's tool servers it was offered. Never saved. */
+  private readonly toolsWithheld = new Set<string>()
+  /**
+   * A thread's rule set: its mode's, then the allows for the tools of Sotto's servers this thread's server was given and
+   * connected (ADR-0087). A server the thread was not given gets no allow, so a project's own MCP server that goes by the
+   * same name is still asked about as the project says.
+   */
+  private rulesFor(mode: OpenCodeMode, entry: ThreadServer): OpenCodeRule[] { return [...opencodeRules(mode), ...opencodeToolRules(entry.toolActions ?? [])] }
+  /**
+   * Give a thread's server Sotto's tool servers for the folder its provider session works in, unless it has them for that
+   * folder already. It runs beside whatever the thread does next, since OpenCode holds the request while it connects.
+   */
+  private giveTools(id: string, entry: ThreadServer, folder: string): void {
+    if (entry.toolsFolder === folder || entry.closing) return
+    // Servers given for another folder are not this one's, so their tools are allowed no longer.
+    entry.toolsFolder = folder; delete entry.toolActions
+    entry.tools = this.addToolServers(id, entry, folder).catch(() => { if (this.ownsTools(id, entry, folder)) this.withholdTools(id, true) })
+      .then(() => this.syncToolRules(id, entry).catch(() => undefined))
+  }
+  /**
+   * Whether what this server hears about its tool servers for `folder` is still the thread's to show: it is the thread's
+   * server, not stopping, and still meant to have them for that folder. A server whose session ended is not, even while
+   * its tool servers are still being taken off, since the thread's next server may have started beside it.
+   */
+  private ownsTools(id: string, entry: ThreadServer, folder: string): boolean {
+    return this.processes.get(id) === entry && !entry.closing && entry.toolsFolder === folder
+  }
+  /**
+   * Sotto's tool servers reach an OpenCode thread as remote MCP servers on that thread's own server, each with the thread's
+   * bearer token (ADR-0087), as Grok Build and Muse get them: the same servers, asked for at each start, so a renewed token
+   * reaches a new server. OpenCode keeps them for the folder until the process ends and writes nothing down. A server it
+   * refuses, or does not list as connected once it has stopped connecting it, leaves the thread marked as without Sotto's
+   * tools, as a Muse thread is.
+   *
+   * A mark an earlier server left is cleared before the servers are asked for, since a scoped server answers no thread
+   * marked so (`admitsVisuals`, `admitsBabysitting`), and they are asked again once the first ones connect, so a scoped
+   * server that read the mark before it was cleared is given too.
+   */
+  private async addToolServers(id: string, entry: ThreadServer, folder: string): Promise<void> {
+    const generation = this.generation
+    const stale = (): boolean => !this.ownsTools(id, entry, folder) || generation !== this.generation || !entry.client
+    if (stale()) return
+    this.withholdTools(id, false)
+    const given = new Map<string, readonly string[]>()
+    for (let round = 0; round < 2; round++) {
+      const servers: OpenCodeToolServer[] = (await opencodeToolServers(this.browserTools, this.threadTools, id)).filter(server => !given.has(server.name))
+      if (stale() || !servers.length) return
+      const client = entry.client!, location = locationQuery(folder), deadline = Date.now() + TOOL_CONNECT_TIMEOUT_MS
+      entry.toolServers = [...new Set([...entry.toolServers ?? [], ...servers.map(server => server.name)])]
+      const added = await Promise.all(servers.map(server => client.request('PUT', `/api/experimental/mcp/${encodeURIComponent(server.name)}`,
+        { query: location, body: { config: server.config }, timeoutMs: TOOL_CONNECT_TIMEOUT_MS }).then(() => true, () => false)))
+      if (stale()) return
+      const connected = added.every(Boolean) ? await this.connectedOnceSettled(client, location, servers.map(server => server.name), deadline, stale) : new Set<string>()
+      if (stale()) return
+      for (const server of servers) if (connected.has(server.name)) given.set(server.name, server.actions)
+      entry.toolActions = [...given.values()].flat()
+      if (!servers.every(server => connected.has(server.name))) { this.withholdTools(id, true); return }
+    }
+  }
+  /**
+   * Which of `names` OpenCode lists as connected once each has settled. OpenCode may answer an add before it has connected
+   * the server and list it as pending meanwhile (2.0.31), so the list is read again until none of them is pending, or
+   * `deadline` passes, or the server is no longer the thread's. A list it cannot give ends the wait with none connected.
+   */
+  private async connectedOnceSettled(client: OpenCodeClient, location: Record<string, string>, names: readonly string[], deadline: number, stale: () => boolean): Promise<ReadonlySet<string>> {
+    for (;;) {
+      const statuses = toolServerStatuses(await client.request('GET', '/api/mcp', { query: location }).catch(() => undefined))
+      if (!statuses) return new Set()
+      const connected = new Set(names.filter(name => statuses.get(name) === 'connected'))
+      if (!names.some(name => statuses.get(name) === 'pending') || Date.now() >= deadline || stale()) return connected
+      await new Promise<void>(resolve => { const timer = setTimeout(resolve, TOOL_SETTLE_POLL_MS); timer.unref() })
+    }
+  }
+  /**
+   * Bring the provider session's rule set in line with the tool servers this thread's server was given: the rules it holds
+   * for its mode, then an allow for each of those servers' tools and for nothing else. It runs once the tools are given and
+   * whenever this server makes or opens the session, so a session made before the thread had its tools, or on a server
+   * given others, gets the right allows when it is opened again (ADR-0087). A session this server has not opened is left
+   * for its opening.
+   */
+  private syncToolRules(id: string, entry: ThreadServer): Promise<void> {
+    return this.changeRules(entry, () => {
+      const alias = this.aliases[id], held = entry.sessionRules
+      if (!alias?.sessionId || !held || entry.closing || this.processes.get(id) !== entry) return undefined
+      const wanted = [...held.filter(candidate => !isToolRule(candidate)).map(({ action, resource, effect }) => ({ action, resource, effect })), ...opencodeToolRules(entry.toolActions ?? [])]
+      return sameRules(wanted, held) ? undefined : { alias, rules: wanted }
+    })
+  }
+  /** Change the provider session's rule set, one change at a time, each worked out when its turn comes. */
+  private changeRules(entry: ThreadServer, next: () => { alias: Alias; rules: readonly HeldRule[] } | undefined): Promise<void> {
+    const run = async (): Promise<void> => {
+      const change = next(); if (!change) return
+      await entry.client!.request('PATCH', `/api/session/${this.sid(change.alias)}`, { body: { permissions: change.rules } })
+      entry.sessionRules = change.rules
+    }
+    const job = (entry.rules ?? Promise.resolve()).then(run)
+    entry.rules = job.catch(() => undefined)
+    return job
+  }
+  private withholdTools(id: string, withheld: boolean): void {
+    if (withheld === this.toolsWithheld.has(id)) return
+    if (withheld) this.toolsWithheld.add(id); else this.toolsWithheld.delete(id)
+    const thread = this.threads.get(id)
+    if (thread) { if (withheld) thread.sottoToolsWithheld = true; else delete thread.sottoToolsWithheld; this.emit() }
+  }
+  /** A send waits a moment for its server's tool servers, never longer: a connect that hangs does not hold the prompt. */
+  private async toolsGiven(entry: ThreadServer): Promise<void> {
+    if (!entry.tools) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([entry.tools, new Promise<void>(resolve => { timer = setTimeout(resolve, TOOL_SEND_GRACE_MS); timer.unref() })])
+    clearTimeout(timer)
+  }
+  /** Take Sotto's tool servers off a thread's server as its session ends; the server stops whatever OpenCode answers. */
+  private async removeToolServers(entry: ThreadServer): Promise<void> {
+    const client = entry.client, folder = entry.toolsFolder
+    if (!client || !folder || !entry.toolServers?.length || entry.closing) return
+    // One deadline for the whole removal, so retries for a server not ready yet cannot hold the stop past it.
+    const signal = AbortSignal.timeout(TOOL_REMOVE_TIMEOUT_MS)
+    await Promise.all(entry.toolServers.map(name => client.request('DELETE', `/api/experimental/mcp/${encodeURIComponent(name)}`,
+      { query: locationQuery(folder), signal }).catch(() => undefined)))
+  }
+
   /**
    * Start one server and prove it is OpenCode 2 at the floor or newer; one that is not is stopped again. Its requests end
    * when `closed` aborts, as the server is being stopped.
@@ -398,7 +571,8 @@ export class OpenCodeHost implements AgentHost {
     entry.ready = (async () => {
       await this.refuseWatcher(id)
       this.assertGeneration(generation)
-      const started = await this.startServer(cwd ?? this.aliases[id]?.cwd ?? this.folders.data, entry.abort.signal)
+      const folder = cwd ?? this.aliases[id]?.cwd ?? this.folders.data
+      const started = await this.startServer(folder, entry.abort.signal)
       if (entry.closing || generation !== this.generation || this.processes.get(id) !== entry) {
         await started.server.stop()
         throw new OpenCodeUncertain('The OpenCode connection changed while the thread was starting.')
@@ -408,6 +582,7 @@ export class OpenCodeHost implements AgentHost {
       const stream = started.client.events(event => this.event(id, entry, event), entry.abort.signal)
       void stream.ended.then(error => { if (error) this.processLost(id, entry) })
       await stream.connected
+      this.giveTools(id, entry, folder)
       return entry
     })()
     this.processes.set(id, entry)
@@ -470,7 +645,12 @@ export class OpenCodeHost implements AgentHost {
     this.folds.delete(id); this.log.release(id)
     if (!entry) return
     this.processes.delete(id)
-    await this.closeProcess(entry)
+    // Tracked whole, so a disconnect while the tool servers are being taken off stops the server and waits for it.
+    this.stopping.add(entry)
+    const stopped = this.removeToolServers(entry).then(() => this.closeProcess(entry))
+    const exit: Promise<void> = stopped.catch(() => undefined).finally(() => { this.stopping.delete(entry); this.exits.delete(exit) })
+    this.exits.add(exit)
+    await stopped
   }
   /** Stop the server a thread that was never made started, unless another has taken its place. */
   private dropServer(id: string, entry: ThreadServer): void {
@@ -616,14 +796,27 @@ export class OpenCodeHost implements AgentHost {
     const generation = this.generation
     this.renew()
     this.emit()
-    const catalog = await this.readCatalog(client)
-    if (generation !== this.generation || !this.state.connected) return
-    this.applyCatalog(this.state.version, catalog.models, catalog.providers, catalog.fallback)
-    this.emit()
+    const applied = await this.inTurn(async () => {
+      const catalog = await this.readCatalog(client)
+      if (generation !== this.generation || !this.state.connected) return false
+      this.applyCatalog(this.state.version, catalog.models, catalog.providers, catalog.fallback)
+      return true
+    })
+    if (applied) this.emit()
   }
   /**
+   * Catalog reads after a sign-in or an update take turns, so each reads once the one before it has been applied, and
+   * one that answers late never replaces what a newer client listed.
+   */
+  private inTurn<T>(work: () => Promise<T>): Promise<T> {
+    const turn = this.catalogTurns.then(work, work)
+    this.catalogTurns = turn.catch(() => undefined)
+    return turn
+  }
+  private catalogTurns: Promise<unknown> = Promise.resolve()
+  /**
    * A new client is on disk (ADR-0042, ADR-0038): it is found again and checked on a server of its own, the catalog is read
-   * from it, and every thread server moves to it as its thread goes idle. Working threads finish on the old one.
+   * from it, and every thread server, and the sign-in server, moves to it as it goes idle. Working threads finish on the old one.
    */
   async clientUpdated(): Promise<void> {
     if (!this.state.connected) return
@@ -641,15 +834,22 @@ export class OpenCodeHost implements AgentHost {
     try {
       // A disconnect ends its requests with it, as it does the connect check's.
       started = await this.startServer(this.folders.data, this.probeClosed.signal)
-      const catalog = await this.readCatalog(started.client)
-      if (generation !== this.generation || !this.state.connected) return
-      this.applyCatalog(started.version, catalog.models, catalog.providers, catalog.fallback)
+      const client = started.client, version = started.version
+      const applied = await this.inTurn(async () => {
+        const catalog = await this.readCatalog(client)
+        if (generation !== this.generation || !this.state.connected) return false
+        this.applyCatalog(version, catalog.models, catalog.providers, catalog.fallback)
+        return true
+      })
+      if (!applied) return
     } catch (error) {
       if (generation !== this.generation || !this.state.connected) return
       this.executable = previous
       throw new Error('OpenCode was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect OpenCode again to try the new version.', { cause: error })
     } finally { await started?.server.stop() }
     this.renew()
+    // The sign-in server moves too, so nothing of Sotto's keeps running the old client once it is free.
+    this.signIn.renew()
     this.emit()
   }
 
@@ -738,7 +938,7 @@ export class OpenCodeHost implements AgentHost {
           session = await this.markedSession(entry, alias)
         }
         if (session) { alias.sessionId = session.id; alias.sessionConfirmed = true; await this.persist() }
-        else session = await this.createSession(entry, alias)
+        else session = await this.createSession(id, entry, alias)
       }
       this.assertGeneration(generation)
       if (this.processes.get(id) !== entry) throw new OpenCodeUncertain('The thread’s OpenCode server changed before its session could open.')
@@ -756,6 +956,10 @@ export class OpenCodeHost implements AgentHost {
       if (this.processes.get(id) !== entry) return
       const ended = this.foldHistory(id, entries)
       this.confirmSession(id, alias, session)
+      // A provider session made before the thread had its tools, or on a server given others, gets the allows for this one's.
+      if (!entry.sessionRules) { entry.sessionRules = session.permissions ?? []; await this.syncToolRules(id, entry).catch(() => undefined) }
+      this.assertGeneration(generation)
+      if (this.processes.get(id) !== entry) return
       this.settleEndedTurn(id, session, ended)
       await this.persist()
       this.loaded.add(id); this.log.pin(id); this.reaper.touch(id); this.touched(id); this.emit()
@@ -768,10 +972,12 @@ export class OpenCodeHost implements AgentHost {
     this.loading.set(id, work)
     return work
   }
-  private async createSession(entry: ThreadServer, alias: Alias): Promise<NativeSession> {
+  private async createSession(id: string, entry: ThreadServer, alias: Alias): Promise<NativeSession> {
+    // The rule set allows the tools the thread's server has been given, so it waits a moment for them, as a send does.
+    await this.toolsGiven(entry)
     const body = {
       title: alias.title, model: this.modelRef(alias.modelId, alias.reasoningEffort), location: { directory: alias.cwd },
-      permissions: opencodeRules(alias.runtimeMode), metadata: { [CREATE_MARK]: { thread: alias.createToken } },
+      permissions: this.rulesFor(alias.runtimeMode, entry), metadata: { [CREATE_MARK]: { thread: alias.createToken } },
     }
     let session: NativeSession
     try { session = sessionReplySchema.parse(await entry.client!.request('POST', '/api/session', { body })).data }
@@ -782,7 +988,10 @@ export class OpenCodeHost implements AgentHost {
       throw error instanceof OpenCodeUncertain ? error : new OpenCodeUncertain('OpenCode sent a reply Sotto cannot read.')
     }
     alias.sessionId = session.id; alias.sessionConfirmed = true
+    entry.sessionRules = body.permissions
     await this.persist()
+    // Tools that connected while the session was being made are allowed now.
+    await this.syncToolRules(id, entry).catch(() => undefined)
     return session
   }
   /** The provider session in the thread's folder that carries its creation mark, newest first, if one exists. */
@@ -1074,7 +1283,9 @@ export class OpenCodeHost implements AgentHost {
           return
         }
         case 'session.permissions': {
-          const mode = modeOfRules(permissionsChangedSchema.parse(data).permissions)
+          const permissions = permissionsChangedSchema.parse(data).permissions
+          entry.sessionRules = permissions
+          const mode = modeOfRules(permissions)
           if (mode) { alias.runtimeMode = mode; thread.runtimeMode = mode; void this.persist().catch(() => undefined); this.emit() }
           return
         }
@@ -1135,11 +1346,13 @@ export class OpenCodeHost implements AgentHost {
           // Checked before anything is saved or sent, so a refusal leaves no record of a thread that never was.
           watcherGuard?.()
         } catch (error) { this.dropServer(id, entry); throw error }
+        // A server an early start made for the draft's folder is given the tools again if the thread's folder reads otherwise.
+        this.giveTools(id, entry, alias.cwd)
         this.aliases[id] = alias
         // From here the thread exists: opening it meanwhile waits for this creation rather than making a second session.
         const creation = (async () => {
           await this.persist()
-          const session = await this.createSession(entry, alias)
+          const session = await this.createSession(id, entry, alias)
           this.confirmSession(id, alias, session)
           await this.persist()
           this.loaded.add(id); this.log.pin(id); this.reaper.touch(id)
@@ -1161,6 +1374,8 @@ export class OpenCodeHost implements AgentHost {
         if (!alias) throw new Error('This OpenCode thread has no provider session. Do not repeat its creation automatically.')
         const readForSend = this.readsBeforeSend.take(command.threadId, command)
         this.reaper.touch(command.threadId)
+        // A thread in the middle of a command is busy, so an update or a sign-in leaves its server to it until it ends (ADR-0038).
+        release = this.hold(command.threadId)
         if (command.type === 'configure-thread') {
           await this.open(command.threadId); this.assertGeneration(generation)
           const entry = await this.threadProcess(command.threadId)
@@ -1182,7 +1397,7 @@ export class OpenCodeHost implements AgentHost {
             watcherGuard?.()
             // Both apply to the live provider session in place: its rule set by PATCH, its model and effort by a model switch.
             if (modeChange) {
-              await entry.client!.request('PATCH', `/api/session/${this.sid(alias)}`, { body: { permissions: opencodeRules(mode) } })
+              await this.changeRules(entry, () => ({ alias, rules: this.rulesFor(mode, entry) }))
               alias.runtimeMode = mode; thread.runtimeMode = mode
             }
             if (modelChange) {
@@ -1196,7 +1411,6 @@ export class OpenCodeHost implements AgentHost {
           }
           settled = true
         } else if (command.type === 'send' || command.type === 'steer') {
-          release = this.hold(command.threadId)
           if (command.skills?.length) throw providerTakesNoSkills('opencode')
           await this.open(command.threadId); this.assertGeneration(generation)
           const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments)
@@ -1219,6 +1433,7 @@ export class OpenCodeHost implements AgentHost {
             attachments: attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })), steer: command.type === 'steer',
           }
           const entry = await this.threadProcess(command.threadId)
+          await this.toolsGiven(entry)
           this.assertGeneration(generation)
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)
@@ -1297,10 +1512,60 @@ export class OpenCodeHost implements AgentHost {
     finally { release?.() }
   }
 
-  /** Side writing is #1106: until it is shown to list nothing and offer no tools, OpenCode writes no side text (ADR-0026). */
+  /**
+   * Sotto's side writing (ADR-0026) as one stateless generation on the thread's own server (`POST
+   * /api/experimental/generate`), with the thread's model at its least effort. It is no turn: the model is offered no tools
+   * and no provider session is made, which the live suite checks on OpenCode itself (ADR-0087). The session list is read
+   * before and after as well, and a call after which a provider session Sotto did not make appeared writes nothing. A
+   * model source that refuses the route, as OpenCode Zen's free models do, writes nothing either, and the stand-ins stay.
+   * There is no fallback to a session.
+   */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
-    void id; void prompt; void signal
-    return null
+    const generation = this.generation
+    const alias = this.aliases[id]
+    // A thread whose provider session is not known to exist has nothing to name yet, and no server is started for it.
+    if (!this.state.connected || !alias?.sessionConfirmed) return null
+    // Watcher's thread is never an OpenCode one (ADR-0087), and it is given no side text.
+    if (await this.launchProfiles?.profileFor(id).catch(() => true)) return null
+    this.assertGeneration(generation)
+    const release = this.hold(id)
+    try {
+      const entry = await this.threadProcess(id)
+      this.assertGeneration(generation)
+      const client = entry.client!
+      const before = await this.unmarkedSessions(client)
+      let text: string
+      try {
+        const answer = await client.request('POST', '/api/experimental/generate', {
+          body: { prompt: `${prompt.instruction}\n\n${prompt.material}`, model: this.modelRef(alias.modelId, sideWritingEffort(this.state.models, alias.modelId)) },
+          timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}),
+        })
+        const parsed = generatedSchema.safeParse(answer)
+        if (!parsed.success) throw new Error('OpenCode sent side text Sotto cannot read.')
+        text = parsed.data.data.text
+      } catch (error) {
+        // Refused: the model source does not take the route, or no longer offers the model. Nothing is written.
+        if (error instanceof OpenCodeRejected) return null
+        throw error
+      }
+      const after = await this.unmarkedSessions(client)
+      this.assertGeneration(generation)
+      if ([...after].some(session => !before.has(session))) return null
+      return text
+    } finally { release(); this.reaper.touch(id) }
+  }
+  /** The provider sessions in Sotto's OpenCode folder that carry no thread's creation mark, by ID. */
+  private async unmarkedSessions(client: OpenCodeClient): Promise<ReadonlySet<string>> {
+    const found = new Set<string>()
+    let cursor: string | undefined
+    for (let page = 0; page < 50; page++) {
+      const read = sessionListSchema.parse(await client.request('GET', '/api/session', { query: cursor ? { cursor } : {} }))
+      for (const session of read.data) if (typeof session.metadata?.[CREATE_MARK]?.thread !== 'string') found.add(session.id)
+      const next = read.cursor?.next ?? undefined
+      if (!read.data.length || !next || next === cursor) break
+      cursor = next
+    }
+    return found
   }
   private disconnecting = false
   disconnect(): void {
@@ -1321,7 +1586,7 @@ export class OpenCodeHost implements AgentHost {
     }
     this.activeTurns.clear()
     if (ended) void this.persist().catch(() => undefined)
-    for (const entry of this.processes.values()) void this.closeProcess(entry)
+    for (const entry of [...this.processes.values(), ...this.stopping]) void this.closeProcess(entry)
     this.processes.clear()
     this.probeClosed.abort()
     if (this.probe) { void this.probe.then(probe => probe.server.stop(), () => undefined); this.probe = undefined }

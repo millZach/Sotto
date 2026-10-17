@@ -227,6 +227,8 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
    */
   source: id.optional(),
 })
+/** The model source OpenCode's free models come from (ADR-0087); the model menu says so on its row. */
+export const OPENCODE_ZEN_SOURCE = 'OpenCode Zen'
 export const agentProjectSchema = z.object({ hostId: z.uuid().optional(), id: providerEntityId, providerId: providerIdSchema.optional(), title: id, path: z.string().max(4_096), workspaceSettledAt: z.string().datetime().nullable().optional() })
 /** How many pages one question carries at most (ADR-0085). */
 export const QUESTION_PAGES_MAX = 8
@@ -460,7 +462,8 @@ export const agentThreadSchema = z.object({
    * send does not start it. Absent while it is stopped or not started yet, and from hosts that predate it. Never saved. */
   providerSessionOpen: z.literal(true).optional(),
   /** The thread's provider client builds its session without Sotto's tool servers: a Muse client that did not grant
-   * session tool servers (ADR-0079). Absent otherwise, and from hosts that predate it. Never saved. */
+   * session tool servers (ADR-0079), or an OpenCode thread's server that refused them or did not connect them (ADR-0087).
+   * Absent otherwise, and from hosts that predate it. Never saved. */
   sottoToolsWithheld: z.literal(true).optional(),
   /** A Devin thread whose host gives Devin Sotto's tool servers, from Devin CLI 3000.11.92 (#1040). Absent from hosts that
    * predate it, whose Devin threads have none, so a Devin thread without it is read as having none. Never saved. */
@@ -961,12 +964,14 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
     ...(running?.startedAt === undefined ? {} : { runningTurnStartedAt: running.startedAt }) }
 }
 /** The providers that write Sotto's short text. A provider is named here once it does; one that is not writes none. */
-const SHORT_TEXT_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok'])
+const SHORT_TEXT_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'opencode'])
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
  * list; Muse cannot yet disable every tool in one (ADR-0079). Those threads, and a provider's that has not said it
  * writes them, keep their first-message title or stand-in and are offered no Regenerate that could do nothing.
+ * OpenCode writes them through its stateless generation route (ADR-0087); a model source that refuses it, as OpenCode
+ * Zen's free models do, writes nothing, and its threads keep their stand-ins.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
   return providerId === undefined || SHORT_TEXT_PROVIDERS.has(providerId)
@@ -975,15 +980,16 @@ export function providerWritesShortText(providerId: ProviderId | undefined): boo
  * The providers that take Sotto's tool servers. A provider is named here once it does; one that is not gets none. Devin's
  * threads take them only where their host says it gives them (`threadTakesSottoTools`).
  */
-const SOTTO_TOOLS_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'devin', 'muse'])
+const SOTTO_TOOLS_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
 /** Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. */
 export function providerTakesSottoTools(providerId: ProviderId | undefined): boolean {
   return providerId === undefined || SOTTO_TOOLS_PROVIDERS.has(providerId)
 }
 /**
  * Whether this thread's agent gets Sotto's tool servers. Every listed provider takes them: Muse when its client grants
- * session tool servers (ADR-0079), and Devin from CLI 3000.11.92, which attaches the servers a session is opened with
- * (ADR-0056). A client that cannot take them marks its threads `sottoToolsWithheld`, and a Devin thread counts only when
+ * session tool servers (ADR-0079), Devin from CLI 3000.11.92, which attaches the servers a session is opened with
+ * (ADR-0056), and OpenCode when its thread's server connects every one (ADR-0087). A client that cannot take them marks
+ * its threads `sottoToolsWithheld`, and a Devin thread counts only when
  * its host says it gives them (`sottoToolsGiven`).
  */
 export function threadTakesSottoTools(thread: Pick<AgentThread, 'providerId' | 'sottoToolsWithheld' | 'sottoToolsGiven'> | undefined): boolean {
