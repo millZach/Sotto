@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
-import { forceDomTerminalRenderer, terminalOutput } from './support/terminal'
+import { forceDomTerminalRenderer, terminalOutput, threadTerminal, waitForShellPrompt, workspaceTerminal } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Run after npm run build. These journeys use real ConPTYs; only external browser opening is stubbed.
@@ -123,6 +123,7 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       }
       const input = scope.locator('.xterm-helper-textarea')
       await expect(input).toBeAttached()
+      await waitForShellPrompt(() => surface === 'workspace' ? workspaceTerminal(page) : threadTerminal(page, threadId, surface))
       await input.pressSequentially('node terminal-basics.cjs'); await input.press('Enter')
       const output = () => surface === 'workspace' ? page.evaluate(async () => {
         const list = await window.sotto!.terminals!.list()

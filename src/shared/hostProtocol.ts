@@ -343,7 +343,7 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   /** The words of a started thread's handover, read only when the user asks to read them (#1028). */
   z.object({ ...base, op: z.literal('start-handover'), threadId: id }).strict(),
   z.object({ ...base, op: z.literal('usage-read'), query: usageLocalQuerySchema }).strict(),
-  z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(4).optional() }).strict(),
+  z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(usageProviderIdSchema.options.length).optional() }).strict(),
   z.object({ ...base, op: z.literal('usage-clear'), request: usageLocalClearRequestSchema }).strict(),
   /**
    * A provider's sign-in on the host, for the client that asks and for no other (ADR-0037): start one, read where it
