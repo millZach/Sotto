@@ -76,13 +76,16 @@ function npmGlobalRoots(environment: NodeJS.ProcessEnv): readonly string[] {
     join(home, '.npm-global', 'lib', 'node_modules'), join(home, '.local', 'share', 'npm', 'lib', 'node_modules'),
   ]
 }
-/** The folder npm installed a client's package in: the one the binary sits inside, else one in a global root. */
-async function npmPackageFolder(packageName: string, executable: string, environment: NodeJS.ProcessEnv): Promise<string | undefined> {
+/**
+ * The folder npm installed a client's package in: the one the binary sits inside, else one in a global root. With no
+ * environment only the binary's own prefix is looked in, so a package elsewhere on the machine cannot claim it.
+ */
+async function npmPackageFolder(packageName: string, executable: string, environment: NodeJS.ProcessEnv | undefined): Promise<string | undefined> {
   const parts = executable.split(sep), names = packageName.split('/')
   const inside = parts.findIndex((part, index) => part.toLowerCase() === 'node_modules'
     && names.every((name, offset) => parts[index + 1 + offset]?.toLowerCase() === name.toLowerCase()))
   const bin = dirname(executable)
-  const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...npmGlobalRoots(environment),
+  const roots = [...inside > 0 ? [parts.slice(0, inside + 1).join(sep)] : [], ...environment ? npmGlobalRoots(environment) : [],
     join(bin, 'node_modules'), join(dirname(bin), 'lib', 'node_modules'), join(dirname(bin), 'node_modules')]
   for (const root of roots) {
     const folder = join(root, ...names)
@@ -259,16 +262,21 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
   environment: NodeJS.ProcessEnv = process.env): Promise<ClientInstall> {
   if (provider === 'devin') return { channel: 'devin-app' }
   if (!executable || !isAbsolute(executable)) return { channel: 'unknown' }
-  if (provider === 'opencode') {
-    const byHand = await opencodeManager(executable)
-    if (byHand) return { channel: 'unknown', byHand }
-  }
   const lower = executable.toLowerCase()
   const packageName = CLIENT_PACKAGES[provider]
   const inOwnHome = ownHome(provider, environment).some(directory => within(executable, directory))
   if (!inOwnHome) {
     const miseTool = await miseToolOf(provider, executable, environment)
     if (miseTool) return { channel: 'mise', miseTool }
+  }
+  if (provider === 'opencode') {
+    // npm's copy is npm's even under a manager's Node (`/opt/homebrew/lib/node_modules/@opencode/cli`), so npm is asked
+    // before the manager (mise was asked above). Only the program's own prefix counts, so an npm package elsewhere on the
+    // machine never claims a copy Homebrew owns.
+    const real = await realpath(executable).catch(() => executable)
+    for (const path of new Set([executable, real])) if (await npmPackageFolder(CLIENT_PACKAGES.opencode!, path, undefined)) return { channel: 'npm' }
+    const byHand = await opencodeManager(executable)
+    if (byHand) return { channel: 'unknown', byHand }
   }
   if (MANAGED_ELSEWHERE.some(marker => lower.includes(marker))) return { channel: 'unknown' }
   if (provider === 'muse') {

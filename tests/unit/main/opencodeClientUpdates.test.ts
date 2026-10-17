@@ -89,4 +89,24 @@ describe('the channel that installed OpenCode updates it (ADR-0042, ADR-0087)', 
     expect(await opencodeManager(executable)).toBeUndefined()
     expect(byHandFor('opencode', { channel: 'npm' })).toEqual(['npm install -g --allow-scripts=@opencode/cli @opencode/cli@latest'])
   })
+
+  it('updates npm’s copy under Homebrew’s Node through npm, and leaves Homebrew’s own copy and other clients as they were', async () => {
+    const brew = join(await root('sotto-opencode-brew-npm-'), 'opt', 'homebrew')
+    const cli = join(brew, 'lib', 'node_modules', '@opencode', 'cli')
+    await mkdir(join(cli, 'bin'), { recursive: true }); await writeFile(join(cli, 'package.json'), '{}')
+    await mkdir(join(brew, 'bin'), { recursive: true })
+    // The package's own program, and npm's launcher in Homebrew's bin beside the package it starts.
+    expect(await detectClientInstall('opencode', join(cli, 'bin', 'opencode'), await noMise())).toEqual({ channel: 'npm' })
+    expect(await detectClientInstall('opencode', join(brew, 'bin', 'opencode'), await noMise())).toEqual({ channel: 'npm' })
+    const clients = new ProviderClients({ fetchImpl: async () => answer('2.0.40'), npmPath: async () => join(brew, 'npm-cli.js') })
+    expect(await clients.check('opencode', '2.0.31', join(cli, 'bin', 'opencode'), await noMise())).toMatchObject({ channel: 'npm', canInstall: true })
+    // A Homebrew prefix with no npm package is Homebrew's, and its command stays one to run by hand.
+    const bare = join(await root('sotto-opencode-brew-bare-'), 'opt', 'homebrew', 'bin', 'opencode')
+    expect(await detectClientInstall('opencode', bare, await noMise())).toEqual({ channel: 'unknown', byHand: ['brew upgrade opencode'] })
+    // Every other client under Homebrew is still Homebrew's to update.
+    const codex = join(brew, 'lib', 'node_modules', '@openai', 'codex')
+    await mkdir(join(codex, 'bin'), { recursive: true }); await writeFile(join(codex, 'package.json'), '{}')
+    expect(await detectClientInstall('codex', join(codex, 'bin', 'codex.js'), await noMise())).toEqual({ channel: 'unknown' })
+    expect(await detectClientInstall('codex', join(brew, 'bin', 'codex'), await noMise())).toEqual({ channel: 'unknown' })
+  })
 })
