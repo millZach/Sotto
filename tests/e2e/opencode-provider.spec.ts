@@ -121,6 +121,8 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     await model.click()
     const picker = page.getByRole('dialog', { name: 'Choose model' })
     await picker.getByRole('tab', { name: 'OpenCode', exact: true }).click()
+    // OpenCode's models are grouped by model source first (#1137): its free models are OpenCode Zen's.
+    await picker.getByRole('group', { name: 'OpenCode model sources', exact: true }).getByRole('button', { name: /^Show OpenCode Zen models/u }).click()
     await picker.getByRole('option', { name: 'Fixture Model', exact: true }).click()
     await expect(model).toContainText('Fixture Model')
     const prompt = promptField(page)
