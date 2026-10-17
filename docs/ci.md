@@ -203,7 +203,7 @@ The scripted adapter tests exercise each advertised permission mode in its own f
 
 `tests/integration/devinAdapter.test.ts` runs the complete shared adapter contract and boundary cases against a scripted ACP subprocess in CI, and `tests/integration/devinSendPath.test.ts` pins what a send starts before its prompt and which streamed work shows Devin took it (#770). They do not establish live CLI compatibility.
 
-The opt-in `tests/integration/devinLive.test.ts` uses the installed, natively signed-in Devin CLI 3000.10.31 and account-advertised `swe-1-6-fast`. It creates a disposable Git project and incurs native account usage. It checks denial, exact-target one-time approval, a structured question, same-session restart, and cancellation. Between turns it also starts a second ACP process with no prompt and checks Devin refuses it the session the thread holds, which is what lets a send skip reading history first, and sends one prompt whose one-word reply must reach the thread as it streams. Each send logs how long it took to be accepted, by stage, and nothing else. Two additional Windows-only cases kill a uniquely identified test ACP owner while permission is pending and verify safe model-change refusal or same-session recovery, according to whether the native model had been saved by a clean shutdown. It never reads credentials or logs protocol bodies. Run on native Windows and Apple silicon macOS before claiming both platforms verified. The initial PR is verified on Windows only; Zach deferred Mac verification because no Mac is available:
+The opt-in `tests/integration/devinLive.test.ts` uses the installed, natively signed-in Devin CLI (3000.11.92 or newer) and account-advertised `swe-1-6-fast`. It creates a disposable Git project and incurs native account usage. It checks denial, exact-target one-time approval, a structured question, same-session restart, and cancellation. Between turns it also starts a second ACP process with no prompt and checks Devin refuses it the session the thread holds, which is what lets a send skip reading history first, and sends one prompt whose one-word reply must reach the thread as it streams. Each send logs how long it took to be accepted, by stage, and nothing else. Two additional Windows-only cases kill a uniquely identified test ACP owner while permission is pending and verify safe model-change refusal or same-session recovery, according to whether the native model had been saved by a clean shutdown. It never reads credentials or logs protocol bodies. Run on native Windows and Apple silicon macOS before claiming both platforms verified. The initial PR is verified on Windows only; Zach deferred Mac verification because no Mac is available:
 
 ```powershell
 $env:SOTTO_DEVIN_LIVE = '1'
@@ -212,6 +212,13 @@ npx vitest run tests/integration/devinLive.test.ts --maxWorkers=1
 
 ```sh
 SOTTO_DEVIN_LIVE=1 npx vitest run tests/integration/devinLive.test.ts --maxWorkers=1
+```
+
+The same file has the check that Devin threads get Sotto's tools (#1040). It spends two turns on the account's first ready model. The first, in the session the thread was made in, calls Sotto's `visualize`, which must run with no request because the owned profile (version 3) lets Sotto's own servers through, and `ping` on a decoy server named `sotto-visual`, which Devin must still ask about; the test denies it, as the user would. The second calls `visualize` again after Sotto restarts with a new visual server and loads the session. `SOTTO_DEVIN_EXECUTABLE` points it at a Devin CLI unpacked from its zip instead of the installed one. It passed once on October 16, 2026, against 3000.11.92 (ADR-0017). To run only that check:
+
+```powershell
+$env:SOTTO_DEVIN_LIVE = '1'
+npx vitest run tests/integration/devinLive.test.ts -t "tools in a new session and in a loaded one" --maxWorkers=1
 ```
 
 Use `npm run build` followed by `npx playwright test tests/e2e/devin-provider.spec.ts` for the Electron provider/permission journey, keyboard path, independent-provider behavior, coordinator separation, and light/dark/minimum-size captures. The verification note records actual platforms and results; a fixture pass is not a native-platform pass.

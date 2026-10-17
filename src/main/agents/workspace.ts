@@ -1,5 +1,6 @@
 import { annotateWatcherOwnChanges, withKeptWatcherChanges } from './watcherOwnChanges'
-import { modelsWithoutMuse } from './museGate'
+import { catalogWithoutHeld, heldProviderOfThreadRecord } from './heldProviderGate'
+import { heldProviderRefusal, heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 import { summarizePullRequestChecks } from './pullRequestCheckState'
 import type { PullRequestObservation } from './watcherEvidence'
 import { threadsInCheckout } from './checkoutCandidates'
@@ -15,7 +16,7 @@ import { cloneActivitySnapshot, immutableActivities, immutableModels, isImmutabl
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, parsePublicProviderEntityId, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, WAKE_UP_MESSAGE_IDS_MAX, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink, type UsageRecordedUserMessage } from './usageHistory/sink'
@@ -209,8 +210,8 @@ function expandProviderModes(models: AgentModel[]): void {
 }
 
 function organizationOnly(thread: AgentThread, keepActivities = false): AgentThread {
-  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, sottoToolsWithheld, ...rest } = thread
-  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen; void sottoToolsWithheld
+  const { summary, earlierAvailable, monitoring, backgroundWork, subagentSummary, activities, lastUserMessageId, providerSessionOpen, sottoToolsWithheld, sottoToolsGiven, ...rest } = thread
+  void summary; void earlierAvailable; void monitoring; void backgroundWork; void subagentSummary; void lastUserMessageId; void providerSessionOpen; void sottoToolsWithheld; void sottoToolsGiven
   return { ...rest, messages: [], ...(keepActivities && activities ? { activities: retainedActivities(activities) } : {}) }
 }
 
@@ -288,25 +289,32 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       reviewApproved: view.reviewDecision === 'approved', autoMerge: view.autoMerge !== null })
   }
   private readonly launchProfiles: WatcherLaunchProfiles
+  /** The providers held to Owl on this run, read once at start. */
+  private readonly held: HeldProviders
+  /** The held provider a new project or thread would be on: the project's provider, or the thread's model's. */
+  private heldProviderCreatedBy(command: AgentHostCommand): ProviderId | undefined {
+    if (!this.held.size) return undefined
+    if (command.type === 'create-project') return command.provider && this.held.has(command.provider) ? command.provider : undefined
+    if (command.type !== 'create-thread') return undefined
+    const model = resolveModel(this.state.snapshot.models, command.modelId)
+    const owner = model?.providerId && this.held.has(model.providerId) ? model.providerId : undefined
+    return owner ?? heldProviderOfThreadRecord({ modelId: command.modelId }, this.held)
+  }
   /** Disabled records are carried through saves exactly as read, outside the active projection. */
   private readonly preservedDormantThreads = new Map<string, AgentThread>()
   private readonly retainedWatcherIds = new Set<string>()
   private visible(thread: AgentThread): boolean {
     return (this.watcherEnabled || !this.retainedWatcherIds.has(thread.id) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history')
-      && (this.museEnabled || thread.providerId !== 'muse' && parsePublicProviderEntityId(thread.modelId)?.provider !== 'muse')
+      && heldProviderOfThreadRecord(thread, this.held) === undefined
   }
   private threadVisible(id: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === id)
     return (this.watcherEnabled || !this.retainedWatcherIds.has(id)) && (!thread || this.visible(thread))
   }
   private visibleSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
-    if (this.watcherEnabled && this.museEnabled) return snapshot
+    if (this.watcherEnabled && !this.held.size) return snapshot
     return { ...snapshot, threads: snapshot.threads.filter(thread => this.visible(thread)),
-      ...(this.museEnabled ? {} : {
-        models: modelsWithoutMuse(snapshot.models),
-        projects: snapshot.projects.filter(project => project.providerId !== 'muse' && parsePublicProviderEntityId(project.id)?.provider !== 'muse'),
-        ...(snapshot.providers ? { providers: snapshot.providers.filter(provider => provider.id !== 'muse') } : {}),
-      }) }
+      ...(this.held.size ? catalogWithoutHeld(snapshot, this.held) : {}) }
   }
   watcherCreationPhase(threadId: string): 'unstarted' | 'starting' | 'retryable' | 'started' | undefined { return this.state.creations.find(item => item.threadId === threadId)?.phase }
   async watcherRead(threadId: string, afterPosition?: number, limit = 50) {
@@ -1309,8 +1317,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /**
    * Whether an agent in this thread is offered Sotto's pull request tools (ADR-0061 decision 2): a thread this host holds,
-   * on Claude Code, Codex, Grok Build or Muse (ADR-0079). Devin's client takes no server of Sotto's, so its threads are
-   * babysat only from the Pull request surface (decision 11).
+   * on any provider whose client took Sotto's servers: Muse where its client grants them (ADR-0079), and Devin from CLI
+   * 3000.11.92 (ADR-0056). A thread whose client withheld them is babysat only from the Pull request surface (decision 11).
    */
   admitsBabysitting(threadId: string): boolean {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
@@ -1385,9 +1393,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
 
   constructor(private readonly inner: AgentHost, private readonly directory: string, private readonly historyEnabled: () => boolean = () => true,
-    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS, private readonly watcherEnabled = false, private readonly museEnabled = false,
+    private readonly worktreeRefreshDelayMs: number = WORKTREE_REFRESH_DELAY_MS, private readonly watcherEnabled = false,
+    /** The providers held to Owl on this run (ADR-0072), or, from before the held set, Muse's answer alone. Absent holds every one. */
+    heldProviders: HeldProviders | boolean = false,
     /** The Owl list's answer for cheaper publish windows (#991), read once by the process owner. Absent fails closed. */
     private readonly streamingPublishCostEnabled = false) {
+    this.held = typeof heldProviders === 'boolean' ? heldProvidersOf({ muse: heldProviders }) : heldProviders
     this.concurrentProviders = inner.concurrentProviders === true
     if (inner.subscribeUsage) this.subscribeUsage = listener => inner.subscribeUsage!(record => {
       if (this.ready && this.threadVisible(record.threadId)) listener(record)
@@ -1407,13 +1418,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       id => this.state.snapshot.threads.find(thread => thread.id === id), watcherEnabled)
     inner.useLaunchProfiles?.({ profileFor: async id => { await this.initialize(); return this.launchProfiles.profileFor(id) } })
     this.worktrees = new ThreadWorktrees(directory)
-    const preserveThread = watcherEnabled && museEnabled ? undefined : (id: string): boolean => !this.threadVisible(id)
+    const preserveThread = watcherEnabled && !this.held.size ? undefined : (id: string): boolean => !this.threadVisible(id)
     this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'), preserveThread)
     this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'), preserveThread)
     const parseWorkspace = (input: unknown): Workspace => { this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); const parsed = workspaceSchema.parse(input);
       // Whichever track wrote the file, every model reads back with its provider's modes on it.
       expandProviderModes(parsed.snapshot.models)
-      if (!this.watcherEnabled || !this.museEnabled) {
+      if (!this.watcherEnabled || this.held.size) {
         const original = input as { snapshot: AgentHostSnapshot }
         this.preservedDormantThreads.clear()
         for (const thread of original.snapshot.threads) if (!this.visible(thread)) this.preservedDormantThreads.set(thread.id, structuredClone(thread))
@@ -2349,6 +2360,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   dormantThreadIds(): readonly string[] {
     return [...new Set([...(this.watcherEnabled ? [] : this.retainedWatcherIds), ...this.state.snapshot.threads.filter(thread => !this.visible(thread)).map(thread => thread.id)])]
   }
+  dormantThreadProviders(): ReadonlyMap<string, ProviderId> {
+    const providers = new Map<string, ProviderId>()
+    for (const thread of this.state.snapshot.threads) {
+      const provider = heldProviderOfThreadRecord(thread, this.held)
+      if (provider) providers.set(thread.id, provider)
+    }
+    return providers
+  }
   watcherThreadIds(): readonly string[] {
     return [...new Set([...this.retainedWatcherIds, ...this.state.snapshot.threads.filter(thread => thread.kind === 'watcher' || thread.kind === 'watcher-history').map(thread => thread.id)])]
   }
@@ -2962,7 +2981,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return thread
   }
   private refuseDormantThread(thread: AgentThread): never {
-    if (!this.museEnabled && (thread.providerId === 'muse' || parsePublicProviderEntityId(thread.modelId)?.provider === 'muse')) throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    const held = heldProviderOfThreadRecord(thread, this.held)
+    if (held) throw new Error(heldProviderRefusal(held))
     throw new WatcherProfileRefusal(WATCHER_DISABLED)
   }
   /** Starts working-copy setup, or returns the setup already running for this thread.
@@ -3189,10 +3209,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private async executeWithProfile(command: AgentHostCommand, checkoutHeld: boolean): Promise<AgentHostResult> {
     const watcherGuard = this.watcherDispatchGuards.get(command)
     await this.initialize(); watcherGuard?.()
-    if (!this.museEnabled && (command.type === 'create-project' && command.provider === 'muse'
-      || command.type === 'create-thread' && (resolveModel(this.state.snapshot.models, command.modelId)?.providerId === 'muse' || parsePublicProviderEntityId(command.modelId)?.provider === 'muse'))) {
-      throw new Error('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
-    }
+    const heldCreation = this.heldProviderCreatedBy(command)
+    if (heldCreation) throw new Error(heldProviderRefusal(heldCreation))
     const commandProfile = 'threadId' in command ? await this.launchProfiles.profileFor(command.threadId) : undefined
     if ('threadId' in command) {
       if (commandProfile) {
@@ -3428,7 +3446,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   observeThreads(ids: readonly string[]): void {
     if (this.stopping) return
-    if ((!this.watcherEnabled || !this.museEnabled) && !this.ready) { void this.initialize().then(() => this.observeThreads(ids)).catch(() => undefined); return }
+    if ((!this.watcherEnabled || this.held.size) && !this.ready) { void this.initialize().then(() => this.observeThreads(ids)).catch(() => undefined); return }
     ids = ids.filter(id => { const thread = this.state.snapshot.threads.find(thread => thread.id === id); return !thread || this.visible(thread) })
     // A thread coming into view reads its stored records back before its provider hears of it, so the pane's first
     // publish has them and a provider reading the thread's history merges onto them (#918).
