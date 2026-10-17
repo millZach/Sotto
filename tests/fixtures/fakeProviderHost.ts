@@ -1,5 +1,5 @@
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../src/shared/agents'
-import type { AgentHost, AgentHostCommand, AgentHostResult, ShortTextPrompt } from '../../src/main/agents/host'
+import type { AgentHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, ThreadForkRequest } from '../../src/main/agents/host'
 import { validatePromptAttachments } from '../../src/main/agents/threadOptions'
 
 /** Provider-facing fake: session IDs deliberately differ from Sotto thread IDs. */
@@ -12,6 +12,8 @@ export class FakeProviderHost implements AgentHost {
   /** What a side call answers; absent, this provider writes nothing, the way Devin does. */
   sideWriter: ((sessionId: string, prompt: ShortTextPrompt) => Promise<string | null>) | undefined
   observed: readonly string[] = []
+  /** The provider's own copy of a conversation (#1028), when a test gives this provider one. */
+  forkThread?: (request: ThreadForkRequest) => Promise<AgentHostResult>
   connectCalls = 0
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   readonly state: AgentHostSnapshot

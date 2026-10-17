@@ -220,6 +220,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
     // and the desktop's own phone listener, which serves no desktop, never does.
     && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
+    && (feature !== 'thread-starts' || service.supportsThreadStarts === true && service.startHandover !== undefined)
     // A host that can update itself offers it on both listeners, to SSH-recorded desktops only (ADR-0088).
     && (feature !== 'host-update' || options.hostUpdate !== undefined && options.watcherDesktops !== undefined))
   /**
@@ -540,7 +542,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // shape and this peer's exact selected owner are still checked here; Send stays conservative.
     const refusal = remoteCommandRefusal(input, { mayAnswer: options.mayAnswer?.(peer.client) ?? false, askingProviderModes: askingProviderModes(input),
       draftRequestId: input.type === 'send' || input.type === 'compose' && input.threadId === undefined ? draftRequestId : undefined,
-      selectedThreadId: targetThreadId, clientUpdates: options.clientUpdates === true && offers(peer, 'client-updates') })
+      selectedThreadId: targetThreadId, clientUpdates: options.clientUpdates === true && offers(peer, 'client-updates'), threadStarts: offers(peer, 'thread-starts') })
     if (refusal) throw new Refusal(refusal)
     if (input.type === 'preview-reclaim-thread-worktree') {
       const result = await service.command(input, peer.client)
@@ -576,7 +578,8 @@ export async function startSocketServer(options: SocketServerOptions) {
             : await service.command(input, client)
           if (input.type === 'compose' && result.error) peer.editingThreadId = previousEditor
           if (['cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
-          if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
+          // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, as a send's is.
+          if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || input.type === 'continue-agent' || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
           if (input.type === 'answer' || input.type === 'send' && draftRequestId) {
             receipt.answerDelivered = result.error == null
             if (!receipt.answerDelivered) receipt.error = { code: 'unavailable', message: errors.unavailable }
@@ -845,6 +848,10 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'subagent-assignments':
         if (!service.subagentAssignments) throw new Refusal('invalid_request')
         return toolRead(() => service.subagentAssignments!(request.request))
+      case 'start-handover':
+        if (!offers(peer, 'thread-starts') || !service.startHandover) throw new Refusal('invalid_request')
+        if (hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
+        return toolRead(async () => ({ handover: await service.startHandover!(request.threadId) }))
       case 'host-facts':
         if (!offers(peer, 'host-facts') || !service.hostFacts) throw new Refusal('invalid_request')
         try { return hostMachineReportSchema.parse(await service.hostFacts()) } catch { throw new Refusal('unavailable') }

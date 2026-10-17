@@ -5,6 +5,10 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { withCliPath } from './cliLookup'
 import { DEVIN_CLI_VERSION, DevinRefusal } from './devinRpc'
+import { BROWSER_MCP_SERVER } from './browserAgentServer'
+import { PULL_REQUEST_MCP_SERVER } from './pullRequestTools'
+import { VISUAL_MCP_SERVER } from './visualTools'
+import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 
 // This is Sotto's approval policy, not Devin's similarly named Ask mode. The profile is what decides:
 // the pinned compatibility experiment shows an ask standing whatever conversation mode Devin is in, with
@@ -22,15 +26,26 @@ export type DevinAllowance = 'nothing' | 'edits' | 'everything'
  */
 export interface DevinProfile { readonly path: string; readonly allows: DevinAllowance }
 
+/**
+ * Sotto's own tool servers a Devin thread can be given, by the exact names Sotto passes them under. Their tools run without
+ * Devin's question on every profile, as Claude Code's, Codex's, Grok Build's and Muse's do: Zach's call on October 16, 2026,
+ * as decision 16 was for Muse (ADR-0017's amendment of that date). The tools still ask the user wherever they always do.
+ * Every other MCP tool keeps the `mcp__*` ask; a more specific allow wins over it in Devin's own precedence. A server that
+ * is not on this list, such as the host setup tools, which Devin is not offered, is asked about as before.
+ */
+export const DEVIN_SOTTO_SERVERS: readonly string[] = [BROWSER_MCP_SERVER, VISUAL_MCP_SERVER, PULL_REQUEST_MCP_SERVER, DELEGATE_MCP_SERVER]
+const SOTTO_TOOLS = DEVIN_SOTTO_SERVERS.map(server => `mcp__${server}__*`)
+
 const permissionsFor = (allows: DevinAllowance): { allow: string[]; deny: string[]; ask: string[] } => ({
-  allow: allows === 'everything' ? [...EDITS, ...ACTIONS] : allows === 'edits' ? [...EDITS] : [],
+  allow: allows === 'everything' ? [...EDITS, ...ACTIONS] : allows === 'edits' ? [...EDITS, ...SOTTO_TOOLS] : [...SOTTO_TOOLS],
   deny: [],
   ask: allows === 'everything' ? [] : allows === 'edits' ? [...ACTIONS] : [...EDITS, ...ACTIONS],
 })
 
-// The profile's own version, in its file name. Version 2 adds `otel`: an owned profile is never rewritten (a changed
-// one is refused), so changing what it says means a new file. Version 1 files are left where they are, unused.
-const PROFILE_VERSION = 2
+// The profile's own version, in its file name. Version 2 added `otel`, and version 3 lets Sotto's own tools through: an
+// owned profile is never rewritten (a changed one is refused), so changing what it says means a new file. Earlier files
+// are left where they are, unused.
+const PROFILE_VERSION = 3
 // `version` below is Devin's own config schema version, not the profile's.
 const policyFor = (allows: DevinAllowance): Record<string, unknown> => ({
   version: 1,
@@ -38,7 +53,7 @@ const policyFor = (allows: DevinAllowance): Record<string, unknown> => ({
   read_config_from: { agents_standard: false, cursor: false, windsurf: false, claude: false, copilot: false, opencode: false, zed: false },
   hooks: {}, mcpServers: {}, auto_update: false, subagents_enabled: false,
   // OpenTelemetry export, from Devin CLI 3000.11.1. Off, so the promise does not rest on no endpoint being set.
-  // The pinned 3000.10.31 accepts the key and drops it from its readback.
+  // 3000.10.31, the floor before 3000.11.92, accepted the key and dropped it from its readback.
   otel: { enabled: false },
 })
 // 3000.11.3 reads `otel` back with every field filled in with its default. It reports the pinned `enabled: false`,
@@ -67,19 +82,28 @@ function compareOtel(value: unknown): 'matches' | 'telemetry' | 'newer' {
 // Native config/read expands the user profile with defaults. Only these known
 // fields may accompany the exact owned settings; routing and execution defaults
 // must remain unchanged. On-disk profiles still accept no extra fields at all.
+// 3000.11.92 adds `proxy.gzip` (compressed API requests, on by default) and `local_tools_bypass_permissions`, which
+// would start `devin connect` sessions in Bypass Permissions and must read back off.
 const normalizedRoutes: Record<string, unknown> = {
-  proxy: { mode: 'system', url: null, no_proxy: null },
+  proxy: { mode: 'system', url: null, no_proxy: null, gzip: true },
   devin: { org_id: null },
   shell: { setup_complete: false, startup_messages_remaining: 10, exec_shell: null },
   sandbox: { allowed_domains: [], denied_domains: [], network_mode: 'full', excluded: { allow: [], ask: [], deny: [] } },
-  disabled_tools: [], keymap: {},
+  disabled_tools: [], keymap: {}, local_tools_bypass_permissions: false,
 }
-const presentationFields = new Set(['theme_mode', 'theme_auto_detect', 'pty_for_noninteractive_exec', 'skip_home_directory_warning',
+const presentationFields = new Set(['typewriter', 'theme_mode', 'theme_auto_detect', 'pty_for_noninteractive_exec', 'skip_home_directory_warning',
   'show_path', 'include_gitignored_files', 'respect_gitignore', 'attribution', 'unicode_mode', 'legacy_terminal', 'disable_osc',
   'skip_workspace_trust', 'notify', 'mouse_capture', 'show_hints'])
 
 /** How a readback compares with the owned profile. `newer` is a top-level block Sotto has never checked. */
-type Readback = 'matches' | 'differs' | 'telemetry' | 'newer'
+type Readback = 'matches' | 'differs' | 'telemetry' | 'newer' | 'older'
+/**
+ * The defaults a Devin CLI older than the floor reads back where 3000.11.92 reads back more: its proxy block without
+ * `gzip`, and its agent block without `subagent_model`. Connecting checks the version once, but every Devin process
+ * reads its profile back, so a CLI replaced by an older one after connecting is caught here, before a session is made.
+ */
+const OLDER_PROXY = { mode: 'system', url: null, no_proxy: null }
+const AGENT_FIELDS = ['model', 'subagent_model', 'preferred_family_models', 'show_history_on_continue', 'thinking', 'model_mixture', 'compaction_threshold_tokens', 'codex_tools']
 
 function compareNormalizedProfile(config: Record<string, unknown>, policy: Record<string, unknown>): Readback {
   if (!Object.entries(policy).every(([key, value]) => key === 'otel' || isDeepStrictEqual(config[key], value))) return 'differs'
@@ -87,21 +111,25 @@ function compareNormalizedProfile(config: Record<string, unknown>, policy: Recor
   const otel = Object.hasOwn(config, 'otel') ? compareOtel(config.otel) : 'matches'
   if (otel === 'telemetry') return 'telemetry'
   let unknown = otel === 'newer'
+  let older = false
   for (const [key, value] of Object.entries(config)) {
     if (Object.hasOwn(policy, key)) continue
-    if (Object.hasOwn(normalizedRoutes, key)) { if (!isDeepStrictEqual(value, normalizedRoutes[key])) return 'differs' }
+    if (key === 'proxy' && isDeepStrictEqual(value, OLDER_PROXY)) older = true
+    else if (Object.hasOwn(normalizedRoutes, key)) { if (!isDeepStrictEqual(value, normalizedRoutes[key])) return 'differs' }
     else if (key === 'agent') {
       const agent = object(value)
-      if (!agent || !isDeepStrictEqual(Object.keys(agent).sort(), ['model', 'preferred_family_models', 'show_history_on_continue', 'thinking', 'model_mixture', 'compaction_threshold_tokens', 'codex_tools'].sort())
-        || agent.model !== null || !isDeepStrictEqual(agent.preferred_family_models, {}) || agent.model_mixture !== null
+      const fields = agent ? Object.keys(agent).sort() : []
+      if (isDeepStrictEqual(fields, AGENT_FIELDS.filter(field => field !== 'subagent_model').sort())) older = true
+      else if (!isDeepStrictEqual(fields, [...AGENT_FIELDS].sort()) || agent!.subagent_model !== null) return 'differs'
+      if (!agent || agent.model !== null || !isDeepStrictEqual(agent.preferred_family_models, {}) || agent.model_mixture !== null
         || agent.compaction_threshold_tokens !== null || agent.codex_tools !== false || typeof agent.show_history_on_continue !== 'boolean') return 'differs'
       const thinking = object(agent.thinking)
       if (!thinking || Object.keys(thinking).length !== 1 || typeof thinking.mode !== 'string') return 'differs'
     } else if (presentationFields.has(key)) { if (value !== null && !['string', 'boolean'].includes(typeof value)) return 'differs' }
     else unknown = true
   }
-  // Judged last, so a block Sotto knows that reads back wrong is reported as that rather than as a newer version.
-  return unknown ? 'newer' : 'matches'
+  // Judged last, so a block Sotto knows that reads back wrong is reported as that rather than as another version.
+  return older ? 'older' : unknown ? 'newer' : 'matches'
 }
 
 const preparing = new Map<string, Promise<void>>()
@@ -151,7 +179,7 @@ export function devinPolicyPath(userDataDirectory: string, allows: DevinAllowanc
 
 /**
  * A versioned, Sotto-owned profile; existing native user/project files are never changed. What the
- * thread allows picks the file: `nothing` gets the plain versioned name (`approval-policy-v2.json`) and
+ * thread allows picks the file: `nothing` gets the plain versioned name (`approval-policy-v3.json`) and
  * the others add their allowance to it. The allowance has no default: a caller that forgot it would
  * otherwise check every profile as the asking one.
  */
@@ -204,6 +232,7 @@ export function verifyDevinPolicy(result: unknown, profile: DevinProfile): void 
     ? compareNormalizedProfile(config, policyFor(profile.allows)) : 'differs'
   // Refusals, not garbled replies: DevinRpc passes them on as they are, so these words reach the provider's tile.
   if (readback === 'telemetry') throw new DevinRefusal('Devin reports telemetry settings that Sotto’s profile does not set, such as a collector to send to. Nothing was sent, and your threads are kept. Remove the otel settings Devin reads, then reconnect.')
+  if (readback === 'older') throw new DevinRefusal(`This Devin version is older than the one Sotto checked. Nothing was sent, and your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} or newer, then reconnect Devin.`)
   if (readback === 'newer') throw new DevinRefusal(`This Devin version is newer than the one Sotto checked, and it has settings Sotto has not checked. Nothing was sent, and your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} until Sotto checks this version.`)
   if (readback !== 'matches') throw new DevinRefusal('Devin did not confirm the Sotto approval profile. Your thread is kept. Reconnect with the supported Devin version.')
 }
@@ -219,6 +248,7 @@ export function verifyDevinPluginList(stdout: string): void {
 /** `mcp list` prints command/URL fields, which may contain secrets. Parse only
  * fixed structure, retain nothing, and never include the output in an error.
  * The pinned CLI marks disabled servers with U+2717; enabled servers use U+2022.
+ * From 3000.11.92 a server may also have one `Source:` line, naming the file or plugin it came from.
  */
 export function verifyDevinMcpList(stdout: string): void {
   const text = stdout.trimEnd()
@@ -226,18 +256,22 @@ export function verifyDevinMcpList(stdout: string): void {
   const lines = text.split(/\r?\n/u)
   let servers = 0
   let details = 0
+  let sources = 0
   let valid = lines.shift() === 'Configured MCP servers:'
   for (const line of lines) {
     if (line === '') continue
     if (/^ {2}\u2717 [^\r\n]+ \(disabled\)$/u.test(line)) {
-      if (servers > 0 && details !== 1) valid = false
+      if (servers > 0 && (details !== 1 || sources > 1)) valid = false
       servers++
       details = 0
+      sources = 0
     } else if (/^ {4}(?:Command|URL): [^\r\n]+$/u.test(line) && servers > 0) {
       details++
+    } else if (/^ {4}Source: [^\r\n]+$/u.test(line) && servers > 0) {
+      sources++
     } else valid = false
   }
-  if (!valid || servers === 0 || details !== 1) {
+  if (!valid || servers === 0 || details !== 1 || sources > 1) {
     throw new Error('Devin has enabled MCP servers or could not confirm they are disabled. Your thread is kept. Disable native Devin MCP servers before reconnecting.')
   }
 }

@@ -4,6 +4,7 @@ import type { WorkflowProgress } from '../../../shared/agentActivity'
 import { distinctModels, type SubagentAssignment, type SubagentRow, type SubagentsBridge } from '../../../shared/subagents'
 import { type SubagentsStore, useThreadSubagents } from './subagentsStore'
 import { ToolsChrome, ToolsChromeLead } from './ToolsChrome'
+import { AgentContinue, AgentContinueContext, type AgentContinueOptions } from './AgentContinue'
 import './agentsSurface.css'
 
 const STATUS: Record<SubagentRow['status'], string> = { running: 'Working', completed: 'Finished', failed: 'Failed', interrupted: 'Interrupted', unknown: 'Last seen working' }
@@ -103,6 +104,7 @@ const AgentRow = memo(function AgentRow({ threadId, row, depth, bridge }: { read
     </button>
     {open ? <div className="subagent-details" id={id} onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); setOpen(false); button.current?.focus() } }}>
       <AssignmentDetails threadId={threadId} row={row} bridge={bridge} />
+      <AgentContinue row={row} />
     </div> : null}
   </li>
 })
@@ -201,7 +203,9 @@ function WorkflowPage({ threadId, row, agents, bridge }: { readonly threadId: st
  * `rosterSignal` is for a thread on a paired host, whose host pushes no roster changes: what the thread's shell says of
  * its agents, so a change there reads the roster again.
  */
-export function AgentsSurface({ threadId, store, bridge, rosterSignal }: { readonly threadId: string; readonly store: SubagentsStore; readonly bridge: SubagentsBridge | undefined; readonly rosterSignal?: string | undefined }): ReactNode {
+export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuation }: { readonly threadId: string; readonly store: SubagentsStore; readonly bridge: SubagentsBridge | undefined; readonly rosterSignal?: string | undefined
+  /** Continue as a thread on each finished agent (#1028), where the feature is on and the thread's provider reports agents. */
+  readonly continuation?: AgentContinueOptions | undefined }): ReactNode {
   const state = useThreadSubagents(store, threadId)
   useEffect(() => { store.activate(bridge, threadId); return () => store.deactivate() }, [store, bridge, threadId])
   const followed = useRef(rosterSignal)
@@ -237,7 +241,7 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal }: { reado
   const loadEarlier = state.before !== undefined ? <button type="button" className="files-link tt-focusable subagents-older" disabled={state.loading} onClick={() => void store.page(threadId, true)}>{state.loading ? 'Loading agents…' : 'Load earlier agents'}</button> : null
   const error = state.error ? <p role="status">{state.error} <button type="button" className="files-link tt-focusable" onClick={() => void store.page(threadId)}>Try again</button></p> : null
   // An open agent inside the page answers Escape first; only then does Escape leave the page.
-  return <div className="subagents-surface" ref={surface} onKeyDown={event => { if (open && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); back() } }}>
+  return <AgentContinueContext.Provider value={continuation ?? null}><div className="subagents-surface" ref={surface} onKeyDown={event => { if (open && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); back() } }}>
     {open ? <div className="tools-chrome">
       <button type="button" className="tools-chrome__button subagents-back tt-focusable" aria-label="Back to all agents" title="Back to all agents" onClick={back}><ArrowLeft size={15} aria-hidden="true" /><span className="tools-chrome__button-label">All agents</span></button>
       <span className="subagents-back__rule" aria-hidden="true" />
@@ -255,5 +259,5 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal }: { reado
       {error}
       {loadEarlier}
     </div>
-  </div>
+  </div></AgentContinueContext.Provider>
 }

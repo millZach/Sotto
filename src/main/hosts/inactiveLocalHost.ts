@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { watcherRecordSchema } from '../../shared/watcher'
 import { migrateWatcherRecord } from '../agents/watcherRecords'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../shared/agents'
+import { HELD_PROVIDER_ENTRIES, type HeldProviders } from '../../shared/heldProviders'
 import type { createAgentRuntime } from '../agents/runtime'
 import { loadHostIdentity } from '../agents/hostIdentity'
 import { ShortTextWriter } from '../llm/shortTextWriter'
@@ -23,7 +24,9 @@ export function emptyDesktopState(hostId?: string): AgentState {
  * No coordinator, provider, history database, timer or workspace migration is constructed here.
  * Unsupported operations fail closed; this adapter never fabricates a successful host command.
  */
-export async function inactiveLocalHost(directory: string): Promise<Awaited<ReturnType<typeof createAgentRuntime>>> {
+/** `parked` names the providers whose saved threads stay dormant: every provider an Owl feature holds, on either track. */
+export async function inactiveLocalHost(directory: string,
+  parked: HeldProviders = new Set(HELD_PROVIDER_ENTRIES.map(entry => entry.provider))): Promise<Awaited<ReturnType<typeof createAgentRuntime>>> {
   const state = emptyDesktopState(await loadHostIdentity(directory))
   // Ownership remains readable while providers are off. No saved data is migrated or written here.
   const retained = new Set<string>()
@@ -42,7 +45,7 @@ export async function inactiveLocalHost(directory: string): Promise<Awaited<Retu
     const threads = z.object({ snapshot: z.object({ threads: z.array(z.object({ id: z.string(), kind: z.string().optional(), providerId: z.string().optional() })).optional() }).optional() }).parse(workspace).snapshot?.threads ?? []
     for (const thread of threads) if (thread.kind === 'watcher' || thread.kind === 'watcher-history') retained.add(thread.id)
     for (const id of retained) dormant.add(id)
-    for (const thread of threads) if (thread.providerId === 'muse') dormant.add(thread.id)
+    for (const thread of threads) if (thread.providerId !== undefined && (parked as ReadonlySet<string>).has(thread.providerId)) dormant.add(thread.id)
   } catch (error) { retentionError = error }
   const watcherThreadIds = (): readonly string[] => {
     // Unreadable ownership blocks answer cleanup rather than treating a saved Watcher answer as ordinary.

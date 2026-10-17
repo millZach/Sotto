@@ -173,12 +173,15 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `watcher-muse`: the host takes Watcher requests from a desktop whose Watcher runs on Muse, whose identity names `muse` as
  * its provider (ADR-0079, #1039). It adds no request, field or push. A desktop whose Watcher is on Muse reads and directs
  * no thread on a host that does not list it, and says to update that host.
+ * `thread-starts`: the host takes `continue-agent`, which continues one of a thread's agents as a thread of its own, and
+ * answers `start-handover` with the handover a thread that began from another goes with on its first message (#1028). Only
+ * a host whose Owl answer turns them on lists it; a desktop refuses both for a host that does not.
  * `host-update`: the host updates itself when a desktop asks (ADR-0088): `host-update` runs one step of a host update on
  * the host, the way the launch script runs it over SSH, and `host-update-step` pushes say which step it is on to a client
  * that accepts the feature. Offered only to a client the launch script recorded as a desktop whose `remote-answer` policy
  * lets it answer, and only by a host Sotto started from a release's own layout.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'host-update'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -352,6 +355,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('subagent-assignments'), request: subagentAssignmentsRequestSchema }).strict(),
   /** The host's machine facts and running thread count, read on request and never pushed (#1031). */
   z.object({ ...base, op: z.literal('host-facts') }).strict(),
+  /** The words of a started thread's handover, read only when the user asks to read them (#1028). */
+  z.object({ ...base, op: z.literal('start-handover'), threadId: id }).strict(),
   /** One step of a host update, run by the host on itself for a desktop that may answer (ADR-0088). */
   z.object({ ...base, op: z.literal('host-update'), action: z.enum(HOST_UPDATE_REQUEST_ACTIONS), version: z.string().min(1).max(64).optional(),
     file: z.string().min(1).max(128).optional(), sha256: z.string().regex(/^[0-9a-f]{64}$/u).optional() }).strict(),
@@ -444,6 +449,8 @@ const aboutShape = {
 export const hostPhoneAccessSchema = z.object({ status: z.enum(HOST_PHONE_ACCESS_STATUSES), phones: z.number().int().nonnegative().max(1000) })
 export const hostHelloSchema = z.object({ ...eventPageShape, hostId: z.uuid(), clientId: id, shell: protocolAgentStateSchema, capabilities: z.object({ mayAnswer: z.boolean() }), sottoVersion, features: featureList,
   ...aboutShape, phoneAccess: hostPhoneAccessSchema.optional().catch(undefined) })
+/** A started thread's handover as a host answers `start-handover`: its words, or null when it has none (#1028). */
+export const hostStartHandoverSchema = z.object({ handover: z.object({ text: z.string() }).strict().nullable() }).strict()
 export const hostHealthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), sottoVersion, features: featureList, ...aboutShape })
 /**
  * The host ID, Sotto version and features a host's health advertises, or null when the host does not speak the

@@ -39,6 +39,9 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'rename-thread': ['threadId', 'title'], 'regenerate-thread-title': ['threadId'],
   'create-thread': ['projectId', 'title', 'modelId', 'titleSource', 'threadId', 'workingCopy', 'baseBranch', 'startFromOrigin',
     'existingWorktreePath', 'reasoningEffort', 'runtimeMode', 'providerMode'],
+  // Continuing an agent as its own thread makes a new thread on the new-thread defaults, as create-thread does, and asks
+  // the model nothing (#1028). Only on a listener that offers `thread-starts`: see remoteCommandRefusal.
+  'continue-agent': ['threadId', 'agentId', 'newThreadId', 'modelId', 'handover', 'workingCopy', 'baseBranch', 'startFromOrigin'],
   'retry-thread-worktree': ['threadId'], 'refresh-thread-worktree': ['threadId', 'background'],
   'restore-thread-branch': ['threadId', 'withUncommittedChanges'],
   'preview-reclaim-thread-worktree': ['threadId'],
@@ -127,12 +130,15 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   /** Selection belongs to this authenticated socket, never to the command payload. */
   readonly selectedThreadId?: string | null | undefined
   /** Whether this listener offers `client-updates`: the headless host does, the desktop's phone listener does not. */
-  readonly clientUpdates?: boolean | undefined }): 'forbidden' | null {
+  readonly clientUpdates?: boolean | undefined
+  /** Whether this listener offers `thread-starts`: only a host whose Owl answer turns them on (#1028). */
+  readonly threadStarts?: boolean | undefined }): 'forbidden' | null {
   if (managementCommandRefusal(command)) return 'forbidden'
   if (command.type === 'connect' && command.notice !== undefined && command.notice !== false) return 'forbidden'
   const fields = REMOTE_COMMANDS[command.type] as readonly string[] | undefined
   if (!fields) return 'forbidden'
   if ((command.type === 'queue-client-updates' || command.type === 'cancel-client-updates') && context.clientUpdates !== true) return 'forbidden'
+  if (command.type === 'continue-agent' && context.threadStarts !== true) return 'forbidden'
   if (Object.keys(command).some(key => key !== 'type' && !fields.includes(key))) return 'forbidden'
   if (command.type === 'configure' && Object.keys(command.patch).some(key => !(REMOTE_CONFIGURATION_FIELDS as readonly string[]).includes(key))) return 'forbidden'
   if (command.type === 'compose' && command.threadId !== undefined && command.threadId !== context.selectedThreadId) return 'forbidden'
