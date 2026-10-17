@@ -189,19 +189,26 @@ describe('Stop all', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'More Watcher actions' })).toHaveFocus())
   })
 
-  it('stays while the stop runs, so Escape cannot lose what came of each thread', async () => {
+  it('answers Escape while its stop runs, and keeps what came of each thread for the button’s next press', async () => {
     const { bridge } = renderRoom(roomState())
     let answer: (result: WatcherStopAllResult) => void = () => undefined
     bridge.stopAll.mockImplementationOnce(() => new Promise<WatcherStopAllResult>(resolve => { answer = resolve }))
     await paneReady()
     fireEvent.click(screen.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Stop 1 thread' }))
-    const stopping = await screen.findByRole('button', { name: 'Stopping…' })
-    fireEvent.keyDown(stopping, { key: 'Escape' })
-    fireEvent.pointerDown(document.body)
-    expect(screen.getByRole('dialog', { name: 'Stop the thread Watcher started?' })).toBeInTheDocument()
+    fireEvent.keyDown(await screen.findByRole('button', { name: 'Stopping…' }), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const button = screen.getByRole('button', { name: 'Stop all, show its progress' })
+    await waitFor(() => expect(button).toHaveFocus())
     await act(async () => { answer({ status: 'ok', state: roomState(), results: [{ target: target('footer-links'), status: 'stopped', message: 'Stopped.' }] }) })
-    expect(await screen.findByRole('dialog', { name: 'Stopped Footer links.' })).toHaveTextContent('Stopped.')
+    // Its results came while it was put away; they wait for the button, which says so.
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Stop all, show what it did' }))
+    const done = await screen.findByRole('dialog', { name: 'Stopped Footer links.' })
+    expect(done).toHaveTextContent('Stopped.')
+    fireEvent.keyDown(within(done).getByRole('button', { name: 'Close' }), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' })).toBeInTheDocument()
   })
   it('says it cannot tell what stopped when the stop’s answer is lost, never that nothing was stopped', async () => {
     const { bridge } = renderRoom(roomState())

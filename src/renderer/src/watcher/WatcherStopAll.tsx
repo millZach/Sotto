@@ -60,8 +60,8 @@ export function stopSummary(results: readonly StopResult[], describe: (target: W
  * Stop all in Watcher's header (Zach's pick on October 16, 2026), shown only while threads Watcher started are running.
  * A press asks main which threads it would stop and asks the user first, naming each with what it is doing; the stop
  * then says what became of each, including one still waiting on its computer to confirm. Escape, Cancel or Close put it
- * away and focus returns to the button; a press outside puts it away and leaves focus where that press put it. While the
- * stop runs it stays, so its results are not lost.
+ * away and focus returns to the button; a press outside puts it away and leaves focus where that press put it. Put away
+ * while the stop runs, the stop goes on and what came of it is kept: the button then says so, and its next press shows it.
  */
 export function WatcherStopAll({ room, conversation, fallbackFocus }: {
   readonly room: WatcherRoom
@@ -71,31 +71,35 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
 }): ReactNode {
   const running = useMemo(() => room.state === null ? [] : stopAllRunning(room.state), [room.state])
   const [phase, setPhase] = useState<Phase | null>(null)
+  /** Whether the popover shows its phase: put away mid-stop, the phase goes on unseen until the button is pressed. */
+  const [shown, setShown] = useState(true)
   const button = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const panelId = useId(), titleId = useId(), noteId = useId()
-  const open = phase !== null
+  const open = phase !== null && shown
   const close = (): void => {
-    setPhase(null)
+    if (phase?.kind === 'stopping') setShown(false)
+    else setPhase(null)
     window.setTimeout(() => { if (button.current?.isConnected) button.current.focus(); else fallbackFocus() }, 0)
   }
   useEffect(() => {
     if (!open) return
     const away = (event: PointerEvent): void => {
       const target = event.target as Node
-      if (!panel.current?.contains(target) && !button.current?.contains(target)) setPhase(current => current?.kind === 'stopping' ? current : null)
+      if (!panel.current?.contains(target) && !button.current?.contains(target)) { if (phase?.kind === 'stopping') setShown(false); else setPhase(null) }
     }
     document.addEventListener('pointerdown', away, true)
     return () => document.removeEventListener('pointerdown', away, true)
-  }, [open])
+  }, [open, phase?.kind])
   // Focus goes into the popover as each step draws: Cancel to ask, Close once it is done.
   useEffect(() => {
+    if (!shown) return
     if (phase?.kind === 'confirm' || phase?.kind === 'done' || phase?.kind === 'refused' || phase?.kind === 'unknown') panel.current?.querySelector<HTMLButtonElement>('[data-autofocus]')?.focus()
-  }, [phase?.kind])
+  }, [phase?.kind, shown])
   if (room.stopAll === null || (running.length === 0 && phase === null)) return null
   const stopAll = room.stopAll
   const prepare = async (): Promise<void> => {
-    setPhase({ kind: 'preparing' })
+    setPhase({ kind: 'preparing' }); setShown(true)
     try {
       const preview = await stopAll.prepare()
       setPhase(current => current?.kind !== 'preparing' ? current : preview.status === 'ok'
@@ -110,6 +114,8 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
       setPhase(current => current === null ? null : result.status === 'ok' ? { kind: 'done', results: result.results } : { kind: 'refused', message: result.message })
     } catch { setPhase(current => current === null ? null : { kind: 'unknown', targets }) }
   }
+  // Put away mid-stop: the button's press shows the stop as it stands, its progress or what came of it.
+  const waiting = phase === null || shown ? null : phase.kind === 'stopping' ? 'Stop all, show its progress' : 'Stop all, show what it did'
   const count = phase?.kind === 'confirm' || phase?.kind === 'stopping' ? phase.targets.length : running.length
   const name = (target: WatcherThreadTarget): ReactNode => {
     const facts = conversation.describe(target)
@@ -168,12 +174,11 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
   return <div className="watcher-stop-all" onKeyDown={event => {
     if (!open || event.key !== 'Escape' || event.nativeEvent.isComposing) return
     event.preventDefault(); event.stopPropagation()
-    if (phase.kind === 'stopping') return
     close()
   }}>
     <button ref={button} type="button" className="watcher-stop-all__button tt-focusable" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined}
-      aria-label={`Stop all threads Watcher started, ${plural(count, 'thread')}`} title="Stop all threads Watcher started"
-      onClick={() => { if (phase?.kind === 'stopping') return; if (open) close(); else void prepare() }}>
+      aria-label={waiting === null ? `Stop all threads Watcher started, ${plural(count, 'thread')}` : waiting} title={waiting ?? 'Stop all threads Watcher started'}
+      onClick={() => { if (waiting !== null) setShown(true); else if (open) close(); else void prepare() }}>
       <Square size={13} aria-hidden="true" /><span className="watcher-stop-all__text">Stop all</span>
     </button>
     {open ? <div ref={panel} id={panelId} className="watcher-stop" role="dialog" aria-labelledby={titleId}
