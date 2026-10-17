@@ -131,7 +131,6 @@ type HistoryEntry = z.infer<typeof historyEntrySchema>
 const historyPageSchema = z.looseObject({ data: z.array(historyEntrySchema), cursor: z.looseObject({ next: z.string().nullable().optional() }).optional() })
 const ofSession = z.looseObject({ sessionID: z.string() })
 const inboxEnqueuedSchema = ofSession.extend({ inboxID: z.string().min(1), item: z.looseObject({ payload: z.looseObject({ text: z.string().default('') }).optional() }).optional() })
-const inboxDeliveredSchema = ofSession.extend({ inboxID: z.string().min(1) })
 const blockSchema = ofSession.extend({ assistantMessageID: z.string().min(1), ordinal: z.number().int().nonnegative().default(0), delta: z.string().optional(), text: z.string().optional() })
 const toolEventSchema = ofSession.extend({ id: z.string().min(1), name: z.string().optional(), input: z.record(z.string(), z.unknown()).optional(),
   content: z.unknown().optional(), error: z.looseObject({ type: z.string().optional(), message: z.string().optional() }).optional() })
@@ -149,7 +148,6 @@ interface ThreadServer {
   server?: OpenCodeServer
   client?: OpenCodeClient
   readonly abort: AbortController
-  readonly clientRevision: number
   closing: boolean
 }
 type Pending = OpenCodePending
@@ -159,12 +157,10 @@ interface Fold {
   /** Each run of reasoning so far, by its activity ID. */
   readonly reasoning: Map<string, string>
   readonly tools: Map<string, OpenCodeTool>
-  /** Prompts OpenCode has handed the model, by inbox ID. */
-  readonly delivered: Set<string>
   /** When each assistant message began, which history reports as its creation, so live and resumed replies match. */
   readonly started: Map<string, number>
 }
-const freshFold = (): Fold => ({ texts: new Map(), reasoning: new Map(), tools: new Map(), delivered: new Set(), started: new Map() })
+const freshFold = (): Fold => ({ texts: new Map(), reasoning: new Map(), tools: new Map(), started: new Map() })
 const iso = (at: number | undefined): string => at !== undefined && Number.isFinite(at) ? new Date(at).toISOString() : new Date().toISOString()
 
 export interface OpenCodeHostOptions {
@@ -210,7 +206,6 @@ export class OpenCodeHost implements AgentHost {
   private readonly holds = new Map<string, number>()
   private readonly exits = new Set<Promise<void>>()
   private executable: string | undefined
-  private clientRevision = 0
   /** The connect check's short-lived server while it starts or answers, so a disconnect stops it too. */
   private probe: Promise<{ server: OpenCodeServer }> | undefined
   private writing = Promise.resolve()
@@ -334,7 +329,7 @@ export class OpenCodeHost implements AgentHost {
     const current = this.processes.get(id); if (current) return current.ready
     if (!this.state.connected || !this.executable) return Promise.reject(new Error('Connect OpenCode before managing threads.'))
     const generation = this.generation
-    const entry = { abort: new AbortController(), clientRevision: this.clientRevision, closing: false } as ThreadServer
+    const entry = { abort: new AbortController(), closing: false } as ThreadServer
     entry.ready = (async () => {
       await this.refuseWatcher(id)
       this.assertGeneration(generation)
@@ -750,7 +745,6 @@ export class OpenCodeHost implements AgentHost {
           this.recordUser(id, parsed.inboxID, parsed.item?.payload?.text ?? '', event.created)
           this.emit(true); return
         }
-        case 'session.inbox.delivered': this.fold(id).delivered.add(inboxDeliveredSchema.parse(data).inboxID); return
         case 'session.step.started': {
           const parsed = stepStartedSchema.safeParse(data)
           if (parsed.success && parsed.data.started !== undefined) this.fold(id).started.set(parsed.data.assistantMessageID, parsed.data.started)
