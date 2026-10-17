@@ -298,6 +298,43 @@ describe('provider model picker', () => {
       expect(onChange).toHaveBeenCalledExactlyOnceWith('openrouter/claude-opus-5-5')
     })
 
+    it('returns to search from the first source on Up, rather than wrapping to the last', async () => {
+      const { user } = await open()
+      const search = screen.getByRole('textbox', { name: 'Search models' })
+      await user.keyboard('{ArrowDown}')
+      expect(sourceRows()[0]).toHaveFocus()
+      await user.keyboard('{ArrowUp}')
+      expect(search).toHaveFocus()
+      await user.keyboard('{ArrowDown}{End}{ArrowUp}')
+      expect(sourceRows()[1]).toHaveFocus()
+      await user.keyboard('{Home}')
+      expect(sourceRows()[0]).toHaveFocus()
+    })
+
+    it('makes the model sources one tab stop, on the chosen model’s source until the arrows move it', async () => {
+      const { user } = await open()
+      // Before any key, the stop is the source holding the thread's model.
+      expect(sourceRows().map(row => row.tabIndex)).toEqual([-1, 0, -1])
+      await user.keyboard('{ArrowDown}')
+      expect(sourceRows()[0]).toHaveFocus()
+      expect(sourceRows().map(row => row.tabIndex)).toEqual([0, -1, -1])
+      // Tab leaves the list from any row rather than visiting each source.
+      await user.tab()
+      expect(sourceRows().some(row => row === document.activeElement)).toBe(false)
+      await user.tab({ shift: true })
+      expect(sourceRows()[0]).toHaveFocus()
+    })
+
+    it('closes the menu on Escape from a source row, with focus back on the chip', async () => {
+      const { user, chip, onChange } = await open()
+      await user.keyboard('{ArrowDown}{ArrowDown}')
+      expect(sourceRows()[1]).toHaveFocus()
+      await user.keyboard('{Escape}')
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(chip).toHaveFocus()
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
     it('steps back one level for each Escape: the search, then the source, then the menu', async () => {
       const { user, onChange, chip } = await open()
       await user.keyboard('{ArrowDown}{ArrowDown}{Enter}')

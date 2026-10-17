@@ -105,6 +105,8 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const [query, setQuery] = useState('')
   /** The model source whose models are showing, and whose provider it is, so another provider's tile starts on its own sources. */
   const [step, setStep] = useState<{ readonly provider: string; readonly source: string } | null>(null)
+  /** The model source row that holds the list's one tab stop, once focus has been on one; until then, the chosen model's. */
+  const [sourceStop, setSourceStop] = useState<string | undefined>(undefined)
   /** Where focus goes once the menu has drawn the step a key or a press asked for. */
   const pendingFocus = useRef<{ readonly to: 'search' } | { readonly to: 'model' } | { readonly to: 'source'; readonly name: string } | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -131,6 +133,8 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   // Across every source at once, matching the source's name too, so "anthropic" finds all of Anthropic's models.
   const found = sources && sourceQuery ? sources.map(source => ({ ...source, models: source.models.filter(model => `${model.name} ${model.id} ${source.name}`.toLowerCase().includes(sourceQuery)) })).filter(source => source.models.length) : undefined
   const openSource = sources && step?.provider === selectedProvider?.name ? sources.find(source => source.name === step?.source) : undefined
+  const holdsChosen = (source: ModelSourceGroup): boolean => source.models.some(model => model.id === currentEntryId)
+  const stopSource = sources?.find(source => source.name === sourceStop)?.name ?? sources?.find(holdsChosen)?.name ?? sources?.[0]?.name
   const showProvider = (name: string): void => { setProvider(name); if (name !== selectedProvider?.name) setStep(null) }
   const leaveSource = (): void => { if (openSource) pendingFocus.current = { to: 'source', name: openSource.name }; setStep(null) }
   const continuing = selectedProvider !== undefined && continueOn?.providers.has(selectedProvider.name) === true
@@ -231,7 +235,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
     onClick={() => { onChange(model.id); setOpen(false) }}><span>{model.name}{!model.ready && <small>Unavailable</small>}</span>{model.id === currentEntryId && <Check size={14} aria-hidden="true" />}</button>
   return <div className="model-picker">
     <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
-      title={spoken} data-source={current?.source} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); setStep(null); wheelTurn.current = restingWheel(); setOpen(true) }}>
+      title={spoken} data-source={current?.source} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setQuery(''); setStep(null); setSourceStop(undefined); wheelTurn.current = restingWheel(); setOpen(true) }}>
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}
       {current?.source ? <span className="model-picker__path"><span className="model-picker__source" data-long={current.source.length > LONG_SOURCE || undefined}>{current.source}</span><span className="model-picker__separator" aria-hidden="true">/</span><span className="model-picker__name">{name}</span></span> : <span>{name}</span>}
       <ChevronDown size={12} aria-hidden="true" />
@@ -281,11 +285,12 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
               {openSource.models.map(option)}
             </div>
           </>
-          : <div ref={list} role="group" aria-label={`${selectedProvider!.name} model sources`} className="model-picker__models model-picker__sources" onKeyDown={event => moveListboxFocus(event, list.current)}>
+          // One tab stop, as the rail is: the arrows move along it, and Up from the first row goes back to search.
+          : <div ref={list} role="group" aria-label={`${selectedProvider!.name} model sources`} className="model-picker__models model-picker__sources" onKeyDown={event => moveListboxFocus(event, list.current, search.current)}>
             {sources.map(source => {
               const about = `${countModels(source.models.length)}${source.name === OPENCODE_ZEN_SOURCE ? ' · Free with OpenCode Zen' : ''}`
-              return <button type="button" key={source.name} data-source={source.name} aria-current={source.models.some(model => model.id === currentEntryId) || undefined}
-                aria-label={`Show ${source.name} models, ${about.replace(' · ', ', ')}`} onClick={() => { pendingFocus.current = { to: 'model' }; setStep({ provider: selectedProvider!.name, source: source.name }) }}>
+              return <button type="button" key={source.name} data-source={source.name} aria-current={holdsChosen(source) || undefined} tabIndex={source.name === stopSource ? 0 : -1}
+                aria-label={`Show ${source.name} models, ${about.replace(' · ', ', ')}`} onFocus={() => setSourceStop(source.name)} onClick={() => { pendingFocus.current = { to: 'model' }; setStep({ provider: selectedProvider!.name, source: source.name }) }}>
                 <span><b>{source.name}</b><small>{about}</small></span><ChevronRight size={14} aria-hidden="true" />
               </button>
             })}
