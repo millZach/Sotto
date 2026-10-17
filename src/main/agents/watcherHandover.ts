@@ -5,6 +5,7 @@ import type { HandoverSummary } from './handover'
 import { projectWatcherMessages } from './watcherMessageDisplay'
 import { watcherReplyAsShown } from './watcherOwnChanges'
 import { watcherMessageRequests, watcherTextAsTyped } from './watcherRequestNote'
+import { watcherWakeUpShown } from './watcherNews'
 
 /**
  * Watcher's handover after a provider change (ADR-0073). When the user chooses to continue, the new Watcher's first
@@ -89,11 +90,13 @@ export function watcherHandoversShown(snapshot: AgentHostSnapshot, requests: rea
  * One message of an earlier Watcher conversation as its pane shows it, for a handover of that conversation: a reply
  * without the reason line its own-change line shows; a user message without a handover it carried itself, without a line
  * Sotto put after the user's words, and cut at its display proof. A handover of a handover would only repeat an older
- * conversation, so the newer one carries the user's words alone.
+ * conversation, so the newer one carries the user's words alone. A wake-up the host recorded as Sotto's own is shown as
+ * the conversation shows it: without Watcher's news, or not at all (`null`).
  */
-export function watcherMessageAsShown(hostId: string, threadId: string, message: AgentMessage, requests: readonly WatcherRequest[]): AgentMessage {
+export function watcherMessageAsShown(hostId: string, threadId: string, message: AgentMessage, requests: readonly WatcherRequest[]): AgentMessage | null {
   if (message.role === 'assistant') { const text = watcherReplyAsShown(message); return text === message.text ? message : { ...message, text } }
   if (message.role !== 'user') return message
+  if (message.wakeUp === true) return watcherWakeUpShown(message)
   const proof = proofsOf(requests).get(`${threadId}\n${message.id}`)
   let shown = proof ? split(message, proof) : message
   if (shown.handover) { const { handover: _handover, ...words } = shown; void _handover; shown = words }

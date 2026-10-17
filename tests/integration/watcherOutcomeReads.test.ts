@@ -10,6 +10,8 @@ import type { AgentThread, ProviderId } from '../../src/shared/agents'
 import { watcherToolSchemas, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
+import { storedFollowups } from '../fixtures/followupQueue'
+import { watcherWakeUpNote } from '../../src/main/agents/wakeUp'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -100,11 +102,12 @@ it('names the operation a finished turn answers in its news', async () => {
   await f.endTurn(started.target.threadId, 'Synthetic worker reply')
   await vi.waitFor(() => expect(f.service.state().news?.find(event => event.kind === 'turn-finished' && event.target.threadId === started.target.threadId))
     .toMatchObject({ operationId: started.receipt.operationId }))
-  // Watcher's own turn is still running, so the news waits in its queue, where its words can be read.
-  await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.threadId === f.id && item.wakeUp && item.text.includes('foreground turn finished'))).toBeDefined(), { timeout: 15_000 })
-  const news = f.control.shell().followups!.find(item => item.threadId === f.id && item.wakeUp && item.text.includes('foreground turn finished'))!
-  expect(news.text).toContain(`This turn answers operation ${started.receipt.operationId}`)
-  expect(news.text).not.toContain('Synthetic worker reply')
+  // Watcher's own turn is still running, so the news waits in its queue. Its words are the note the wake-up's send carries (ADR-0073).
+  const note = () => storedFollowups(f.control).filter(item => item.threadId === f.id && item.wakeUp)
+    .map(item => watcherWakeUpNote(item.news ?? []) ?? '').find(text => text.includes('foreground turn finished'))
+  await vi.waitFor(() => expect(note()).toBeDefined(), { timeout: 15_000 })
+  expect(note()).toContain(`This turn answers operation ${started.receipt.operationId}`)
+  expect(note()).not.toContain('Synthetic worker reply')
 })
 
 it('gives a queued send its own outcome and reply', async () => {
