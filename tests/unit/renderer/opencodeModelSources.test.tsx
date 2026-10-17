@@ -221,8 +221,6 @@ describe('Add a model source', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' }))
     fireEvent.change(await within(dialog).findByLabelText('Code from the GitLab Duo page'), { target: { value: 'abc' } })
     expect(api.reopen).toHaveBeenCalledWith({ attemptId: 'con_4' })
-    // A code mode is not read again until Finish has handed OpenCode the code.
-    expect(api.wait).not.toHaveBeenCalled()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Finish signing in to GitLab Duo with this code' }))
     expect(await within(dialog).findByRole('status')).toHaveTextContent('Waiting for GitLab Duo to take the code. This updates by itself.')
     await waitFor(() => expect(api.wait).toHaveBeenCalledWith({ attemptId: 'con_4' }))
@@ -231,16 +229,20 @@ describe('Add a model source', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('notices a waiting sign-in has expired, cancels it and says so', async () => {
+  it('notices while it waits for a pasted code that the page has expired, and says so', async () => {
+    let expired = false
     const api = await mount(bridge({
-      startBrowserSignIn: vi.fn(async () => ({ status: 'waiting' as const, attempt: { id: 'con_5', sourceId: 'gitlab', mode: 'code' as const, page: 'gitlab.com/oauth/authorize', expiresAt: Date.now() + 150 } })),
+      startBrowserSignIn: vi.fn(async () => ({ status: 'waiting' as const, attempt: { id: 'con_5', sourceId: 'gitlab', mode: 'code' as const, page: 'gitlab.com/oauth/authorize' } })),
+      wait: vi.fn(async () => expired ? { status: 'expired' as const, message: SIGN_IN_WORDS.expired('GitLab Duo') } : { status: 'pending' as const }),
     }), 20)
     await openDialog()
     const dialog = await pick(/^GitLab Duo,/u)
     fireEvent.click(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' }))
     await within(dialog).findByLabelText('Code from the GitLab Duo page')
-    expect(await within(dialog).findByRole('alert', {}, { timeout: 3_000 })).toHaveTextContent(SIGN_IN_WORDS.expired('GitLab Duo'))
-    expect(api.cancel).toHaveBeenCalledWith({ attemptId: 'con_5' })
+    // No code has been pasted yet, and the sign-in is read all the same.
+    await waitFor(() => expect(api.wait).toHaveBeenCalledWith({ attemptId: 'con_5' }))
+    act(() => { expired = true })
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(SIGN_IN_WORDS.expired('GitLab Duo'))
     expect(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' })).toHaveTextContent('Open sign-in page again')
   })
 

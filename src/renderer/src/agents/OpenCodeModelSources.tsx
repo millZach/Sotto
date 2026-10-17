@@ -100,7 +100,7 @@ interface Flow {
   answers: Record<string, string>
   error: string | null
   attempt: SignInAttempt | null
-  /** Finish handed OpenCode the pasted code and it is still taking it, so the sign-in is read again until it says. */
+  /** Finish handed OpenCode the pasted code and it is still taking it: the dialog says so while it reads the sign-in again. */
   taking: boolean
   /** The page's address when the browser did not open it, to open by hand. */
   unopened: string | null
@@ -171,33 +171,19 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
     if (result.status === 'ok') { flowRef.current = null; onSignedIn(result.sources, current.source, method, result.warning); return }
     setFlow(ended(current, result.message))
   }, [onSignedIn, setFlow])
-  // A browser sign-in that finishes by itself is read again every couple of seconds while it waits, and so is a pasted
-  // code once Finish has handed it to OpenCode and OpenCode is still taking it.
-  useEffect(() => {
-    if (!flow?.attempt || flow.phase !== 'waiting' || flow.attempt.mode === 'code' && !flow.taking) return
-    const current = flow
-    const timer = setInterval(() => { void bridge.wait({ attemptId: current.attempt!.id }).then(result => finish(result, current), () => undefined) }, pollMs)
-    return () => clearInterval(timer)
-  }, [flow, bridge, pollMs, finish])
-  // When its page expires, a waiting sign-in is read once more; one still not done is cancelled, and the dialog says so.
-  const expiresAt = flow?.phase === 'waiting' ? flow.attempt?.expiresAt : undefined
+  // A waiting sign-in is read again every couple of seconds, whatever its mode: one that finishes by itself, and a pasted
+  // code OpenCode is still taking, end when OpenCode says, and an expired page is noticed by OpenCode's own clock.
   const waitingId = flow?.phase === 'waiting' ? flow.attempt?.id : undefined
   useEffect(() => {
-    if (expiresAt === undefined || !waitingId) return
-    const expire = (): void => {
-      const current = flowRef.current
-      if (current?.attempt?.id !== waitingId) return
-      void bridge.cancel({ attemptId: waitingId }).catch(() => undefined)
-      setFlow(ended(current, SIGN_IN_WORDS.expired(current.source.name)))
-    }
-    const timer = setTimeout(() => {
+    if (!waitingId) return
+    const timer = setInterval(() => {
       void bridge.wait({ attemptId: waitingId }).then(result => {
         const current = flowRef.current
-        if (result.status === 'pending') expire(); else if (current?.attempt?.id === waitingId) finish(result, current)
-      }, expire)
-    }, Math.min(Math.max(0, expiresAt - Date.now()), 2_147_483_647))
-    return () => clearTimeout(timer)
-  }, [expiresAt, waitingId, bridge, finish, setFlow])
+        if (current?.attempt?.id === waitingId) finish(result, current)
+      }, () => undefined)
+    }, pollMs)
+    return () => clearInterval(timer)
+  }, [waitingId, bridge, pollMs, finish])
 
   const common = useMemo(() => COMMON_MODEL_SOURCES.flatMap(id => sources.filter(source => source.id === id)), [sources])
   const matches = (source: ModelSource): boolean => { const words = query.trim().toLowerCase(); return !words || `${source.name} ${source.id}`.toLowerCase().includes(words) }
