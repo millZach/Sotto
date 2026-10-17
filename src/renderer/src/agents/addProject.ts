@@ -1,4 +1,4 @@
-import React, { useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { defaultThreadModelId, hostForThread, isSubscriptionReasoning, PROJECT_FOLDER_MISSING, type AgentState } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import type { AgentConnection } from './AgentContext'
@@ -10,9 +10,13 @@ import { projectAtFolder } from './projectFolders'
  * it as a Sotto project on that host, or open the project that already has it. The folder is made on the host when
  * it is new, by the same create-project that attaches an existing one. Only a listed folder is sent as existing, so one
  * that has gone since it was listed is refused rather than made again. `hostId` fixes the computer, as first-run setup
- * does for this one, so the dialog asks only for a folder.
+ * does for this one, so the dialog asks only for a folder. `onAdded` is told the project once it is in `state`, so
+ * what it opens there finds it.
  */
-export function useAddProject(state: AgentState, command: AgentConnection['command'], options: { readonly hostId?: string | undefined } = {}): {
+export function useAddProject(state: AgentState, command: AgentConnection['command'], options: {
+  readonly hostId?: string | undefined
+  readonly onAdded?: ((projectId: string) => void) | undefined
+} = {}): {
   readonly add: () => Promise<void>; readonly adding: boolean; readonly error: string | null; readonly clearError: () => void; readonly dialog: ReactNode
 } {
   const [open, setOpen] = useState(false)
@@ -22,6 +26,19 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
   const latest = useRef(state)
   latest.current = state
   const unansweredNew = useRef(new Set<string>())
+  const onAdded = useRef(options.onAdded)
+  onAdded.current = options.onAdded
+  // The project added or opened, held until a render's `state` lists it. The reply listed it, so the first state
+  // newer than the one held at the reply either lists it or has lost it, as when the host drops; lost, nothing opens
+  // later on its own.
+  const [added, setAdded] = useState<{ readonly projectId: string; readonly before: AgentState } | null>(null)
+  useEffect(() => {
+    if (added === null) return
+    const listed = state.host.projects.some(project => project.id === added.projectId)
+    if (!listed && state === added.before) return
+    setAdded(null)
+    if (listed) onAdded.current?.(added.projectId)
+  }, [added, state])
   const add = async (): Promise<void> => {
     if (adding) return
     // Reopened, the browser lists the host's folders afresh: a folder an unanswered try made shows as a folder, not a new name.
@@ -43,7 +60,7 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
       if (existing) {
         const result = await command({ type: 'select-project', projectId: existing.id })
         if (result === null || result.error !== null) { setDialogError(result?.error ?? 'Could not open the project. Nothing was changed. Try again.'); return }
-        setOpen(false); return
+        setOpen(false); setAdded({ projectId: existing.id, before: latest.current }); return
       }
       const host = hostForThread(current.host, { hostId: choice.hostId })
       const defaultModelId = defaultThreadModelId(current.configuration, host.models, current.reasoningAccounts)
@@ -62,6 +79,8 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
       if (asNew && result !== null) unansweredNew.current.delete(unanswered)
       if (result === null || result.error !== null) { setDialogError(result?.error ?? 'Could not confirm the new project. Choose the folder again to check; it will not be added twice.'); return }
       setOpen(false)
+      const project = projectAtFolder(result.host.projects, choice.hostId, choice.path)
+      if (project) setAdded({ projectId: project.id, before: latest.current })
     } catch { setDialogError('Could not add the project. Nothing was changed. Try again.') }
     finally { setAdding(false) }
   }

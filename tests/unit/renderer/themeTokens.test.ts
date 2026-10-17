@@ -264,6 +264,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/reviewComments.css',
       'src/renderer/src/agents/visualCard.css',
       'src/renderer/src/agents/delegation.css',
+      'src/renderer/src/agents/continueThread.css',
       'src/renderer/src/agents/threadStart.css',
       'src/renderer/src/agents/interactiveVisual.css',
       'src/renderer/src/agents/visualStepper.css',

@@ -5,16 +5,36 @@ import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../
 import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WatcherEvidenceStore, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation } from './watcherEvidence'
-import { foldWatcherEvents, foldWatcherNews, requestRevision } from './watcherNews'
+import { eventSlot, foldWatcherEvents, foldWatcherNews, requestRevision } from './watcherNews'
+import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 
 const RETRY_LIMIT = 8
 const RETRY_MAX_MS = 60_000
+/** A thread whose own facts Watcher has not been told: the digest of none. */
+const NOTHING_TOLD = observationDigest([])
+/**
+ * How long a Git-backed thread's turn end waits for the Git read its finish starts. The workspace reads the working
+ * copy again 1.5 seconds after a turn's work settles; the read lands just after the two-second batch otherwise, and
+ * would wait for the next turn's end. A read that changes the thread's own facts ends the wait early.
+ */
+const TURN_END_SETTLE_MS = 5_000
+const TURN_ENDS: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', 'turn-failed', 'work-settled'])
+/** How many hidden wake-ups in a row may miss Watcher before only news that needs it makes another (hiddenWakeUp.ts). */
+export const WAKE_UP_TRIES = 3
 
 interface Progress { fingerprint: string; connected: boolean; connectedAt: number; progressAt: number; quiet: boolean; links?: Set<string>; cancel?: () => void }
 /** Opaque progress only: no plan, message, tool input or output text crosses the host projection. */
 export function watcherProgressFingerprint(thread: AgentThread): string {
   return observationDigest([thread.status, thread.lastTurn, thread.messages.map(message => [message.id, message.text.length]),
     thread.activities?.map(activity => [activity.id, activity.status, activity.startedAt, activity.completedAt, activity.text?.length, activity.output?.length, activity.steps?.map(step => [step.status, step.text.length]), activity.agents?.map(agent => [agent.id, agent.status, agent.progress, agent.message?.length]) ]), thread.backgroundWork?.map(work => [work.id, work.type]), thread.monitoring?.map(work => work.id), thread.requests.map(card => [card.id, card.kind])])
+}
+/**
+ * Whether a receipt for one of Watcher's own sends is news to it: the send failed, was refused or may not have gone. An
+ * ordinary delivered receipt is not; Watcher made the send and reads its receipts with read_operation when it wants them.
+ */
+export function receiptNeedsWatcher(operation: Pick<WatcherRecord['operations'][number], 'deliveryState' | 'refusalCode' | 'creationUncertain'>): boolean {
+  return operation.deliveryState === 'failed' || operation.deliveryState === 'uncertain'
+    || operation.deliveryState === 'accepted' && (operation.creationUncertain === true || operation.refusalCode !== undefined)
 }
 /**
  * The work a finished turn is still waiting on: background work (Claude's background tasks), the roster's working
@@ -41,6 +61,8 @@ export interface WatcherWakeOptions {
   /** The Watcher start or send a thread's newest turn answers, so its news can name that operation. */
   answers?: (target: WatcherThreadTarget, thread: AgentThread, record: WatcherRecord) => string | undefined
   restoredEvents?: () => readonly WatcherEvent[]
+  /** Whether Watcher's queue holds its hidden wake-up (hiddenWakeUp.ts). While it does, news waits here for the next one. */
+  wakeUpQueued?: () => boolean
   canDeliver: (target: WatcherThreadTarget) => boolean
   deliver: (news: WatcherNews) => Promise<void>; prune: () => Promise<void>
   remember: (ids: string[]) => Promise<void>; changed?: () => void; failed?: () => void
@@ -54,8 +76,34 @@ export class WatcherWakeUp {
   private readonly seen = new Set<string>()
   private readonly latestEvidence = new Map<string, { fingerprint: string; id: string; legacyId?: string; restoredRefs?: Set<string> }>()
   private readonly rememberPending = new Set<string>()
+  /** Each thread's own facts (working copy, Git, checkpoints) as Watcher was last told them, so a turn's end says only what differs. */
+  private readonly toldLocal = new Map<string, string>()
+  /** Each evidence event's thread's own facts when it was made: what Watcher is told of them once a wake-up carries it. */
+  private readonly localAt = new Map<string, string>()
   /** Finished turns, per request and generation, that left background work running: each is owed one work-settled event. */
   private readonly owedWorkSettled = new Set<string>()
+  /** Git-backed threads whose untold turn end waits for its Git read: until when, and their own facts when it ended. */
+  private readonly settling = new Map<string, { target: WatcherThreadTarget; until: number; local: string }>()
+  /** Evidence events a pull request's change made, which need Watcher's attention as a turn end does. */
+  private readonly waking = new Set<string>()
+  /**
+   * Set while evidenceChanged makes an event for news that needs Watcher, so the event is marked before it is batched:
+   * `fresh` for a pull request's own change, `inherited` for evidence that only keeps earlier waiting news current.
+   */
+  private evidenceWakes: false | 'fresh' | 'inherited' = false
+  /**
+   * Hidden wake-ups in a row that did not reach Watcher (hiddenWakeUp.ts). After one, the next is made only on a retry:
+   * news that needs Watcher came since the last was made, or Watcher came to rest, or the miss was unknown, the last two
+   * only while fewer than WAKE_UP_TRIES missed. Retries are counted, and a made wake-up consumes only those counted before
+   * its news was taken, so one counted while it was being saved is not lost.
+   */
+  private misses = 0
+  private retries = 0
+  private consumedRetries = 0
+  /** Whether Watcher rested at the last pass, so a pass can see it come to rest. */
+  private watcherResting: boolean | undefined
+  /** Events an unknown send let go of: observed again, they are not news that came since. */
+  private readonly reobserved = new Set<string>()
   private pending: WatcherEvent[] = []
   private recent: WatcherEvent[] = []
   private cancelBatch: (() => void) | undefined
@@ -90,6 +138,8 @@ export class WatcherWakeUp {
     }
     for (const event of restored) {
       this.seen.add(event.id)
+      // Which evidence needed Watcher is kept in memory only; evidence in a wake-up that was made is counted as having done.
+      if (event.kind === 'evidence-changed') this.wake(event.id)
       if (event.kind !== 'evidence-changed' || !event.evidenceIds?.length) continue
       const fingerprint = observationDigest([...event.evidenceIds].sort())
       if (event.revision !== fingerprint && event.revision !== observationDigest(event.evidenceIds)) continue
@@ -165,6 +215,95 @@ export class WatcherWakeUp {
   }
   news(): WatcherEvent[] { return this.withPassReads(() => this.recent.filter(event => this.due(event))) }
   /**
+   * Whether news needs Watcher's attention: anything but evidence, or evidence of a pull request's link, state, checks,
+   * review or merge changing. Evidence of a thread's own facts alone does not; it only rides with news that does. Which
+   * evidence woke is kept in memory only, as Watcher's news is: a restart observes it all afresh.
+   */
+  needsAttention(events: readonly WatcherEvent[]): boolean {
+    return events.some(event => event.kind !== 'evidence-changed' || this.waking.has(event.id))
+  }
+  /**
+   * Watcher's hidden wake-up left its queue whole (hiddenWakeUp.ts), holding these events. Told: Watcher has them. Failed
+   * or withdrawn: what is still true waits again, to go in the next one. Unknown: the send may have gone, and is never
+   * sent twice, so its news is forgotten and observed afresh, as after a restart. Anything but told is a miss, or a
+   * withdrawal, and none of it is remembered as told.
+   */
+  settled(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void {
+    if (!this.started || this.closed) return
+    if (outcome !== 'told') for (const event of events) this.rememberPending.delete(event.id)
+    // An unconsumed retry already says news that needs Watcher came since that one was made, which is news it did not carry.
+    if (outcome === 'told') this.misses = 0
+    else if (outcome === 'withdrawn') this.retries++
+    else {
+      this.misses++
+      // Observed afresh, as after a restart, it goes again by itself, a bounded number of times. A sure failure waits for
+      // news that needs Watcher, or for Watcher to come to rest.
+      if (outcome === 'unknown' && this.misses < WAKE_UP_TRIES) this.retries++
+    }
+    if (outcome === 'unknown') { this.forget(events); this.observe(); return }
+    if (outcome !== 'told') this.withPassReads(() => this.returned(events))
+    this.batch()
+  }
+  /**
+   * News that went back unsent waits again, ahead of what came since, which wins where both say the same. Evidence whose
+   * facts moved on since, as a thread's own facts do, is told again as they stand now, with a turn end still waiting.
+   * A pull request's change still needs Watcher: evidence that replaced it carries it, and so does its retelling.
+   */
+  private returned(events: readonly WatcherEvent[]): void {
+    const later = new Map(this.pending.map(event => [eventSlot(event), event])), again = new Map<string, { target: WatcherThreadTarget; wakes: boolean }>()
+    for (const event of events) {
+      if (event.kind !== 'evidence-changed') continue
+      const replaced = later.get(eventSlot(event)), wakes = this.waking.has(event.id)
+      // Not told after all, so Watcher's last word of the thread's own facts is no longer this one.
+      this.toldLocal.delete(targetKey(event.target))
+      if (replaced?.kind === 'evidence-changed') { if (wakes) this.wake(replaced.id) }
+      else if (!this.due(event)) {
+        again.set(targetKey(event.target), { target: event.target, wakes: wakes || again.get(targetKey(event.target))?.wakes === true })
+      }
+    }
+    this.pending = this.stillDue(foldWatcherEvents(events, this.pending))
+    for (const [key, { target, wakes }] of again) {
+      if (!this.pending.some(event => event.kind === 'evidence-changed' && targetKey(event.target) === key)) this.evidenceChanged(target, [], false, wakes ? 'again' : false)
+    }
+  }
+  /** Watcher is told this evidence's thread's own facts: a wake-up was made with it. */
+  private toldLocalAs(event: WatcherEvent): void {
+    const key = targetKey(event.target), local = this.localAt.get(event.id)
+    this.toldLocal.delete(key)
+    if (local !== undefined) this.toldLocal.set(key, local)
+    while (this.toldLocal.size > 2_000) this.toldLocal.delete(this.toldLocal.keys().next().value!)
+  }
+  private wake(id: string): void {
+    this.waking.delete(id); this.waking.add(id)
+    while (this.waking.size > 2_000) this.waking.delete(this.waking.values().next().value!)
+  }
+  /**
+   * Forgets that these events were told, so what is still true is observed afresh and told in a new wake-up; what is no
+   * longer true stays untold. As a restart does: a quiet episode already told is open again, and a pull request's facts
+   * are told as they stand.
+   */
+  private forget(events: readonly WatcherEvent[]): void {
+    const pullRequests = new Map<string, WatcherThreadTarget>()
+    for (const event of events) {
+      this.seen.delete(event.id); this.rememberPending.delete(event.id)
+      this.reobserved.delete(event.id); this.reobserved.add(event.id)
+      while (this.reobserved.size > 2_000) this.reobserved.delete(this.reobserved.values().next().value!)
+      if (event.kind === 'evidence-changed') {
+        const scope = observationDigest(['evidence-changed', event.requestId, event.target, event.generation])
+        if (this.latestEvidence.get(scope)?.id === event.id) this.latestEvidence.delete(scope)
+        this.toldLocal.delete(targetKey(event.target))
+        if (this.waking.has(event.id)) pullRequests.set(targetKey(event.target), event.target)
+      }
+      if (event.kind === 'work-settled') this.oweWorkSettled(workSettledScope(event.requestId, event.target, event.generation, event.turnId))
+      if (event.kind === 'quiet') {
+        const progress = this.progress.get(targetKey(event.target))
+        if (progress) { progress.quiet = false; progress.cancel?.(); delete progress.cancel }
+      }
+    }
+    this.recent = this.recent.filter(event => !events.some(item => item.id === event.id))
+    for (const target of pullRequests.values()) this.evidenceChanged(target, [], false, 'again')
+  }
+  /**
    * The events still due. Work-settled news whose work started again before delivery is not sent; its turn is owed it
    * again, so it comes once the work truly reaches zero.
    */
@@ -209,6 +348,13 @@ export class WatcherWakeUp {
       const event: WatcherEvent = { ...extra, kind, target, requestId: request.id, generation: participant.generation,
         observedAt: new Date(this.now()).toISOString(), id }
       this.seen.add(event.id)
+      if (kind === 'evidence-changed' && this.evidenceWakes) this.wake(event.id)
+      // News that needs Watcher in itself, and was not just let go of, may make a wake-up after one that missed.
+      if ((kind !== 'evidence-changed' || this.evidenceWakes === 'fresh') && !this.reobserved.has(event.id)) this.retries++
+      if (kind === 'evidence-changed') {
+        this.localAt.set(event.id, this.evidence.digest(target, 'local'))
+        while (this.localAt.size > 2_000) this.localAt.delete(this.localAt.keys().next().value!)
+      }
       // Seen identities are bounded in memory and persisted only after a successful queue save.
       while (this.seen.size > 2_000) this.seen.delete(this.seen.values().next().value!)
       if (this.retryFailures >= RETRY_LIMIT) { this.retryFailures = 0; this.retryAt = 0 }
@@ -233,29 +379,71 @@ export class WatcherWakeUp {
       this.cancelBatch?.(); this.cancelBatch = undefined
       return
     }
+    // News waits in memory while it may not make a wake-up: a thread's own facts with nothing that needs Watcher beside
+    // them, anything while Watcher's hidden wake-up is still in its queue, and anything after a miss until a retry is due.
+    if (!this.rememberPending.size && !this.worthTelling(this.pending)) { this.cancelBatch?.(); this.cancelBatch = undefined; return }
     // Observations and new events cannot shorten an outstanding persistence backoff.
     if (this.retryAt && this.cancelBatch) return
     if (!this.cancelBatch) this.firstPending = this.now()
     this.cancelBatch?.()
-    const delay = this.retryAt ? this.retryAt - this.now() : Math.min(WATCHER_BATCH_MS, this.firstPending + WATCHER_BATCH_MAX_MS - this.now())
+    // A turn end waiting for its Git read holds only its own thread's news; everything else keeps the batch's own limits.
+    const held = this.heldForGitRead(), free = this.pending.some(event => !this.waitsForGitRead(event, held))
+    const delay = this.retryAt ? this.retryAt - this.now() : free || !held.size ? Math.min(WATCHER_BATCH_MS, this.firstPending + WATCHER_BATCH_MAX_MS - this.now())
+      : Math.min(...held.values()) - this.now()
     this.cancelBatch = this.schedule(() => { this.cancelBatch = undefined; this.flush() }, Math.max(0, delay))
   }
+  /**
+   * Whether these events may make Watcher's next hidden wake-up (hiddenWakeUp.ts): some of them need Watcher, none is in
+   * its queue, and none missed since the last that reached it, or a retry is due.
+   */
+  private worthTelling(events: readonly WatcherEvent[]): boolean {
+    return events.length > 0 && this.needsAttention(events) && (this.misses === 0 || this.retries > this.consumedRetries) && this.options.wakeUpQueued?.() !== true
+  }
+  /** A turn end, and the thread's own facts that ride with it, wait for that thread's Git read; nothing else does. */
+  private waitsForGitRead(event: WatcherEvent, held: ReadonlyMap<string, number>): boolean {
+    return held.has(targetKey(event.target)) && (TURN_ENDS.has(event.kind) || event.kind === 'evidence-changed')
+  }
+  /**
+   * The threads whose waiting turn end still holds their own news for its Git read, and until when: none once the read
+   * has changed the thread's own facts, once its time is up, or when no turn end of that thread is waiting.
+   */
+  private heldForGitRead(): Map<string, number> {
+    const held = new Map<string, number>()
+    for (const [key, wait] of this.settling) {
+      if (wait.until <= this.now() || this.evidence.digest(wait.target, 'local') !== wait.local) { this.settling.delete(key); continue }
+      if (this.pending.some(event => targetKey(event.target) === key && TURN_ENDS.has(event.kind))) held.set(key, wait.until)
+    }
+    return held
+  }
   private flush(): void {
-    const { events, watcher } = this.withPassReads(() => ({ events: this.canDeliver() ? this.stillDue(this.pending) : [], watcher: this.record().current?.target }))
-    if (events.length) this.pending = []
-    if (this.closed || !events.length && !this.rememberPending.size) return
+    const { held, due, watcher } = this.withPassReads(() => ({ held: this.heldForGitRead(), due: this.canDeliver() ? this.stillDue(this.pending) : [], watcher: this.record().current?.target }))
+    const ready = due.filter(event => !this.waitsForGitRead(event, held))
+    const events = this.worthTelling(ready) ? ready : []
+    if (events.length) this.pending = due.filter(event => this.waitsForGitRead(event, held))
+    if (this.closed) return
+    // Only news still waiting for its thread's Git read is left: it goes when that wait ends.
+    if (!events.length && !this.rememberPending.size) { if (held.size) this.batch(); return }
     const news = watcher && events.length ? foldWatcherNews(undefined, { source: 'watcher', watcher, events, omitted: 0 }) : undefined
+    // The retries this wake-up answers: those counted by now. One counted while it is saved is for the next.
+    const retries = this.retries
     this.tail = this.tail.catch(() => undefined).then(async () => {
       if (this.closed) return
       let failed = false
       // A fresh pass after the wait: the state may have moved, but one recheck reads it once for every event.
       const valid = news && { ...news, events: this.withPassReads(() => this.stillDue(news.events)) }
+      // What went stale while it waited may leave a thread's own facts alone, which wake no one: they wait with the rest.
+      if (valid?.events.length && !this.needsAttention(valid.events)) {
+        const kept = valid.events; valid.events = []
+        this.withPassReads(() => this.returned(kept))
+      }
       if (valid?.events.length) {
         try {
-          // Recheck after the serialized lane; recipient refusal is held, not retried by a timer.
-          if (this.canDeliver()) {
+          // Recheck after the serialized lane; recipient refusal is held, not retried by a timer. One hidden wake-up at a time.
+          if (this.canDeliver() && this.options.wakeUpQueued?.() !== true) {
             await this.options.deliver(valid)
             if (this.closed) return
+            this.consumedRetries = Math.max(this.consumedRetries, retries)
+            for (const event of valid.events) if (event.kind === 'evidence-changed') this.toldLocalAs(event)
             for (const event of valid.events) this.rememberPending.add(event.id)
             while (this.rememberPending.size > 1_000) this.rememberPending.delete(this.rememberPending.values().next().value!)
           } else this.pending = this.withPassReads(() => this.stillDue(foldWatcherEvents(events, this.pending)))
@@ -310,23 +498,46 @@ export class WatcherWakeUp {
         const added = progress.links !== undefined && [...links].some(link => !progress.links!.has(link))
         progress.links = links
         before.push(...facts.filter(item => item.source === 'github' && item.url && !links.has(pullRequestKey(item.url) ?? '')).map(item => item.id))
+        // Every thread keeps its facts current; only a watched one's news is worked out, since no one else is told it.
+        const told = watched.has(key)
+        const pullRequests = told ? this.evidence.digest(target, 'pull-request') : ''
         const changedEvidence = this.evidence.observeThread(thread, target, stamp)
-        if (changedEvidence) this.evidenceChanged(target, before, added)
-        const turn = thread.lastTurn, finished = finishedTurn(thread)
-        // A finish is news only for a watched thread, so no other thread's finish costs its extras.
-        if (finished && watched.has(key)) {
-          // The news names the delegation this turn answers, when there is one. The name is an identity, never words.
-          const operationId = this.options.answers?.(target, thread, this.record())
-          const answers = operationId ? { operationId } : {}
-          // A host that does not report the counts sends no count: unknown, never none running. Unknown sub-agents count, so
-          // a finish while they are unresolved says the turn is not done and is owed work-settled news.
-          this.event(finished.status === 'failed' ? 'turn-failed' : 'turn-finished', target, [finished.id, finished.status],
-            { turnId: finished.id, ...answers, ...this.reportsWork(target.hostId) ? { backgroundWorkCount: watcherBackgroundWorkCount(thread) } : {},
-              evidenceIds: this.evidence.read(target).filter(item => item.turnId === finished.id).map(item => item.id) })
-          if (this.workSettled(thread, target.hostId)) this.event('work-settled', target, [finished.id], { turnId: finished.id, ...answers, backgroundWorkCount: 0 })
+        if (told) {
+          const turn = thread.lastTurn, finished = finishedTurn(thread)
+          const ends = () => this.pending.filter(event => targetKey(event.target) === key && TURN_ENDS.has(event.kind)).map(event => event.id)
+          const endsBefore = new Set(ends())
+          let settles = false
+          if (finished) {
+            // The news names the delegation this turn answers, when there is one. The name is an identity, never words.
+            const operationId = this.options.answers?.(target, thread, this.record())
+            const answers = operationId ? { operationId } : {}
+            // A host that does not report the counts sends no count: unknown, never none running. Unknown sub-agents count, so
+            // a finish while they are unresolved says the turn is not done and is owed work-settled news.
+            this.event(finished.status === 'failed' ? 'turn-failed' : 'turn-finished', target, [finished.id, finished.status],
+              { turnId: finished.id, ...answers, ...this.reportsWork(target.hostId) ? { backgroundWorkCount: watcherBackgroundWorkCount(thread) } : {},
+                evidenceIds: this.evidence.read(target).filter(item => item.turnId === finished.id).map(item => item.id) })
+            if (this.workSettled(thread, target.hostId)) {
+              const settling = () => this.pending.filter(event => event.kind === 'work-settled' && targetKey(event.target) === key).map(event => event.id)
+              const waiting = new Set(settling())
+              this.event('work-settled', target, [finished.id], { turnId: finished.id, ...answers, backgroundWorkCount: 0 })
+              settles = settling().some(id => !waiting.has(id))
+            }
+          }
+          // A turn end of a thread with a Git working copy waits, briefly, for the read its finish starts (TURN_END_SETTLE_MS).
+          if (thread.worktree?.git && ends().some(id => !endsBefore.has(id)) && !((this.settling.get(key)?.until ?? 0) > this.now())) {
+            this.settling.delete(key)
+            this.settling.set(key, { target, until: this.now() + TURN_END_SETTLE_MS, local: this.evidence.digest(target, 'local') })
+            while (this.settling.size > 2_000) this.settling.delete(this.settling.keys().next().value!)
+            this.batch()
+          }
+          for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
+            { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })
+          // After the turn's own news, so a turn's end carries what its working copy became. A turn that finished with work
+          // still running ends again when that work settles, which carries what the work changed since. A new turn end also
+          // carries the thread's own facts when they differ from what Watcher was told, though nothing changed in this pass.
+          const untold = ends().some(id => !endsBefore.has(id)) && (this.toldLocal.get(key) ?? NOTHING_TOLD) !== this.evidence.digest(target, 'local')
+          if (changedEvidence || settles || untold) this.evidenceChanged(target, before, added, added || pullRequests !== this.evidence.digest(target, 'pull-request'))
         }
-        for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
-          { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })
       }
       const landing = this.evidence.read(target, connected, this.now()).find(item => item.freshness === 'fresh' && ['merge-observed', 'auto-merge-observed', 'landing-action'].includes(item.fact))
       if (landing) observed.landing = { source: landing.source === 'github' ? 'github' : 'user-landing-action', observedAt: landing.observedAt, fresh: true }
@@ -348,10 +559,17 @@ export class WatcherWakeUp {
     for (const [key, progress] of this.progress) if (!targets.has(key)) { progress.cancel?.(); this.progress.delete(key) }
     this.evidence.removeMissing(targets)
     for (const { participant } of this.workers(true)) if (participant.state === 'taken-over') this.event('taken-over', participant.target, participant.takeover)
-    for (const operation of this.record().operations) if (['accepted', 'failed'].includes(operation.deliveryState)) {
+    // A receipt for Watcher's own send wakes it only when the send did not plainly go: failed, refused or uncertain.
+    for (const operation of this.record().operations) if (receiptNeedsWatcher(operation)) {
       const revision = observationDigest([operation.deliveryState, operation.refusalCode, operation.creationUncertain])
       this.event('delivery-changed', operation.target, [operation.id, revision], { operationId: operation.id, revision })
     }
+    // Watcher coming to rest after a wake-up that missed is a retry, a bounded number of times.
+    const watcher = this.record().current?.target
+    const own = watcher && snapshot.threads.find(thread => thread.id === watcher.threadId && (thread.hostId ?? snapshot.hostId) === watcher.hostId)
+    const resting = !!own && own.status !== 'running' && own.lastTurn?.status !== 'running' && !own.requests.length
+    if (resting && this.watcherResting === false && this.misses > 0 && this.misses < WAKE_UP_TRIES) this.retries++
+    this.watcherResting = resting
     this.pending = this.stillDue(this.pending)
     if (!this.pending.length && !this.rememberPending.size) { this.cancelBatch?.(); this.cancelBatch = undefined }
     this.batch()
@@ -361,7 +579,15 @@ export class WatcherWakeUp {
   private knownEvidenceIds(target: WatcherThreadTarget): string[] {
     return this.evidence.knownIdentities(target)
   }
-  private evidenceChanged(target: WatcherThreadTarget, before: readonly string[] = [], added = false): void {
+  /**
+   * A thread's facts changed. A pull request's link, state, checks, review or auto-merge is news at once (`wake`). The
+   * thread's own facts (working copy, Git, checkpoints) change on nearly every tool call, so they are held: they ride
+   * with a turn's end still waiting to be told, keep news already waiting current, and otherwise wait for the next
+   * turn's end, which drops them when nothing differs from what Watcher was last told. A turn that finished with
+   * background work running ends twice: what changed during that work rides with its work-settled news. `again` tells a
+   * pull request's facts afresh, as after a restart: they need Watcher, but are no news that came since.
+   */
+  private evidenceChanged(target: WatcherThreadTarget, before: readonly string[] = [], added = false, wake: boolean | 'again' = true): void {
     const evidenceIds = this.evidence.read(target).map(item => item.id).sort()
     // A changed or removed already-observed fact is real news, including an unlink during incomplete recovery.
     const identities = this.evidence.identities(target)
@@ -370,18 +596,31 @@ export class WatcherWakeUp {
       const latest = this.latestEvidence.get(observationDigest(['evidence-changed', request.id, target, participant.generation]))
       if (latest) delete latest.restoredRefs
     }
-    this.event('evidence-changed', target, evidenceIds, { evidenceIds, revision: observationDigest(evidenceIds) })
+    let marks = wake !== false
+    if (wake === false) {
+      // Only news waiting here is kept current. Watcher's hidden wake-up never changes, and a turn's end it carries was told
+      // with the facts it had; what changed since rides with the next turn's end.
+      const key = targetKey(target), held = this.pending.filter(event => targetKey(event.target) === key)
+      const waiting = held.filter(event => event.kind === 'evidence-changed')
+      const ending = held.some(event => TURN_ENDS.has(event.kind))
+      if (!waiting.length && !(ending && (this.toldLocal.get(key) ?? NOTHING_TOLD) !== this.evidence.digest(target, 'local'))) return
+      // Keeping a pull request's waiting news current keeps it news that needs Watcher, but no news that came since.
+      marks = waiting.some(event => this.waking.has(event.id))
+    }
+    // A pull request's change needs Watcher; the thread's own facts only ride with what does (needsAttention).
+    this.evidenceWakes = marks ? wake === true ? 'fresh' : 'inherited' : false
+    try { this.event('evidence-changed', target, evidenceIds, { evidenceIds, revision: observationDigest(evidenceIds) }) } finally { this.evidenceWakes = false }
   }
   pairedEvidence(hostId: string, facts: readonly WatcherEvidence[]): void {
     if (!this.started || this.closed) return
-    const changed = new Map<string, WatcherThreadTarget>(), before = new Map<string, string[]>()
+    const changed = new Map<string, WatcherThreadTarget>(), before = new Map<string, string[]>(), pullRequests = new Map<string, string>()
     for (const fact of facts) {
       if (fact.target.hostId !== hostId) continue
       const key = targetKey(fact.target)
-      if (!before.has(key)) before.set(key, this.knownEvidenceIds(fact.target))
+      if (!before.has(key)) { before.set(key, this.knownEvidenceIds(fact.target)); pullRequests.set(key, this.evidence.digest(fact.target, 'pull-request')) }
       if (this.evidence.paired(fact)) changed.set(key, fact.target)
     }
-    for (const [key, target] of changed) this.evidenceChanged(target, before.get(key))
+    for (const [key, target] of changed) this.evidenceChanged(target, before.get(key), false, pullRequests.get(key) !== this.evidence.digest(target, 'pull-request'))
   }
   pullRequest(read: PullRequestObservation): void {
     if (this.closed) return
@@ -412,7 +651,8 @@ export class WatcherWakeUp {
     if (!snapshot.hostId) return
     const target = { hostId: snapshot.hostId, threadId: read.threadId }
     const before = this.knownEvidenceIds(target)
-    if (this.evidence.checkpoint(target, read)) this.evidenceChanged(target, before)
+    // A checkpoint is the thread's own working copy: it rides with its turn's end, never a wake-up of its own.
+    if (this.evidence.checkpoint(target, read)) this.evidenceChanged(target, before, false, false)
     this.options.changed?.()
   }
   /**
@@ -433,7 +673,7 @@ export class WatcherWakeUp {
     if (!thread || isThreadArchived(thread) || !standing && (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.project(snapshot, thread)))) return false
     if (event.kind === 'delivery-changed') {
       const operation = record.operations.find(item => item.id === event.operationId)
-      return !!operation && event.revision === observationDigest([operation.deliveryState, operation.refusalCode, operation.creationUncertain])
+      return !!operation && receiptNeedsWatcher(operation) && event.revision === observationDigest([operation.deliveryState, operation.refusalCode, operation.creationUncertain])
     }
     if (event.kind === 'evidence-changed') {
       const scope = observationDigest([event.kind, event.requestId, event.target, event.generation])

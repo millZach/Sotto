@@ -976,3 +976,80 @@ describe('a question’s pages (ADR-0085)', () => {
     expect(router.questionPageOpening({ threadId: hostEntityKey(REMOTE, 'thread'), requestId: 'question', token })).toBeNull()
   })
 })
+
+describe('a remote thread after its host restarts (#1098)', () => {
+  function remoteDetails() {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const connect = (inPlace = false) => {
+      const host = fixture(REMOTE, 'remote')
+      let push: ((detail: AgentThreadDetailUpdate) => void) | undefined
+      host.connection.subscribeDetail = listener => { push = listener; return () => { push = undefined } }
+      if (inPlace) router.replace(host.connection); else router.add(host.connection)
+      return { host, push: (detail: AgentThreadDetailUpdate) => push!(detail) }
+    }
+    const forwarded: AgentThreadDetailUpdate[] = []
+    router.subscribeThreadDetail(detail => forwarded.push(detail))
+    return { router, connect, forwarded }
+  }
+  const whole = (revision: number) => ({ threadId: 'thread', revision, messages: [] })
+  const delta = (baseRevision: number, revision: number) => ({ threadId: 'thread', baseRevision, revision, messageDeltas: [], activityDeltas: [] })
+
+  it('gives the window revisions that never go back when a restarted host counts them again from one', async () => {
+    const { router, connect, forwarded } = remoteDetails()
+    const before = connect()
+    before.push(whole(40)); before.push(delta(40, 41))
+    expect(forwarded.map(item => item.revision)).toEqual([40, 41])
+    router.remove(REMOTE)
+    // The host restarted: its count starts again, and every revision it sends now lands past the window's last.
+    const after = connect()
+    after.push(whole(2)); after.push(delta(2, 3))
+    expect(forwarded.slice(2)).toEqual([whole(42), delta(42, 43)].map(item => ({ ...item, threadId: hostEntityKey(REMOTE, 'thread') })))
+    // A read the window asks for is on the same line.
+    after.host.detail.mockResolvedValueOnce(whole(3))
+    expect((await router.threadDetail(hostEntityKey(REMOTE, 'thread')))?.revision).toBe(43)
+    router.dispose()
+  })
+
+  it('moves revisions the same way when a reconnect takes the old connection’s place, and keeps them through a rename', async () => {
+    const { router, connect, forwarded } = remoteDetails()
+    connect().push(whole(40))
+    const after = connect(true)
+    after.push(whole(2))
+    // A rename replaces the connection object; a read through it and the pushes that follow stay on one line.
+    router.rename(REMOTE, 'Forge at home')
+    after.host.detail.mockResolvedValueOnce(whole(2))
+    expect((await router.threadDetail(hostEntityKey(REMOTE, 'thread')))?.revision).toBe(41)
+    after.push(delta(2, 3)); after.push(delta(3, 4))
+    expect(forwarded.map(item => item.revision)).toEqual([40, 41, 42, 43])
+    expect(forwarded.at(-1)).toMatchObject({ baseRevision: 42, revision: 43 })
+    router.dispose()
+  })
+
+  it('drops a read the replaced connection answers late, and a delta a new connection sends before its whole detail', async () => {
+    const { router, connect, forwarded } = remoteDetails()
+    const before = connect()
+    before.push(whole(40))
+    let answer: (detail: ReturnType<typeof whole>) => void = () => undefined
+    before.host.detail.mockImplementationOnce(() => new Promise(resolve => { answer = resolve }))
+    const read = router.threadDetail(hostEntityKey(REMOTE, 'thread'))
+    const after = connect(true)
+    after.push(delta(2, 3))
+    after.push(whole(2))
+    answer(whole(40))
+    expect(await read).toBeNull()
+    expect(forwarded.map(item => item.revision)).toEqual([40, 41])
+    after.push(delta(2, 3))
+    expect(forwarded.at(-1)).toMatchObject({ baseRevision: 41, revision: 42 })
+    router.dispose()
+  })
+
+  it('leaves revisions as they are while a reconnected host carries on counting past them', () => {
+    const { router, connect, forwarded } = remoteDetails()
+    connect().push(whole(5))
+    router.remove(REMOTE)
+    const after = connect()
+    after.push(whole(9)); after.push(delta(9, 10))
+    expect(forwarded.map(item => item.revision)).toEqual([5, 9, 10])
+    router.dispose()
+  })
+})

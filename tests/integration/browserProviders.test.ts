@@ -32,16 +32,6 @@ describe.each(factories)('%s shared browser transport', (provider, factory) => {
     await host.execute({ type: 'create-project', commandId: randomUUID(), projectId: fixture.projectId, title: 'Project', path: fixture.root })
     const threadId = randomUUID()
     expect(await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: fixture.projectId, title: 'Browser check', modelId: fixture.modelId })).toMatchObject({ accepted: true })
-    if (provider === 'devin') {
-      // The pinned native client ignores ACP-supplied MCP servers. Never mint credentials
-      // or relax its native integration policy based only on a passing fixture.
-      expect(mcpServer).not.toHaveBeenCalled()
-      const sessions = (await fixture.driver.requests()).filter(record => record.method === 'session/new')
-      expect(sessions.length).toBeGreaterThan(0)
-      expect(sessions.every(record => JSON.stringify(record.params?.mcpServers) === '[]')).toBe(true)
-      await registry.flush()
-      return
-    }
     expect(mcpServer).toHaveBeenCalledWith(threadId)
     const endpoint = await server.mcpServer(threadId)
     const records = await fixture.driver.requests()
@@ -123,8 +113,8 @@ describe('grok browser admission', () => {
 })
 
 // The visual tool (ADR-0056) rides the same list as the host setup tools: each provider that takes Sotto's tools is given
-// `sotto_visual` beside the browser on a project thread, with no native prompt, while the switch is on. Devin's client
-// ignores supplied servers, and a switch turned off gives new launches nothing.
+// `sotto_visual` beside the browser on a project thread, with no native prompt, while the switch is on. Devin is given it the
+// same way; its asking profiles ask before a call, which the user answers. A switch turned off gives new launches nothing.
 const DIAGRAM = { title: 'How a send moves', kind: 'diagram', source: 'flowchart LR\n  A[Draft] --> B[Sent]', steps: [{ text: 'A draft is sent.', highlight: ['A->B'] }] }
 
 describe.each(factories)('%s visual tool', (provider, factory) => {
@@ -147,11 +137,6 @@ describe.each(factories)('%s visual tool', (provider, factory) => {
     }
     const threadId = await create('Visual check')
     const records = await fixture.driver.requests()
-    if (provider === 'devin') {
-      expect(JSON.stringify(records)).not.toContain(VISUAL_MCP_SERVER)
-      await registry.flush()
-      return
-    }
     let given: Pick<ThreadMcpServer, 'url' | 'headers'>
     if (provider === 'codex') {
       const start = records.find(record => record.method === 'thread/start')?.params as { config: { mcp_servers: Record<string, { url: string; default_tools_approval_mode: string; tool_timeout_sec?: number; http_headers: Record<string, string> }> } }

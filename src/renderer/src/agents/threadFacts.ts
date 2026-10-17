@@ -1,6 +1,8 @@
 import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentModel, type AgentProject, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { DELEGATION_LEVELS_MAX } from '../../../shared/delegation'
+import { continuedWordsOf } from '../../../shared/continueThread'
+import { HANDOVER_LEAD } from '../../../shared/handover'
 import { babysittingWord } from './babysitting'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 
@@ -11,7 +13,7 @@ const WEEK_MS = 7 * DAY_MS
 export type ThreadRowState = 'needs' | 'working' | 'done'
 
 /** The badge tint for a provider; `other` is the neutral badge for a provider Sotto has no colour for. */
-export type ProviderKey = 'claude' | 'codex' | 'grok' | 'devin' | 'muse' | 'other'
+export type ProviderKey = ProviderId | 'other'
 
 export interface ThreadLastMessage {
   readonly who: string
@@ -84,7 +86,8 @@ export function providerKey(provider: string): ProviderKey {
 
 /** Sotto's badge glyph for an agent provider; an unknown provider gets its initial. */
 export function providerGlyph(provider: string): string {
-  const glyph = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', muse: 'M', other: provider.trim().charAt(0).toLocaleUpperCase() }[providerKey(provider)]
+  const glyphs: Readonly<Record<ProviderKey, string>> = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', muse: 'M', other: provider.trim().charAt(0).toLocaleUpperCase() }
+  const glyph = glyphs[providerKey(provider)]
   return glyph === '' ? '?' : glyph
 }
 
@@ -117,6 +120,18 @@ export function workingLabel(since: number, now: number): string {
   return `${Math.floor(hours / 24)}d`
 }
 
+/**
+ * A continued thread's first message begins with the handover of the thread it continues (ADR-0089), which no row
+ * shows: its excerpt is the user's words after it, or, where the excerpt was cut before they began, none at all.
+ */
+function continuedExcerpt<T extends { readonly id: string; readonly text: string }>(thread: AgentThread, excerpt: T | undefined): T | undefined {
+  if (excerpt === undefined || thread.continuedFrom?.handover === undefined || !excerpt.text.startsWith(HANDOVER_LEAD)) return excerpt
+  const proof = thread.continuedFrom.handover
+  if (proof.messageId !== undefined && proof.messageId !== excerpt.id) return excerpt
+  const words = continuedWordsOf(thread, excerpt)
+  return words === undefined ? undefined : { ...excerpt, text: words }
+}
+
 /** When the run on screen began: the provider's running turn if it reported one, otherwise your last prompt. */
 function runStartedAt(thread: AgentThread, lastUserAt: number, activityAt: number): number {
   // The shell stream carries the running turn's start in the summary; a full state still has the record.
@@ -124,13 +139,14 @@ function runStartedAt(thread: AgentThread, lastUserAt: number, activityAt: numbe
   return Number.isFinite(started) ? started : Number.isFinite(lastUserAt) ? lastUserAt : activityAt
 }
 
-function describe(state: AgentState, thread: AgentThread, now: number): ThreadRow {
+function describe(state: AgentState, thread: AgentThread, now: number, continued: boolean): ThreadRow {
   const project = state.host.projects.find(entry => entry.id === thread.projectId)
   const model = resolveModel(hostForThread(state.host, thread).models, thread.modelId)
   const provider = model?.provider ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : state.host.name)
   // A row's history facts come from the thread's summary: the shell stream carries it in place of the
   // messages, and a thread whose messages did arrive derives exactly the same thing.
-  const { lastAssistant, lastUser, lastMessageAt } = threadSummaryOf(thread)
+  const { lastAssistant, lastUser: lastUserExcerpt, lastMessageAt } = threadSummaryOf(thread)
+  const lastUser = continued ? continuedExcerpt(thread, lastUserExcerpt) : lastUserExcerpt
   const closed = isThreadClosed(thread)
   const pending = closed ? undefined : thread.requests.find(request => request.kind === 'permission') ?? thread.requests[0]
   const decision: ThreadRequestView | undefined = pending === undefined ? undefined : { requestId: pending.id, kind: pending.kind, text: pending.text }
@@ -218,9 +234,12 @@ export function rowStatus(row: Pick<ThreadRow, 'thread' | 'state' | 'stateLabel'
   return { text: finished ? 'Just finished' : babysitting ?? label, finished, babysitting: babysitting !== undefined }
 }
 
-/** Every thread Sotto knows, described from its own state. */
-export function describeThreads(state: AgentState, now: number): ThreadRow[] {
-  return state.host.threads.map(thread => describe(state, thread, now))
+/**
+ * Every thread Sotto knows, described from its own state. `continued` is the Owl answer for continuing on another provider
+ * (ADR-0089): with it, a continued thread's excerpt is the user's words rather than the handover ahead of them.
+ */
+export function describeThreads(state: AgentState, now: number, options: { readonly continued?: boolean } = {}): ThreadRow[] {
+  return state.host.threads.map(thread => describe(state, thread, now, options.continued === true))
 }
 
 /** A row matches when the query appears anywhere in it: title, project, provider, sentence or your last message. */

@@ -47,7 +47,13 @@ export type AgentHostCommand =
      * thread's adapter gives it to the model through the provider's own context channel for this turn, never in the
      * user's text, so the message is sent, echoed and shown as typed. Every other thread ignores it.
      */
-    readonly watcherRequestNote?: string }
+    readonly watcherRequestNote?: string
+    /**
+     * A wake-up's news for the current Watcher (ADR-0073), set only by the coordinator on that wake-up's send. It
+     * travels exactly as the request note does, through the same channel, beside a short message of Sotto's that no
+     * one is shown. Every other thread ignores it.
+     */
+    readonly watcherNews?: string }
   | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
@@ -286,6 +292,8 @@ export interface AgentHost {
   watcherThreadIds?(): readonly string[]
   /** Saved threads held behind an immutable Owl gate, for dormant drafts and history preservation. */
   dormantThreadIds?(): readonly string[]
+  /** The held provider of each saved thread hidden for it, so a refusal names that provider rather than another held one. */
+  dormantThreadProviders?(): ReadonlyMap<string, ProviderId>
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }, watcherGuard?: () => void): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */

@@ -162,7 +162,7 @@ export function TerminalSidebar({ state, command, organization, query, stateOf, 
   const closedShown = closedOpen || searching
   return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Terminal sidebar" query={query} searchPlaceholder="Search terminals" onQuery={onQuery}
     // A plus, not a second terminal glyph beside the room switch's: the same relation New thread's pen has to Threads.
-    onNew={() => onNewTerminal()} newLabel="New terminal" NewIcon={SquarePlus}>
+    onNew={() => onNewTerminal()} newLabel="New terminal" NewIcon={SquarePlus} onProjectAdded={onNewTerminal}>
     <div ref={rowsRef} onFocusCapture={event => {
       const button = event.target instanceof HTMLButtonElement ? event.target : null
       const id = button?.closest<HTMLLIElement>('[data-terminal-id]')?.dataset.terminalId

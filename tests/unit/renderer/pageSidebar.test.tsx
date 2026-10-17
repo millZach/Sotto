@@ -81,6 +81,14 @@ describe('the Threads sidebar beside another page', () => {
     expect(takeNewThreadIntent()).toBeNull()
   })
 
+  it('turns the remembered mode back to Threads with a New thread, so the thread is not opened behind Terminal', () => {
+    localStorage.setItem(SIDEBAR_MODE_KEY, 'terminals')
+    const { navigate } = mount(threadsStateFixture())
+    fireEvent.click(within(sidebar()).getByRole('button', { name: 'New thread' }))
+    expect(localStorage.getItem(SIDEBAR_MODE_KEY)).toBe('threads')
+    expect(navigate).toHaveBeenCalledWith('threads')
+  })
+
   it('leads to the Threads page when the switch is turned to Terminal, remembering the mode', () => {
     const { navigate } = mount(threadsStateFixture())
     fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Sidebar mode' })).getByRole('radio', { name: 'Terminal' }))
