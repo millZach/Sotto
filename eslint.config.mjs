@@ -144,6 +144,7 @@ export default tseslint.config(
       'artifacts/devin-local-provider/**',
       'artifacts/muse-provider/**',
       'artifacts/opencode-provider/**',
+      'artifacts/opencode-model-menu/**',
       'artifacts/starting-screen/**',
       'node_modules/**',
       'out/**',

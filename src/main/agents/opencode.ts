@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
+import { agentProjectSchema, OPENCODE_ZEN_SOURCE, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
@@ -37,7 +37,7 @@ const SOURCE_REFUSED = 'The model source refused this turn: it may need signing 
 const watcherRefused = (held: HeldProviders): string => `OpenCode cannot host Watcher. Nothing was sent. Choose a ${watcherProvidersInWords(held)} model for Watcher.`
 /** OpenCode Zen's provider ID: the model source a folder with no sign-ins offers, its free models (ADR-0087). */
 const ZEN = 'opencode'
-const ZEN_NAME = 'OpenCode Zen'
+const ZEN_NAME = OPENCODE_ZEN_SOURCE
 
 /**
  * Sotto's permission modes as OpenCode session rule sets (ADR-0087). The last matching rule wins, and OpenCode's own
