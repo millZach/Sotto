@@ -17,3 +17,11 @@ it('includes an installed Muse only in Owl while preserving ordinary native dete
   expect(await detectInstalledProviders({ museEnabled: true })).toEqual(['claude', 'grok', 'muse'])
   expect(probes.muse).toHaveBeenCalledOnce()
 })
+it('skips every held provider through the one gate, with a test-only held Grok', async () => {
+  expect(await detectInstalledProviders({ heldProviders: new Set(['grok']) })).toEqual(['codex', 'claude', 'devin', 'muse'])
+  expect(probes.grok).not.toHaveBeenCalled()
+  expect(probes.muse).toHaveBeenCalledOnce()
+  expect(await detectInstalledProviders({ heldProviders: new Set(['grok', 'muse']) })).toEqual(['codex', 'claude', 'devin'])
+  expect(probes.grok).not.toHaveBeenCalled()
+  expect(probes.muse).toHaveBeenCalledOnce()
+})

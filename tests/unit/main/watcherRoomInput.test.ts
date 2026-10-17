@@ -62,7 +62,7 @@ describe('owned cached Watcher room inputs', () => {
     const f = fixture()
     try {
       f.state.host.projects[0]!.providerId = 'muse'
-      Object.assign(f.socket, { dormantMuseThreads: new Map([['two', 'project']]) })
+      Object.assign(f.socket, { dormantProviderThreads: new Map([['two', { projectId: 'project', provider: 'muse' }]]) })
       expect(f.socket.watcherRoomThreads!(['one', 'two'])).toEqual([
         { id: 'one', title: 'One', status: 'running', connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [{ id: 'question', kind: 'question' }] }])
     } finally { f.close() }
@@ -95,7 +95,7 @@ describe('owned cached Watcher room inputs', () => {
     try {
       expect(service.state()).toEqual(legacy.state())
       room.mockClear(); snapshot.mockClear(); shell.mockClear()
-      const expected = new Map(watcherRoomInputs(f.state.host, ['one', 'two'], false).map(row => [row.id, row]))
+      const expected = new Map(watcherRoomInputs(f.state.host, ['one', 'two'], new Set(['muse'])).map(row => [row.id, row]))
       for (const state of [service.state(), (service.get() as { state: ReturnType<WatcherService['state']> }).state]) {
         for (const row of state.watchedThreads) {
           const input = expected.get(row.target.threadId)

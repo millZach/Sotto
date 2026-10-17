@@ -166,6 +166,7 @@ import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
 import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleaseVersion'
 import { WATCHER_CHANGED, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
+import { heldProvidersOf, releasesHeldProvider } from '../shared/heldProviders'
 import type { DictationCommand } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
@@ -581,11 +582,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     overrides: process.env.SOTTO_OWL_FEATURES, watcherOverride: process.env.SOTTO_WATCHER_ENABLED })
   // Existing Watcher options wrap the Owl feature list for branches in flight.
   const watcherEnabled = owlFeatures.watcher
-  const museEnabled = owlFeatures.muse
+  // The providers an Owl feature holds off this run (ADR-0072): every boundary asks this set, not a provider's own answer.
+  const heldProviders = heldProvidersOf(owlFeatures)
   const usageEnabled = owlFeatures.usage
   const delegationEnabled = owlFeatures['thread-delegation']
   const continueEnabled = owlFeatures['continue-on-provider']
-  const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || museEnabled)
+  const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || releasesHeldProvider(heldProviders))
   // With Update all on, the host version the update this computer is downloading brings, which a host may run before
   // Sotto restarts (ADR-0077 decision 6). It stays undefined on stable, where hosts follow the running version alone.
   let waitingAppVersion: string | undefined
@@ -713,7 +715,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => window.getTitle() === buildName && window.isVisible() && !window.isMinimized()
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
-    directory: userDataPath, credentials, watcherEnabled, museEnabled, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
+    directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, continueEnabled,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
@@ -728,7 +730,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(authority === undefined ? {} : { authority }),
     logFailure: (code, detail) => { console.error(`[Sotto] ${code} ${detail}`) },
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
-    ...(e2eConfiguration === null ? { installedProviders: () => detectInstalledProviders({ museEnabled }) } : {}),
+    ...(e2eConfiguration === null ? { installedProviders: () => detectInstalledProviders({ heldProviders }) } : {}),
     ...(testAgentHost === null ? {} : { host: testAgentHost }),
     ...(devinFixtureRoot ? { providers: {
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(),
@@ -739,7 +741,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     } } : {}),
     ...(museFixtureRoot ? { providers: {
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(),
-      ...(museEnabled ? { muse: new MuseMspHost(userDataPath, {
+      ...(!heldProviders.has('muse') ? { muse: new MuseMspHost(userDataPath, {
         executable: museFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeMuseAgent.mjs'), museFixtureRoot],
       }) } : {}),
     } } : {}),
@@ -774,7 +776,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The runtime builds the worktree cleanup (ADR-0041). Only the local host has worktrees on this
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, museEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'],
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
   })
   quitHandles.hostRouter = hostRouter
@@ -799,10 +801,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const tailnetStandIn = e2eConfiguration !== null && !app.isPackaged ? e2eTailnetMap(process.env['SOTTO_E2E_TAILNET_MAP']) : undefined
   /** The last page an end-to-end run asked the browser to open, which it never opens. */
   let openedExternalLink: string | null = null
-  const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, museEnabled, historyEnabled: () => agentHistoryEnabled,
+  const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, heldProviders, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, museEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
+  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
     waitingClientVersion: () => waitingHostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
@@ -943,7 +945,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     const key = parseHostEntityKey(target.ownerId)
     if (key && key.hostId !== agentControl.hostId()) await hostRouter.refreshRequestDraft(target, decisionId)
     else await agentControl.refreshRequestDraft(key?.id ?? target.ownerId, target.requestId)
-  }, undefined, watcherEnabled && museEnabled ? undefined : owner => {
+  }, undefined, watcherEnabled && !heldProviders.size ? undefined : owner => {
     if (owner.kind !== 'thread') return false
     const key = parseHostEntityKey(owner.ownerId)
     if (key && key.hostId !== agentControl.hostId()) return hostRouter.preservesDormantThread(owner.ownerId)
@@ -1176,7 +1178,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       if (owlFeatures['update-all'] && status.phase.phase !== waitingPhase) {
         waitingPhase = status.phase.phase
         waitingAppVersion = waitingVersion(status.phase, waitingAppVersion)
-        waitingHostVersion = waitingAppVersion === undefined ? undefined : updateHostReleaseVersion(waitingAppVersion, usageEnabled || museEnabled)
+        waitingHostVersion = waitingAppVersion === undefined ? undefined : updateHostReleaseVersion(waitingAppVersion, usageEnabled || releasesHeldProvider(heldProviders))
         hostUpdates.pending(waitingHostVersion)
       }
     },

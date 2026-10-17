@@ -9,7 +9,9 @@ import { CodexAppServerHost } from './codex'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './claude'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
-import { MuseDisabledHost, MuseMspHost } from './muse'
+import { MuseMspHost } from './muse'
+import { HeldProviderHost } from './heldProviderGate'
+import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { ConfiguredProviderHost } from './providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from './threads'
 import { WorkspaceHost } from './workspace'
@@ -48,7 +50,9 @@ export interface AgentRuntimeOptions {
   directory: string
   /** Immutable release-track gate, read once by the process owner. Absent fails closed. */
   watcherEnabled?: boolean
-  /** Immutable Muse-provider Owl gate, read once by the process owner (ADR-0079). Absent fails closed. */
+  /** The providers held to Owl on this run (ADR-0072, ADR-0079), read once by the process owner. Absent holds every one. */
+  heldProviders?: HeldProviders
+  /** Muse's answer alone, from before the held set; `heldProviders` wins. */
   museEnabled?: boolean
   /** Immutable Owl feature answer; absent fails closed and leaves saved usage untouched. */
   usageEnabled?: boolean
@@ -115,13 +119,16 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const facts = new HostFactsSource()
   void facts.read().catch(() => undefined)
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
+  const held = heldProvidersOption(options)
+  // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.
+  const adapter = (id: ProviderId, build: () => NativeHost): NativeHost => held.has(id) ? new HeldProviderHost(id) : build()
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
-    codex: options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true }),
-    claude: options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
-      ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}) }),
-    grok: options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true }),
-    devin: options.providers?.devin ?? new DevinAcpHost(directory),
-    muse: options.museEnabled === true ? options.providers?.muse ?? new MuseMspHost(directory) : new MuseDisabledHost(),
+    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true })),
+    claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
+      ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}) })),
+    grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true })),
+    devin: adapter('devin', () => options.providers?.devin ?? new DevinAcpHost(directory)),
+    muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory)),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -135,7 +142,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
-  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false, options.museEnabled ?? false, options.streamingPublishCost ?? false)
+  }), directory, options.historyEnabled, undefined, options.watcherEnabled ?? false, held, options.streamingPublishCost ?? false)
   const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()
@@ -179,7 +186,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     })
   const agentControl: AgentControl = new AgentControl({
     directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
-    museEnabled: options.museEnabled ?? false, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
+    heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     historyEnabled: options.historyEnabled,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
