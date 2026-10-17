@@ -290,7 +290,8 @@ describe("independent working-copy allocation", () => {
     held = { read: 'fetch', until: typing.promise }
     const typed = service.prefetchOriginBase(f.project, 'base')
     await vi.waitFor(() => expect(remoteReads).toEqual(['ls-remote (quiet)', 'fetch (quiet)']))
-    let clock = performance.now()
+    // A whole number, so adding exactly two minutes and taking the start away again gives exactly two minutes.
+    let clock = Math.ceil(performance.now())
     const now = vi.spyOn(performance, 'now').mockImplementation(() => clock)
     onceSendsLook(service, 1, typing.resolve)
     const sent = await service.allocate(f.project, 'independent', { baseBranch: 'base', startFromOrigin: true })
