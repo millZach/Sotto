@@ -846,11 +846,13 @@ export class WatcherService implements WatcherControlHooks {
       || this.record().requests.some(request => request.participants.some(item => key(item.target) === key(target) && item.state === 'participating'))
     if (!owned) return
     const operations = new Set<string>()
+    // One send is one takeover, whichever requests it ends: every participant it fences shares its time (the takeover line).
+    const at = now()
     this.options.control.mutateWatcher(record => {
       const watch = record.watches?.find(item => key(item.target) === key(target))
       if (watch) { watch.generation++; watch.pausedByUserMessageId = userMessageId ?? nativeHead(this.thread(target)) ?? 'unobserved-user-turn' }
       for (const request of record.requests) for (const participant of request.participants) if (key(participant.target) === key(target) && participant.state === 'participating') {
-        participant.state = 'taken-over'; participant.generation++; participant.takeover = { reason, at: now() }
+        participant.state = 'taken-over'; participant.generation++; participant.takeover = { reason, at }
         for (const operation of record.operations.filter(item => item.requestId === request.id && key(item.target) === key(target))) {
           operations.add(operation.id)
           if (operation.deliveryState === 'queued') { operation.deliveryState = 'failed'; operation.refusalCode = 'THREAD_TAKEN_OVER'; operation.updatedAt = now() }
