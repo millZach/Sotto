@@ -9,7 +9,7 @@ import { markThreadsRead, READ_DISPATCH_MAX_MS, recordDispatch, trackDispatches 
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import type { AgentHostSnapshot, AgentThread } from '../../../src/shared/agents'
 import { emptyWatcherRecord, watcherRecordSchema, type WatcherRecord } from '../../../src/shared/watcher'
-import type { WatcherRemoteHosts } from '../../../src/shared/watcherHost'
+import { watcherDispatchBefore, type WatcherDispatchBefore, type WatcherRemoteHosts } from '../../../src/shared/watcherHost'
 import { agentControlFixture } from '../../fixtures/agentControlFixture'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
 
@@ -36,7 +36,7 @@ function service(options: { record?: WatcherRecord; remote?: AgentThread[] } = {
   let record = options.record ?? emptyWatcherRecord()
   let threads: AgentThread[] = []
   let remoteThreads = options.remote ?? []
-  let notify: ((target: { hostId: string; threadId: string }) => void) | undefined
+  let notify: ((target: { hostId: string; threadId: string }, before: WatcherDispatchBefore) => void) | undefined
   const providers = (['codex', 'claude', 'grok'] as const).map(id => ({ id, connection: 'connected' }))
   const local = (): AgentHostSnapshot => ({ ...emptyDesktopState(HOST).host, connected: true, providers, threads } as AgentHostSnapshot)
   let writes = 0
@@ -78,8 +78,8 @@ function service(options: { record?: WatcherRecord; remote?: AgentThread[] } = {
       watcher.dispatched(command)
       return messageId
     },
-    /** This desktop routing a send to a paired host's thread. */
-    routed(threadId: string): void { notify?.({ hostId: REMOTE, threadId }) },
+    /** This desktop routing a send to a paired host's thread, told of it once the host took it, with the thread as it was before. */
+    routed(threadId: string, before = remoteThreads.find(item => item.id === threadId)): void { notify?.({ hostId: REMOTE, threadId }, watcherDispatchBefore(before)) },
     marks: () => (watcher.state().readMarks ?? []).map(mark => [mark.target.threadId, mark.kind]),
   }
 }
@@ -186,6 +186,18 @@ describe('a dispatched turn’s own end', () => {
     room.pass(thread('pair', { ...turn('t2', 'interrupted'), activities: [activity('t1', 'completed', first), activity('t2', 'interrupted', second)] }))
     expect(room.marks()).toEqual([['pair', 'finished']])
     expect(room.record().readMarks?.[0]?.newsId).toBe('finished:t1')
+  })
+})
+
+describe('a send routed to a paired host', () => {
+  it('is told apart from the thread as it was before the send, though the host ended the turn before it answered', () => {
+    const room = service({ remote: [thread('fast', turn('t0', 'completed'))] })
+    const before = thread('fast', turn('t0', 'completed'))
+    // The host's push lands first: its shell already shows the routed turn finished when the router hears the answer.
+    room.remotePass(thread('fast', turn('t1', 'completed')))
+    room.routed('fast', before)
+    room.remotePass(thread('fast', turn('t1', 'completed')))
+    expect(room.marks()).toEqual([['fast', 'finished']])
   })
 })
 

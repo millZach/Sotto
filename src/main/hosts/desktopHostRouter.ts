@@ -4,7 +4,7 @@ import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '..
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { visibleWatcherState, withoutThreads } from '../../shared/watcherVisibility'
 import { parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
-import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts } from '../../shared/watcherHost'
+import { watcherDispatchBefore, type WatcherDispatchBefore, type WatcherHostControl, type WatcherHostRead, type WatcherRemoteHosts } from '../../shared/watcherHost'
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
@@ -205,7 +205,7 @@ export class DesktopHostRouter {
   /** Hosts whose threads read Reconnecting: kept on the page while their host restarts for an update (ADR-0040). */
   private readonly reconnecting = new Set<string>()
   /** Watcher's read marks, told of each send routed to a paired host's thread. */
-  private readonly dispatchListeners = new Set<(target: { hostId: string; threadId: string }) => void>()
+  private readonly dispatchListeners = new Set<(target: { hostId: string; threadId: string }, before: WatcherDispatchBefore) => void>()
   /** Provider identity is immutable for a thread; classify its gated details when its shell arrives. */
   private readonly dormantProviderIds = new Map<string, Map<string, DormantProviderThread>>()
   /** The providers held to Owl on this run, read once at start (ADR-0072). */
@@ -848,7 +848,14 @@ export class DesktopHostRouter {
       }
     }
     // Read as values: a host's shell can be its live state, which the command is about to change.
-    const { activeThreadId, activeProjectId } = connection.service.shell()
+    const before = connection.service.shell()
+    const { activeThreadId, activeProjectId } = before
+    // A send routed to a paired host's thread is a turn of this desktop's (Watcher's read marks), told apart from the
+    // thread as it was before the send went: a host may end the turn before its answer comes back.
+    const sentTo = connection.kind === 'remote' && this.options.watcherEnabled === true && this.dispatchListeners.size > 0
+      ? command.type === 'send' ? command.draft?.threadId : command.type === 'manual-send' || command.type === 'queue-followup' || command.type === 'resume-followups' ? command.threadId : undefined
+      : undefined
+    const dispatchBefore = sentTo === undefined ? undefined : watcherDispatchBefore(before.host.threads.find(thread => thread.id === sentTo))
     const selections = this.selections
     const windowShowed = { hostId: this.selectedHostId, threadId: this.selectedThreadId }
     let refused = false
@@ -876,11 +883,7 @@ export class DesktopHostRouter {
       const result = startsThread(command) && connection.kind === 'remote' && connection.service.supportsThreadStarts !== true ? { error: THREAD_STARTS_UNSUPPORTED }
         : await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
           : connection.service.command(command as AgentCommand, client))
-      // A send this desktop routed to a paired host's thread is a turn of this desktop's (Watcher's read marks).
-      if (!result.error && connection.kind === 'remote' && this.options.watcherEnabled === true) {
-        const sent = command.type === 'send' ? command.draft?.threadId : command.type === 'manual-send' || command.type === 'queue-followup' || command.type === 'resume-followups' ? command.threadId : undefined
-        if (sent !== undefined) for (const listener of [...this.dispatchListeners]) listener({ hostId: connection.hostId, threadId: sent })
-      }
+      if (!result.error && sentTo !== undefined) for (const listener of [...this.dispatchListeners]) listener({ hostId: connection.hostId, threadId: sentTo }, dispatchBefore!)
       if (result.error && startsThread(command)) { refused = true; inPlace = this.refusal(connection, result.error) }
       else if (result.error) {
         refused = true

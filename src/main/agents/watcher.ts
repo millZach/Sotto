@@ -31,7 +31,7 @@ import { watcherOwnChanges } from './watcherOwnChanges'
 import { markThreadsRead, recordDispatch, recordSteer, trackDispatches, type ReadMarkThread } from './watcherReadMarks'
 import { watcherReceiptReplies } from './watcherReceiptReplies'
 import { WATCHER_FINAL_OUTCOMES, watcherLatestTurnMessageId, watcherTurnOutcome } from './watcherOutcomes'
-import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts } from '../../shared/watcherHost'
+import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts, type WatcherDispatchBefore, watcherDispatchBefore } from '../../shared/watcherHost'
 
 const now = () => new Date().toISOString()
 const MACHINE_FACTS_OLDER = 'This machine’s host does not report what kind of machine it is. Update Sotto on it to see.'
@@ -41,8 +41,8 @@ const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, targ
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const nativeHead = (thread: AgentThread) => lastUserMessageIdOf(thread) ?? thread.summary?.lastUser?.id ?? null
 type PromptTurn = NonNullable<WatcherRecord['promptTurns']>[number]
-/** What a dispatch remembers of its thread from before it went: its newest turn, its waiting requests and its kind. */
-type DispatchBefore = Pick<AgentThread, 'requests'> & Partial<Pick<AgentThread, 'lastTurn' | 'kind'>>
+type DispatchBefore = WatcherDispatchBefore
+
 export function watcherRefusal(code: WatcherRefusal['code'], message: string, retryable = false): WatcherRefusal {
   return { status: 'refused', code, message, retryable }
 }
@@ -197,7 +197,7 @@ export class WatcherService implements WatcherControlHooks {
     this.remoteOff?.(); this.remote = remote
     const off = remote.subscribe((hostId, force = true) => this.scheduleRemote(hostId, force))
     // A user's send routed to a paired host's thread is a dispatch of this desktop's too (read marks).
-    const offDispatches = remote.subscribeDispatches?.(target => this.noteDispatch(target, remote.snapshot(target.hostId)?.threads.find(thread => thread.id === target.threadId)))
+    const offDispatches = remote.subscribeDispatches?.((target, before) => this.noteDispatch(target, before))
     this.remoteOff = () => { off(); offDispatches?.() }
     void this.reconcileRemote().catch(() => undefined)
   }
@@ -924,7 +924,7 @@ export class WatcherService implements WatcherControlHooks {
     // The thread as the send finds it, read before the provider starts the turn, so the turn's end is told from the one before.
     if ((command.type === 'send' || command.type === 'steer') && !this.closed && !this.options.workerHost) {
       const thread = this.options.control.watcherSnapshot().threads.find(item => item.id === command.threadId)
-      this.dispatchesBefore.set(command.commandId, { ...thread?.lastTurn ? { lastTurn: { ...thread.lastTurn } } : {}, requests: [...thread?.requests ?? []], ...thread?.kind ? { kind: thread.kind } : {} })
+      this.dispatchesBefore.set(command.commandId, watcherDispatchBefore(thread))
       while (this.dispatchesBefore.size > 1_000) this.dispatchesBefore.delete(this.dispatchesBefore.keys().next().value!)
     }
     if (origin?.phoneOrigin && command.type === 'send') this.guardPhoneSend(command.threadId)

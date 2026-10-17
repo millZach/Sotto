@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, type AgentHostSnapshot, type AgentRuntimeMode } from './agents'
+import { agentRuntimeModeSchema, type AgentHostSnapshot, type AgentRuntimeMode, type AgentThread } from './agents'
 import { watcherIdentitySchema, type WatcherIdentity, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema, watcherStandingWatchSchema, type WatcherThreadTarget } from './watcher'
 import type { WatcherRoomState } from './watcherRoom'
 import type { HostMachineReport } from './hostFacts'
@@ -52,8 +52,19 @@ export interface WatcherRemoteHosts {
   roomThreads?(hostId: string, threadIds: readonly string[]): WatcherRoomThreadInput[] | undefined
   projection?(hostId: string, master: WatcherIdentity): WatcherHostProjection | undefined
   subscribe(listener: (hostId?: string, force?: boolean) => void): () => void
-  /** Each send this desktop routed to a paired host's thread, after the host took it (read marks). */
-  subscribeDispatches?(listener: (target: WatcherThreadTarget) => void): () => void
+  /**
+   * Each send this desktop routed to a paired host's thread, after the host took it (read marks), with the thread as it
+   * was before the send went: a host that ends the turn before its answer comes back still has that turn told apart.
+   */
+  subscribeDispatches?(listener: (target: WatcherThreadTarget, before: WatcherDispatchBefore) => void): () => void
   /** A connected host's machine facts and running threads, or undefined when it does not report them (#1031). */
   machineFacts?(hostId: string): Promise<HostMachineReport | undefined>
+}
+
+/** A thread as a dispatch remembers it from before the send (read marks): its newest turn, its waiting requests and its kind. */
+export type WatcherDispatchBefore = Pick<AgentThread, 'requests'> & Partial<Pick<AgentThread, 'lastTurn' | 'kind'>>
+
+/** The thread as a dispatch remembers it, copied as values: the live thread is about to change. */
+export function watcherDispatchBefore(thread: AgentThread | undefined): WatcherDispatchBefore {
+  return { ...thread?.lastTurn ? { lastTurn: { ...thread.lastTurn } } : {}, requests: [...thread?.requests ?? []], ...thread?.kind ? { kind: thread.kind } : {} }
 }
