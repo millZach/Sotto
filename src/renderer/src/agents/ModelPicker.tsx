@@ -138,6 +138,9 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
     return sourceWords.every(word => text.includes(word))
   }) })).filter(source => source.models.length) : undefined
   const openSource = sources && step?.provider === selectedProvider?.name ? sources.find(source => source.name === step?.source) : undefined
+  // A source that leaves while it is open (its sign-in ends, the folder reconnects without it) is forgotten, so its
+  // return shows the sources rather than reopening it unasked.
+  useLayoutEffect(() => { if (step && !openSource) setStep(null) }, [step, openSource])
   const holdsChosen = (source: ModelSourceGroup): boolean => source.models.some(model => model.id === currentEntryId)
   const stopSource = sources?.find(source => source.name === sourceStop)?.name ?? sources?.find(holdsChosen)?.name ?? sources?.[0]?.name
   const showProvider = (name: string): void => { setProvider(name); if (name !== selectedProvider?.name) setStep(null) }

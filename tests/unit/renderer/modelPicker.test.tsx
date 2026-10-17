@@ -399,6 +399,20 @@ describe('provider model picker', () => {
       expect(screen.getByRole('button', { name: /^Show xAI models/u })).toHaveFocus()
     })
 
+    it('forgets a source that leaves while it is open, so its return does not reopen it, and keeps focus in the menu', async () => {
+      const user = userEvent.setup()
+      const view = render(<ModelPicker models={sourced} modelId="opencode/big-pickle" disabled={false} onChange={vi.fn()} />)
+      await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+      await user.click(screen.getByRole('button', { name: /^Show Anthropic models/u }))
+      expect(screen.getByRole('option', { name: 'Claude Sonnet 5' })).toHaveFocus()
+      view.rerender(<ModelPicker models={sourced.filter(model => model.source !== 'Anthropic')} modelId="opencode/big-pickle" disabled={false} onChange={vi.fn()} />)
+      expect(screen.getByRole('group', { name: 'OpenCode model sources' })).toBeInTheDocument()
+      expect(screen.getByRole('textbox', { name: 'Search models' })).toHaveFocus()
+      view.rerender(<ModelPicker models={sourced} modelId="opencode/big-pickle" disabled={false} onChange={vi.fn()} />)
+      expect(screen.getByRole('group', { name: 'OpenCode model sources' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Back to model sources' })).not.toBeInTheDocument()
+    })
+
     it('leaves a provider without model sources as it was: one list, and Escape left to the dialog', async () => {
       const user = userEvent.setup()
       render(<ModelPicker models={models} modelId="astra" disabled={false} onChange={vi.fn()} />)
