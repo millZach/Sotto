@@ -38,6 +38,7 @@ import { discoverSshHosts } from './hosts/sshSuggestions'
 import { detectInstalledProviders } from './agents/installedProviders'
 import { DevinAcpHost } from './agents/devin'
 import { MuseMspHost } from './agents/muse'
+import { OpenCodeHost } from './agents/opencode'
 import { connectCheckpoints } from './tools/checkpointIntegration'
 import { RequestDraftService } from './agents/requestDrafts'
 import { RetainedDraftStore } from './agents/retainedDraftStore'
@@ -687,13 +688,19 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   if (museFixtureRoot && (!isAbsolute(museFixtureRoot) || !museFixtureExecutable || !isAbsolute(museFixtureExecutable))) {
     throw new Error('The Muse test fixture requires absolute paths.')
   }
+  // OpenCode's real adapter over the scripted server, the same way; its OpenCode folder is under the profile, as Sotto's is.
+  const opencodeFixtureRoot = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_OPENCODE_ROOT'] : undefined
+  const opencodeFixtureExecutable = process.env['SOTTO_E2E_OPENCODE_EXECUTABLE']
+  if (opencodeFixtureRoot && (!isAbsolute(opencodeFixtureRoot) || !opencodeFixtureExecutable || !isAbsolute(opencodeFixtureExecutable))) {
+    throw new Error('The OpenCode test fixture requires absolute paths.')
+  }
   // The same for Claude and Codex: the real adapters over the fake CLIs, so a benchmark measures what they hold.
-  const nativeFixtureRoot = e2eConfiguration !== null && !app.isPackaged && !devinFixtureRoot && !museFixtureRoot ? process.env['SOTTO_E2E_NATIVE_FIXTURE_ROOT'] : undefined
+  const nativeFixtureRoot = e2eConfiguration !== null && !app.isPackaged && !devinFixtureRoot && !museFixtureRoot && !opencodeFixtureRoot ? process.env['SOTTO_E2E_NATIVE_FIXTURE_ROOT'] : undefined
   const nativeFixtureExecutable = process.env['SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE']
   if (nativeFixtureRoot && (!isAbsolute(nativeFixtureRoot) || !nativeFixtureExecutable || !isAbsolute(nativeFixtureExecutable))) {
     throw new Error('The native test fixture requires absolute paths.')
   }
-  const testAgentHost = e2eConfiguration === null || devinFixtureRoot || museFixtureRoot || nativeFixtureRoot ? null : new E2EAgentHost(e2eConfiguration.scenario)
+  const testAgentHost = e2eConfiguration === null || devinFixtureRoot || museFixtureRoot || opencodeFixtureRoot || nativeFixtureRoot ? null : new E2EAgentHost(e2eConfiguration.scenario)
   // A Playwright journey pushes to an owned remote and "creates" its pull request through a scripted gh; development only.
   const ghStandInScript = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_GH_SCRIPT'] : undefined
   const ghStandInExecutable = process.env['SOTTO_E2E_GH_EXECUTABLE']
@@ -740,6 +747,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(),
       ...(!heldProviders.has('muse') ? { muse: new MuseMspHost(userDataPath, {
         executable: museFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeMuseAgent.mjs'), museFixtureRoot],
+      }) } : {}),
+    } } : {}),
+    ...(opencodeFixtureRoot ? { providers: {
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(),
+      ...(!heldProviders.has('opencode') ? { opencode: new OpenCodeHost(userDataPath, {
+        executable: opencodeFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeOpenCodeServer.mjs'), opencodeFixtureRoot],
       }) } : {}),
     } } : {}),
     ...(nativeFixtureRoot ? { providers: {

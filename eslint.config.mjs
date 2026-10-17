@@ -143,6 +143,7 @@ export default tseslint.config(
       'artifacts/codex-connection-recovery/**',
       'artifacts/devin-local-provider/**',
       'artifacts/muse-provider/**',
+      'artifacts/opencode-provider/**',
       'artifacts/starting-screen/**',
       'node_modules/**',
       'out/**',
