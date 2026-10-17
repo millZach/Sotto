@@ -186,16 +186,21 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
   const listRef = useRef<HTMLDivElement>(null)
   const titleId = useId(), aboutId = useId(), listId = useId(), errorId = useId(), noteId = useId()
   const setFlow = useCallback((next: Flow | null): void => { flowRef.current = next; setFlowState(next) }, [])
+  // The newest bridge and tile callback, for leaving: Settings makes a host's bridge again whenever what it is made from
+  // changes, and that is no reason to end a sign-in.
+  const latest = useRef({ bridge, onLeft })
+  useEffect(() => { latest.current = { bridge, onLeft } }, [bridge, onLeft])
   /** Cancels the waiting browser sign-in, if there is one; one OpenCode finished meanwhile is kept, so the list is read again. */
   const leave = useCallback((): void => {
     const attempt = flowRef.current?.attempt
     // A start or a key still answering finds no flow: a start cancels its sign-in and opens no page, and a key's answer
     // still reaches the tile.
     flowRef.current = null
-    if (attempt) void bridge.cancel({ attemptId: attempt.id }).then(onLeft, () => undefined)
-  }, [bridge, onLeft])
+    const { bridge: current, onLeft: left } = latest.current
+    if (attempt) void current.cancel({ attemptId: attempt.id }).then(left, () => undefined)
+  }, [])
   const close = useCallback((): void => { leave(); onClose() }, [leave, onClose])
-  // Settings closing under the dialog ends a waiting sign-in as Cancel does.
+  // Settings closing under the dialog ends a waiting sign-in as Cancel does; only the dialog going away does.
   useEffect(() => leave, [leave])
   const dialogRef = useDialogFocus({ onEscape: close, initialFocus: searchRef, fallbackFocus })
   // Each step puts focus on its first field or control, as the eye reads it.
