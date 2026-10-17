@@ -14,8 +14,12 @@ type Phase =
   | { readonly kind: 'stopping'; readonly targets: readonly WatcherThreadTarget[] }
   | { readonly kind: 'done'; readonly results: readonly StopResult[] }
   | { readonly kind: 'refused'; readonly message: string }
+  /** The stop went to main and its answer was lost: it may or may not have reached the threads. */
+  | { readonly kind: 'unknown'; readonly targets: readonly WatcherThreadTarget[] }
 
 const NOTE = 'Each stops its current turn and keeps the work it has done. Threads you started or took over keep running.'
+/** What an unknown outcome says: the stop may have gone through, and how to find out. */
+export const STOP_UNKNOWN = 'Sotto lost the answer, so the stop may or may not have reached these threads. Open each one to see whether its turn stopped, and press Stop all again for any still running.'
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
 const named = (facts: ConversationThread): string => facts.title ?? 'A thread no longer here'
 
@@ -86,7 +90,7 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
   }, [open])
   // Focus goes into the popover as each step draws: Cancel to ask, Close once it is done.
   useEffect(() => {
-    if (phase?.kind === 'confirm' || phase?.kind === 'done' || phase?.kind === 'refused') panel.current?.querySelector<HTMLButtonElement>('[data-autofocus]')?.focus()
+    if (phase?.kind === 'confirm' || phase?.kind === 'done' || phase?.kind === 'refused' || phase?.kind === 'unknown') panel.current?.querySelector<HTMLButtonElement>('[data-autofocus]')?.focus()
   }, [phase?.kind])
   if (room.stopAll === null || (running.length === 0 && phase === null)) return null
   const stopAll = room.stopAll
@@ -104,7 +108,7 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
       const result = await stopAll.stop({ confirmationId })
       if (result.status === 'ok') room.settle({ status: 'ok', state: result.state })
       setPhase(current => current === null ? null : result.status === 'ok' ? { kind: 'done', results: result.results } : { kind: 'refused', message: result.message })
-    } catch { setPhase(current => current === null ? null : { kind: 'refused', message: 'Sotto could not reach Watcher, so it cannot say what stopped. Open each thread to check.' }) }
+    } catch { setPhase(current => current === null ? null : { kind: 'unknown', targets }) }
   }
   const count = phase?.kind === 'confirm' || phase?.kind === 'stopping' ? phase.targets.length : running.length
   const name = (target: WatcherThreadTarget): ReactNode => {
@@ -119,6 +123,13 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
   else if (phase.kind === 'refused') body = <>
     <h2 id={titleId}>Nothing was stopped</h2>
     <p className="watcher-stop__note watcher-stop__refused" role="alert">{phase.message}</p>
+    <div className="watcher-stop__actions"><Button variant="secondary" data-autofocus onClick={close}>Close</Button></div>
+  </>
+  else if (phase.kind === 'unknown') body = <>
+    <h2 id={titleId}>Sotto can’t tell what stopped</h2>
+    <p className="watcher-stop__note watcher-stop__unknown" role="alert">{STOP_UNKNOWN}</p>
+    {phase.targets.length ? <ul className="watcher-stop__results">{phase.targets.map(target => <li key={`${target.hostId}:${target.threadId}`} className="watcher-stop__result" data-result="uncertain">
+      <TriangleAlert size={15} aria-hidden="true" /><span>{name(target)}</span></li>)}</ul> : null}
     <div className="watcher-stop__actions"><Button variant="secondary" data-autofocus onClick={close}>Close</Button></div>
   </>
   else if (phase.kind === 'done') body = <>

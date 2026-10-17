@@ -203,6 +203,18 @@ describe('Stop all', () => {
     await act(async () => { answer({ status: 'ok', state: roomState(), results: [{ target: target('footer-links'), status: 'stopped', message: 'Stopped.' }] }) })
     expect(await screen.findByRole('dialog', { name: 'Stopped Footer links.' })).toHaveTextContent('Stopped.')
   })
+  it('says it cannot tell what stopped when the stop’s answer is lost, never that nothing was stopped', async () => {
+    const { bridge } = renderRoom(roomState())
+    bridge.stopAll.mockRejectedValueOnce(new Error('The reply was lost.'))
+    await paneReady()
+    fireEvent.click(screen.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop 1 thread' }))
+    const unknown = await screen.findByRole('dialog', { name: 'Sotto can’t tell what stopped' })
+    expect(unknown).toHaveTextContent('the stop may or may not have reached these threads. Open each one to see whether its turn stopped')
+    expect(unknown).not.toHaveTextContent('Nothing was stopped')
+    expect(within(unknown).getByRole('button', { name: 'Open Footer links beside Watcher' })).toBeInTheDocument()
+  })
+
   it('names a thread still waiting on its computer to confirm', async () => {
     const { bridge } = renderRoom(roomState())
     bridge.stopAll.mockResolvedValueOnce({ status: 'ok', state: roomState(), results: [{ target: target('footer-links'), status: 'requested', message: 'Stop requested.' }] })
