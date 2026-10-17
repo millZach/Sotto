@@ -598,3 +598,45 @@ it('ends a server a crash left running when Sotto next connects, and nothing tha
     await f.cleanup()
   }
 })
+
+it('keeps a steer in the turn it joined when the thread is restored', async () => {
+  const { f, id } = await open()
+  let restarted: Fixture | undefined
+  try {
+    await send(f, id, 'first')
+    await f.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: 'steered', text: 'Also check the tests' })
+    await f.action(id, { type: 'tool', name: 'shell', input: { command: 'npm test' }, output: 'ok' })
+    await expect.poll(async () => (await thread(f, id)).activities?.some(activity => activity.command === 'npm test')).toBe(true)
+    await f.driver.completeTurn(id, 'Done')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    const before = await thread(f, id)
+    const placed = (activities: typeof before.activities) => activities?.filter(activity => activity.kind === 'command').map(activity => [activity.command, activity.turnId, activity.afterMessageId])
+    expect(placed(before.activities)).toEqual([['npm test', 'first', 'steered']])
+    restarted = await f.driver.restart()
+    restarted.host.useThreadHistory!({ messageIdentities: threadId => threadId === id ? before.messages.map(({ id: messageId, role }) => ({ id: messageId, role })) : [] })
+    restarted.host.observeThreads?.([id]); await restarted.host.connect()
+    await expect.poll(async () => placed((await thread(restarted!, id)).activities)?.length ?? 0).toBe(1)
+    expect(placed((await thread(restarted, id)).activities)).toEqual(placed(before.activities))
+  } finally { await (restarted ?? f).cleanup() }
+})
+
+it('settles a steered turn its server never finished under the prompt that started it', async () => {
+  const { f, id } = await open()
+  let restarted: Fixture | undefined
+  try {
+    await send(f, id, 'first')
+    await f.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: 'steered', text: 'Also check the tests' })
+    await f.action(id, { type: 'tool', name: 'shell', input: { command: 'ping -n 90 127.0.0.1' }, running: true })
+    await expect.poll(async () => (await thread(f, id)).activities?.some(activity => activity.kind === 'command')).toBe(true)
+    restarted = await f.driver.restart()
+    // Sotto stopped before it could save what it saw: only the provider session shows the turn never ended.
+    const saved = JSON.parse(await readFile(join(f.root, 'opencode-threads.json'), 'utf8')) as Record<string, { endedTurn?: unknown }>
+    delete saved[id]!.endedTurn
+    await writeFile(join(f.root, 'opencode-threads.json'), JSON.stringify(saved))
+    restarted.host.observeThreads?.([id]); await restarted.host.connect()
+    await expect.poll(async () => (await thread(restarted!, id)).lastTurn).toEqual({ id: 'first', status: 'interrupted' })
+    const resumed = await thread(restarted, id)
+    expect(resumed.activities?.find(activity => activity.kind === 'command')).toMatchObject({ turnId: 'first', status: 'interrupted' })
+    expect(resumed.activities?.some(activity => activity.turnId === 'steered')).toBe(false)
+  } finally { await (restarted ?? f).cleanup() }
+})

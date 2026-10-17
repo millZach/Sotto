@@ -78,6 +78,8 @@ const attachmentRefSchema = z.object({ id: z.string(), name: z.string(), mimeTyp
 const originSchema = z.object({
   messageId: z.string(), commandId: z.string(), inboxId: z.string(), createdAt: z.string(),
   confirmed: z.boolean().default(false), attachments: z.array(attachmentRefSchema).default([]),
+  /** Sent as a steer, so it joined the execution that was running, and its turn, rather than starting one (ADR-0087). */
+  steer: z.boolean().default(false),
 })
 type Origin = z.infer<typeof originSchema>
 const aliasSchema = z.object({
@@ -760,13 +762,19 @@ export class OpenCodeHost implements AgentHost {
     // Each record goes under the user message it follows in the history, never under the newest one the log knows:
     // Sotto's own store may already hold every message of the thread before the history is read.
     let turnId = 'native-history', afterMessageId: string | undefined
+    // One execution can carry several prompts, as a steer joins the running one, and history does not say where an
+    // execution began. So a turn opens, as it does live, at a prompt Sotto sent as a send, which only ever starts one, or
+    // at any prompt after an idle entry or before the first; Sotto's steers and prompts typed in OpenCode meanwhile join it.
+    let open = false
     const placement = (): Placement => ({ turnId, afterMessageId })
     for (const entry of entries) {
       const at = entry.time?.created
       if (entry.type === 'user') {
         const messageId = this.recordUser(id, entry.id, entry.text ?? '', at)
-        if (messageId) { turnId = messageId; afterMessageId = messageId }
-        unfinished = messageId
+        if (!messageId) continue
+        afterMessageId = messageId
+        const origin = this.aliases[id]?.origins.find(candidate => candidate.inboxId === entry.id)
+        if (!open || (origin !== undefined && !origin.steer)) { turnId = messageId; unfinished = messageId; open = true }
       } else if (entry.type === 'assistant') {
         const ordinals = { text: 0, reasoning: 0 }
         if (at !== undefined) this.fold(id).started.set(entry.id, at)
@@ -785,7 +793,7 @@ export class OpenCodeHost implements AgentHost {
           }
         }
         this.recordStepFiles(id, entry.id, entry.snapshot?.files ?? [], entry.time?.completed ?? at, placement())
-      } else if (entry.type === 'idle') unfinished = undefined
+      } else if (entry.type === 'idle') { unfinished = undefined; open = false }
     }
     return unfinished
   }
@@ -1052,7 +1060,7 @@ export class OpenCodeHost implements AgentHost {
           this.assertGeneration(generation)
           const origin: Origin = {
             messageId: command.messageId, commandId: command.commandId, inboxId: promptId(), createdAt: new Date().toISOString(), confirmed: false,
-            attachments: attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })),
+            attachments: attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })), steer: command.type === 'steer',
           }
           const entry = await this.threadProcess(command.threadId)
           this.assertGeneration(generation)
