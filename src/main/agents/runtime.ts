@@ -138,7 +138,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true })),
     devin: adapter('devin', () => options.providers?.devin ?? new DevinAcpHost(directory)),
     muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory)),
-    opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, { heldProviders: held })),
+    // A desktop's OpenCode opens a sign-in page in the user's browser (#1104); a headless host's offers no sign-in yet (#1107).
+    opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held } : { heldProviders: held, openExternal: options.openExternal })),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -371,5 +372,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),
     ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher) } : {}) })
   babysitter?.begin()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, prepareForShutdown, close }
+  // Signing Sotto's OpenCode in to model sources (#1104): only where its adapter runs, so a held OpenCode has none.
+  const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, prepareForShutdown, close }
 }

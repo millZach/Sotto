@@ -7,10 +7,19 @@ import { join } from 'node:path'
 import { URL } from 'node:url'
 // A scripted OpenCode 2 server (`opencode serve`), in the shape Sotto's OpenCode adapter speaks: the HTTP routes and the
 // server-sent events captured from OpenCode 2.0.31 (.zstack/opencode-provider/v2-captures, not committed). Files in the
-// root steer it, as with the other fakes: `script.json` (version, infoVersion, models, providers, delay by operation,
-// refuse by operation (the HTTP status the next such request is refused with, once), migrationMs, unavailable,
-// printPassword, pageSize, eventStream: 'refuse' to answer the event stream with an error before its first frame),
-// `control.json` (one driver action at a time, taken by the process
+// root steer it, as with the other fakes: `script.json` (version, infoVersion, models, modelsByVersion (the models a
+// process of that version lists, as a newer client's catalog may differ), providers, delay by operation,
+// refuse by operation (the HTTP status the next such request is refused with, once, or `[status, times]` in a row, or
+// `[status, times, after]` once `after` have gone through),
+// loseAnswer by operation (the next such request is done and its connection then cut, so its answer never arrives),
+// migrationMs, unavailable, printPassword, pageSize, eventStream: 'refuse' to answer the event stream with an error
+// before its first frame;
+// mcp and generate for the runtime MCP routes and the stateless generation route, below (a side call's words go to
+// side-calls.jsonl); integrations, sourceModels, oauth by `<integration>:<method>`, oauthExpiresMs and oauthUrl for the
+// sign-in routes),
+// `approve.json` (`{ integrationID }`: the next read of that source's browser sign-in finds it complete),
+// `credentials.json` (the sign-ins, shared by every process as OpenCode's database is, secrets included as OpenCode
+// answers them), `control.json` (one driver action at a time, taken by the process
 // holding its session). Every request is recorded in requests.jsonl under its OpenAPI operation name, with the process
 // that took it. Sessions are shared by every process through native-sessions.json under a lock, as OpenCode's database is.
 // A process holding a session writes `holders/<sessionId>` with its PID, so a test can see when that server has gone.
@@ -36,6 +45,32 @@ const MODELS = startup.models ?? [
     variants: [], enabled: true, status: 'active', limit: { context: 200000, output: 32000 } },
 ]
 const PROVIDERS = startup.providers ?? [{ id: 'opencode', name: 'OpenCode', activation: 'enabled', package: '@opencode/ai/providers/openai-compatible' }]
+// The model sources OpenCode 2.0.31 lists, cut to the ones the tests sign in to, in its shape (`Integration.Info`).
+const INTEGRATIONS = startup.integrations ?? [
+  { id: 'opencode', name: 'OpenCode Console', methods: [{ type: 'key', label: 'API key (service account)' }, { type: 'env', names: ['OPENCODE_API_KEY'] },
+    { id: 'device', type: 'oauth', label: 'OpenCode Console account', form: [{ key: 'server', hidden: true, type: 'string', format: 'uri', default: 'https://opencode.ai/console' }] }] },
+  { id: 'anthropic', name: 'Anthropic', methods: [{ type: 'key' }, { type: 'env', names: ['ANTHROPIC_API_KEY'] }] },
+  { id: 'openai', name: 'OpenAI', methods: [{ type: 'key' }, { type: 'env', names: ['OPENAI_API_KEY'] }, { id: 'chatgpt-token-sharing', type: 'oauth', label: 'Sign in with ChatGPT' },
+    { id: 'chatgpt-browser', type: 'oauth', label: 'Codex browser (legacy)' }, { id: 'chatgpt-headless', type: 'oauth', label: 'Codex device code (legacy)' }] },
+  { id: 'openrouter', name: 'OpenRouter', methods: [{ type: 'key' }, { type: 'env', names: ['OPENROUTER_API_KEY'] }] },
+  { id: 'github-copilot', name: 'GitHub Copilot', methods: [{ type: 'env', names: ['GITHUB_TOKEN'] }, { id: 'device', type: 'oauth', label: 'Login with GitHub Copilot', form: [
+    { key: 'deploymentType', title: 'Select GitHub deployment type', required: true, type: 'string', options: [{ value: 'github.com', label: 'GitHub.com', description: 'Public' }, { value: 'enterprise', label: 'GitHub Enterprise', description: 'Data residency or self-hosted' }] },
+    { key: 'enterpriseUrl', title: 'Enter your GitHub Enterprise URL or domain', required: true, when: [{ key: 'deploymentType', op: 'eq', value: 'enterprise' }], type: 'string', placeholder: 'company.ghe.com or https://company.ghe.com' }] }] },
+  { id: 'google', name: 'Google', methods: [{ type: 'key' }, { type: 'env', names: ['GEMINI_API_KEY'] }] },
+  { id: 'xai', name: 'xAI', methods: [{ type: 'key', label: 'Manually enter API Key' }, { type: 'env', names: ['XAI_API_KEY'] }, { id: 'device', type: 'oauth', label: 'SuperGrok Subscription' }] },
+  { id: 'gitlab', name: 'GitLab Duo', methods: [{ type: 'key' }, { id: 'pkce', type: 'oauth', label: 'Login with GitLab (OAuth)', form: [{ key: 'instanceUrl', title: 'GitLab instance URL', type: 'string', default: 'https://gitlab.com' }] }] },
+  { id: 'zenmux', name: 'ZenMux', methods: [{ type: 'key' }] },
+]
+// The models a signed-in source adds to the catalog, by source.
+const SOURCE_MODELS = startup.sourceModels ?? {
+  anthropic: [{ id: 'claude-fixture', name: 'Claude Fixture' }, { id: 'claude-fixture-small', name: 'Claude Fixture Small' }],
+  openai: [{ id: 'gpt-fixture', name: 'GPT Fixture' }], xai: [{ id: 'grok-fixture', name: 'Grok Fixture' }], gitlab: [{ id: 'duo-fixture', name: 'Duo Fixture' }],
+}
+const credentials = () => read('credentials.json', [])
+const saveCredentials = list => writeFileSync(path('credentials.json'), JSON.stringify(list))
+const sourceModels = () => credentials().flatMap(credential => (SOURCE_MODELS[credential.integrationID] ?? []).map(model => ({ ...model, modelID: model.id, providerID: credential.integrationID,
+  capabilities: { tools: true, input: ['text'], output: ['text'] }, variants: [], enabled: true, status: 'active', limit: { context: 200000, output: 32000 } })))
+const attempts = new Map()
 const PROVIDER_KEYS = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENROUTER_API_KEY', 'XAI_API_KEY', 'META_API_KEY', 'OPENCODE_SERVER_PASSWORD', 'OPENCODE_DATA_DIR']
 record({ method: 'fixture/process', params: { pid: process.pid, version: VERSION, args, environment: {
   dataHome: process.env.XDG_DATA_HOME ?? null, configHome: process.env.XDG_CONFIG_HOME ?? null, stateHome: process.env.XDG_STATE_HOME ?? null, cacheHome: process.env.XDG_CACHE_HOME ?? null,
@@ -204,9 +239,12 @@ const delayOf = name => {
 /** A refusal the script asks for once: the next request of this operation is refused with that status, before anything is done. */
 const refusalOf = name => {
   const current = script()
-  const status = current.refuse?.[name]
-  if (!status) return 0
-  writeFileSync(path('script.json'), JSON.stringify({ ...current, refuse: { ...current.refuse, [name]: 0 } }))
+  const asked = current.refuse?.[name]
+  if (!asked) return 0
+  // `[status, times]` refuses that many in a row, and `[status, times, after]` lets `after` through first.
+  const [status, times, after = 0] = Array.isArray(asked) ? asked : [asked, 1]
+  if (after > 0) { writeFileSync(path('script.json'), JSON.stringify({ ...current, refuse: { ...current.refuse, [name]: [status, times, after - 1] } })); return 0 }
+  writeFileSync(path('script.json'), JSON.stringify({ ...current, refuse: { ...current.refuse, [name]: times > 1 ? [status, times - 1] : 0 } }))
   return status
 }
 let unavailable = startup.unavailable ?? 0
@@ -220,11 +258,49 @@ const routes = [
   ['GET', /^\/api\/session\/([^/]+)\/permission$/u, 'session.permission.list'], ['POST', /^\/api\/session\/([^/]+)\/permission\/([^/]+)\/reply$/u, 'session.permission.reply'],
   ['GET', /^\/api\/session\/([^/]+)\/form$/u, 'session.form.list'], ['POST', /^\/api\/session\/([^/]+)\/form\/([^/]+)\/reply$/u, 'session.form.reply'],
   ['DELETE', /^\/api\/session\/([^/]+)\/form\/([^/]+)$/u, 'session.form.cancel'],
+  ['GET', /^\/api\/integration$/u, 'integration.list'], ['POST', /^\/api\/integration\/([^/]+)\/connect\/key$/u, 'integration.connect.key'],
+  ['POST', /^\/api\/integration\/([^/]+)\/connect\/external$/u, 'integration.connect.external'],
+  ['POST', /^\/api\/integration\/([^/]+)\/connect\/oauth$/u, 'integration.connect.oauth'],
+  ['GET', /^\/api\/integration\/([^/]+)\/connect\/oauth\/([^/]+)$/u, 'integration.connect.oauth.status'],
+  ['DELETE', /^\/api\/integration\/([^/]+)\/connect\/oauth\/([^/]+)$/u, 'integration.connect.oauth.cancel'],
+  ['POST', /^\/api\/integration\/([^/]+)\/connect\/oauth\/([^/]+)\/complete$/u, 'integration.connect.oauth.complete'],
+  ['GET', /^\/api\/credential$/u, 'credential.list'], ['DELETE', /^\/api\/credential\/([^/]+)$/u, 'credential.remove'],
+  ['PUT', /^\/api\/experimental\/mcp\/([^/]+)$/u, 'experimental.mcp.add'], ['DELETE', /^\/api\/experimental\/mcp\/([^/]+)$/u, 'experimental.mcp.remove'],
+  ['GET', /^\/api\/mcp$/u, 'mcp.list'], ['POST', /^\/api\/experimental\/generate$/u, 'experimental.generate.text'],
 ]
+// Runtime MCP servers, per folder and per process, as OpenCode keeps them until it ends (2.0.31): name to status.
+const mcpServers = new Map()
+const mcpOf = directory => { if (!mcpServers.has(directory)) mcpServers.set(directory, new Map()); return mcpServers.get(directory) }
+/**
+ * Connect a runtime MCP server as OpenCode does: an `initialize` to its URL with the headers it was given, so a server
+ * whose token Sotto's tool server does not admit reads as failed. `script.mcp` steers it: `refuse` answers the add with a
+ * 400, and `fail` lists every server as failed.
+ */
+async function connectMcp(config) {
+  if (script().mcp?.fail) return 'failed'
+  try {
+    const response = await globalThis.fetch(config.url, { method: 'POST', signal: globalThis.AbortSignal.timeout(5000),
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(config.headers ?? {}) },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'opencode', version: VERSION } } }) })
+    const reply = await response.json().catch(() => undefined)
+    return response.ok && reply?.result ? 'connected' : 'failed'
+  } catch { return 'failed' }
+}
+// OpenCode Zen's free models refuse the stateless generation route, as a 503 naming the model source (2.0.31).
+const ZEN_REFUSAL = { _tag: 'ServiceUnavailableError', message: 'OpenCode’s free tier can only be used from within OpenCode.', service: 'opencode' }
 const expected = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD ?? ''}`).toString('base64')}`
+/** An answer the script asks to lose once: the next request of this operation is done, and its connection cut unanswered. */
+const lossOf = name => {
+  const current = script()
+  if (!current.loseAnswer?.[name]) return false
+  writeFileSync(path('script.json'), JSON.stringify({ ...current, loseAnswer: { ...current.loseAnswer, [name]: false } }))
+  return true
+}
 const server = createServer((request, response) => {
   const url = new URL(request.url, 'http://fixture')
+  let lost = false
   const send = (status, body) => {
+    if (lost) { response.socket?.destroy(); return }
     if (body === undefined) { response.writeHead(status); response.end(); return }
     response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(body))
   }
@@ -240,9 +316,15 @@ const server = createServer((request, response) => {
   request.on('end', () => {
     const body = raw ? JSON.parse(raw) : undefined
     const query = Object.fromEntries(url.searchParams)
-    record({ method: name, params: { ...(sessionId ? { sessionID: sessionId } : {}), ...(itemId ? { itemID: itemId } : {}), ...(body ?? {}), ...(Object.keys(query).length ? { query } : {}) } })
+    if (name === 'experimental.generate.text') {
+      // A side call's words go to a file of their own: what the thread's provider session heard stays in requests.jsonl.
+      appendFileSync(path('side-calls.jsonl'), JSON.stringify({ prompt: body?.prompt, model: body?.model ?? null, cwd: process.cwd(), process: process.pid }) + '\n')
+      record({ method: name, params: { model: body?.model ?? null } })
+    } else if (name.startsWith('experimental.mcp.')) record({ method: name, params: { server: decodeURIComponent(sessionId), ...(body ?? {}), query } })
+    else record({ method: name, params: { ...(sessionId ? { sessionID: sessionId } : {}), ...(itemId ? { itemID: itemId } : {}), ...(body ?? {}), ...(Object.keys(query).length ? { query } : {}) } })
     const refused = refusalOf(name)
     if (refused) { fail(refused, 'InvalidRequestError'); return }
+    lost = lossOf(name)
     const go = () => handle(name, sessionId, itemId, body, query, request, response, send, fail)
     const delay = delayOf(name)
     if (delay) setTimeout(go, delay); else go()
@@ -253,10 +335,15 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
   if (name === 'server.info') { send(200, { version: script().infoVersion ?? VERSION, pid: process.pid, urls: [], paths: {}, capabilities: {} }); return }
   if (name === 'model.list') {
     if (unavailable > 0) { unavailable--; fail(503, 'ServiceUnavailableError'); return }
-    send(200, { location: { directory: query['location[directory]'] }, data: script().models ?? MODELS }); return
+    send(200, { location: { directory: query['location[directory]'] }, data: [...script().modelsByVersion?.[VERSION] ?? script().models ?? MODELS, ...sourceModels()] }); return
   }
   if (name === 'model.default') { send(200, { location: { directory: query['location[directory]'] }, data: (script().models ?? MODELS)[0] ?? null }); return }
-  if (name === 'provider.list') { send(200, { location: { directory: query['location[directory]'] }, data: script().providers ?? PROVIDERS }); return }
+  if (name === 'provider.list') {
+    const signed = [...new Set(credentials().map(credential => credential.integrationID))].map(integrationID => ({ id: integrationID, integrationID,
+      name: INTEGRATIONS.find(item => item.id === integrationID)?.name ?? integrationID, activation: 'enabled' }))
+    send(200, { location: { directory: query['location[directory]'] }, data: [...script().providers ?? PROVIDERS, ...signed.filter(item => item.id !== 'opencode')] }); return
+  }
+  if (name.startsWith('integration.') || name.startsWith('credential.')) { integration(name, sessionId, itemId, body, query, send); return }
   if (name === 'event.subscribe') {
     if (script().eventStream === 'refuse') { fail(500, 'InternalServerError'); return }
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
@@ -265,6 +352,48 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
     clients.add(response)
     response.on('close', () => clients.delete(response))
     return
+  }
+  if (name === 'experimental.mcp.add') {
+    const server = decodeURIComponent(sessionId)
+    if (script().mcp?.refuse) { fail(400, 'InvalidRequestError'); return }
+    // `script.mcp.hold` names a file in the root: the next add, and only that one, waits for it before it connects.
+    const hold = script().mcp?.hold
+    if (hold) writeFileSync(path('script.json'), JSON.stringify({ ...script(), mcp: { ...script().mcp, hold: undefined } }))
+    // `script.mcp.pendingMs`: the add is answered at once and the server listed as pending until it connects that much
+    // later, as OpenCode 2.0.31 answers an add for a server that connects without trouble.
+    const pendingMs = script().mcp?.pendingMs
+    if (pendingMs) {
+      const servers = mcpOf(query['location[directory]'])
+      servers.set(server, 'pending'); send(204)
+      setTimeout(() => void connectMcp(body.config).then(status => { servers.set(server, status); record({ method: 'fixture/mcp-connected', params: { server, status } }) }), pendingMs)
+      return
+    }
+    const released = () => new Promise(resolve => { const check = () => { if (!hold || existsSync(path(hold))) resolve(); else setTimeout(check, 20) }; check() })
+    // OpenCode holds the request while it connects, and answers 204 whether or not the server connected.
+    void released().then(() => connectMcp(body.config)).then(status => {
+      mcpOf(query['location[directory]']).set(server, status)
+      record({ method: 'fixture/mcp-connected', params: { server, status } })
+      send(204)
+    })
+    return
+  }
+  if (name === 'experimental.mcp.remove') {
+    // `script.mcp.removeUnavailable` answers every removal with a 503 that is only a wait, as a folder still starting does.
+    if (script().mcp?.removeUnavailable) { fail(503, 'ServiceUnavailableError'); return }
+    const servers = mcpOf(query['location[directory]']), server = decodeURIComponent(sessionId)
+    if (!servers.has(server)) { send(404, { _tag: 'McpServerNotFoundError', server, message: `MCP server not found: ${server}` }); return }
+    servers.delete(server); send(204); return
+  }
+  if (name === 'mcp.list') {
+    send(200, { location: { directory: query['location[directory]'] }, data: [...mcpOf(query['location[directory]'])].map(([server, status]) => ({ name: server, status: { status } })) }); return
+  }
+  if (name === 'experimental.generate.text') {
+    // `script.generate` steers it: `text` to answer, `refuse: 'zen'` for Zen's refusal, `session` to make a provider
+    // session as a turn would, which the route must never do.
+    const generate = script().generate ?? {}
+    if (generate.refuse === 'zen') { send(503, ZEN_REFUSAL); return }
+    if (generate.session) { const made = { id: id('ses'), title: 'Side call', location: { directory: process.cwd() }, created: now(), messages: [] }; sessions[made.id] = made; save() }
+    send(200, { data: { text: generate.text ?? 'Fixture side text' } }); return
   }
   if (name === 'session.list') {
     const all = Object.values({ ...locked(stored).sessions, ...sessions }).filter(session => !query.directory || session.location?.directory === query.directory)
@@ -330,6 +459,56 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
     send(204); return
   }
   fail(404, 'NotFoundError')
+}
+/** OpenCode 2.0.31's sign-in routes, as the scratch probe of October 16, 2026 found them. */
+function integration(name, integrationID, attemptID, body, query, send) {
+  const location = { directory: query['location[directory]'] }
+  const add = (integrationID, value) => {
+    const entry = { id: id('cred'), integrationID, label: INTEGRATIONS.find(item => item.id === integrationID)?.name ?? integrationID, active: true, value }
+    saveCredentials([...credentials().filter(item => item.integrationID !== integrationID), entry])
+  }
+  if (name === 'credential.list') { send(200, { data: credentials() }); return }
+  if (name === 'credential.remove') { saveCredentials(credentials().filter(item => item.id !== integrationID)); send(204); return }
+  if (name === 'integration.list') {
+    const held = credentials()
+    send(200, { location, data: INTEGRATIONS.map(item => ({ ...item, connections: held.filter(credential => credential.integrationID === item.id)
+      .map(credential => ({ type: 'credential', id: credential.id, label: credential.label, method: credential.value.type })) })) }); return
+  }
+  const source = INTEGRATIONS.find(item => item.id === integrationID)
+  if (!source) { send(404, { _tag: 'IntegrationNotFoundError', integrationID, message: `Integration not found: ${integrationID}` }); return }
+  if (name === 'integration.connect.key') {
+    // OpenCode keeps any key without trying it; the fixture refuses one that says so, to draw a refused key.
+    if (typeof body?.key !== 'string' || body.key.startsWith('refuse')) { send(400, { _tag: 'InvalidRequestError', message: 'Invalid key', kind: 'integration_authorization' }); return }
+    add(source.id, { type: 'key', key: body.key, ...(body.answer ? { configuration: body.answer } : {}) }); send(204); return
+  }
+  if (name === 'integration.connect.external') { add(source.id, { type: 'external', methodID: body.methodID }); send(204); return }
+  if (name === 'integration.connect.oauth') {
+    const method = source.methods.find(item => item.type === 'oauth' && item.id === body?.methodID)
+    if (!method) { send(404, { _tag: 'IntegrationMethodNotFoundError', message: 'Method not found' }); return }
+    const missing = (method.form ?? []).find(field => field.required && !field.hidden && !(field.when ?? []).some(rule => body.answer?.[rule.key] !== rule.value) && !body.answer?.[field.key])
+    if (missing) { send(400, { _tag: 'InvalidRequestError', message: `Missing required form field: ${missing.key}`, kind: 'integration_authorization' }); return }
+    const how = script().oauth?.[`${source.id}:${method.id}`] ?? { mode: 'auto' }
+    const created = now(), attempt = { attemptID: id('con'), integrationID: source.id, methodID: method.id, mode: how.mode, time: { created, expires: created + (script().oauthExpiresMs ?? 600_000) } }
+    attempts.set(attempt.attemptID, attempt)
+    const url = script().oauthUrl ?? `https://sign-in.fixture.invalid/${source.id}/${how.code ? `device?user_code=${how.code}` : 'authorize?state=fixture-state'}`
+    const instructions = how.code ? `Open https://sign-in.fixture.invalid/${source.id}/device on any device and enter code: ${how.code}` : 'Complete authorization in your browser. This window will close automatically.'
+    send(200, { location, data: { attemptID: attempt.attemptID, url, instructions, mode: how.mode, time: attempt.time } }); return
+  }
+  const attempt = attempts.get(attemptID)
+  if (name === 'integration.connect.oauth.cancel') { attempts.delete(attemptID); send(204); return }
+  if (!attempt || attempt.integrationID !== source.id) { send(404, { _tag: 'IntegrationAttemptNotFoundError', integrationID, attemptID, message: `OAuth attempt not found: ${attemptID}` }); return }
+  if (name === 'integration.connect.oauth.complete') {
+    if (body?.code !== 'good-code') { send(400, { _tag: 'InvalidRequestError', message: 'Invalid code' }); return }
+    attempt.status = 'complete'; add(source.id, { type: 'oauth', methodID: attempt.methodID, refresh: 'fixture-refresh-secret', access: 'fixture-access-secret', expires: now() + 3_600_000 })
+    send(204); return
+  }
+  const approved = read('approve.json', null)
+  if (!attempt.status && approved?.integrationID === source.id) {
+    rmSync(path('approve.json'), { force: true })
+    attempt.status = 'complete'; add(source.id, { type: 'oauth', methodID: attempt.methodID, refresh: 'fixture-refresh-secret', access: 'fixture-access-secret', expires: now() + 3_600_000 })
+  }
+  const status = attempt.status ?? (now() >= attempt.time.expires ? 'expired' : 'pending')
+  send(200, { location, data: { status, time: attempt.time } })
 }
 const heartbeat = setInterval(() => { for (const client of clients) client.write(': heartbeat\n\n') }, 15_000)
 heartbeat.unref()

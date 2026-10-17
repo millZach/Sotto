@@ -70,7 +70,8 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
   grok: 'https://docs.x.ai/build/overview',
   devin: 'https://docs.devin.ai/cli',
   muse: 'https://dev.meta.ai/docs/muse-code',
-  opencode: 'https://opencode.ai/docs',
+  // OpenCode 2's guide: opencode.ai/docs installs OpenCode 1, which Sotto refuses (ADR-0087).
+  opencode: 'https://opencode.ai/v2/docs/',
 }
 
 /**
