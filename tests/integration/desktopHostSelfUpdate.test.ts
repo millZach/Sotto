@@ -2,10 +2,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { HostCredentialEncryption } from '../../src/host/credentials'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
@@ -20,7 +20,7 @@ import { TAILNET_ONLY_MS } from '../../src/main/hosts/hostConnectionPlan'
 import type { HostUpdateState, HostUpdateStep } from '../../src/shared/hostUpdates'
 import { hostRelease, localArchiveName, releasesPage, sidecar, tarGz } from '../fixtures/hostArchive'
 import { collectLaunchScript, launchScriptChild } from '../fixtures/launchScriptRunner'
-import { buildSelfUpdatingHost, stopEverythingIn } from '../fixtures/selfUpdatingHostBuild'
+import { buildSelfUpdatingHost, installSelfUpdatingHost, stopEverythingIn } from '../fixtures/selfUpdatingHostBuild'
 import { serveStandIn } from '../fixtures/serveStandIn'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
 import { testCredentials } from '../fixtures/testCredentials'
@@ -73,12 +73,7 @@ async function scene(options: { readonly entry?: string; readonly hostReachesRel
   /** Holds every launch script operation over SSH until it settles, so a test decides when SSH carries a step. */
   readonly beforeSsh?: () => Promise<void> } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-desktop-self-update-')); roots.push(root)
-  const install = join(root, 'sotto-host'), data = join(root, 'data'), bin = join(root, 'bin'), sshUsed = join(root, 'ssh-used')
-  await mkdir(join(install, 'host'), { recursive: true }); await mkdir(bin); await mkdir(data)
-  await copyFile(join(built!.directory, 'index.js'), join(install, 'host', 'index.js'))
-  await writeFile(join(install, 'package.json'), JSON.stringify({ name: 'sotto-host', version: OLD }))
-  await writeFile(join(bin, 'ssh'), `#!/bin/sh\necho used > '${sshUsed}'\nexit 255\n`, { mode: 0o755 })
-  await writeFile(join(bin, 'ssh.cmd'), `@echo used > "${sshUsed}"\r\n@exit /b 255\r\n`)
+  const { install, data, sshUsed, env: installEnv } = await installSelfUpdatingHost(root, built!.directory, OLD)
   // Tailscale runs on forge, as the end-to-end stand-in reads it; this machine's own is never touched.
   await writeFile(join(data, 'e2e-tailscale.json'), JSON.stringify({ state: 'running', dnsName: DNS, hostName: 'forge' }))
   // A held download is answered never, so it runs until it is cancelled; any later one is answered at once.
@@ -89,8 +84,7 @@ async function scene(options: { readonly entry?: string; readonly hostReachesRel
     return new Promise<void>(() => undefined)
   })
   closers.push(() => page.close())
-  const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') ?? 'PATH'
-  const env = { ...process.env, [pathKey]: bin + delimiter + (process.env[pathKey] ?? ''),
+  const env = { ...installEnv,
     SOTTO_TEST_HOST_RELEASES_URL: options.hostReachesReleases === false ? await nowhere() : page.url }
   const configuration = { installPath: install, dataDirectory: data, remotePort: 0, ...hostLaunchTimings() }
   /** One launch script operation, run here the way SSH runs it on forge; its steps are told as it reports them. */
@@ -238,15 +232,23 @@ describe('a host update over the tailnet (ADR-0088)', () => {
     expect(s.manager.get().hosts[0]).toMatchObject({ phase: 'connected', via: 'tailnet', version: NEW })
   })
 
-  it('reads a rollback from the host once it is back when the restart’s answer is lost', async () => {
+  it('reads a rollback after losing the restart answer and the first outcome connection', async () => {
     const s = await scene({ entry: 'process.exit(1)\n' })
-    let cut = false
-    s.stand.cutWhen(bytes => (cut = bytes.includes('"update-restarting"')))
+    let cut = false, outcomeCut = false
+    s.stand.cutWhen(bytes => {
+      if (!bytes.includes('"update-restarting"')) return false
+      cut = true
+      // A quick reconnect can reach the old process while it is stopping. Script the next lost read too, regardless
+      // of which process answers, so the restart's speed cannot hide a desktop that gives up on its first outcome miss.
+      setImmediate(() => s.stand.cutWhen(answer => (outcomeCut = answer.includes('"update-outcome"'))))
+      return true
+    })
     const panel = s.updatePanel()
     // Only the host's outcome can say this: the answer that would have said the restart went never arrived.
     expect(await panel.run()).toMatchObject({ phase: 'failed', failure: { step: 'restart',
       message: `${NEW} installed on forge, but its host did not start, so Sotto started ${OLD} again.` } })
     expect(cut).toBe(true)
+    expect(outcomeCut).toBe(true)
     expect(s.connects).toEqual(['ssh'])
     expect(s.operations).toEqual([])
   })

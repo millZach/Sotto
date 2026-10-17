@@ -54,7 +54,8 @@ export type AfterSocketMiss = 'ssh' | 'lost' | 'reconnect' | 'ask' | 'cancelled'
  *   ends as a lost connection and Try again starts over, reusing what was installed. A restart may have gone ahead, so it is
  *   never sent again: the desktop reconnects and asks the host how it went.
  * - A failure the host answered with ended a download, which goes over SSH. An install may still be running, so it is a
- *   lost connection. A deadline that passed is a lost connection for both.
+ *   lost connection. A download whose deadline passed closes its connection to end the download, then goes over SSH;
+ *   an install whose deadline passed is a lost connection.
  * - A restart the host answered with a failure, or whose deadline passed, may have gone ahead, so it is never sent again:
  *   the desktop asks the host, on the connection still open, whether a restart is under way (`ask`).
  * - Anything after Cancel update is cancelled, and falls back to nothing.
@@ -65,7 +66,7 @@ export function afterSocketMiss(action: SocketUpdateAction, miss: HostUpdateMiss
     case 'forbidden': case 'invalid_request': case 'version_mismatch': case 'busy': case 'unsent': return 'ssh'
     case 'closed': return action === 'fetch' ? 'ssh' : action === 'install' ? 'lost' : 'reconnect'
     case 'failed': return action === 'fetch' ? 'ssh' : action === 'install' ? 'lost' : 'ask'
-    case 'timeout': return action === 'restart' ? 'ask' : 'lost'
+    case 'timeout': return action === 'fetch' ? 'ssh' : action === 'restart' ? 'ask' : 'lost'
   }
 }
 /** Why a socket step has no answer, by the error's class; anything unexpected counts as an answer lost. */
@@ -95,7 +96,11 @@ export function socketStepResult(action: 'fetch' | 'install', answer: HostUpdate
  */
 export function restartFromOutcome(outcome: HostUpdateAnswer | undefined, to: string, before?: HostUpdateAnswer): HostUpdateRestartResult | undefined {
   if (outcome?.type !== 'update-outcome' || outcome.restart.state !== 'finished' || outcome.restart.version !== to) return undefined
-  if (before?.type === 'update-outcome' && JSON.stringify(before.restart) === JSON.stringify(outcome.restart)) return undefined
+  if (before?.type === 'update-outcome' && before.restart.state !== 'none') {
+    if (before.restart.attempt && outcome.restart.attempt) {
+      if (before.restart.attempt === outcome.restart.attempt) return undefined
+    } else if (JSON.stringify(before.restart) === JSON.stringify(outcome.restart)) return undefined
+  }
   const { result } = outcome.restart
   if (result.type === 'ready') return outcome.running === to ? result : undefined
   return result.reason === 'update-lost' ? undefined : result

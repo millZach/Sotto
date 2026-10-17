@@ -7,7 +7,8 @@ import { HOST_NODE_RANGE, LAUNCH_SCRIPT_SOURCE } from '../main/hosts/launchScrip
 import { hostLaunchTimings } from '../shared/hostLaunchTimings'
 import { HOST_RELEASES_URL, HOST_UPDATE_STEPS, HOST_VERSION_PATTERN, hostArchiveName, type HostUpdateStep } from '../shared/hostUpdates'
 import { compareHostToTarget, HOST_UPDATE_ANSWER_WAIT_MS, HOST_UPDATE_FETCH_BUDGET_MS, HOST_UPDATE_INSTALL_BUDGET_MS, hostUpdateAttemptFile, HOST_UPDATE_RESTART_BUDGET_MS, HOST_UPDATE_RESTART_WAIT_MS, HOST_UPDATE_STATUS_FILE, HOST_UPDATE_STATUS_LIMIT_BYTES, hostUpdateErrorSchema, hostUpdateFetchedSchema, hostUpdateInstalledSchema, hostUpdateStatusSchema,
-  type HostUpdateAnswer, type HostUpdateStatus } from '../shared/hostSelfUpdate'
+  type HostUpdateAnswer, type HostUpdateRequest, type HostUpdateStatus } from '../shared/hostSelfUpdate'
+export type { HostUpdateRequest } from '../shared/hostSelfUpdate'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import type { HostUpdateRequestAction } from '../shared/hostProtocol'
 import { processAlive } from './lock'
@@ -94,12 +95,6 @@ export interface HostSelfUpdateOptions {
 }
 /** Why a host offers no self-update: Sotto did not start it, or it does not run from a release's own layout. */
 export type HostSelfUpdateRefusal = 'update-not-owned' | 'update-layout'
-export interface HostUpdateRequest {
-  readonly action: HostUpdateRequestAction
-  readonly version?: string | undefined
-  readonly file?: string | undefined
-  readonly sha256?: string | undefined
-}
 export interface HostUpdateContext {
   /** The client that asked. Only it may cancel its own download. */
   readonly owner: object
@@ -169,10 +164,10 @@ export class HostSelfUpdate {
         // A restart whose process has gone, or that has run far past any restart's time, was interrupted before it could
         // say how it ended: Sotto cannot tell which version is running beyond what this host says it runs.
         if (status.state === 'restarting' && interrupted(read)) {
-          return { type: 'update-outcome', running: this.options.sottoVersion, restart: { state: 'finished', version: status.version, result: { type: 'error', reason: 'update-lost' } } }
+          return { type: 'update-outcome', running: this.options.sottoVersion, restart: { state: 'finished', version: status.version, attempt: status.attempt, result: { type: 'error', reason: 'update-lost' } } }
         }
         return { type: 'update-outcome', running: this.options.sottoVersion,
-          restart: status.state === 'restarting' ? { state: 'restarting', version: status.version } : { state: 'finished', version: status.version, result: status.result } }
+          restart: status.state === 'restarting' ? { state: 'restarting', version: status.version, attempt: status.attempt } : { state: 'finished', version: status.version, attempt: status.attempt, result: status.result } }
       }
     }
   }

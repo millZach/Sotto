@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { HostUpdateMissed, type HostUpdateMiss } from '../../../src/main/agents/socketHostService'
 import { afterSocketMiss, missOf, restartFromOutcome, socketStepResult, updateCarrier, type AfterSocketMiss, type CarrierFacts, type SocketUpdateAction } from '../../../src/main/hosts/hostSelfUpdateRoute'
-import type { HostUpdateAnswer } from '../../../src/shared/hostSelfUpdate'
+import { hostUpdateAnswerSchema, type HostUpdateAnswer } from '../../../src/shared/hostSelfUpdate'
 
 // How a host update's steps travel (ADR-0088, October 16 amendment), row by row.
 const FILE = 'Sotto-host-9.9.9-linux-x64.tar.gz', SUM = 'a'.repeat(64)
@@ -39,7 +39,7 @@ describe('afterSocketMiss', () => {
     ['closed', { fetch: 'ssh', install: 'lost', restart: 'reconnect' }],
     // The host answered with a failure, or not in time, on a connection that may still be open: a restart is asked about there.
     ['failed', { fetch: 'ssh', install: 'lost', restart: 'ask' }],
-    ['timeout', { fetch: 'lost', install: 'lost', restart: 'ask' }],
+    ['timeout', { fetch: 'ssh', install: 'lost', restart: 'ask' }],
   ]
   it.each(rows)('leads %s to the right place for each step', (miss, expected) => {
     for (const action of ['fetch', 'install', 'restart'] as const) expect(afterSocketMiss(action, miss, false), action).toBe(expected[action])
@@ -98,5 +98,13 @@ describe('restartFromOutcome', () => {
     // A record that changed since is this restart's.
     expect(restartFromOutcome(outcome('9.9.9', { state: 'finished', version: '9.9.9', result: ready }), '9.9.9', earlier)).toEqual(ready)
     expect(restartFromOutcome(earlier, '9.9.9', outcome('9.9.8', { state: 'none' }))).toEqual(failed)
+  })
+  it('keeps an identical rollback from a new attempt after reading both socket answers', () => {
+    const failed = { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } as const
+    const wire = { type: 'update-outcome', running: '9.9.8', restart: { state: 'finished', version: '9.9.9', result: failed } }
+    const before = hostUpdateAnswerSchema.parse({ ...wire, restart: { ...wire.restart, attempt: 'aaaaaaaaaaaaaaaa' } })
+    const after = hostUpdateAnswerSchema.parse({ ...wire, restart: { ...wire.restart, attempt: 'bbbbbbbbbbbbbbbb' } })
+    expect(restartFromOutcome(after, '9.9.9', before)).toEqual(failed)
+    expect(restartFromOutcome(before, '9.9.9', before)).toBeUndefined()
   })
 })

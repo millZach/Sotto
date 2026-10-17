@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { HOST_DOWNLOAD_TIMEOUT_MS, HOST_READY_TIMEOUT_MS, HOST_STOP_DRAIN_MS } from './hostLaunchTimings'
-import { hostIsNewer, hostIsOlder } from './hostProtocol'
+import { hostIsNewer, hostIsOlder, type HostUpdateRequestAction } from './hostProtocol'
 import { compareOwlHostTarget, HOST_ARCHIVE_PATTERN } from './hostUpdates'
 import { getReleaseTrack } from './releaseTrack'
 
@@ -13,6 +13,13 @@ import { getReleaseTrack } from './releaseTrack'
 
 /** The file in the host's data folder where a restart over the socket reports how it went, for `outcome` to read. */
 export const HOST_UPDATE_STATUS_FILE = 'host-update-status.json'
+/** One update step shared by the desktop's socket client and the host that runs it. */
+export interface HostUpdateRequest {
+  readonly action: HostUpdateRequestAction
+  readonly version?: string | undefined
+  readonly file?: string | undefined
+  readonly sha256?: string | undefined
+}
 /** The largest status file the host reads: a few small fields, so anything larger is not one it wrote. */
 export const HOST_UPDATE_STATUS_LIMIT_BYTES = 4096
 /** How long the host waits for its restart to say it has passed its checks, or why not, before it gives up on it. */
@@ -100,8 +107,8 @@ export const hostUpdateAnswerSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('update-outcome'), running: version,
     restart: z.discriminatedUnion('state', [
       z.object({ state: z.literal('none') }),
-      z.object({ state: z.literal('restarting'), version: version.nullable() }),
-      z.object({ state: z.literal('finished'), version: version.nullable(), result: hostUpdateRestartResultSchema }),
+      z.object({ state: z.literal('restarting'), version: version.nullable(), attempt: attempt.optional() }),
+      z.object({ state: z.literal('finished'), version: version.nullable(), attempt: attempt.optional(), result: hostUpdateRestartResultSchema }),
     ]) }),
   hostUpdateErrorSchema,
 ])

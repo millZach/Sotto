@@ -1,12 +1,12 @@
 // @vitest-environment node
 import { spawn, type ChildProcess } from 'node:child_process'
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { collectLaunchScript as collect, launchScriptChild } from '../fixtures/launchScriptRunner'
 import { hostRelease, localArchiveName, releasesPage, sha256, sidecar, tarGz } from '../fixtures/hostArchive'
-import { buildSelfUpdatingHost, stopEverythingIn } from '../fixtures/selfUpdatingHostBuild'
+import { buildSelfUpdatingHost, installSelfUpdatingHost, stopEverythingIn } from '../fixtures/selfUpdatingHostBuild'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { hostLaunchTimings, HOST_STOP_DRAIN_MS, HOST_READY_TIMEOUT_MS } from '../../src/shared/hostLaunchTimings'
@@ -40,15 +40,9 @@ afterEach(async () => {
 /** forge's host as an SSH launch leaves it: a flat install of `OLD`, started by the launch script, with ssh on its path recording any use. */
 async function installedHost(publish: Map<string, Uint8Array | string>, hold?: Parameters<typeof releasesPage>[2]) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-self-update-')); roots.push(root)
-  const install = join(root, 'sotto-host'), data = join(root, 'data'), bin = join(root, 'bin'), sshUsed = join(root, 'ssh-used')
-  await mkdir(join(install, 'host'), { recursive: true }); await mkdir(bin)
-  await copyFile(join(built!.directory, 'index.js'), join(install, 'host', 'index.js'))
-  await writeFile(join(install, 'package.json'), JSON.stringify({ name: 'sotto-host', version: OLD }))
-  await writeFile(join(bin, 'ssh'), `#!/bin/sh\necho used > '${sshUsed}'\nexit 255\n`, { mode: 0o755 })
-  await writeFile(join(bin, 'ssh.cmd'), `@echo used > "${sshUsed}"\r\n@exit /b 255\r\n`)
+  const { install, data, sshUsed, env: installEnv } = await installSelfUpdatingHost(root, built!.directory, OLD)
   const page = await releasesPage(publish, 0, hold); pages.push(page)
-  const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') ?? 'PATH'
-  const env = { ...process.env, [pathKey]: bin + delimiter + (process.env[pathKey] ?? ''), SOTTO_TEST_HOST_RELEASES_URL: page.url }
+  const env = { ...installEnv, SOTTO_TEST_HOST_RELEASES_URL: page.url }
   const configuration = { installPath: install, dataDirectory: data, remotePort: 0, ...hostLaunchTimings() }
   const script = async (operation: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const outcome = await collect(launchScriptChild({ ...configuration, ...operation }, env, child => children.push(child)))
@@ -121,7 +115,7 @@ it('downloads, installs and restarts into a newer release over its socket with n
   const again = await connect(host.data, host.paired.token)
   expect(again.hello.sottoVersion).toBe(NEW)
   await vi.waitFor(async () => expect(await again.update({ action: 'outcome' })).toEqual({ type: 'update-outcome', running: NEW,
-    restart: { state: 'finished', version: NEW, result: { type: 'ready', hostId: host.hostId, pid: next.pid } } }), { timeout: 10_000 })
+    restart: { state: 'finished', version: NEW, attempt: expect.stringMatching(/^[a-f0-9]{16}$/u), result: { type: 'ready', hostId: host.hostId, pid: next.pid } } }), { timeout: 10_000 })
   // It runs the newer release now, so the same version is refused rather than installed again.
   expect(await again.update({ action: 'fetch', version: NEW })).toEqual({ type: 'error', reason: 'update-invalid' })
   await expect(readFile(host.sshUsed)).rejects.toMatchObject({ code: 'ENOENT' })
@@ -138,7 +132,7 @@ it('starts the old version again when the new one will not start, and says so th
   expect(back.sottoVersion).toBe(OLD)
   const again = await connect(host.data, host.paired.token)
   await vi.waitFor(async () => expect(await again.update({ action: 'outcome' })).toEqual({ type: 'update-outcome', running: OLD,
-    restart: { state: 'finished', version: NEW, result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } } }), { timeout: 10_000 })
+    restart: { state: 'finished', version: NEW, attempt: expect.stringMatching(/^[a-f0-9]{16}$/u), result: { type: 'error', reason: 'update-start-failed', restarted: true, cause: 'host-start-failed' } } }), { timeout: 10_000 })
   await expect(readFile(join(host.install, 'current'))).rejects.toMatchObject({ code: 'ENOENT' })
 })
 

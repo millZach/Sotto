@@ -32,9 +32,8 @@ import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from './heldProviderGate'
 import { heldProviderRefusal, heldProvidersOption, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
-import { HOST_UPDATE_ANSWER_DEADLINES_MS, hostUpdateAnswerSchema, type HostUpdateAnswer } from '../../shared/hostSelfUpdate'
+import { HOST_UPDATE_ANSWER_DEADLINES_MS, hostUpdateAnswerSchema, type HostUpdateAnswer, type HostUpdateRequest } from '../../shared/hostSelfUpdate'
 import type { HostUpdateStep } from '../../shared/hostUpdates'
-import type { HostUpdateRequestAction } from '../../shared/hostProtocol'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
@@ -66,13 +65,6 @@ export class HostRequestUnanswered extends HostConnectionError {
 export type HostUpdateMiss = 'forbidden' | 'invalid_request' | 'version_mismatch' | 'busy' | 'unsent' | 'failed' | 'closed' | 'timeout'
 export class HostUpdateMissed extends Error {
   constructor(readonly miss: HostUpdateMiss) { super('The host did not answer this update step.') }
-}
-/** One step of a host update as the desktop asks for it: the action, a version, and for install the archive name and checksum fetch answered. */
-export interface HostUpdateCall {
-  readonly action: HostUpdateRequestAction
-  readonly version?: string | undefined
-  readonly file?: string | undefined
-  readonly sha256?: string | undefined
 }
 /** The address answered as a host other than the one expected. Nothing of this computer's pairing was sent to its session. */
 export class WrongHostError extends HostConnectionError {
@@ -1208,11 +1200,15 @@ export class SocketHostService implements HostService {
    * answer, `update-cancelled`, so the host is free before anything asks it for the next step. Without an answer it throws
    * `HostUpdateMissed`, which says whether the host refused it, it never went, or its answer was lost; never by message.
    */
-  async hostUpdate(request: HostUpdateCall, options: { readonly onStep?: ((step: HostUpdateStep) => void) | undefined; readonly signal?: AbortSignal | undefined } = {}): Promise<HostUpdateAnswer> {
+  async hostUpdate(request: HostUpdateRequest, options: { readonly onStep?: ((step: HostUpdateStep) => void) | undefined; readonly signal?: AbortSignal | undefined } = {}): Promise<HostUpdateAnswer> {
     if (!this.offersHostUpdate() || options.signal?.aborted) throw new HostUpdateMissed('unsent')
     const { onStep, signal } = options
     if (onStep) this.updateSteps.add(onStep)
-    const cancel = (): void => { void this.call({ op: 'host-update', action: 'cancel' }, randomUUID(), undefined, HOST_UPDATE_ANSWER_DEADLINES_MS.cancel).catch(() => undefined) }
+    const frames = this.frames
+    // A cancel that cannot reach the host must still end its download: closing this request's connection aborts its owner.
+    // Keep this connection, so a late cancel failure can never close a replacement connection.
+    const cancel = (): void => { void this.call({ op: 'host-update', action: 'cancel' }, randomUUID(), undefined, HOST_UPDATE_ANSWER_DEADLINES_MS.cancel)
+      .then(answer => { const parsed = hostUpdateAnswerSchema.safeParse(answer); if (!parsed.success || parsed.data.type !== 'update-cancelled') frames?.close() }, () => frames?.close()) }
     signal?.addEventListener('abort', cancel, { once: true })
     try {
       const operation = { op: 'host-update', action: request.action, ...(request.version ? { version: request.version } : {}),
@@ -1220,7 +1216,11 @@ export class SocketHostService implements HostService {
       let answer: unknown
       try { answer = await this.call(operation, randomUUID(), undefined, HOST_UPDATE_ANSWER_DEADLINES_MS[request.action]) }
       catch (error) {
-        if (error instanceof HostRequestUnanswered) throw new HostUpdateMissed(error.stage)
+        if (error instanceof HostRequestUnanswered) {
+          // The SSH fallback must not leave a timed-out socket download holding the host's update lock.
+          if (request.action === 'fetch' && error.stage === 'timeout') frames?.close()
+          throw new HostUpdateMissed(error.stage)
+        }
         const code = error instanceof HostConnectionError ? error.code : undefined
         if (code === 'forbidden' || code === 'invalid_request' || code === 'version_mismatch' || code === 'busy') throw new HostUpdateMissed(code)
         // A revoked client is sent `unauthenticated` and its socket closes with it.

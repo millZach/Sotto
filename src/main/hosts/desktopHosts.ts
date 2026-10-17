@@ -7,9 +7,9 @@ import type { HostPhonesLink } from './hostPhones'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { RetainedDraftStore } from '../agents/retainedDraftStore'
 import type { AgentCredentials } from '../agents/credentials'
-import { HostConnectionError, SocketHostService, type HostUpdateCall, type HostUpdateMiss } from '../agents/socketHostService'
+import { HostConnectionError, SocketHostService, type HostUpdateMiss } from '../agents/socketHostService'
 import { afterSocketMiss, missOf, restartFromOutcome, socketStepResult, updateCarrier } from './hostSelfUpdateRoute'
-import { HOST_UPDATE_RESTART_BUDGET_MS, type HostUpdateAnswer, type HostUpdateRestartResult } from '../../shared/hostSelfUpdate'
+import { HOST_UPDATE_RESTART_BUDGET_MS, type HostUpdateAnswer, type HostUpdateRequest, type HostUpdateRestartResult } from '../../shared/hostSelfUpdate'
 import { afterTailnetFailure, classifyTailnetFailure, connectOrder, TAILNET_HEALTH_MS, TAILNET_RETURN_MS, tryTailnetAfterSsh, type HostConnectionPreference, type HostVia, type TailnetFailure } from './hostConnectionPlan'
 import { TailnetStore } from './tailnetStore'
 import { hostTailnetSetting, retryTailnetServe, settingAddress, settingNote, type HostTailnetSetting } from './hostTailnetSetting'
@@ -375,7 +375,7 @@ export class DesktopHosts {
     if (socket && (operation.op === 'update-fetch' || operation.op === 'update-install')) {
       // The request carries a version, and for install the archive the host's own download named. Never a releases page.
       const action: 'fetch' | 'install' = operation.op === 'update-fetch' ? 'fetch' : 'install'
-      const request: HostUpdateCall = operation.op === 'update-fetch' ? { action, version: operation.version } : { action, version: operation.version, file: operation.file, sha256: operation.sha256 }
+      const request: HostUpdateRequest = operation.op === 'update-fetch' ? { action, version: operation.version } : { action, version: operation.version, file: operation.file, sha256: operation.sha256 }
       let answer: HostUpdateAnswer | undefined, miss: HostUpdateMiss = 'closed'
       try { answer = await this.socketStep(id, () => socket.hostUpdate(request, { onStep: options?.onStep, signal: options?.signal })) }
       catch (error) { miss = missOf(error) }
@@ -445,7 +445,7 @@ export class DesktopHosts {
    * a host still running, so the same connection carries on.
    */
   private async restartOverSocket(host: SavedHost, socket: SocketHostService, version: string): Promise<{ readonly went: false } | { readonly went: true; readonly result: HostUpdateRestartResult | undefined }> {
-    let sentAt = this.now(), went = false
+    let sentAt = this.now(), went = false, acknowledged = false
     // What the host recorded of its last restart before this one, so a record left from an earlier Try again is not read as this one's.
     let before: HostUpdateAnswer | undefined
     type Sent = { readonly refused: true } | { readonly answer: HostUpdateRestartResult } | { readonly restarting: true }
@@ -469,11 +469,13 @@ export class DesktopHosts {
       }
       if (answer.type === 'error') return { answer }
       if (answer.type !== 'update-restarting') return { answer: { type: 'error', reason: 'restart-not-sent' } }
+      acknowledged = true
       return restarting()
     }, result => !('restarting' in result), () => went ? { since: sentAt, tailnetOnlyMs: HOST_UPDATE_RESTART_BUDGET_MS } : { since: this.now() })
     if ('refused' in sent) return { went: false }
     if ('answer' in sent) return { went: true, result: sent.answer }
-    return { went: true, result: restartFromOutcome(await this.outcomeAfterRestart(host, socket, sentAt + HOST_UPDATE_RESTART_BUDGET_MS), version, before) }
+    // An acknowledged restart went even on an older host with no attempt IDs; an identical rollback can be fresh.
+    return { went: true, result: restartFromOutcome(await this.outcomeAfterRestart(host, socket, sentAt + HOST_UPDATE_RESTART_BUDGET_MS), version, acknowledged ? undefined : before) }
   }
   /** Resolves once `socket` has dropped, or at `deadline` when it has not. */
   private async socketDown(socket: SocketHostService, deadline: number): Promise<void> {
@@ -487,20 +489,26 @@ export class DesktopHosts {
    */
   private async outcomeAfterRestart(host: SavedHost, before: SocketHostService, deadline: number): Promise<HostUpdateAnswer | undefined> {
     const left = (): number => Math.max(0, deadline - this.now())
-    const back = await this.until(() => {
-      if (this.closed || !this.saved.includes(host) || host.enabled === false) return false
-      const status = this.status.get(host.id), socket = this.live.get(host.id)?.socket
-      if (status?.phase === 'error') return false
-      return status?.phase === 'connected' && socket !== undefined && socket !== before ? true : undefined
-    }, left())
-    if (!back) return undefined
     // Asked at most as often as fits in the time left, whatever the clock says.
     let outcome: HostUpdateAnswer | undefined
     for (let tries = Math.ceil(left() / 500) + 1; tries > 0; tries--) {
+      const back = await this.until(() => {
+        if (this.closed || !this.saved.includes(host) || host.enabled === false) return false
+        const status = this.status.get(host.id), socket = this.live.get(host.id)?.socket
+        if (status?.phase === 'error') return false
+        return status?.phase === 'connected' && socket !== undefined && socket !== before ? true : undefined
+      }, left())
+      if (!back) return undefined
       const socket = this.live.get(host.id)?.socket
-      if (this.closed || !socket || this.status.get(host.id)?.phase !== 'connected') return outcome
-      try { outcome = await this.socketStep(host.id, () => socket.hostUpdate({ action: 'outcome' })) } catch { return undefined }
-      if (outcome.type !== 'update-outcome' || outcome.restart.state !== 'restarting' || left() === 0) return outcome
+      if (this.closed) return undefined
+      outcome = undefined
+      try { if (socket && this.status.get(host.id)?.phase === 'connected') outcome = await this.socketStep(host.id, () => socket.hostUpdate({ action: 'outcome' })) }
+      catch (error) {
+        // A quick reconnect can reach the old host before it stops. Its outcome read drops too; wait for the next host.
+        if (!['closed', 'timeout'].includes(missOf(error))) return undefined
+        outcome = undefined
+      }
+      if (left() === 0 || (outcome !== undefined && (outcome.type !== 'update-outcome' || outcome.restart.state !== 'restarting'))) return outcome
       await new Promise(resolve => setTimeout(resolve, 500).unref?.())
     }
     return outcome

@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { isBuiltin } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import { build } from 'vite'
 
 /**
@@ -15,6 +15,18 @@ export async function buildSelfUpdatingHost(): Promise<{ readonly directory: str
     build: { ssr: resolve('tests/fixtures/selfUpdatingHost.ts'), target: 'node24', outDir: directory, emptyOutDir: true,
       rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
   return { directory, source: await readFile(join(directory, 'index.js'), 'utf8') }
+}
+
+/** The release layout both update journeys start from, with SSH shims that record any unexpected use. */
+export async function installSelfUpdatingHost(root: string, builtDirectory: string, version: string) {
+  const install = join(root, 'sotto-host'), data = join(root, 'data'), bin = join(root, 'bin'), sshUsed = join(root, 'ssh-used')
+  await mkdir(join(install, 'host'), { recursive: true }); await mkdir(bin); await mkdir(data)
+  await copyFile(join(builtDirectory, 'index.js'), join(install, 'host', 'index.js'))
+  await writeFile(join(install, 'package.json'), JSON.stringify({ name: 'sotto-host', version }))
+  await writeFile(join(bin, 'ssh'), `#!/bin/sh\necho used > '${sshUsed}'\nexit 255\n`, { mode: 0o755 })
+  await writeFile(join(bin, 'ssh.cmd'), `@echo used > "${sshUsed}"\r\n@exit /b 255\r\n`)
+  const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') ?? 'PATH'
+  return { install, data, sshUsed, env: { ...process.env, [pathKey]: bin + delimiter + (process.env[pathKey] ?? '') } }
 }
 
 /**

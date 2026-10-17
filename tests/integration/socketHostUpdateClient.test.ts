@@ -152,3 +152,43 @@ it('asks the host to cancel on Cancel update, and still waits for the downloadâ€
   await expect(client.hostUpdate({ action: 'fetch', version: '9.9.9' }, { signal: abort.signal })).rejects.toEqual(missed('unsent'))
   expect(asked).toHaveLength(2)
 })
+
+it('closes the download connection when the pending request limit prevents Cancel update reaching the host', async () => {
+  const { client, asked, script } = await setUp()
+  const held = deferred<HostUpdateAnswer>()
+  let download: HostUpdateContext | undefined
+  script((request, context) => { if (request.action === 'fetch') download = context; return held.promise })
+  await client.connect()
+  const abort = new AbortController()
+  const fetching = client.hostUpdate({ action: 'fetch', version: '9.9.9' }, { signal: abort.signal }).catch((error: unknown) => error)
+  await vi.waitFor(() => expect(download).toBeDefined(), { timeout: 10_000 })
+  const reads = Array.from({ length: 31 }, () => client.hostUpdate({ action: 'outcome' }).catch((error: unknown) => error))
+  await vi.waitFor(() => expect(asked).toHaveLength(32), { timeout: 10_000 })
+  try {
+    abort.abort()
+    await vi.waitFor(() => expect(download?.gone.aborted).toBe(true), { timeout: 10_000 })
+    expect(await fetching).toEqual(missed('closed'))
+    expect(client.connected()).toBe(false)
+  } finally {
+    held.resolve({ type: 'update-cancelled', cancelled: true })
+    await Promise.all([fetching, ...reads])
+  }
+})
+
+it('ends the socket download before reporting its answer timeout for SSH fallback', async () => {
+  const { client, asked, script } = await setUp()
+  const held = deferred<HostUpdateAnswer>()
+  let download: HostUpdateContext | undefined
+  script((_request, context) => { download = context; return held.promise })
+  await client.connect()
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const fetching = client.hostUpdate({ action: 'fetch', version: '9.9.9' }).catch((error: unknown) => error)
+  await vi.waitFor(() => expect(asked).toHaveLength(1), { interval: 5 })
+  vi.advanceTimersByTime(HOST_UPDATE_ANSWER_DEADLINES_MS.fetch)
+  expect(await fetching).toEqual(missed('timeout'))
+  vi.useRealTimers()
+  try {
+    await vi.waitFor(() => expect(download?.gone.aborted).toBe(true), { timeout: 10_000 })
+    expect(client.connected()).toBe(false)
+  } finally { held.resolve({ type: 'update-cancelled', cancelled: true }) }
+})
