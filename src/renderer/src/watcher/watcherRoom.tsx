@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { parseHostEntityKey } from '../../../shared/clientIdentity'
-import type { WatcherThreadTarget } from '../../../shared/watcher'
+import type { WatcherReadMarkKind, WatcherThreadTarget } from '../../../shared/watcher'
+import { useOptionalApp } from '../state/AppContext'
 import { isWatchedRow, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
@@ -38,7 +39,16 @@ export interface WatcherRoom {
   readonly handover: WatcherHandoverCalls | null
   /** Takes a result's state when main sent one and hands back the refusal's words, or null. */
   readonly settle: (result: WatcherRoomResult) => string | null
+  /** Stop all: main's preview of what it would stop, then the stop that preview confirms. Null without a bridge. */
+  readonly stopAll: { readonly prepare: WatcherBridge['prepareStopAll']; readonly stop: WatcherBridge['stopAll'] } | null
+  /** Read marks (CONTEXT.md), by this window's thread ID: the threads with news the user has not seen. */
+  readonly readMarks: ReadonlyMap<string, WatcherReadMarkView>
+  /** Takes these threads' read marks away; hands back main's refusal in its words, or null. Null where the bridge cannot. */
+  readonly markRead: ((targets: readonly WatcherThreadTarget[]) => Promise<string | null>) | null
 }
+
+/** One read mark as the window shows it: the thread's own address and what its news is. */
+export interface WatcherReadMarkView { readonly target: WatcherThreadTarget; readonly kind: WatcherReadMarkKind }
 
 /** The bridge's three handover calls, together or not at all. */
 export interface WatcherHandoverCalls {
@@ -61,6 +71,7 @@ export interface WatchActions {
 
 const WatcherRoomContext = createContext<WatcherRoom | null>(null)
 const NONE: ReadonlySet<string> = new Set()
+const NO_MARKS: ReadonlyMap<string, WatcherReadMarkView> = new Map()
 /** Apart from the room, so a memoised sidebar row re-renders only when who is watched changes. */
 const WatchedThreadsContext = createContext<ReadonlySet<string>>(NONE)
 const WatchActionsContext = createContext<WatchActions | null>(null)
@@ -146,6 +157,12 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   const standingKey = state === null || agentState === null ? '' : JSON.stringify(watchedRows(state).filter(entry => hasStandingWatch(state, entry.target))
     .map(entry => threadForTarget(agentState, entry.target)?.id).filter(Boolean))
   const standingThreadIds = useMemo<ReadonlySet<string>>(() => standingKey === '' ? NONE : new Set(JSON.parse(standingKey) as string[]), [standingKey])
+  const marksKey = state === null || agentState === null || !state.readMarks?.length ? '' : JSON.stringify(state.readMarks.flatMap(mark => {
+    const id = threadForTarget(agentState, mark.target)?.id
+    return id === undefined ? [] : [[id, { target: mark.target, kind: mark.kind }]]
+  }))
+  const readMarks = useMemo<ReadonlyMap<string, WatcherReadMarkView>>(() => marksKey === '' ? NO_MARKS
+    : new Map(JSON.parse(marksKey) as [string, WatcherReadMarkView][]), [marksKey])
   // A first message sent before Watcher existed goes to it from here, so leaving the room cannot lose it.
   useFirstMessageDelivery(enabled ? agents : null, currentThreadId)
   // A first message read back after a reload as started, when main then says there is no Watcher, goes back to the composer.
@@ -154,8 +171,11 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   // The contract keeps these three optional for stand-ins written before them, so the room asks before offering them.
   // Main's own preload supplies all three.
   const manage = useMemo(() => {
-    const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
+    const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover, markRead } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
     return {
+      markRead: markRead === undefined ? null : async (targets: readonly WatcherThreadTarget[]): Promise<string | null> => {
+        try { return settle(await markRead.call(bridge, { targets: [...targets] })) } catch { return 'Sotto could not reach Watcher, so these threads still show as new. Try again.' }
+      },
       setPermission: setPermission === undefined ? null : (request: Parameters<typeof setPermission>[0]) => setPermission.call(bridge, request),
       handover: readHandover === undefined || continueWithHandover === undefined || dismissHandover === undefined ? null : {
         read: () => readHandover.call(bridge),
@@ -167,7 +187,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
         unwatchThread: (request: Parameters<typeof unwatchThread>[0]) => unwatchThread.call(bridge, request),
       },
     }
-  }, [live, bridge])
+  }, [live, bridge, settle])
   const latest = useRef(agentState)
   useEffect(() => { latest.current = agentState })
   const actions = useMemo<WatchActions | null>(() => {
@@ -201,12 +221,33 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
     watchThread: manage.watch?.watchThread ?? null,
     unwatchThread: manage.watch?.unwatchThread ?? null,
     handover: manage.handover,
-  }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, pausedThreadIds, standingThreadIds, settle, bridge, manage])
+    stopAll: live ? { prepare: () => bridge.prepareStopAll(), stop: request => bridge.stopAll(request) } : null,
+    readMarks, markRead: manage.markRead,
+  }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, pausedThreadIds, standingThreadIds, settle, bridge, manage, readMarks])
+  // The thread selected on the Threads page is the one the user reads there: its read mark goes, as one beside Watcher's does.
+  const app = useOptionalApp()
+  useReadMarksCleared(value, agentState, app?.navigation === 'threads' ? [agentState?.activeThreadId ?? null] : [])
   return <WatcherRoomContext.Provider value={value}>
     <WatchedThreadsContext.Provider value={enabled ? watchedThreadIds : NONE}>
       <WatchActionsContext.Provider value={actions}>{children}</WatchActionsContext.Provider>
     </WatchedThreadsContext.Provider>
   </WatcherRoomContext.Provider>
+}
+
+/**
+ * Takes the read marks of the threads the user is reading now, once each: a thread opened beside Watcher, or selected on
+ * the Threads page, has its news seen. A refusal leaves the mark, and it is tried again when the thread is opened again.
+ */
+export function useReadMarksCleared(room: WatcherRoom | null, state: AgentState | null, threadIds: readonly (string | null)[]): void {
+  const marked = room === null ? '' : threadIds.filter((id): id is string => id !== null && room.readMarks.has(id)).join('\n')
+  const latest = useRef({ room, state })
+  useEffect(() => { latest.current = { room, state } })
+  useEffect(() => {
+    const { room: now } = latest.current
+    if (marked === '' || now?.markRead == null) return
+    const targets = marked.split('\n').flatMap(id => { const mark = now.readMarks.get(id); return mark ? [mark.target] : [] })
+    if (targets.length) void now.markRead(targets)
+  }, [marked])
 }
 
 /** Watcher's room state, or null while the gate is off. */

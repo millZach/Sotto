@@ -62,7 +62,7 @@ export function watchedLead(count: number, standing: number): string {
 }
 
 /** A watched thread this window does not list (its host is out of reach): its status as the room last saw it. */
-function unlistedStatus(row: WatchedRow): string {
+export function unlistedStatus(row: WatchedRow): string {
   if (!row.connected || row.status === 'unavailable') return 'Can’t reach it'
   return row.status === 'running' ? 'Working' : row.status === 'error' ? 'Last turn failed' : 'Idle'
 }

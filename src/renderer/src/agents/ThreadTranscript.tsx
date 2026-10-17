@@ -22,6 +22,7 @@ import { isResumeNoteText } from '../../../shared/restartResume'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { WatcherOwnChangeFor } from '../watcher/WatcherOwnChange'
+import { WatcherAfterMessage } from '../watcher/WatcherReceipts'
 import { HandoverMessage } from '../watcher/WatcherHandover'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { ThreadGreeting } from './ThreadGreeting'
@@ -248,7 +249,8 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
     {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}
-  </article></>
+  </article>
+  {speaker === 'watcher' ? <WatcherAfterMessage message={message} /> : null}</>
 })
 
 /**

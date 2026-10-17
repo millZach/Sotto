@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { SottoBridge } from '../../../shared/contracts'
 import { watcherIdentitySchema, type WatcherRefusal, type WatcherThreadTarget } from '../../../shared/watcher'
-import { watcherRoomStateSchema, type WatcherBridge, type WatcherRoomState } from '../../../shared/watcherRoom'
+import { stopAllRunning, watcherRoomStateSchema, type WatcherBridge, type WatcherRoomState } from '../../../shared/watcherRoom'
 
 /** Where an end-to-end run leaves the projection the room should show, before it reloads the window. */
 export const WATCHER_STAND_IN_KEY = 'sotto.e2e.watcherRoom'
@@ -14,6 +14,11 @@ export const watcherStandInSeedSchema = z.object({
   permissionConfirms: z.boolean().optional(),
   /** Watch and Stop watching refuse with this, as main does for a thread it cannot watch. */
   watchRefusal: z.string().optional(),
+  /**
+   * What Stop all answers for each thread it stops, by thread ID; a thread not named here stops. Without it, Stop all
+   * refuses, as it did before the room offered it.
+   */
+  stopResults: z.record(z.string(), z.object({ status: z.enum(['stopped', 'requested', 'refused', 'uncertain']), message: z.string() }).strict()).optional(),
 }).strict()
 export type WatcherStandInSeed = z.infer<typeof watcherStandInSeedSchema>
 
@@ -74,8 +79,18 @@ export function createE2EWatcherBridge(sotto: SottoBridge | undefined): WatcherB
         watchedThreads: state.watchedThreads.map(row => same(row.target, target) ? { ...row, watched: false, paused: false } : row),
       }) }
     },
-    prepareStopAll: async () => NOT_HERE,
-    stopAll: async () => NOT_HERE,
+    // Stop all as main answers it: a preview of the running threads Watcher started, then each one's result, and the
+    // threads that stopped no longer running.
+    prepareStopAll: async () => seed.stopResults === undefined ? NOT_HERE : ({ status: 'ok', confirmationId: crypto.randomUUID(),
+      targets: stopAllRunning(state), expiresAt: new Date(Date.now() + 60_000).toISOString() }),
+    stopAll: async () => {
+      if (seed.stopResults === undefined) return NOT_HERE
+      const results = stopAllRunning(state).map(target => ({ target, ...seed.stopResults?.[target.threadId] ?? { status: 'stopped' as const, message: 'Stopped.' } }))
+      const stopped = results.filter(result => result.status === 'stopped').map(result => result.target)
+      return { status: 'ok', results, state: publish({ watchedThreads: state.watchedThreads.map(row => stopped.some(item => same(item, row.target))
+        ? { ...row, status: 'idle', backgroundWorkCount: 0 } : row) }) }
+    },
+    markRead: async ({ targets }) => ({ status: 'ok', state: publish({ readMarks: (state.readMarks ?? []).filter(mark => !targets.some(item => same(item, mark.target))) }) }),
     onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
 }
