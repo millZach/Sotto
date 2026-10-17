@@ -4,32 +4,13 @@ import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { elementContrast } from './support/elementContrast'
 import { expectPromptText, fillPrompt, promptField } from './support/prompt'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
 const evidence = evidenceDirectory('artifacts/opencode-provider')
 const sizes = [[1600, 1000], [1280, 800], [820, 560]] as const
 type Frame = { method?: string; params?: Record<string, unknown> }
-
-/** Resolve color-mix and translucent theme surfaces as Chromium renders them. */
-async function textContrast(locator: Locator): Promise<number> {
-  return locator.evaluate(element => {
-    const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1
-    const context = canvas.getContext('2d')!
-    const rgba = (color: string): number[] => {
-      context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1)
-      return [...context.getImageData(0, 0, 1, 1).data].map((value, index) => index === 3 ? value / 255 : value)
-    }
-    const blend = (front: number[], back: number[]): number[] => front.slice(0, 3).map((value, index) => value * front[3]! + back[index]! * (1 - front[3]!))
-    const ancestors: Element[] = []; let current: Element | null = element
-    while (current) { ancestors.unshift(current); current = current.parentElement }
-    let background = [255, 255, 255]
-    for (const ancestor of ancestors) background = blend(rgba(getComputedStyle(ancestor).backgroundColor), background)
-    const foreground = blend(rgba(getComputedStyle(element).color), background)
-    const luminance = (color: number[]): number => color.map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index]!, 0)
-    return (Math.max(luminance(foreground), luminance(background)) + .05) / (Math.min(luminance(foreground), luminance(background)) + .05)
-  })
-}
 
 async function providerPanel(page: Page): Promise<Locator> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
@@ -104,7 +85,7 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
         await expect(panel.getByRole('button', { name: 'Disconnect OpenCode' })).toBeVisible()
         expect(await panel.evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false)
         const account = panel.locator('.oc-empty', { hasText: 'Sign in to a model source' })
-        const ratio = await textContrast(account)
+        const ratio = await elementContrast(account)
         expect(ratio).toBeGreaterThanOrEqual(4.5)
         contrasts.push({ surface: 'OpenCode model sources line', width, appearance, ratio })
         await page.screenshot({ animations: 'disabled', path: join(evidence, `settings-${width}-${appearance}.png`) })
@@ -180,7 +161,7 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
         expect(layout.pageOverflow).toBeLessThanOrEqual(1)
         expect(layout.cardOverflow).toBeLessThanOrEqual(1)
         expect(layout.composerBottom).toBeLessThanOrEqual(layout.height + 1)
-        const ratio = await textContrast(allow)
+        const ratio = await elementContrast(allow)
         expect(ratio).toBeGreaterThanOrEqual(4.5)
         contrasts.push({ surface: 'Allow once', width, appearance, ratio })
         await page.screenshot({ animations: 'disabled', path: join(evidence, `permission-${width}-${appearance}.png`) })

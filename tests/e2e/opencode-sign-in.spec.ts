@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
+import { elementContrast } from './support/elementContrast'
 import { closeSotto, launchSotto, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
 const evidence = evidenceDirectory('artifacts/opencode-sign-in')
@@ -15,29 +16,10 @@ async function providerPanel(page: Page): Promise<Locator> {
   return page.getByRole('region', { name: 'Provider configuration', exact: true })
 }
 
-/** Resolve color-mix and translucent theme surfaces as Chromium renders them (as opencode-provider.spec.ts does). */
-async function textContrast(locator: Locator): Promise<number> {
-  return locator.evaluate(element => {
-    const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1
-    const context = canvas.getContext('2d')!
-    const rgba = (color: string): number[] => {
-      context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1)
-      return [...context.getImageData(0, 0, 1, 1).data].map((value, index) => index === 3 ? value / 255 : value)
-    }
-    const blend = (front: number[], back: number[]): number[] => front.slice(0, 3).map((value, index) => value * front[3]! + back[index]! * (1 - front[3]!))
-    const ancestors: Element[] = []; let current: Element | null = element
-    while (current) { ancestors.unshift(current); current = current.parentElement }
-    let background = [255, 255, 255]
-    for (const ancestor of ancestors) background = blend(rgba(getComputedStyle(ancestor).backgroundColor), background)
-    const foreground = blend(rgba(getComputedStyle(element).color), background)
-    const luminance = (color: number[]): number => color.map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index]!, 0)
-    return (Math.max(luminance(foreground), luminance(background)) + .05) / (Math.min(luminance(foreground), luminance(background)) + .05)
-  })
-}
 const contrasts: { surface: string; width: number; appearance: string; ratio: number }[] = []
 async function measure(dialog: Locator, surfaces: Record<string, string>, width: number, appearance: string): Promise<void> {
   for (const [surface, selector] of Object.entries(surfaces)) {
-    const ratio = await textContrast(dialog.locator(selector).first())
+    const ratio = await elementContrast(dialog.locator(selector).first())
     contrasts.push({ surface, width, appearance, ratio: Math.round(ratio * 100) / 100 })
     expect(ratio, surface).toBeGreaterThanOrEqual(4.5)
   }
