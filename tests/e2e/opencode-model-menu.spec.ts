@@ -200,7 +200,7 @@ test('opens OpenCode’s model menu on its model sources, steps back with Escape
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await page.mouse.wheel(0, away)
     await expect.poll(chosen).toBe(tiles[at + Math.sign(away)])
-    await page.waitForTimeout(300)
+    // Turning the wheel the other way starts a new turn at once, so the way back needs no pause.
     await page.mouse.wheel(0, -away)
     await expect.poll(chosen).toBe('OpenCode')
     await expect(sources).toBeVisible()
@@ -295,7 +295,8 @@ test('opens OpenCode’s model menu on its model sources, steps back with Escape
     await chip.click()
     await expect(sources).toBeVisible()
     await expect.poll(() => menu.evaluate(element => getComputedStyle(element).animationName)).toBe('thread-chip-rise')
-    await page.waitForTimeout(400)
+    // The rise has run its course before the menu is measured and captured.
+    await menu.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))))
     await expectWhole(page)
     await page.screenshot({ path: join(evidence, 'sources-1280-dark-motion.png') }); shots.push('sources-1280-dark-motion.png')
     await page.keyboard.press('Escape')
