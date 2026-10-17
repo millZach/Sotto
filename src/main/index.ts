@@ -730,14 +730,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(e2eConfiguration === null ? { installedProviders: () => detectInstalledProviders({ heldProviders }) } : {}),
     ...(testAgentHost === null ? {} : { host: testAgentHost }),
     ...(devinFixtureRoot ? { providers: {
-      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(),
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), opencode: new E2EAgentHost(),
       devin: new DevinAcpHost(userDataPath, {
         executable: devinFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeDevinAgent.mjs'), devinFixtureRoot],
         nativeConfigDirectory: join(devinFixtureRoot, 'native-config'), pollIntervalMs: 50,
       }),
     } } : {}),
     ...(museFixtureRoot ? { providers: {
-      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(),
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(),
       ...(!heldProviders.has('muse') ? { muse: new MuseMspHost(userDataPath, {
         executable: museFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeMuseAgent.mjs'), museFixtureRoot],
       }) } : {}),
@@ -747,7 +747,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home') }),
       codex: new CodexAppServerHost({ userDataPath, executable: nativeFixtureExecutable!,
         args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home') }),
-      grok: new E2EAgentHost(), devin: new E2EAgentHost(),
+      grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },

@@ -16,7 +16,7 @@ import type { HostClientUpdatesView } from './hostClientUpdateWords'
 import './hostProviders.css'
 
 /** The order the tiles are in: the providers the prototype drew, in its order (ADR-0037). */
-export const HOST_PROVIDER_ORDER: readonly ProviderId[] = everyProvider(['claude', 'codex', 'grok', 'devin', 'muse'])
+export const HOST_PROVIDER_ORDER: readonly ProviderId[] = everyProvider(['claude', 'codex', 'grok', 'devin', 'muse', 'opencode'])
 
 /**
  * What one tile says. `kind` decides its dot and its actions: Disconnect when connected, Connect when turned off, Sign in

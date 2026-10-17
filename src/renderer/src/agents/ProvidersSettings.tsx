@@ -12,7 +12,7 @@ import { useTransientFlag, writeClipboard } from './richActions'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import './providers.css'
 
-const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse' }
+const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode' }
 
 /** What Sotto knows about the installed client, in one sentence, whichever way the check went. */
 function clientLine(update: ProviderClientUpdate | undefined, verified: string | undefined, checking: boolean, connected = false, checkingNow = false): string {
@@ -153,7 +153,8 @@ export function ProvidersSettings(): ReactNode {
           tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const next = value === 'configuration' ? 'models' : 'configuration'; setTab(next); document.getElementById(`${tabId}-${next}`)?.focus() } }}>{value === 'configuration' ? 'Configuration' : 'Models'}</button>)}</div>
         <div key={`${selected}-${tab}`} id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} className="provider-detail__body">
           {tab === 'configuration' ? <>
-            <div className="provider-connection"><div><h4>Local connection</h4><p>{selected === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : selected === 'muse' ? 'Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.' : `Uses your ${CLIENT_NAMES[selected]} sign-in on this computer.`}</p>
+            <div className="provider-connection"><div><h4>Local connection</h4><p>{selected === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : selected === 'muse' ? 'Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.' : selected === 'opencode' ? 'Uses OpenCode 2 on this computer, in a folder of Sotto’s own, apart from your own OpenCode. That folder starts with no sign-ins.' : `Uses your ${CLIENT_NAMES[selected]} sign-in on this computer.`}</p>
+              {selected === 'opencode' && connected && 'account' in status && status.account && <p>{status.account}.</p>}
               {selected === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label="Copy Muse login command" onClick={() => void copyMuseLogin()}>{loginFeedback ?? 'Copy'}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>Sign-in steps</Button><span className="tt-visually-hidden" role="status">{loginFeedback ? 'Muse login command copied.' : ''}</span></div>}
             </div>
               <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working) || selectedUpdating} aria-label={`${connected ? 'Disconnect' : status.connection === 'error' ? 'Retry' : 'Connect'} ${label}`}
@@ -176,6 +177,7 @@ export function ProvidersSettings(): ReactNode {
             {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.</p>}
             <p className="provider-models__empty">Choose what new threads start with under Agents.</p>
             {selected === 'muse' && <details className="provider-support"><summary>Threads with Muse</summary><p>Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
+            {selected === 'opencode' && <details className="provider-support"><summary>Threads with OpenCode</summary><p>Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable, and Sotto cannot update OpenCode yet. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
           </> : models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul> : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
           {detailError && <p role="alert" className="provider-detail__error">{detailError}</p>}
         </div>

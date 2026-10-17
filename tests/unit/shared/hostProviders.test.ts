@@ -16,6 +16,6 @@ describe('the pages a host sign-in may open (ADR-0037)', () => {
     ] as const) expect(isProviderSignInPage(provider, page), page).toBe(false)
   })
   it('signs Codex and Grok Build in with a device code, Claude Code with a code pasted back, and leaves Devin to its terminal', () => {
-    expect(PROVIDER_SIGN_IN_SHAPES).toEqual({ codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null })
+    expect(PROVIDER_SIGN_IN_SHAPES).toEqual({ codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null })
   })
 })

@@ -9,6 +9,7 @@ import { compareClientVersions, isComparableVersion } from './clientVersions'
 import { installerDetail, installerOutput } from './installerDetail'
 import { findDevinExecutable } from './devinRpc'
 import { findMuseExecutable } from './museRpc'
+import { findOpenCodeExecutable } from './opencodeServer'
 import { compareMuseVersions, installMuseClient, museByHand, museInstallForExecutable, musePublishedVersion, museReleaseChannel, museResponseText, MUSE_FEED_BYTES, type MuseChannel, type MuseMakerInstall } from './museClientInstall'
 import { findGrokExecutable } from './grokRpc'
 import { findClaudeExecutable } from './subscriptionClaude'
@@ -553,5 +554,6 @@ export async function locateClient(provider: ProviderId): Promise<string | undef
     case 'grok': return findGrokExecutable()
     case 'devin': return findDevinExecutable()
     case 'muse': return findMuseExecutable()
+    case 'opencode': return findOpenCodeExecutable()
   }
 }

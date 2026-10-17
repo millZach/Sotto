@@ -1,0 +1,202 @@
+import { spawn, type ChildProcess } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { compareClientVersions } from './clientVersions'
+import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
+
+/**
+ * OpenCode's floor: the oldest client Sotto connects (ADR-0042, ADR-0087). 2.0.31 is the client this adapter's routes,
+ * events and process facts were checked against on October 16, 2026. OpenCode 1 has another server and is refused at
+ * connect. Move it only after checking a newer client against the adapter contract.
+ */
+export const OPENCODE_CLI_VERSION = '2.0.31'
+/** The connection changed, or OpenCode did not answer in time: what was asked may or may not have happened. */
+export class OpenCodeUncertain extends Error {}
+/** A client Sotto will not drive: OpenCode 1, or an OpenCode 2 older than the floor. */
+export class OpenCodeUnsupported extends Error {}
+/** A client older than the version Sotto checked, carrying the version it reported. */
+export class OpenCodeTooOld extends OpenCodeUnsupported { constructor(message: string, readonly version: string) { super(message) } }
+
+/**
+ * Sotto's own OpenCode folders (ADR-0087): every OpenCode process Sotto starts keeps its data, config, state and cache
+ * here, never in the user's own OpenCode folders, which OpenCode 2 would migrate for good on first open.
+ */
+export interface OpenCodeFolders { readonly data: string; readonly config: string; readonly state: string; readonly cache: string }
+export function opencodeFolders(base: string): OpenCodeFolders {
+  return { data: join(base, 'data'), config: join(base, 'config'), state: join(base, 'state'), cache: join(base, 'cache') }
+}
+export async function ensureOpenCodeFolders(folders: OpenCodeFolders): Promise<void> {
+  await Promise.all(Object.values(folders).map(folder => mkdir(folder, { recursive: true })))
+}
+/** OpenCode's database in a data folder; while it is missing, the next server to start runs its migrations. */
+export function opencodeDatabase(folders: OpenCodeFolders): string { return join(folders.data, 'opencode', 'opencode.db') }
+
+/** What every Sotto server is told on top of its own config: no share links, and no update of its own (ADR-0087). */
+export const OPENCODE_CONFIG_CONTENT = JSON.stringify({ share: 'disabled', update: 'disable' })
+const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'temp', 'tmp', 'tmpdir', 'home', 'user', 'logname', 'username', 'userprofile', 'homedrive', 'homepath', 'appdata', 'localappdata', 'programdata', 'allusersprofile', 'comspec', 'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy', 'ssl_cert_file', 'ssl_cert_dir'])
+/**
+ * The environment an OpenCode process gets: the shared allow-list and nothing else, so no provider's key reaches it and
+ * a thread runs on the sign-ins OpenCode keeps in Sotto's own folder. The XDG folders are always Sotto's; the user's own
+ * are never passed through. The password is this process's alone, so OpenCode never makes up and prints one.
+ */
+export function opencodeEnvironment(environment: NodeJS.ProcessEnv, folders: OpenCodeFolders, password: string): NodeJS.ProcessEnv {
+  const env = Object.fromEntries(Object.entries(environment).filter(([key]) => safeEnvironment.has(key.toLowerCase())))
+  return { ...env, XDG_DATA_HOME: folders.data, XDG_CONFIG_HOME: folders.config, XDG_STATE_HOME: folders.state, XDG_CACHE_HOME: folders.cache,
+    OPENCODE_PASSWORD: password, OPENCODE_CONFIG_CONTENT, OPENCODE_DISABLE_AUTOUPDATE: '1' }
+}
+/** A fresh secret for one server, never written down or logged. */
+export function opencodePassword(): string { return randomBytes(32).toString('base64url') }
+
+/** Where OpenCode is: `~/.opencode/bin` first, where OpenCode 2's install script puts it, then the shared lookup (ADR-0036). */
+export async function findOpenCodeExecutable(environment: NodeJS.ProcessEnv = process.env, lookup: Omit<CliLookupOptions, 'environment'> = {}): Promise<string | undefined> {
+  return findCli({ name: 'opencode', first: [join(lookup.home ?? homedir(), '.opencode', 'bin')] }, { ...lookup, environment })
+}
+
+/** A version line as each OpenCode prints it: `opencode v2.0.31` from 2, the bare `1.19.3` from 1. */
+export function parseOpenCodeVersion(text: string): { version: string; generation: number } | undefined {
+  const match = /(?:^|\s)v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?(?=\s|$)/u.exec(text.trim())
+  if (!match) return undefined
+  return { version: `${match[1]}.${match[2]}.${match[3]}`, generation: Number(match[1]) }
+}
+/** Why Sotto will not drive this version, in the words connect shows, or undefined when it will. */
+export function opencodeVersionRefusal(version: string): OpenCodeUnsupported | undefined {
+  const parsed = parseOpenCodeVersion(version)
+  if (!parsed) return new OpenCodeUnsupported('OpenCode did not say which version it is, so Sotto cannot tell whether it is OpenCode 2.')
+  if (parsed.generation < 2) return new OpenCodeUnsupported(`This is OpenCode ${parsed.version}, and Sotto works with OpenCode 2 only. Install it from opencode.ai/v2/install or npm's @opencode/cli; opencode.ai/install and npm's opencode-ai give OpenCode 1.`)
+  if (compareClientVersions(parsed.version, OPENCODE_CLI_VERSION) < 0) return new OpenCodeTooOld(`OpenCode ${OPENCODE_CLI_VERSION} or newer is required, and this client is ${parsed.version}.`, parsed.version)
+  return undefined
+}
+
+/** Ask the client its version without starting a server. Its output is read for the version line and nothing else. */
+export function readOpenCodeVersion(executable: string, args: readonly string[], env: NodeJS.ProcessEnv, timeoutMs = 10_000): Promise<string | undefined> {
+  return new Promise(resolve => {
+    let output = ''
+    let settled = false
+    const finish = (value: string | undefined): void => { if (!settled) { settled = true; clearTimeout(timer); resolve(value) } }
+    const child = spawn(executable, [...args, '--version'], { env: withCliPath(env, executable), windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'ignore'] })
+    const timer = setTimeout(() => { child.kill(); finish(undefined) }, timeoutMs)
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => { if (output.length < 4_096) output += chunk })
+    child.once('error', () => finish(undefined))
+    child.once('close', () => finish(output.split(/\r?\n/u).find(line => parseOpenCodeVersion(line)) ?? (output.trim() || undefined)))
+  })
+}
+
+/**
+ * The first server on a data folder without a database starts alone (ADR-0087): several OpenCode servers migrating one
+ * new database at once lose a race over its tables, and one of them fails to start. Every start on that folder waits
+ * while another runs its migrations; once the database is there, they start side by side.
+ */
+const migrating = new Map<string, Promise<void>>()
+export async function withFirstServerLock<T>(folders: OpenCodeFolders, start: () => Promise<T>): Promise<T> {
+  for (let held = migrating.get(folders.data); held; held = migrating.get(folders.data)) await held.catch(() => undefined)
+  if (existsSync(opencodeDatabase(folders))) return start()
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  migrating.set(folders.data, gate)
+  try { return await start() } finally { if (migrating.get(folders.data) === gate) migrating.delete(folders.data); release() }
+}
+
+/** Stable event names an OpenCode server's life is logged by. Nothing it prints is ever logged (AGENTS.md). */
+export type OpenCodeServerEvent = 'opencode-server-started' | 'opencode-server-ready' | 'opencode-server-exited' | 'opencode-server-stopped' | 'opencode-server-failed'
+
+const READY = /server listening on\s+(https?:\/\/[^\s]+)/iu
+/** Readiness is read from the first lines a server prints; anything past this is never held. */
+const READY_SCAN_BYTES = 64 * 1024
+
+export interface OpenCodeServerLaunch {
+  readonly executable: string
+  /** Arguments before `serve`, used by the scripted provider. */
+  readonly args?: readonly string[]
+  readonly cwd: string
+  readonly env: NodeJS.ProcessEnv
+  readonly timeoutMs: number
+  readonly log?: ((event: OpenCodeServerEvent) => void) | undefined
+}
+
+/**
+ * One `opencode serve --hostname=127.0.0.1 --port=0` (ADR-0038, ADR-0087), started with its own password. It is ready
+ * once it prints the address it listens on; the address is all Sotto reads from its output, and nothing it prints is
+ * kept or logged, since OpenCode prints a generated password when it is given none. It stops with its whole process
+ * tree, because a running tool's processes outlive a server stopped alone on Windows.
+ */
+export class OpenCodeServer {
+  readonly closed: Promise<void>
+  private exited = false
+  private stopping: Promise<void> | undefined
+  private constructor(private readonly child: ChildProcess, readonly url: string, private readonly log: OpenCodeServerLaunch['log'], closed: Promise<void>) {
+    this.closed = closed
+    void closed.then(() => { this.exited = true })
+  }
+  get pid(): number | undefined { return this.child.pid }
+  get running(): boolean { return !this.exited }
+
+  static start(launch: OpenCodeServerLaunch): Promise<OpenCodeServer> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(launch.executable, [...(launch.args ?? []), 'serve', '--hostname=127.0.0.1', '--port=0'], {
+        cwd: launch.cwd, env: withCliPath(launch.env, launch.executable), windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'pipe'],
+        // A process group of its own elsewhere, so stopping it reaches every tool it started.
+        detached: process.platform !== 'win32',
+      })
+      launch.log?.('opencode-server-started')
+      const closed = new Promise<void>(done => child.once('close', () => done()))
+      let scanned = '', ready = false
+      const fail = (error: Error): void => {
+        if (ready) return
+        ready = true; clearTimeout(timer)
+        launch.log?.('opencode-server-failed')
+        void killTree(child, closed)
+        reject(error)
+      }
+      const timer = setTimeout(() => fail(new OpenCodeUncertain('OpenCode did not start in time.')), launch.timeoutMs)
+      child.stdout!.setEncoding('utf8')
+      child.stdout!.on('data', (chunk: string) => {
+        if (ready) return
+        scanned = (scanned + chunk).slice(-READY_SCAN_BYTES)
+        const match = READY.exec(scanned)
+        if (!match) return
+        ready = true; clearTimeout(timer); scanned = ''
+        const server = new OpenCodeServer(child, match[1]!.replace(/\/+$/u, ''), launch.log, closed)
+        void closed.then(() => { if (!server.stopping) launch.log?.('opencode-server-exited') })
+        resolve(server)
+      })
+      // Drained and dropped: a server's diagnostics are not Sotto's to read, and a full pipe would stall it.
+      child.stderr!.on('data', () => undefined)
+      child.once('error', () => fail(new OpenCodeUncertain('OpenCode could not be started.')))
+      void closed.then(() => fail(new OpenCodeUncertain('OpenCode stopped before it was ready.')))
+    })
+  }
+
+  /** Stop the server and everything it started. Resolves once the server has exited. */
+  stop(): Promise<void> {
+    if (this.stopping) return this.stopping
+    this.log?.('opencode-server-stopped')
+    this.stopping = this.exited ? Promise.resolve() : killTree(this.child, this.closed)
+    return this.stopping
+  }
+}
+
+/** End a process and its descendants: `taskkill /T /F` on Windows, its process group elsewhere. */
+async function killTree(child: ChildProcess, closed: Promise<void>): Promise<void> {
+  const pid = child.pid
+  if (pid === undefined) return
+  if (process.platform === 'win32') {
+    await new Promise<void>(resolve => {
+      const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, shell: false, stdio: 'ignore' })
+      killer.once('error', () => resolve()); killer.once('close', () => resolve())
+    })
+    // taskkill can miss a process that is already ending; the child itself is the last resort.
+    const late = setTimeout(() => { try { child.kill() } catch { /* Gone. */ } }, 2_000); late.unref()
+    await closed; clearTimeout(late)
+    return
+  }
+  const signal = (name: NodeJS.Signals): void => { try { process.kill(-pid, name) } catch { try { child.kill(name) } catch { /* Gone. */ } } }
+  signal('SIGTERM')
+  const hard = setTimeout(() => signal('SIGKILL'), 1_000); hard.unref()
+  await closed; clearTimeout(hard)
+  // Children that ignored SIGTERM may outlive the leader; the group gets the hard stop either way.
+  signal('SIGKILL')
+}

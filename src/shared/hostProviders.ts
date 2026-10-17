@@ -28,7 +28,7 @@ export type ProviderSignInStage = z.infer<typeof providerSignInStageSchema>
 
 /** Which providers sign in from this computer, and how. Devin's and Muse's sign-ins run on the host itself, so their tiles show the command. */
 export const PROVIDER_SIGN_IN_SHAPES: Readonly<Record<ProviderId, ProviderSignInShape | null>> = {
-  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null,
+  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null,
 }
 /** What Devin's tile says to run on the host: its sign-in for a machine reached over SSH, where a browser cannot come back to it. */
 export const DEVIN_SIGN_IN_COMMAND = 'devin auth login --force-manual-token-flow'
@@ -50,6 +50,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
   grok: 'https://docs.x.ai/build/overview',
   devin: 'https://docs.devin.ai/cli',
   muse: 'https://dev.meta.ai/docs/muse-code',
+  opencode: 'https://opencode.ai/docs',
 }
 
 /**
@@ -59,7 +60,7 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
  * versions printed on `claude.ai`. A page anywhere else is not opened, and the sign-in says to finish it on the host.
  */
 export const PROVIDER_SIGN_IN_PAGES: Readonly<Record<ProviderId, readonly string[]>> = {
-  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [],
+  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [], opencode: [],
 }
 export function isProviderSignInPage(provider: ProviderId, value: string): boolean {
   if (value.length > 4096 || /\s/u.test(value)) return false

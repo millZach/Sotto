@@ -39,7 +39,8 @@ function socket(store: RetainedDraftStore, museEnabled = false) {
 
 it.each([true, false])('keeps Owl Muse remote edits whole through stable history-off load and restart (legacy identity %s)', async legacy => {
   const root = await directory(), ordinary = edit('ordinary', 'codex'), muse = edit('muse', legacy ? undefined : 'muse')
-  const owl = new RetainedDraftStore({ directory: root, watcherEnabled: true, museEnabled: true })
+  // An Owl run holds no provider; the older Muse answer alone would still hold OpenCode, and with it a draft naming no provider.
+  const owl = new RetainedDraftStore({ directory: root, watcherEnabled: true, heldProviders: new Set() })
   owl.put(muse); owl.put(ordinary); await owl.close()
   const stable = new RetainedDraftStore({ directory: root, watcherEnabled: true, museEnabled: false, historyEnabled: () => false })
   await stable.load(); await stable.privacyChanged()
@@ -49,7 +50,7 @@ it.each([true, false])('keeps Owl Muse remote edits whole through stable history
   await cold.load(); cold.identifyThreads(hostId, [{ id: 'muse', providerId: 'muse', kind: 'project' }]); await cold.close()
   expect(cold.list(hostId)).toEqual([])
   expect(JSON.parse(await readFile(join(root, 'remote-drafts.json'), 'utf8'))).toEqual([muse])
-  const reopened = new RetainedDraftStore({ directory: root, watcherEnabled: true, museEnabled: true })
+  const reopened = new RetainedDraftStore({ directory: root, watcherEnabled: true, heldProviders: new Set() })
   await reopened.load()
   expect(reopened.list(hostId)).toEqual([{ ...muse, recovery: true }])
 })
