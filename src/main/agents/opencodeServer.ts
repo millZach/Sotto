@@ -359,15 +359,15 @@ const isRunning = (pid: number): boolean => { try { process.kill(pid, 0); return
 /**
  * How far a process's start may sit from the moment Sotto wrote down starting it: a little before, for the coarse clocks
  * process start times are kept on, and a little after, for a slow spawn. Windows stamps a process on the clock Node
- * reads, so this is all it needs. On macOS and Linux it is only for a record written before `ps` was asked: Linux's `ps`
- * adds ticks since boot to a boot time kept in whole seconds and drops the fraction again, so it reads up to two seconds
- * behind the clock, and further on a machine whose clock was stepped after boot.
+ * reads, so this is all it needs. Linux's `ps` adds ticks since boot to a boot time kept in whole seconds and drops the
+ * fraction again, so it reads up to two seconds behind the clock, and a wall-clock step moves what it reads.
  */
 const START_BEFORE_MS = 1_500
 const START_AFTER_MS = 10_000
 /**
  * How far `ps` may read from the start it reported when Sotto wrote the server down: the second it rounds to, once more if
- * the boot time it adds to is rounded the other way.
+ * the boot time it adds to is rounded the other way. A clock that steps after the record moves `ps` off it, and then
+ * Sotto's own clock is the other rule a server may match by.
  */
 const SAME_START_MS = 1_000
 /** The process seen holding a recorded server's PID: when it started, and its command line when the system says. */
@@ -377,13 +377,14 @@ function isServerCommand(command: string | undefined): boolean {
   return !!command && /(?:^|\s)serve(?:\s|$)/u.test(command) && command.includes('--hostname=127.0.0.1') && command.includes('--port=0')
 }
 /**
- * Whether the process holding a recorded server's PID is that server: it started when Sotto wrote down starting it, and
- * its command line is OpenCode's server as Sotto starts one. A command line the system will not show is not proof.
+ * Whether the process holding a recorded server's PID is that server: its command line is OpenCode's server as Sotto
+ * starts one, and it started when Sotto wrote down starting it, by Sotto's clock or within a second of the start `ps`
+ * reported for it then. A command line the system will not show is not proof.
  */
 export function isRecordedServer(record: OpenCodeServerRecord, seen: ObservedProcess | undefined): boolean {
   if (!seen || !isServerCommand(seen.command)) return false
   // Like with like: the start the system reported then, against what it reports now.
-  if (record.started !== undefined) return Math.abs(seen.started - record.started) <= SAME_START_MS
+  if (record.started !== undefined && Math.abs(seen.started - record.started) <= SAME_START_MS) return true
   return seen.started >= record.startedAt - START_BEFORE_MS && seen.started <= record.startedAt + START_AFTER_MS
 }
 /** One line of `ps -o lstart= -o args=` in the C locale: the start time, to the second, and the command line. */

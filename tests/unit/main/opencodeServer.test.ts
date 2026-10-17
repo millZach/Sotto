@@ -76,13 +76,27 @@ describe('a server a crash left, as the next connect knows it', () => {
     const reported = Date.parse('2026-10-16T21:48:01')
     const written = { ...record, started: reported }
     expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:01 2026 ' + command))).toBe(true)
-    // ps reads a second later than it did: the boot time it adds to was rounded the other way.
+    // ps reads a second later or earlier than it did: the boot time it adds to was rounded the other way.
     expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:02 2026 ' + command))).toBe(true)
-    // Any further, and it is another process that took the PID, whatever the clock said.
-    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:03 2026 ' + command))).toBe(false)
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:00 2026 ' + command))).toBe(true)
+    // Further from both what ps said then and Sotto's clock, and it is another process that took the PID.
     expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:47:59 2026 ' + command))).toBe(false)
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:14 2026 ' + command))).toBe(false)
     // The command line still has to be OpenCode's server.
     expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:01 2026 /usr/bin/python3 -m http.server'))).toBe(false)
+  })
+  it('still knows its server after the clock steps forward, by Sotto’s clock', () => {
+    // ps read 1.4 s behind Sotto's clock when the server was written down. Then the wall clock stepped 2 s forward, as
+    // NTP or a WSL2 resync steps it, and what ps reads moved with it, since it adds ticks since boot to the wall clock's boot time.
+    const written = { ...record, started: Date.parse('2026-10-16T21:48:02') }
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:04 2026 ' + command))).toBe(true)
+    // Up to ten seconds after Sotto's clock said it started the server.
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:13 2026 ' + command))).toBe(true)
+    // A step past that leaves both rules behind, and the server is not ended.
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:14 2026 ' + command))).toBe(false)
+    // Either rule needs OpenCode's server on the command line.
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:04 2026 /usr/bin/python3 -m http.server'))).toBe(false)
+    expect(isRecordedServer(written, { started: Date.parse('2026-10-16T21:48:04') })).toBe(false)
   })
 })
 
