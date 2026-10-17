@@ -1,6 +1,6 @@
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdOfLabel, type AgentCommand, type AgentHostSnapshot,
   type AgentModel, type AgentProject, type AgentThread, type ProviderId } from '../../shared/agents'
-import { heldProviderRefusal, type HeldProviders } from '../../shared/heldProviders'
+import { heldProviderRefusal, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { resolveModel } from '../../shared/modelCatalog'
 import type { WatcherRefusal } from '../../shared/watcher'
 import type { WatcherHostControl, WatcherHostRead } from '../../shared/watcherHost'
@@ -139,9 +139,12 @@ export function rememberDormantProviderThreads(into: Map<string, DormantProvider
   return into
 }
 
-/** Refuse unsafe remote pages before the wire: the owning host's rows, counts and cursors stay one response. */
+/**
+ * Refuse unsafe remote pages before the wire: the owning host's rows, counts and cursors stay one response. A list of every
+ * thread names each held provider with a dormant thread in it, so the refusal says every provider Owl would show there.
+ */
 export function heldProviderOfWatcherRequest(request: WatcherHostRead | WatcherHostControl, held: HeldProviders, snapshot?: AgentHostSnapshot,
-  knownDormantThreads: DormantProviderThreads = new Map()): ProviderId | undefined {
+  knownDormantThreads: DormantProviderThreads = new Map()): HeldProviderNames | undefined {
   const call = request.call
   if (!held.size || !call || call.name === 'read_operation') return undefined
   const threads = new Map(knownDormantThreads)
@@ -160,7 +163,10 @@ export function heldProviderOfWatcherRequest(request: WatcherHostRead | WatcherH
   }
   if (call.name !== 'list_threads') return undefined
   const project = call.input.project
-  if (!project) return threads.values().next().value?.provider
+  if (!project) {
+    const providers = [...new Set([...threads.values()].map(thread => thread.provider))]
+    return providers.length > 1 ? providers : providers[0]
+  }
   const projects = snapshot?.projects ?? []
   // An exact catalog identity wins. Only an unqualified alias may resolve to the catalog's qualified identity.
   const scope = projects.some(item => item.id === project.projectId) || parsePublicProviderEntityId(project.projectId)
@@ -173,7 +179,7 @@ export function heldProviderOfWatcherRequest(request: WatcherHostRead | WatcherH
 }
 
 /** What Watcher hears for a held provider's thread, in that provider's name. */
-export function heldWatcherRefusal(provider: ProviderId): WatcherRefusal {
+export function heldWatcherRefusal(provider: HeldProviderNames): WatcherRefusal {
   return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', retryable: false, message: heldProviderRefusal(provider) }
 }
 

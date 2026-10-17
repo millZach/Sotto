@@ -40,7 +40,15 @@ export function firstHeldProvider(held: HeldProviders): ProviderId {
   return held.values().next().value ?? HELD_PROVIDER_ENTRIES[0].provider
 }
 
-/** What a refused command says. Muse's words are "Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent." */
-export function heldProviderRefusal(provider: ProviderId): string {
-  return `${PROVIDER_LABELS[provider]} is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.`
+/** One held provider a refusal names, or several when the refused request touched more than one. */
+export type HeldProviderNames = ProviderId | readonly ProviderId[]
+
+/**
+ * What a refused command says. Muse's words are "Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was
+ * sent." Several held providers are named together: "Muse and OpenCode are available in Sotto Owl. ..."
+ */
+export function heldProviderRefusal(provider: HeldProviderNames): string {
+  const labels = [...new Set(typeof provider === 'string' ? [provider] : provider)].map(id => PROVIDER_LABELS[id])
+  const named = labels.length > 1 ? `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)} are` : `${labels[0] ?? ''} is`
+  return `${named} available in Sotto Owl. Open an Owl build to continue. Nothing was sent.`
 }

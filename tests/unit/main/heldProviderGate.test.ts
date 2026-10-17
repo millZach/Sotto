@@ -97,6 +97,23 @@ describe('the held-provider table', () => {
   it("keeps Muse's refusal word for word and builds another's from its label", () => {
     expect(heldProviderRefusal('muse')).toBe('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
     expect(heldProviderRefusal('grok')).toBe('Grok Build is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    expect(heldProviderRefusal(['muse'])).toBe(heldProviderRefusal('muse'))
+    expect(heldProviderRefusal(['muse', 'opencode'])).toBe('Muse and OpenCode are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    expect(heldProviderRefusal(['muse', 'opencode', 'grok'])).toBe('Muse, OpenCode and Grok Build are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+  })
+  it('names every held provider with a dormant thread when Watcher lists every thread, and Muse alone word for word', () => {
+    const state = hostState('muse'), host = state.host
+    const everything = read('list_threads', { hostId: centerHostId })
+    const museOnly = new Set(['muse', 'opencode'] as const)
+    expect(heldProviderOfWatcherRequest(everything, museOnly, host)).toBe('muse')
+    expect(heldWatcherRefusal(heldProviderOfWatcherRequest(everything, museOnly, host)!).message).toBe('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    const both = { ...host, threads: [...host.threads,
+      { id: 'opencode-worker', providerId: 'opencode' as const, projectId: 'project', modelId: 'opencode/fixture-model', title: 'OpenCode', status: 'idle' as const, messages: [], requests: [] }] }
+    expect(heldProviderOfWatcherRequest(everything, museOnly, both)).toEqual(['muse', 'opencode'])
+    expect(heldWatcherRefusal(heldProviderOfWatcherRequest(everything, museOnly, both)!).message)
+      .toBe('Muse and OpenCode are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    // One project's list still names that project's held provider alone.
+    expect(heldProviderOfWatcherRequest(read('list_threads', { project: { hostId: centerHostId, projectId: 'project' } }), museOnly, both)).toBe('opencode')
   })
 })
 
