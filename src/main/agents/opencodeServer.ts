@@ -66,6 +66,8 @@ export function opencodeVersionRefusal(version: string): OpenCodeUnsupported | u
   const parsed = parseOpenCodeVersion(version)
   if (!parsed) return new OpenCodeUnsupported('OpenCode did not say which version it is, so Sotto cannot tell whether it is OpenCode 2.')
   if (parsed.generation < 2) return new OpenCodeUnsupported(`This is OpenCode ${parsed.version}, and Sotto works with OpenCode 2 only. Install it from opencode.ai/v2/install or npm's @opencode/cli; opencode.ai/install and npm's opencode-ai give OpenCode 1.`)
+  // A later generation is another server again: Sotto drives the one it was checked against and no other (ADR-0087).
+  if (parsed.generation > 2) return new OpenCodeUnsupported(`This is OpenCode ${parsed.version}, and Sotto works with OpenCode 2 only. Install OpenCode 2 from opencode.ai/v2/install or npm's @opencode/cli@2, then connect again.`)
   if (compareClientVersions(parsed.version, OPENCODE_CLI_VERSION) < 0) return new OpenCodeTooOld(`OpenCode ${OPENCODE_CLI_VERSION} or newer is required, and this client is ${parsed.version}.`, parsed.version)
   return undefined
 }
