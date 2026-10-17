@@ -14,7 +14,9 @@ import { URL } from 'node:url'
 // loseAnswer by operation (the next such request is done and its connection then cut, so its answer never arrives),
 // migrationMs, unavailable, printPassword, pageSize, eventStream: 'refuse' to answer the event stream with an error
 // before its first frame;
-// integrations, sourceModels, oauth by `<integration>:<method>`, oauthExpiresMs and oauthUrl for the sign-in routes),
+// mcp and generate for the runtime MCP routes and the stateless generation route, below (a side call's words go to
+// side-calls.jsonl); integrations, sourceModels, oauth by `<integration>:<method>`, oauthExpiresMs and oauthUrl for the
+// sign-in routes),
 // `approve.json` (`{ integrationID }`: the next read of that source's browser sign-in finds it complete),
 // `credentials.json` (the sign-ins, shared by every process as OpenCode's database is, secrets included as OpenCode
 // answers them), `control.json` (one driver action at a time, taken by the process
@@ -263,7 +265,29 @@ const routes = [
   ['DELETE', /^\/api\/integration\/([^/]+)\/connect\/oauth\/([^/]+)$/u, 'integration.connect.oauth.cancel'],
   ['POST', /^\/api\/integration\/([^/]+)\/connect\/oauth\/([^/]+)\/complete$/u, 'integration.connect.oauth.complete'],
   ['GET', /^\/api\/credential$/u, 'credential.list'], ['DELETE', /^\/api\/credential\/([^/]+)$/u, 'credential.remove'],
+  ['PUT', /^\/api\/experimental\/mcp\/([^/]+)$/u, 'experimental.mcp.add'], ['DELETE', /^\/api\/experimental\/mcp\/([^/]+)$/u, 'experimental.mcp.remove'],
+  ['GET', /^\/api\/mcp$/u, 'mcp.list'], ['POST', /^\/api\/experimental\/generate$/u, 'experimental.generate.text'],
 ]
+// Runtime MCP servers, per folder and per process, as OpenCode keeps them until it ends (2.0.31): name to status.
+const mcpServers = new Map()
+const mcpOf = directory => { if (!mcpServers.has(directory)) mcpServers.set(directory, new Map()); return mcpServers.get(directory) }
+/**
+ * Connect a runtime MCP server as OpenCode does: an `initialize` to its URL with the headers it was given, so a server
+ * whose token Sotto's tool server does not admit reads as failed. `script.mcp` steers it: `refuse` answers the add with a
+ * 400, and `fail` lists every server as failed.
+ */
+async function connectMcp(config) {
+  if (script().mcp?.fail) return 'failed'
+  try {
+    const response = await globalThis.fetch(config.url, { method: 'POST', signal: globalThis.AbortSignal.timeout(5000),
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(config.headers ?? {}) },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'opencode', version: VERSION } } }) })
+    const reply = await response.json().catch(() => undefined)
+    return response.ok && reply?.result ? 'connected' : 'failed'
+  } catch { return 'failed' }
+}
+// OpenCode Zen's free models refuse the stateless generation route, as a 503 naming the model source (2.0.31).
+const ZEN_REFUSAL = { _tag: 'ServiceUnavailableError', message: 'OpenCode’s free tier can only be used from within OpenCode.', service: 'opencode' }
 const expected = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD ?? ''}`).toString('base64')}`
 /** An answer the script asks to lose once: the next request of this operation is done, and its connection cut unanswered. */
 const lossOf = name => {
@@ -292,7 +316,12 @@ const server = createServer((request, response) => {
   request.on('end', () => {
     const body = raw ? JSON.parse(raw) : undefined
     const query = Object.fromEntries(url.searchParams)
-    record({ method: name, params: { ...(sessionId ? { sessionID: sessionId } : {}), ...(itemId ? { itemID: itemId } : {}), ...(body ?? {}), ...(Object.keys(query).length ? { query } : {}) } })
+    if (name === 'experimental.generate.text') {
+      // A side call's words go to a file of their own: what the thread's provider session heard stays in requests.jsonl.
+      appendFileSync(path('side-calls.jsonl'), JSON.stringify({ prompt: body?.prompt, model: body?.model ?? null, cwd: process.cwd(), process: process.pid }) + '\n')
+      record({ method: name, params: { model: body?.model ?? null } })
+    } else if (name.startsWith('experimental.mcp.')) record({ method: name, params: { server: decodeURIComponent(sessionId), ...(body ?? {}), query } })
+    else record({ method: name, params: { ...(sessionId ? { sessionID: sessionId } : {}), ...(itemId ? { itemID: itemId } : {}), ...(body ?? {}), ...(Object.keys(query).length ? { query } : {}) } })
     const refused = refusalOf(name)
     if (refused) { fail(refused, 'InvalidRequestError'); return }
     lost = lossOf(name)
@@ -323,6 +352,48 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
     clients.add(response)
     response.on('close', () => clients.delete(response))
     return
+  }
+  if (name === 'experimental.mcp.add') {
+    const server = decodeURIComponent(sessionId)
+    if (script().mcp?.refuse) { fail(400, 'InvalidRequestError'); return }
+    // `script.mcp.hold` names a file in the root: the next add, and only that one, waits for it before it connects.
+    const hold = script().mcp?.hold
+    if (hold) writeFileSync(path('script.json'), JSON.stringify({ ...script(), mcp: { ...script().mcp, hold: undefined } }))
+    // `script.mcp.pendingMs`: the add is answered at once and the server listed as pending until it connects that much
+    // later, as OpenCode 2.0.31 answers an add for a server that connects without trouble.
+    const pendingMs = script().mcp?.pendingMs
+    if (pendingMs) {
+      const servers = mcpOf(query['location[directory]'])
+      servers.set(server, 'pending'); send(204)
+      setTimeout(() => void connectMcp(body.config).then(status => { servers.set(server, status); record({ method: 'fixture/mcp-connected', params: { server, status } }) }), pendingMs)
+      return
+    }
+    const released = () => new Promise(resolve => { const check = () => { if (!hold || existsSync(path(hold))) resolve(); else setTimeout(check, 20) }; check() })
+    // OpenCode holds the request while it connects, and answers 204 whether or not the server connected.
+    void released().then(() => connectMcp(body.config)).then(status => {
+      mcpOf(query['location[directory]']).set(server, status)
+      record({ method: 'fixture/mcp-connected', params: { server, status } })
+      send(204)
+    })
+    return
+  }
+  if (name === 'experimental.mcp.remove') {
+    // `script.mcp.removeUnavailable` answers every removal with a 503 that is only a wait, as a folder still starting does.
+    if (script().mcp?.removeUnavailable) { fail(503, 'ServiceUnavailableError'); return }
+    const servers = mcpOf(query['location[directory]']), server = decodeURIComponent(sessionId)
+    if (!servers.has(server)) { send(404, { _tag: 'McpServerNotFoundError', server, message: `MCP server not found: ${server}` }); return }
+    servers.delete(server); send(204); return
+  }
+  if (name === 'mcp.list') {
+    send(200, { location: { directory: query['location[directory]'] }, data: [...mcpOf(query['location[directory]'])].map(([server, status]) => ({ name: server, status: { status } })) }); return
+  }
+  if (name === 'experimental.generate.text') {
+    // `script.generate` steers it: `text` to answer, `refuse: 'zen'` for Zen's refusal, `session` to make a provider
+    // session as a turn would, which the route must never do.
+    const generate = script().generate ?? {}
+    if (generate.refuse === 'zen') { send(503, ZEN_REFUSAL); return }
+    if (generate.session) { const made = { id: id('ses'), title: 'Side call', location: { directory: process.cwd() }, created: now(), messages: [] }; sessions[made.id] = made; save() }
+    send(200, { data: { text: generate.text ?? 'Fixture side text' } }); return
   }
   if (name === 'session.list') {
     const all = Object.values({ ...locked(stored).sessions, ...sessions }).filter(session => !query.directory || session.location?.directory === query.directory)

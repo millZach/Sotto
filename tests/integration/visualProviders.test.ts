@@ -18,7 +18,9 @@ import { claudeFixture } from '../fixtures/claudeFixture'
 
 import { codexFixture } from '../fixtures/codexFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import { opencodeFixture } from '../fixtures/fakeOpenCodeFixture'
 import { callVisualize } from '../fixtures/visualToolCall'
+import { headerList } from '../fixtures/mcpHeaders'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
@@ -31,14 +33,19 @@ async function given(provider: ProviderId, records: readonly RecordedRpc[]): Pro
   if (provider === 'codex') {
     const start = records.find(record => record.method === 'thread/start')?.params as { config: { mcp_servers: Record<string, { url: string; http_headers: Record<string, string> }> } }
     const entry = start.config.mcp_servers[VISUAL_MCP_SERVER]!
-    return { url: entry.url, headers: Object.entries(entry.http_headers).map(([name, value]) => ({ name, value })) }
+    return { url: entry.url, headers: headerList(entry.http_headers) }
   }
   if (provider === 'claude') {
     const launch = records.findLast(record => ['launch', 'resume'].includes(record.method ?? '') && (record.params?.frame as { args: string[] }).args.includes('--mcp-config'))
     const args = (launch!.params!.frame as { args: string[] }).args
     const config = JSON.parse(await readFile(args[args.indexOf('--mcp-config') + 1]!, 'utf8')) as { mcpServers: Record<string, { url: string; headers: Record<string, string> }> }
     const entry = config.mcpServers[VISUAL_MCP_SERVER]!
-    return { url: entry.url, headers: Object.entries(entry.headers).map(([name, value]) => ({ name, value })) }
+    return { url: entry.url, headers: headerList(entry.headers) }
+  }
+  if (provider === 'opencode') {
+    // OpenCode is given each of Sotto's servers on the thread's own server, as a remote MCP server (ADR-0087).
+    const entry = records.find(record => record.method === 'experimental.mcp.add' && record.params?.server === VISUAL_MCP_SERVER)!.params as { config: { url: string; headers: Record<string, string> } }
+    return { url: entry.config.url, headers: headerList(entry.config.headers) }
   }
   const servers = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? '')).map(record => record.params?.mcpServers as { name: string; url: string; headers: { name: string; value: string }[] }[]).find(value => value?.length)!
   return servers.find(server => server.name === VISUAL_MCP_SERVER)!
@@ -47,14 +54,15 @@ async function given(provider: ProviderId, records: readonly RecordedRpc[]): Pro
 type ScriptedFixture = AdapterFixture & { action(id: string, value: Record<string, unknown>): Promise<unknown> }
 /**
  * How each fake writes words in a turn that goes on, as its provider does before a tool call: Codex an agent message
- * item, Claude an API message, Grok a chunk of a new stream.
+ * item, Claude an API message, Grok a chunk of a new stream, OpenCode a reply block.
  */
-const SAY: Record<'codex' | 'claude' | 'grok', (text: string) => Record<string, unknown>> = {
+const SAY: Record<'codex' | 'claude' | 'grok' | 'opencode', (text: string) => Record<string, unknown>> = {
   codex: text => ({ type: 'say', text }),
   claude: text => ({ type: 'say', text }),
   grok: text => ({ type: 'chunk', text, meta: { streamStartMs: Date.now() } }),
+  opencode: text => ({ type: 'reply', text }),
 }
-const factories: ['codex' | 'claude' | 'grok', () => Promise<ScriptedFixture>][] = [['codex', codexFixture], ['claude', claudeFixture], ['grok', grokFixture]]
+const factories: ['codex' | 'claude' | 'grok' | 'opencode', () => Promise<ScriptedFixture>][] = [['codex', codexFixture], ['claude', claudeFixture], ['grok', grokFixture], ['opencode', () => opencodeFixture()]]
 describe.each(factories)('%s visualize call', (provider, factory) => {
   it('draws the card live between the words before the call and the words after it, after a reply, before one and mid-reply', async () => {
     const fixture = await factory(); cleanup.push(fixture.cleanup)
