@@ -1,6 +1,6 @@
 # OpenCode is a thread provider (#1108)
 
-Zach asked on October 16, 2026 for OpenCode the way T3 Code has it, and chose: an Owl feature, OpenCode 2 only, a full provider as Muse is, his own OpenCode data folder shared, and variant C of `prototype/opencode-model-menu` (model source first). [ADR-0087](../adr/0087-opencode-is-a-thread-provider.md) governs behaviour; [the research note](../research/2026-10-16-t3-opencode.md) has the wire facts from T3 Code and from OpenCode 2.0.31.
+Zach asked on October 16, 2026 for OpenCode the way T3 Code has it, and chose: an Owl feature, OpenCode 2 only, a full provider as Muse is, a data folder of Sotto's own (first his own OpenCode folder shared, changed the same day after a scratch test), and variant C of `prototype/opencode-model-menu` (model source first). [ADR-0087](../adr/0087-opencode-is-a-thread-provider.md) governs behaviour; [the research note](../research/2026-10-16-t3-opencode.md) has the wire facts from T3 Code and from OpenCode 2.0.31.
 
 ## Tickets, in dependency order
 

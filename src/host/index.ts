@@ -26,7 +26,9 @@ import { version as packageVersion } from '../../package.json'
 import { getReleaseTrack } from '../shared/releaseTrack'
 import { owlFeaturesForTrack } from '../shared/owlFeatures'
 import { heldProvidersOf } from '../shared/heldProviders'
+import { heldOnHost } from '../shared/hostProviders'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
+import { createHostSelfUpdate } from './selfUpdate'
 
 export interface HeadlessHostOptions {
   dataDirectory: string
@@ -51,6 +53,13 @@ export interface HeadlessHostOptions {
   locateClient?: AgentRuntimeOptions['locateClient']
   /** Tests and end-to-end runs stand in for this machine's Tailscale, which phone access runs (ADR-0050). */
   tailscale?: PhoneAccessTailscale
+  /**
+   * The host's own entry, `host/index.js` in its installation folder, which the command line passes. With it, a host Sotto
+   * started can update itself when a paired desktop asks over its socket (ADR-0088); without it, it offers no such thing.
+   */
+  entryPath?: string
+  /** Tests stand a local releases page in for a host that updates itself; a host always uses the published one. */
+  releasesUrl?: string
 }
 
 export { HostLockError, HostLockHeldError } from './lock'
@@ -92,9 +101,11 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // A host reads its features from its own packaged version; a paired desktop cannot turn any on.
   const owlFeatures = owlFeaturesForTrack(getReleaseTrack(options.sottoVersion ?? packageVersion))
   const usageEnabled = owlFeatures.usage
-  const heldProviders = heldProvidersOf(owlFeatures)
+  // Its Owl answers, and every provider hosts do not take yet: OpenCode until #1107 adds it to HOST_PROVIDERS.
+  const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
   const resumeAfterRestart = owlFeatures['resume-after-restart']
   const streamingPublishCost = owlFeatures['streaming-publish-cost']
+  const threadStartsEnabled = owlFeatures['continue-agent-thread']
   const repositories = createStorageRepositories(directory, recovery, Date.now, undefined, undefined, watcherEnabled)
   const settings = new SecureSettings(repositories.settings, credentials)
   if ((await repositories.settings.get()).llmApiKey && !credentials.available()) {
@@ -103,7 +114,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   await settings.migrate(() => options.log?.('openrouter-key-migration-failed')).catch(() => {
     throw new HostKeyMigrationError('The OpenRouter key could not be stored securely and was removed from settings. Enter it again on the host machine after restoring storage access. Start the host with --key-file <file>.')
   })
-  await repositories.settings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(directory))
+  // The host's identity, read once from its own file; the self-update reads it here rather than copying the runtime's state.
+  const hostId = await loadHostIdentity(directory)
+  await repositories.settings.migrateProjectWorkingCopyDefaults(hostId)
   await repositories.settings.save(await repositories.settings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await removeRetiredVoiceCache(directory)
   const startup = await settings.get()
@@ -113,7 +126,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
     const runtime = await createAgentRuntime({
-      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, settings: () => startup, writingSettings: () => settings.get(),
+      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, settings: () => startup, writingSettings: () => settings.get(),
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),
@@ -175,12 +188,18 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // listener, which carries desktops the launch script recorded as well as phones (ADR-0053). This one, with the
         // administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
         const desktops = new DesktopClients(directory, options.log)
+        // One for both listeners, so an update one desktop runs over either is the only one running (ADR-0088).
+        const selfUpdate = options.entryPath ? createHostSelfUpdate({ entry: options.entryPath, dataDirectory: directory, port: options.port,
+          hostId, sottoVersion: options.sottoVersion ?? packageVersion, startedBy: options.startedBy,
+          ...(options.releasesUrl ? { releasesUrl: options.releasesUrl } : {}), ...(options.log ? { log: options.log } : {}) }) : undefined
+        if (selfUpdate && !selfUpdate.ok) options.log?.(selfUpdate.reason === 'update-not-owned' ? 'host-update-not-owned' : 'host-update-layout-unknown')
+        const hostUpdate = selfUpdate?.ok ? { hostUpdate: selfUpdate.update } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops, listener: { signIns, watcherDesktops: desktops, clientUpdates: true, receipts, about, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
+          desktops, listener: { signIns, watcherDesktops: desktops, clientUpdates: true, receipts, about, ...hostUpdate, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, clientUpdates: true, phones: tailnet.administration,
-          watcherDesktops: desktops,
+          watcherDesktops: desktops, ...hostUpdate,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
           receipts, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => tailnet.revoked(clientId),
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
@@ -295,7 +314,8 @@ export async function runHeadlessCommandLine(): Promise<void> {
     const options = parseHostArguments(process.argv.slice(2))
     // Read once: the provider processes this host starts must not inherit the mark.
     delete process.env.SOTTO_HOST_STARTED_BY
-    host = await startHeadlessHost({ ...options, log: event => console.error('[Sotto] ' + event) })
+    // The entry this process runs is where the host was installed, which a host that updates itself reads (ADR-0088).
+    host = await startHeadlessHost({ ...options, ...(process.argv[1] ? { entryPath: process.argv[1] } : {}), log: event => console.error('[Sotto] ' + event) })
     if (stopping) stop()
     else { console.error('[Sotto] host-ready'); if (host.descriptor) process.stdout.write(JSON.stringify({ ...host.descriptor, event: 'ready' }) + '\n') }
   } catch (error) {

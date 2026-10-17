@@ -32,7 +32,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentCredentials } from './credentials'
 import { classifyRiskyAction, mayGrantLocally, REMOTE_PERMISSION_DENIED, UNPAIRED_CLIENT_ERROR, type Authority } from './authority'
 import { desktopWindowClient, RequestAnswerCheckRefusal, type ClientIdentity } from './hostService'
-import type { AgentHost, AgentHostCommand, PromptImage, ThreadReadPurpose } from './host'
+import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, ThreadReadPurpose } from './host'
 import type { AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { FirstOutputWatches, lendSendStages, SendStageClock } from './sendStages'
@@ -40,6 +40,7 @@ import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWorkspaceThrea
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { clientVersionOf } from './clientVersions'
 import { locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
+import { opencodeFolders } from './opencodeServer'
 import { resolveModel } from '../../shared/modelCatalog'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { AttachmentPreviews } from './attachmentPreviews'
@@ -56,6 +57,8 @@ import { QuestionPages, type QuestionPageTarget } from './questionPages'
 import { watcherRepliesAsShown } from './watcherOwnChanges'
 import { watcherMessageRequests, watcherMessagesAsTyped } from './watcherRequestNote'
 import { watcherHandoversShown } from './watcherHandover'
+import { startHandoverSend, startHandoversShown } from './startHandover'
+import { NATIVE_FORKS, START_HANDOVER_UNREADABLE, startsThread } from '../../shared/threadStarts'
 import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
@@ -570,12 +573,14 @@ export class AgentControl {
     runsAs?: 'desktop' | 'headless-host'
     /** Native CLIs present on this machine. Absent in tests that script the host themselves. */
     installedProviders?: () => Promise<readonly ProviderId[]>
+    /** Continuing agents as threads and forking at a reply (#1028): the Owl list's answer, read once at start. Absent fails closed. */
+    threadStartsEnabled?: boolean
   }) {
     this.held = heldProvidersOption(dependencies)
     this.watcherMessageDisplay = dependencies.watcherEnabled === true ? new WatcherMessageDisplay() : undefined
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
     this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id))
-    this.clients = dependencies.clients ?? new ProviderClients()
+    this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')) })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
       activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
@@ -762,6 +767,8 @@ export class AgentControl {
     // Sotto put after them or a handover it put before them, and Watcher's replies without the reason line their
     // own-change line already shows.
     snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(watcherHandoversShown(snapshot, this.watcher.requests), watcherMessageRequests(this.watcher.requests)))
+    // A thread that began from another shows its first message as the user's words, with its handover beside them (#1028).
+    if (this.dependencies.threadStartsEnabled === true) snapshot = startHandoversShown(snapshot)
     if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
     return this.questionPages.decorate(snapshot)
   }
@@ -2707,6 +2714,8 @@ export class AgentControl {
     const laneThreadId = actionThreadId && THREAD_SCOPED_COMMAND_TYPES.has(command.type) ? actionThreadId : ''
     const independent = laneThreadId !== ''
     let releaseThread = (): void => {}
+    // Continuing an agent or forking at a reply is refused where it was asked (#1028), never as the window's banner.
+    const answersInPlace = startsThread(command)
     const task = (independent ? this.threadActions.get(laneThreadId) ?? Promise.resolve() : this.serial).catch(() => undefined).then(async () => {
       if (independent) releaseThread = this.mark(this.busyThreads, laneThreadId)
       else this.state.globalLaneBusy = true
@@ -2734,8 +2743,8 @@ export class AgentControl {
         failure = error instanceof AnswerDeliveryUnconfirmed && error.delivered ? undefined
           : error instanceof CheckoutSendRefusal && (command.type === 'manual-send' || command.type === 'steer' || command.type === 'send') ? error.draftMessage()
           : error instanceof Error ? error.message : 'Sotto could not complete this action.'
-        if (!origin && !privateDraftReply && !(error instanceof AnswerDeliveryUnconfirmed)) this.setCommandError(error, failure!)
-        if (!origin && !privateDraftReply && failure !== undefined && !(error instanceof AnswerDeliveryUnconfirmed && client.transport === 'socket')) this.say(failure)
+        if (!origin && !privateDraftReply && !answersInPlace && !(error instanceof AnswerDeliveryUnconfirmed)) this.setCommandError(error, failure!)
+        if (!origin && !privateDraftReply && !answersInPlace && failure !== undefined && !(error instanceof AnswerDeliveryUnconfirmed && client.transport === 'socket')) this.say(failure)
       }
       if ((command.type === 'manual-send' || command.type === 'steer') && command.draftId) {
         const delivery = this.state.deliveries?.find(item => item.threadId === command.threadId && item.draftId === command.draftId)
@@ -2763,7 +2772,7 @@ export class AgentControl {
       if (unconfirmedAnswer?.delivered) failure = undefined
       // Socket replies and receipts keep the command's outcome, including Send answering a question draft.
       // Keep the published shell and desktop response as they are.
-      return origin || privateDraftReply || (command.type === 'answer' || command.type === 'send') && client.transport === 'socket'
+      return origin || privateDraftReply || answersInPlace || (command.type === 'answer' || command.type === 'send') && client.transport === 'socket'
         ? { ...this.shell(), error: failure ?? null } : this.shell()
     })
     if (independent) {
@@ -3455,6 +3464,37 @@ export class AgentControl {
         this.say(`Opened ${command.title}.`)
         return
       }
+      case 'continue-agent':
+      case 'fork-thread': {
+        // An Owl feature (#1028): stable starts none of it, and a host that predates it never gets this far.
+        const host = this.dependencies.host
+        if (this.dependencies.threadStartsEnabled !== true || (command.type === 'continue-agent' ? !host.continueAgent : !host.forkAtReply)) {
+          throw new Error(`${command.type === 'continue-agent' ? 'Continuing an agent as a thread' : 'Fork from here'} is available in Sotto Owl. Nothing was made.`)
+        }
+        const source = this.thread(command.threadId)
+        // A fork at a reply stays on its thread's provider: on a model of the user's choosing where the provider copies
+        // the conversation itself, and on the thread's own where it starts from a handover.
+        const fork = command.type === 'fork-thread'
+        const chosen = fork && !(source.providerId !== undefined && NATIVE_FORKS.has(source.providerId)) ? undefined : command.modelId
+        const model = resolveModel(this.state.host.models, chosen ?? source.modelId)
+        this.canCreate(model?.providerId)
+        if (!model?.ready || fork && model.providerId !== source.providerId) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account. Nothing was made.')
+        if (this.state.host.threads.some(thread => thread.id === command.newThreadId)) throw new Error('This thread already exists. Select it instead of creating it again.')
+        // The new thread starts on the new-thread defaults, as any new thread does, so it is never wider than the user chose.
+        const defaults = this.newThreadOptionDefaults({ type: 'create-thread', projectId: source.projectId, title: source.title, modelId: model.id }, model)
+        validateThreadOptions(this.state.host, { modelId: model.id, ...defaults })
+        if (!origin?.operationId) this.guardThreadPermission(client, defaults, model)
+        if (turn) { turn.threadId = command.newThreadId; turn.projectId = source.projectId }
+        const request = { threadId: command.newThreadId, sourceThreadId: source.id, modelId: model.id, ...defaults,
+          ...(command.workingCopy ? { workingCopy: command.workingCopy } : {}), ...(command.baseBranch ? { baseBranch: command.baseBranch } : {}),
+          ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}) }
+        if (command.type === 'continue-agent') await host.continueAgent!({ ...request, agentId: command.agentId, ...(command.handover ? { handover: true } : {}) })
+        else await host.forkAtReply!({ ...request, messageId: command.messageId })
+        if (!origin && selectionRevision === this.selectionRevision) { this.state.activeThreadId = command.newThreadId; this.state.activeProjectId = source.projectId }
+        this.observe(); this.acceptSnapshot(await this.readThread(command.newThreadId))
+        this.say(`Opened ${this.thread(command.newThreadId).title}.`)
+        return
+      }
       case 'select-thread': {
         this.selectThread(command.threadId, selectionRevision)
         return
@@ -3603,6 +3643,35 @@ export class AgentControl {
       attachments: command.attachments ?? saved?.attachments ?? [], skills: saved?.skills, files: saved?.files, requestId }
   }
   /** Defaults and provider profiles are preferences, never a remote client's policy grant. */
+  /**
+   * The handover a started thread's first message goes with (#1028): built afresh from Sotto's own record, and recorded
+   * on the thread as which characters it was before the provider hears it. Only the thread's first message carries it,
+   * and only while the feature is on. When it can no longer be built, this send is refused, the handover is put away,
+   * and the next send goes without it.
+   */
+  private async startHandoverFor(command: Extract<DispatchCommand, { type: 'send' }>): Promise<{ prefix: string; sent: StartHandoverSent }> {
+    const thread = this.thread(command.threadId)
+    const built = this.dependencies.host.startHandover?.(thread.id)
+    if (!built) {
+      await this.dependencies.host.markStartHandover?.(thread.id, 'drop').catch(() => undefined)
+      throw new Error(START_HANDOVER_UNREADABLE)
+    }
+    const send = startHandoverSend(built.text, command.messageId)
+    await this.dependencies.host.markStartHandover?.(thread.id, send.sent)
+    return send
+  }
+  /**
+   * Whether a send is a started thread's first, which goes with its handover, answered without waiting, so that every
+   * other send dispatches exactly as it did before (#1028). Not by whether the provider's session started: a first send
+   * it refused after starting one is sent again with the handover.
+   */
+  private startHandoverDue(command: Extract<DispatchCommand, { type: 'send' }>): boolean {
+    if (this.dependencies.threadStartsEnabled !== true || command.wakeUp === true) return false
+    const thread = this.state.host.threads.find(item => item.id === command.threadId)
+    const start = thread?.startedFrom
+    return thread !== undefined && start?.route === 'handover' && start.handover !== undefined && start.handover.sent === undefined
+      && !thread.messages.some(message => message.role === 'user' && message.id !== command.messageId)
+  }
   private guardThreadPermission(client: ClientIdentity, options: { runtimeMode?: AgentRuntimeMode | undefined; providerMode?: string | undefined }, model: AgentModel | undefined): void {
     if ((options.runtimeMode !== undefined && options.runtimeMode !== 'approval-required')
       || (options.providerMode !== undefined && !model?.providerModes?.some(mode => mode.id === options.providerMode && mode.allows === 'nothing'))) {
@@ -3720,6 +3789,10 @@ export class AgentControl {
     const startingEffort = command.type === 'configure-thread' && command.modelId !== undefined && command.reasoningEffort === undefined
       ? resolveModel(this.state.host.models, command.modelId)?.defaultReasoningEffort : undefined
     command = (this.watcherHooks?.beforeDispatch(command as AgentHostCommand, draftId, origin) ?? command) as DispatchCommand
+    // A thread that began from another sends its first message with the handover ahead of the words (#1028).
+    const startHandover = command.type === 'send' && this.startHandoverDue(command) ? await this.startHandoverFor(command) : undefined
+    if (startHandover && command.type === 'send') command = { ...command, text: startHandover.prefix + command.text }
+    const startAborted = (): void => { if (startHandover) void this.dependencies.host.markStartHandover?.(threadId!, null).catch(() => undefined) }
     this.outbox.push({ id: command.commandId, type: command.type, ...(provider ? { provider } : {}), ...(threadId ? { threadId } : {}),
       ...('messageId' in command ? { messageId: command.messageId } : {}),
       ...('requestId' in command ? { requestId: command.requestId } : {}),
@@ -3742,7 +3815,7 @@ export class AgentControl {
     try { await this.persist() }
     catch (error) {
       // Nothing crossed the adapter boundary. Do not leave phantom uncertain intent.
-      this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand)
+      this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand); startAborted()
       this.outbox = this.outbox.filter(item => item.id !== command.commandId)
       if ((prompt || atomicDigest) && draftId && threadId) { this.setDelivery(threadId, draftId, 'failed'); this.publish() }
       // This write is also the one that first saves a prompt sent at once, so its failure says what admission's did.
@@ -3801,7 +3874,7 @@ export class AgentControl {
         if (endLoan && !result?.accepted) stages?.close()
       }
     } catch (error) {
-      this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand)
+      this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand); startAborted()
       if (prompt && (provider === undefined || isUsageProviderId(provider))) {
         try { this.dependencies.usage?.discardPrompt(prompt.threadId, prompt.messageId) }
         catch { /* Only usage metadata is affected. */ }
@@ -3818,7 +3891,7 @@ export class AgentControl {
       }
     }
     if (result.accepted || result.uncertain) this.watcherHooks?.dispatched?.(command as AgentHostCommand)
-    else this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand)
+    else { this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand); startAborted() }
     // Previews are decoration, not history: the provider hears the prompt first, and a definitive refusal records nothing.
     if (prompt && previewAttachments.length
       && (result.accepted || result.uncertain || !this.outbox.some(item => item.id === command.commandId))) {

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { hostIsNewer, hostIsOlder, LEGACY_MANAGEMENT_UPDATE } from '../../shared/hostProtocol'
+import { LEGACY_MANAGEMENT_UPDATE } from '../../shared/hostProtocol'
+import { compareHostToTarget } from '../../shared/hostSelfUpdate'
 import { compareOwlHostTarget, HOST_ARCHIVE_PATTERN, HOST_VERSION_PATTERN, HOST_RELEASES_URL, hostArchiveName, type HostUpdateAction, type HostUpdateFailure, type HostUpdatePhase, type HostUpdateRoute, type HostUpdateState, type HostUpdateStep } from '../../shared/hostUpdates'
-import { getReleaseTrack } from '../../shared/releaseTrack'
 import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS } from './launchScript'
 import { SshFailure } from './sshFailure'
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from './sshLauncher'
@@ -149,14 +149,8 @@ async function probeHere(url: string, signal: AbortSignal): Promise<boolean | un
     return publishedAnswer(response.status, response.headers.get('location'))
   } catch { return undefined }
 }
-/**
- * How a host's `version` stands against an update's `target`: -1 behind it, 0 on it, 1 ahead of it, or undefined when an
- * Owl target cannot be compared with it. By the Owl build order for an Owl target, and by release number otherwise.
- */
-function compareToTarget(version: string, target: string): -1 | 0 | 1 | undefined {
-  if (getReleaseTrack(target) === 'owl') return compareOwlHostTarget(version, target)
-  return hostIsOlder(version, target) ? -1 : hostIsNewer(version, target) ? 1 : 0
-}
+/** The rule a host that updates itself checks a version against too (ADR-0088). */
+const compareToTarget = compareHostToTarget
 const behind = (version: string, target: string): boolean => compareToTarget(version, target) === -1
 
 /**

@@ -30,6 +30,8 @@ export const AGENT_ATTACHMENT_CONTENT = 'sotto:agents:attachment-content'
 export const AGENT_THREAD_DETAIL = 'sotto:agents:thread-detail'
 /** Asked for by the window when it opens a thread whose detail it has not been sent. */
 export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
+/** The words of a started thread's handover, read only when the user asks to read them (#1028). */
+export const AGENT_START_HANDOVER = 'sotto:agents:start-handover'
 export { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 /** How many thread providers Sotto has: the cap on every list that names each provider at most once. */
 export const PROVIDER_COUNT = providerIdSchema.options.length
@@ -218,7 +220,15 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
   providerModes: z.array(agentProviderModeSchema).max(20).optional(),
   /** The provider names one of its own models as the one to reach for; the picker keeps it at the top. */
   recommended: z.boolean().optional(),
+  /**
+   * Where the model runs, for a provider that offers models from several companies under one sign-in: OpenCode's
+   * **model source**, such as OpenCode Zen or Anthropic (ADR-0087). The picker may group by it; `provider` stays the
+   * thread provider's own label, so a model from Anthropic on OpenCode never reads as Claude Code.
+   */
+  source: id.optional(),
 })
+/** The model source OpenCode's free models come from (ADR-0087); the model menu says so on its row. */
+export const OPENCODE_ZEN_SOURCE = 'OpenCode Zen'
 export const agentProjectSchema = z.object({ hostId: z.uuid().optional(), id: providerEntityId, providerId: providerIdSchema.optional(), title: id, path: z.string().max(4_096), workspaceSettledAt: z.string().datetime().nullable().optional() })
 /** How many pages one question carries at most (ADR-0085). */
 export const QUESTION_PAGES_MAX = 8
@@ -278,6 +288,28 @@ export const threadContinuedInSchema = z.object({ threadId: id, provider: provid
 export type ThreadContinuedIn = z.infer<typeof threadContinuedInSchema>
 /** The most continuations a thread's record names, the newest kept, so a record cannot grow without end. */
 export const THREAD_CONTINUED_IN_MAX = 100
+/**
+ * Where a thread began when it began from another thread rather than empty (#1028): one of that thread's agents continued
+ * as a thread of its own (`agent`), or that thread forked at one of its replies (`turn`). The source is named by its Sotto
+ * thread ID alone (ADR-0002). A `fork` is the provider's own copy of the conversation, bound to this thread when it was
+ * made; a `handover` goes ahead of this thread's first message, and `handover.sent` names that message once it has gone.
+ */
+export const agentThreadStartSchema = z.object({
+  threadId: id,
+  from: z.enum(['agent', 'turn']),
+  route: z.enum(['fork', 'handover']),
+  at: z.string().datetime(),
+  /** The agent's title as its roster showed it, for an agent. */
+  agentTitle: z.string().max(240).optional(),
+  /** The agent's observational identity and the assignment a handover carries, for an agent. Never a provider address. */
+  agentId: id.optional(), assignmentId: id.optional(),
+  /** The reply a fork carries the conversation up to, for a turn. */
+  messageId: id.optional(),
+  /** What a handover carries, as counts only: `thin` when it holds an agent's task and result alone. */
+  handover: z.object({ thin: z.boolean(), counts: handoverCountsSchema,
+    sent: z.object({ messageId: id, prefixLength: z.number().int().positive(), prefixDigest: z.string().regex(/^[a-f0-9]{64}$/u) }).strict().optional() }).strict().optional(),
+}).strict()
+export type AgentThreadStart = z.infer<typeof agentThreadStartSchema>
 export const agentMessageSchema = z.object({
   // A projected message combines bounded events and can exceed any one event's limit.
   id, role: z.enum(['user', 'assistant']), text: z.string(), createdAt: z.string(),
@@ -388,6 +420,11 @@ export const agentThreadSchema = z.object({
    */
   continuedFrom: threadContinuedFromSchema.optional().catch(undefined),
   continuedIn: z.array(threadContinuedInSchema).max(THREAD_CONTINUED_IN_MAX).optional().catch(undefined),
+  /**
+   * The thread this one began from, when it was an agent continued as its own thread or a fork at a reply (#1028). Sotto's
+   * record, kept on the thread's own record; absent on every other thread, and from older hosts.
+   */
+  startedFrom: agentThreadStartSchema.optional().catch(undefined),
   /** Who named this thread: the user by hand, Sotto through the thread's own provider, or the stand-in/provider name.
    * Absent on threads saved before Sotto recorded it, which counts as `default`. */
   titleSource: z.enum(['user', 'default', 'generated']).optional(),
@@ -425,7 +462,8 @@ export const agentThreadSchema = z.object({
    * send does not start it. Absent while it is stopped or not started yet, and from hosts that predate it. Never saved. */
   providerSessionOpen: z.literal(true).optional(),
   /** The thread's provider client builds its session without Sotto's tool servers: a Muse client that did not grant
-   * session tool servers (ADR-0079). Absent otherwise, and from hosts that predate it. Never saved. */
+   * session tool servers (ADR-0079), or an OpenCode thread's server that refused them or did not connect them (ADR-0087).
+   * Absent otherwise, and from hosts that predate it. Never saved. */
   sottoToolsWithheld: z.literal(true).optional(),
   /** A Devin thread whose host gives Devin Sotto's tool servers, from Devin CLI 3000.11.92 (#1040). Absent from hosts that
    * predate it, whose Devin threads have none, so a Devin thread without it is read as having none. Never saved. */
@@ -630,7 +668,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -926,12 +964,14 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
     ...(running?.startedAt === undefined ? {} : { runningTurnStartedAt: running.startedAt }) }
 }
 /** The providers that write Sotto's short text. A provider is named here once it does; one that is not writes none. */
-const SHORT_TEXT_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok'])
+const SHORT_TEXT_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'opencode'])
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
  * list; Muse cannot yet disable every tool in one (ADR-0079). Those threads, and a provider's that has not said it
  * writes them, keep their first-message title or stand-in and are offered no Regenerate that could do nothing.
+ * OpenCode writes them through its stateless generation route (ADR-0087); a model source that refuses it, as OpenCode
+ * Zen's free models do, writes nothing, and its threads keep their stand-ins.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
   return providerId === undefined || SHORT_TEXT_PROVIDERS.has(providerId)
@@ -940,15 +980,16 @@ export function providerWritesShortText(providerId: ProviderId | undefined): boo
  * The providers that take Sotto's tool servers. A provider is named here once it does; one that is not gets none. Devin's
  * threads take them only where their host says it gives them (`threadTakesSottoTools`).
  */
-const SOTTO_TOOLS_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'devin', 'muse'])
+const SOTTO_TOOLS_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
 /** Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. */
 export function providerTakesSottoTools(providerId: ProviderId | undefined): boolean {
   return providerId === undefined || SOTTO_TOOLS_PROVIDERS.has(providerId)
 }
 /**
  * Whether this thread's agent gets Sotto's tool servers. Every listed provider takes them: Muse when its client grants
- * session tool servers (ADR-0079), and Devin from CLI 3000.11.92, which attaches the servers a session is opened with
- * (ADR-0056). A client that cannot take them marks its threads `sottoToolsWithheld`, and a Devin thread counts only when
+ * session tool servers (ADR-0079), Devin from CLI 3000.11.92, which attaches the servers a session is opened with
+ * (ADR-0056), and OpenCode when its thread's server connects every one (ADR-0087). A client that cannot take them marks
+ * its threads `sottoToolsWithheld`, and a Devin thread counts only when
  * its host says it gives them (`sottoToolsGiven`).
  */
 export function threadTakesSottoTools(thread: Pick<AgentThread, 'providerId' | 'sottoToolsWithheld' | 'sottoToolsGiven'> | undefined): boolean {
@@ -1038,6 +1079,22 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     workingCopy: z.enum(['independent', 'shared']).optional(),
     baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional(), existingWorktreePath: z.string().min(1).max(4096).optional(),
     reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() }).strict(),
+  /**
+   * One of a thread's agents continued as a thread of its own (#1028). `threadId` is the agent's thread, so the command goes
+   * to that thread's host, and `newThreadId` the thread to make, which the window mints. A Codex agent is forked by Codex
+   * itself; a Claude Code agent, or a Codex agent with `handover`, starts from a thin handover of its task and result that
+   * goes with the new thread's first message. Nothing is sent to any provider until that message.
+   */
+  z.object({ type: z.literal('continue-agent'), threadId: id, agentId: id, newThreadId: z.uuid(), modelId: providerEntityId.optional(),
+    handover: z.literal(true).optional(), workingCopy: z.enum(['independent', 'shared']).optional(),
+    baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional() }).strict(),
+  /**
+   * Fork from here (#1028, E5b): a new thread with `threadId`'s conversation up to its reply `messageId`. Codex and Claude
+   * Code copy it themselves; any other provider starts the new thread from a handover of it that goes with its first
+   * message. `newThreadId` is the thread to make, which the window mints. Nothing is sent to any provider until then.
+   */
+  z.object({ type: z.literal('fork-thread'), threadId: id, messageId: id, newThreadId: z.uuid(), modelId: providerEntityId.optional(),
+    workingCopy: z.enum(['independent', 'shared']).optional(), baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional() }).strict(),
   z.object({ type: z.enum(['retry-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
   /** Read the thread's folder again, remote and all. `background` is a read the window made on its own (it regained focus,
    * a draft began), which asks GitHub only as the timer would: never while its rate limit is paused or below the reserve (#820). */
@@ -1118,7 +1175,14 @@ export interface AgentBridge {
   threadDetail?(threadId: string): Promise<AgentThreadDetail | null>
   /** Whole details and the deltas between them; a delta the window cannot apply sends it back to `threadDetail`. */
   onThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
+  /**
+   * The words of the handover a thread that began from another goes with on its first message, as its provider will read
+   * them, or null once it has none (#1028). Read on the thread's own host, and only when the user asks.
+   */
+  startHandover?(threadId: string): Promise<AgentStartHandover | null>
 }
+export const agentStartHandoverSchema = z.object({ text: z.string() }).strict()
+export type AgentStartHandover = z.infer<typeof agentStartHandoverSchema>
 
 /**
  * The agent bridge as the preload exposes it (`window.sotto.agents`): what
@@ -1146,7 +1210,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse'])
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays

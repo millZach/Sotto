@@ -26,6 +26,7 @@ import { codexFixture } from '../fixtures/codexFixture'
 
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import type { McpReply } from '../fixtures/visualToolCall'
+import { headerList } from '../fixtures/mcpHeaders'
 
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
@@ -39,7 +40,7 @@ async function given(provider: ProviderId, records: readonly RecordedRpc[]): Pro
     const entry = start.config.mcp_servers[PULL_REQUEST_MCP_SERVER]!
     // Codex is told to approve Sotto's own server's calls, so the provider's own prompt is suppressed (decision 4).
     expect(entry.default_tools_approval_mode).toBe('approve')
-    return { url: entry.url, headers: Object.entries(entry.http_headers).map(([name, value]) => ({ name, value })) }
+    return { url: entry.url, headers: headerList(entry.http_headers) }
   }
   if (provider === 'claude') {
     const launch = records.findLast(record => ['launch', 'resume'].includes(record.method ?? '') && (record.params?.frame as { args: string[] }).args.includes('--mcp-config'))
@@ -48,7 +49,7 @@ async function given(provider: ProviderId, records: readonly RecordedRpc[]): Pro
     for (const tool of ['babysit_pull_request', 'stop_babysitting', 'list_babysitting']) expect(args).toContain(`mcp__${PULL_REQUEST_MCP_SERVER}__${tool}`)
     const config = JSON.parse(await readFile(args[args.indexOf('--mcp-config') + 1]!, 'utf8')) as { mcpServers: Record<string, { url: string; headers: Record<string, string> }> }
     const entry = config.mcpServers[PULL_REQUEST_MCP_SERVER]!
-    return { url: entry.url, headers: Object.entries(entry.headers).map(([name, value]) => ({ name, value })) }
+    return { url: entry.url, headers: headerList(entry.headers) }
   }
   const servers = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? '')).map(record => record.params?.mcpServers as { name: string; url: string; headers: { name: string; value: string }[] }[]).find(value => value?.length)!
   return servers.find(server => server.name === PULL_REQUEST_MCP_SERVER)!

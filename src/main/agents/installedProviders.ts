@@ -7,6 +7,7 @@ import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { findGrokExecutable } from './grokRpc'
 import { findDevinExecutable } from './devinRpc'
 import { findMuseExecutable } from './museRpc'
+import { findOpenCodeExecutable } from './opencodeServer'
 
 /**
  * Which native thread clients are on this machine. Presence only: no sign-in and no session. A provider held to Owl on
@@ -18,7 +19,7 @@ export async function detectInstalledProviders(options: { heldProviders?: HeldPr
   // One finder per provider, so a new provider is a type error here until Sotto knows where to look for its client.
   const finders: Readonly<Record<ProviderId, () => Promise<unknown>>> = {
     codex: findCodexExecutable, claude: () => claude.findExecutable(), grok: findGrokExecutable, devin: findDevinExecutable,
-    muse: findMuseExecutable,
+    muse: findMuseExecutable, opencode: findOpenCodeExecutable,
   }
   const ids = providerIdSchema.options.filter(id => !held.has(id))
   const found = await Promise.all(ids.map(id => finders[id]()))

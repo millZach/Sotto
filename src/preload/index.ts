@@ -15,6 +15,12 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { VISUAL_PAGE_OPEN, visualPageRequestSchema, visualPageResultSchema, type VisualPagesBridge } from '../shared/visualPages'
 import { SUBAGENTS_PAGE, SUBAGENTS_ASSIGNMENTS, SUBAGENTS_CHANGED, subagentPageRequestSchema, subagentAssignmentsRequestSchema, subagentPageSchema, subagentAssignmentsPageSchema, subagentChangeSchema, type SubagentsBridge } from '../shared/subagents'
 import { DELEGATIONS_READ, DELEGATIONS_CHANGED, DELEGATION_RENDERER_ARGUMENT, delegationsReadSchema, delegationsRequestSchema, delegationsChangedSchema, type DelegationsBridge } from '../shared/delegation'
+import {
+  OPENCODE_RENDERER_ARGUMENT, OPENCODE_SIGN_IN_BROWSER, OPENCODE_SIGN_IN_CANCEL, OPENCODE_SIGN_IN_EXTERNAL, OPENCODE_SIGN_IN_FINISH, OPENCODE_SIGN_IN_KEY,
+  OPENCODE_SIGN_IN_REOPEN, OPENCODE_SIGN_IN_WAIT, OPENCODE_SIGN_OUT, OPENCODE_SOURCES_READ, modelSourcesSchema, signInAttemptRequestSchema, signInDoneSchema,
+  signInFinishRequestSchema, signInKeyRequestSchema, signInMethodRequestSchema, signInResultSchema, signInStartSchema, signInWaitSchema, signOutRequestSchema,
+  type OpenCodeSignInBridge,
+} from '../shared/opencodeSignIn'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
 import { createToolsBridges } from './tools'
@@ -34,7 +40,7 @@ import { externalLinkSchema } from '../shared/externalLinks'
 import { questionPageOpenResultSchema, questionPageOpenSchema } from '../shared/questionPageOpen'
 import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
-import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema } from '../shared/agents'
+import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -273,6 +279,7 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     gitPullRequest: (request: import('../shared/gitPullRequests').GitPullRequestRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST, gitPullRequestResultSchema, gitPullRequestRequestSchema.parse(request)),
     hostFolders: (request: import('../shared/hostFolders').HostFoldersClientRequest) => invokeParsed(renderer, AGENT_HOST_FOLDERS, hostFoldersResultSchema, hostFoldersClientRequestSchema.parse(request)),
     threadDetail: (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
+    startHandover: (threadId: string) => invokeParsed(renderer, AGENT_START_HANDOVER, agentStartHandoverSchema.nullable(), agentThreadDetailRequestSchema.parse(threadId)),
     // Whole details and the deltas between them share this channel, so the shape they share is the guard.
     onThreadDetail: (listener: (update: import('../shared/agents').AgentThreadDetailUpdate) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
       trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
@@ -297,6 +304,7 @@ export function createSottoBridge(
   usageEnabled = false,
   delegationEnabled = false,
   continueEnabled = false,
+  opencodeEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -338,6 +346,19 @@ export function createSottoBridge(
     ...(delegationEnabled ? { delegations: Object.freeze<DelegationsBridge>({
       read: request => invokeParsed(renderer, DELEGATIONS_READ, delegationsReadSchema, delegationsRequestSchema.parse(request)),
       onChanged: listener => subscribe(renderer, DELEGATIONS_CHANGED, delegationsChangedSchema, listener),
+    }) } : {}),
+    // Signing Sotto's OpenCode in to model sources (#1104): only while OpenCode's Owl feature is on. A key goes to main
+    // once and nothing returned carries one.
+    ...(opencodeEnabled ? { opencode: Object.freeze<OpenCodeSignInBridge>({
+      sources: () => invokeParsed(renderer, OPENCODE_SOURCES_READ, modelSourcesSchema),
+      signInWithKey: request => invokeParsed(renderer, OPENCODE_SIGN_IN_KEY, signInResultSchema, signInKeyRequestSchema.parse(request)),
+      startBrowserSignIn: request => invokeParsed(renderer, OPENCODE_SIGN_IN_BROWSER, signInStartSchema, signInMethodRequestSchema.parse(request)),
+      useExternalSignIn: request => invokeParsed(renderer, OPENCODE_SIGN_IN_EXTERNAL, signInResultSchema, signInMethodRequestSchema.parse(request)),
+      wait: request => invokeParsed(renderer, OPENCODE_SIGN_IN_WAIT, signInWaitSchema, signInAttemptRequestSchema.parse(request)),
+      finish: request => invokeParsed(renderer, OPENCODE_SIGN_IN_FINISH, signInWaitSchema, signInFinishRequestSchema.parse(request)),
+      reopen: request => invokeParsed(renderer, OPENCODE_SIGN_IN_REOPEN, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
+      cancel: request => invokeParsed(renderer, OPENCODE_SIGN_IN_CANCEL, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
+      signOut: request => invokeParsed(renderer, OPENCODE_SIGN_OUT, signInResultSchema, signOutRequestSchema.parse(request)),
     }) } : {}),
     // Continue a thread on another provider (ADR-0089): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(continueEnabled ? { continueThread: Object.freeze<ContinueBridge>({
@@ -554,7 +575,7 @@ export function exposeRendererBridge(
   const platform = parsePlatformArgument(arguments_)
   if (rendererRole === 'main') {
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
-      arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT)))
+      arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

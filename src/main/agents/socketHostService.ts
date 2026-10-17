@@ -1,3 +1,4 @@
+import { startsThread } from '../../shared/threadStarts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
@@ -19,7 +20,7 @@ import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignm
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import type { AgentThread, ProviderId } from '../../shared/agents'
-import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema } from '../../shared/hostProtocol'
+import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema } from '../../shared/hostProtocol'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
@@ -29,7 +30,7 @@ import { requestQuestionsDigest } from './requestDrafts'
 import { version as sourceVersion } from '../../../package.json'
 import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from './heldProviderGate'
-import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
+import { heldProviderRefusal, heldProvidersOption, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
@@ -343,6 +344,8 @@ export class SocketHostService implements HostService {
         }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, message.detail)
         else if (message.event === 'detail-delta') this.applyDelta(message.threadId, message.delta)
+        // Sent only to a client whose hello accepts `host-update` (ADR-0088), which this one does not ask for yet.
+        else if (message.event === 'host-update-step') return
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
       } else {
         const pending = this.pending.get(message.id)
@@ -646,7 +649,7 @@ export class SocketHostService implements HostService {
   get supportsWatcherWorkSettled(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-work-settled') }
   get supportsWatcherOutcomes(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-outcomes') }
   get supportsWatcherMuse(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-muse') }
-  private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): ProviderId | undefined {
+  private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): HeldProviderNames | undefined {
     return heldProviderOfWatcherRequest(request, this.held, this.cached?.host, this.dormantProviderThreads)
   }
   async watcherControl(request: WatcherHostControl, _client?: ClientIdentity, guard?: () => void): Promise<unknown> {
@@ -984,7 +987,8 @@ export class SocketHostService implements HostService {
       this.snapshotEpoch++ // A read already in flight cannot retire this newly acknowledged revision.
       this.notifyState()
       this.refreshRetainedShell()
-    } else this.publish(state, Boolean(retainedId && !state.error))
+    // Continuing an agent or forking at a reply answers where it was asked (#1028): its refusal is this command's alone.
+    } else this.publish(startsThread(command) ? { ...state, error: before.error } : state, Boolean(retainedId && !state.error))
     const acknowledged = this.state()
     // Typing changes no history. Its own acknowledgement settles the save; observed pushes update the rest.
     if (command.type === 'compose' || command.type === 'save-thread-draft') {
@@ -1021,7 +1025,7 @@ export class SocketHostService implements HostService {
     const refreshed = generation === this.generation ? this.state() : acknowledged
     // State refreshes cannot replace this command's own answer outcome.
     return accepted ? { ...refreshed, error: null }
-      : command.type === 'answer' || command.type === 'send' ? { ...refreshed, error: state.error } : refreshed
+      : command.type === 'answer' || command.type === 'send' || startsThread(command) ? { ...refreshed, error: state.error } : refreshed
   }
   async receipt(commandId: string, answer?: HostAnswerTarget): Promise<HostReceipt> {
     return this.read(hostReceiptSchema, await this.call({ op: 'receipt', commandId, ...(answer ? { answer } : {}) }))
@@ -1131,6 +1135,12 @@ export class SocketHostService implements HostService {
   async hostFacts(): Promise<HostMachineReport> {
     this.offers('host-facts')
     return this.read(hostMachineReportSchema, await this.call({ op: 'host-facts' }, undefined, undefined, 10000))
+  }
+  /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
+  get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }
+  async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
+    this.offers('thread-starts')
+    return this.read(hostStartHandoverSchema, await this.call({ op: 'start-handover', threadId })).handover
   }
   get supportsUsage(): boolean { return this.features.includes('usage-dashboard') }
   async usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {

@@ -45,6 +45,35 @@ describe('SettingsRepository', () => {
     expect((await reopened.update({ watcherInFlightLimit: 8 })).watcherInFlightLimit).toBe(8)
     expect((await reopened.reset()).watcherInFlightLimit).toBe(DEFAULT_SETTINGS.watcherInFlightLimit)
   })
+  it('keeps saved worker roles whole through a build without them, then restores Owl edits (#1041)', async () => {
+    const { filePath, repository: owl } = await createRepository()
+    const rows: AppSettings['workerRoles'] = { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } }
+    await owl.update({ workerRoles: rows, autoPaste: false })
+    const stable = new SettingsRepository(filePath, { workerRolesEnabled: false })
+    expect((await stable.save({ ...DEFAULT_SETTINGS, hotkey: 'Alt+F8' })).workerRoles).toEqual(rows)
+    expect((await stable.update({ hotkey: 'Alt+F9' })).workerRoles).toEqual(rows)
+    const before = await readFile(filePath, 'utf8')
+    await expect(stable.update({ workerRoles: {} })).rejects.toThrow('Sotto Owl')
+    expect(await readFile(filePath, 'utf8')).toBe(before)
+    expect((await stable.reset()).workerRoles).toEqual(rows)
+    const reopened = new SettingsRepository(filePath, { workerRolesEnabled: true })
+    expect((await reopened.get()).workerRoles).toEqual(rows)
+    expect((await reopened.update({ workerRoles: {} })).workerRoles).toEqual({})
+  })
+  it('reads saved worker roles row by row, dropping only a damaged or unknown row', async () => {
+    const { filePath, repository } = await createRepository()
+    await writeFile(filePath, JSON.stringify({ ...DEFAULT_SETTINGS, workerRoles: {
+      ui: { modelId: 'native:codex:model:gpt-6.1-sol', reasoningEffort: 'high', runtimeMode: 'auto-accept-edits' },
+      research: { modelId: '', reasoningEffort: null },
+      painting: { modelId: 'native:claude:model:opus', reasoningEffort: null },
+      orchestrating: { modelId: 'native:claude:model:opus', reasoningEffort: 'high', runtimeMode: 'full-access' },
+    } }), 'utf8')
+    expect((await repository.get()).workerRoles).toEqual({
+      ui: { modelId: 'native:codex:model:gpt-6.1-sol', reasoningEffort: 'high', runtimeMode: 'auto-accept-edits' },
+      // Watcher's permission is its own, never a role's.
+      orchestrating: { modelId: 'native:claude:model:opus', reasoningEffort: 'high' },
+    })
+  })
   it('canonically removes the voice gate without changing dictation or memory settings', async () => {
     const { filePath, repository } = await createRepository()
     const legacy = { ...DEFAULT_SETTINGS, voiceCoordinatorEnabled: true, memoryEnabled: true, hotkey: 'Alt+F8', autoPaste: false, soundCues: false }

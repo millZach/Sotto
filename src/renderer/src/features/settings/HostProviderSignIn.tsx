@@ -2,9 +2,9 @@ import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react
 import { Check, Copy, LoaderCircle } from 'lucide-react'
 import { writeClipboard } from '../../agents/richActions'
 import { isCompositionKey } from '../../agents/composerKeys'
-import { PROVIDER_LABELS, type ProviderId } from '../../../../shared/agents'
+import { PROVIDER_LABELS } from '../../../../shared/agents'
 import type { HostsBridge, HostStatus } from '../../../../shared/hosts'
-import { PASTED_CODE_MAX, type ProviderSignInView } from '../../../../shared/hostProviders'
+import { PASTED_CODE_MAX, type HostProviderId, type ProviderSignInView } from '../../../../shared/hostProviders'
 import { Button } from '../../components/Button'
 import { HostsModal } from './HostsModal'
 
@@ -25,7 +25,7 @@ function spelled(code: string): string { return [...code].map(character => chara
  * code the page shows (Claude Code). Cancel and Escape stop the sign-in on the host; nothing is kept on this computer.
  */
 export function HostProviderSignIn({ host, provider, bridge, onClose }: {
-  readonly host: HostStatus; readonly provider: ProviderId; readonly bridge: HostsBridge; readonly onClose: () => void
+  readonly host: HostStatus; readonly provider: HostProviderId; readonly bridge: HostsBridge; readonly onClose: () => void
 }): ReactNode {
   const name = PROVIDER_LABELS[provider]
   const [view, setView] = useState<ProviderSignInView | null>(null)

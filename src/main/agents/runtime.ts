@@ -5,11 +5,14 @@ import { babysitEndedReasonSchema, type BabysitEndedReason } from '../../shared/
 import { ShortTextWriter } from '../llm/shortTextWriter'
 import { firstMessageTitleWriter, threadTitleWriter } from '../llm/threadTitle'
 import { threadBranchWriter } from '../llm/threadBranch'
-import { CodexAppServerHost } from './codex'
+import { CodexAppServerHost, type CodexAdapterEvent } from './codex'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './claude'
+import { WorkerRoles } from './subagentRoles'
+import { subagentRoleTable } from '../../shared/workerRoles'
 import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
+import { OpenCodeHost } from './opencode'
 import { HeldProviderHost } from './heldProviderGate'
 import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { ConfiguredProviderHost } from './providerSwitch'
@@ -62,8 +65,12 @@ export interface AgentRuntimeOptions {
   streamingPublishCost?: boolean
   /** The Owl list's answer for delegation between threads (ADR-0081), read once by the process owner. Absent fails closed. */
   delegationEnabled?: boolean
+  /** The Owl list's answer for worker roles (#1041), read once by the process owner. Absent fails closed. */
+  workerRolesEnabled?: boolean
   /** The Owl list's answer for continuing a thread on another provider (ADR-0089), read once by the process owner. Absent fails closed. */
   continueEnabled?: boolean
+  /** The Owl list's answer for continuing an agent as its own thread and forking at a reply (#1028), read once. Absent fails closed. */
+  threadStartsEnabled?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -78,6 +85,8 @@ export interface AgentRuntimeOptions {
   logFailure?: ControlDependencies['logFailure']
   /** How a Claude settings change reached its CLI, as stable event names; never a model, a level or a mode. */
   claudeSettingsLog?: (event: ClaudeAdapterEvent) => void
+  /** What happened to Sotto's Codex role files (#1042), as stable event names; never a path, a model or Codex's words. */
+  codexLog?: (event: CodexAdapterEvent) => void
   missingAttachment?: ControlDependencies['missingAttachment']
   /** The headless host says so: it connects every signed-in provider at start and names itself in refusals (ADR-0036). */
   runsAs?: ControlDependencies['runsAs']
@@ -123,12 +132,14 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.
   const adapter = (id: ProviderId, build: () => NativeHost): NativeHost => held.has(id) ? new HeldProviderHost(id) : build()
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
-    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true })),
+    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
     claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}) })),
     grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true })),
     devin: adapter('devin', () => options.providers?.devin ?? new DevinAcpHost(directory)),
     muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory)),
+    // A desktop's OpenCode opens a sign-in page in the user's browser (#1104); a headless host's offers no sign-in yet (#1107).
+    opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held } : { heldProviders: held, openExternal: options.openExternal })),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -138,6 +149,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       grok: new SottoThreadHost('grok', providers.grok!, threadRegistry!),
       devin: new SottoThreadHost('devin', providers.devin!, threadRegistry!),
       muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
+      opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
     },
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
@@ -146,6 +158,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()
+  if (options.threadStartsEnabled === true) agentHost.allowThreadStarts()
   agentHost.setWorkingCopyDefaults(projectId => options.settings().projectThreadWorkingCopyDefaults[projectId] ?? options.settings().threadWorkingCopyDefault)
   let gitStatus: GitStatusReader | undefined
   let gitHubRateLimit: GitHubRateLimit | undefined
@@ -187,6 +200,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const agentControl: AgentControl = new AgentControl({
     directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
+    ...(options.threadStartsEnabled === true ? { threadStartsEnabled: true } : {}),
     historyEnabled: options.historyEnabled,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
@@ -205,21 +219,28 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   let watcherTools: WatcherToolServer | undefined
   // Delegation between threads (ADR-0081): only this computer's threads take Sotto's tool servers, so a headless host has none.
   let delegation: DelegationService | undefined
+  // Worker roles (#1041): Settings are read only when a start or a delegation asks for its role.
+  const roles = options.workerRolesEnabled === true ? { roles: () => options.settings().workerRoles } : {}
+  // Each provider's own sub-agents follow them too (#1042): the table is read when a thread on this computer launches,
+  // and offered again when Settings change. A headless host's threads start concretely, as their workers do.
+  const workerRoles = options.workerRolesEnabled === true && options.runsAs !== 'headless-host'
+    ? new WorkerRoles(() => subagentRoleTable(options.settings().workerRoles, agentControl.watcherSnapshot().models)) : undefined
+  if (workerRoles) agentHost.useWorkerRoles(workerRoles)
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       limit: () => options.settings().watcherInFlightLimit, workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
-      otherStartsInFlight: () => delegation?.startsInFlight() ?? 0 }) : undefined
+      otherStartsInFlight: () => delegation?.startsInFlight() ?? 0, ...roles }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
       limit: () => options.settings().watcherInFlightLimit, otherStartsInFlight: () => watcher?.startsInFlight() ?? 0,
-      tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId) })
+      tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles })
   }
   // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
   const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
     ? new ContinueService({ control: agentControl, host: agentHost }) : undefined
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
-    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher); agentHost.useWatcherTools(watcherTools) }
+    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true }); agentHost.useWatcherTools(watcherTools) }
   }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's
@@ -346,9 +367,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (watcher) await watcher.recover()
   if (delegation) await delegation.recover()
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
+    ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(usage ? { usage, mayClearUsage: client => (options.authority?.mayGrant(client) ?? mayGrantLocally(client)).allowed } : {}),
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),
     ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher) } : {}) })
   babysitter?.begin()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, prepareForShutdown, close }
+  // Signing Sotto's OpenCode in to model sources (#1104): only where its adapter runs, so a held OpenCode has none.
+  const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, prepareForShutdown, close }
 }

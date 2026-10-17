@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import type { HostDeviceList, TailscaleConnectOutcome, TailscaleSummary } from './hostDevices'
-import { providerIdSchema } from './agents'
-import type { HostClientUpdateRequest, HostProviderAction, HostProviderActionResult, HostProviderJobState, HostSignInRequest, ProviderSignInView } from './hostProviders'
+import { hostProviderIdSchema, type HostClientUpdateRequest, type HostProviderAction, type HostProviderActionResult, type HostProviderJobState, type HostSignInRequest, type ProviderSignInView } from './hostProviders'
 import { hostUpdateCommandSchema, type HostUpdateState } from './hostUpdates'
 import { hostPhonesCommandSchema, type PhonesState } from './phones'
 import { hostBootCommandSchema, type BootStatus, type HostBootState } from './bootStart'
@@ -261,7 +260,7 @@ export const hostsCommandSchema = z.discriminatedUnion('type', [
    * Have my agent install it (update it, fix it) on a provider's tile (ADR-0035): a provider job on `modelId` for this
    * one saved host (`hostId`) and this one provider. What the job does follows from why the host cannot use it.
    */
-  z.object({ type: z.literal('start-provider-job'), id: z.uuid(), hostId: z.uuid(), provider: providerIdSchema, modelId: z.string().min(1).max(6_144) }).strict(),
+  z.object({ type: z.literal('start-provider-job'), id: z.uuid(), hostId: z.uuid(), provider: hostProviderIdSchema, modelId: z.string().min(1).max(6_144) }).strict(),
   /** Stop on the working tile: stops the job's thread and its tool, and leaves whatever it installed. */
   z.object({ type: z.literal('stop-provider-job'), id: z.uuid() }).strict(),
   z.object({ type: z.literal('restart') }).strict(),

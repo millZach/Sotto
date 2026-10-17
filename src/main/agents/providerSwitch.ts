@@ -14,7 +14,7 @@ import { sameSnapshot } from './sameSnapshot'
 import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { mappedSink, type UsageHistorySink } from './usageHistory/sink'
 import { unavailableProviderQuota } from './providerQuota'
-import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles } from './host'
+import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles, type ThreadForkRequest, type WorkerRoleSource } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -124,6 +124,9 @@ export class ConfiguredProviderHost implements AgentHost {
   }
   useThreadTools(tools: readonly ScopedThreadTools[]): void {
     for (const id of providerIdSchema.options) this.options.hosts[id].useThreadTools?.(tools)
+  }
+  useWorkerRoles(roles: WorkerRoleSource): void {
+    for (const id of providerIdSchema.options) this.options.hosts[id].useWorkerRoles?.(roles)
   }
   useThreadHistory(source: ThreadHistorySource): void {
     for (const id of providerIdSchema.options) this.options.hosts[id].useThreadHistory?.(source)
@@ -354,6 +357,18 @@ export class ConfiguredProviderHost implements AgentHost {
     const host = this.options.hosts[provider]
     if (!host.rollbackThread) throw new Error('This provider does not support conversation rewind.')
     return host.rollbackThread(threadId, removedUserMessages, expectedUserMessageIds)
+  }
+  /**
+   * A fork is its source's provider's own copy (#1028), so it goes to the provider that owns the source thread, on one of
+   * that provider's models; no other provider is asked in its place.
+   */
+  async forkThread(request: ThreadForkRequest): Promise<AgentHostResult> {
+    const provider = this.owner(request.source.threadId); this.requireConnected(provider)
+    const host = this.options.hosts[provider]
+    if (!host.forkThread) throw new Error(`${PROVIDER_LABELS[provider]} has no fork of its own, so nothing was made.`)
+    const model = resolveModel(this.aggregate().models, this.resolveModelId(request.modelId))
+    if (!model?.ready || model.providerId !== provider) throw new Error(`Choose a ready ${PROVIDER_LABELS[provider]} model: a fork stays with its source’s provider. Nothing was made.`)
+    return host.forkThread({ ...request, modelId: nativeEntityId(provider, 'model', model.id) })
   }
   /**
    * The thread's own provider writes or nothing does (ADR-0026). A client that is not connected is not

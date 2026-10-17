@@ -9,6 +9,7 @@
 .provider-mark[data-provider='claude']:is(.providers-list__select > *, .provider-detail__header > *) { color: var(--tt-provider-claude); }
 .provider-mark[data-provider='grok']:is(.providers-list__select > *, .provider-detail__header > *) { color: var(--tt-provider-grok); }
 .provider-mark[data-provider='devin']:is(.providers-list__select > *, .provider-detail__header > *) { color: var(--tt-provider-devin); }
+.provider-mark[data-provider='opencode']:is(.providers-list__select > *, .provider-detail__header > *) { color: var(--tt-provider-opencode); }
 .providers-list__select > span { display: grid; gap: 7px; min-width: 0; }
 .providers-list__select strong { font-size: 15px; font-weight: 600; }
 .providers-list__select small { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-text-muted); }

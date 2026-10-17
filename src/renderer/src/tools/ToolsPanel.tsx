@@ -7,6 +7,8 @@ import type { GitChangesBridge } from '../../../shared/gitChanges'
 import type { TerminalBridge } from '../../../shared/terminal'
 import type { SubagentsBridge } from '../../../shared/subagents'
 import { AgentsSurface } from './AgentsSurface'
+import type { AgentContinueOptions } from './AgentContinue'
+import { useThreadStarts } from '../agents/ThreadStart'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
 import { offersBabysitting } from '../agents/babysitting'
 import { resolveModel } from '../../../shared/modelCatalog'
@@ -256,6 +258,18 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // that leave out what needs the thread on this computer: reveal, the turn checkpoints and the watch.
   const hostFiles = useMemo(() => bridge && hostThreadFiles(bridge), [bridge])
   const hostChanges = useMemo(() => changesBridge && hostThreadChanges(changesBridge), [changesBridge])
+  // Continue as a thread on a finished agent (#1028; Owl only): the agents Codex and Claude Code threads report.
+  const startsOn = useThreadStarts()
+  const continueModels = thread ? hostForThread(state.host, thread).models : undefined
+  const sourceRepository = thread?.worktree?.git?.isRepository === true, sourceBranch = thread?.worktree?.git?.branch ?? null
+  const continuation = useMemo<AgentContinueOptions | undefined>(() => {
+    if (!startsOn || !thread || !continueModels || !command || (thread.providerId !== 'codex' && thread.providerId !== 'claude') || thread.kind === 'watcher' || thread.kind === 'watcher-history') return undefined
+    return { threadId: thread.id, threadTitle: thread.title, provider: thread.providerId, projectId: thread.projectId, remote: thread.remoteHost === true,
+      where: thread.remoteHost ? thread.hostLabel ?? 'The host' : 'This computer', models: continueModels, sourceModelId: thread.modelId, command,
+      ...(sourceRepository ? { sourceBranch: { currentBranch: sourceBranch } } : {}),
+      workingCopyOptions: thread.remoteHost ? undefined : window.sotto?.agents?.workingCopyOptions }
+  // The thread is read by the fields the form shows, so a publish that changes none of them keeps the form as it is.
+  }, [startsOn, thread?.id, thread?.title, thread?.providerId, thread?.projectId, thread?.remoteHost, thread?.hostLabel, thread?.modelId, thread?.kind, continueModels, command, sourceRepository, sourceBranch])
   const filesFor = thread?.remoteHost ? hostFiles : bridge
   const changesFor = thread?.remoteHost ? hostChanges : changesBridge
   const workingCopyTarget = chrome.pinnedThreadId ?? focusedThreadId
@@ -433,7 +447,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (thread.remoteHost && (chrome.surface === 'terminal' || chrome.surface === 'browser' || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{surfaceLabel} is on the host machine.</strong><p>Use this tool on the host. Replies and permission answers remain available here.</p></div></>
   // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge}
-    rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} />
+    rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} continuation={continuation} />
   else if (chrome.surface === 'iphone') body = <IPhoneSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} onFloat={canFloat ? floatBrowser : undefined} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
