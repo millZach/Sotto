@@ -245,8 +245,9 @@ describe('Add a model source', () => {
   })
 
   it('cancels a browser sign-in that starts after the dialog closed, and never opens its page', async () => {
-    let answer: (value: Awaited<ReturnType<OpenCodeSignInBridge['startBrowserSignIn']>>) => void = () => undefined
-    const api = await mount(bridge({ startBrowserSignIn: vi.fn(() => new Promise(resolve => { answer = resolve })) }))
+    type Started = Awaited<ReturnType<OpenCodeSignInBridge['startBrowserSignIn']>>
+    let answer: (value: Started) => void = () => undefined
+    const api = await mount(bridge({ startBrowserSignIn: vi.fn(() => new Promise<Started>(resolve => { answer = resolve })) }))
     await openDialog()
     const dialog = await pick(/^GitLab Duo,/u)
     fireEvent.click(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' }))

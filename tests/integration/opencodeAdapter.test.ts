@@ -675,7 +675,7 @@ it('retires a thread that was opening during an update once its opening complete
     await expect.poll(async () => (await f.driver.requests()).filter(record => record.method === 'session.get').length, { timeout: 15_000 }).toBe(1)
     // The newer client is installed with the history read still held.
     await f.script({ version: '2.0.40', delay: { 'session.messages': 2_000 } })
-    await f.host.clientUpdated!('opencode')
+    await f.host.clientUpdated!()
     // The server the opening runs on holds the session once its held read is answered.
     await expect.poll(async () => { const holder = await f.holder(id); return holder !== undefined && holder !== first }, { timeout: 15_000 }).toBe(true)
     const opening = await f.holder(id)
