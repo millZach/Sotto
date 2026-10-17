@@ -2,6 +2,7 @@ import { HOST_NODE_MAJOR } from './sshFailure'
 import { quoteRemoteArgument, type ValidatedSshHostConfiguration } from './sshConfiguration'
 import { desktopAnswerSetupSql } from '../memory/migrations.mjs'
 import { DESKTOP_CLIENTS_FILE, DESKTOP_CLIENTS_MAX, DESKTOP_CLIENT_ID_MAX } from '../../shared/desktopClients'
+import { HOST_STOP_DRAIN_MS, HOST_UPDATE_LOCK_UNNAMED_MS, hostLaunchTimings } from '../../shared/hostLaunchTimings'
 
 /**
  * The launch script: fixed Node source the desktop pipes to one `ssh` command per operation. It finds or
@@ -47,7 +48,9 @@ const http = require('node:http');
 const net = require('node:net');
 const crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
-const cfg = JSON.parse(process.argv[process.argv[1] === '-' ? 2 : 1]);
+// The configuration is the last argument however Node was given the script: on stdin, with -e, or as a file, which
+// is how a host that updates itself runs its restart under a transient systemd unit (ADR-0088).
+const cfg = JSON.parse(process.argv[process.argv.length - 1]);
 const resolvePath = value => path.resolve(value.startsWith('~/') ? path.join(os.homedir(), value.slice(2)) : value);
 const data = resolvePath(cfg.dataDirectory);
 const install = resolvePath(cfg.installPath);
@@ -73,7 +76,44 @@ const finishesAlone = cfg.op === 'update-install' || cfg.op === 'update-restart'
 process.stdout.on('error', () => { if (!finishesAlone) process.exit(0); });
 if (finishesAlone) process.on('SIGHUP', () => undefined);
 const say = event => new Promise(resolve => { if (process.stdout.destroyed) { resolve(); return; } process.stdout.write(JSON.stringify(event) + '\n', () => resolve()); });
-const finish = async event => { await say(event); process.exit(0); };
+// A restart a host asked for over its own socket (ADR-0088) also reports in a file in its data folder, since the host that
+// asked is the one it stops. Each such restart is one attempt, named by the host. Whoever first makes the attempt's claim
+// file decides it: the restart once its checks pass, or the host when it stops waiting. A restart that finds its attempt
+// claimed touches nothing, and no later attempt can take the claim from it, since each has its own.
+const attempt = typeof cfg.attempt === 'string' && /^[a-f0-9]{8,64}$/.test(cfg.attempt) ? cfg.attempt : null;
+const resultFile = attempt && typeof cfg.resultFile === 'string' && path.isAbsolute(cfg.resultFile) && path.dirname(path.resolve(cfg.resultFile)) === data ? path.resolve(cfg.resultFile) : null;
+let claimed = false;
+const resultText = value => JSON.stringify({ v: 1, attempt, version: typeof cfg.version === 'string' && RELEASE.test(cfg.version) ? cfg.version : null, ...value }) + '\n';
+const writeResult = async value => {
+  const temporary = resultFile + '.' + process.pid + '.tmp';
+  try { await fs.writeFile(temporary, resultText(value), { mode: 0o600 }); await fs.rename(temporary, resultFile); return true; }
+  catch { await fs.rm(temporary, { force: true }).catch(() => undefined); return false; }
+};
+// True only when this process claimed the attempt and the host can read what it claimed with: a restart whose status could
+// not be written does not go ahead, since the host would stop with no answer given and no outcome to read after.
+const claim = async value => {
+  if (!resultFile) return true;
+  try { await fs.writeFile(resultFile + '.' + attempt + '.claim', String(process.pid), { flag: 'wx', mode: 0o600 }); } catch { return false; }
+  claimed = true;
+  return writeResult(value);
+};
+// Only what the desktop reads of a result goes in the file, so it stays small whatever the result carried.
+const briefly = event => { const kept = {}; for (const key of ['type', 'reason', 'restarted', 'cause', 'hostId', 'pid']) if (event && event[key] !== undefined) kept[key] = event[key]; return kept; };
+const record = async event => {
+  if (!resultFile) return;
+  const value = { state: 'finished', result: briefly(event) };
+  if (!claimed) { await claim(value); return; }
+  await writeResult(value);
+};
+const finish = async event => { await record(event); await say(event); process.exit(0); };
+// The host that asked answers its desktop once the restart has claimed the file, then says so beside it. The restart waits
+// a few seconds for that before it stops the host, so the answer is not cut off; a host that never says goes ahead anyway.
+const answered = async () => {
+  if (!resultFile) return;
+  const file = resultFile + '.' + attempt + '.answered', deadline = Date.now() + (Number.isInteger(cfg.answerWaitMs) && cfg.answerWaitMs >= 0 ? cfg.answerWaitMs : 5000);
+  while (Date.now() < deadline) { if (await exists(file)) break; await pause(50); }
+  await fs.rm(file, { force: true }).catch(() => undefined);
+};
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const exists = async file => { try { await fs.access(file); return true; } catch { return false; } };
 // The host's own rule: a process another account owns (EPERM) is still running.
@@ -504,21 +544,91 @@ const stopHost = async () => {
   if (stopped && legacy && legacy.pid === pid) await fs.rm(legacyLauncherPath, { force: true }).catch(() => undefined);
   return finish({ type: 'host-stopped', stopped, hostId: current.hostId });
 };
-// One update at a time in a folder, whichever client runs it. A lock whose process has gone, or that never named one, is taken over.
+// One update at a time in a folder, whichever client runs it: over SSH, or a host updating itself (ADR-0088), which runs
+// this same script. The lock is a folder naming its process, made with mkdir, which only one update can do, as before. A
+// lock whose process has gone, or that has named none for a while, is taken over the way starting hosts take over
+// host-listener.lock (src/host/lock.ts): updates take turns through .update-lock.takeover, made the same way, and in its
+// turn an update looks at the lock again and removes it only if it is still that stale lock. A folder is only ever removed
+// by moving it aside, whole, under a name only the remover uses, and looking at what moved: a removal never empties a lock
+// in place, where another could be put, and a look that found nothing is never followed by a removal. Only the update
+// holding the turn removes a lock it did not make, and a stale lock's process never removes it, so a live lock is never
+// removed, however many updates start at once. An update that finds the turn taken is refused, since the one taking over
+// will hold the lock. A turn left by an update killed partway through one is cleared the same careful way; two updates
+// could share a turn only if one is killed in the moment its turn lasts while others arrive.
+const lockOwner = async folder => {
+  let pid = 0, age = Infinity, missing = false;
+  try { pid = Number(await fs.readFile(path.join(folder, 'pid'), 'utf8')); } catch {}
+  try { age = Date.now() - (await fs.stat(folder)).mtimeMs; } catch (error) { missing = !!error && error.code === 'ENOENT'; }
+  return { pid: Number.isInteger(pid) && pid > 0 ? pid : 0, age, missing };
+};
+const lockHeld = owner => owner.pid ? alive(owner.pid) : owner.age < ${HOST_UPDATE_LOCK_UNNAMED_MS};
+// The same stale lock as one seen before: still there, still naming the same process, and still not held.
+const stillStale = seen => now => !now.missing && now.pid === seen.pid && !lockHeld(now);
+const takeoverPath = updateLockPath + '.takeover';
+// Moves folder aside and removes it there, if what moved is what matches says it should be: 'removed'. Something else is
+// put back, made again the way a lock is made so that it never replaces a folder made meanwhile ('changed', or 'lost' when
+// one was). 'gone' when there was nothing to move, and 'kept' when it could not be moved, as while Windows refuses for a
+// moment because another update is reading the file in it. The folder moved aside names its remover, so one a remover
+// killed partway leaves is cleared when versions are pruned.
+const removeIfStill = async (folder, matches) => {
+  const aside = folder + '.' + process.pid + '.' + crypto.randomUUID() + '.removing';
+  for (let tries = 0; ; tries++) {
+    try { await fs.rename(folder, aside); break; }
+    catch (error) {
+      if (error && error.code === 'ENOENT') return 'gone';
+      if (tries >= 10 || !error || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) return 'kept';
+      await pause(50);
+    }
+  }
+  const moved = await lockOwner(aside);
+  let outcome = 'removed';
+  if (!matches(moved)) {
+    outcome = 'lost';
+    try { await fs.mkdir(folder); outcome = 'changed'; } catch {}
+    if (outcome === 'changed' && moved.pid) await fs.writeFile(path.join(folder, 'pid'), String(moved.pid)).catch(() => undefined);
+  }
+  await fs.rm(aside, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }).catch(() => undefined);
+  return outcome;
+};
+// A folder moved aside by a removal whose process has gone before it could remove it.
+const leftAside = name => { const match = /^\.update-lock(?:\.takeover)?\.(\d+)\.[0-9a-f-]+\.removing$/.exec(name); return !!match && !alive(Number(match[1])); };
+// Makes a folder naming this process at target, or answers false when one is there already.
+const placeLockFolder = async target => {
+  try { await fs.mkdir(target); } catch (error) { if (error && error.code === 'EEXIST') return false; throw error; }
+  try { await fs.writeFile(path.join(target, 'pid'), String(process.pid)); return true; }
+  catch (error) { await removeIfStill(target, now => !now.pid || now.pid === process.pid); throw error; }
+};
+const ownedHere = now => now.pid === process.pid;
+// Gives up a folder this process holds. It looks first and leaves one that names another process alone: nothing removes a
+// live update's folder but that update, so it cannot become this process's own between the look and the move.
+const giveUp = async folder => { if (ownedHere(await lockOwner(folder))) await removeIfStill(folder, ownedHere); };
 const takeUpdateLock = async () => {
   await fs.mkdir(versionsPath, { recursive: true });
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try { await fs.mkdir(updateLockPath); await fs.writeFile(path.join(updateLockPath, 'pid'), String(process.pid)); return; }
-    catch (error) { if (error.code !== 'EEXIST') throw error; }
-    let pid = 0, age = Infinity;
-    try { pid = Number(await fs.readFile(path.join(updateLockPath, 'pid'), 'utf8')); } catch {}
-    try { age = Date.now() - (await fs.stat(updateLockPath)).mtimeMs; } catch {}
-    if (Number.isInteger(pid) && pid > 0 ? alive(pid) : age < 30000) throw new Error('update-busy');
-    await fs.rm(updateLockPath, { recursive: true, force: true });
+  for (let attempt = 0; attempt < 8; attempt++) {
+    if (await placeLockFolder(updateLockPath)) return;
+    const seen = await lockOwner(updateLockPath);
+    if (seen.missing) continue;
+    if (lockHeld(seen)) throw new Error('update-busy');
+    if (!(await placeLockFolder(takeoverPath))) {
+      const turn = await lockOwner(takeoverPath);
+      if (turn.missing) continue;
+      if (lockHeld(turn)) throw new Error('update-busy');
+      if (await removeIfStill(takeoverPath, stillStale(turn)) === 'lost') throw new Error('update-busy');
+      continue;
+    }
+    try {
+      const judged = await lockOwner(updateLockPath);
+      if (judged.missing) continue;
+      if (lockHeld(judged)) throw new Error('update-busy');
+      const removal = await removeIfStill(updateLockPath, stillStale(judged));
+      if (removal === 'lost') throw new Error('update-busy');
+      if (removal === 'removed' && await placeLockFolder(updateLockPath)) return;
+    } finally { await giveUp(takeoverPath).catch(() => undefined); }
   }
   throw new Error('update-busy');
 };
-const releaseUpdateLock = () => fs.rm(updateLockPath, { recursive: true, force: true }).catch(() => undefined);
+// Only the lock this process holds is removed: one taken over after this process was judged gone is not its to remove.
+const releaseUpdateLock = () => giveUp(updateLockPath).catch(() => undefined);
 const updateVersion = () => { if (typeof cfg.version !== 'string' || !RELEASE.test(cfg.version)) throw new Error('update-invalid'); return cfg.version; };
 const archiveName = version => 'Sotto-host-' + version + '-' + process.platform + '-' + process.arch + '.tar.gz';
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -616,12 +726,13 @@ const installUpdate = async () => {
   await fs.rm(archive, { force: true });
   return { type: 'update-installed', version };
 };
-// Keeps the version now running and the one before it; every other version folder, and anything half unpacked, goes.
+// Keeps the version now running and the one before it; every other version folder, anything half unpacked, and any lock
+// folder a removal killed partway left aside, goes.
 const prune = async keep => {
   let names = [];
   try { names = await fs.readdir(versionsPath); } catch { return; }
   for (const name of names) {
-    if ((RELEASE.test(name) && !keep.includes(name)) || name.endsWith('.partial')) await fs.rm(path.join(versionsPath, name), { recursive: true, force: true }).catch(() => undefined);
+    if ((RELEASE.test(name) && !keep.includes(name)) || name.endsWith('.partial') || leftAside(name)) await fs.rm(path.join(versionsPath, name), { recursive: true, force: true }).catch(() => undefined);
   }
 };
 // A failure's own code for a result's cause, or host-start-failed for anything that is not one.
@@ -643,6 +754,10 @@ const restartForUpdate = async () => {
   const current = await discover().catch(() => null);
   if (!current || current.hostId !== cfg.hostId || !(await sottoStarted(current))) return { type: 'error', reason: 'update-not-owned' };
   const previous = await currentVersion();
+  // The checks have passed. A host that asked over its socket stops waiting here: from now on the restart goes ahead, unless
+  // that host gave up first, when nothing has been touched (ADR-0088).
+  if (!(await claim({ state: 'restarting', pid: process.pid }))) return { type: 'error', reason: 'restart-not-sent' };
+  await answered();
   await say({ type: 'update-step', step: 'restart' });
   await writePointer(version);
   // A host the unit runs is stopped through it, and start() below has the unit start the new version (ADR-0054).
@@ -731,10 +846,12 @@ const runBoot = async () => {
   finally { await releaseUpdateLock(); }
 };
 const runUpdate = async () => {
-  // A download writes only its own file, so it runs without the lock: a cancelled one still finishing never holds up the next.
-  if (cfg.op === 'update-fetch') return fetchUpdate();
+  // Every step holds the folder's lock, the download too, so an update over SSH and one a host runs on itself over its
+  // socket (ADR-0088) refuse each other. A cancelled download gives the lock up once it notices it is orphaned, and one that
+  // was killed leaves a lock whose process has gone, which the next update takes over.
   await takeUpdateLock();
   try {
+    if (cfg.op === 'update-fetch') return await fetchUpdate();
     if (cfg.op === 'update-install') return await installUpdate();
     if (cfg.op === 'update-restart') return await restartForUpdate();
     return { type: 'failed' };
@@ -859,20 +976,12 @@ fi
 
 /** The range a host archive declares in its manifest; the desktop sends it for an archive without one. */
 export const HOST_NODE_RANGE = `>=${HOST_NODE_MAJOR} <${HOST_NODE_MAJOR + 1}`
-/** How long Stop host lets a host finish its running turns after SIGTERM before the script kills it. */
-export const HOST_STOP_DRAIN_MS = 15_000
+export { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_READY_TIMEOUT_MS, HOST_STOP_DRAIN_MS } from '../../shared/hostLaunchTimings'
 /**
  * How long the desktop gives a stop once SSH is signed in: the drain, the kill and the reply's trip back
  * over SSH. Shorter, and the desktop would report a failure while the stop was still going.
  */
 export const HOST_STOP_REPLY_MS = HOST_STOP_DRAIN_MS + 5_000
-/** How long a host has to download an archive and its checksum before the download counts as failed. */
-export const HOST_DOWNLOAD_TIMEOUT_MS = 5 * 60_000
-/**
- * The largest archive an update takes. Today's is about 1 MB; one that carries its own Node (#207) is tens of
- * megabytes. Anything larger is not a Sotto host.
- */
-export const HOST_ARCHIVE_LIMIT_BYTES = 512 * 1024 * 1024
 
 export type LaunchOperation =
   /**
@@ -890,8 +999,13 @@ export type LaunchOperation =
   | { readonly op: 'update-receive'; readonly file: string; readonly size: number }
   /** Check `file` against `sha256` and unpack it beside the version running. */
   | { readonly op: 'update-install'; readonly version: string; readonly file: string; readonly sha256: string }
-  /** Start `version` in place of the running host, or start the running one again when it does not start. */
-  | { readonly op: 'update-restart'; readonly hostId: string; readonly version: string }
+  /**
+   * Start `version` in place of the running host, or start the running one again when it does not start. `resultFile`, a
+   * file in the data folder, and `attempt` are only for a host that updates itself over its socket (ADR-0088): the restart
+   * claims the attempt once its checks pass and writes how it stands in `resultFile`, since the host that asked is the one it
+   * stops. It then waits up to `answerWaitMs` for the host to say it has answered its desktop, before it stops the host.
+   */
+  | { readonly op: 'update-restart'; readonly hostId: string; readonly version: string; readonly resultFile?: string; readonly attempt?: string; readonly answerWaitMs?: number }
   /** What start at boot looks like on the host (ADR-0054). */
   | { readonly op: 'boot-status' }
   /** Turn on linger, install and enable the boot unit, and hand the running host over to it when Sotto started it. */
@@ -902,8 +1016,7 @@ export type LaunchOperation =
 /** The configuration the launch script reads from its argument. It carries paths, IDs and a release URL, never a secret. */
 export function launchConfiguration(configuration: ValidatedSshHostConfiguration, operation: LaunchOperation, readyTimeoutMs: number): string {
   return JSON.stringify({ ...operation, installPath: configuration.installPath, dataDirectory: configuration.dataDirectory,
-    remotePort: configuration.remotePort, readyTimeoutMs, stopDrainMs: HOST_STOP_DRAIN_MS, nodeRange: HOST_NODE_RANGE,
-    downloadTimeoutMs: HOST_DOWNLOAD_TIMEOUT_MS, archiveLimit: HOST_ARCHIVE_LIMIT_BYTES })
+    remotePort: configuration.remotePort, nodeRange: HOST_NODE_RANGE, ...hostLaunchTimings(readyTimeoutMs) })
 }
 
 /**
