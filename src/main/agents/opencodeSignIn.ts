@@ -33,7 +33,8 @@ export interface OpenCodeSignInOptions {
 
 const modelListSchema = z.looseObject({ data: z.array(z.looseObject({ providerID: z.string(), enabled: z.boolean().optional(), status: z.string().optional() })) })
 const providerListSchema = z.looseObject({ data: z.array(z.looseObject({ id: z.string(), integrationID: z.string().optional() })) })
-interface Attempt { readonly sourceId: string; readonly name: string; readonly url: string; readonly server: SignInServer; readonly expiresAt: number }
+/** A waiting browser sign-in. `owner` is the client a host started it for (#1107), which alone may read, finish or cancel it. */
+interface Attempt { readonly sourceId: string; readonly name: string; readonly url: string; readonly server: SignInServer; readonly expiresAt: number; readonly owner?: string | undefined }
 /** How long a waiting sign-in that OpenCode gave no expiry for keeps the server up. */
 const UNTIMED_ATTEMPT_MS = 30 * 60_000
 
@@ -211,7 +212,11 @@ export class OpenCodeSignIn {
     }, message => ({ status: 'refused', message }))
   }
 
-  startBrowserSignIn(request: unknown): Promise<SignInStart> {
+  /**
+   * Starts a browser sign-in. On a host, `owner` is the client that asked: the sign-in is that client's for as long as it
+   * waits, after a pasted code OpenCode refused and on either of the host's listeners, since both share this one.
+   */
+  startBrowserSignIn(request: unknown, owner?: string): Promise<SignInStart> {
     const { sourceId, methodId, answer } = signInMethodRequestSchema.parse(request)
     return this.use(async server => {
       const integration = await this.integration(server, sourceId)
@@ -234,11 +239,20 @@ export class OpenCodeSignIn {
       const now = (this.options.now ?? Date.now)()
       // OpenCode's own clock says when its page expires; a little past it, Sotto stops waiting on it.
       const expiresAt = attempt.expiresAt !== undefined && attempt.expiresAt > now ? attempt.expiresAt + 60_000 : now + UNTIMED_ATTEMPT_MS
-      this.attempts.set(attempt.id, { sourceId, name: integration.name, url: reply.url, server, expiresAt })
+      this.attempts.set(attempt.id, { sourceId, name: integration.name, url: reply.url, server, expiresAt, ...(owner !== undefined ? { owner } : {}) })
       this.log('opencode-sign-in-browser-started')
       // The page opens when the dialog asks for it with `reopenPage`, so a dialog closed while this started opens none.
       return { status: 'waiting', attempt }
     }, message => ({ status: 'refused', message }))
+  }
+
+  /**
+   * Whether `owner` may read, finish, open or cancel a sign-in: one that waits only for the client that started it, and one
+   * that waits no longer for anyone, since each call then answers for itself that nothing is running.
+   */
+  mayUse(attemptId: string, owner: string): boolean {
+    const attempt = this.attempts.get(attemptId)
+    return attempt === undefined || attempt.owner === owner
   }
 
   /** Where a browser sign-in stands. A finished one reads the catalog again; an ended one is forgotten. */

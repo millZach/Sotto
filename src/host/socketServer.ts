@@ -31,7 +31,7 @@ import type { WatcherThreadTarget } from '../shared/watcher'
 import { visibleWatcherState } from '../shared/watcherVisibility'
 import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, type ProviderScope } from './providerPeers'
 import type { HeldProviders } from '../shared/heldProviders'
-import { SIGN_IN_WORDS, type OpenCodeHostCall } from '../shared/opencodeSignIn'
+import type { OpenCodeHostCall } from '../shared/opencodeSignIn'
 import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
 
 const errors: Record<HostErrorCode, string> = {
@@ -146,7 +146,7 @@ export interface SocketServerOptions {
    * A headless host's own OpenCode sign-ins to model sources (#1107), run here for the desktop that asks. Present only where
    * the host's OpenCode runs; without it the listener neither lists `opencode-sign-in` nor answers its request.
    */
-  opencodeSignIn?: Pick<OpenCodeSignIn, 'sources' | 'signInWithKey' | 'startBrowserSignIn' | 'useExternalSignIn' | 'wait' | 'finish' | 'pageAddress' | 'cancel' | 'signOut'>
+  opencodeSignIn?: Pick<OpenCodeSignIn, 'sources' | 'signInWithKey' | 'startBrowserSignIn' | 'useExternalSignIn' | 'wait' | 'finish' | 'pageAddress' | 'cancel' | 'signOut' | 'mayUse'>
   /**
    * The headless host updates its clients for a paired client that asks (`queue-client-updates`, #480). Absent on the
    * desktop's phone listener, which then neither lists `client-updates` nor takes the command.
@@ -264,39 +264,26 @@ export async function startSocketServer(options: SocketServerOptions) {
   }
   /**
    * The host's own OpenCode signed in to a model source for the desktop that asks (#1107). Only the client that started a
-   * browser sign-in reads it, finishes it, asks for its page or cancels it. Whatever OpenCode's sign-in refuses is its own
-   * answer; anything else is the host's failure to run it. A key is passed on and never kept, logged or sent back.
+   * browser sign-in reads it, finishes it, asks for its page or cancels it. The sign-in itself keeps who that is, for as long
+   * as it waits, so the host's other listener knows it too (#1143). Whatever OpenCode's sign-in refuses is its own answer;
+   * anything else is the host's failure to run it. A key is passed on and never kept, logged or sent back.
    */
-  const opencodeOwners = new Map<string, string>()
   const opencodeCall = async (peer: Peer, op: HostRequest['op'], call: OpenCodeHostCall): Promise<unknown> => {
     const signIn = options.opencodeSignIn
     if (!signIn || !offers(peer, 'opencode-sign-in') || !(REMOTE_OPENCODE_SIGN_IN_OPERATIONS as readonly string[]).includes(op)) throw new Refusal('invalid_request')
-    if (call.action === 'wait' || call.action === 'finish' || call.action === 'page' || call.action === 'cancel') {
-      const owner = opencodeOwners.get(call.request.attemptId)
-      if (owner !== undefined && owner !== peer.client.clientId) throw new Refusal('forbidden')
-      if (owner === undefined) return call.action === 'cancel' ? { status: 'ok' } : { status: 'refused', message: SIGN_IN_WORDS.notRunning }
-    }
+    if ((call.action === 'wait' || call.action === 'finish' || call.action === 'page' || call.action === 'cancel')
+      && !signIn.mayUse(call.request.attemptId, peer.client.clientId)) throw new Refusal('forbidden')
     try {
       switch (call.action) {
         case 'sources': return await signIn.sources()
         case 'key': return await signIn.signInWithKey(call.request)
         case 'external': return await signIn.useExternalSignIn(call.request)
         case 'sign-out': return await signIn.signOut(call.request)
-        case 'browser': {
-          const started = await signIn.startBrowserSignIn(call.request)
-          if (started.status === 'waiting') {
-            opencodeOwners.set(started.attempt.id, peer.client.clientId)
-            while (opencodeOwners.size > 64) opencodeOwners.delete(opencodeOwners.keys().next().value!)
-          }
-          return started
-        }
-        case 'wait': case 'finish': {
-          const settled = call.action === 'wait' ? await signIn.wait(call.request) : await signIn.finish(call.request)
-          if (settled.status !== 'pending') opencodeOwners.delete(call.request.attemptId)
-          return settled
-        }
+        case 'browser': return await signIn.startBrowserSignIn(call.request, peer.client.clientId)
+        case 'wait': return await signIn.wait(call.request)
+        case 'finish': return await signIn.finish(call.request)
         case 'page': return await signIn.pageAddress(call.request)
-        case 'cancel': opencodeOwners.delete(call.request.attemptId); return await signIn.cancel(call.request)
+        case 'cancel': return await signIn.cancel(call.request)
       }
     } catch { throw new Refusal('unavailable') }
   }
