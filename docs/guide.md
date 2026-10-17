@@ -134,6 +134,8 @@ Pasting an image in any of these terminals saves a PNG under `.sotto/clipboard` 
 
 ### Sending, steering and screenshots
 
+**Unconfirmed** means Sotto cannot tell whether the provider received your prompt. **Check again** looks for confirmation without resending it. For a prompt sent at once, **Continue with a new message**, on the desktop that owns the thread, sets it aside and keeps your next draft. That press sends nothing. The old prompt stays marked **Set aside · Unconfirmed** until the provider confirms it. Sotto keeps its identity so a retry cannot send that revision again, including after a restart. New messages and answers you explicitly send can go; automatic continuations stay held while the old delivery is unknown. Questions, permissions, queued follow-ups and messages still being sent keep their own recovery rules.
+
 If a permission arrives while you type, the composer keeps focus and your draft. It becomes read-only until you allow or deny the request above. Tab still reaches the other controls.
 
 If a question answer fails, its text comes back to the composer unless you have written a newer draft. The error stays with that thread when you switch away and return, until you edit or retry the answer or close the window.

@@ -1,5 +1,7 @@
 # A prompt sent at once is saved by its outbox write
 
+October 17, 2026 amendment: an uncertain direct send must not trap every later manual prompt. The user may choose **Continue with a new message** on the owning desktop to set that exact send aside. Persisting this choice releases new explicit manual prompts, while the old outbox identity, digest and message ID remain evidence. Delivery stays uncertain until the exact native message confirms it. A failed recovery write keeps the block. The action resends nothing, approves nothing, preserves newer drafts, and cannot retire an answer, permission, queued follow-up or live send. An IPC outcome with no retained outbox is retired by its exact draft revision rather than invented delivery evidence.
+
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. Assignment growth described below is historical; assignments are removed from live coordinator state. Drafts, deliveries, user follow-up queues and the compact outbox write remain.
 
 ## Status

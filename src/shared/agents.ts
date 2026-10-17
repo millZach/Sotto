@@ -751,6 +751,8 @@ export const agentDeliverySchema = z.object({
   commandId: id.optional(), messageId: id.optional(),
   /** The exact stable Send packet this delivery belongs to; evidence, never authority. */
   packetDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+  /** The user released the composer; the original delivery is still unconfirmed. */
+  setAside: z.boolean().optional(),
   localFeedbackMs: z.number().nonnegative().optional(), providerLatencyMs: z.number().nonnegative().optional(),
 })
 export type AgentDelivery = z.infer<typeof agentDeliverySchema>
@@ -1052,6 +1054,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     binding: z.object({ requestId: id.nullable(), questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u).nullable() }).strict()
       .refine(value => (value.requestId === null) === (value.questionsDigest === null), 'Use a question ID with its form digest, or neither.').optional(),
   }).strict().optional() }).strict(),
+  z.object({ type: z.literal('set-aside-send'), threadId: id, draftId: z.uuid() }).strict(),
   z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),

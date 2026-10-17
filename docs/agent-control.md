@@ -31,6 +31,8 @@ Devin saves a provider session only after its first prompt, so an empty provider
 
 ## Working with threads
 
+An uncertain direct prompt on this desktop offers **Continue with a new message**. It saves the choice to set that exact send aside without claiming delivery or replaying it. A new manual prompt can then go, while the old command and message identities remain available for deduplication and exact native confirmation. It changes no question, permission or follow-up queue entry.
+
 A **monitoring task** is a provider-confirmed live watch, shown by the pixel creature above the thread composer. It works in threads independently of dictation. There is no elapsed-time threshold. Ordinary commands, long foreground work and unattended background processes do not qualify; short confirmed watches can appear briefly. The indicator is observational and cannot approve or send anything. It disappears for a pending question or permission, an error, a closed thread, interruption, disconnect or task completion. System or app reduced motion holds a still inspection pose.
 
 Claude Code clients that emit native `task_started` events with `task_type: monitor` or `monitor_mcp` supply this evidence. Task progress and status updates refresh it; terminal statuses and end times clear it. Nested subagent, ambient and transcript-only tasks do not qualify. The adapter maps native task IDs to ephemeral Sotto IDs and does not restore monitoring from transcripts or cached threads. An active confirmed monitor keeps its Claude session alive so the idle reaper cannot abandon it. Codex terminal-interaction events do not identify a bounded monitoring interval; Codex, Grok Build and Devin therefore publish no inferred monitoring state.
