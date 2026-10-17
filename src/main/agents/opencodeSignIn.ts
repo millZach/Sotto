@@ -50,6 +50,8 @@ export class OpenCodeSignIn {
   private idle: ReturnType<typeof setTimeout> | undefined
   private busy = 0
   private closed = false
+  /** A new client is on disk, and the server still runs the old one until nothing needs it. */
+  private outdated = false
   constructor(private readonly options: OpenCodeSignInOptions) {}
 
   private get location(): Record<string, string> { return locationQuery(this.options.location) }
@@ -73,7 +75,7 @@ export class OpenCodeSignIn {
       starting.then(server => {
         void server.closed.then(() => {
           if (this.server !== starting) return
-          this.server = undefined
+          this.server = undefined; this.outdated = false
           for (const [id, attempt] of this.attempts) if (attempt.server === server) this.attempts.delete(id)
         })
       }, () => { if (this.server === starting) this.server = undefined })
@@ -89,6 +91,7 @@ export class OpenCodeSignIn {
     if (this.busy || !this.server) return
     const now = (this.options.now ?? Date.now)()
     for (const [id, attempt] of this.attempts) if (attempt.expiresAt <= now) this.attempts.delete(id)
+    if (this.outdated && !this.attempts.size) { void this.stop(); return }
     const idleMs = this.options.idleMs ?? 60_000
     const waitMs = this.attempts.size ? Math.max(idleMs, Math.min(...[...this.attempts.values()].map(attempt => attempt.expiresAt - now))) : idleMs
     this.idle = setTimeout(() => { if (this.busy) return; if (this.attempts.size) this.rest(); else void this.stop() }, Math.min(waitMs, 2_147_483_647))
@@ -96,11 +99,16 @@ export class OpenCodeSignIn {
   }
   private async stop(): Promise<void> {
     const server = this.server
-    this.server = undefined; this.attempts.clear()
+    this.server = undefined; this.attempts.clear(); this.outdated = false
     await server?.then(running => running.stop(), () => undefined)
   }
   /** Stops everything: the server and any sign-in waiting on it. A disconnect or a quit calls this. */
   async close(): Promise<void> { clearTimeout(this.idle); await this.stop() }
+  /**
+   * A new client is on disk (ADR-0042): the server moves to it at once when nothing uses it, and otherwise once nothing
+   * does and no browser sign-in waits on it, since OpenCode keeps a waiting sign-in in that server's memory (ADR-0038).
+   */
+  renew(): void { if (!this.server) return; this.outdated = true; this.rest() }
   /** OpenCode was connected again: sign-ins may run once more. */
   reopen(): void { this.closed = false }
   /** OpenCode was disconnected: nothing runs until it connects again. */

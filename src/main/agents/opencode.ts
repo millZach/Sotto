@@ -612,7 +612,7 @@ export class OpenCodeHost implements AgentHost {
   }
   /**
    * A new client is on disk (ADR-0042, ADR-0038): it is found again and checked on a server of its own, the catalog is read
-   * from it, and every thread server moves to it as its thread goes idle. Working threads finish on the old one.
+   * from it, and every thread server, and the sign-in server, moves to it as it goes idle. Working threads finish on the old one.
    */
   async clientUpdated(): Promise<void> {
     if (!this.state.connected) return
@@ -639,6 +639,8 @@ export class OpenCodeHost implements AgentHost {
       throw new Error('OpenCode was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect OpenCode again to try the new version.', { cause: error })
     } finally { await started?.server.stop() }
     this.renew()
+    // The sign-in server moves too, so nothing of Sotto's keeps running the old client once it is free.
+    this.signIn.renew()
     this.emit()
   }
 

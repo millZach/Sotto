@@ -224,3 +224,35 @@ it('moves every thread server to the new sign-ins after a sign-out even when the
     await expect.poll(async () => f.holder(id), { timeout: 10_000 }).toBeDefined()
   } finally { await f.cleanup() }
 })
+
+const running = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' } }
+
+it('moves the sign-in server to a new client at once when nothing needs it, and once a waiting browser sign-in has ended', { timeout: 60_000 }, async () => {
+  // A long idle time, so only the update can be what stops the server.
+  const f = await opencodeFixture(undefined, undefined, {}, { openExternal: async () => undefined, signInIdleMs: 60_000 })
+  try {
+    await f.script({ oauth: { 'xai:device': { mode: 'auto', code: 'QX7M-4LRT' } } })
+    await f.host.connect()
+    const signIn = f.host.signIn
+    const records = async (method: string) => (await f.driver.requests()).filter(record => record.method === method) as { process?: number; params?: Record<string, unknown> }[]
+    const servedBy = async (method = 'integration.list'): Promise<number> => (await records(method)).at(-1)!.process!
+    const versionOf = async (pid: number) => (await records('fixture/process')).find(record => record.params?.pid === pid)?.params?.version
+    expect((await signIn.sources()).status).toBe('ok')
+    const idle = await servedBy()
+    await f.script({ version: '2.0.40', oauth: { 'xai:device': { mode: 'auto', code: 'QX7M-4LRT' } } })
+    await f.host.clientUpdated!()
+    // Nothing used it, so it stopped at once, and the next sign-in runs on the new client.
+    await expect.poll(() => running(idle)).toBe(false)
+    const attempt = waiting(await signIn.startBrowserSignIn({ sourceId: 'xai', methodId: 'device' }))
+    const holding = await servedBy('integration.connect.oauth')
+    expect(await versionOf(holding)).toBe('2.0.40')
+    // A browser sign-in waits on the server's memory, so a later update leaves the server to it until it ends.
+    await f.host.clientUpdated!()
+    expect(await signIn.wait({ attemptId: attempt.id })).toEqual({ status: 'pending' })
+    expect(running(holding)).toBe(true)
+    expect(await signIn.cancel({ attemptId: attempt.id })).toEqual({ status: 'ok' })
+    await expect.poll(() => running(holding)).toBe(false)
+    expect((await signIn.sources()).status).toBe('ok')
+    expect(await servedBy()).not.toBe(holding)
+  } finally { await f.cleanup() }
+})
