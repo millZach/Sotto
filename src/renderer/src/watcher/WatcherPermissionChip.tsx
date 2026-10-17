@@ -39,7 +39,7 @@ function choices(model: AgentModel | undefined, chosen: AgentRuntimeMode, provid
  * it for the current Watcher, the chip is dashed and the caption beside it says what is still in force, as on Threads. A
  * refusal is said in main's words under the chips. Where the room's bridge cannot change it, the mode is said as a fact.
  */
-export function WatcherPermissionChip({ model, provider, inForce, disabled = false, fixedReason, noticeSlot }: {
+export function WatcherPermissionChip({ model, provider, inForce, disabled = false, fixedReason, noticeSlot, flip = false }: {
   readonly model: AgentModel | undefined
   /** The provider's name, for Auto's line and the caption. */
   readonly provider: string
@@ -51,6 +51,8 @@ export function WatcherPermissionChip({ model, provider, inForce, disabled = fal
   readonly fixedReason?: string | undefined
   /** Where the composer wants a refusal said, under its whole footer row. */
   readonly noticeSlot?: HTMLElement | null | undefined
+  /** Opens below the chip when there is no room above it, as on the Orchestrating card in Settings. */
+  readonly flip?: boolean
 }): ReactNode {
   const room = useWatcherRoom()
   const captionId = useId()
@@ -79,7 +81,7 @@ export function WatcherPermissionChip({ model, provider, inForce, disabled = fal
   const notice = refusal === null ? null : <p className="thread-options__notice" role="alert"><span>{refusal}</span></p>
   return <>
     <ChoiceChip label={WATCHER_PERMISSIONS} placeholder={RUNTIME_LABELS[FIRST_MODE]} value={chosen} options={choices(model, chosen, provider)}
-      disabled={disabled} fixedReason={fixedReason} pending={pending} describedBy={captionId} foot={WATCHER_PERMISSIONS_FOOT}
+      disabled={disabled} fixedReason={fixedReason} pending={pending} describedBy={captionId} foot={WATCHER_PERMISSIONS_FOOT} flip={flip}
       onChange={mode => void choose(mode as AgentRuntimeMode)} />
     {/* Always present, so assistive technology hears the caption when it arrives. */}
     <span id={captionId} className="thread-options__caption" role="status">{pending ? permissionInForceCaption(provider, { runtimeMode: current }) : ''}</span>

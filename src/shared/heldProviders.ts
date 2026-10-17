@@ -40,6 +40,15 @@ export function firstHeldProvider(held: HeldProviders): ProviderId {
   return held.values().next().value ?? HELD_PROVIDER_ENTRIES[0].provider
 }
 
+/**
+ * Providers in the held table's order, those the table does not name after them as given, so a sentence naming several
+ * reads the same whatever order their threads were seen in.
+ */
+export function inHeldOrder(providers: readonly ProviderId[], entries: readonly HeldProviderEntry[] = HELD_PROVIDER_ENTRIES): ProviderId[] {
+  const rank = (id: ProviderId): number => { const at = entries.findIndex(entry => entry.provider === id); return at < 0 ? entries.length : at }
+  return [...new Set(providers)].map((id, index) => ({ id, index })).sort((a, b) => rank(a.id) - rank(b.id) || a.index - b.index).map(({ id }) => id)
+}
+
 /** One held provider a refusal names, or several when the refused request touched more than one. */
 export type HeldProviderNames = ProviderId | readonly ProviderId[]
 
@@ -48,7 +57,7 @@ export type HeldProviderNames = ProviderId | readonly ProviderId[]
  * sent." Several held providers are named together: "Muse and OpenCode are available in Sotto Owl. ..."
  */
 export function heldProviderRefusal(provider: HeldProviderNames): string {
-  const labels = [...new Set(typeof provider === 'string' ? [provider] : provider)].map(id => PROVIDER_LABELS[id])
+  const labels = inHeldOrder(typeof provider === 'string' ? [provider] : provider).map(id => PROVIDER_LABELS[id])
   const named = labels.length > 1 ? `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)} are` : `${labels[0] ?? ''} is`
   return `${named} available in Sotto Owl. Open an Owl build to continue. Nothing was sent.`
 }

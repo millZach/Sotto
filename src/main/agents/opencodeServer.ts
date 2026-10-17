@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { z } from 'zod'
 import { compareClientVersions } from './clientVersions'
 import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
@@ -24,9 +25,13 @@ export class OpenCodeTooOld extends OpenCodeUnsupported { constructor(message: s
  * Sotto's own OpenCode folders (ADR-0087): every OpenCode process Sotto starts keeps its data, config, state and cache
  * here, never in the user's own OpenCode folders, which OpenCode 2 would migrate for good on first open.
  */
-export interface OpenCodeFolders { readonly data: string; readonly config: string; readonly state: string; readonly cache: string }
+export interface OpenCodeFolders {
+  readonly data: string; readonly config: string; readonly state: string; readonly cache: string
+  /** Sotto's own: where each server it starts is written down while it runs (`opencodeServerLedger`). */
+  readonly servers: string
+}
 export function opencodeFolders(base: string): OpenCodeFolders {
-  return { data: join(base, 'data'), config: join(base, 'config'), state: join(base, 'state'), cache: join(base, 'cache') }
+  return { data: join(base, 'data'), config: join(base, 'config'), state: join(base, 'state'), cache: join(base, 'cache'), servers: join(base, 'servers') }
 }
 export async function ensureOpenCodeFolders(folders: OpenCodeFolders): Promise<void> {
   await Promise.all(Object.values(folders).map(folder => mkdir(folder, { recursive: true })))
@@ -104,8 +109,22 @@ export async function withFirstServerLock<T>(folders: OpenCodeFolders, start: ()
 
 /** Stable event names an OpenCode server's life is logged by. Nothing it prints is ever logged (AGENTS.md). */
 export type OpenCodeServerEvent = 'opencode-server-started' | 'opencode-server-ready' | 'opencode-server-exited' | 'opencode-server-stopped' | 'opencode-server-failed'
+  | 'opencode-server-left-ended'
 
-const READY = /server listening on\s+(https?:\/\/[^\s]+)/iu
+/** The line a server prints once it listens, read only when it is whole: an address cut across two reads is not its address. */
+const READY = /server listening on[ \t]+(https?:\/\/\S+)\r?\n/iu
+/**
+ * The address a server said it listens on, if it is on this computer: it was told to listen on 127.0.0.1, and its
+ * password goes nowhere else. Undefined for anything else.
+ */
+export function loopbackServerUrl(said: string): string | undefined {
+  let url: URL
+  try { url = new URL(said) } catch { return undefined }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) return undefined
+  if (url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) return undefined
+  return `${url.protocol}//${url.host}`
+}
 /** Readiness is read from the first lines a server prints; anything past this is never held. */
 const READY_SCAN_BYTES = 64 * 1024
 
@@ -117,6 +136,8 @@ export interface OpenCodeServerLaunch {
   readonly env: NodeJS.ProcessEnv
   readonly timeoutMs: number
   readonly log?: ((event: OpenCodeServerEvent) => void) | undefined
+  /** Where the server is written down while it runs, so one a crash leaves is ended at the next connect. */
+  readonly ledger?: string | undefined
 }
 
 /**
@@ -129,7 +150,8 @@ export class OpenCodeServer {
   readonly closed: Promise<void>
   private exited = false
   private stopping: Promise<void> | undefined
-  private constructor(private readonly child: ChildProcess, readonly url: string, private readonly log: OpenCodeServerLaunch['log'], closed: Promise<void>, private readonly startedAt: number) {
+  private constructor(private readonly child: ChildProcess, readonly url: string, private readonly log: OpenCodeServerLaunch['log'], closed: Promise<void>,
+    private readonly startedAt: number, private readonly forget: () => Promise<void>) {
     this.closed = closed
     void closed.then(() => { this.exited = true })
   }
@@ -147,12 +169,16 @@ export class OpenCodeServer {
       })
       launch.log?.('opencode-server-started')
       const closed = new Promise<void>(done => child.once('close', () => done()))
+      // Written down before anything else can happen to it, and taken off once it and what it left are gone.
+      const { ledger } = launch, pid = child.pid
+      const recorded = ledger && pid !== undefined ? recordOpenCodeServer(ledger, { pid, startedAt, owner: process.pid }).catch(() => undefined) : Promise.resolve()
+      const forget = (): Promise<void> => recorded.then(() => ledger && pid !== undefined ? rm(serverRecordPath(ledger, pid), { force: true }) : undefined).catch(() => undefined)
       let scanned = '', ready = false
       const fail = (error: Error): void => {
         if (ready) return
         ready = true; clearTimeout(timer)
         launch.log?.('opencode-server-failed')
-        void killTree(child, closed, startedAt)
+        void killTree(child, closed, startedAt).then(forget, forget)
         reject(error)
       }
       const timer = setTimeout(() => fail(new OpenCodeUncertain('OpenCode did not start in time.')), launch.timeoutMs)
@@ -162,8 +188,10 @@ export class OpenCodeServer {
         scanned = (scanned + chunk).slice(-READY_SCAN_BYTES)
         const match = READY.exec(scanned)
         if (!match) return
+        const url = loopbackServerUrl(match[1]!)
+        if (!url) { fail(new OpenCodeUnsupported('OpenCode said it was listening somewhere other than this computer, so Sotto sent it nothing. Connect again to retry.')); return }
         ready = true; clearTimeout(timer); scanned = ''
-        const server = new OpenCodeServer(child, match[1]!.replace(/\/+$/u, ''), launch.log, closed, startedAt)
+        const server = new OpenCodeServer(child, url, launch.log, closed, startedAt, forget)
         void closed.then(() => { if (!server.stopping) launch.log?.('opencode-server-exited') })
         resolve(server)
       })
@@ -181,13 +209,13 @@ export class OpenCodeServer {
   stop(): Promise<void> {
     if (this.stopping) return this.stopping
     this.log?.('opencode-server-stopped')
-    this.stopping = killTree(this.child, this.closed, this.startedAt)
+    this.stopping = killTree(this.child, this.closed, this.startedAt).then(this.forget, this.forget)
     return this.stopping
   }
 }
 
-/** One row of the process table, as Windows keeps it: who started each process, and when. */
-export interface ProcessRow { readonly pid: number; readonly parent: number; readonly created: number }
+/** One row of the process table, as Windows keeps it: who started each process, when, and with what command line if it says. */
+export interface ProcessRow { readonly pid: number; readonly parent: number; readonly created: number; readonly command?: string }
 /**
  * Process creation times are stamped on the system's coarse clock, which may read a little behind the precise one Node
  * reads, so a process started just after another can look a few milliseconds older.
@@ -218,7 +246,7 @@ export function orphanedDescendants(rows: readonly ProcessRow[], root: number, s
   return [...found]
 }
 
-const PROCESS_QUERY = "Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate | ForEach-Object { if ($_.CreationDate) { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() } }"
+const PROCESS_QUERY = "Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate,CommandLine | ForEach-Object { if ($_.CreationDate) { '{0} {1} {2} {3}' -f $_.ProcessId, $_.ParentProcessId, ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds(), ($_.CommandLine -replace '[\\r\\n]', ' ') } }"
 /** The process table, read once through PowerShell's CIM query; empty when it cannot be read. Windows only. */
 function processTable(): Promise<ProcessRow[]> {
   return new Promise(resolve => {
@@ -231,18 +259,27 @@ function processTable(): Promise<ProcessRow[]> {
     reader.once('close', () => {
       clearTimeout(timer)
       resolve(output.split(/\r?\n/u).flatMap(line => {
-        const [pid, parent, created] = line.trim().split(' ').map(Number)
-        return Number.isInteger(pid) && Number.isInteger(parent) && Number.isFinite(created) ? [{ pid: pid!, parent: parent!, created: created! }] : []
+        const [pid, parent, created] = line.trim().split(' ', 3).map(Number)
+        const command = line.trim().split(' ').slice(3).join(' ')
+        return Number.isInteger(pid) && Number.isInteger(parent) && Number.isFinite(created) ? [{ pid: pid!, parent: parent!, created: created!, ...(command ? { command } : {}) }] : []
       }))
     })
   })
 }
 
 /** End what an exited server left running, on Windows, where nothing else reaches it once its leader is gone. */
-async function endOrphans(root: number, startedAt: number): Promise<void> {
-  for (const pid of orphanedDescendants(await processTable(), root, startedAt)) {
+async function endOrphans(root: number, startedAt: number, rows?: readonly ProcessRow[]): Promise<void> {
+  for (const pid of orphanedDescendants(rows ?? await processTable(), root, startedAt)) {
     try { process.kill(pid) } catch { /* Ended meanwhile. */ }
   }
+}
+
+/** `taskkill /T /F` on one process and its tree; true when taskkill says it ended them. */
+function taskkillTree(pid: number): Promise<boolean> {
+  return new Promise<boolean>(resolve => {
+    const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, shell: false, stdio: 'ignore' })
+    killer.once('error', () => resolve(false)); killer.once('close', code => resolve(code === 0))
+  })
 }
 
 /** Whether a child process has exited. */
@@ -259,10 +296,7 @@ async function killTree(child: ChildProcess, closed: Promise<void>, startedAt: n
   if (process.platform === 'win32') {
     let whole = false
     if (!ended(child)) {
-      whole = await new Promise<boolean>(resolve => {
-        const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, shell: false, stdio: 'ignore' })
-        killer.once('error', () => resolve(false)); killer.once('close', code => resolve(code === 0))
-      })
+      whole = await taskkillTree(pid)
       // taskkill can miss a process that is already ending; the child itself is the last resort.
       const late = setTimeout(() => { try { child.kill() } catch { /* Gone. */ } }, 2_000); late.unref()
       await closed; clearTimeout(late)
@@ -279,4 +313,107 @@ async function killTree(child: ChildProcess, closed: Promise<void>, startedAt: n
   await closed; clearTimeout(hard)
   // Children that ignored SIGTERM, or outlived a leader that exited on its own, are still in its group: the hard stop reaches them.
   signal('SIGKILL')
+}
+
+/**
+ * A server Sotto started, as it is written down while it runs (ADR-0087): its PID, when Sotto started it, and the Sotto
+ * process that did. A crash leaves the record behind, and the next connect ends the server it names, if it is still that
+ * server, and what it left.
+ */
+export interface OpenCodeServerRecord { readonly pid: number; readonly startedAt: number; readonly owner: number }
+const serverRecordSchema = z.object({ pid: z.number().int().positive(), startedAt: z.number().finite(), owner: z.number().int().positive() })
+/** Where each server Sotto starts on these folders is written down while it runs: one file per server, named by its PID. */
+export function opencodeServerLedger(folders: OpenCodeFolders): string { return folders.servers }
+const serverRecordPath = (ledger: string, pid: number): string => join(ledger, `${pid}.json`)
+export async function recordOpenCodeServer(ledger: string, record: OpenCodeServerRecord): Promise<void> {
+  await mkdir(ledger, { recursive: true })
+  await writeFile(serverRecordPath(ledger, record.pid), JSON.stringify(record))
+}
+
+const isRunning = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' } }
+/**
+ * How far a process's start may sit from the moment Sotto wrote down starting it: a little before, for the coarse clocks
+ * process start times are kept on (whole seconds from `ps`), and a little after, for a slow spawn.
+ */
+const START_BEFORE_MS = 1_500
+const START_AFTER_MS = 10_000
+/** The process seen holding a recorded server's PID: when it started, and its command line when the system says. */
+export interface ObservedProcess { readonly started: number; readonly command?: string | undefined }
+/**
+ * Whether the process holding a recorded server's PID is that server: it started when Sotto wrote down starting it, and
+ * its command line is OpenCode's server as Sotto starts one. A command line the system will not show is not proof.
+ */
+export function isRecordedServer(record: OpenCodeServerRecord, seen: ObservedProcess | undefined): boolean {
+  if (!seen?.command) return false
+  if (seen.started < record.startedAt - START_BEFORE_MS || seen.started > record.startedAt + START_AFTER_MS) return false
+  return /(?:^|\s)serve(?:\s|$)/u.test(seen.command) && seen.command.includes('--hostname=127.0.0.1') && seen.command.includes('--port=0')
+}
+/** One line of `ps -o lstart= -o args=` in the C locale: the start time, to the second, and the command line. */
+export function parseProcessStart(line: string): ObservedProcess | undefined {
+  const match = /^\s*([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.*?)\s*$/u.exec(line)
+  if (!match) return undefined
+  const started = Date.parse(match[1]!.replace(/\s+/gu, ' '))
+  return Number.isFinite(started) ? { started, command: match[2] } : undefined
+}
+/** When a process started and what it runs, from `ps`, which macOS and Linux both have. Undefined once it has gone. */
+function processStart(pid: number): Promise<ObservedProcess | undefined> {
+  return new Promise(resolve => {
+    let output = ''
+    const reader = spawn('ps', ['-o', 'lstart=', '-o', 'args=', '-p', String(pid)], { env: { ...process.env, LC_ALL: 'C' }, shell: false, stdio: ['ignore', 'pipe', 'ignore'] })
+    const timer = setTimeout(() => { reader.kill(); resolve(undefined) }, 10_000); timer.unref()
+    reader.stdout.setEncoding('utf8')
+    reader.stdout.on('data', (chunk: string) => { if (output.length < 65_536) output += chunk })
+    reader.once('error', () => { clearTimeout(timer); resolve(undefined) })
+    reader.once('close', () => { clearTimeout(timer); resolve(parseProcessStart(output.split(/\r?\n/u)[0] ?? '')) })
+  })
+}
+const pause = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms).unref() })
+async function gone(pid: number, withinMs: number): Promise<boolean> {
+  for (const until = Date.now() + withinMs; isRunning(pid) && Date.now() < until;) await pause(50)
+  return !isRunning(pid)
+}
+
+/** End one server a crash left, and what it started, if the process that has its PID is still that server. */
+async function endRecordedServer(record: OpenCodeServerRecord, rows: readonly ProcessRow[]): Promise<boolean> {
+  if (process.platform === 'win32') {
+    const row = rows.find(candidate => candidate.pid === record.pid)
+    if (row && isRecordedServer(record, { started: row.created, command: row.command })) {
+      await taskkillTree(record.pid)
+      return gone(record.pid, 2_000)
+    }
+    // The server is gone, as Node's job object ends it with Sotto on Windows; a tool it started may not be. A process
+    // holding its PID now is someone else's, and so is anything that process started.
+    await endOrphans(record.pid, record.startedAt, rows)
+    return false
+  }
+  // Elsewhere the server leads a process group of its own, which holds every tool it started. A group whose leader has
+  // gone is left alone: with no leader, nothing shows the group is still the server's.
+  if (!isRecordedServer(record, await processStart(record.pid))) return false
+  const signal = (name: NodeJS.Signals): void => { try { process.kill(-record.pid, name) } catch { /* Gone. */ } }
+  signal('SIGTERM')
+  if (!await gone(record.pid, 1_000)) signal('SIGKILL')
+  // Children that ignored the first signal are still in its group.
+  signal('SIGKILL')
+  return gone(record.pid, 2_000)
+}
+
+/**
+ * End the servers a Sotto that has gone left running on these folders (ADR-0087), with what they started, and take their
+ * records off. A record whose Sotto is still running is left for it, and a process that only has a recorded PID now,
+ * started at another time or running something else, is never touched.
+ */
+export async function endServersLeftBehind(ledger: string, log?: (event: OpenCodeServerEvent) => void): Promise<void> {
+  let names: string[]
+  try { names = (await readdir(ledger)).filter(name => name.endsWith('.json')) } catch { return }
+  const records = await Promise.all(names.map(async name => {
+    const file = join(ledger, name)
+    try { return { file, record: serverRecordSchema.parse(JSON.parse(await readFile(file, 'utf8'))) } } catch { return { file, record: undefined } }
+  }))
+  const left = records.filter(({ record }) => !record || !isRunning(record.owner))
+  if (!left.length) return
+  const rows = process.platform === 'win32' && left.some(({ record }) => record) ? await processTable() : []
+  for (const { file, record } of left) {
+    if (record && await endRecordedServer(record, rows)) log?.('opencode-server-left-ended')
+    await rm(file, { force: true }).catch(() => undefined)
+  }
 }

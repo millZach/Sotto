@@ -1,11 +1,14 @@
 // @vitest-environment node
+import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
-import { providerIdOfLabel } from '../../src/shared/agents'
+import { providerIdOfLabel, type ProviderId } from '../../src/shared/agents'
 import { OPENCODE_FORM_UNSHOWN } from '../../src/main/agents/opencodeRequests'
 import { opencodeRules } from '../../src/main/agents/opencode'
+import { ensureOpenCodeFolders, opencodeDatabase, opencodeEnvironment, opencodeFolders, opencodePassword, opencodeServerLedger, recordOpenCodeServer } from '../../src/main/agents/opencodeServer'
 import { describeAdapterContract } from './adapterContract'
 import { opencodeFixture, opencodeFixtureSkips } from '../fixtures/fakeOpenCodeFixture'
 import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
@@ -130,7 +133,8 @@ it.each(['approval-required', 'auto-accept-edits', 'full-access'] as const)('cre
     expect((await f.driver.requests()).filter(record => record.method === 'session.update').map(record => record.params?.permissions)).toEqual([opencodeRules(next)])
     // OpenCode has no mode that matches Automatic, so it is never offered.
     await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'auto' })).rejects.toThrow('not supported')
-    expect(opencodeRules('approval-required')).toEqual([{ action: 'shell', resource: '*', effect: 'ask' }, { action: 'edit', resource: '*', effect: 'ask' }, { action: 'external_directory', resource: '*', effect: 'ask' }])
+    expect(opencodeRules('approval-required')).toEqual(['shell', 'edit', 'external_directory', 'webfetch', 'websearch', 'subagent'].map(action => ({ action, resource: '*', effect: 'ask' })))
+    expect(opencodeRules('auto-accept-edits').filter(item => item.effect === 'ask').map(item => item.action)).toEqual(['shell', 'external_directory', 'webfetch', 'websearch', 'subagent'])
     expect(opencodeRules('auto-accept-edits')).toContainEqual({ action: 'edit', resource: '*', effect: 'allow' })
     expect(opencodeRules('full-access')).toEqual([{ action: '*', resource: '*', effect: 'allow' }])
   } finally { await f.cleanup() }
@@ -271,7 +275,8 @@ it('steers a running turn inside the same execution, and refuses to steer an idl
   } finally { await f.cleanup() }
 })
 
-it('ends a turn as interrupted when its server dies, and shows a resumed turn with no outcome as stopped', async () => {
+// Two real servers end here, one killed and one left behind by a restart, and each exit sweeps for the tools it left.
+it('ends a turn as interrupted when its server dies, and shows a resumed turn with no outcome as stopped', { timeout: 60_000 }, async () => {
   const { f, id } = await open()
   try {
     await send(f, id, 'first')
@@ -343,8 +348,11 @@ it('stops a server with its whole process tree, so a tool it started does not ou
   }
 })
 
-it('refuses Watcher in words before any OpenCode process starts', async () => {
-  const f = await opencodeFixture()
+it.each([
+  ['stable, with Muse held', undefined, 'Choose a Codex, Claude Code or Grok Build model for Watcher.'],
+  ['Owl, with nothing held', new Set<ProviderId>(), 'Choose a Codex, Claude Code, Grok Build or Muse model for Watcher.'],
+] as const)('refuses Watcher in words before any OpenCode process starts, naming Watcher’s providers on %s', async (_run, heldProviders, choose) => {
+  const f = await opencodeFixture(undefined, undefined, {}, heldProviders ? { heldProviders } : {})
   try {
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
@@ -352,8 +360,8 @@ it('refuses Watcher in words before any OpenCode process starts', async () => {
     let revoked: string | undefined
     f.host.useLaunchProfiles!({ profileFor: async () => ({ kind: 'watcher' as const, server: { name: 'sotto_threads', type: 'http' as const, url: 'http://127.0.0.1:9/mcp', headers: [] }, toolNames: [], revoke: reason => { revoked = reason } }) })
     await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: randomUUID(), projectId: f.projectId, modelId: f.modelId, title: 'Watcher' }))
-      .rejects.toThrow('OpenCode cannot host Watcher. Nothing was sent.')
-    expect(revoked).toContain('OpenCode cannot host Watcher')
+      .rejects.toThrow(`OpenCode cannot host Watcher. Nothing was sent. ${choose}`)
+    expect(revoked).toBe(`OpenCode cannot host Watcher. Nothing was sent. ${choose}`)
     expect((await f.driver.requests()).filter(record => record.method === 'fixture/process')).toHaveLength(before)
   } finally { await f.cleanup() }
 })
@@ -472,4 +480,181 @@ it('shows the files a step changed as a file change, live and restored, without 
     await expect.poll(async () => changes((await thread(restarted!, id)).activities)?.length ?? 0).toBe(2)
     expect(changes((await thread(restarted, id)).activities)).toEqual(live)
   } finally { await (restarted ?? f).cleanup() }
+})
+
+it('makes one provider session when a thread is read while its creation is still answering', async () => {
+  const f = await opencodeFixture()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await f.script({ delay: { 'session.create': 1000 } })
+    const id = randomUUID()
+    const creating = f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'In flight' })
+    await expect.poll(async () => (await f.driver.requests()).some(record => record.method === 'session.create')).toBe(true)
+    // Sotto's store opens the thread while OpenCode is still making its provider session.
+    f.host.observeThreads?.([id])
+    const reading = f.host.refreshThread!(id)
+    await expect(creating).resolves.toEqual({ accepted: true })
+    await reading
+    expect((await thread(f, id)).status).toBe('idle')
+    expect((await f.driver.requests()).filter(record => record.method === 'session.create')).toHaveLength(1)
+    expect((await f.nativeSessions()).filter(session => session.title === 'In flight')).toHaveLength(1)
+  } finally { await f.cleanup() }
+})
+
+it('makes no second provider session when a thread is read at once after its creation answer was lost', { timeout: 60_000 }, async () => {
+  const f = await opencodeFixture()
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await f.script({ delay: { 'session.create': 4000 } })
+    const id = randomUUID()
+    await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Lost then read' }))
+      .resolves.toEqual({ accepted: false, uncertain: true })
+    const took = ((await f.driver.requests()).find(record => record.method === 'session.create') as { process?: number } | undefined)?.process
+    expect(took).toBeTypeOf('number')
+    // Read at once: the server that took the creation may still be making the session its lost answer was for.
+    await f.host.refreshThread!(id)
+    expect((await thread(f, id)).status).toBe('idle')
+    // That server has gone, so it cannot finish a second session later, and the thread has one.
+    expect(running(took!)).toBe(false)
+    expect((await f.nativeSessions()).filter(session => session.title === 'Lost then read')).toHaveLength(1)
+    await expect(send(f, id, 'first')).resolves.toEqual({ accepted: true })
+  } finally { await f.cleanup() }
+})
+
+it.each([
+  ['OpenCode refuses its creation', 'refused'],
+  ['Watcher’s check fails before it is created', 'guard'],
+] as const)('stops the server of a thread that was never made when %s, and keeps no record of it', async (_case, how) => {
+  const f = await opencodeFixture()
+  let left: number[] = []
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    if (how === 'refused') await f.script({ refuse: { 'session.create': 400 } })
+    const before = await f.processes()
+    const id = randomUUID()
+    const command = { type: 'create-thread' as const, commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Never made' }
+    if (how === 'refused') await expect(f.host.execute(command)).rejects.toThrow('OpenCode refused to create this thread. Nothing was created.')
+    else await expect(f.host.executeFromWatcher!(command, () => { throw new Error('Watcher no longer holds this grant.') })).rejects.toThrow('Watcher no longer holds this grant.')
+    const started = (await f.processes()).filter(pid => !before.includes(pid))
+    expect(started).toHaveLength(1)
+    // Nothing is left of it once the adapter says its work is done.
+    await f.host.closed()
+    left = started.filter(running)
+    expect(JSON.parse(await readFile(join(f.root, 'opencode-threads.json'), 'utf8').catch(() => '{}'))).not.toHaveProperty(id)
+    expect((await f.host.snapshot()).threads.some(candidate => candidate.id === id)).toBe(false)
+    expect((await f.driver.requests()).filter(record => record.method === 'session.create')).toHaveLength(how === 'refused' ? 1 : 0)
+  } finally {
+    for (const pid of left) process.kill(pid)
+    await f.cleanup()
+  }
+  expect(left).toEqual([])
+})
+
+it('ends a server a crash left running when Sotto next connects, and nothing that is not its own', { timeout: 60_000 }, async () => {
+  const f = await opencodeFixture()
+  const strays: ChildProcess[] = []
+  const spawned = (args: string[], env: NodeJS.ProcessEnv = process.env): number => {
+    const child = spawn(process.execPath, args, { env, stdio: 'ignore', windowsHide: true, detached: process.platform !== 'win32' })
+    strays.push(child); return child.pid!
+  }
+  try {
+    const folders = opencodeFolders(join(f.root, 'opencode'))
+    await ensureOpenCodeFolders(folders)
+    // The Sotto that started them has gone.
+    const gone = spawn(process.execPath, ['-e', ''], { stdio: 'ignore', windowsHide: true })
+    const owner = gone.pid!
+    await new Promise(done => gone.once('close', done))
+    const startedAt = Date.now()
+    // A server Sotto started before it crashed, still running.
+    const left = spawned([resolve('tests/fixtures/fakeOpenCodeServer.mjs'), f.root, 'serve', '--hostname=127.0.0.1', '--port=0'], opencodeEnvironment(process.env, folders, opencodePassword()))
+    // Processes that are not servers the crashed Sotto left: one started an hour before its record says, one that is no
+    // OpenCode server, and one whose Sotto is still running.
+    const late = spawned(['-e', 'setInterval(() => {}, 1000)', 'serve', '--hostname=127.0.0.1', '--port=0'])
+    const other = spawned(['-e', 'setInterval(() => {}, 1000)'])
+    const owned = spawned(['-e', 'setInterval(() => {}, 1000)', 'serve', '--hostname=127.0.0.1', '--port=0'])
+    const ledger = opencodeServerLedger(folders)
+    await recordOpenCodeServer(ledger, { pid: left, startedAt, owner })
+    await recordOpenCodeServer(ledger, { pid: late, startedAt: startedAt + 3_600_000, owner })
+    await recordOpenCodeServer(ledger, { pid: other, startedAt, owner })
+    await recordOpenCodeServer(ledger, { pid: owned, startedAt, owner: process.pid })
+    // The left server has made its database, so the connect check's server does not race it.
+    await expect.poll(() => existsSync(opencodeDatabase(folders)), { timeout: 15_000 }).toBe(true)
+    await f.host.connect()
+    await expect.poll(() => running(left), { timeout: 5_000 }).toBe(false)
+    expect([late, other, owned].map(running)).toEqual([true, true, true])
+    // What was swept is no longer written down; the record of a running Sotto's server stays.
+    expect((await readdir(ledger)).sort()).toEqual([`${owned}.json`])
+    await rm(join(ledger, `${owned}.json`))
+    // A thread's server is written down while it runs, and its record goes with it.
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Written down' })
+    const serving = await f.holder(id)
+    expect(await readdir(ledger)).toEqual([`${serving}.json`])
+    expect(JSON.parse(await readFile(join(ledger, `${serving}.json`), 'utf8'))).toMatchObject({ pid: serving, owner: process.pid })
+    f.host.disconnect(); await f.host.closed()
+    expect(await readdir(ledger)).toEqual([])
+  } finally {
+    for (const child of strays) if (child.pid !== undefined && running(child.pid)) process.kill(child.pid)
+    await f.cleanup()
+  }
+})
+
+it('keeps a steer in the turn it joined when the thread is restored', async () => {
+  const { f, id } = await open()
+  let restarted: Fixture | undefined
+  try {
+    await send(f, id, 'first')
+    await f.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: 'steered', text: 'Also check the tests' })
+    await f.action(id, { type: 'tool', name: 'shell', input: { command: 'npm test' }, output: 'ok' })
+    await expect.poll(async () => (await thread(f, id)).activities?.some(activity => activity.command === 'npm test')).toBe(true)
+    await f.driver.completeTurn(id, 'Done')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    const before = await thread(f, id)
+    const placed = (activities: typeof before.activities) => activities?.filter(activity => activity.kind === 'command').map(activity => [activity.command, activity.turnId, activity.afterMessageId])
+    expect(placed(before.activities)).toEqual([['npm test', 'first', 'steered']])
+    restarted = await f.driver.restart()
+    restarted.host.useThreadHistory!({ messageIdentities: threadId => threadId === id ? before.messages.map(({ id: messageId, role }) => ({ id: messageId, role })) : [] })
+    restarted.host.observeThreads?.([id]); await restarted.host.connect()
+    await expect.poll(async () => placed((await thread(restarted!, id)).activities)?.length ?? 0).toBe(1)
+    expect(placed((await thread(restarted, id)).activities)).toEqual(placed(before.activities))
+  } finally { await (restarted ?? f).cleanup() }
+})
+
+it('settles a steered turn its server never finished under the prompt that started it', async () => {
+  const { f, id } = await open()
+  let restarted: Fixture | undefined
+  try {
+    await send(f, id, 'first')
+    await f.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: 'steered', text: 'Also check the tests' })
+    await f.action(id, { type: 'tool', name: 'shell', input: { command: 'ping -n 90 127.0.0.1' }, running: true })
+    await expect.poll(async () => (await thread(f, id)).activities?.some(activity => activity.kind === 'command')).toBe(true)
+    restarted = await f.driver.restart()
+    // Sotto stopped before it could save what it saw: only the provider session shows the turn never ended.
+    const saved = JSON.parse(await readFile(join(f.root, 'opencode-threads.json'), 'utf8')) as Record<string, { endedTurn?: unknown }>
+    delete saved[id]!.endedTurn
+    await writeFile(join(f.root, 'opencode-threads.json'), JSON.stringify(saved))
+    restarted.host.observeThreads?.([id]); await restarted.host.connect()
+    await expect.poll(async () => (await thread(restarted!, id)).lastTurn).toEqual({ id: 'first', status: 'interrupted' })
+    const resumed = await thread(restarted, id)
+    expect(resumed.activities?.find(activity => activity.kind === 'command')).toMatchObject({ turnId: 'first', status: 'interrupted' })
+    expect(resumed.activities?.some(activity => activity.turnId === 'steered')).toBe(false)
+  } finally { await (restarted ?? f).cleanup() }
+})
+
+it('names as signed in only the model sources whose models it offers', async () => {
+  const f = await opencodeFixture()
+  try {
+    await f.script({
+      providers: [{ id: 'opencode', name: 'OpenCode', activation: 'enabled' }, { id: 'anthropic', name: 'Anthropic', activation: 'enabled' }],
+      models: [{ id: 'fixture-model', providerID: 'opencode', name: 'Fixture Model', capabilities: { input: ['text'] }, variants: [], enabled: true, status: 'active' },
+        { id: 'retired', providerID: 'anthropic', name: 'Retired', capabilities: { input: ['text'] }, variants: [], enabled: true, status: 'deprecated' }],
+    })
+    const snapshot = await f.host.connect()
+    expect(snapshot.models.map(model => model.id)).toEqual(['opencode/fixture-model'])
+    expect(snapshot.account).toBe('No model source signed in yet; OpenCode Zen’s free models only')
+  } finally { await f.cleanup() }
 })

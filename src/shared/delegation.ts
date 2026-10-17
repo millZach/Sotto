@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, providerIdSchema, type AgentThread } from './agents'
 import { WATCHER_OUTCOMES, watcherOutcomeSchema } from './watcher'
+import { workerKindSchema } from './workerRoles'
 
 /**
  * Delegation between threads (ADR-0081): an ordinary thread hands work to a thread it starts, through the scoped
@@ -20,8 +21,11 @@ export const DELEGATION_LEVELS_MAX = 2
 export const DELEGATION_BRIEF_MAX = 32_000
 export const DELEGATION_TITLE_MAX = 120
 
-/** The kind of work a delegation is for; once worker roles land (#1041), Sotto fills in the model from it (decision 9). */
-export const delegationWorkSchema = z.enum(['building', 'ui', 'code-review', 'research', 'computer-use'])
+/**
+ * The kind of work a delegation is for: one of the worker roles (#1041), from which Sotto fills in what the call leaves
+ * out while that Owl feature is on (decision 9).
+ */
+export const delegationWorkSchema = workerKindSchema
 export type DelegationWork = z.infer<typeof delegationWorkSchema>
 export const DELEGATION_WORK_TITLES: Record<DelegationWork, string> = {
   building: 'Building', ui: 'UI work', 'code-review': 'Code review', research: 'Research', 'computer-use': 'Computer use',

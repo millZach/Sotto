@@ -1084,6 +1084,13 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('continue-agent'), threadId: id, agentId: id, newThreadId: z.uuid(), modelId: providerEntityId.optional(),
     handover: z.literal(true).optional(), workingCopy: z.enum(['independent', 'shared']).optional(),
     baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional() }).strict(),
+  /**
+   * Fork from here (#1028, E5b): a new thread with `threadId`'s conversation up to its reply `messageId`. Codex and Claude
+   * Code copy it themselves; any other provider starts the new thread from a handover of it that goes with its first
+   * message. `newThreadId` is the thread to make, which the window mints. Nothing is sent to any provider until then.
+   */
+  z.object({ type: z.literal('fork-thread'), threadId: id, messageId: id, newThreadId: z.uuid(), modelId: providerEntityId.optional(),
+    workingCopy: z.enum(['independent', 'shared']).optional(), baseBranch: z.string().min(1).max(512).optional(), startFromOrigin: z.boolean().optional() }).strict(),
   z.object({ type: z.enum(['retry-thread-worktree', 'open-thread-folder']), threadId: id }).strict(),
   /** Read the thread's folder again, remote and all. `background` is a read the window made on its own (it regained focus,
    * a draft began), which asks GitHub only as the timer would: never while its rate limit is paused or below the reserve (#820). */

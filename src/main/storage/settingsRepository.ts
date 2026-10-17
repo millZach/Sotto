@@ -6,6 +6,11 @@ import { parseHostEntityKey } from '../../shared/clientIdentity'
 
 export interface SettingsRepositoryOptions {
   watcherEnabled?: boolean
+  /**
+   * The Owl list's answer for worker roles (#1041), read once at start. Off, the saved rows stay as they are: a save or a
+   * reset keeps them, and a patch that would change them is refused. Absent keeps today's behaviour, as in tests.
+   */
+  workerRolesEnabled?: boolean
   now?: () => number
   store?: AtomicJsonStore<AppSettings>
   onRecovery?: (notice: RecoveryNotice) => void
@@ -23,10 +28,12 @@ export class SettingsRepository {
   private readonly omarchyTheme: (() => OmarchyTheme | null) | undefined
   private readonly shellPillInUse: (() => boolean) | undefined
   private readonly watcherEnabled: boolean
+  private readonly workerRolesEnabled: boolean
   private mutationTail: Promise<void> = Promise.resolve()
 
   constructor(filePath: string, options: SettingsRepositoryOptions = {}) {
     this.watcherEnabled = options.watcherEnabled ?? true
+    this.workerRolesEnabled = options.workerRolesEnabled ?? true
     this.omarchyTheme = options.omarchyTheme
     this.shellPillInUse = options.shellPillInUse
     this.defaults = options.defaults ?? DEFAULT_SETTINGS
@@ -50,7 +57,7 @@ export class SettingsRepository {
   async save(input: unknown): Promise<AppSettings> {
     const parsed = this.parse(input)
     return this.enqueueMutation(async () => {
-      const settings = this.watcherEnabled ? parsed : { ...parsed, watcherInFlightLimit: (await this.readSettings()).watcherInFlightLimit }
+      const settings = await this.keepHeld(parsed)
       await this.writeSettings(settings)
       return this.project(settings)
     })
@@ -64,6 +71,10 @@ export class SettingsRepository {
         throw new Error('Watcher settings are available in Sotto Owl. Nothing was changed.')
       }
       if (!this.watcherEnabled) delete patchSnapshot.watcherInFlightLimit
+      if (!this.workerRolesEnabled && patchSnapshot.workerRoles !== undefined && JSON.stringify(patchSnapshot.workerRoles) !== JSON.stringify(current.workerRoles)) {
+        throw new Error('Worker roles are available in Sotto Owl. Nothing was changed.')
+      }
+      if (!this.workerRolesEnabled) delete patchSnapshot.workerRoles
       const settings = this.parse({ ...current, ...patchSnapshot })
       await this.writeSettings(settings)
       return this.project(settings)
@@ -73,10 +84,18 @@ export class SettingsRepository {
   async reset(): Promise<AppSettings> {
     const parsed = this.parse(this.defaults)
     return this.enqueueMutation(async () => {
-      const settings = this.watcherEnabled ? parsed : { ...parsed, watcherInFlightLimit: (await this.readSettings()).watcherInFlightLimit }
+      const settings = await this.keepHeld(parsed)
       await this.writeSettings(settings)
       return this.project(settings)
     })
+  }
+
+  /** What a build without an Owl feature keeps as it was saved, whatever a whole save or a reset brings. */
+  private async keepHeld(settings: AppSettings): Promise<AppSettings> {
+    if (this.watcherEnabled && this.workerRolesEnabled) return settings
+    const saved = await this.readSettings()
+    return { ...settings, ...(this.watcherEnabled ? {} : { watcherInFlightLimit: saved.watcherInFlightLimit }),
+      ...(this.workerRolesEnabled ? {} : { workerRoles: saved.workerRoles }) }
   }
 
   async exists(): Promise<boolean> {
