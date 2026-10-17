@@ -7,6 +7,15 @@ import { PROVIDER_COUNT, PROVIDER_LABELS, providerIdSchema, type AgentProviderSt
  * own client and finished by the user in this computer's browser.
  */
 
+/**
+ * The providers a host offers from this computer: its tiles, their connect, sign-in and agent jobs, and the provider job
+ * brief. OpenCode is not one yet: hosts and phones take it in #1107, which adds it here. A headless host may still run
+ * its adapter behind the Owl gate; nothing on this computer offers it for a host.
+ */
+export const HOST_PROVIDERS = ['claude', 'codex', 'grok', 'devin', 'muse'] as const satisfies readonly ProviderId[]
+export type HostProviderId = typeof HOST_PROVIDERS[number]
+export const hostProviderIdSchema = z.enum(HOST_PROVIDERS)
+
 /** How long a sign-in lives on the host before its client is stopped and what it printed is dropped. */
 export const PROVIDER_SIGN_IN_LIFETIME_MS = 15 * 60_000
 
@@ -91,14 +100,14 @@ export const PASTED_CODE_MAX = 2048
 
 /** What Settings > Hosts asks of one of a saved host's providers. `id` is the saved host's. */
 export const hostProviderActionSchema = z.object({
-  id: z.uuid(), provider: providerIdSchema, action: z.enum(['connect', 'disconnect', 'refresh']),
+  id: z.uuid(), provider: hostProviderIdSchema, action: z.enum(['connect', 'disconnect', 'refresh']),
 }).strict()
 export type HostProviderAction = z.infer<typeof hostProviderActionSchema>
 /** How a provider action went: nothing when the host took it, else the host's own sentence, naming the host. */
 export interface HostProviderActionResult { readonly error?: string }
 
 export const hostSignInRequestSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('start'), id: z.uuid(), provider: providerIdSchema }).strict(),
+  z.object({ type: z.literal('start'), id: z.uuid(), provider: hostProviderIdSchema }).strict(),
   z.object({ type: z.literal('read'), id: z.uuid(), signInId: z.uuid() }).strict(),
   z.object({ type: z.literal('code'), id: z.uuid(), signInId: z.uuid(), code: z.string().min(1).max(PASTED_CODE_MAX) }).strict(),
   z.object({ type: z.literal('cancel'), id: z.uuid(), signInId: z.uuid() }).strict(),
