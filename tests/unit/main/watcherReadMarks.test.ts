@@ -61,6 +61,18 @@ describe('read marks', () => {
     expect(after?.map(mark => mark.target.threadId)).toEqual(['b'])
   })
 
+  it('marks nothing a thread already had when it connects again, even news that came while it was out of reach', () => {
+    const marks = new WatcherReadMarks()
+    const offline = (item: AgentThread): ReadMarkThread[] => [{ target: target(item.id), thread: item, connected: false }]
+    marks.track([], pass(running('a', 't1')), AT)
+    expect(marks.track([], offline(running('a', 't1')), AT)).toBeNull()
+    expect(marks.track([], offline(finished('a', 't1')), AT)).toBeNull()
+    expect(marks.track([], pass(finished('a', 't1')), AT)).toBeNull()
+    // News seen to arrive after it connected again still marks it.
+    marks.track([], pass(running('a', 't2')), AT)
+    expect(marks.track([], pass(finished('a', 't2')), AT)).toHaveLength(1)
+  })
+
   it('goes when the user reads the thread, records when, and the same news never marks it again', () => {
     const marks = new WatcherReadMarks()
     marks.track([], pass(running('a', 't1')), AT)

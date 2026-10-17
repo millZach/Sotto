@@ -32,9 +32,10 @@ export interface ReadMarkThread { readonly target: WatcherThreadTarget; readonly
 
 /**
  * Read marks (CONTEXT.md): which threads have news the user has not seen. Each pass reads every thread once. A thread
- * earns a mark when its news changes to something new while Sotto watches it change, so a restart, or a host
- * connecting, marks nothing it already had; the marks it saved stay until the user reads them. Working again takes a
- * mark away, since the news it was for is over, and a disconnected thread neither earns nor loses one.
+ * earns a mark when its news changes to something new while Sotto watches it change, so a restart, a host connecting
+ * or a thread reconnecting marks nothing it already had: what changed out of reach was not seen to change. The marks it
+ * saved stay until the user reads them. Working again takes a mark away, since the news it was for is over, and a
+ * disconnected thread neither earns nor loses one.
  */
 export class WatcherReadMarks {
   /** Each thread's news at the last pass, by target. Ephemeral: a restart starts from what it sees. */
@@ -45,8 +46,11 @@ export class WatcherReadMarks {
     const byTarget = new Map(marks.map(mark => [key(mark.target), mark] as const))
     let changed = false
     for (const { target, thread, connected } of threads) {
-      if (!connected || thread.kind === 'watcher' || thread.kind === 'watcher-history') continue
-      const slot = key(target), news = threadNews(thread)
+      if (thread.kind === 'watcher' || thread.kind === 'watcher-history') continue
+      const slot = key(target)
+      // Out of reach, Sotto cannot see its news change: when it connects again, what it has then is first sight.
+      if (!connected) { this.seen.delete(slot); continue }
+      const news = threadNews(thread)
       const before = this.seen.get(slot)
       this.seen.set(slot, news?.newsId ?? null)
       const mark = byTarget.get(slot)
