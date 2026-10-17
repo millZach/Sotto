@@ -5,7 +5,7 @@ import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { RUNTIME_MODE_ORDER } from '../../../../shared/newThreadDefaults'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
-import { capRuntimeMode, defaultModel, fitEffort, fitRuntimeMode, roleInForce, withRoleRow, WATCHER_PROVIDERS, WORKER_ROLES,
+import { capRuntimeMode, defaultModel, fitEffort, fitRuntimeMode, roleInForce, watcherProvidersInWords, withRoleRow, WORKER_ROLES,
   type RoleInForce, type WorkerRoleChoice, type WorkerRoleChoices, type WorkerRoleId } from '../../../../shared/workerRoles'
 import { useOptionalAgents, type AgentConnection } from '../../agents/AgentContext'
 import { EffortPicker, effortLabel } from '../../agents/EffortPicker'
@@ -340,8 +340,7 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   const pending = usePendingSettings(watcher?.id ?? '')
   // A provider held to Owl on this run is not named (ADR-0072): the card asks the held set, as Settings, Providers does.
   const held = useHeldProviders()
-  const named = [...WATCHER_PROVIDERS].filter(id => !held.has(id)).map(id => PROVIDER_LABELS[id])
-  const watcherProviders = named.length < 2 ? named.join('') : `${named.slice(0, -1).join(', ')} or ${named.at(-1)}`
+  const watcherProviders = watcherProvidersInWords(held)
   const role = read.role
   // While Watcher runs, the card shows what it is on; before it exists, what it will start on.
   const drawn = watcher ? settingValues(state, watcher) : null

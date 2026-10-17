@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, everyProvider, parsePublicProviderEntityId, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
+import { agentRuntimeModeSchema, everyProvider, parsePublicProviderEntityId, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
 import { resolveModel } from './modelCatalog'
 import { nearestRuntimeMode, RUNTIME_MODE_ORDER } from './newThreadDefaults'
 import { effortKey, effortRank } from './reasoningEfforts'
@@ -113,8 +113,19 @@ export const RUNTIME_MODE_WORDS: Readonly<Record<AgentRuntimeMode, string>> = {
  * of theirs. A provider is named here once Watcher runs on it; one that is not is never Orchestrating's.
  */
 export const WATCHER_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'muse'])
-/** The order a role with no ready default looks through for one of a provider's own models. */
-const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin'])
+/**
+ * Watcher's providers in words, less those held to Owl on this run (ADR-0072): "Codex, Claude Code or Grok Build" on
+ * stable, with Muse added on Owl. Every sentence that names where Watcher can run asks this.
+ */
+export function watcherProvidersInWords(held: ReadonlySet<ProviderId>): string {
+  const named = [...WATCHER_PROVIDERS].filter(id => !held.has(id)).map(id => PROVIDER_LABELS[id])
+  return named.length < 2 ? named.join('') : `${named.slice(0, -1).join(', ')} or ${named.at(-1)}`
+}
+/**
+ * The order a role with no ready default looks through for one of a provider's own models. OpenCode comes last: a fresh
+ * one offers only OpenCode Zen's free models, which no role names as a default.
+ */
+const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin', 'opencode'])
 /** Whether a role can run on a model: Orchestrating only on a provider Watcher can run on. */
 export function roleCanUse(role: WorkerRoleId, model: Pick<AgentModel, 'providerId'>): boolean {
   return role !== 'orchestrating' || (model.providerId !== undefined && WATCHER_PROVIDERS.has(model.providerId))
@@ -319,3 +330,77 @@ export function roleStartNote(start: RoleStart, models: readonly AgentModel[], h
 
 /** The roles in a line, for instructions that name them. */
 export const WORKER_KIND_LIST = WORKER_KINDS.join(', ')
+
+/**
+ * The name a role's own sub-agent goes by in Claude Code and Codex (#1042). Sotto's prefix keeps it clear of the
+ * provider's built-in agents and of any the user made, so neither is replaced and neither replaces it.
+ */
+export function subagentName(kind: WorkerKind): string { return `sotto_${kind.replaceAll('-', '_')}` }
+
+/** One kind of work as a thread's own sub-agents follow it (#1042): what the role runs on now. */
+export interface SubagentRole {
+  readonly kind: WorkerKind
+  readonly name: string
+  readonly what: string
+  readonly provider: ProviderId
+  /** The provider's own ID for the model, as its client takes it. */
+  readonly model: string
+  /** The model as the user knows it. */
+  readonly modelName: string
+  readonly reasoningEffort: string | null
+  /** Before the thread's own permission caps it; undefined for a model with its own permission profiles. */
+  readonly runtimeMode: AgentRuntimeMode | undefined
+}
+/**
+ * What each kind of work runs on now, for a thread's own sub-agents to follow: read once at a thread's launch and when
+ * Settings change, never on the update path. A kind nothing ready can do is left out.
+ */
+export function subagentRoleTable(choices: WorkerRoleChoices, models: readonly AgentModel[]): readonly SubagentRole[] {
+  return WORKER_KINDS.flatMap(kind => {
+    const start = roleInForce(kind, choices, models).start, provider = start?.model.providerId
+    if (!start || !provider) return []
+    const role = workerRole(kind)
+    return [{ kind, name: role.name, what: role.what, provider, model: parsePublicProviderEntityId(start.modelId)?.value ?? start.modelId,
+      modelName: start.model.name, reasoningEffort: start.reasoningEffort, runtimeMode: start.runtimeMode }]
+  })
+}
+
+/** How one launch reaches the roles: its own named sub-agents for some, Sotto's `delegate` for the rest while it may delegate. */
+export interface SubagentReach {
+  readonly provider: ProviderId
+  /** The roles this launch has as named sub-agents of its own; empty where the provider gets instructions only. */
+  readonly agents: ReadonlySet<WorkerKind>
+  /** The tool that starts one of them. */
+  readonly agentTool?: 'claude' | 'codex'
+  /** Whether this launch was offered `delegate` (ADR-0081): a second-level delegated thread is not. */
+  readonly canDelegate: boolean
+}
+/** A role's kind of work as words inside a sentence: "writing and changing code". */
+export const roleWork = (role: Pick<WorkerRole, 'what'>): string => `${role.what.charAt(0).toLowerCase()}${role.what.slice(1).replace(/\.$/u, '')}`
+const atEffort = (effort: string | null): string => effort ? ` at ${effort} effort` : ''
+/** One role's line: which agent, which model on this provider, or the delegation that reaches another provider. */
+function reachLine(role: SubagentRole, reach: SubagentReach): string {
+  const name = subagentName(role.kind), on = `${role.modelName}${atEffort(role.reasoningEffort)}`
+  if (reach.agents.has(role.kind)) return reach.agentTool === 'codex'
+    ? `call spawn_agent with agent_type "${name}" (${on}).`
+    : `use the Agent tool with subagent_type "${name}" (${on}).`
+  if (role.provider === reach.provider) return reach.agentTool === 'codex'
+    ? `call spawn_agent with model "${role.model}"${role.reasoningEffort ? ` and reasoning_effort "${role.reasoningEffort}"` : ''}.`
+    : `start your sub-agent on ${role.model}${atEffort(role.reasoningEffort)} when you can choose its model.`
+  return reach.canDelegate
+    ? `${on} on ${PROVIDER_LABELS[role.provider]}, another provider: call delegate with work "${role.kind}".`
+    : `${on} on ${PROVIDER_LABELS[role.provider]}, which this thread cannot start: do that work yourself.`
+}
+/**
+ * The role table as a thread's own instructions carry it (#1042), through its provider's background channel: which
+ * sub-agent to use for which kind of work, and which kinds go to another provider by delegation. Undefined when no
+ * kind of work has anything ready to run on.
+ */
+export function subagentRoleInstructions(table: readonly SubagentRole[], reach: SubagentReach): string | undefined {
+  if (!table.length) return undefined
+  return [
+    'The user\'s Settings give each kind of work a worker role and the model it runs on. When you hand part of your work to a sub-agent or another thread, follow them:',
+    ...table.map(role => `- ${role.name} (${roleWork(role)}): ${reachLine(role, reach)}`),
+    'A model, effort or permission the user names for a request wins over the role. Work you do yourself needs no role.',
+  ].join('\n')
+}

@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
-import { forceDomTerminalRenderer, terminalOutput, threadTerminal, waitForShellPrompt, workspaceTerminal } from './support/terminal'
+import { forceDomTerminalRenderer, SHELL_START_TIMEOUT, terminalOutput, threadTerminal, waitForShellPrompt, workspaceTerminal } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Run after npm run build. These journeys use real ConPTYs; only external browser opening is stubbed.
@@ -46,15 +46,44 @@ async function expectHighlightOnText(scope: Locator): Promise<void> {
   }).toPass({ timeout: 15_000 })
 }
 
-async function clickTerminalLink(page: Page, scope: Locator, text: string, modifier = false): Promise<void> {
-  let box!: Awaited<ReturnType<typeof renderedText>>
-  // ConPTY can repaint after a size change; wait for the actual linked text before hit testing it.
-  await expect(async () => { box = await renderedText(scope, text, text) }).toPass({ timeout: 10_000 })
-  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-  await page.mouse.move(point.x, point.y)
-  if (modifier) await page.keyboard.down('Control')
-  try { await page.mouse.click(point.x, point.y) }
-  finally { if (modifier) await page.keyboard.up('Control') }
+/**
+ * Click `text` in the terminal while xterm shows it as a link, or, with `link: false`, while xterm shows it is not one.
+ *
+ * xterm looks for a link only when the pointer enters a new cell, shows what it found as a pointer cursor on its
+ * screen, and follows the link when the button comes up while that link is still current. A click before the hover
+ * resolved, or after a repaint ended the link under a pointer that never moved, is an ordinary click (#1135). So each
+ * try arrives from the space just left of the text, waits for the cursor, and notes whether xterm still showed the link
+ * when the button went down and when it came up. Only a click xterm could not have followed is tried again, so no link
+ * opens twice.
+ */
+async function clickTerminalLink(page: Page, scope: Locator, text: string, { modifier = false, link = true }: { modifier?: boolean; link?: boolean } = {}): Promise<void> {
+  const screen = scope.locator('.xterm-screen')
+  const pointer = /\bxterm-cursor-pointer\b/u
+  // ConPTY can repaint after a size change; measure the text again on every try.
+  await expect(async () => {
+    const box = await renderedText(scope, text, text)
+    const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    await page.mouse.move(box.x - 2, point.y)
+    await page.mouse.move(point.x, point.y)
+    if (link) await expect(screen, `xterm shows "${text}" as a link`).toHaveClass(pointer, { timeout: 1_000 })
+    else await expect(screen, `xterm does not offer "${text}" as a link`).not.toHaveClass(pointer, { timeout: 1_000 })
+    // Capture listeners run before xterm's own mousedown and mouseup handlers, so they see the link each one reads. xterm
+    // follows a link only when the same link was current at both, so a click it might have followed shows it at both.
+    await screen.evaluate(element => {
+      const screen = element as HTMLElement
+      delete screen.dataset.linkAtMouseDown; delete screen.dataset.linkAtMouseUp
+      const note = (key: 'linkAtMouseDown' | 'linkAtMouseUp') => () => { screen.dataset[key] = String(screen.classList.contains('xterm-cursor-pointer')) }
+      screen.addEventListener('mousedown', note('linkAtMouseDown'), { capture: true, once: true })
+      screen.addEventListener('mouseup', note('linkAtMouseUp'), { capture: true, once: true })
+    })
+    if (modifier) await page.keyboard.down('Control')
+    try { await page.mouse.click(point.x, point.y) }
+    finally { if (modifier) await page.keyboard.up('Control') }
+    const shown = await screen.evaluate(element => [(element as HTMLElement).dataset.linkAtMouseDown, (element as HTMLElement).dataset.linkAtMouseUp])
+    // With a link, a click xterm could not have followed (no link at one end or both) is tried again; one it might have
+    // followed is never clicked again, so a link opens at most once.
+    expect(shown, `xterm ${link ? 'still showed' : 'did not show'} "${text}" as a link while the button went down and came up`).toEqual([String(link), String(link)])
+  }).toPass({ timeout: 10_000 })
 }
 
 for (const surface of ['tools', 'drawer', 'workspace'] as const) {
@@ -76,19 +105,23 @@ for (const surface of ['tools', 'drawer', 'workspace'] as const) {
       expect(folder.startsWith(launched.userData)).toBe(true)
       await writeFile(join(folder, 'terminal-basics.cjs'), `
 const e = '\\x1b';
-const paint = () => process.stdout.write(e+'[3J'+e+'[2J'+e+'[H'+[
+// Every line of a paint ends with its number, so the journey can tell a fresh paint from the one before it wherever
+// search scrolled the screen. The fixture also notes how many paints it made and how many Ctrl+L asked for, so the
+// journey knows which paint is the newest.
+let paints=0, asked=0;
+const paint = () => { require('fs').writeFileSync(require('path').join(__dirname, 'fixture-paints.json'), JSON.stringify({ paints: ++paints, asked })); process.stdout.write(e+'[3J'+e+'[2J'+e+'[H'+[
  'Search check ready', 'alpha needle one', 'beta needle two', 'gamma needle three',
  'URL https://example.com/terminal',
  'OSC '+e+']8;;https://example.com/docs'+e+'\\\\'+'project docs'+e+']8;;'+e+'\\\\',
  'Unsafe '+e+']8;;file:///tmp/blocked'+e+'\\\\'+'blocked file'+e+']8;;'+e+'\\\\',
  'CJK 界 emoji 😀', 'GRID='+process.stdout.columns+'x'+process.stdout.rows
-].join('\\r\\n')+'\\r\\n');
+].map(line => line+' PAINT='+paints).join('\\r\\n')+'\\r\\n'); };
 // After the capture redraw, follow later PTY sizes instead of keeping a screen from the old grid.
 let repaintOnResize=false;
 process.stdout.on('resize', () => { if(repaintOnResize) paint(); });
 paint();
 process.stdin.setRawMode(true); process.stdin.resume(); let line='';
-process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x03') process.exit(0); if(c==='\\x0c') {repaintOnResize=true;paint();continue;} if(c==='\\x02') {process.stdout.write('\\r\\n'+('many-match\\r\\n').repeat(1001));continue;} if(c==='\\r') {process.stdout.write('INPUT='+line+'\\r\\n');line='';} else line+=c; } });
+process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x03') process.exit(0); if(c==='\\x0c') {repaintOnResize=true;asked++;paint();continue;} if(c==='\\x02') {process.stdout.write('\\r\\n'+('many-match\\r\\n').repeat(1001)+'Wrote the long output\\r\\n');continue;} if(c==='\\r') {process.stdout.write('INPUT='+line+'\\r\\n');line='';} else line+=c; } });
 `, 'utf8')
       await app.evaluate(({ shell }) => {
         const state = globalThis as typeof globalThis & { terminalOpenedLinks?: string[] }
@@ -139,7 +172,12 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
         const list = await window.sotto!.terminal!.list({ threadId, place: surface })
         return list.ok ? list.value.sessions[0]!.cols : 0
       }, { surface, threadId })
-      await expect.poll(output).toContain('Search check ready')
+      // The fixture is a fresh Node process. On a loaded runner its first line had not arrived five seconds after the shell
+      // echoed the command (#1135), so wait for that line as long as for the shell's first prompt.
+      // Like waitForShellPrompt, the wait adds its deadline to the test's, so a slow start fails with this wait's message.
+      const info = test.info()
+      if (info.timeout > 0) info.setTimeout(info.timeout + SHELL_START_TIMEOUT)
+      await expect.poll(output, { message: 'the fixture printed its first screen', timeout: SHELL_START_TIMEOUT }).toContain('Search check ready')
       if (surface === 'workspace') await expect(scope.locator('.xterm-screen canvas:not(.xterm-link-layer)')).toBeVisible()
       else await expect(scope.locator('.xterm-rows')).toContainText('CJK 界 emoji 😀')
       await input.press('Control+f')
@@ -193,11 +231,11 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       await input.press('Enter'); await expect.poll(output).toContain('INPUT=\r\n')
       await clickTerminalLink(page, scope, 'https://example.com/terminal')
       expect(await links()).toEqual([])
-      await clickTerminalLink(page, scope, 'https://example.com/terminal', true)
+      await clickTerminalLink(page, scope, 'https://example.com/terminal', { modifier: true })
       await expect.poll(links).toEqual(['https://example.com/terminal'])
-      await clickTerminalLink(page, scope, 'project docs', true)
+      await clickTerminalLink(page, scope, 'project docs', { modifier: true })
       await expect.poll(links).toEqual(['https://example.com/terminal', 'https://example.com/docs'])
-      await clickTerminalLink(page, scope, 'blocked file', true)
+      await clickTerminalLink(page, scope, 'blocked file', { modifier: true, link: false })
       expect(await links()).toHaveLength(2)
       await input.press('Control+f')
       await find.press('Tab'); await page.keyboard.press('Tab'); await page.keyboard.press('Tab')
@@ -281,15 +319,78 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
         expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(560)
       }).toPass()
       await namedLink.press('Escape'); await find.focus()
+      /** The newest fixture paint the screen shows. Every line of a paint names its number. */
+      const shownPaint = () => scope.locator('.xterm-rows > div').evaluateAll(rows => Math.max(0, ...rows.map(row => Number(/PAINT=(\d+)/u.exec(row.textContent ?? '')?.[1] ?? 0))))
+      /** The fixture's own record of how many paints it made and how many of them Ctrl+L asked for. */
+      const fixturePaints = async (): Promise<{ paints: number; asked: number }> => {
+        let record: { paints: number; asked: number } | undefined
+        // The fixture may be writing the file as it is read; read it again until it parses.
+        await expect(async () => { record = JSON.parse(await readFile(join(folder, 'fixture-paints.json'), 'utf8')) }).toPass()
+        return record!
+      }
+      // Note every count search shows, with the newest paint the screen showed at that moment.
+      type CountsView = HTMLElement & { fixtureCounts: { text: string; paint: number }[] }
+      await search.evaluate(bar => {
+        const view = bar.parentElement as CountsView, count = bar.querySelector('output')!
+        view.fixtureCounts = []
+        new MutationObserver(records => {
+          if (!records.some(record => count.contains(record.target))) return
+          const paint = Math.max(0, ...[...view.querySelectorAll('.xterm-rows > div')].map(row => Number(/PAINT=(\d+)/u.exec(row.textContent ?? '')?.[1] ?? 0)))
+          view.fixtureCounts.push({ text: count.textContent ?? '', paint })
+        }).observe(view, { subtree: true, childList: true, characterData: true })
+      })
+      const counts = () => search.evaluate(bar => (bar.parentElement as CountsView).fixtureCounts)
+      /**
+       * The count search shows once the screen shows the fixture's newest paint, made after the Ctrl+L that followed
+       * `asked`, and search has counted again since that paint arrived (the addon recounts after a write). The query is
+       * never typed again, so the count is the one Sotto and the addon arrived at by themselves.
+       */
+      const countAfterPaint = async (asked: number): Promise<string> => {
+        let text = ''
+        await expect(async () => {
+          const fixture = await fixturePaints()
+          expect(fixture.asked, 'the fixture made the paint Ctrl+L asked for').toBeGreaterThan(asked)
+          expect(await shownPaint(), 'the screen shows the fixture\'s newest paint').toBe(fixture.paints)
+          const last = (await counts()).at(-1)
+          expect(last?.paint, 'search counted again after that paint arrived').toBe(fixture.paints)
+          text = last!.text
+        }).toPass({ timeout: 15_000 })
+        return text
+      }
+      /** The count search shows after Sotto's own refresh, the first count after the `seen` counts before it. */
+      const countAfterRefresh = async (seen: number): Promise<string> => {
+        await expect.poll(async () => (await counts()).length, { message: 'search counted again for the new theme' }).toBeGreaterThan(seen)
+        return (await counts()).at(-1)!.text
+      }
+      /**
+       * Search counts the fixture's three matches. When the grid has fewer rows than a paint has lines, ConPTY can send
+       * the next paint's scrollback clear ahead of the line feed that ended the paint before it, so one needle line of
+       * that paint outlives the clear and search counts four (#1135). The PTY's own output shows that order, so it is
+       * ConPTY's and not Sotto's. Only that count asks for a fresh paint, whose count is checked the same way; any other
+       * count fails.
+       */
+      const expectFixtureMatches = async (count: string): Promise<void> => {
+        for (let fresh = 0; !/^\d+ of 3$/u.test(count); fresh++) {
+          expect(count, 'search counts the fixture\'s three matches, or four with a line ConPTY kept from the paint before').toMatch(/^\d+ of 4$/u)
+          expect(fresh, 'a fresh paint drops the line ConPTY kept').toBeLessThan(5)
+          const { asked } = await fixturePaints()
+          await input.press('Control+l'); await find.focus()
+          count = await countAfterPaint(asked)
+        }
+      }
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+        const { asked } = await fixturePaints()
         await resizeWindow(launched, width, height)
         await input.press('Control+l')
         await find.focus()
+        await expectFixtureMatches(await countAfterPaint(asked))
         for (const appearance of ['dark', 'light'] as const) {
+          const rethemed = await page.locator('html').getAttribute('data-theme') !== appearance, seen = (await counts()).length
           await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
           await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
           await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
-          await expect(search.locator('output')).toHaveText(/of 3$/u)
+          // A new theme makes Sotto search again, so its highlights take the theme's colours; that count must hold too.
+          if (rethemed) await expectFixtureMatches(await countAfterRefresh(seen))
           await expectHighlightOnText(scope)
           const box = await search.boundingBox(), bounds = await scope.locator('.terminal-view__screen').boundingBox()
           expect(box!.x).toBeGreaterThanOrEqual(bounds!.x)
@@ -332,6 +433,9 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       }
       if (surface === 'workspace') {
         await input.press('Control+b')
+        // Search the long output once all of it has arrived. A query typed while it streams in finds nothing at first,
+        // and the addon's recount after the rest lands shows the total with no current match.
+        await expect(scope.locator('.xterm-rows')).toContainText('Wrote the long output')
         await input.press('Control+f'); await find.fill('many-match')
         await expect(search.locator('output')).toHaveText('1 of 1000+')
         await find.press('Control+=')

@@ -81,21 +81,51 @@ function hostState(provider: Held): AgentState {
 describe('the held-provider table', () => {
   it('holds a provider until its Owl feature is on, and a missing answer holds it', () => {
     const entries: readonly HeldProviderEntry[] = [...HELD_PROVIDER_ENTRIES, { provider: 'grok', feature: 'usage' }]
-    expect([...heldProvidersOf({}, entries)]).toEqual(['muse', 'grok'])
-    expect([...heldProvidersOf({ muse: true }, entries)]).toEqual(['grok'])
-    expect([...heldProvidersOf({ muse: true, usage: true }, entries)]).toEqual([])
+    expect([...heldProvidersOf({}, entries)]).toEqual(['muse', 'opencode', 'grok'])
+    expect([...heldProvidersOf({ muse: true }, entries)]).toEqual(['opencode', 'grok'])
+    expect([...heldProvidersOf({ muse: true, opencode: true, usage: true }, entries)]).toEqual([])
     expect(releasesHeldProvider(new Set(['grok']), entries)).toBe(true)
-    expect(releasesHeldProvider(new Set(['muse', 'grok']), entries)).toBe(false)
-    expect([...heldProvidersOf({})]).toEqual(['muse'])
+    expect(releasesHeldProvider(new Set(['muse', 'opencode', 'grok']), entries)).toBe(false)
+    expect([...heldProvidersOf({})]).toEqual(['muse', 'opencode'])
   })
   it('reads an older Muse answer as the held set, and the held set wins', () => {
-    expect([...heldProvidersOption({})]).toEqual(['muse'])
-    expect([...heldProvidersOption({ museEnabled: true })]).toEqual([])
+    // The older answer is Muse's alone, so OpenCode, which it says nothing about, stays held: the gate fails closed.
+    expect([...heldProvidersOption({})]).toEqual(['muse', 'opencode'])
+    expect([...heldProvidersOption({ museEnabled: true })]).toEqual(['opencode'])
     expect([...heldProvidersOption({ museEnabled: true, heldProviders: HELD })]).toEqual(['muse', 'grok'])
   })
   it("keeps Muse's refusal word for word and builds another's from its label", () => {
     expect(heldProviderRefusal('muse')).toBe('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
     expect(heldProviderRefusal('grok')).toBe('Grok Build is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    expect(heldProviderRefusal(['muse'])).toBe(heldProviderRefusal('muse'))
+    expect(heldProviderRefusal(['muse', 'opencode'])).toBe('Muse and OpenCode are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    expect(heldProviderRefusal(['muse', 'opencode', 'grok'])).toBe('Muse, OpenCode and Grok Build are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+  })
+  it('names every held provider with a dormant thread when Watcher lists every thread, and Muse alone word for word', () => {
+    const state = hostState('muse'), host = state.host
+    const everything = read('list_threads', { hostId: centerHostId })
+    const museOnly = new Set(['muse', 'opencode'] as const)
+    expect(heldProviderOfWatcherRequest(everything, museOnly, host)).toBe('muse')
+    expect(heldWatcherRefusal(heldProviderOfWatcherRequest(everything, museOnly, host)!).message).toBe('Muse is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    const both = { ...host, threads: [...host.threads,
+      { id: 'opencode-worker', providerId: 'opencode' as const, projectId: 'project', modelId: 'opencode/fixture-model', title: 'OpenCode', status: 'idle' as const, messages: [], requests: [] }] }
+    expect(heldProviderOfWatcherRequest(everything, museOnly, both)).toEqual(['muse', 'opencode'])
+    expect(heldWatcherRefusal(heldProviderOfWatcherRequest(everything, museOnly, both)!).message)
+      .toBe('Muse and OpenCode are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    // One project's list still names that project's held provider alone.
+    expect(heldProviderOfWatcherRequest(read('list_threads', { project: { hostId: centerHostId, projectId: 'project' } }), museOnly, both)).toBe('opencode')
+  })
+  it('names held providers in the held table’s order, whatever order their threads were seen in', () => {
+    expect(heldProviderRefusal(['opencode', 'muse'])).toBe('Muse and OpenCode are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    const state = hostState('muse'), host = state.host
+    const held = new Set(['muse', 'opencode'] as const)
+    // OpenCode's thread comes first in the snapshot, so it is the first seen.
+    const openFirst = { ...host, threads: [
+      { id: 'opencode-worker', providerId: 'opencode' as const, projectId: 'project', modelId: 'opencode/fixture-model', title: 'OpenCode', status: 'idle' as const, messages: [], requests: [] },
+      ...host.threads] }
+    const named = heldProviderOfWatcherRequest(read('list_threads', { hostId: centerHostId }), held, openFirst)
+    expect(named).toEqual(['muse', 'opencode'])
+    expect(heldWatcherRefusal(named!).message).toBe('Muse and OpenCode are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
   })
 })
 

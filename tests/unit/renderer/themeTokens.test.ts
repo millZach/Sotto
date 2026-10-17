@@ -208,7 +208,7 @@ describe('main-window theme tokens', () => {
     const css = tokensCss.replace(/\/\*[\s\S]*?\*\//gu, '')
     expect(css).not.toMatch(/data-accent/u)
     const derived = tokenBlocks.find(block => block.selectors.length === 1 && block.selectors[0] === ':root' && block.declarations.has('--tt-canvas'))!
-    const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-ink', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
+    const constants = new Set(['--tt-success', '--tt-provider-codex', '--tt-provider-claude', '--tt-provider-grok', '--tt-provider-devin', '--tt-provider-opencode', '--tt-provider-ink', '--tt-backdrop', '--tt-shadow-sm', '--tt-shadow-lg', '--tt-shadow-overlay', '--tt-shadow-color'])
     for (const [name, value] of derived.declarations) {
       // A relative colour from a theme role (`oklch(from var(…) …)`) is derived, not a literal.
       if (constants.has(name) || !/^(#|rgb\(|oklch\((?!from (var|color-mix)\())/u.test(value)) continue
@@ -258,6 +258,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/folderBrowser.css',
       'src/renderer/src/agents/providerRecovery.css',
       'src/renderer/src/agents/providers.css',
+      'src/renderer/src/agents/opencodeSources.css',
       'src/renderer/src/agents/clientUpdates.css',
       'src/renderer/src/agents/hostUpdates.css',
       'src/renderer/src/features/updates/updateAll.css',
