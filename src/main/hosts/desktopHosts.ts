@@ -30,7 +30,7 @@ import type { HostUpdateAction, HostUpdateState } from '../../shared/hostUpdates
 import { nameHostInRefusal, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import type { HostProviderJobSource, ProviderJobHost } from './hostProviderJob'
-import { SIGN_IN_WORDS, isOpenCodeSignInPage, opencodeHostNeedsUpdate, opencodeSignInComesBack, type SignInRefusalReason } from '../../shared/opencodeSignIn'
+import { HOST_ANSWER_LOST, SIGN_IN_WORDS, isOpenCodeSignInPage, opencodeHostNeedsUpdate, opencodeSignInComesBack, type SignInRefusalReason } from '../../shared/opencodeSignIn'
 import { isProviderSignInPage, type HostOpenCodeSignInRequest, type HostClientUpdateRequest, type HostProviderAction, type HostProviderActionResult, type HostSignIn, type HostSignInRequest, type ProviderSignInView } from '../../shared/hostProviders'
 
 /** Files from before the switch have no `sshPort` or `enabled` and still read: both are optional, and no `enabled` means on. */
@@ -861,8 +861,29 @@ export class DesktopHosts {
       return await socket.opencodeSignIn(call)
     } catch (error) {
       if (error instanceof HostConnectionError && error.code === 'version_mismatch') return refused(opencodeHostNeedsUpdate(host.name))
-      return refused(`${host.name} did not answer, so nothing was signed in or out there. Check that ${host.name} is connected, then try again.`)
+      return this.opencodeAnswerLost(socket, host.name, call)
     }
+  }
+  /**
+   * A host's answer to a sign-in call that never came back (#1107). The host may have acted on it all the same, so Sotto never
+   * says nothing changed: for a key, an existing sign-in or a sign-out it reads the host's model sources again and answers
+   * with what they show, as this computer's own sign-in does when OpenCode's answer is lost (#1104). Any other call names no
+   * source to check, so it is refused as `answer-lost` and the window reads the list again itself. Reading the list, or a
+   * sign-in page's address, changes nothing, so those say only that the host did not answer.
+   */
+  private async opencodeAnswerLost(socket: SocketHostService, host: string, call: HostOpenCodeSignInRequest['call']): Promise<unknown> {
+    const lost = (message: string) => ({ status: 'refused' as const, reason: 'answer-lost' as const, message })
+    if (call.action === 'sources') return { status: 'refused', message: HOST_ANSWER_LOST.unread(host) }
+    if (call.action === 'reopen') return { status: 'refused', message: HOST_ANSWER_LOST.page(host) }
+    if (call.action !== 'key' && call.action !== 'external' && call.action !== 'sign-out') return lost(HOST_ANSWER_LOST.untold(host))
+    let now: Awaited<ReturnType<typeof socket.opencodeSignIn<'sources'>>>
+    try { now = await socket.opencodeSignIn({ action: 'sources' }) } catch { return lost(HOST_ANSWER_LOST.unknown(host)) }
+    if (now.status !== 'ok') return lost(HOST_ANSWER_LOST.unknown(host))
+    const source = now.sources.find(item => item.id === call.request.sourceId)
+    const signingIn = call.action !== 'sign-out'
+    const name = source?.name ?? call.request.sourceId
+    if ((source?.signedIn !== undefined) === signingIn) return { status: 'ok', sources: now, warning: HOST_ANSWER_LOST.took(host, name, signingIn) }
+    return lost(HOST_ANSWER_LOST.notTaken(host, name, signingIn))
   }
   /** The live connection to a saved host that is connected now, for what its tiles ask of it. */
   private connectedSocket(id: string): { host: SavedHost; socket: SocketHostService } {

@@ -77,6 +77,23 @@ it('signs forge’s own OpenCode in to a model source with a key, through that h
   expect(document.body.innerHTML).not.toContain(KEY)
 })
 
+// The host may have saved the key all the same, so the list under the tiles is read again and shows what forge holds.
+it('reads forge’s model sources again when forge’s answer to a sign-in was lost, and shows what they hold', async () => {
+  let reads = 0
+  const lost = { status: 'refused', reason: 'answer-lost', message: 'forge did not answer.' }
+  const { bridge: hosts, opencodeSignIn } = bridge(call => call.action === 'key' ? lost : read(reads++ > 0))
+  await open(hosts)
+  const block = await screen.findByRole('group', { name: 'OpenCode model sources on forge' })
+  fireEvent.click(within(block).getByRole('button', { name: 'Add a model source to OpenCode on forge' }))
+  fireEvent.click(within(within(await screen.findByRole('dialog', { name: 'Add a model source to OpenCode on forge' })).getByRole('listbox', { name: 'Model sources' })).getByRole('option', { name: /^Anthropic/u }))
+  const signIn = await screen.findByRole('dialog', { name: 'Sign in to Anthropic' })
+  fireEvent.change(within(signIn).getByLabelText('Anthropic API key'), { target: { value: KEY } })
+  fireEvent.click(within(signIn).getByRole('button', { name: 'Sign in to Anthropic with this key' }))
+  expect(await within(signIn).findByRole('alert')).toHaveTextContent('forge did not answer.')
+  await waitFor(() => expect(opencodeSignIn.mock.calls.filter(([request]) => request.call.action === 'sources')).toHaveLength(2))
+  expect(await within(block).findByRole('button', { name: 'Sign out of Anthropic on forge' })).toBeInTheDocument()
+})
+
 it('says a sign-in already on a host is the host’s, not this computer’s', async () => {
   const { bridge: hosts } = bridge()
   await open(hosts)

@@ -24,6 +24,24 @@ function aboutMethod(source: ModelSource, method: ModelSourceMethod, host: strin
 }
 
 /**
+ * The bridge, with each answer that says a host did not answer (`answer-lost`) followed by `lost`: the host may have signed
+ * in or out all the same, so the list is read again and shown (#1107). Reading the list is never followed, so it cannot loop.
+ */
+function rereadingAfterLostAnswers(bridge: OpenCodeSignInBridge, lost: () => void): OpenCodeSignInBridge {
+  const after = <T,>(answer: Promise<T>): Promise<T> => answer.then(result => {
+    if ((result as { readonly reason?: string }).reason === 'answer-lost') lost()
+    return result
+  })
+  return {
+    sources: () => bridge.sources(),
+    signInWithKey: request => after(bridge.signInWithKey(request)), startBrowserSignIn: request => after(bridge.startBrowserSignIn(request)),
+    useExternalSignIn: request => after(bridge.useExternalSignIn(request)), wait: request => after(bridge.wait(request)),
+    finish: request => after(bridge.finish(request)), reopen: request => after(bridge.reopen(request)),
+    cancel: request => after(bridge.cancel(request)), signOut: request => after(bridge.signOut(request)),
+  }
+}
+
+/**
  * The OpenCode tile's Model sources block (#1104, variant A of `prototype/opencode-sign-in`): OpenCode Zen, then each
  * source Sotto's OpenCode is signed in to with how and its model count, and Add a model source, which opens the dialog.
  * Everything it learns comes through main; it never holds a key past the field it was typed in. With `host`, the same block
@@ -60,13 +78,16 @@ export function OpenCodeModelSources({ bridge, pollMs = 2_000, host }: {
     void bridge.sources().then(result => { if (live) setRead(result) }, () => { if (live) setRead({ status: 'refused', message: SIGN_IN_WORDS.notRunning }) })
     return () => { live = false }
   }, [bridge])
+  // After a host's lost answer only a list it could read replaces the one shown, so the dialog stays open over it.
+  const rereadShown = useCallback((): void => { void bridge.sources().then(next => { if (next.status === 'ok') setRead(next) }, () => undefined) }, [bridge])
+  const checked = useMemo(() => rereadingAfterLostAnswers(bridge, rereadShown), [bridge, rereadShown])
   const sources = read?.status === 'ok' ? read.sources : []
   const signed = sources.filter(source => source.signedIn)
   const signOut = async (source: ModelSource): Promise<void> => {
     setSigningOut(source.id); setError(null); setNotice('')
     const key = isKey(source.signedIn?.how ?? '')
     try {
-      const result = await bridge.signOut({ sourceId: source.id })
+      const result = await checked.signOut({ sourceId: source.id })
       if (result.status === 'ok') {
         setRead(result.sources)
         setNotice([SIGN_IN_WORDS.signedOut(source.name, key), result.warning ?? ''].filter(Boolean).join(' '))
@@ -99,7 +120,7 @@ export function OpenCodeModelSources({ bridge, pollMs = 2_000, host }: {
     </> : null}
     <p className="oc-notice" role="status">{notice}</p>
     {error ? <p className="provider-detail__error" role="alert">{error}</p> : null}
-    {open && read?.status === 'ok' ? <AddModelSourceDialog bridge={bridge} sources={read.sources} pollMs={pollMs} fallbackFocus={addRef} host={host}
+    {open && read?.status === 'ok' ? <AddModelSourceDialog bridge={checked} sources={read.sources} pollMs={pollMs} fallbackFocus={addRef} host={host}
       onClose={() => setOpen(false)} onSignedIn={signedIn} onLeft={reread} unreachable={unreachable}
       onUnreachable={key => setUnreachable(current => new Set([...current, key]))} /> : null}
   </div>

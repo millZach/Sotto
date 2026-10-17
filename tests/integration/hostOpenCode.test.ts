@@ -11,7 +11,7 @@ import { publicProviderEntityId } from '../../src/shared/agents'
 import { e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import { HostCredentialEncryption } from '../../src/host/credentials'
 import { SshHostLauncher, type SshCallbacks, type SshHostConfiguration, type SshHostConnection } from '../../src/main/hosts/sshLauncher'
-import { opencodeHostNeedsUpdate, opencodeSignInComesBack, SIGN_IN_WORDS, type ModelSources } from '../../src/shared/opencodeSignIn'
+import { HOST_ANSWER_LOST, opencodeHostNeedsUpdate, opencodeSignInComesBack, SIGN_IN_WORDS, type ModelSources } from '../../src/shared/opencodeSignIn'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { DesktopHosts } from '../../src/main/hosts/desktopHosts'
@@ -108,6 +108,45 @@ it('sends OpenCode only to a client whose hello accepts provider-opencode, and h
   const current = await phone.call('hello', { op: 'hello', accepts: ['detail-delta', 'provider-opencode'] }) as { result: { shell: unknown } }
   expect(named(current.result.shell)).toBe(true)
   expect(await phone.call('detail', { op: 'detail', threadId: opencodeThread.id })).toMatchObject({ ok: true })
+})
+
+// An answer lost on the way back from a host says nothing of what the host did: the key may be saved or the sign-in gone all
+// the same. So the desktop never says nothing changed; it reads the host's model sources again and says what they show.
+it('reads a host’s model sources again when its answer to a sign-in or sign-out is lost, and says what they show', { timeout: 90_000 }, async () => {
+  const f = await opencodeFixture()
+  cleanup.push(f.cleanup)
+  const { hosts, forge } = await desktopWithForge(OWL, f)
+  await vi.waitFor(() => expect(hosts.providerStatus(forge, 'opencode')?.connection).toBe('connected'), { timeout: 30_000 })
+  const ask = (call: Parameters<typeof hosts.opencodeSignIn>[0]['call']) => hosts.opencodeSignIn({ id: forge, call })
+  const through = SocketHostService.prototype.opencodeSignIn
+  /** The next call reaches the host, which acts on it, and its answer never comes back. */
+  const loseAnswer = (reach: boolean) => vi.spyOn(SocketHostService.prototype, 'opencodeSignIn').mockImplementationOnce(async function (this: SocketHostService, call) {
+    if (reach) await through.call(this, call as never)
+    throw new Error('The connection closed before the answer came back.')
+  })
+  cleanup.push(async () => { vi.restoreAllMocks() })
+
+  // The key was saved on forge: the answer says so, from the list read again.
+  loseAnswer(true)
+  const saved = await ask({ action: 'key', request: { sourceId: 'anthropic', key: KEY } })
+  expect(saved).toMatchObject({ status: 'ok', warning: HOST_ANSWER_LOST.took('forge', 'Anthropic', true) })
+  expect(sources(saved).find(source => source.id === 'anthropic')?.signedIn).toBeDefined()
+  // The sign-out went through on forge.
+  loseAnswer(true)
+  const out = await ask({ action: 'sign-out', request: { sourceId: 'anthropic' } })
+  expect(out).toMatchObject({ status: 'ok', warning: HOST_ANSWER_LOST.took('forge', 'Anthropic', false) })
+  expect(sources(out).find(source => source.id === 'anthropic')?.signedIn).toBeUndefined()
+  // The key never reached forge: nothing was saved, and the answer says so because the list says so.
+  loseAnswer(false)
+  expect(await ask({ action: 'key', request: { sourceId: 'anthropic', key: KEY } }))
+    .toEqual({ status: 'refused', reason: 'answer-lost', message: HOST_ANSWER_LOST.notTaken('forge', 'Anthropic', true) })
+  // A call that names no source, such as a pasted code, cannot be checked that way: the window reads the list itself.
+  loseAnswer(true)
+  expect(await ask({ action: 'finish', request: { attemptId: 'con_gone', code: 'abc' } })).toEqual({ status: 'refused', reason: 'answer-lost', message: HOST_ANSWER_LOST.untold('forge') })
+  // The list cannot be read again either: Sotto says it cannot tell.
+  vi.spyOn(SocketHostService.prototype, 'opencodeSignIn').mockRejectedValue(new Error('The connection closed.'))
+  expect(await ask({ action: 'sign-out', request: { sourceId: 'anthropic' } })).toEqual({ status: 'refused', reason: 'answer-lost', message: HOST_ANSWER_LOST.unknown('forge') })
+  expect(await ask({ action: 'sources' })).toEqual({ status: 'refused', message: HOST_ANSWER_LOST.unread('forge') })
 })
 
 // A host gives no thread Sotto's tool servers: the browser, visuals, pull request tools and delegation are this computer's

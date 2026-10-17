@@ -94,10 +94,11 @@ export type SignInAttempt = z.infer<typeof signInAttemptSchema>
 /**
  * Why a refusal was made, where the window acts on it and not only shows its words: `code-refused` is a pasted code the
  * source did not accept, and the dialog asks for another; `finishes-on-host` is a browser sign-in that sends the browser back
- * to OpenCode on the host's own machine, which the dialog then stops offering (#1107). A refusal without one is told in its
- * words alone, and a reason this build does not know reads as none.
+ * to OpenCode on the host's own machine, which the dialog then stops offering (#1107); `answer-lost` is a host that did not
+ * answer, which may have signed in or out all the same, so the window reads its model sources again and shows them. A refusal
+ * without one is told in its words alone, and a reason this build does not know reads as none.
  */
-export const signInRefusalReasonSchema = z.enum(['code-refused', 'finishes-on-host'])
+export const signInRefusalReasonSchema = z.enum(['code-refused', 'finishes-on-host', 'answer-lost'])
 export type SignInRefusalReason = z.infer<typeof signInRefusalReasonSchema>
 const refused = z.object({ status: z.literal('refused'), message: words, reason: signInRefusalReasonSchema.optional().catch(undefined) }).strict()
 /** The sign-ins changed. `warning` says what did not follow them, such as a model list that could not be read again. */
@@ -188,6 +189,31 @@ export const SIGN_IN_WORDS = {
   /** OpenCode keeps a key without trying it (checked against 2.0.31), so a wrong one shows only when a thread uses it. */
   keyUnchecked: (source: string) => `OpenCode tries the key the first time a thread uses one of its models. If ${source} refuses it then, sign out here and paste the key again.`,
   signedOut: (source: string, key: boolean) => `Signed out of ${source}. Its ${key ? 'key' : 'sign-in'} is gone from Sotto’s OpenCode.`,
+} as const
+
+/**
+ * A host whose answer to a sign-in call was lost (#1107): it may have saved the key, finished the sign-in or signed out all
+ * the same, so this computer never says nothing changed. Where the call names a source, main reads the host's model sources
+ * again and says what they show; otherwise the window reads them again and shows them.
+ */
+export const HOST_ANSWER_LOST = {
+  /** The list read again shows the change took. */
+  took: (host: string, source: string, signedIn: boolean): string =>
+    `${host} did not answer at first, so Sotto read its model sources again: ${source} is signed ${signedIn ? 'in' : 'out'} there.`,
+  /** The list read again shows it did not. */
+  notTaken: (host: string, source: string, signingIn: boolean): string => signingIn
+    ? `${host} did not answer, so Sotto read its model sources again: ${source} is not signed in there, so nothing was saved. Try again.`
+    : `${host} did not answer, so Sotto read its model sources again: ${source} is still signed in there. Try again.`,
+  /** A call that names no source: the window reads the list again under the tiles. */
+  untold: (host: string): string =>
+    `${host} did not answer, so Sotto could not tell whether anything was signed in or out there. It is reading ${host}’s model sources again; look under them before you try again.`,
+  /** The list could not be read again either. */
+  unknown: (host: string): string =>
+    `${host} did not answer, so Sotto could not tell whether anything was signed in or out there, and could not read its model sources to find out. Check that ${host} is connected, then look under its model sources before you try again.`,
+  /** Reading the list itself got no answer; a read changes nothing. */
+  unread: (host: string): string => `${host} did not answer, so Sotto could not read its model sources. Nothing was changed. Check that ${host} is connected, then try again.`,
+  /** Asking for a waiting sign-in's page got no answer, so the page did not open. */
+  page: (host: string): string => `${host} did not answer, so the sign-in page did not open. Nothing was saved. Press Open the page again.`,
 } as const
 
 /** A host from before #1107 does not list `opencode-sign-in`: its tile says so, and nothing is sent to it. */
