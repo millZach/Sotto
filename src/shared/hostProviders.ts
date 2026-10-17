@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PROVIDER_COUNT, PROVIDER_LABELS, providerIdSchema, type AgentProviderStatus, type ProviderId, type ProviderProblem } from './agents'
+import type { HeldProviders } from './heldProviders'
 
 /**
  * A host's providers from this computer (ADR-0037): the tiles under a connected host's row in Settings > Hosts, the
@@ -15,6 +16,16 @@ import { PROVIDER_COUNT, PROVIDER_LABELS, providerIdSchema, type AgentProviderSt
 export const HOST_PROVIDERS = ['claude', 'codex', 'grok', 'devin', 'muse'] as const satisfies readonly ProviderId[]
 export type HostProviderId = typeof HOST_PROVIDERS[number]
 export const hostProviderIdSchema = z.enum(HOST_PROVIDERS)
+/**
+ * What a headless host holds on its run: the providers its Owl answers hold, and every provider hosts do not take yet,
+ * whatever those answers are. A host starts no process for one, and its state names none of its providers, models or
+ * threads, so a desktop or phone that does not know the provider never reads it there. OpenCode is held so until #1107
+ * adds it to `HOST_PROVIDERS`, which lifts this; #1107 must then send it only to peers that list a host feature for it.
+ */
+export function heldOnHost(held: HeldProviders): HeldProviders {
+  const hosted: readonly ProviderId[] = HOST_PROVIDERS
+  return new Set([...held, ...providerIdSchema.options.filter(id => !hosted.includes(id))])
+}
 
 /** How long a sign-in lives on the host before its client is stopped and what it printed is dropped. */
 export const PROVIDER_SIGN_IN_LIFETIME_MS = 15 * 60_000
