@@ -245,7 +245,7 @@ describe('Stop all', () => {
 })
 
 describe('read marks', () => {
-  const marked = (): Partial<WatcherRoomState> => ({ readMarks: [{ target: target('footer-links'), kind: 'finished', at }, { target: target('wav-stall'), kind: 'failed', at }] })
+  const marked = (): Partial<WatcherRoomState> => ({ readMarks: [{ target: target('footer-links'), kind: 'finished', newsId: 'finished:f1', at }, { target: target('wav-stall'), kind: 'failed', newsId: 'failed:w1', at }] })
 
   it('put a dot before a row’s name in All threads, count what is new, and Mark all read clears them through main', async () => {
     const { bridge } = renderRoom(roomState(marked()))
@@ -260,7 +260,7 @@ describe('read marks', () => {
     expect(within(list).getByRole('button', { name: 'Open Weekly note beside Watcher' }).querySelector('.watcher-row__dot')).toBeNull()
     expect(list).toHaveTextContent('2 new')
     fireEvent.click(within(list).getByRole('button', { name: 'Mark all read, 2 threads' }))
-    await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ targets: [target('wav-stall'), target('footer-links')] }))
+    await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ reads: [{ target: target('wav-stall'), newsId: 'failed:w1' }, { target: target('footer-links'), newsId: 'finished:f1' }] }))
     await waitFor(() => expect(within(list).queryByText('2 new')).toBeNull())
     expect(within(list).getByRole('searchbox')).toHaveFocus()
   })
@@ -276,7 +276,7 @@ describe('read marks', () => {
     expect(bridge.markRead).not.toHaveBeenCalled()
     vi.mocked(document.hasFocus).mockReturnValue(true)
     act(() => { window.dispatchEvent(new Event('focus')) })
-    await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ targets: [target('footer-links')] }))
+    await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ reads: [{ target: target('footer-links'), newsId: 'finished:f1' }] }))
   })
 
   it('go when the thread opens beside Watcher', async () => {
@@ -284,7 +284,7 @@ describe('read marks', () => {
     await paneReady()
     fireEvent.click(screen.getByRole('button', { name: /^All threads, \d+\. Show the list$/ }))
     fireEvent.click(within(await screen.findByRole('dialog', { name: 'All threads' })).getByRole('button', { name: 'Open Footer links beside Watcher' }))
-    await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ targets: [target('footer-links')] }))
+    await waitFor(() => expect(bridge.markRead).toHaveBeenCalledWith({ reads: [{ target: target('footer-links'), newsId: 'finished:f1' }] }))
   })
 })
 
@@ -307,7 +307,7 @@ describe('the room’s thread addresses', () => {
     const connection = agentContextFixture(state, command, { threadDrafts: new ThreadDraftStore(command) })
     vi.mocked(useAgents).mockReturnValue(connection)
     vi.mocked(useOptionalAgents).mockReturnValue(connection)
-    const marks = state.host.threads.filter(thread => thread.kind !== 'watcher').map(thread => ({ target: target(thread.id), kind: 'finished' as const, at }))
+    const marks = state.host.threads.filter(thread => thread.kind !== 'watcher').map(thread => ({ target: target(thread.id), kind: 'finished' as const, newsId: `finished:${thread.id}`, at }))
     const { bridge } = fakeBridge(roomState({ readMarks: marks }))
     const find = vi.spyOn(state.host.threads, 'find')
     let size = 0

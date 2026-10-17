@@ -81,6 +81,9 @@ function service(options: { record?: WatcherRecord; remote?: AgentThread[] } = {
     /** This desktop routing a send to a paired host's thread, told of it once the host took it, with the thread as it was before. */
     routed(threadId: string, before = remoteThreads.find(item => item.id === threadId)): void { notify?.({ hostId: REMOTE, threadId }, watcherDispatchBefore(before)) },
     marks: () => (watcher.state().readMarks ?? []).map(mark => [mark.target.threadId, mark.kind]),
+    /** The user reading these threads' news as the room shows it now. */
+    read: (...threadIds: string[]) => watcher.markRead({ reads: (watcher.state().readMarks ?? []).filter(mark => threadIds.includes(mark.target.threadId))
+      .map(mark => ({ target: mark.target, newsId: mark.newsId })) }),
   }
 }
 
@@ -244,7 +247,7 @@ describe('the requests a dispatch knows', () => {
     room.send('busy')
     room.pass(thread('busy', { ...turn('t1', 'running'), requests: cards }))
     expect(room.marks()).toEqual([['busy', 'question']])
-    await room.watcher.markRead({ targets: [target('busy')] })
+    await room.read('busy')
     const writes = room.writes()
     room.pass(thread('busy', { ...turn('t1', 'running'), requests: cards }))
     room.pass(thread('busy', { ...turn('t1', 'running'), requests: cards }))
@@ -310,14 +313,28 @@ describe('reading a thread', () => {
     room.pass(thread('worker', turn('t0', 'completed')))
     room.send('worker')
     room.pass(thread('worker', turn('t1', 'completed')))
-    const result = await room.watcher.markRead({ targets: [target('worker')] })
+    const result = await room.read('worker')
     expect(result.status === 'ok' && result.state.readMarks).toEqual([])
     expect(room.record().userReads?.map(entry => entry.target)).toEqual([target('worker')])
-    expect(await room.watcher.markRead({ targets: [] })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+    expect(await room.watcher.markRead({ reads: [] })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
     const record = emptyWatcherRecord()
     record.readMarks = [{ target: target('a'), kind: 'finished', newsId: 'finished:t1', at: AT }]
-    expect(markThreadsRead(record, [target('a')], '2026-10-17T10:05:00.000Z')).toBe(true)
-    expect(markThreadsRead(record, [target('a')], '2026-10-17T10:06:00.000Z')).toBe(false)
+    expect(markThreadsRead(record, [{ target: target('a'), newsId: 'finished:t1' }], '2026-10-17T10:05:00.000Z')).toBe(true)
+    expect(markThreadsRead(record, [{ target: target('a'), newsId: 'finished:t1' }], '2026-10-17T10:06:00.000Z')).toBe(false)
     expect(record.userReads).toEqual([{ target: target('a'), readAt: '2026-10-17T10:06:00.000Z' }])
+  })
+
+  it('takes only the news the window showed: news that came after it stays new', async () => {
+    const room = service()
+    room.pass(thread('worker', turn('t0', 'completed')))
+    room.send('worker')
+    room.pass(thread('worker', turn('t1', 'completed')))
+    const shown = (room.watcher.state().readMarks ?? []).map(mark => ({ target: mark.target, newsId: mark.newsId }))
+    expect(shown).toEqual([{ target: target('worker'), newsId: 'finished:t1' }])
+    // Watcher sends it more, and a question comes, before the user's Mark all read reaches main.
+    room.send('worker')
+    room.pass(thread('worker', { ...turn('t2', 'running'), requests: [card('q1')] }))
+    expect(await room.watcher.markRead({ reads: shown })).toMatchObject({ status: 'ok' })
+    expect(room.marks()).toEqual([['worker', 'question']])
   })
 })

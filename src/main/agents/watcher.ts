@@ -421,7 +421,7 @@ export class WatcherService implements WatcherControlHooks {
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(),
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
       receiptReplies: watcherReceiptReplies(record, current),
-      readMarks: (record.readMarks ?? []).map(mark => ({ target: mark.target, kind: mark.kind, at: mark.at })) }
+      readMarks: (record.readMarks ?? []).map(mark => ({ target: mark.target, kind: mark.kind, newsId: mark.newsId, at: mark.at })) }
   }
   /**
    * Read marks come from Sotto's own dispatches (Zach's pick on October 17, 2026): a pass reads only the threads with a
@@ -463,7 +463,7 @@ export class WatcherService implements WatcherControlHooks {
     const parsed = watcherMarkReadRequestSchema.safeParse(input)
     if (!parsed.success) return watcherRefusal('INVALID_INPUT', 'Sotto could not tell which threads to mark read. Nothing changed.')
     if (this.closed) return watcherRefusal('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing changed. Reopen Sotto.')
-    try { await this.options.control.updateWatcher(record => { markThreadsRead(record, parsed.data.targets, now()) }) }
+    try { await this.options.control.updateWatcher(record => { markThreadsRead(record, parsed.data.reads, now()) }) }
     catch { return watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not save that these threads are read. They still show as new. Try again.', true) }
     this.publish()
     return this.get()

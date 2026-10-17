@@ -880,7 +880,7 @@ test.describe("Watcher's room on the built app", () => {
         requests: [{ id: requestId, watcher: target(CURRENT), rootUserMessageId: 'watcher-ask', state: 'active', createdAt: at(12), closedAt: null, participants }],
         watchedThreads: participants.map(part => ({ target: part.target, title: part.target.threadId, watched: part.state === 'participating', paused: false,
           status: 'running' as const, connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [part] })),
-        readMarks: [{ target: target('grok-previews'), kind: 'finished', at: at(3) }, { target: target('wav-stall'), kind: 'failed', at: at(2) }] }
+        readMarks: [{ target: target('grok-previews'), kind: 'finished', newsId: 'finished:g1', at: at(3) }, { target: target('wav-stall'), kind: 'failed', newsId: 'failed:w1', at: at(2) }] }
     }
     await onReleaseTrack('owl', async () => {
       for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance), async (launched) => {
@@ -1261,7 +1261,7 @@ test.describe("Watcher's room on the built app", () => {
       const worker = await createWorker(page, join(root, 'worker'), 'Unseen worker')
       await page.evaluate(async threadId => { await window.sotto!.agents!.command({ type: 'manual-send', threadId, text: 'Check the footer links.' }) }, worker.id)
       await expect.poll(async () => (await mainRoom(page)).readMarks, { timeout: 60_000 })
-        .toEqual([{ target: worker.target, kind: 'finished', at: expect.any(String) }])
+        .toEqual([{ target: worker.target, kind: 'finished', newsId: expect.stringMatching(/^finished:/u), at: expect.any(String) }])
       await allThreads(page).click()
       const list = threadsList(page)
       await expect(list.locator('.watcher-list__news-count')).toHaveText('1 new')

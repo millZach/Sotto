@@ -44,11 +44,13 @@ export interface WatcherRoom {
   /** Read marks (CONTEXT.md), by this window's thread ID: the threads with news the user has not seen. */
   readonly readMarks: ReadonlyMap<string, WatcherReadMarkView>
   /** Takes these threads' read marks away; hands back main's refusal in its words, or null. Null where the bridge cannot. */
-  readonly markRead: ((targets: readonly WatcherThreadTarget[]) => Promise<string | null>) | null
+  readonly markRead: ((reads: readonly WatcherReadNews[]) => Promise<string | null>) | null
 }
 
 /** One read mark as the window shows it: the thread's own address and what its news is. */
-export interface WatcherReadMarkView { readonly target: WatcherThreadTarget; readonly kind: WatcherReadMarkKind }
+export interface WatcherReadMarkView { readonly target: WatcherThreadTarget; readonly kind: WatcherReadMarkKind; readonly newsId: string }
+/** A thread the user read, and the news its mark showed: only that news is taken away. */
+export type WatcherReadNews = Pick<WatcherReadMarkView, 'target' | 'newsId'>
 
 /** The bridge's three handover calls, together or not at all. */
 export interface WatcherHandoverCalls {
@@ -185,7 +187,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   const standingThreadIds = useMemo<ReadonlySet<string>>(() => standingKey === '' ? NONE : new Set(JSON.parse(standingKey) as string[]), [standingKey])
   const marksKey = state === null || agentState === null || !state.readMarks?.length ? '' : JSON.stringify(state.readMarks.flatMap(mark => {
     const id = idOf(mark.target)
-    return id === undefined ? [] : [[id, { target: mark.target, kind: mark.kind }]]
+    return id === undefined ? [] : [[id, { target: mark.target, kind: mark.kind, newsId: mark.newsId }]]
   }))
   const readMarks = useMemo<ReadonlyMap<string, WatcherReadMarkView>>(() => marksKey === '' ? NO_MARKS
     : new Map(JSON.parse(marksKey) as [string, WatcherReadMarkView][]), [marksKey])
@@ -199,8 +201,8 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   const manage = useMemo(() => {
     const { setPermission, watchThread, unwatchThread, readHandover, continueWithHandover, dismissHandover, markRead } = live && bridge !== undefined ? bridge : {} as Partial<WatcherBridge>
     return {
-      markRead: markRead === undefined ? null : async (targets: readonly WatcherThreadTarget[]): Promise<string | null> => {
-        try { return settle(await markRead.call(bridge, { targets: [...targets] })) } catch { return 'Sotto could not reach Watcher, so these threads still show as new. Try again.' }
+      markRead: markRead === undefined ? null : async (reads: readonly WatcherReadNews[]): Promise<string | null> => {
+        try { return settle(await markRead.call(bridge, { reads: reads.map(item => ({ target: item.target, newsId: item.newsId })) })) } catch { return 'Sotto could not reach Watcher, so these threads still show as new. Try again.' }
       },
       setPermission: setPermission === undefined ? null : (request: Parameters<typeof setPermission>[0]) => setPermission.call(bridge, request),
       handover: readHandover === undefined || continueWithHandover === undefined || dismissHandover === undefined ? null : {
@@ -291,14 +293,15 @@ export function useWindowAttended(): boolean {
  */
 export function useReadMarksCleared(room: WatcherRoom | null, state: AgentState | null, threadIds: readonly (string | null)[]): void {
   const attended = useWindowAttended()
-  const marked = room === null || !attended ? '' : threadIds.filter((id): id is string => id !== null && room.readMarks.has(id)).join('\n')
+  // Keyed by the news too, so news that replaces a mark on a thread still open is taken as soon as it shows.
+  const marked = room === null || !attended ? '' : threadIds.flatMap(id => { const mark = id === null ? undefined : room.readMarks.get(id); return mark ? [`${id}\t${mark.newsId}`] : [] }).join('\n')
   const latest = useRef({ room, state })
   useEffect(() => { latest.current = { room, state } })
   useEffect(() => {
     const { room: now } = latest.current
     if (marked === '' || now?.markRead == null) return
-    const targets = marked.split('\n').flatMap(id => { const mark = now.readMarks.get(id); return mark ? [mark.target] : [] })
-    if (targets.length) void now.markRead(targets)
+    const reads = marked.split('\n').flatMap(line => { const mark = now.readMarks.get(line.split('\t')[0]!); return mark ? [{ target: mark.target, newsId: mark.newsId }] : [] })
+    if (reads.length) void now.markRead(reads)
   }, [marked])
 }
 

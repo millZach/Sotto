@@ -1,14 +1,14 @@
 import React, { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from 'react'
 import { CheckCheck, ChevronRight, Search } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
-import type { WatcherReadMarkKind, WatcherThreadTarget } from '../../../shared/watcher'
+import type { WatcherReadMarkKind } from '../../../shared/watcher'
 import { WATCHER_GROUPS, watcherOverview, type WatcherGroup, type WatcherOverviewRow } from '../../../shared/watcherOverview'
 import { ProviderMark } from '../agents/ProviderMark'
 import { RowTime } from '../agents/ThreadSidebar'
 import { rowStatus, type ThreadRow } from '../agents/threadFacts'
 import { WATCHED_BY_WATCHER, WatchedBadge } from './WatcherOwl'
 import { WatchListToggle } from './WatchControls'
-import { useWatchActions, type WatcherReadMarkView } from './watcherRoom'
+import { useWatchActions, type WatcherReadMarkView, type WatcherReadNews } from './watcherRoom'
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
 const NO_MARKS: ReadonlyMap<string, WatcherReadMarkView> = new Map()
@@ -195,7 +195,7 @@ export function WatcherOverviewList({ groups, watched, marks = NO_MARKS, onMarkR
   /** Read marks by thread ID: the dot before a row's name, and the count of what is new over the list. */
   readonly marks?: ReadonlyMap<string, WatcherReadMarkView> | undefined
   /** Mark all read; hands back main's refusal in its words, or null. Null where the bridge cannot. */
-  readonly onMarkRead?: ((targets: readonly WatcherThreadTarget[]) => Promise<string | null>) | null
+  readonly onMarkRead?: ((reads: readonly WatcherReadNews[]) => Promise<string | null>) | null
   readonly besideId: string | null
   readonly liveClock: boolean
   /** All threads, which the list drops from. */
@@ -228,10 +228,11 @@ export function WatcherOverviewList({ groups, watched, marks = NO_MARKS, onMarkR
   // Once placed: until then it is measured unseen, and an unseen field cannot take focus.
   const placed = place !== null
   useLayoutEffect(() => { if (placed) filter.current?.focus() }, [placed])
-  // What is new: every listed thread with a read mark, except the one open beside Watcher, which is being read.
+  // What is new: every listed thread with a read mark, except the one open beside Watcher, which is being read. Mark all
+  // read takes this news, as shown, and no news that came after.
   const unread = groups.flatMap(group => group.entries).flatMap(entry => {
     const mark = entry.overview.thread.id === besideId ? undefined : marks.get(entry.overview.thread.id)
-    return mark === undefined ? [] : [mark.target]
+    return mark === undefined ? [] : [{ target: mark.target, newsId: mark.newsId }]
   })
   const [markError, setMarkError] = useState<string | null>(null)
   const markAllRead = async (): Promise<void> => {

@@ -40,9 +40,10 @@ it('registers no Watcher channels in stable and allows only the trusted main sen
     expect(watcher.continueWithHandover).toHaveBeenCalledTimes(1)
     expect(watcher.continueWithHandover).toHaveBeenCalledWith({ draftId })
     // Read marks: only the threads' own addresses, and at least one.
-    await expect(f.ipc.invoke(WATCHER_MARK_READ, { targets: [target] })).resolves.toEqual(refused)
-    await expect(f.ipc.invoke(WATCHER_MARK_READ, { targets: [] })).rejects.toThrow()
-    await expect(f.ipc.invoke(WATCHER_MARK_READ, { targets: [target], all: true })).rejects.toThrow()
-    expect(watcher.markRead).toHaveBeenCalledWith({ targets: [target] })
+    await expect(f.ipc.invoke(WATCHER_MARK_READ, { reads: [{ target, newsId: 'finished:t1' }] })).resolves.toEqual(refused)
+    await expect(f.ipc.invoke(WATCHER_MARK_READ, { reads: [] })).rejects.toThrow()
+    await expect(f.ipc.invoke(WATCHER_MARK_READ, { reads: [{ target }] })).rejects.toThrow()
+    await expect(f.ipc.invoke(WATCHER_MARK_READ, { reads: [{ target, newsId: 'finished:t1' }], all: true })).rejects.toThrow()
+    expect(watcher.markRead).toHaveBeenCalledWith({ reads: [{ target, newsId: 'finished:t1' }] })
   } finally { cleanup() }
 })
