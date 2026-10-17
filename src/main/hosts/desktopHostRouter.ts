@@ -146,6 +146,7 @@ export class DesktopHostRouter {
         connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
         // Read only when asked: the shell read copies the host's whole cached shell, and Watcher lists hosts on every pass (#1023).
         get permissionCeiling() { return host.service.shell().configuration.newThreadRuntimeMode ?? 'approval-required' } })),
+      subscribeDispatches: listener => { this.dispatchListeners.add(listener); return () => { this.dispatchListeners.delete(listener) } },
       snapshot: id => {
         allowed(); const entry = this.hosts.get(id)?.connection
         if (!entry || entry.kind !== 'remote') return undefined
@@ -203,6 +204,8 @@ export class DesktopHostRouter {
   private published: AgentState | undefined
   /** Hosts whose threads read Reconnecting: kept on the page while their host restarts for an update (ADR-0040). */
   private readonly reconnecting = new Set<string>()
+  /** Watcher's read marks, told of each send routed to a paired host's thread. */
+  private readonly dispatchListeners = new Set<(target: { hostId: string; threadId: string }) => void>()
   /** Provider identity is immutable for a thread; classify its gated details when its shell arrives. */
   private readonly dormantProviderIds = new Map<string, Map<string, DormantProviderThread>>()
   /** The providers held to Owl on this run, read once at start (ADR-0072). */
@@ -873,6 +876,11 @@ export class DesktopHostRouter {
       const result = startsThread(command) && connection.kind === 'remote' && connection.service.supportsThreadStarts !== true ? { error: THREAD_STARTS_UNSUPPORTED }
         : await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
           : connection.service.command(command as AgentCommand, client))
+      // A send this desktop routed to a paired host's thread is a turn of this desktop's (Watcher's read marks).
+      if (!result.error && connection.kind === 'remote' && this.options.watcherEnabled === true) {
+        const sent = command.type === 'send' ? command.draft?.threadId : command.type === 'manual-send' || command.type === 'queue-followup' || command.type === 'resume-followups' ? command.threadId : undefined
+        if (sent !== undefined) for (const listener of [...this.dispatchListeners]) listener({ hostId: connection.hostId, threadId: sent })
+      }
       if (result.error && startsThread(command)) { refused = true; inPlace = this.refusal(connection, result.error) }
       else if (result.error) {
         refused = true

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, type AgentHostSnapshot, type AgentRuntimeMode } from './agents'
-import { watcherIdentitySchema, type WatcherIdentity, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema, watcherStandingWatchSchema } from './watcher'
+import { watcherIdentitySchema, type WatcherIdentity, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema, watcherStandingWatchSchema, type WatcherThreadTarget } from './watcher'
 import type { WatcherRoomState } from './watcherRoom'
 import type { HostMachineReport } from './hostFacts'
 
@@ -52,6 +52,8 @@ export interface WatcherRemoteHosts {
   roomThreads?(hostId: string, threadIds: readonly string[]): WatcherRoomThreadInput[] | undefined
   projection?(hostId: string, master: WatcherIdentity): WatcherHostProjection | undefined
   subscribe(listener: (hostId?: string, force?: boolean) => void): () => void
+  /** Each send this desktop routed to a paired host's thread, after the host took it (read marks). */
+  subscribeDispatches?(listener: (target: WatcherThreadTarget) => void): () => void
   /** A connected host's machine facts and running threads, or undefined when it does not report them (#1031). */
   machineFacts?(hostId: string): Promise<HostMachineReport | undefined>
 }

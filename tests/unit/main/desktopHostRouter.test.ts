@@ -225,6 +225,19 @@ describe('desktop host routing', () => {
     expect(local.command).not.toHaveBeenCalled()
     expect((await router.threadDetail(hostEntityKey(REMOTE, 'thread')))?.threadId).toBe(hostEntityKey(REMOTE, 'thread'))
   })
+  it('tells Watcher’s read marks of each send it routed to a paired host’s thread, and of nothing else (ADR-0073)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    const routed = vi.fn()
+    const off = router.watcherHosts().subscribeDispatches!(routed)
+    await router.command({ type: 'manual-send', threadId: hostEntityKey(REMOTE, 'thread'), text: 'Reply' }, desktopWindowClient())
+    await router.command({ type: 'manual-send', threadId: hostEntityKey(LOCAL, 'thread'), text: 'Local' }, desktopWindowClient())
+    await router.command({ type: 'select-thread', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())
+    remote.command.mockResolvedValueOnce({ ...remote.state, error: 'The provider refused it.' })
+    await router.command({ type: 'manual-send', threadId: hostEntityKey(REMOTE, 'thread'), text: 'Refused' }, desktopWindowClient())
+    expect(routed.mock.calls).toEqual([[{ hostId: REMOTE, threadId: 'thread' }]])
+    off()
+  })
   it('stages an image on the host that runs its thread, or the selected host for the coordinator, and reads it back there (ADR-0031)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     const handle = { id: 'image', name: 'Shot.png', mimeType: 'image/png' as const, sizeBytes: 8, digest: 'a'.repeat(64) }
