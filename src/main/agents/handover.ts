@@ -171,7 +171,10 @@ export type HandoverStore = Pick<ThreadStore, 'readMessages' | 'messageIdentitie
  * thread's message identities, which carry no words. With Keep local history off the store is the in-memory one, and
  * the handover says so.
  */
-export function readHandover(store: HandoverStore, options: Omit<HandoverOptions, 'historyKept' | 'toolRecords'>): Handover {
+export function readHandover(store: HandoverStore, options: Omit<HandoverOptions, 'historyKept' | 'toolRecords'> & {
+  /** Each message as the thread's pane shows it, once it is marked as a wake-up or not; `null` for one the pane does not show at all. */
+  readonly shown?: ((message: AgentMessage) => AgentMessage | null) | undefined
+}): Handover {
   const { threadId } = options.source
   const budget = budgetOf(options)
   const share = shareOf(budget)
@@ -180,8 +183,15 @@ export function readHandover(store: HandoverStore, options: Omit<HandoverOptions
   const total = identities.length
   // The projection does not keep which messages were Sotto's wake-ups; the store's own record does (ADR-0061).
   const wakeUps = store.wakeUps(threadId)
-  const authored = (message: AgentMessage): AgentMessage => wakeUps.has(message.id) ? { ...message, wakeUp: true } : message
-  const placed = new Map<number, AgentMessage>()
+  const authored = (message: AgentMessage): AgentMessage | null => {
+    const marked = wakeUps.has(message.id) ? { ...message, wakeUp: true as const } : message
+    return options.shown ? options.shown(marked) : marked
+  }
+  // Which wake-ups the pane does not show, wherever they are, so none is picked, counted or paid for as history.
+  const unseen = new Set(options.shown ? [...wakeUps].filter(id => { const message = store.message(threadId, id); return message !== undefined && authored(message) === null }) : [])
+  const visible = (identity: { readonly id: string }): boolean => !unseen.has(identity.id)
+  // A message the pane does not show is no part of the history: it costs nothing and is not counted (`null`).
+  const placed = new Map<number, AgentMessage | null>()
   let beforePosition: number | undefined
   let fitting = 0
   for (;;) {
@@ -189,22 +199,25 @@ export function readHandover(store: HandoverStore, options: Omit<HandoverOptions
     if (window.messages.length === 0) break
     const start = total - placed.size - window.messages.length
     window.messages.forEach((message, index) => {
-      placed.set(start + index, authored(message))
-      const cost = costOf(message, speaker)
+      const shown = authored(message)
+      placed.set(start + index, shown)
+      const cost = shown ? costOf(shown, speaker) : 0
       if (cost <= share) fitting += cost
     })
     beforePosition = window.firstPosition
     if (!window.earlierAvailable || fitting > budget || placed.size >= READ_MAX) break
   }
-  const latestRequest = identities.findLastIndex(identity => identity.role === 'user')
-  const answer = identities.findLastIndex(identity => identity.role === 'assistant')
-  const kept = [identities.findIndex(identity => identity.role === 'user'), latestRequest, ...(answer > latestRequest ? [answer] : [])]
+  const latestRequest = identities.findLastIndex(identity => identity.role === 'user' && visible(identity))
+  const answer = identities.findLastIndex(identity => identity.role === 'assistant' && visible(identity))
+  const kept = [identities.findIndex(identity => identity.role === 'user' && visible(identity)), latestRequest, ...(answer > latestRequest ? [answer] : [])]
   for (const ordinal of kept) {
     if (ordinal < 0 || placed.has(ordinal)) continue
     const message = store.message(threadId, identities[ordinal]!.id)
     if (message !== undefined) placed.set(ordinal, authored(message))
   }
-  return buildHandover({ messages: [...placed].map(([ordinal, message]) => ({ ordinal, message })), total }, {
+  const unshown = [...new Set([...identities.flatMap((identity, ordinal) => visible(identity) ? [] : [ordinal]), ...[...placed].flatMap(([ordinal, message]) => message ? [] : [ordinal])])]
+  const before = (ordinal: number): number => unshown.filter(other => other < ordinal).length
+  return buildHandover({ messages: [...placed].flatMap(([ordinal, message]) => message ? [{ ordinal: ordinal - before(ordinal), message }] : []), total: total - unshown.length }, {
     ...options, historyKept: !store.ephemeral, toolRecords: store.activityCount(threadId),
   })
 }

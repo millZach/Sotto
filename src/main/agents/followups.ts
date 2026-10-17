@@ -8,7 +8,9 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { StageInline } from './attachmentStore'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { isResumeNoteText } from '../../shared/restartResume'
-import { wakeUpNewsSchema, foldWakeUpNews, isBabysitNews, isRestartNews, WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
+import { hiddenEvents } from './hiddenWakeUp'
+import type { WatcherEvent } from '../../shared/watcherNews'
+import { wakeUpNewsSchema, foldWakeUpNews, isBabysitNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */
 export const LOST_IMAGES = 'An image in this follow-up was no longer kept when Sotto started, so the follow-up was paused rather than sent without it. Attach the image again or remove the follow-up.'
@@ -214,9 +216,13 @@ export class FollowupStore {
     return this.change(state => {
       const items = state.items.filter(item => item.threadId === threadId)
       if (items.some(item => item.status === 'dispatching' || item.status === 'uncertain')) throw new Error('Wait for this thread’s pending delivery before reordering follow-ups.')
-      if (ids.length !== items.length || new Set(ids).size !== ids.length || ids.some(id => !items.some(item => item.id === id))) throw new Error('The follow-up order changed. Refresh and try again.')
+      // A wake-up holding only Watcher's news is shown in no queue (ADR-0073), so an order may leave it out; anything
+      // else missing or added is a change made since the order was read.
+      const hidden = items.filter(item => isWatcherOnlyWakeUp(item) && !ids.includes(item.id))
+      const shown = items.filter(item => !hidden.includes(item))
+      if (ids.length !== shown.length || new Set(ids).size !== ids.length || ids.some(id => !shown.some(item => item.id === id))) throw new Error('The follow-up order changed. Refresh and try again.')
       // Sotto's wake-up keeps its place after the user's follow-ups, wherever the user moved theirs; a resume note, before.
-      const ordered = ids.map(id => items.find(item => item.id === id)!)
+      const ordered = [...ids.map(id => shown.find(item => item.id === id)!), ...hidden]
       const leading = ordered.filter(item => leadsQueue(item, threadId))
       state.items = [...state.items.filter(item => item.threadId !== threadId), ...leading, ...ordered.filter(item => !waitingWakeUp(item, threadId)),
         ...ordered.filter(item => waitingWakeUp(item, threadId) && !leading.includes(item))]
@@ -230,9 +236,14 @@ export class FollowupStore {
   queueWakeUp(threadId: string, news: WakeUpNews, word: WordWakeUp, resumeAfterTurnId?: string, apart?: (news: WakeUpNews) => boolean): Promise<void> {
     return this.change(state => {
       const now = new Date().toISOString()
+      // Watcher's news is a hidden wake-up of its own, made whole and never changed (hiddenWakeUp.ts): no news folds into
+      // it and it folds into no other wake-up, and a Watcher holds one at a time.
+      const hidden = isWatcherNews(news)
+      if (hidden && state.items.some(item => item.threadId === threadId && isWatcherOnlyWakeUp(item))) throw new Error('Watcher already has news on its way.')
       // News `apart` picks out may not go yet, so it never shares a wake-up with news that may: neither holds the other.
       const side = apart?.(news) ?? false
-      const waiting = state.items.find(item => waitingWakeUp(item, threadId) && (!apart || (item.news ?? []).every(held => apart(held) === side)))
+      const waiting = hidden ? undefined : state.items.find(item => waitingWakeUp(item, threadId) && !isWatcherOnlyWakeUp(item)
+        && (!apart || (item.news ?? []).every(held => apart(held) === side)))
       if (waiting) {
         const folded = foldWakeUpNews(waiting.news ?? [], wakeUpNewsSchema.parse(news))
         // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
@@ -265,7 +276,7 @@ export class FollowupStore {
     return this.change(state => {
       // A thread may hold a second waiting wake-up, of news set apart (`separateWakeUps`): each is looked through.
       let changed = false
-      for (const waiting of state.items.filter(item => waitingWakeUp(item, threadId))) {
+      for (const waiting of state.items.filter(item => waitingWakeUp(item, threadId) && !isWatcherOnlyWakeUp(item))) {
         const kept = (waiting.news ?? []).filter(item => !isBabysitNews(item) || key !== undefined && pullRequestKey(item.pullRequest.url) !== key)
         if (kept.length === (waiting.news ?? []).length) continue
         changed = true
@@ -319,9 +330,41 @@ export class FollowupStore {
       if (!changed) return false
     })
   }
+  /**
+   * Takes Watcher's saved news out of the queue as it loads, and returns its events: every hidden wake-up goes, and a wake-up
+   * an earlier build saved with Watcher's news beside other news keeps the rest, worded again with `word`. A restart starts
+   * Watcher's news afresh, so the coordinator lets these events be observed again (ADR-0073).
+   */
+  dropWatcherNews(word: WordWakeUp): Promise<WatcherEvent[]> {
+    let dropped: WatcherEvent[] = []
+    return this.change(state => {
+      const held = this.watcherNewsHeld(state.items)
+      if (!held.length) return false
+      dropped = held.flatMap(item => hiddenEvents(item.news))
+      state.items = state.items.flatMap(item => {
+        if (!held.includes(item) || isWatcherOnlyWakeUp(item)) return held.includes(item) ? [] : [item]
+        const kept = item.news!.filter(news => !isWatcherNews(news))
+        return [{ ...item, news: kept, text: word(kept), updatedAt: new Date().toISOString() }]
+      })
+    }).then(() => dropped)
+  }
+  /** The events `dropWatcherNews` would take out, read without changing anything, so they can be untold first. */
+  heldWatcherEvents(): WatcherEvent[] { return this.watcherNewsHeld(this.state.items).flatMap(item => hiddenEvents(item.news)) }
+  private watcherNewsHeld(items: readonly QueuedFollowup[]): QueuedFollowup[] {
+    return items.filter(item => item.wakeUp && item.news?.some(isWatcherNews) && this.active(item.threadId) && !this.dormant.has(item.id))
+  }
+  /** Takes these hidden wake-ups out of the queue whole, in one change, in whatever state each is (hiddenWakeUp.ts). */
+  removeWakeUp(...ids: string[]): Promise<void> {
+    return this.change(state => {
+      const kept = state.items.filter(candidate => !ids.includes(candidate.id) || !isWatcherOnlyWakeUp(candidate))
+      if (kept.length === state.items.length) return false
+      state.items = kept
+    })
+  }
+  /** Pauses the thread's queued follow-ups. Watcher's hidden wake-up never pauses: no one could resume it. */
   pause(threadId: string, error: string): Promise<void> {
     return this.change(state => {
-      for (const item of state.items) if (item.threadId === threadId && item.status === 'queued') Object.assign(item, { status: 'paused', error })
+      for (const item of state.items) if (item.threadId === threadId && item.status === 'queued' && !isWatcherOnlyWakeUp(item)) Object.assign(item, { status: 'paused', error })
     })
   }
   resume(threadId: string, turnId?: string): Promise<void> {
