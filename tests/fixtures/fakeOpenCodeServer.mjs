@@ -306,6 +306,8 @@ function handle(name, sessionId, itemId, body, query, request, response, send, f
     return
   }
   if (name === 'experimental.mcp.remove') {
+    // `script.mcp.removeUnavailable` answers every removal with a 503 that is only a wait, as a folder still starting does.
+    if (script().mcp?.removeUnavailable) { fail(503, 'ServiceUnavailableError'); return }
     const servers = mcpOf(query['location[directory]']), server = decodeURIComponent(sessionId)
     if (!servers.has(server)) { send(404, { _tag: 'McpServerNotFoundError', server, message: `MCP server not found: ${server}` }); return }
     servers.delete(server); send(204); return

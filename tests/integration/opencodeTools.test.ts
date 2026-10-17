@@ -230,3 +230,14 @@ it('waits for a thread’s server to stop when Sotto disconnects while its tool 
   f.host.disconnect(); await f.adapter.closed()
   expect(f.running(pid)).toBe(false)
 })
+
+it('stops a thread’s server within moments when OpenCode keeps saying it is not ready to take its tool servers off', { timeout: 60_000 }, async () => {
+  const { f } = await withTools({ visuals: false, idle: true })
+  const id = await open(f)
+  await expect.poll(async () => of(await f.driver.requests(), 'fixture/mcp-connected').length).toBe(1)
+  await f.scriptAlso({ mcp: { removeUnavailable: true } })
+  f.host.observeThreads([])
+  await expect.poll(async () => of(await f.driver.requests(), 'experimental.mcp.remove').length, { timeout: 20_000 }).toBeGreaterThan(0)
+  // The whole removal is held to its few seconds, retries included, and the server stops whatever OpenCode said.
+  await expect.poll(() => f.sessions.stopped(id), { timeout: 10_000 }).toBe(true)
+})

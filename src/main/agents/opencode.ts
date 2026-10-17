@@ -213,7 +213,7 @@ const TOOL_CONNECT_TIMEOUT_MS = 45_000
  * are in place well inside this; a connect that hangs never holds a prompt longer, and the tools join a later step.
  */
 const TOOL_SEND_GRACE_MS = 2_000
-/** How long taking a tool server off may take as a thread's session ends; its server is stopped whatever the answer. */
+/** How long taking the tool servers off may take, retries included, as a thread's session ends; its server is stopped whatever the answer. */
 const TOOL_REMOVE_TIMEOUT_MS = 3_000
 const generatedSchema = z.looseObject({ data: z.looseObject({ text: z.string() }) })
 
@@ -465,8 +465,10 @@ export class OpenCodeHost implements AgentHost {
   private async removeToolServers(entry: ThreadServer): Promise<void> {
     const client = entry.client, folder = entry.toolsFolder
     if (!client || !folder || !entry.toolServers?.length || entry.closing) return
+    // One deadline for the whole removal, so retries for a server not ready yet cannot hold the stop past it.
+    const signal = AbortSignal.timeout(TOOL_REMOVE_TIMEOUT_MS)
     await Promise.all(entry.toolServers.map(name => client.request('DELETE', `/api/experimental/mcp/${encodeURIComponent(name)}`,
-      { query: locationQuery(folder), timeoutMs: TOOL_REMOVE_TIMEOUT_MS }).catch(() => undefined)))
+      { query: locationQuery(folder), signal }).catch(() => undefined)))
   }
 
   /**
