@@ -297,9 +297,9 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   /**
    * The turns Sotto dispatched whose end has not been read yet (read marks): the thread, Sotto's message for the turn when
    * this computer knows it, the thread's newest turn and its waiting requests when the send went, Sotto's messages for the
-   * steers sent into that turn since, and when. Text-free.
+   * steers sent into that turn since, Watcher's operation for a send to a paired host, and when. Text-free.
    */
-  readDispatches: z.array(z.object({ target: watcherThreadTargetSchema, messageId: id.optional(), priorTurnId: id.nullable(),
+  readDispatches: z.array(z.object({ target: watcherThreadTargetSchema, messageId: id.optional(), operationId: z.uuid().optional(), priorTurnId: id.nullable(),
     steerIds: z.array(id).max(WATCHER_READ_DISPATCH_STEERS_MAX).optional(),
     requestIds: z.array(id).max(WATCHER_READ_DISPATCH_REQUESTS_MAX), requestsDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
     at: time }).strict()).max(WATCHER_READ_DISPATCHES_MAX).optional(),

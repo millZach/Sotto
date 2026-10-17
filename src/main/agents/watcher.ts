@@ -435,7 +435,11 @@ export class WatcherService implements WatcherControlHooks {
       // The merged snapshot marks each thread connected or not already, with its own host and provider.
       if (wanted.has(key(target))) found.set(key(target), { target, thread, connected: thread.clientConnected !== false })
     }
-    const next = trackDispatches(record.readDispatches, record.readMarks ?? [], target => found.get(key(target)), Date.now(), now())
+    // A paired host that refused Watcher's send ran no turn for it; the operation's own record says so.
+    let failed: Set<string> | undefined
+    const refused = (operationId: string): boolean =>
+      (failed ??= new Set(record.operations.filter(operation => operation.deliveryState === 'failed').map(operation => operation.id))).has(operationId)
+    const next = trackDispatches(record.readDispatches, record.readMarks ?? [], target => found.get(key(target)), Date.now(), now(), refused)
     // A mark that cannot be saved is lost, never the pass it rode in on: the wake-ups' news must still go.
     if (next !== null) try { void this.options.control.updateWatcher(update => { update.readDispatches = next.dispatches; update.readMarks = next.marks }).catch(() => undefined) } catch { /* Not saved. */ }
   }
@@ -1496,8 +1500,9 @@ export class WatcherService implements WatcherControlHooks {
         if (assignment && !next.watches?.some(watch => key(watch.target) === key(target)) && !imported) (next.watches ??= []).push(assignment)
         if (start || send) participant.promptCount = this.promptCount(next, target, turn?.id, request.id) + 1
         next.operations.push(operation)
-        // Watcher's start or send to a paired host's thread is this desktop's dispatch: its turn earns a read mark when it ends.
-        if (remote && !imported && (start || send) && !this.options.workerHost) recordDispatch(next, target, thread, now())
+        // Watcher's start or send to a paired host's thread is this desktop's dispatch: its turn earns a read mark when it
+        // ends. One queued or steered there is not: the host runs it later, or inside a turn, where this desktop does not hear.
+        if (remote && !imported && operation.delivery === 'now' && !this.options.workerHost) recordDispatch(next, target, thread, now(), undefined, operation.id)
         if (start && !next.reservations.some(item => key(item.target) === key(target))) next.reservations.push({ target, requestId: request.id, operationId: operation.id, generation: participant.generation, reason: 'creation' })
       })
       if (roleResult) this.rememberRoleStart(operation.id, roleResult)

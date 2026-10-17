@@ -249,6 +249,19 @@ describe('the dispatches read marks wait on', () => {
     expect(next?.dispatches.map(entry => entry.target.threadId)).toEqual(['away'])
   })
 
+  it('drop one whose send a paired host refused, so a turn the host runs later earns nothing', () => {
+    const record = emptyWatcherRecord(), refusedId = randomUUID(), acceptedId = randomUUID()
+    recordDispatch(record, target('refused', REMOTE), thread('refused', turn('t0', 'completed')), AT, undefined, refusedId)
+    recordDispatch(record, target('accepted', REMOTE), thread('accepted', turn('t0', 'completed')), AT, undefined, acceptedId)
+    const threads = { refused: thread('refused', turn('t0', 'completed')), accepted: thread('accepted', turn('t1', 'running')) }
+    const read = (item: { hostId: string; threadId: string }) => ({ target: item, thread: threads[item.threadId as keyof typeof threads], connected: true })
+    const first = trackDispatches(record.readDispatches!, [], read, Date.parse(AT), AT, id => id === refusedId)
+    expect(first?.dispatches.map(entry => entry.target.threadId)).toEqual(['accepted'])
+    // The phone starts a turn of its own on the refused thread: nothing of this desktop's waits on it.
+    threads.refused = thread('refused', turn('p1', 'completed'))
+    expect(trackDispatches(first!.dispatches, first!.marks, read, Date.parse(AT), AT, id => id === refusedId)).toBeNull()
+  })
+
   it('are kept in the Watcher record with the marks, which a restart and a move to stable read back whole', async () => {
     const record = emptyWatcherRecord()
     record.readMarks = [{ target: target('a'), kind: 'finished', newsId: 'finished:t1', at: AT }]

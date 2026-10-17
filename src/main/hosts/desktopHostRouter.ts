@@ -851,11 +851,15 @@ export class DesktopHostRouter {
     const before = connection.service.shell()
     const { activeThreadId, activeProjectId } = before
     // A send routed to a paired host's thread is a turn of this desktop's (Watcher's read marks), told apart from the
-    // thread as it was before the send went: a host may end the turn before its answer comes back.
-    const sentTo = connection.kind === 'remote' && this.options.watcherEnabled === true && this.dispatchListeners.size > 0
-      ? command.type === 'send' ? command.draft?.threadId : command.type === 'manual-send' || command.type === 'queue-followup' || command.type === 'resume-followups' ? command.threadId : undefined
+    // thread as it was before the send went: a host may end the turn before its answer comes back. A follow-up queued
+    // there, a resumed queue and a send into a running turn are not: the host runs them later, where this desktop does
+    // not hear, and may drop them unrun.
+    const addressed = connection.kind === 'remote' && this.options.watcherEnabled === true && this.dispatchListeners.size > 0
+      ? command.type === 'send' ? command.draft?.threadId : command.type === 'manual-send' ? command.threadId : undefined
       : undefined
-    const dispatchBefore = sentTo === undefined ? undefined : watcherDispatchBefore(before.host.threads.find(thread => thread.id === sentTo))
+    const beforeThread = addressed === undefined ? undefined : before.host.threads.find(thread => thread.id === addressed)
+    const sentTo = beforeThread?.status === 'running' ? undefined : addressed
+    const dispatchBefore = sentTo === undefined ? undefined : watcherDispatchBefore(beforeThread)
     const selections = this.selections
     const windowShowed = { hostId: this.selectedHostId, threadId: this.selectedThreadId }
     let refused = false

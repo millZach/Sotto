@@ -385,6 +385,9 @@ it('rechecks a late native question at the owning Codex writer, without answerin
     await reconciliation
     const refused = await lateQuestion
     expect(refused).toMatchObject({ code: 'PENDING_USER_REQUEST', receipt: { deliveryState: 'failed' } })
+    // The host ran no turn for the refused send, so read marks wait on none for it once a pass reads the record.
+    f.watcher.wakes.observe()
+    await expect.poll(() => (f.control.watcherRecord().readDispatches ?? []).filter(entry => entry.target.threadId === target.threadId)).toEqual([])
     const promptCount = () => f.watcher.state().requests.find(item => item.id === f.requestId)!.participants[0]!.promptCount
     expect(promptCount()).toBe(1)
     expect(await send()).toMatchObject({ code: 'PENDING_USER_REQUEST', receipt: refused.receipt })
@@ -430,6 +433,8 @@ it('routes steer and queue by turn identity and fences a native takeover before 
   expect(steered.status, steered.status === 'refused' ? steered.code : undefined).toBe('ok')
   const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'queue', text: 'Synthetic fenced queue' })
   expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
+  // A steer and a queued send run where this desktop does not hear their turns: read marks wait only on the start.
+  expect((f.control.watcherRecord().readDispatches ?? []).filter(entry => entry.target.threadId === target.threadId)).toHaveLength(1)
   await native.driver.typeInProvider(nativeId, 'Synthetic native instruction')
   // The background poll can finish before it discovers this rollout. Establish takeover before releasing the queue.
   await native.adapter.refreshThread(nativeId)

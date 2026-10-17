@@ -24,11 +24,13 @@ export interface ReadMarkThread { readonly target: WatcherThreadTarget; readonly
  * A turn Sotto just dispatched to a thread (read marks, ADR-0073, Zach's pick on October 17, 2026): a user's send, Watcher's
  * or a wake-up, on this computer or routed to a paired host. `messageId` is Sotto's message for the turn when this computer
  * knows it; the turn in place and the requests showing when it went are what the turn's own end and news are told apart
- * from. Adds it to `record`, edited in place as `updateWatcher` hands it, and keeps the newest when the list is full.
+ * from. `operationId` names Watcher's operation for a send to a paired host, so the host refusing it takes the dispatch
+ * back. Adds it to `record`, edited in place as `updateWatcher` hands it, and keeps the newest when the list is full.
  */
-export function recordDispatch(record: WatcherRecord, target: WatcherThreadTarget, thread: Pick<AgentThread, 'requests'> & Partial<Pick<AgentThread, 'lastTurn'>> | undefined, at: string, messageId?: string): void {
+export function recordDispatch(record: WatcherRecord, target: WatcherThreadTarget, thread: Pick<AgentThread, 'requests'> & Partial<Pick<AgentThread, 'lastTurn'>> | undefined, at: string,
+  messageId?: string, operationId?: string): void {
   const kept = (record.readDispatches ?? []).filter(entry => !(key(entry.target) === key(target) && messageId !== undefined && entry.messageId === messageId))
-  kept.push({ target, ...(messageId ? { messageId } : {}), priorTurnId: thread?.lastTurn?.id ?? null,
+  kept.push({ target, ...(messageId ? { messageId } : {}), ...(operationId ? { operationId } : {}), priorTurnId: thread?.lastTurn?.id ?? null,
     ...knownRequests((thread?.requests ?? []).map(request => request.id)), at })
   record.readDispatches = kept.slice(-WATCHER_READ_DISPATCHES_MAX)
 }
@@ -97,11 +99,13 @@ function endOf(entry: WatcherReadDispatch, thread: AgentThread): { readonly end:
  * or failed, and when a question or permission appears while such a turn is in flight. Nothing else marks: history a
  * thread loads, a fork's or a continued thread's copy, a reconnect, a restart and a provider's reload carry no dispatch.
  * A turn started outside this desktop, at a provider's own command line or by a phone talking straight to a paired host,
- * earns none. Each pass reads only the threads with a dispatch in flight. A stopped turn ends its dispatch unmarked, and
- * one that never reports an end is let go after a day. Null when nothing changed; never edits what it is given.
+ * earns none. Each pass reads only the threads with a dispatch in flight. A stopped turn ends its dispatch unmarked, one
+ * whose operation a paired host refused goes, and one that never reports an end is let go after a day. Null when nothing
+ * changed; never edits what it is given.
  */
 export function trackDispatches(dispatches: readonly WatcherReadDispatch[], marks: readonly WatcherReadMark[],
-  threadOf: (target: WatcherThreadTarget) => ReadMarkThread | undefined, now: number, at: string): { dispatches: WatcherReadDispatch[]; marks: WatcherReadMark[] } | null {
+  threadOf: (target: WatcherThreadTarget) => ReadMarkThread | undefined, now: number, at: string,
+  refused: (operationId: string) => boolean = () => false): { dispatches: WatcherReadDispatch[]; marks: WatcherReadMark[] } | null {
   if (dispatches.length === 0) return null
   const byTarget = new Map(marks.map(mark => [key(mark.target), mark] as const))
   let changed = false
@@ -112,7 +116,7 @@ export function trackDispatches(dispatches: readonly WatcherReadDispatch[], mark
   }
   const kept: WatcherReadDispatch[] = []
   for (const entry of dispatches) {
-    if (now - Date.parse(entry.at) > READ_DISPATCH_MAX_MS) { changed = true; continue }
+    if (now - Date.parse(entry.at) > READ_DISPATCH_MAX_MS || entry.operationId !== undefined && refused(entry.operationId)) { changed = true; continue }
     const found = threadOf(entry.target)
     // Out of reach for now: the dispatch waits, and its turn's end is read when the thread is back.
     if (!found || !found.connected) { kept.push(entry); continue }
