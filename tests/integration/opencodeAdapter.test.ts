@@ -271,7 +271,8 @@ it('steers a running turn inside the same execution, and refuses to steer an idl
   } finally { await f.cleanup() }
 })
 
-it('ends a turn as interrupted when its server dies, and shows a resumed turn with no outcome as stopped', async () => {
+// Two real servers end here, one killed and one left behind by a restart, and each exit sweeps for the tools it left.
+it('ends a turn as interrupted when its server dies, and shows a resumed turn with no outcome as stopped', { timeout: 60_000 }, async () => {
   const { f, id } = await open()
   try {
     await send(f, id, 'first')
