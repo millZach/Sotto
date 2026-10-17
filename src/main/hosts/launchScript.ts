@@ -545,55 +545,90 @@ const stopHost = async () => {
   return finish({ type: 'host-stopped', stopped, hostId: current.hostId });
 };
 // One update at a time in a folder, whichever client runs it: over SSH, or a host updating itself (ADR-0088), which runs
-// this same script. The lock is a folder naming its process, put in place whole by renaming a folder this process made, so
-// nobody sees it half made. A lock whose process has gone, or that never named one, is taken over the way starting hosts
-// take over host-listener.lock (src/host/lock.ts): updates take turns through .update-lock.takeover, placed the same way, and
-// in its turn an update looks at the lock again, removes it only if it is still stale, and puts its own in its place. Only
-// the update holding the turn removes a lock it did not place, and a stale lock's process never removes it, so the lock
-// cannot change between that look and the removal: a live lock is never removed, however many updates start at once. An
-// update that finds the turn taken is refused, since the one taking over will hold the lock. A turn left by an update killed
-// partway through one is cleared, so two updates could share a turn only if one is killed in the moment its turn lasts.
+// this same script. The lock is a folder naming its process, made with mkdir, which only one update can do, as before. A
+// lock whose process has gone, or that has named none for a while, is taken over the way starting hosts take over
+// host-listener.lock (src/host/lock.ts): updates take turns through .update-lock.takeover, made the same way, and in its
+// turn an update looks at the lock again and removes it only if it is still that stale lock. A folder is only ever removed
+// by moving it aside, whole, under a name only the remover uses, and looking at what moved: a removal never empties a lock
+// in place, where another could be put, and a look that found nothing is never followed by a removal. Only the update
+// holding the turn removes a lock it did not make, and a stale lock's process never removes it, so a live lock is never
+// removed, however many updates start at once. An update that finds the turn taken is refused, since the one taking over
+// will hold the lock. A turn left by an update killed partway through one is cleared the same careful way; two updates
+// could share a turn only if one is killed in the moment its turn lasts while others arrive.
 const lockOwner = async folder => {
-  let pid = 0, age = Infinity;
+  let pid = 0, age = Infinity, missing = false;
   try { pid = Number(await fs.readFile(path.join(folder, 'pid'), 'utf8')); } catch {}
-  try { age = Date.now() - (await fs.stat(folder)).mtimeMs; } catch {}
-  return { pid: Number.isInteger(pid) && pid > 0 ? pid : 0, age };
+  try { age = Date.now() - (await fs.stat(folder)).mtimeMs; } catch (error) { missing = !!error && error.code === 'ENOENT'; }
+  return { pid: Number.isInteger(pid) && pid > 0 ? pid : 0, age, missing };
 };
 const lockHeld = owner => owner.pid ? alive(owner.pid) : owner.age < ${HOST_UPDATE_LOCK_UNNAMED_MS};
+// The same stale lock as one seen before: still there, still naming the same process, and still not held.
+const stillStale = seen => now => !now.missing && now.pid === seen.pid && !lockHeld(now);
 const takeoverPath = updateLockPath + '.takeover';
-// Windows refuses to remove a folder for a moment while another update reads the file in it, so a removal tries again.
-const removeLockFolder = folder => fs.rm(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
-// Puts a folder naming this process at target, whole, or answers false when one is there already.
-const placeLockFolder = async target => {
-  const mine = updateLockPath + '.' + process.pid + '.' + crypto.randomUUID() + '.taking';
-  await fs.mkdir(mine);
-  await fs.writeFile(path.join(mine, 'pid'), String(process.pid));
-  try { await fs.rename(mine, target); return true; }
-  catch { await removeLockFolder(mine).catch(() => undefined); return false; }
+// Moves folder aside and removes it there, if what moved is what matches says it should be: 'removed'. Something else is
+// put back, made again the way a lock is made so that it never replaces a folder made meanwhile ('changed', or 'lost' when
+// one was). 'gone' when there was nothing to move, and 'kept' when it could not be moved, as while Windows refuses for a
+// moment because another update is reading the file in it. The folder moved aside names its remover, so one a remover
+// killed partway leaves is cleared when versions are pruned.
+const removeIfStill = async (folder, matches) => {
+  const aside = folder + '.' + process.pid + '.' + crypto.randomUUID() + '.removing';
+  for (let tries = 0; ; tries++) {
+    try { await fs.rename(folder, aside); break; }
+    catch (error) {
+      if (error && error.code === 'ENOENT') return 'gone';
+      if (tries >= 10 || !error || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) return 'kept';
+      await pause(50);
+    }
+  }
+  const moved = await lockOwner(aside);
+  let outcome = 'removed';
+  if (!matches(moved)) {
+    outcome = 'lost';
+    try { await fs.mkdir(folder); outcome = 'changed'; } catch {}
+    if (outcome === 'changed' && moved.pid) await fs.writeFile(path.join(folder, 'pid'), String(moved.pid)).catch(() => undefined);
+  }
+  await fs.rm(aside, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }).catch(() => undefined);
+  return outcome;
 };
+// A folder moved aside by a removal whose process has gone before it could remove it.
+const leftAside = name => { const match = /^\.update-lock(?:\.takeover)?\.(\d+)\.[0-9a-f-]+\.removing$/.exec(name); return !!match && !alive(Number(match[1])); };
+// Makes a folder naming this process at target, or answers false when one is there already.
+const placeLockFolder = async target => {
+  try { await fs.mkdir(target); } catch (error) { if (error && error.code === 'EEXIST') return false; throw error; }
+  try { await fs.writeFile(path.join(target, 'pid'), String(process.pid)); return true; }
+  catch (error) { await removeIfStill(target, now => !now.pid || now.pid === process.pid); throw error; }
+};
+const ownedHere = now => now.pid === process.pid;
+// Gives up a folder this process holds. It looks first and leaves one that names another process alone: nothing removes a
+// live update's folder but that update, so it cannot become this process's own between the look and the move.
+const giveUp = async folder => { if (ownedHere(await lockOwner(folder))) await removeIfStill(folder, ownedHere); };
 const takeUpdateLock = async () => {
   await fs.mkdir(versionsPath, { recursive: true });
   for (let attempt = 0; attempt < 8; attempt++) {
     if (await placeLockFolder(updateLockPath)) return;
-    if (lockHeld(await lockOwner(updateLockPath))) throw new Error('update-busy');
+    const seen = await lockOwner(updateLockPath);
+    if (seen.missing) continue;
+    if (lockHeld(seen)) throw new Error('update-busy');
     if (!(await placeLockFolder(takeoverPath))) {
-      if (lockHeld(await lockOwner(takeoverPath))) throw new Error('update-busy');
-      await removeLockFolder(takeoverPath).catch(() => undefined);
+      const turn = await lockOwner(takeoverPath);
+      if (turn.missing) continue;
+      if (lockHeld(turn)) throw new Error('update-busy');
+      if (await removeIfStill(takeoverPath, stillStale(turn)) === 'lost') throw new Error('update-busy');
       continue;
     }
     try {
-      if (lockHeld(await lockOwner(updateLockPath))) throw new Error('update-busy');
-      try { await removeLockFolder(updateLockPath); } catch { continue; }
-      if (await placeLockFolder(updateLockPath)) return;
-    } finally { if ((await lockOwner(takeoverPath)).pid === process.pid) await removeLockFolder(takeoverPath).catch(() => undefined); }
+      const judged = await lockOwner(updateLockPath);
+      if (judged.missing) continue;
+      if (lockHeld(judged)) throw new Error('update-busy');
+      const removal = await removeIfStill(updateLockPath, stillStale(judged));
+      if (removal === 'lost') throw new Error('update-busy');
+      if (removal === 'removed' && await placeLockFolder(updateLockPath)) return;
+    } finally { await giveUp(takeoverPath).catch(() => undefined); }
   }
   throw new Error('update-busy');
 };
 // Only the lock this process holds is removed: one taken over after this process was judged gone is not its to remove.
-const releaseUpdateLock = async () => {
-  if ((await lockOwner(updateLockPath)).pid !== process.pid) return;
-  await removeLockFolder(updateLockPath).catch(() => undefined);
-};
+const releaseUpdateLock = () => giveUp(updateLockPath).catch(() => undefined);
 const updateVersion = () => { if (typeof cfg.version !== 'string' || !RELEASE.test(cfg.version)) throw new Error('update-invalid'); return cfg.version; };
 const archiveName = version => 'Sotto-host-' + version + '-' + process.platform + '-' + process.arch + '.tar.gz';
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -691,12 +726,13 @@ const installUpdate = async () => {
   await fs.rm(archive, { force: true });
   return { type: 'update-installed', version };
 };
-// Keeps the version now running and the one before it; every other version folder, and anything half unpacked, goes.
+// Keeps the version now running and the one before it; every other version folder, anything half unpacked, and any lock
+// folder a removal killed partway left aside, goes.
 const prune = async keep => {
   let names = [];
   try { names = await fs.readdir(versionsPath); } catch { return; }
   for (const name of names) {
-    if ((RELEASE.test(name) && !keep.includes(name)) || name.endsWith('.partial')) await fs.rm(path.join(versionsPath, name), { recursive: true, force: true }).catch(() => undefined);
+    if ((RELEASE.test(name) && !keep.includes(name)) || name.endsWith('.partial') || leftAside(name)) await fs.rm(path.join(versionsPath, name), { recursive: true, force: true }).catch(() => undefined);
   }
 };
 // A failure's own code for a result's cause, or host-start-failed for anything that is not one.

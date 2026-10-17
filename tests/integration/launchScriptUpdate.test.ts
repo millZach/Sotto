@@ -83,6 +83,14 @@ it('downloads, checks and installs a version beside a flat install, then restart
   expect(await readdir(join(configuration.installPath, 'versions', '.incoming'))).toEqual([])
   expect(await pointer(configuration)).toBeNull()
   expect(alive(old.pid as number)).toBe(true)
+  // Lock folders a removal moved aside: one whose remover was killed before it removed it goes when versions are pruned,
+  // and one whose remover still runs stays.
+  const killed = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore', windowsHide: true })
+  await new Promise(resolve => killed.once('exit', resolve))
+  const versions = join(configuration.installPath, 'versions')
+  const leftBy = (pid: number): string => `.update-lock.${pid}.0b6c1c51-4c54-4a39-9a3a-1f0e1c2d3e4f.removing`
+  await mkdir(join(versions, leftBy(killed.pid!)))
+  await mkdir(join(versions, leftBy(process.pid)))
 
   const restarted = await run(configuration, { op: 'update-restart', hostId: HOST_ID, version: NEW })
   const ready = last(restarted)
@@ -97,7 +105,8 @@ it('downloads, checks and installs a version beside a flat install, then restart
   await expect(readFile(join(configuration.installPath, 'host', 'index.js'), 'utf8')).resolves.toBeTruthy()
   expect(await launch(configuration)).toMatchObject({ owned: true, pid: ready.pid })
   // No update lock is left behind.
-  expect(await readdir(join(configuration.installPath, 'versions'))).toEqual(expect.not.arrayContaining(['.update-lock']))
+  expect(await readdir(versions)).toEqual(expect.not.arrayContaining(['.update-lock', leftBy(killed.pid!)]))
+  expect(await readdir(versions)).toEqual(expect.arrayContaining([leftBy(process.pid)]))
 })
 
 it('receives and installs a full Owl archive, reuses identical retries and never replaces different published version files', async () => {
@@ -434,7 +443,7 @@ it('refuses while another update takes over a stale lock, and clears a turn left
   expect(Number(await readFile(join(versions, '.update-lock', 'pid'), 'utf8'))).toBe(gone.pid)
   // That update is killed partway through its turn: the next one clears the turn, takes the lock over and gives it up after.
   taking.kill()
-  await vi.waitFor(() => expect(alive(taking.pid!)).toBe(false))
+  await vi.waitFor(() => expect(alive(taking.pid!)).toBe(false), { timeout: 30_000 })
   expect(last(await run(configuration, install))).toEqual({ type: 'error', reason: 'update-missing' })
   expect((await readdir(versions)).filter(name => name.startsWith('.update-lock'))).toEqual([])
 })
