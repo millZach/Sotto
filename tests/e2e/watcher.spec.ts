@@ -1378,6 +1378,12 @@ test.describe("Watcher's room on the built app", () => {
       await writeFile(join(root, 'claude', 'script.json'), JSON.stringify({ reply: 'Claude Watcher here. I have the handover.' }))
       await resizeContentWindow(launched, 1280, 800)
       await openRoom(page)
+      // With worker roles (#1097) the first entry starts on the Orchestrating role, whose first default here is Claude
+      // Code's; this journey changes from Codex to Claude Code, so it picks Codex for the first Watcher itself.
+      await page.getByRole('group', { name: 'Watcher’s model' }).getByRole('combobox', { name: 'Thread model' }).click()
+      const firstPicker = page.getByRole('dialog', { name: 'Choose model' })
+      await firstPicker.getByRole('tab', { name: /Codex/ }).click()
+      await firstPicker.getByRole('option').first().click()
       await page.getByRole('textbox', { name: 'Watcher message' }).click()
       await page.keyboard.type('Check the release notes and tell me what is missing.')
       await page.getByRole('button', { name: 'Start Watcher and send' }).click()
@@ -1385,6 +1391,7 @@ test.describe("Watcher's room on the built app", () => {
       await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. Release notes is missing the install line.')
       await expect.poll(async () => (await mainRoom(page)).currentOptions?.status).toBe('idle')
       const codex = (await mainRoom(page)).current!
+      expect(codex.provider).toBe('codex')
       expect((await mainRoom(page)).handover ?? null).toBeNull()
 
       // Another provider's model in Watcher's own picker is a new Watcher there.
