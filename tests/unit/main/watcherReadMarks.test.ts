@@ -257,6 +257,36 @@ describe('the requests a dispatch knows', () => {
   })
 })
 
+describe('news a snapshot showed again, which no dispatch brought', () => {
+  it('gives a finish already read no second mark when a question comes and is withdrawn', async () => {
+    const room = service()
+    room.pass(thread('worker', turn('t0', 'completed')))
+    room.send('worker')
+    room.pass(thread('worker', turn('t1', 'completed')))
+    await room.read('worker')
+    // Nothing of Sotto's is in flight: the question and its withdrawal are the thread's own.
+    room.pass(thread('worker', { ...turn('t1', 'completed'), requests: [card('q1')] }))
+    room.pass(thread('worker', turn('t1', 'completed')))
+    expect(room.marks()).toEqual([])
+    // With a dispatch in flight the question is news, and withdrawing it brings back no finish.
+    room.send('worker')
+    room.pass(thread('worker', { ...turn('t2', 'running'), requests: [card('q2')] }))
+    await room.read('worker')
+    room.pass(thread('worker', turn('t2', 'running')))
+    expect(room.marks()).toEqual([])
+  })
+
+  it('gives a Codex thread no mark when, after a restart, its old turn is read in late', () => {
+    const before = service()
+    before.pass(thread('codex', turn('t0', 'completed')))
+    const after = service({ record: watcherRecordSchema.parse(JSON.parse(JSON.stringify(before.record()))) })
+    // Codex lists the thread idle with no turn, then a read or a resume fills in the turn it had before the restart.
+    after.pass(thread('codex'))
+    after.pass(thread('codex', turn('t0', 'completed')))
+    expect(after.marks()).toEqual([])
+  })
+})
+
 describe('a request that comes back', () => {
   it('is not news twice: one withdrawn while the turn runs and shown again earns no second mark once read', async () => {
     const room = service()
