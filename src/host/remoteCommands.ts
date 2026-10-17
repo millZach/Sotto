@@ -1,3 +1,4 @@
+import { startsThread } from '../shared/threadStarts'
 import type { AgentCommand, AgentConfiguration } from '../shared/agents'
 import { managementCommandRefusal } from '../shared/hostProtocol'
 
@@ -42,6 +43,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // Continuing an agent as its own thread makes a new thread on the new-thread defaults, as create-thread does, and asks
   // the model nothing (#1028). Only on a listener that offers `thread-starts`: see remoteCommandRefusal.
   'continue-agent': ['threadId', 'agentId', 'newThreadId', 'modelId', 'handover', 'workingCopy', 'baseBranch', 'startFromOrigin'],
+  // Fork from here makes a new thread the same way, from a copy of the conversation or a handover of it (#1028).
+  'fork-thread': ['threadId', 'messageId', 'newThreadId', 'modelId', 'workingCopy', 'baseBranch', 'startFromOrigin'],
   'retry-thread-worktree': ['threadId'], 'refresh-thread-worktree': ['threadId', 'background'],
   'restore-thread-branch': ['threadId', 'withUncommittedChanges'],
   'preview-reclaim-thread-worktree': ['threadId'],
@@ -79,6 +82,17 @@ export const REMOTE_SIGN_IN_OPERATIONS = ['sign-in-start', 'sign-in-read', 'sign
 export const REMOTE_USAGE_OPERATIONS = ['usage-read', 'usage-refresh', 'usage-clear'] as const
 export function remoteUsageRefusal(operation: typeof REMOTE_USAGE_OPERATIONS[number], mayAnswer: boolean): 'forbidden' | null {
   return operation === 'usage-clear' && !mayAnswer ? 'forbidden' : null
+}
+/**
+ * A host update the host runs on itself (ADR-0088). It installs and restarts into a newer published Sotto release, so it
+ * takes more than pairing: the client must be one the launch script recorded as a desktop over the owner's SSH session,
+ * and its `remote-answer` policy must let it answer, which `--deny-answers` on the host revokes. A phone never may. The
+ * client names only a version, and for install the archive name and checksum the host's own download answered; the host
+ * builds every path, URL and setting itself, and refuses any version that is not newer than its own.
+ */
+export const REMOTE_HOST_UPDATE_ACTIONS = ['fetch', 'install', 'restart', 'cancel', 'outcome'] as const
+export function remoteHostUpdateRefusal(client: { readonly desktop: boolean; readonly mayAnswer: boolean }): 'forbidden' | null {
+  return client.desktop && client.mayAnswer ? null : 'forbidden'
 }
 /**
  * The account and thread defaults a paired client may change. Keys stay on the host. The projects directory is only
@@ -127,7 +141,7 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   const fields = REMOTE_COMMANDS[command.type] as readonly string[] | undefined
   if (!fields) return 'forbidden'
   if ((command.type === 'queue-client-updates' || command.type === 'cancel-client-updates') && context.clientUpdates !== true) return 'forbidden'
-  if (command.type === 'continue-agent' && context.threadStarts !== true) return 'forbidden'
+  if (startsThread(command) && context.threadStarts !== true) return 'forbidden'
   if (Object.keys(command).some(key => key !== 'type' && !fields.includes(key))) return 'forbidden'
   if (command.type === 'configure' && Object.keys(command.patch).some(key => !(REMOTE_CONFIGURATION_FIELDS as readonly string[]).includes(key))) return 'forbidden'
   if (command.type === 'compose' && command.threadId !== undefined && command.threadId !== context.selectedThreadId) return 'forbidden'

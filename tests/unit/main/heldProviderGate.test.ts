@@ -115,6 +115,18 @@ describe('the held-provider table', () => {
     // One project's list still names that project's held provider alone.
     expect(heldProviderOfWatcherRequest(read('list_threads', { project: { hostId: centerHostId, projectId: 'project' } }), museOnly, both)).toBe('opencode')
   })
+  it('names held providers in the held table’s order, whatever order their threads were seen in', () => {
+    expect(heldProviderRefusal(['opencode', 'muse'])).toBe('Muse and OpenCode are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+    const state = hostState('muse'), host = state.host
+    const held = new Set(['muse', 'opencode'] as const)
+    // OpenCode's thread comes first in the snapshot, so it is the first seen.
+    const openFirst = { ...host, threads: [
+      { id: 'opencode-worker', providerId: 'opencode' as const, projectId: 'project', modelId: 'opencode/fixture-model', title: 'OpenCode', status: 'idle' as const, messages: [], requests: [] },
+      ...host.threads] }
+    const named = heldProviderOfWatcherRequest(read('list_threads', { hostId: centerHostId }), held, openFirst)
+    expect(named).toEqual(['muse', 'opencode'])
+    expect(heldWatcherRefusal(named!).message).toBe('Muse and OpenCode are available in Sotto Owl. Open an Owl build to continue. Nothing was sent.')
+  })
 })
 
 describe.each(providers)('the gate functions hold %s', provider => {

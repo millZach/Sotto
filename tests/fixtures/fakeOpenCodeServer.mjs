@@ -8,9 +8,10 @@ import { URL } from 'node:url'
 // A scripted OpenCode 2 server (`opencode serve`), in the shape Sotto's OpenCode adapter speaks: the HTTP routes and the
 // server-sent events captured from OpenCode 2.0.31 (.zstack/opencode-provider/v2-captures, not committed). Files in the
 // root steer it, as with the other fakes: `script.json` (version, infoVersion, models, providers, delay by operation,
-// migrationMs, unavailable, printPassword, pageSize, eventStream: 'refuse' to answer the event stream with an error before
-// its first frame; integrations, sourceModels, oauth by `<integration>:<method>`, oauthExpiresMs and oauthUrl for the
-// sign-in routes), `approve.json` (`{ integrationID }`: the next read of that source's browser sign-in finds it complete),
+// refuse by operation (the HTTP status the next such request is refused with, once), migrationMs, unavailable,
+// printPassword, pageSize, eventStream: 'refuse' to answer the event stream with an error before its first frame;
+// integrations, sourceModels, oauth by `<integration>:<method>`, oauthExpiresMs and oauthUrl for the sign-in routes),
+// `approve.json` (`{ integrationID }`: the next read of that source's browser sign-in finds it complete),
 // `credentials.json` (the sign-ins, shared by every process as OpenCode's database is, secrets included as OpenCode
 // answers them), `control.json` (one driver action at a time, taken by the process
 // holding its session). Every request is recorded in requests.jsonl under its OpenAPI operation name, with the process
@@ -229,6 +230,14 @@ const delayOf = name => {
   writeFileSync(path('script.json'), JSON.stringify({ ...current, delay: { ...current.delay, [name]: 0 } }))
   return ms
 }
+/** A refusal the script asks for once: the next request of this operation is refused with that status, before anything is done. */
+const refusalOf = name => {
+  const current = script()
+  const status = current.refuse?.[name]
+  if (!status) return 0
+  writeFileSync(path('script.json'), JSON.stringify({ ...current, refuse: { ...current.refuse, [name]: 0 } }))
+  return status
+}
 let unavailable = startup.unavailable ?? 0
 const routes = [
   ['GET', /^\/api\/info$/u, 'server.info'], ['GET', /^\/api\/model$/u, 'model.list'], ['GET', /^\/api\/model\/default$/u, 'model.default'],
@@ -268,6 +277,8 @@ const server = createServer((request, response) => {
     const body = raw ? JSON.parse(raw) : undefined
     const query = Object.fromEntries(url.searchParams)
     record({ method: name, params: { ...(sessionId ? { sessionID: sessionId } : {}), ...(itemId ? { itemID: itemId } : {}), ...(body ?? {}), ...(Object.keys(query).length ? { query } : {}) } })
+    const refused = refusalOf(name)
+    if (refused) { fail(refused, 'InvalidRequestError'); return }
     const go = () => handle(name, sessionId, itemId, body, query, request, response, send, fail)
     const delay = delayOf(name)
     if (delay) setTimeout(go, delay); else go()

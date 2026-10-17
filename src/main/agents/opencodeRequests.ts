@@ -45,7 +45,7 @@ export const OPENCODE_FORM_UNSHOWN = 'Sotto could not show this question to the 
 
 const ACTIONS: Readonly<Record<string, string>> = {
   edit: 'Edit', shell: 'Run a command', bash: 'Run a command', read: 'Read', webfetch: 'Fetch a web page', websearch: 'Search the web',
-  external_directory: 'Work outside the project folder', glob: 'Search files', grep: 'Search file contents',
+  external_directory: 'Work outside the project folder', glob: 'Search files', grep: 'Search file contents', subagent: 'Start a subagent',
 }
 /** What the action is, in one sentence the request card shows. */
 function permissionText(permission: OpenCodePermission): string {
@@ -131,7 +131,8 @@ export function opencodeFormAnswer(pending: Extract<OpenCodePending, { kind: 'fo
     const given = supplied[field.key]
     const options = fieldOptions(field)
     const chosen = (given?.optionIds ?? []).map(id => options[Number(id.slice('option-'.length))]!.value)
-    const typed = given?.text?.trim()
+    // Text typed beside a chosen option is the user's own answer, and only text that says something counts.
+    const typed = given?.text?.trim() || undefined
     if (!chosen.length && !typed) continue
     if (field.type === 'multiselect') {
       const values = [...chosen, ...(typed ? [typed] : [])]
@@ -140,10 +141,10 @@ export function opencodeFormAnswer(pending: Extract<OpenCodePending, { kind: 'fo
       result[field.key] = values
     } else if (field.type === 'boolean') result[field.key] = chosen[0] === 'true'
     else if (field.type === 'number' || field.type === 'integer') {
-      const value = Number(typed ?? chosen[0])
+      const value = Number(typed ?? chosen[0]!)
       if (!Number.isFinite(value) || (field.type === 'integer' && !Number.isInteger(value))) throw new Error(field.type === 'integer' ? 'Answer this question with a whole number.' : 'Answer this question with a number.')
       result[field.key] = value
-    } else result[field.key] = chosen[0] ?? typed!
+    } else result[field.key] = typed ?? chosen[0]!
   }
   return result
 }

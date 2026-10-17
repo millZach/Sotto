@@ -35,12 +35,25 @@ export interface OpenCodeRequest {
  * OpenCode 2's HTTP API on one server, over Node's own `fetch` (ADR-0087): HTTP Basic as the user `opencode` with the
  * server's password, JSON both ways, and the event stream read as server-sent events. A request that times out is
  * uncertain and never repeated here; only a 503 is retried, which OpenCode answers before it has admitted anything.
+ * Every request, and every wait between retries, ends when `closed` aborts: the thread's server is being stopped.
  * Nothing it sends or answers is logged.
  */
 export class OpenCodeClient {
   private readonly authorization: string
-  constructor(readonly url: string, password: string, private readonly timeoutMs: number) {
+  constructor(readonly url: string, password: string, private readonly timeoutMs: number, private readonly closed?: AbortSignal) {
     this.authorization = `Basic ${Buffer.from(`opencode:${password}`, 'utf8').toString('base64')}`
+  }
+
+  /** Wait before retrying, unless the server is being stopped; the timer never keeps Sotto running. */
+  private retryAfter(ms: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const closed = this.closed
+      if (closed?.aborted) { reject(new OpenCodeUncertain('The OpenCode server was stopped.')); return }
+      const stop = (): void => { clearTimeout(timer); reject(new OpenCodeUncertain('The OpenCode server was stopped.')) }
+      const timer = setTimeout(() => { closed?.removeEventListener('abort', stop); resolve() }, ms)
+      timer.unref()
+      closed?.addEventListener('abort', stop, { once: true })
+    })
   }
 
   async request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, options: OpenCodeRequest = {}): Promise<unknown> {
@@ -48,10 +61,12 @@ export class OpenCodeClient {
     const target = `${this.url}${path}${query.length ? `?${new URLSearchParams(query).toString()}` : ''}`
     const giveUp = Date.now() + UNAVAILABLE_RETRY_MS
     for (let attempt = 0; ; attempt++) {
+      if (this.closed?.aborted) throw new OpenCodeUncertain('The OpenCode server was stopped.')
+      const timeout = AbortSignal.timeout(options.timeoutMs ?? this.timeoutMs)
       let response: Response
       try {
         response = await fetch(target, {
-          method, redirect: 'error', signal: AbortSignal.timeout(options.timeoutMs ?? this.timeoutMs),
+          method, redirect: 'error', signal: this.closed ? AbortSignal.any([timeout, this.closed]) : timeout,
           headers: { authorization: this.authorization, accept: 'application/json', ...(options.body !== undefined ? { 'content-type': 'application/json' } : {}) },
           ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
         })
@@ -62,7 +77,7 @@ export class OpenCodeClient {
       }
       let tag: string | undefined
       try { tag = errorSchema.parse(await response.json())._tag } catch { /* An error without a readable body still has its status. */ }
-      if (response.status === 503 && Date.now() < giveUp) { await new Promise(resolve => setTimeout(resolve, Math.min(250 * (attempt + 1), 1_000))); continue }
+      if (response.status === 503 && Date.now() < giveUp) { await this.retryAfter(Math.min(250 * (attempt + 1), 1_000)); continue }
       throw new OpenCodeRejected(response.status, tag)
     }
   }
@@ -88,25 +103,43 @@ export class OpenCodeClient {
         })
         if (!response.ok || !response.body) { await response.body?.cancel().catch(() => undefined); throw new OpenCodeRejected(response.status, undefined) }
         const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
-        let buffer = '', data: string[] = []
+        // A line still arriving is kept in its pieces and joined once its newline comes, so a long one is never rescanned.
+        const partial: string[] = []
+        let partialLength = 0, data: string[] = [], dataLength = 0
+        const line = (read: string): void => {
+          const text = read.endsWith('\r') ? read.slice(0, -1) : read
+          if (text === '') {
+            if (!data.length) return
+            const frame = data.join('\n'); data = []; dataLength = 0
+            const event = opencodeEventSchema.safeParse(JSON.parse(frame))
+            if (!event.success) throw new OpenCodeUnreadable('OpenCode sent an event Sotto cannot read.')
+            connect()
+            onEvent(event.data)
+          } else if (text.startsWith('data:')) {
+            const payload = text.slice(text.startsWith('data: ') ? 6 : 5)
+            dataLength += payload.length
+            if (dataLength > MAX_EVENT_BYTES) throw new OpenCodeUnreadable('OpenCode sent an event too large to read.')
+            data.push(payload)
+          }
+          // Comments (`: heartbeat`), `event:` and `id:` lines carry nothing Sotto reads.
+        }
         for (;;) {
           const { value, done } = await reader.read()
           if (done) break
           quiet()
-          buffer += value
-          if (buffer.length > MAX_EVENT_BYTES) throw new OpenCodeUnreadable('OpenCode sent an event too large to read.')
-          let end: number
-          while ((end = buffer.indexOf('\n')) >= 0) {
-            const line = buffer.slice(0, end).replace(/\r$/u, ''); buffer = buffer.slice(end + 1)
-            if (line === '') {
-              if (!data.length) continue
-              const frame = data.join('\n'); data = []
-              const event = opencodeEventSchema.safeParse(JSON.parse(frame))
-              if (!event.success) throw new OpenCodeUnreadable('OpenCode sent an event Sotto cannot read.')
-              connect()
-              onEvent(event.data)
-            } else if (line.startsWith('data:')) data.push(line.slice(line.startsWith('data: ') ? 6 : 5))
-            // Comments (`: heartbeat`), `event:` and `id:` lines carry nothing Sotto reads.
+          let start = 0
+          for (let end = value.indexOf('\n'); end >= 0; end = value.indexOf('\n', start)) {
+            const piece = value.slice(start, end)
+            start = end + 1
+            if (!partial.length) { line(piece); continue }
+            partial.push(piece)
+            const whole = partial.join(''); partial.length = 0; partialLength = 0
+            line(whole)
+          }
+          if (start < value.length) {
+            partialLength += value.length - start
+            if (partialLength > MAX_EVENT_BYTES) throw new OpenCodeUnreadable('OpenCode sent an event too large to read.')
+            partial.push(start === 0 ? value : value.slice(start))
           }
         }
         throw new OpenCodeUncertain('OpenCode closed its event stream.')

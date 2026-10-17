@@ -216,7 +216,7 @@ export class GrokAcpHost implements AgentHost {
   }
   private async sessionMeta(id: string, mode: GrokRuntimeMode | undefined) {
     const profile = await this.checkLaunchProfile(id)
-    return profile ? { ...sessionPolicy(mode), systemPromptOverride: WATCHER_SYSTEM_PROMPT } : sessionPolicy(mode)
+    return profile ? { ...sessionPolicy(mode), systemPromptOverride: profile.instructions ?? WATCHER_SYSTEM_PROMPT } : sessionPolicy(mode)
   }
   /** A profile failure ends the process even if native close/cancel would refuse or time out. */
   private revokeProfile(id: string, profile: WatcherLaunchProfile | undefined, reason: string): void {

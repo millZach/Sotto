@@ -4,7 +4,9 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
+import { watcherProvidersInWords } from '../../shared/workerRoles'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -13,7 +15,7 @@ import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHos
 import { opencodeReasoningActivity, opencodeStepFilesActivity, opencodeTextMessageId, opencodeToolActivity, opencodeToolOutput, opencodeToolStatus, type OpenCodeTool } from './opencodeActivity'
 import { locationQuery, OpenCodeClient, OpenCodeRejected, type OpenCodeEvent } from './opencodeClient'
 import { OPENCODE_DECLINED, OPENCODE_FORM_UNSHOWN, opencodeFormAnswer, opencodeFormPending, opencodeFormSchema, opencodePermissionDecision, opencodePermissionPending, opencodePermissionSchema, type OpenCodePending } from './opencodeRequests'
-import { ensureOpenCodeFolders, findOpenCodeExecutable, OPENCODE_CLI_VERSION, parseOpenCodeVersion, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
+import { endServersLeftBehind, ensureOpenCodeFolders, findOpenCodeExecutable, OPENCODE_CLI_VERSION, parseOpenCodeVersion, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
@@ -37,16 +39,19 @@ const SOURCE_REFUSED = 'The model source refused this turn: it may need signing 
  * shows here, on the first turn that uses it, rather than when it was pasted.
  */
 const signedInSourceRefused = (source: string): string => `${source} refused the sign-in Sotto’s OpenCode has for it, so this turn did not run. Nothing else was lost. In Settings › Providers › OpenCode, sign out of ${source} and sign in again, then send again.`
-const WATCHER_REFUSED = 'OpenCode cannot host Watcher. Nothing was sent. Choose a Codex, Claude Code or Grok Build model for Watcher.'
+/** Watcher's refusal names the providers Watcher runs on this run, so a stable build never names a held one. */
+const watcherRefused = (held: HeldProviders): string => `OpenCode cannot host Watcher. Nothing was sent. Choose a ${watcherProvidersInWords(held)} model for Watcher.`
 /** OpenCode Zen's provider ID: the model source a folder with no sign-ins offers, its free models (ADR-0087). */
 const ZEN = 'opencode'
 const ZEN_NAME = 'OpenCode Zen'
 
 /**
  * Sotto's permission modes as OpenCode session rule sets (ADR-0087). The last matching rule wins, and OpenCode's own
- * agent rules still apply, so **Ask for approval** asks for every command, edit and step outside the project folder that
- * those rules do not already decide. There is no Automatic: OpenCode has no mode of its own that matches it. Nothing is
- * denied outright, since OpenCode Zen's free models refuse a session whose rules take a tool away.
+ * agent rules still apply, so **Ask for approval** asks for every command, edit, step outside the project folder, web
+ * fetch, web search and subagent that those rules do not already decide, as Claude Code and Devin ask before reaching the
+ * web; **Auto-accept edits** allows edits and asks the rest. A session's rules win over a project's own `opencode.json`
+ * for the actions they name (checked against 2.0.31). There is no Automatic: OpenCode has no mode of its own that matches
+ * it. Nothing is denied outright, since OpenCode Zen's free models refuse a session whose rules take a tool away.
  */
 export const opencodeRuntimeModes = ['approval-required', 'auto-accept-edits', 'full-access'] as const
 type OpenCodeMode = typeof opencodeRuntimeModes[number]
@@ -55,7 +60,8 @@ export interface OpenCodeRule { readonly action: string; readonly resource: stri
 const rule = (action: string, effect: OpenCodeRule['effect']): OpenCodeRule => ({ action, resource: '*', effect })
 export function opencodeRules(mode: OpenCodeMode): OpenCodeRule[] {
   if (mode === 'full-access') return [rule('*', 'allow')]
-  return [rule('shell', 'ask'), rule('edit', mode === 'auto-accept-edits' ? 'allow' : 'ask'), rule('external_directory', 'ask')]
+  return [rule('shell', 'ask'), rule('edit', mode === 'auto-accept-edits' ? 'allow' : 'ask'), rule('external_directory', 'ask'),
+    rule('webfetch', 'ask'), rule('websearch', 'ask'), rule('subagent', 'ask')]
 }
 function modeOfRules(rules: readonly { action: string; resource: string; effect: string }[] | undefined): OpenCodeMode | undefined {
   if (!rules) return undefined
@@ -84,6 +90,8 @@ const attachmentRefSchema = z.object({ id: z.string(), name: z.string(), mimeTyp
 const originSchema = z.object({
   messageId: z.string(), commandId: z.string(), inboxId: z.string(), createdAt: z.string(),
   confirmed: z.boolean().default(false), attachments: z.array(attachmentRefSchema).default([]),
+  /** Sent as a steer, so it joined the execution that was running, and its turn, rather than starting one (ADR-0087). */
+  steer: z.boolean().default(false),
 })
 type Origin = z.infer<typeof originSchema>
 const aliasSchema = z.object({
@@ -161,6 +169,8 @@ interface ThreadServer {
   client?: OpenCodeClient
   readonly abort: AbortController
   closing: boolean
+  /** This server took a creation whose answer was lost, and may still be making that provider session. */
+  createUnsettled?: boolean
 }
 type Pending = OpenCodePending
 interface Fold {
@@ -193,6 +203,8 @@ export interface OpenCodeHostOptions {
   openExternal?: (url: string) => Promise<unknown>
   /** How long the sign-in server stays up once nothing uses it. */
   signInIdleMs?: number
+  /** The providers held to Owl on this run, read once at start (ADR-0072). Absent holds every one. */
+  heldProviders?: HeldProviders
 }
 
 /**
@@ -226,12 +238,16 @@ export class OpenCodeHost implements AgentHost {
   private executable: string | undefined
   /** The connect check's short-lived server while it starts or answers, so a disconnect stops it too. */
   private probe: Promise<{ server: OpenCodeServer }> | undefined
+  /** Aborted when Sotto disconnects, which ends the connect check's requests with its server. */
+  private probeClosed = new AbortController()
   private writing = Promise.resolve()
   private readonly log = new ThreadMessageLog()
   private history: ThreadHistorySource | undefined
   private readonly observed = new Set<string>()
   private readonly loaded = new OpenSessions(id => this.threads.get(id))
   private readonly loading = new Map<string, Promise<void>>()
+  /** Each thread's creation while it runs, so opening the thread meanwhile waits for it rather than making another session. */
+  private readonly creating = new Map<string, Promise<void>>()
   private readonly readsBeforeSend = new ReadsBeforeSend(id => this.readState(id))
   private readonly reaper: SessionReaper
   private generation = 0
@@ -332,21 +348,26 @@ export class OpenCodeHost implements AgentHost {
     }
     this.assertGeneration(generation)
     if (!profile) return
-    try { profile.revoke(WATCHER_REFUSED) } catch { /* The refusal stands whatever the revocation does. */ }
-    throw new WatcherProfileRefusal(WATCHER_REFUSED)
+    const refused = watcherRefused(this.options.heldProviders ?? heldProvidersOf({}))
+    try { profile.revoke(refused) } catch { /* The refusal stands whatever the revocation does. */ }
+    throw new WatcherProfileRefusal(refused)
   }
 
-  /** Start one server and prove it is OpenCode 2 at the floor or newer; one that is not is stopped again. */
-  private async startServer(cwd: string): Promise<{ server: OpenCodeServer; client: OpenCodeClient; version: string }> {
+  /**
+   * Start one server and prove it is OpenCode 2 at the floor or newer; one that is not is stopped again. Its requests end
+   * when `closed` aborts, as the server is being stopped.
+   */
+  private async startServer(cwd: string, closed: AbortSignal): Promise<{ server: OpenCodeServer; client: OpenCodeClient; version: string }> {
     const executable = this.executable
     if (!executable) throw new Error('Connect OpenCode before managing threads.')
     await ensureOpenCodeFolders(this.folders)
     return withFirstServerLock(this.folders, async () => {
       const password = opencodePassword()
       const server = await OpenCodeServer.start({ executable, ...(this.options.args ? { args: this.options.args } : {}), cwd,
-        env: opencodeEnvironment(this.environment, this.folders, password), timeoutMs: this.options.startTimeoutMs ?? 30_000, log: this.options.log })
+        env: opencodeEnvironment(this.environment, this.folders, password), timeoutMs: this.options.startTimeoutMs ?? 30_000, log: this.options.log,
+        ledger: this.folders.servers })
       try {
-        const client = new OpenCodeClient(server.url, password, this.timeoutMs)
+        const client = new OpenCodeClient(server.url, password, this.timeoutMs, closed)
         const info = infoSchema.parse(await client.request('GET', '/api/info'))
         const refusal = opencodeVersionRefusal(info.version)
         if (refusal) throw refusal
@@ -361,10 +382,12 @@ export class OpenCodeHost implements AgentHost {
     if (!this.state.connected || !this.executable) return Promise.reject(new Error('Connect OpenCode before managing threads.'))
     const generation = this.generation
     const entry = { abort: new AbortController(), closing: false, revision: this.revision } as ThreadServer
+    // Tracked from its start, so a server no thread goes on to use is stopped once it has sat idle.
+    this.reaper.touch(id)
     entry.ready = (async () => {
       await this.refuseWatcher(id)
       this.assertGeneration(generation)
-      const started = await this.startServer(cwd ?? this.aliases[id]?.cwd ?? this.folders.data)
+      const started = await this.startServer(cwd ?? this.aliases[id]?.cwd ?? this.folders.data, entry.abort.signal)
       if (entry.closing || generation !== this.generation || this.processes.get(id) !== entry) {
         await started.server.stop()
         throw new OpenCodeUncertain('The OpenCode connection changed while the thread was starting.')
@@ -438,6 +461,10 @@ export class OpenCodeHost implements AgentHost {
     this.processes.delete(id)
     await this.closeProcess(entry)
   }
+  /** Stop the server a thread that was never made started, unless another has taken its place. */
+  private dropServer(id: string, entry: ThreadServer): void {
+    if (this.processes.get(id) === entry) void this.stopSession(id)
+  }
   private hold(id: string): () => void {
     this.holds.set(id, (this.holds.get(id) ?? 0) + 1)
     let held = true
@@ -458,6 +485,9 @@ export class OpenCodeHost implements AgentHost {
     this.disconnect(); await this.closed()
     const generation = this.generation
     await mkdir(this.userDataDirectory, { recursive: true })
+    // Servers a Sotto that crashed left running on this folder are ended before any of this run's start (ADR-0087).
+    await endServersLeftBehind(this.folders.servers, this.options.log)
+    this.assertGeneration(generation)
     const executable = this.options.executable ?? await findOpenCodeExecutable(this.environment)
     if (!executable || !isAbsolute(executable)) throw new ProviderUnavailable('not-installed', 'Install OpenCode 2, then connect again. Your threads and drafts are kept.')
     let tooOld: string | undefined
@@ -473,7 +503,8 @@ export class OpenCodeHost implements AgentHost {
       this.threads.clear(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
       this.assertGeneration(generation)
       this.executable = executable
-      const starting = this.startServer(this.folders.data)
+      this.probeClosed = new AbortController()
+      const starting = this.startServer(this.folders.data, this.probeClosed.signal)
       this.probe = starting
       // Its exit is tracked with the thread servers', so `closed()` waits for it however it ends.
       const exit: Promise<void> = starting.then(started => started.server.closed.then(() => started.server.stop()), () => undefined).finally(() => { this.exits.delete(exit) })
@@ -520,7 +551,8 @@ export class OpenCodeHost implements AgentHost {
     else delete this.state.verifiedVersion
     const names = new Map(providers.map(provider => [provider.id, provider.name]))
     const sourceOf = (providerId: string): string => providerId === ZEN ? ZEN_NAME : names.get(providerId) ?? providerId
-    this.state.models = models.filter(model => model.enabled !== false && model.status !== 'deprecated').map((model): AgentModel => {
+    const shown = models.filter(model => model.enabled !== false && model.status !== 'deprecated')
+    this.state.models = shown.map((model): AgentModel => {
       const efforts = orderReasoningEfforts(model.variants.map(variant => variant.id))
       const preferred = ['medium', 'high'].find(level => efforts.includes(level)) ?? efforts[0]
       return {
@@ -530,8 +562,9 @@ export class OpenCodeHost implements AgentHost {
         ...(fallback && fallback.id === model.id && fallback.providerID === model.providerID ? { recommended: true } : {}),
       }
     })
-    // Sotto's OpenCode folder starts with no sign-ins: until the user signs in to a model source inside it, only Zen's free models are listed.
-    const signedIn = [...new Set(models.map(model => model.providerID).filter(id => id !== ZEN))].map(sourceOf)
+    // Sotto's OpenCode folder starts with no sign-ins: until the user signs in to a model source inside it, only Zen's free
+    // models are listed. A source is named only for models Sotto offers, so the line never names one the list leaves out.
+    const signedIn = [...new Set(shown.map(model => model.providerID).filter(id => id !== ZEN))].map(sourceOf)
     const account = signedIn.length ? `Signed in to ${signedIn.join(', ')}` : 'No model source signed in yet; OpenCode Zen’s free models only'
     this.state.account = account.length > 80 ? `${account.slice(0, 79)}…` : account
   }
@@ -557,11 +590,13 @@ export class OpenCodeHost implements AgentHost {
   private async startSignInServer(): Promise<SignInServer> {
     if (!this.state.connected || !this.executable) throw new Error('Connect OpenCode before signing in.')
     const generation = this.generation
-    const started = await this.startServer(this.folders.data)
-    if (generation !== this.generation || !this.state.connected) { await started.server.stop(); throw new OpenCodeUncertain('The OpenCode connection changed.') }
-    const exit: Promise<void> = started.server.closed.then(() => started.server.stop()).finally(() => { this.exits.delete(exit) })
+    // Its requests end with it, however it stops.
+    const closed = new AbortController()
+    const started = await this.startServer(this.folders.data, closed.signal)
+    if (generation !== this.generation || !this.state.connected) { closed.abort(); await started.server.stop(); throw new OpenCodeUncertain('The OpenCode connection changed.') }
+    const exit: Promise<void> = started.server.closed.then(() => { closed.abort(); return started.server.stop() }).finally(() => { this.exits.delete(exit) })
     this.exits.add(exit)
-    return { client: started.client, closed: started.server.closed, stop: () => started.server.stop() }
+    return { client: started.client, closed: started.server.closed, stop: () => { closed.abort(); return started.server.stop() } }
   }
   /**
    * After a sign-in or a sign-out, the catalog is read again, so the model menu and the account line have what changed.
@@ -594,7 +629,8 @@ export class OpenCodeHost implements AgentHost {
     this.executable = executable
     let started: { server: OpenCodeServer; client: OpenCodeClient; version: string } | undefined
     try {
-      started = await this.startServer(this.folders.data)
+      // A disconnect ends its requests with it, as it does the connect check's.
+      started = await this.startServer(this.folders.data, this.probeClosed.signal)
       const catalog = await this.readCatalog(started.client)
       if (generation !== this.generation || !this.state.connected) return
       this.applyCatalog(started.version, catalog.models, catalog.providers, catalog.fallback)
@@ -661,28 +697,42 @@ export class OpenCodeHost implements AgentHost {
   /** Open this thread's provider session on its own server, once per connection, and read its history back. */
   private open(id: string): Promise<void> {
     const generation = this.generation
-    const alias = this.aliases[id]
-    if (!alias || !this.state.connected) return Promise.resolve()
+    if (!this.aliases[id] || !this.state.connected) return Promise.resolve()
     this.reaper.touch(id)
     if (this.loaded.has(id)) return Promise.resolve()
     const pending = this.loading.get(id); if (pending) return pending
     const work = (async () => {
-      const entry = await this.threadProcess(id)
+      // A creation still running is waited for, never repeated: a thread's provider session is made once (ADR-0087).
+      await this.creating.get(id)?.then(() => undefined, () => undefined)
       this.assertGeneration(generation)
-      const client = entry.client!
+      const alias = this.aliases[id]
+      if (!alias || this.loaded.has(id)) return
+      let entry = await this.threadProcess(id)
+      this.assertGeneration(generation)
       let session: NativeSession | undefined
       if (alias.sessionId) {
-        try { session = sessionReplySchema.parse(await client.request('GET', `/api/session/${alias.sessionId}`)).data }
+        try { session = sessionReplySchema.parse(await entry.client!.request('GET', `/api/session/${alias.sessionId}`)).data }
         catch (error) { if (!(error instanceof OpenCodeRejected && error.status === 404)) throw error }
         if (!session) throw new Error('OpenCode no longer has this thread’s provider session. Nothing was changed.')
       } else {
         // A creation whose answer was lost: the provider session it made, if it made one, carries this thread's mark.
         session = await this.markedSession(entry, alias)
+        if (!session && entry.createUnsettled) {
+          // The server that took it may still be making it, so only a server that never saw it can say it was not made.
+          // The thread has no provider session yet, so nothing else runs on the server that is stopped for this.
+          if (this.processes.get(id) === entry) this.processes.delete(id)
+          await this.closeProcess(entry)
+          this.assertGeneration(generation)
+          entry = await this.threadProcess(id)
+          this.assertGeneration(generation)
+          session = await this.markedSession(entry, alias)
+        }
         if (session) { alias.sessionId = session.id; alias.sessionConfirmed = true; await this.persist() }
         else session = await this.createSession(entry, alias)
       }
       this.assertGeneration(generation)
       if (this.processes.get(id) !== entry) throw new OpenCodeUncertain('The thread’s OpenCode server changed before its session could open.')
+      const client = entry.client!
       const entries: HistoryEntry[] = []
       let cursor: string | undefined
       for (let page = 0; page < 500; page++) {
@@ -704,10 +754,18 @@ export class OpenCodeHost implements AgentHost {
     return work
   }
   private async createSession(entry: ThreadServer, alias: Alias): Promise<NativeSession> {
-    const session = sessionReplySchema.parse(await entry.client!.request('POST', '/api/session', { body: {
+    const body = {
       title: alias.title, model: this.modelRef(alias.modelId, alias.reasoningEffort), location: { directory: alias.cwd },
       permissions: opencodeRules(alias.runtimeMode), metadata: { [CREATE_MARK]: { thread: alias.createToken } },
-    } })).data
+    }
+    let session: NativeSession
+    try { session = sessionReplySchema.parse(await entry.client!.request('POST', '/api/session', { body })).data }
+    catch (error) {
+      // A refusal made nothing. Anything else was sent and its answer lost or unreadable: the session may exist, or yet be made.
+      if (error instanceof OpenCodeRejected) throw error
+      entry.createUnsettled = true
+      throw error instanceof OpenCodeUncertain ? error : new OpenCodeUncertain('OpenCode sent a reply Sotto cannot read.')
+    }
     alias.sessionId = session.id; alias.sessionConfirmed = true
     await this.persist()
     return session
@@ -845,13 +903,19 @@ export class OpenCodeHost implements AgentHost {
     // Each record goes under the user message it follows in the history, never under the newest one the log knows:
     // Sotto's own store may already hold every message of the thread before the history is read.
     let turnId = 'native-history', afterMessageId: string | undefined
+    // One execution can carry several prompts, as a steer joins the running one, and history does not say where an
+    // execution began. So a turn opens, as it does live, at a prompt Sotto sent as a send, which only ever starts one, or
+    // at any prompt after an idle entry or before the first; Sotto's steers and prompts typed in OpenCode meanwhile join it.
+    let open = false
     const placement = (): Placement => ({ turnId, afterMessageId })
     for (const entry of entries) {
       const at = entry.time?.created
       if (entry.type === 'user') {
         const messageId = this.recordUser(id, entry.id, entry.text ?? '', at)
-        if (messageId) { turnId = messageId; afterMessageId = messageId }
-        unfinished = messageId
+        if (!messageId) continue
+        afterMessageId = messageId
+        const origin = this.aliases[id]?.origins.find(candidate => candidate.inboxId === entry.id)
+        if (!open || (origin !== undefined && !origin.steer)) { turnId = messageId; unfinished = messageId; open = true }
       } else if (entry.type === 'assistant') {
         const ordinals = { text: 0, reasoning: 0 }
         if (at !== undefined) this.fold(id).started.set(entry.id, at)
@@ -870,7 +934,7 @@ export class OpenCodeHost implements AgentHost {
           }
         }
         this.recordStepFiles(id, entry.id, entry.snapshot?.files ?? [], entry.time?.completed ?? at, placement())
-      } else if (entry.type === 'idle') unfinished = undefined
+      } else if (entry.type === 'idle') { unfinished = undefined; open = false }
     }
     return unfinished
   }
@@ -1048,20 +1112,35 @@ export class OpenCodeHost implements AgentHost {
           runtimeMode: command.runtimeMode ? opencodeMode(command.runtimeMode) : 'approval-required', ...(reasoningEffort ? { reasoningEffort } : {}),
         }
         this.assertGeneration(generation)
-        release = this.hold(command.threadId)
-        const entry = await this.threadProcess(command.threadId, alias.cwd)
-        this.assertGeneration(generation)
-        this.aliases[command.threadId] = alias; await this.persist()
-        watcherGuard?.()
-        let session: NativeSession
-        try { session = await this.createSession(entry, alias) } catch (error) {
-          if (error instanceof OpenCodeUncertain) { this.thread(command.threadId); this.emit(); throw error }
-          delete this.aliases[command.threadId]; await this.persist().catch(() => undefined)
-          throw new Error('OpenCode refused to create this thread. Nothing was created. Check the model and folder, then try again.', { cause: error })
+        const id = command.threadId
+        release = this.hold(id)
+        const entry = await this.threadProcess(id, alias.cwd)
+        try {
+          this.assertGeneration(generation)
+          // Checked before anything is saved or sent, so a refusal leaves no record of a thread that never was.
+          watcherGuard?.()
+        } catch (error) { this.dropServer(id, entry); throw error }
+        this.aliases[id] = alias
+        // From here the thread exists: opening it meanwhile waits for this creation rather than making a second session.
+        const creation = (async () => {
+          await this.persist()
+          const session = await this.createSession(entry, alias)
+          this.confirmSession(id, alias, session)
+          await this.persist()
+          this.loaded.add(id); this.log.pin(id); this.reaper.touch(id)
+        })()
+        this.creating.set(id, creation)
+        const settledCreation = (): void => { if (this.creating.get(id) === creation) this.creating.delete(id) }
+        void creation.then(settledCreation, settledCreation)
+        try { await creation } catch (error) {
+          // A lost answer keeps the record: the next read finds the session by its mark, or makes the one never made.
+          if (error instanceof OpenCodeUncertain) { this.thread(id); this.emit(); throw error }
+          delete this.aliases[id]; await this.persist().catch(() => undefined)
+          // Nothing was created, so the server started for it has nothing to serve.
+          this.dropServer(id, entry)
+          if (error instanceof OpenCodeRejected) throw new Error('OpenCode refused to create this thread. Nothing was created. Check the model and folder, then try again.', { cause: error })
+          throw error
         }
-        this.confirmSession(command.threadId, alias, session)
-        await this.persist()
-        this.loaded.add(command.threadId); this.log.pin(command.threadId); this.reaper.touch(command.threadId)
       } else {
         const alias = this.aliases[command.threadId]
         if (!alias) throw new Error('This OpenCode thread has no provider session. Do not repeat its creation automatically.')
@@ -1122,7 +1201,7 @@ export class OpenCodeHost implements AgentHost {
           this.assertGeneration(generation)
           const origin: Origin = {
             messageId: command.messageId, commandId: command.commandId, inboxId: promptId(), createdAt: new Date().toISOString(), confirmed: false,
-            attachments: attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })),
+            attachments: attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })), steer: command.type === 'steer',
           }
           const entry = await this.threadProcess(command.threadId)
           this.assertGeneration(generation)
@@ -1215,7 +1294,7 @@ export class OpenCodeHost implements AgentHost {
     try { this.finishDisconnect() } finally { this.disconnecting = false }
   }
   private finishDisconnect(): void {
-    this.generation++; this.reaper.dispose(); this.loaded.clear(); this.loading.clear()
+    this.generation++; this.reaper.dispose(); this.loaded.clear(); this.loading.clear(); this.creating.clear()
     // A pending permission is OpenCode's to settle when its server ends; Sotto sends no decision for it here.
     this.pending.clear()
     for (const thread of this.threads.values()) thread.requests = []
@@ -1229,6 +1308,7 @@ export class OpenCodeHost implements AgentHost {
     if (ended) void this.persist().catch(() => undefined)
     for (const entry of this.processes.values()) void this.closeProcess(entry)
     this.processes.clear()
+    this.probeClosed.abort()
     if (this.probe) { void this.probe.then(probe => probe.server.stop(), () => undefined); this.probe = undefined }
     this.outdated.clear()
     const signingIn: Promise<void> = this.signIn.shut().finally(() => { this.exits.delete(signingIn) })

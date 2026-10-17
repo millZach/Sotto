@@ -24,6 +24,8 @@ export interface WatcherLaunchProfile {
   readonly kind: 'watcher'
   readonly server: Readonly<Omit<ThreadMcpServer, 'headers'>> & { readonly headers: readonly Readonly<{ name: string; value: string }>[] }
   readonly toolNames: readonly string[]
+  /** Watcher's system prompt when its tools ask for more than the base one, as with worker roles on (#1041). */
+  readonly instructions?: string
   /** Revokes this session's server admission; recovery requires a fresh admission. */
   revoke(reason: string): void
 }
@@ -31,7 +33,11 @@ export interface ThreadLaunchProfiles {
   profileFor(threadId: string): Promise<WatcherLaunchProfile | undefined>
 }
 /** Ticket 3 supplies the server; ticket 2 consumes only this thread-bound capability. */
-export interface WatcherProfileTools extends ScopedThreadTools { revoke(threadId: string): void }
+export interface WatcherProfileTools extends ScopedThreadTools {
+  /** The system prompt Watcher runs on with these tools; undefined keeps the base one. */
+  readonly instructions?: string | undefined
+  revoke(threadId: string): void
+}
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
@@ -112,6 +118,8 @@ export interface AgentContinuation {
   readonly baseBranch?: string | undefined
   readonly startFromOrigin?: boolean | undefined
 }
+/** Fork from here (#1028, E5b): a new thread `threadId` with `sourceThreadId`'s conversation up to its reply `messageId`. */
+export interface ReplyFork extends Omit<AgentContinuation, 'agentId' | 'handover'> { readonly messageId: string }
 /** Which of a first message's characters were the handover it went with (#1028): a length and its digest, never the words. */
 export interface StartHandoverSent { readonly messageId: string; readonly prefixLength: number; readonly prefixDigest: string }
 /**
@@ -265,6 +273,8 @@ export interface AgentHost {
   forkThread?(request: ThreadForkRequest): Promise<AgentHostResult>
   /** Continue one of a thread's agents as a thread of its own (#1028). The workspace makes the thread; refusals make nothing. */
   continueAgent?(request: AgentContinuation): Promise<AgentHostResult>
+  /** Fork a thread at one of its replies (#1028, E5b). The workspace makes the thread; refusals make nothing. */
+  forkAtReply?(request: ReplyFork): Promise<AgentHostResult>
   /**
    * The handover a thread that began from another goes with on its first message (#1028), built afresh from Sotto's own
    * record. Undefined once it has gone, or when Sotto no longer holds what it carries.

@@ -15,13 +15,13 @@ import { compactionPending, compactionSchema } from '../../shared/compaction'
 import { randomUUID } from 'node:crypto'
 import { readdir, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { questionInstructions } from './questionInstructions'
@@ -66,6 +66,8 @@ const aliasSchema = z.object({ sessionId: z.string().uuid(), historyEpoch: z.str
   /** The journal generation of the whole write that wrote this record; see `ClaudeOriginJournal`. A record written before there was one has none. */
   journalGeneration: z.number().int().nonnegative().optional() }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
+/** One folder however it is spelled: resolved, and on Windows without regard to case. */
+const pathKey = (path: string): string => { const full = resolve(path); return process.platform === 'win32' ? full.toLowerCase() : full }
 // Native CLI permission modes. Aliases without a stored mode keep the original
 // approval-required behaviour.
 const nativePermissionModes = { 'approval-required': 'default', 'auto-accept-edits': 'acceptEdits', auto: 'auto', 'full-access': 'bypassPermissions' } as const satisfies Record<AgentRuntimeMode, string>
@@ -796,6 +798,59 @@ export class ClaudeStreamJsonHost implements AgentHost {
     try { await this.persist() } catch (error) { this.aliases[id] = alias; throw error }
     return next
   }
+  /**
+   * Fork from here on a Claude Code thread (#1028, E5b): Claude Code's own session fork, the one rewind uses, copies the
+   * conversation up to a reply into a new session, which the new thread is bound to when it is made (ADR-0002). The source
+   * thread and its session stay as they are, and files are not rewound. The new session lives where its source's does,
+   * so it starts in the same folder. Claude Code keeps an agent's working history inside its own session, so an agent is
+   * never forked here; it continues from a thin handover instead. The model is asked nothing.
+   */
+  async forkThread(request: ThreadForkRequest): Promise<AgentHostResult> {
+    const generation = this.generation
+    if (!this.state.connected) throw new Error('Connect Claude Code before continuing.')
+    if (this.aliases[request.threadId]) return { accepted: true }
+    if (request.source.agentId !== undefined || request.source.messageId === undefined) throw new Error('Claude Code keeps an agent’s working history inside its own session, so it can’t be forked, and nothing was made.')
+    const sourceId = request.source.threadId, source = this.aliases[sourceId], thread = this.threads.get(sourceId)
+    if (!source || !thread || source.kind === 'personal' || await this.watcherProfile(sourceId)) throw new Error('That Claude thread is unavailable.')
+    if (source.rollbackPending) throw new Error('Claude rollback is unconfirmed. Review its native sessions before forking; nothing was made.')
+    if (request.workingDirectory !== undefined && pathKey(request.workingDirectory) !== pathKey(source.cwd)) throw new Error('A Claude Code fork starts in its thread’s own folder, so it can’t start in another, and nothing was made. Fork into the same folder.')
+    validateThreadOptions(this.state, request)
+    const busy = (): boolean => { const current = this.threads.get(sourceId); return !current || current.status === 'running' || current.requests.length > 0 || this.dispatching.has(sourceId) }
+    if (busy()) throw new Error('Wait for this turn to finish, or stop it, before forking. A fork carries finished turns, and nothing was made.')
+    await this.sync(sourceId)
+    const history = new ClaudeHistory(this.client.environment(), this.options.claudeHome ?? join(homedir(), '.claude'), source.cwd, this.options.historyModulePath)
+    const messages = await history.read(source.sessionId)
+    const reply = request.source.messageId
+    // A reply is shown under its own message ID, or its line's when the transcript names none (`addMessage`).
+    const boundary = messages.findLastIndex(message => message.type === 'assistant' && (typeof object(message.message)?.id === 'string' ? object(message.message)!.id === reply : message.uuid === reply))
+    if (boundary < 0) throw new Error('Claude Code doesn’t have that reply in this thread any more, so nothing was made. Refresh the thread and try again.')
+    if (generation !== this.generation || busy()) throw new Error('Claude changed before the fork, so nothing was made. Try again.')
+    const retained = messages.slice(0, boundary + 1)
+    const sessionId = await history.fork(source.sessionId, messages[boundary]!.uuid)
+    const fork = await history.read(sessionId)
+    if (!isDeepStrictEqual(retained.map(message => [message.type, message.message]), fork.map(message => [message.type, message.message]))) {
+      throw new Error('Claude Code’s copy did not match the conversation up to that reply, so Sotto made no thread for it. It may have kept the copy, which Sotto leaves alone.')
+    }
+    const remap = new Map(retained.map((message, index) => [message.uuid, fork[index]!.uuid]))
+    const alias: Alias = { sessionId, projectId: source.projectId, cwd: source.cwd, title: request.title, modelId: request.modelId,
+      ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}), ...(request.runtimeMode ? { runtimeMode: request.runtimeMode } : {}),
+      createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [],
+      // The user's messages keep the IDs they have in the source thread; the replies keep Claude Code's own.
+      forkMessageIds: Object.fromEntries(retained.filter(message => message.type === 'user').map(message => [remap.get(message.uuid)!,
+        source.origins.find(origin => origin.uuid === message.uuid)?.messageId ?? source.forkMessageIds?.[message.uuid] ?? message.uuid])) }
+    if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
+    this.aliases[request.threadId] = alias
+    try { await this.persist() } catch (error) { delete this.aliases[request.threadId]; throw error }
+    this.ensureThread(request.threadId, alias)
+    // The copy is made and bound; a history that can't be read yet is said on the thread, and a refresh reads it.
+    try { await this.readLog(request.threadId) }
+    catch {
+      const thread = this.threads.get(request.threadId)
+      if (thread) { thread.historyStatus = 'error'; thread.historyError = 'Claude Code made the copy, but its history could not be read yet. Refresh this thread to read it.' }
+    }
+    this.emit()
+    return { accepted: true }
+  }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
   executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> { return this.executeNative(command, guard) }
   private async executeNative(command: AgentHostCommand, watcherGuard?: () => void): Promise<AgentHostResult> {
@@ -1278,7 +1333,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const toolArguments = mcpConfig ? ['--mcp-config', mcpConfig, ...toolAllowance(servers)] : []
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
-      '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${WATCHER_SYSTEM_PROMPT}` : CLAUDE_QUESTIONS,
+      '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : CLAUDE_QUESTIONS,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
     let runtime: Runtime
     try {
