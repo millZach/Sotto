@@ -19,6 +19,7 @@ import { useClock } from '../agents/paneGrid'
 import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
 import { useShared } from '../agents/stateSharing'
 import { describeThreads, type ThreadRow } from '../agents/threadFacts'
+import { useContinueEnabled } from '../agents/continuations'
 import { effortChoices } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
 import { BrowserPageRouteContext } from '../tools/webLinks'
@@ -351,7 +352,8 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   const mac = app?.platform === 'darwin'
   const current = room?.state?.current ?? null
   const watcherId = room?.currentThreadId ?? null
-  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now), [state, now]))
+  const continued = useContinueEnabled()
+  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued]))
   const groups = useOverview(state, rows, now, watcherId)
   const needs = useMemo<readonly OverviewEntry[]>(() => groups.find(group => group.group === 'Needs you')?.entries ?? [], [groups])
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])

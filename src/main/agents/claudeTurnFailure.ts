@@ -1,3 +1,4 @@
+import { claudeUsageLimitSentence, CLAUDE_SPENDING_LIMIT_SENTENCE } from '../../shared/limitStops'
 import type { ClaudeFrame } from './claudeProtocol'
 
 /**
@@ -18,7 +19,8 @@ const SENTENCES: ReadonlyMap<Exclude<Reason, 'usage-limit'>, string> = new Map([
   ['model', 'Claude Code could not use this thread’s model, so this turn stopped. Nothing in the thread was lost. Choose another model from the model chip, then send again.'],
   ['too-long', 'This thread’s conversation is too long for its model, so this turn stopped. Nothing in the thread was lost. Compact the thread or choose a model with more context, then send again.'],
   ['step-limit', 'Claude stopped this turn after the most steps it takes in one turn. What it did so far is kept. Send a message to let it carry on.'],
-  ['spending-limit', 'Claude stopped this turn at the spending limit set in Claude Code. What it did so far is kept. Raise the limit in Claude Code, then send a message to carry on.'],
+  // Sotto's own sentence, which the window reads to offer continuing on another provider (ADR-0089).
+  ['spending-limit', CLAUDE_SPENDING_LIMIT_SENTENCE],
 ])
 
 /** The classification Claude Code puts on an assistant message that stands for a failed API call (`SDKAssistantMessageError`). */
@@ -79,7 +81,5 @@ export function claudeTurnFailure(frame: ClaudeFrame, assistantError?: string): 
   const reason = reasonOf(frame, assistantError, text)
   if (reason === undefined) return CLAUDE_TURN_FAILED
   if (reason !== 'usage-limit') return SENTENCES.get(reason)!
-  const reset = resetTime(text)
-  return `Claude Code has reached your plan’s usage limit, so this turn stopped. Nothing in the thread was lost. ${reset
-    ? `Send again after it resets at ${reset}.` : 'Send again once it resets; Claude Code shows when.'}`
+  return claudeUsageLimitSentence(resetTime(text))
 }

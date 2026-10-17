@@ -19,6 +19,7 @@ import { WatcherService } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
 import { DelegationService } from './delegation'
+import { ContinueService } from './continueThread'
 import { AgentControl } from './control'
 import { TurnRecorder } from './turns'
 import { ConfiguredAgentReasoner } from './reasoning'
@@ -63,6 +64,8 @@ export interface AgentRuntimeOptions {
   delegationEnabled?: boolean
   /** The Owl list's answer for worker roles (#1041), read once by the process owner. Absent fails closed. */
   workerRolesEnabled?: boolean
+  /** The Owl list's answer for continuing a thread on another provider (ADR-0089), read once by the process owner. Absent fails closed. */
+  continueEnabled?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -215,6 +218,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       limit: () => options.settings().watcherInFlightLimit, otherStartsInFlight: () => watcher?.startsInFlight() ?? 0,
       tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles })
   }
+  // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
+  const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
+    ? new ContinueService({ control: agentControl, host: agentHost }) : undefined
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
     if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true }); agentHost.useWatcherTools(watcherTools) }
@@ -271,6 +277,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     watcherStopped = true
     watcher?.close()
     delegation?.close()
+    continuation?.close()
     closingWatcherTools = watcherTools?.close()
   }
   let stoppingProviders: Promise<void> | undefined
@@ -331,6 +338,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     await restartResume?.freeze()
     watcher?.close()
     delegation?.close()
+    continuation?.close()
     const closingWatcherTools = watcherTools?.close()
     void babysitter?.close()
     agentControl.dispose()
@@ -346,5 +354,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),
     ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher) } : {}) })
   babysitter?.begin()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, prepareForShutdown, close }
 }

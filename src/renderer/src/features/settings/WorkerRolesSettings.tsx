@@ -365,14 +365,18 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   }
   const name = model?.name ?? shown?.modelId ?? ''
   const mirrorMode = room?.state?.runtimeMode ?? room?.state?.currentOptions?.runtimeMode ?? 'approval-required'
+  // Every provider's models are offered; a provider Watcher does not run on keeps its tile, saying why, as the
+  // composer's picker says why a provider cannot take a choice now.
+  const watcherModels = catalog.filter(item => watcherProviderOf(item) !== null)
+  const refused = [...new Map(catalog.filter(item => watcherProviderOf(item) === null).map(item => [item.provider, {
+    name: item.provider, providerId: item.providerId, reason: `Watcher can’t run on ${item.providerId ? PROVIDER_LABELS[item.providerId] : item.provider} yet.` }])).values()]
   return <article className="worker-role worker-role--wide" data-chosen={status === 'chosen' || status === 'away'} aria-labelledby={headId}>
     <div className="worker-role__main">
       <header className="worker-role__head"><WatcherOwl size={15} /><h4 id={headId}>{role.name}</h4><Tag status={status} /></header>
       <p className="worker-role__what">{role.what}</p>
       {shown ? <div className="worker-role__fields">
         <div className="worker-role__field worker-role__field--full" data-away={status === 'away' || undefined}><span aria-hidden="true">Model</span>
-          <ModelPicker models={[...catalog]} modelId={shown.modelId} disabled={fixedReason !== undefined} label={`Choose Watcher’s model. Now ${name}`}
-            unavailable={item => watcherProviderOf(item) === null ? `Watcher can’t run on ${item.providerId ? PROVIDER_LABELS[item.providerId] : item.provider} yet` : undefined}
+          <ModelPicker models={watcherModels} modelId={shown.modelId} disabled={fixedReason !== undefined} label={`Choose Watcher’s model. Now ${name}`} unavailable={refused}
             note={watcher ? 'Watcher’s model: the same choice as the model chip under its composer. Another provider’s model starts a new Watcher, and this conversation stays in Watcher history.'
               : `Watcher’s model: the same choice as the model chip under its composer. Watcher runs on ${watcherProviders}.`}
             onChange={id => choose(chosenModelId(catalog, id, shown.modelId), undefined)} /></div>

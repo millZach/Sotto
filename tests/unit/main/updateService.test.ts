@@ -17,7 +17,7 @@ import { deferred } from '../../fixtures/deferred'
 import { e2eUpdater } from '../../../src/main/updates/e2eUpdater'
 
 /** Stable answers every Owl feature off. */
-const STABLE_FEATURES = { watcher: false, muse: false, usage: false, 'resume-after-restart': false, 'update-all': false, 'streaming-publish-cost': false, 'thread-delegation': false, 'worker-roles': false }
+const STABLE_FEATURES = { watcher: false, muse: false, usage: false, 'resume-after-restart': false, 'update-all': false, 'streaming-publish-cost': false, 'thread-delegation': false, 'worker-roles': false, 'continue-on-provider': false }
 
 type Emit = (event: UpdaterEvent) => void
 

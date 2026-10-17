@@ -95,15 +95,15 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
     expect(open).toHaveBeenCalledWith('settings-agents')
   })
 
-  it('lists every model for Orchestrating, those Watcher cannot run on yet not choosable, beside a drawing of its composer', () => {
+  it('lists every provider for Orchestrating, saying why Watcher cannot run on one yet, beside a drawing of its composer', () => {
     show({}, true, true)
     const orchestrating = card('Orchestrating')
     fireEvent.click(within(orchestrating).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
     fireEvent.click(screen.getByRole('tab', { name: 'Codex' }))
     expect(screen.getByRole('option', { name: 'GPT-6.1 Sol' })).toBeEnabled()
     fireEvent.click(screen.getByRole('tab', { name: 'Devin' }))
-    expect(screen.getByRole('option', { name: /^Devin SWE/u })).toBeDisabled()
-    expect(screen.getByRole('option', { name: /^Devin SWE/u })).toHaveTextContent('Watcher can’t run on Devin yet')
+    expect(screen.queryByRole('option', { name: /^Devin SWE/u })).toBeNull()
+    expect(screen.getByRole('note')).toHaveTextContent('Watcher can’t run on Devin yet.')
     fireEvent.click(screen.getByRole('button', { name: 'Close model picker' }))
     expect(within(orchestrating).getByRole('combobox', { name: /^Choose Watcher’s model\. Now Opus 5\.5/u })).toBeInTheDocument()
     expect(within(orchestrating).getByText('Permissions, Watcher’s own')).toBeInTheDocument()
