@@ -43,6 +43,8 @@ const signedInSourceRefused = (source: string): string => `${source} refused the
 const watcherRefused = (held: HeldProviders): string => `OpenCode cannot host Watcher. Nothing was sent. Choose a ${watcherProvidersInWords(held)} model for Watcher.`
 /** OpenCode Zen's provider ID: the model source a folder with no sign-ins offers, its free models (ADR-0087). */
 const ZEN = 'opencode'
+/** How long a thread server is kept for a prompt whose answer was lost, in case OpenCode is still taking it. */
+const UNCONFIRMED_PROMPT_HOLD_MS = 60_000
 const ZEN_NAME = 'OpenCode Zen'
 
 /**
@@ -285,7 +287,16 @@ export class OpenCodeHost implements AgentHost {
   private busy(id: string): boolean {
     const thread = this.threads.get(id)
     return this.holds.has(id) || this.activePrompts.has(id) || this.activeTurns.has(id) || this.loading.has(id)
-      || !!thread && (thread.status === 'running' || thread.requests.length > 0)
+      || !!thread && (thread.status === 'running' || thread.requests.length > 0) || this.awaitingPrompt(id)
+  }
+  /**
+   * Whether a prompt whose answer was lost may still be in this thread's server: OpenCode may take it after Sotto stopped
+   * waiting, and stopping the server then would end that turn and lose the stream that confirms it (found running the
+   * host contract on OpenCode, #1107). The server is kept for a while; after that, the next open reads history instead.
+   */
+  private awaitingPrompt(id: string): boolean {
+    const now = Date.now()
+    return this.aliases[id]?.origins.some(origin => !origin.confirmed && now - Date.parse(origin.createdAt) < UNCONFIRMED_PROMPT_HOLD_MS) ?? false
   }
   private current(historyFromEvents = false): AgentHostSnapshot {
     if (historyFromEvents) return cloneActivitySnapshot(this.activitySnapshot(true))
