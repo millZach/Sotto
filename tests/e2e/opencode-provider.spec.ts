@@ -37,6 +37,15 @@ async function providerPanel(page: Page): Promise<Locator> {
   return page.getByRole('region', { name: 'Provider configuration', exact: true })
 }
 
+/** Connects OpenCode unless it already is, once the startup connect has had its say. */
+async function connectOpenCode(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const status = async () => (await window.sotto!.agents!.get()).host.providers?.find(provider => provider.id === 'opencode')?.connection
+    for (let tries = 0; tries < 50 && await status() === 'connecting'; tries += 1) await new Promise(resolve => setTimeout(resolve, 200))
+    if (await status() !== 'connected') await window.sotto!.agents!.command({ type: 'connect', provider: 'opencode', notice: false })
+  })
+}
+
 /** Keyboard activation waits for the previous command's lane to release before taking focus. */
 async function activate(page: Page, button: Locator): Promise<void> {
   await expect(button).toBeEnabled()
@@ -243,11 +252,10 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     const reopened = launched.page
     const reopenedPanel = await providerPanel(reopened)
     await reopened.getByRole('button', { name: 'OpenCode', exact: true }).click()
-    const connectAgain = reopenedPanel.getByRole('button', { name: 'Connect OpenCode', exact: true })
     const connected = reopenedPanel.getByRole('button', { name: 'Disconnect OpenCode' })
-    // The panel draws one of the two once it has read the provider; asking before then saw neither.
-    await expect(connectAgain.or(connected)).toBeVisible()
-    if (await connectAgain.isVisible()) await connectAgain.click()
+    // Connect is asked of main directly: the panel can draw Connect for a moment before the startup connect begins, and
+    // a press then lands on a button that is about to turn into Connecting…. The first launch presses it from the keyboard.
+    await connectOpenCode(reopened)
     await expect(connected).toBeVisible()
     await openThreads(reopened)
     await reopened.getByRole('button', { name: 'OpenCode UI check', exact: true }).click()
@@ -290,8 +298,7 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     const restored = launched.page
     const restoredPanel = await providerPanel(restored)
     await restored.getByRole('button', { name: 'OpenCode', exact: true }).click()
-    const reconnect = restoredPanel.getByRole('button', { name: 'Connect OpenCode', exact: true })
-    if (await reconnect.count()) await reconnect.click()
+    await connectOpenCode(restored)
     await expect(restoredPanel.getByRole('button', { name: 'Disconnect OpenCode' })).toBeVisible()
     await openThreads(restored)
     await restored.getByRole('button', { name: 'OpenCode UI check', exact: true }).click()
