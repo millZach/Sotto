@@ -80,6 +80,8 @@ export interface HostService {
   readonly supportsWatcherWorkSettled?: boolean
   /** The host's exact operation reads carry a delegation's outcome and reply; without it a desktop reads them as unknown. */
   readonly supportsWatcherOutcomes?: boolean
+  /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
+  readonly supportsWatcherMuse?: boolean
   subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
   watcherRoomThreads?(threadIds: readonly string[]): WatcherRoomThreadInput[]
