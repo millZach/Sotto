@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { LEGACY_MANAGEMENT_UPDATE } from '../../shared/hostProtocol'
-import { compareHostToTarget } from '../../shared/hostSelfUpdate'
+import { compareHostToTarget, type HostUpdateRestartResult } from '../../shared/hostSelfUpdate'
 import { compareOwlHostTarget, HOST_ARCHIVE_PATTERN, HOST_VERSION_PATTERN, HOST_RELEASES_URL, hostArchiveName, type HostUpdateAction, type HostUpdateFailure, type HostUpdatePhase, type HostUpdateRoute, type HostUpdateState, type HostUpdateStep } from '../../shared/hostUpdates'
 import { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS } from './launchScript'
 import { SshFailure } from './sshFailure'
@@ -35,9 +35,11 @@ export interface HostUpdateHosts {
   run(id: string, operation: SshHostUpdateOperation, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult>
   /**
    * The restart. The host's threads stay on the Threads page, reading Reconnecting with their drafts kept, until this
-   * computer has connected to the host again, which the promise waits for once.
+   * computer has connected to the host again, which the promise waits for once. A restart sent over the host's socket
+   * (ADR-0088) answers with what the host's `outcome` says once this computer is back, or undefined when that cannot say,
+   * and the version the host says it runs decides.
    */
-  restart(id: string, version: string, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult>
+  restart(id: string, version: string, options?: SshHostUpdateOptions): Promise<SshHostUpdateResult | HostUpdateRestartResult | undefined>
   subscribe(listener: () => void): () => void
 }
 /** What an update needs of the threads: the busy-host question's (`busyHost.ts`). */
@@ -345,7 +347,7 @@ export class HostUpdates {
       // The install is done and stays: the restart waits for the line to empty, and Cancel update still refuses.
       await this.lineEmpty(entry, current)
       if (!current()) return
-      let restarted: SshHostUpdateResult | undefined
+      let restarted: SshHostUpdateResult | HostUpdateRestartResult | undefined
       try { restarted = await this.options.hosts.restart(entry.id, to) }
       catch (error) {
         // Refused before it was sent (the host is not Sotto's any more, or not connected): nothing was stopped.

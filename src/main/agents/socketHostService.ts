@@ -31,6 +31,9 @@ import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from './heldProviderGate'
 import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
+import { HOST_UPDATE_ANSWER_DEADLINES_MS, hostUpdateAnswerSchema, type HostUpdateAnswer } from '../../shared/hostSelfUpdate'
+import type { HostUpdateStep } from '../../shared/hostUpdates'
+import type { HostUpdateRequestAction } from '../../shared/hostProtocol'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
 export const REMOTE_COMPOSE_UNSAVED = 'This host cannot save this draft yet. Your draft is kept on this computer and has not been saved on the host. Update the host.'
@@ -44,6 +47,31 @@ type ComposeBatch = { command: TargetedCompose; draftId: string; commandId?: str
 /** `version_mismatch` is this client's own finding, never a code on the wire: the host speaks a protocol it cannot use. */
 export class HostConnectionError extends Error {
   constructor(message: string, readonly code: HostErrorCode | 'disconnected' | 'version_mismatch', readonly commandId?: string, readonly pairingRequired = false) { super(message) }
+}
+/**
+ * A request the host never answered, by where it stopped: never sent (no connection, or the socket would not take it),
+ * the connection closed while it waited, or its deadline passed. Its code is `disconnected`, as before, so everything that
+ * reads the code reads it as it did; only a caller that must know whether the host may have acted reads `stage`.
+ */
+export class HostRequestUnanswered extends HostConnectionError {
+  constructor(message: string, readonly stage: 'unsent' | 'closed' | 'timeout', commandId?: string) { super(message, 'disconnected', commandId) }
+}
+/**
+ * Why a host update step asked over the socket has no answer (ADR-0088): the host refused it, by its code; it never went;
+ * the host answered with a failure of its own (`failed`: it could not run the step, or answered something this client
+ * cannot read), so it may have acted on it; the connection closed before its answer; or its deadline passed.
+ * `hostSelfUpdateRoute.ts` decides what each leads to.
+ */
+export type HostUpdateMiss = 'forbidden' | 'invalid_request' | 'version_mismatch' | 'busy' | 'unsent' | 'failed' | 'closed' | 'timeout'
+export class HostUpdateMissed extends Error {
+  constructor(readonly miss: HostUpdateMiss) { super('The host did not answer this update step.') }
+}
+/** One step of a host update as the desktop asks for it: the action, a version, and for install the archive name and checksum fetch answered. */
+export interface HostUpdateCall {
+  readonly action: HostUpdateRequestAction
+  readonly version?: string | undefined
+  readonly file?: string | undefined
+  readonly sha256?: string | undefined
 }
 /** The address answered as a host other than the one expected. Nothing of this computer's pairing was sent to its session. */
 export class WrongHostError extends HostConnectionError {
@@ -147,6 +175,10 @@ export class SocketHostService implements HostService {
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
   private connecting: Promise<HostHello> | undefined
+  /** Told each `host-update-step` push while the host update step this client asked for runs (ADR-0088). */
+  private readonly updateSteps = new Set<(step: HostUpdateStep) => void>()
+  /** Told once the connection that was open when they asked, the key, has closed. */
+  private readonly dropWaiters = new Map<SocketFrames, Set<() => void>>()
   private observed: string[] = []
   /** The threads the host confirmed this connection observes: `observed` once its observe was answered, and nothing before. */
   private confirmedObserved: ReadonlySet<string> = new Set()
@@ -279,7 +311,7 @@ export class SocketHostService implements HostService {
     })
     if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError('This host connection was closed.', 'disconnected') }
     try {
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', 'model-catalog-revision', ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', 'model-catalog-revision', 'host-update', ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
@@ -303,13 +335,17 @@ export class SocketHostService implements HostService {
     } catch (error) { this.frames?.close(); throw error }
   }
   private disconnected(frames: SocketFrames): void {
+    // Only the waiters on this connection: a late close of an earlier one says nothing about the one open now.
+    const waiters = this.dropWaiters.get(frames)
+    this.dropWaiters.delete(frames)
+    for (const resolve of waiters ?? []) resolve()
     this.cachedWatcher = undefined
     if (this.frames !== frames) return
     this.frames = undefined
     this.resetComposeQueue()
     for (const [id, item] of this.pending) {
       clearTimeout(item.timer)
-      item.reject(new HostConnectionError(item.command ? 'The connection closed before the host confirmed this command. Refresh before deciding what to do next.' : 'The host connection closed. Connect again to refresh.', 'disconnected', item.command ? id : undefined))
+      item.reject(new HostRequestUnanswered(item.command ? 'The connection closed before the host confirmed this command. Refresh before deciding what to do next.' : 'The host connection closed. Connect again to refresh.', 'closed', item.command ? id : undefined))
     }
     this.pending.clear(); this.lateDetails.clear(); this.behind.clear(); this.confirmedObserved = new Set()
     if (this.cached) this.publish({ ...this.cached, stale: true })
@@ -343,8 +379,8 @@ export class SocketHostService implements HostService {
         }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, message.detail)
         else if (message.event === 'detail-delta') this.applyDelta(message.threadId, message.delta)
-        // Sent only to a client whose hello accepts `host-update` (ADR-0088), which this one does not ask for yet.
-        else if (message.event === 'host-update-step') return
+        // Sent only to a client whose hello accepts `host-update` (ADR-0088), for the update step it asked for.
+        else if (message.event === 'host-update-step') { for (const listener of this.updateSteps) listener(message.step) }
         else { this.pushErrorThread = message.threadId ?? null; if (message.threadId) this.tooLarge.add(message.threadId); this.options.onPushError?.(message.error.message) }
       } else {
         const pending = this.pending.get(message.id)
@@ -489,18 +525,18 @@ export class SocketHostService implements HostService {
       : 'answer' in operation && operation.answer && 'threadId' in operation.answer ? operation.answer.threadId : operation.op === 'command' ? this.commandThreadId(operation.command) : undefined
     if (!this.threadAvailable(threadId)) return Promise.reject(new Error(this.threadRefusal(threadId)))
     const frames = this.frames, session = this.session
-    if (!frames || !session) return Promise.reject(new HostConnectionError('The host is disconnected. Connect again before sending.', 'disconnected'))
+    if (!frames || !session) return Promise.reject(new HostRequestUnanswered('The host is disconnected. Connect again before sending.', 'unsent'))
     if (this.pending.has(id) || this.pending.size >= 32) return Promise.reject(new HostConnectionError('Wait for the pending host request to finish.', 'busy'))
     return new Promise((resolve, reject) => {
       const command = operation.op === 'command'
       const timer = setTimeout(() => {
         this.pending.delete(id)
         if (operation.op === 'detail') { this.lateDetails.set(id, operation.threadId); if (this.lateDetails.size > 32) this.lateDetails.delete(this.lateDetails.keys().next().value!) }
-        reject(new HostConnectionError(command ? 'The host has not confirmed this command. Refresh before deciding what to do next.' : 'The host did not answer in time. Try refreshing.', 'disconnected', command ? id : undefined))
+        reject(new HostRequestUnanswered(command ? 'The host has not confirmed this command. Refresh before deciding what to do next.' : 'The host did not answer in time. Try refreshing.', 'timeout', command ? id : undefined))
       }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer, command })
       onPlacement?.()
-      if (!frames.send({ v: 1, id, session: session.session, ...operation })) { clearTimeout(timer); this.pending.delete(id); reject(new HostConnectionError('The connection closed before this request could be confirmed.', 'disconnected', command ? id : undefined)) }
+      if (!frames.send({ v: 1, id, session: session.session, ...operation })) { clearTimeout(timer); this.pending.delete(id); reject(new HostRequestUnanswered('The connection closed before this request could be confirmed.', 'unsent', command ? id : undefined)) }
     })
   }
   private validateState(state: AgentState): void {
@@ -1162,6 +1198,52 @@ export class SocketHostService implements HostService {
   async subagentAssignments(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage> {
     this.offers('subagents')
     return this.read(subagentAssignmentsPageSchema, await this.call({ op: 'subagent-assignments', request }))
+  }
+  /** Whether this connection's hello lists `host-update`: the host updates itself when this desktop asks (ADR-0088). */
+  offersHostUpdate(): boolean { return this.features.includes('host-update') }
+  /**
+   * One step of a host update, run by the host on itself (ADR-0088). The host's `host-update-step` pushes go to `onStep`
+   * while it runs. Aborting `signal` asks the host to cancel this client's download and still waits for the download's own
+   * answer, `update-cancelled`, so the host is free before anything asks it for the next step. Without an answer it throws
+   * `HostUpdateMissed`, which says whether the host refused it, it never went, or its answer was lost; never by message.
+   */
+  async hostUpdate(request: HostUpdateCall, options: { readonly onStep?: ((step: HostUpdateStep) => void) | undefined; readonly signal?: AbortSignal | undefined } = {}): Promise<HostUpdateAnswer> {
+    if (!this.offersHostUpdate() || options.signal?.aborted) throw new HostUpdateMissed('unsent')
+    const { onStep, signal } = options
+    if (onStep) this.updateSteps.add(onStep)
+    const cancel = (): void => { void this.call({ op: 'host-update', action: 'cancel' }, randomUUID(), undefined, HOST_UPDATE_ANSWER_DEADLINES_MS.cancel).catch(() => undefined) }
+    signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      const operation = { op: 'host-update', action: request.action, ...(request.version ? { version: request.version } : {}),
+        ...(request.file ? { file: request.file } : {}), ...(request.sha256 ? { sha256: request.sha256 } : {}) } as const
+      let answer: unknown
+      try { answer = await this.call(operation, randomUUID(), undefined, HOST_UPDATE_ANSWER_DEADLINES_MS[request.action]) }
+      catch (error) {
+        if (error instanceof HostRequestUnanswered) throw new HostUpdateMissed(error.stage)
+        const code = error instanceof HostConnectionError ? error.code : undefined
+        if (code === 'forbidden' || code === 'invalid_request' || code === 'version_mismatch' || code === 'busy') throw new HostUpdateMissed(code)
+        // A revoked client is sent `unauthenticated` and its socket closes with it.
+        throw new HostUpdateMissed(code === 'unauthenticated' || code === 'disconnected' ? 'closed' : 'failed')
+      }
+      const parsed = hostUpdateAnswerSchema.safeParse(answer)
+      if (!parsed.success) throw new HostUpdateMissed('failed')
+      return parsed.data
+    } finally {
+      if (onStep) this.updateSteps.delete(onStep)
+      signal?.removeEventListener('abort', cancel)
+    }
+  }
+  /** Whether a connection is open now. */
+  connected(): boolean { return this.frames !== undefined && !this.frames.isClosed }
+  /** Resolves once the connection open now has closed; at once when none is open. */
+  whenDisconnected(): Promise<void> {
+    const frames = this.frames
+    if (!frames || frames.isClosed) return Promise.resolve()
+    return new Promise(resolve => {
+      const waiters = this.dropWaiters.get(frames) ?? new Set<() => void>()
+      waiters.add(resolve)
+      this.dropWaiters.set(frames, waiters)
+    })
   }
   /** Refuses with the version sentence, before anything is sent, a read whose feature this host does not list. */
   private offers(feature: HostFeature): void {

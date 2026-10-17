@@ -344,4 +344,6 @@ Each restart over the socket is one attempt, which the host names with a random 
 
 For a host its start at boot unit runs, the restart runs in a transient user unit of its own, `sotto-host-update-<id>`, through `systemd-run --user --collect`, since stopping `sotto-host` kills everything in that unit's cgroup ([ADR-0054](adr/0054-a-host-can-start-at-boot-on-linux.md)). Otherwise it runs detached in its own session.
 
+The desktop accepts `host-update` in its hello whenever health lists it, and reads `host-update-step` for the step it asked for ([ADR-0088](adr/0088-sotto-leans-on-tailscale.md), the October 16 amendment, as built). It uses the route only on the host's tailnet connection, and asks `outcome` once it has connected again after `update-restarting`, or after a restart whose answer never came. Over the host's SSH connection it keeps running the launch script there.
+
 The launch script's `update-restart` takes an optional `resultFile`, a file directly in the data folder, with `attempt` and `answerWaitMs`, for this; without a valid `attempt` it writes no file, and the desktop never sends any of them over SSH. The script also reads its configuration as its last argument, so it runs the same from stdin, with `-e` or as a file.

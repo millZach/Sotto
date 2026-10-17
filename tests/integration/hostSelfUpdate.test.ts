@@ -1,13 +1,12 @@
 // @vitest-environment node
-import { execFile, spawn, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { delimiter, join, resolve } from 'node:path'
-import { isBuiltin } from 'node:module'
-import { build } from 'vite'
+import { delimiter, join } from 'node:path'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { collectLaunchScript as collect, launchScriptChild } from '../fixtures/launchScriptRunner'
 import { hostRelease, localArchiveName, releasesPage, sha256, sidecar, tarGz } from '../fixtures/hostArchive'
+import { buildSelfUpdatingHost, stopEverythingIn } from '../fixtures/selfUpdatingHostBuild'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { hostLaunchTimings, HOST_STOP_DRAIN_MS, HOST_READY_TIMEOUT_MS } from '../../src/shared/hostLaunchTimings'
@@ -22,35 +21,12 @@ import type { SocketFrames } from '../../src/host/socketFrames'
 // rollback starts once more. A run that is not stuck never reaches this.
 vi.setConfig({ testTimeout: HOST_STOP_DRAIN_MS + 3 * HOST_READY_TIMEOUT_MS + 60_000 })
 const OLD = '9.9.8', NEW = '9.9.9', FILE = localArchiveName(NEW)
-let built: { directory: string; source: string } | undefined
+let built: { readonly directory: string; readonly source: string } | undefined
 const roots: string[] = [], pages: { close(): Promise<void> }[] = [], raws: SocketFrames[] = [], children: ChildProcess[] = []
 
-beforeAll(async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'sotto-self-update-build-'))
-  await build({ configFile: false, logLevel: 'silent', define: { 'require.main': 'undefined' }, ssr: { noExternal: true },
-    build: { ssr: resolve('tests/fixtures/selfUpdatingHost.ts'), target: 'node24', outDir: directory, emptyOutDir: true,
-      rollupOptions: { external: id => isBuiltin(id), output: { format: 'cjs', entryFileNames: 'index.js' } } } })
-  built = { directory, source: await readFile(join(directory, 'index.js'), 'utf8') }
-}, 180_000)
+beforeAll(async () => { built = await buildSelfUpdatingHost() }, 180_000)
 afterAll(async () => { if (built) await rm(built.directory, { recursive: true, force: true }) })
 
-/**
- * Every process this test started is stopped: the hosts, the restart that outlives the host that started it, and anything
- * else whose command line names the test's own folder. Leftover hosts from launch tests have been found running for days.
- */
-async function stopEverythingIn(root: string): Promise<void> {
-  const pids = await new Promise<number[]>(done => {
-    if (process.platform === 'win32') {
-      const filter = `$_.CommandLine -and $_.CommandLine.Contains('${root.replaceAll("'", "''")}')`
-      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process | Where-Object { ${filter} } | ForEach-Object { $_.ProcessId }`],
-        { windowsHide: true, encoding: 'utf8' }, (_error, stdout) => done(String(stdout ?? '').split(/\s+/u).map(Number).filter(pid => Number.isInteger(pid) && pid > 0)))
-    } else {
-      execFile('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' }, (_error, stdout) => done(String(stdout ?? '').split('\n')
-        .filter(line => line.includes(root)).map(line => Number(line.trim().split(/\s+/u)[0])).filter(pid => Number.isInteger(pid) && pid > 0)))
-    }
-  })
-  for (const pid of pids) if (pid !== process.pid) { try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ } }
-}
 afterEach(async () => {
   for (const frames of raws.splice(0)) frames.close()
   for (const child of children.splice(0)) if (child.exitCode === null) child.kill('SIGKILL')

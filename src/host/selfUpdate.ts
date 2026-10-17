@@ -4,9 +4,9 @@ import { access, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { HOST_NODE_RANGE, LAUNCH_SCRIPT_SOURCE } from '../main/hosts/launchScript'
-import { HOST_DOWNLOAD_TIMEOUT_MS, hostLaunchTimings } from '../shared/hostLaunchTimings'
+import { hostLaunchTimings } from '../shared/hostLaunchTimings'
 import { HOST_RELEASES_URL, HOST_UPDATE_STEPS, HOST_VERSION_PATTERN, hostArchiveName, type HostUpdateStep } from '../shared/hostUpdates'
-import { compareHostToTarget, HOST_UPDATE_ANSWER_WAIT_MS, hostUpdateAttemptFile, HOST_UPDATE_RESTART_BUDGET_MS, HOST_UPDATE_RESTART_WAIT_MS, HOST_UPDATE_STATUS_FILE, HOST_UPDATE_STATUS_LIMIT_BYTES, hostUpdateErrorSchema, hostUpdateFetchedSchema, hostUpdateInstalledSchema, hostUpdateStatusSchema,
+import { compareHostToTarget, HOST_UPDATE_ANSWER_WAIT_MS, HOST_UPDATE_FETCH_BUDGET_MS, HOST_UPDATE_INSTALL_BUDGET_MS, hostUpdateAttemptFile, HOST_UPDATE_RESTART_BUDGET_MS, HOST_UPDATE_RESTART_WAIT_MS, HOST_UPDATE_STATUS_FILE, HOST_UPDATE_STATUS_LIMIT_BYTES, hostUpdateErrorSchema, hostUpdateFetchedSchema, hostUpdateInstalledSchema, hostUpdateStatusSchema,
   type HostUpdateAnswer, type HostUpdateStatus } from '../shared/hostSelfUpdate'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import type { HostUpdateRequestAction } from '../shared/hostProtocol'
@@ -120,7 +120,6 @@ export function createHostSelfUpdate(options: HostSelfUpdateOptions): { readonly
 
 const pause = (ms: number): Promise<void> => new Promise(done => setTimeout(done, ms))
 const OUTPUT_LIMIT = 65_536
-const INSTALL_BUDGET_MS = 10 * 60_000
 const fetchResult = z.union([hostUpdateFetchedSchema, hostUpdateErrorSchema])
 const installResult = z.union([hostUpdateInstalledSchema, hostUpdateErrorSchema])
 const invalid = (): HostUpdateAnswer => ({ type: 'error', reason: 'update-invalid' })
@@ -206,7 +205,7 @@ export class HostSelfUpdate {
       // The launch script's download holds the folder's update lock, as it does over SSH, so the two refuse each other.
       if (context.gone.aborted) return { type: 'update-cancelled', cancelled: true }
       context.onStep('download')
-      const result = await this.script(this.configuration({ op: 'update-fetch', version }), context.onStep, 2 * HOST_DOWNLOAD_TIMEOUT_MS + 10_000, abort.signal)
+      const result = await this.script(this.configuration({ op: 'update-fetch', version }), context.onStep, HOST_UPDATE_FETCH_BUDGET_MS, abort.signal)
       if (abort.signal.aborted) return { type: 'update-cancelled', cancelled: true }
       return fetchResult.safeParse(result).data ?? { type: 'error', reason: 'update-failed' }
     } finally {
@@ -224,7 +223,7 @@ export class HostSelfUpdate {
     if (!this.take('install')) return busy()
     // Unpacking carries on when the client's socket closes, as it does over SSH: it is never stopped partway.
     try {
-      const result = await this.script(this.configuration({ op: 'update-install', version, file: request.file, sha256: request.sha256 }), context.onStep, INSTALL_BUDGET_MS)
+      const result = await this.script(this.configuration({ op: 'update-install', version, file: request.file, sha256: request.sha256 }), context.onStep, HOST_UPDATE_INSTALL_BUDGET_MS)
       return installResult.safeParse(result).data ?? { type: 'error', reason: 'update-failed' }
     } finally { this.running = null }
   }
