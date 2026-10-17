@@ -238,6 +238,8 @@ export interface AgentHost {
   watcherThreadIds?(): readonly string[]
   /** Saved threads held behind an immutable Owl gate, for dormant drafts and history preservation. */
   dormantThreadIds?(): readonly string[]
+  /** The held provider of each saved thread hidden for it, so a refusal names that provider rather than another held one. */
+  dormantThreadProviders?(): ReadonlyMap<string, ProviderId>
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }, watcherGuard?: () => void): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */
