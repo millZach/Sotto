@@ -528,7 +528,7 @@ export class WatcherWakeUp {
     const watched = new Set(this.watchedTargets().map(targetKey))
     for (const thread of snapshot.threads) {
       if (thread.kind !== 'watcher' && !watched.has(targetKey({ hostId: thread.hostId ?? snapshot.hostId ?? '', threadId: thread.id }))) continue
-      edges += `|${thread.hostId ?? ''}/${thread.id}:${thread.status}:${thread.lastTurn?.id ?? ''}:${thread.lastTurn?.status ?? ''}:${watcherBackgroundWorkCount(thread)}:${thread.clientConnected ?? ''}:${thread.requests.map(card => card.id).join(',')}`
+      edges += `|${thread.hostId ?? ''}/${thread.id}:${thread.status}:${thread.lastTurn?.id ?? ''}:${thread.lastTurn?.status ?? ''}:${watcherBackgroundWorkCount(thread)}:${thread.clientConnected ?? ''}:${thread.requests.map(card => `${card.id}@${requestRevision(card)}`).join(',')}`
     }
     return edges
   }
@@ -550,8 +550,9 @@ export class WatcherWakeUp {
         if (this.everyThread) this.observeUnwatched(snapshot, thread, target, stamp)
         continue
       }
-      lookedAt.add(key)
       const connected = this.connected(snapshot, thread)
+      // Looked at means its facts were read: one watched while disconnected starts from its facts once it connects.
+      if (connected || this.lookedAt?.has(key)) lookedAt.add(key)
       const previous = this.progress.get(key)
       const fingerprint = this.options.progress?.(target) ?? watcherProgressFingerprint(thread)
       const changedProgress = !previous || previous.fingerprint !== fingerprint

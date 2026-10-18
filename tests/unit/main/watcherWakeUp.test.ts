@@ -145,6 +145,23 @@ it('starts a thread that has just become watched from its facts as they are, and
   expect(told()).toHaveLength(1)
 })
 
+it('starts a thread watched while disconnected from its facts once it connects', async () => {
+  const f = fixture(), url = 'https://github.com/synthetic/project/pull/44', target = { hostId: centerTarget.hostId, threadId: 'away' }
+  const thread: AgentThread = { ...f.thread, id: 'away', clientConnected: false, lastTurn: { id: 'away-turn', status: 'running' },
+    worktree: { mode: 'shared', status: 'ready', branch: 'feature', baseBranch: 'main', git: { isRepository: true, branch: 'feature', upstream: null,
+      hasRemote: true, defaultBranch: 'main', isDefaultBranch: false, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0,
+      aheadOfDefault: null, pullRequest: { url, number: 44, title: 'Synthetic pull request', state: 'merged', draft: false },
+      readAt: centerTime, fetchedAt: null } } }
+  f.snapshot.threads.push(thread)
+  f.wakes.observe()
+  f.record.requests[0]!.participants.push({ target, requestId: f.record.requests[0]!.id, startedBy: 'user', generation: 0, state: 'participating', promptCount: 0 })
+  f.wakes.observe()
+  // It connects with the pull request it merged long ago: that is where it stands, not news.
+  thread.clientConnected = true
+  f.wakes.observe(); await f.advance(5_000)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'evidence-changed' && event.target.threadId === 'away')).toEqual([])
+})
+
 it('tells what a watched thread that appears after a restart brings, as one on a host that reconnects', async () => {
   const f = fixture(false), url = 'https://github.com/synthetic/project/pull/43', later = { hostId: centerTarget.hostId, threadId: 'late' }
   f.record.requests[0]!.participants.push({ target: later, requestId: f.record.requests[0]!.id, startedBy: 'user', generation: 0, state: 'participating', promptCount: 0 })
