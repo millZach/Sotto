@@ -115,4 +115,27 @@ Existing first-start and permissions/watch journeys also passed. The existing Co
 
 The final saved-source focused run passed **395 tests across 17 files in 171 seconds**, with maxWorkers=2. All four typecheck configurations and lint passed after phase instrumentation. Notices passed for 189 components, build passed, and all four rebuilt Electron scripted-provider journeys passed together in **28.2 seconds**. These supersede the earlier checkpoints above; interrupted full-suite shards remain uncounted.
 
-The measured `src/main/agents/watcher.ts` SHA-256 is `620b17ec3aaf7b0f8257c0c2244cd7e15c20b462489ea17c93cf11490bc9b216`, verified again before rebase. Any post-rebase source difference must be reported separately from that measurement. Full post-rebase gates are pending in the merge-ready continuation. Installed/live Sotto, macOS/Linux and live paired-host proof remain unverified. Renderer reload is not an application restart. Historical refusal causality remains partly inferred; #1148 remains partial, and the Opus comparison remains anecdotal.
+The measured `src/main/agents/watcher.ts` SHA-256 is `620b17ec3aaf7b0f8257c0c2244cd7e15c20b462489ea17c93cf11490bc9b216`, verified again before rebase. Any post-rebase source difference must be reported separately from that measurement. Full post-rebase gates completed successfully in the merge-ready continuation, as recorded below. Installed/live Sotto, macOS/Linux and live paired-host proof remain unverified. Renderer reload is not an application restart. Historical refusal causality remains partly inferred; #1148 remains partial, and the Opus comparison remains anecdotal.
+
+
+## Full post-rebase repository gates
+
+The merge-ready continuation committed the handed-off follow-up work, fetched origin and ran `git rebase origin/main`. The fetched base remained `f000d7612fb270317ee32102037695edbf1765fa`; rebase reported already up to date, without conflicts. The post-rebase source commit is `7b914f215753af568ff5c88117f2d8e860856975`. `watcher.ts` still has the measured SHA-256 above: no source changes followed measurement, rebase or these gates. No benchmarks were rerun and no new tests were written in this continuation; the newly committed test files were already in the handed-off working tree.
+
+All gates ran sequentially under one `Invoke-HeavyJob.ps1` lease, 2026-10-18 00:09:51?00:47:06 UTC (October 17 locally), using node.exe and npm-cli.js. The helper released with exit 0. Timings below are external command durations, not benchmark evidence.
+
+| Gate | Result | External duration |
+| --- | --- | ---: |
+| `assets:verify` | Claude SDK 0.3.270 history helper and 7 terminal assets | 0.413 s |
+| `typecheck` | All four configurations | 69.042 s |
+| `lint` | Clean | 27.390 s |
+| `notices:verify` | 189 components | 0.395 s |
+| `npm test -- --maxWorkers=2` | 12,259 passed; 349 skipped; 946 files passed, 79 skipped (1025 total files) | 2071.349 s |
+| `build` | Electron main, host, preload and renderer built | 34.844 s |
+| `four Watcher Playwright journeys` | 4 passed; 29.5 s Playwright duration | 30.958 s |
+
+Vitest reported 2070.07 seconds internally; there were no failed files, failed tests or unhandled errors, and no isolated rerun or gate fix. The four exact Playwright selections came from `.zstack/watcher-diagnosis/app-validation.ps1`: `watcher-recovery.spec.ts` and `watcher.spec.ts`, grep `fresh Watcher request|against main`, one worker. Recovery passed in 7.0 seconds; first start 4.9; permissions/watch 5.7; provider handover 8.8. These run the freshly rebuilt main process with scripted providers and isolated owned profiles.
+
+The refreshed `artifacts/e2e-runs/watcher-recovery/during-user-turn.png` and `recovered-after-reload.png` were opened and inspected after the final run. The first shows the standing watch waiting for the human turn; the second shows completed fresh continuation and retained conversation after renderer reload. No visible clipping or overflow was found. Only those two cited images are retained. No design baselines changed.
+
+Verdict: the scoped Windows isolated built-app journeys are VERIFIED. Installed/live Sotto, full application restart, macOS/Linux and live paired-host proof remain NOT VERIFIED. No merge, release, deployment, live control change or other lane was included. Prior native Sol standards/spec reviews remain applicable because rebase and final verification introduced no source delta; the final light standards/spec and evidence review found no additional actionable finding. #1148 remains partial and is related rather than closed.
