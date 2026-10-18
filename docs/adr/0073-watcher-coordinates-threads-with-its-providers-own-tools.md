@@ -291,3 +291,14 @@ Watcher's room did things the user could not see or undo from where they were. Z
 Read marks, a dot before a row's name in All threads for news the user has not seen (dot A, picked the same day), move to a follow-up after #1142, which marks threads and wakes Watcher from live turn and request events, wherever the turn started.
 
 The iPhone already showed receipts as one card per reply (2B). Its page now carries the takeover lines as an optional `takeovers` field of host protocol version 1; the phone's own view of them is a later change.
+
+## October 18, 2026: Watcher looks only at what it watches
+
+Watcher's wake-up pass ran on every coordinator update and looked at every thread, watched or not, which with threads
+streaming was about a fifth of main. Unwatched threads make no news; looking at them kept their facts and progress
+current for Watcher's own reads. Zach's call: stop looking at them. A pass now looks only at watched threads and
+Watcher's own, at once when a turn, a request card, background work, a connection or the record moves, and otherwise at
+most every 250 ms. Each Watcher read looks at every thread first, so it reads them as they are. A thread that becomes
+watched starts from its facts as they are, so what it had before is not told as news; after a restart, what changed is
+still told. Quiet in `list_threads` therefore applies only to watched threads: an unwatched thread has no observed
+history of its progress, so a silent one lists as Working. Watched threads' news, Quiet included, is unchanged.

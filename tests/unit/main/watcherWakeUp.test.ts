@@ -5,7 +5,7 @@ import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../.
 import { WATCHER_QUIET_MS, watcherOverview } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
 import type { WatcherRecord } from '../../../src/shared/watcher'
-import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, WATCHER_SWEEP_MS, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
+import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
@@ -109,26 +109,38 @@ it('looks at once when the Watcher record is replaced, and owes nothing once clo
   expect(after).not.toHaveBeenCalled()
 })
 
-it('looks at a thread Watcher does not watch only on a sweep, or when Watcher reads', async () => {
+it('looks at a thread Watcher does not watch only when Watcher reads', async () => {
   const looked: string[] = []
   const f = fixture(false, target => { looked.push(target.threadId); return 'same' })
   f.snapshot.threads.push({ ...f.thread, id: 'unwatched', lastTurn: { id: 'other-turn', status: 'running' } })
   f.wakes.start()
-  // The first pass sweeps every thread.
-  expect(looked).toEqual([centerTarget.threadId, 'unwatched'])
-  looked.length = 0
-  for (let pass = 0; pass < 3; pass++) { await f.advance(WATCHER_OBSERVE_MS); f.wakes.observe() }
-  expect(looked).toEqual([centerTarget.threadId, centerTarget.threadId, centerTarget.threadId])
-  // Its turn ending is no news to anyone, so it waits for the sweep too.
+  for (let pass = 0; pass < 3; pass++) { await f.advance(WATCHER_OBSERVE_MS * 40); f.wakes.observe() }
+  expect(looked).toEqual(Array(4).fill(centerTarget.threadId))
+  // Its turn ending is no news to anyone, so no pass looks at it.
   looked.length = 0
   f.snapshot.threads[1]!.status = 'idle'; f.snapshot.threads[1]!.lastTurn = { id: 'other-turn', status: 'completed' }
   f.wakes.observeSoon(() => undefined)
   expect(looked).not.toContain('unwatched')
-  await f.advance(WATCHER_SWEEP_MS); f.wakes.observe()
-  expect(looked).toContain('unwatched')
-  looked.length = 0
   f.wakes.observeAll()
   expect(looked).toEqual([centerTarget.threadId, 'unwatched'])
+})
+
+it('starts a thread that has just become watched from its facts as they are, and tells what changes after', async () => {
+  const f = fixture(), url = 'https://github.com/synthetic/project/pull/41', later = { hostId: centerTarget.hostId, threadId: 'later' }
+  const thread: AgentThread = { ...f.thread, id: 'later', lastTurn: { id: 'later-turn', status: 'running' },
+    pullRequests: [{ url, number: 41, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }] }
+  f.snapshot.threads.push(thread)
+  const checks = (state: 'failed' | 'passed') => f.wakes.pullRequest({ url, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: state, checkCount: 1 })
+  // GitHub's read of its pull request, and a new link, while no one watches it.
+  checks('failed'); f.wakes.observe()
+  thread.pullRequests = [...thread.pullRequests!, { url: url.replace('/41', '/42'), number: 42, title: 'Second synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
+  f.wakes.observe()
+  f.record.requests[0]!.participants.push({ target: later, requestId: f.record.requests[0]!.id, startedBy: 'user', generation: 0, state: 'participating', promptCount: 0 })
+  f.wakes.observe(); await f.advance(5_000)
+  const told = () => f.delivered.flatMap(news => news.events).filter(event => event.kind === 'evidence-changed' && event.target.threadId === 'later')
+  expect(told()).toEqual([])
+  checks('passed'); f.wakes.observe(); await f.advance(5_000)
+  expect(told()).toHaveLength(1)
 })
 
 it('batches for two seconds and never delays a sustained burst past five seconds', async () => {

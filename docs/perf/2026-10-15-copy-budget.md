@@ -120,10 +120,12 @@ and once more after the last update; news waits two seconds before it goes in an
 one pass took about 70 ms, three seconds of updates every 16 ms ran 29 passes and spent 71% of main in Watcher's
 publish before, and 13 passes and 19% after.
 
-Most of a pass was spent on threads Watcher does not watch. They make no news; their facts only answer Watcher's own
-reads and the Quiet group, which waits twenty minutes. A pass now looks at them only on a sweep, at most every five
-seconds, and a Watcher read looks at every thread first. With the same 150 threads and nothing watched, three seconds of
-updates spent 695 ms in passes before and 25 ms after, and Watcher's publish fell from 23% of main to 5%.
+Most of a pass was spent on threads Watcher does not watch. They make no news; their facts only answered Watcher's own
+reads and marked a long-silent thread Quiet in `list_threads`. No pass looks at them now. Each Watcher read looks at
+every thread first, so it reads them as they are; a thread starts from its facts as they are when it becomes watched, so
+what it had before is not told as news; and only a watched thread is marked Quiet, since an unwatched one has no history
+of its progress. With the same 150 threads and nothing watched, three seconds of updates spent 695 ms in passes before
+and 25 ms with a five-second sweep, which was dropped as well (Zach's call, October 18, 2026).
 
 A failed Watcher send that waits in the queue was recorded again on every snapshot with a new time, which replaced the
 record each time and would have run the pass on every update. Its time now changes only when its outcome does.

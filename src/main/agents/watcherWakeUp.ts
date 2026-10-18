@@ -23,11 +23,6 @@ const TURN_END_SETTLE_MS = 5_000
  * coordinator publishes up to every 16 ms while threads stream, and news waits WATCHER_BATCH_MS before it goes.
  */
 export const WATCHER_OBSERVE_MS = 250
-/**
- * How often, at most, a pass also looks at the threads Watcher does not watch. Their facts only answer Watcher's own
- * reads, which look at every thread first, and the Quiet group, which waits twenty minutes.
- */
-export const WATCHER_SWEEP_MS = 5_000
 const TURN_ENDS: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', 'turn-failed', 'work-settled'])
 /** How many hidden wake-ups in a row may miss Watcher before only news that needs it makes another (hiddenWakeUp.ts). */
 export const WAKE_UP_TRIES = 3
@@ -132,8 +127,10 @@ export class WatcherWakeUp {
   private observedAt = -Infinity
   private observedEdges: { record: Readonly<WatcherRecord>; threads: string } | undefined
   private cancelObserve: (() => void) | undefined
-  /** When a pass last looked at every thread, watched or not. */
-  private sweptAt = -Infinity
+  /** Set while a pass for one of Watcher's reads looks at every thread, watched or not. */
+  private everyThread = false
+  /** The watched threads the last pass looked at, so one that has just become watched starts from its facts as they are. */
+  private lookedAt: Set<string> | undefined
   /** The reads the synchronous pass under way shares; see `withPassReads`. */
   private pass: { snapshot?: AgentHostSnapshot; record?: Readonly<WatcherRecord>; reportsWork?: (hostId: string) => boolean } | undefined
   constructor(private readonly options: WatcherWakeOptions) {
@@ -493,7 +490,7 @@ export class WatcherWakeUp {
   }
   observe(): void { this.withPassReads(() => this.observePass()) }
   /** A pass over every thread, watched or not, for a read of Watcher's that may name any of them. */
-  observeAll(): void { this.sweptAt = -Infinity; this.observe() }
+  observeAll(): void { this.everyThread = true; try { this.observe() } finally { this.everyThread = false } }
   /**
    * The pass for an update. It runs at once when a turn, a request card, background work, a connection or the record
    * moved, since a turn that finishes as the next one starts is seen only in the update between them. Otherwise, as
@@ -511,7 +508,7 @@ export class WatcherWakeUp {
   }
   /**
    * Each watched thread's and Watcher's own turn, request cards, background work and connection: what a pass must not
-   * miss between two looks. Other threads make no news, so a change of theirs waits for the next sweep.
+   * miss between two looks. Other threads make no news, and no pass looks at them.
    */
   private threadEdges(snapshot: AgentHostSnapshot): string {
     let edges = String(snapshot.connected)
@@ -528,15 +525,17 @@ export class WatcherWakeUp {
     this.cancelObserve?.(); this.cancelObserve = undefined
     this.observedAt = this.now(); this.observedEdges = { record: this.record(), threads: this.threadEdges(snapshot) }
     const targets = new Set<string>(), watched = new Set(this.watchedTargets().map(targetKey))
-    const sweep = this.now() - this.sweptAt >= WATCHER_SWEEP_MS
-    if (sweep) this.sweptAt = this.now()
+    const lookedAt = new Set<string>()
     for (const thread of snapshot.threads) {
       if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || !snapshot.hostId) continue
       const target = { hostId: thread.hostId ?? snapshot.hostId, threadId: thread.id }, key = targetKey(target)
       targets.add(key)
-      // A thread Watcher does not watch makes no news: its facts are brought up to date by a sweep, not on every pass,
-      // and it holds no quiet deadline.
-      if (!sweep && !watched.has(key)) { const unwatched = this.progress.get(key); unwatched?.cancel?.(); if (unwatched) delete unwatched.cancel; continue }
+      // A thread Watcher does not watch makes no news, so a pass looks at it only for one of Watcher's own reads, and it
+      // holds no quiet deadline.
+      if (!watched.has(key)) {
+        const unwatched = this.progress.get(key); unwatched?.cancel?.(); if (unwatched) delete unwatched.cancel
+        if (!this.everyThread) continue
+      } else lookedAt.add(key)
       const connected = this.connected(snapshot, thread)
       const previous = this.progress.get(key)
       const fingerprint = this.options.progress?.(target) ?? watcherProgressFingerprint(thread)
@@ -548,6 +547,9 @@ export class WatcherWakeUp {
       this.progress.set(key, progress)
       const observed: WatcherObservation = { observedAt: stamp, fresh: connected && capabilitiesForThread(snapshot, thread).observe,
         connectedAt: new Date(progress.connectedAt).toISOString(), lastProgressAt: new Date(progress.progressAt).toISOString() }
+      // A thread that has just become watched starts from its facts as they are: what it had before is no news. After a
+      // restart there is no last pass, and what changed is told, as it always was.
+      if (connected && watched.has(key) && this.lookedAt && !this.lookedAt.has(key)) { this.evidence.observeThread(thread, target, stamp); delete progress.links }
       const facts = this.evidence.read(target, connected, this.now())
       if (connected) {
         const before = this.knownEvidenceIds(target)
@@ -555,7 +557,7 @@ export class WatcherWakeUp {
         const added = progress.links !== undefined && [...links].some(link => !progress.links!.has(link))
         progress.links = links
         before.push(...facts.filter(item => item.source === 'github' && item.url && !links.has(pullRequestKey(item.url) ?? '')).map(item => item.id))
-        // Every thread keeps its facts current; only a watched one's news is worked out, since no one else is told it.
+        // Only a watched thread's news is worked out, since no one else is told it; a read's pass only brings facts current.
         const told = watched.has(key)
         const pullRequests = told ? this.evidence.digest(target, 'pull-request') : ''
         const changedEvidence = this.evidence.observeThread(thread, target, stamp)
@@ -615,6 +617,7 @@ export class WatcherWakeUp {
         this.options.changed?.()
       }, Math.max(0, Math.max(progress.progressAt, progress.connectedAt) + WATCHER_QUIET_MS - this.now()))
     }
+    this.lookedAt = lookedAt
     for (const [key, progress] of this.progress) if (!targets.has(key)) { progress.cancel?.(); this.progress.delete(key) }
     this.evidence.removeMissing(targets)
     for (const { participant } of this.workers(true)) if (participant.state === 'taken-over') this.event('taken-over', participant.target, participant.takeover)

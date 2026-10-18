@@ -2128,7 +2128,7 @@ export class WatcherService implements WatcherControlHooks {
 
   /** Entry points validate caller or paired receipt ownership before reaching this shared read path. */
   private async dispatchRead(call: NonNullable<WatcherHostRead['call']>, operation?: WatcherOperation, outcomes = false, hosted?: OutcomeRead): Promise<unknown> {
-    // Passes look at unwatched threads only now and then, so a read that may name any thread looks at all of them first.
+    // Passes look only at watched threads, so a read that may name any thread looks at all of them first.
     this.wakes.observeAll()
     if (call.name === 'read_operation') {
       if (!operation) refuse('UNKNOWN_OPERATION', 'That operation is unavailable.')
