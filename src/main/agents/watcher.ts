@@ -900,7 +900,6 @@ export class WatcherService implements WatcherControlHooks {
     // One send is one takeover, whichever requests it ends: every participant it fences shares its time (the takeover line).
     const at = now()
     this.options.control.mutateWatcher(record => {
-      const at = now()
       this.recordLocalTakeover(record, target, at, userDraft)
       const watch = record.watches?.find(item => key(item.target) === key(target))
       if (watch) { watch.generation++; watch.pausedByUserMessageId = userMessageId ?? nativeHead(this.thread(target)) ?? 'unobserved-user-turn' }

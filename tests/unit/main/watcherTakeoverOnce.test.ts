@@ -24,7 +24,7 @@ it('gives one send that ends several requests’ work on a thread one takeover t
     watcherRecord: () => structuredClone(record), watcherRecordView: () => record, hostId: () => HOST,
     watcherSnapshot: () => ({ ...emptyDesktopState(HOST).host, threads: [] }), useWatcher: () => () => undefined, subscribe: () => () => undefined,
     mutateWatcher: update, updateWatcher: async (change: (next: WatcherRecord) => void) => update(change), cancelWatcherQueue: async () => undefined,
-    refreshWatcherObservation: () => undefined,
+    refreshWatcherObservation: () => undefined, watcherSendRecords: () => ({ deliveries: [], followups: [] }),
   } as unknown as AgentControl
   const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, limit: () => 4, historyEnabled: () => false })
   try {
