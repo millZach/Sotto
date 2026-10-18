@@ -187,7 +187,7 @@ export interface RestoredThreadHistory {
 /** One change to what a thread said, addressed by Sotto thread ID (ADR-0016). */
 export interface ThreadHostEvent { readonly threadId: string; readonly event: ThreadEvent }
 /** One message the event store already holds, as an adapter needs to recognise it: its ID and its role. */
-export interface StoredMessageIdentity { readonly id: string; readonly role: 'user' | 'assistant' }
+export interface StoredMessageIdentity { readonly id: string; readonly role: 'user' | 'assistant'; readonly turnMessageId?: string }
 /**
  * What the host's event store already holds for a thread, asked for one thread at a time. An adapter
  * re-reading a provider's own history uses it to append the unseen tail instead of adding the history

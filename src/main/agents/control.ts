@@ -1,6 +1,7 @@
 import { catalogWithoutHeld, heldProviderChosenBy } from './heldProviderGate'
 import { firstHeldProvider, heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { WatcherMessageDisplay } from './watcherMessageDisplay'
+import { clonePlainData } from './cloneHostSnapshot'
 import { CheckoutSendRefusal, type CheckoutPendingWork } from './checkoutMutations'
 import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextWriter'
 import type { AgentSkillReference } from '../../shared/agentSkills'
@@ -11,6 +12,7 @@ import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, type Queu
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
@@ -66,7 +68,7 @@ import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from '
 import type { DelegationCommand, DelegationControlHooks } from './delegation'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
 import { parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
-import { migrateWatcherRecord } from './watcherRecords'
+import { migrateWatcherRecord, prunePromptTurns } from './watcherRecords'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
@@ -313,7 +315,8 @@ export class AgentControl {
       ...this.watcher.creation ? [this.watcher.creation.identity] : []]
     return { threadIds: identities.map(row => row.target.threadId), projectIds: identities.map(row => row.projectId) }
   }
-  watcherRecord(): WatcherRecord { return structuredClone(this.watcher) }
+  /** A copy of the Watcher record to change. It is plain schema data, so its containers are copied and its strings kept. */
+  watcherRecord(): WatcherRecord { return clonePlainData(this.watcher) }
   /**
    * The Watcher record itself, for a caller that only reads it. Every change replaces the record rather than editing it
    * (mutateWatcher, start), so what this hands out never changes under its holder. Watcher's observe pass reads the
@@ -331,7 +334,13 @@ export class AgentControl {
     return this.persist()
   }
   mutateWatcher(update: (record: WatcherRecord) => void): void {
-    const next = this.watcherRecord(); update(next); this.watcher = watcherRecordSchema.parse(next)
+    const next = this.watcherRecord(); update(next)
+    // Stable keeps Watcher's record whole (ADR-0072); only Owl, where Watcher runs, lets go of the turns nothing reads.
+    if (this.dependencies.watcherEnabled === true) prunePromptTurns(next)
+    // Watcher's observe pass offers an update on every streamed chunk, and most change nothing. Checking the record again
+    // costs more than copying it, and both grow with every prompt and wake-up Watcher has had, so an unchanged record stays.
+    if (isDeepStrictEqual(next, this.watcher)) return
+    this.watcher = watcherRecordSchema.parse(next)
     this.watcherMessageDisplay?.update(this.watcher.requests)
   }
   useWatcher(hooks: WatcherControlHooks): () => void {
