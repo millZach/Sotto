@@ -1,6 +1,6 @@
 import { capabilitiesForThread, isThreadProviderConnected, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
-import { WATCHER_QUIET_MS, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
+import { WATCHER_QUIET_MS, isWatcherWorkActive, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
 import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../shared/watcher'
 import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { pullRequestKey } from '../../shared/gitPullRequests'
@@ -180,7 +180,7 @@ export class WatcherWakeUp {
     return snapshot.connected && thread.clientConnected !== false && isThreadProviderConnected(snapshot, thread)
   }
   /** Unknown roster entries keep work unsettled, but only provider-confirmed working agents can become quiet. */
-  private active(thread: AgentThread): boolean { return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.subagentSummary?.working || thread.backgroundWork?.length || thread.monitoring?.length) }
+  private active(thread: AgentThread): boolean { return isWatcherWorkActive(thread) }
   /**
    * The thread's work is confirmed ended: nothing running and nothing unknown. A sub-agent a restart left unknown may still
    * be running, so it keeps the turn unsettled until its provider says how it ended. A host that does not report the counts
