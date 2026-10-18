@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { PROVIDER_COUNT, PROVIDER_LABELS, providerIdSchema, type AgentProviderStatus, type ProviderId, type ProviderProblem } from './agents'
 import type { HeldProviders } from './heldProviders'
+import { OPENCODE_SIGN_IN_ANSWERS, OPENCODE_SIGN_IN_CALLS, signInAttemptRequestSchema, signInDoneSchema } from './opencodeSignIn'
 
 /**
  * A host's providers from this computer (ADR-0037): the tiles under a connected host's row in Settings > Hosts, the
@@ -10,17 +11,18 @@ import type { HeldProviders } from './heldProviders'
 
 /**
  * The providers a host offers from this computer: its tiles, their connect, sign-in and agent jobs, and the provider job
- * brief. OpenCode is not one yet: hosts and phones take it in #1107, which adds it here. A headless host may still run
- * its adapter behind the Owl gate; nothing on this computer offers it for a host.
+ * brief. OpenCode joined in #1107; a host sends its provider row, models and threads only to a client whose hello accepts
+ * `provider-opencode` (`PROVIDER_HOST_FEATURES` in `hostProtocol.ts`).
  */
-export const HOST_PROVIDERS = ['claude', 'codex', 'grok', 'devin', 'muse'] as const satisfies readonly ProviderId[]
+export const HOST_PROVIDERS = ['claude', 'codex', 'grok', 'devin', 'muse', 'opencode'] as const satisfies readonly ProviderId[]
 export type HostProviderId = typeof HOST_PROVIDERS[number]
 export const hostProviderIdSchema = z.enum(HOST_PROVIDERS)
 /**
  * What a headless host holds on its run: the providers its Owl answers hold, and every provider hosts do not take yet,
  * whatever those answers are. A host starts no process for one, and its state names none of its providers, models or
- * threads, so a desktop or phone that does not know the provider never reads it there. OpenCode is held so until #1107
- * adds it to `HOST_PROVIDERS`, which lifts this; #1107 must then send it only to peers that list a host feature for it.
+ * threads, so a desktop or phone that does not know the provider never reads it there. Every provider is a host provider
+ * since #1107, so this holds only what the Owl answers hold; a provider added to Sotto before hosts take it is held here
+ * until it joins `HOST_PROVIDERS`, and is then sent only to peers that list its host feature.
  */
 export function heldOnHost(held: HeldProviders): HeldProviders {
   const hosted: readonly ProviderId[] = HOST_PROVIDERS
@@ -46,7 +48,11 @@ export type ProviderSignInShape = z.infer<typeof providerSignInShapeSchema>
 export const providerSignInStageSchema = z.enum(['starting', 'waiting', 'finishing', 'connected', 'refused', 'failed', 'ended'])
 export type ProviderSignInStage = z.infer<typeof providerSignInStageSchema>
 
-/** Which providers sign in from this computer, and how. Devin's and Muse's sign-ins run on the host itself, so their tiles show the command. */
+/**
+ * Which providers sign in from this computer, and how. Devin's and Muse's sign-ins run on the host itself, so their tiles
+ * show the command. OpenCode signs in to model sources instead, from its tile's Add a model source dialog, which drives
+ * the host's own OpenCode over the host connection (`opencode-sign-in`, #1107).
+ */
 export const PROVIDER_SIGN_IN_SHAPES: Readonly<Record<ProviderId, ProviderSignInShape | null>> = {
   codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null,
 }
@@ -199,3 +205,18 @@ export type HostClientUpdateRequest = z.infer<typeof hostClientUpdateRequestSche
 export const HOSTS_PROVIDER_ACTION = 'hosts:provider-action'
 export const HOSTS_UPDATE_CLIENTS = 'hosts:update-clients'
 export const HOSTS_SIGN_IN = 'hosts:sign-in'
+export const HOSTS_OPENCODE_SIGN_IN = 'hosts:opencode-sign-in'
+
+/**
+ * What a host's OpenCode tile asks of its Add a model source dialog (#1107): the same calls the desktop's own dialog makes
+ * (`OpenCodeSignInBridge`), each naming the saved host it goes to. `reopen` has this computer's main ask the host for the
+ * page and open it here (ADR-0037); the window never asks for the address itself.
+ */
+export const hostOpenCodeCallSchema = z.discriminatedUnion('action', [...OPENCODE_SIGN_IN_CALLS,
+  z.object({ action: z.literal('reopen'), request: signInAttemptRequestSchema }).strict()])
+export type HostOpenCodeCall = z.infer<typeof hostOpenCodeCallSchema>
+export const hostOpenCodeSignInRequestSchema = z.object({ id: z.uuid(), call: hostOpenCodeCallSchema }).strict()
+export type HostOpenCodeSignInRequest = z.infer<typeof hostOpenCodeSignInRequestSchema>
+/** What each of those calls is answered with: the desktop's own dialog's answers, and `reopen` as Open the page again's. */
+export const HOST_OPENCODE_ANSWERS = { ...OPENCODE_SIGN_IN_ANSWERS, reopen: signInDoneSchema } as const satisfies Record<HostOpenCodeCall['action'], z.ZodType>
+export type HostOpenCodeAnswer<A extends HostOpenCodeCall['action']> = z.infer<(typeof HOST_OPENCODE_ANSWERS)[A]>
