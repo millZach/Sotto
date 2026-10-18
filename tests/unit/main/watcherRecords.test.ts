@@ -6,6 +6,7 @@ import { migrateWatcherRecord, migrateWorkspaceThreadKinds, prunePromptTurns, WA
 import { agentThreadSchema } from '../../../src/shared/agents'
 import { emptyWatcherRecord, watcherRecordSchema } from '../../../src/shared/watcher'
 import { watcherRecordFixture } from '../../fixtures/watcher'
+import { agentControlFixture } from '../../fixtures/agentControlFixture'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 
 const cleanup: Array<() => Promise<void>> = []
@@ -89,5 +90,19 @@ describe('prompt turns Watcher keeps', () => {
       ...Array.from({ length: WATCHER_PROMPT_TURNS_KEPT }, (_, index) => turn(600 - WATCHER_PROMPT_TURNS_KEPT + 1 + index).id)])
     // What is left is still a record the schema accepts.
     expect(() => watcherRecordSchema.parse(record)).not.toThrow()
+  })
+
+  it.each([['Owl', true], ['stable', false]] as const)('lets go of the turns nothing reads on %s only, and keeps the record when nothing changes after', async (_track, owl) => {
+    const workspace = await workspaceFixture(undefined, { history: false, watcherEnabled: owl })
+    const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
+      control: { historyEnabled: () => false, watcherEnabled: owl } })
+    cleanup.push(async () => { await f.dispose(); await workspace.stop(); await workspace.remove() })
+    await f.control.start()
+    f.control.mutateWatcher(record => { record.promptTurns = Array.from({ length: 120 }, (_, index) => turn(index)) })
+    // Stable keeps Watcher's saved record whole (ADR-0072).
+    expect(f.control.watcherRecordView().promptTurns).toHaveLength(owl ? WATCHER_PROMPT_TURNS_KEPT : 120)
+    const trimmed = f.control.watcherRecordView()
+    f.control.mutateWatcher(() => undefined)
+    expect(f.control.watcherRecordView()).toBe(trimmed)
   })
 })

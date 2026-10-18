@@ -25,11 +25,11 @@ Two checks run in every CI run. They count calls; they never time anything.
   adapter, the provider switch, the workspace, the coordinator, Watcher on Owl, the local host service, the desktop
   router, the window's publisher and broadcaster, the Watcher room's publisher, and the host-update busy check with one
   saved host on an older Sotto. On Owl, Watcher is open and watching the streaming thread. It streams one reply with
-  20 threads and with 200, and counts every `structuredClone`, `cloneHostSnapshot` and `cloneActivitySnapshot` call,
-  and which of them copy the whole state. It fails when one update copies more with 200
-  threads than with 20, or when an update passes its budget.
+  20 threads and with 200, and counts every `structuredClone`, `cloneHostSnapshot`, `clonePlainData` and
+  `cloneActivitySnapshot` call, which of them copy the whole state, and which copy Watcher's record. It fails when one
+  update copies more with 200 threads than with 20, or when an update passes its budget.
 - `tests/unit/main/copySites.test.ts` counts every copy call site in `src/main` and `src/host` (`structuredClone(`,
-  `.shell()`, `watcherRecord()`, `cloneHostSnapshot(`, `cloneActivitySnapshot(` and JSON round trips) per file, and
+  `.shell()`, `watcherRecord()`, `cloneHostSnapshot(`, `clonePlainData(`, `cloneActivitySnapshot(` and JSON round trips) per file, and
   fails when the count differs from `tests/fixtures/copySites.json`. A new copy shows up in review that way.
 
 `tests/e2e/main-freeze.spec.ts` is the timing side, opt-in like the other benchmarks: it measures main's freezes and the
@@ -87,8 +87,9 @@ does anything without running it, a second copy of its rules that would have to 
 change there is lost silently. Instead the record is smaller and cheaper to copy:
 
 - Owl keeps only the prompt turns something reads: those an operation counts against, each Watcher's newest, and the
-  50 most recent. The rest go on the next change to the record, so the owner's 513 turns become about 50. Stable keeps
-  the record whole (ADR-0072).
+  50 most recent. The rest go on the next change to the record; the owner's 513 turns become about 50. Turns an
+  operation counts against are always kept, so a Watcher that acts in most of its turns keeps more. Stable keeps the
+  record whole (ADR-0072).
 - The record is copied as plain schema data, its containers copied and its strings kept, as host snapshots already are.
 
 Measured in one run on a busy machine, a copy of the owner's record took 3.4 ms with `structuredClone` and 0.66 ms as

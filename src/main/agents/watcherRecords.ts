@@ -5,7 +5,10 @@ export function migrateWatcherRecord(input: unknown): WatcherRecord {
   return input === undefined ? emptyWatcherRecord() : watcherRecordSchema.parse(input)
 }
 
-/** Prompt turns kept beyond those in use, so a retried send still finds the turn it opened. */
+/**
+ * Prompt turns kept beyond those in use, so a retried send still finds the turn it opened. A message sent again only after
+ * this many newer turns, whose own turn Watcher never acted in, opens a second budget; nothing was spent from the first.
+ */
 export const WATCHER_PROMPT_TURNS_KEPT = 50
 
 /**
