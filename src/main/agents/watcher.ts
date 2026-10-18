@@ -30,6 +30,7 @@ import type { CheckpointObservation, PullRequestObservation } from './watcherEvi
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { watcherOwnChanges } from './watcherOwnChanges'
+import { watcherReceiptReplies } from './watcherReceiptReplies'
 import { WATCHER_FINAL_OUTCOMES, watcherLatestTurnMessageId, watcherTurnOutcome } from './watcherOutcomes'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts } from '../../shared/watcherHost'
 
@@ -424,7 +425,8 @@ export class WatcherService implements WatcherControlHooks {
       }), inFlight: this.inFlight(record), inFlightLimit: this.options.limit(),
       receipts: record.operations.map(operation => { const outcome = this.outcomeOf(operation, reportsOutcomes); return outcome ? { ...operation, outcome } : operation }),
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(),
-      handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null }
+      handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
+      receiptReplies: watcherReceiptReplies(record, current) }
   }
   private roomObservation(observation: WatcherObservation) { const { landing: _landing, ...result } = observation; void _landing; return result }
   get(): WatcherRoomResult { return { status: 'ok', state: this.state() } }
@@ -914,8 +916,9 @@ export class WatcherService implements WatcherControlHooks {
       || this.record().requests.some(request => request.participants.some(item => key(item.target) === key(target)))
     if (!owned) return
     const operations = new Set<string>()
+    // One send is one takeover, whichever requests it ends: every participant it fences shares its time (the takeover line).
+    const at = now()
     this.options.control.mutateWatcher(record => {
-      const at = now()
       this.recordLocalTakeover(record, target, at, userDraft)
       const watch = record.watches?.find(item => key(item.target) === key(target))
       if (watch) { watch.generation++; watch.pausedByUserMessageId = userMessageId ?? nativeHead(this.thread(target)) ?? 'unobserved-user-turn' }
