@@ -65,6 +65,8 @@ async function pairedWatcher(size: number) {
   const readRecord = f.control.watcherRecord.bind(f.control)
   f.control.watcherRecord = () => { if (counted()) tally.records++; return readRecord() }
   watcher.wakes.start()
+  // These count reads per pass, so every update runs its pass at once, as one does after WATCHER_OBSERVE_MS.
+  Object.defineProperty(watcher.wakes, 'observedAt', { get: () => -Infinity, set: () => undefined })
   const measure = async (read: () => unknown) => {
     for (const name of Object.keys(tally) as (keyof typeof tally)[]) tally[name] = 0
     const token = measuring = {}

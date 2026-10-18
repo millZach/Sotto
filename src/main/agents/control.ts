@@ -932,9 +932,10 @@ export class AgentControl {
       ...(thread.activities === undefined ? {} : { activities: EMPTY_ACTIVITIES }),
       summary: this.presentedSummary(thread),
     })) } }
-    const state = structuredClone(bare)
+    // Every broadcast makes one, so it copies containers and keeps strings: several times faster than structuredClone.
+    const state = clonePlainData(bare)
     if (shared) state.host.models = models
-    state.obsoleteDrafts = structuredClone(this.persistedObsoleteDrafts)
+    state.obsoleteDrafts = clonePlainData(this.persistedObsoleteDrafts)
     state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false

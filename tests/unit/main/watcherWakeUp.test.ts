@@ -2,10 +2,10 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
-import { WATCHER_QUIET_MS, watcherOverview } from '../../../src/shared/watcherOverview'
+import { WATCHER_QUIET_MS, watcherObservationKey, watcherOverview } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
 import type { WatcherRecord } from '../../../src/shared/watcher'
-import { WatcherWakeUp, WAKE_UP_TRIES, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
+import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
@@ -57,6 +57,145 @@ function pairedChecks(wakes: WatcherWakeUp, state: 'passed' | 'failed', at: numb
     observedAt: new Date(at).toISOString(), freshness: 'fresh', availability: 'available', fact: state === 'failed' ? 'checks-failed' : 'checks-passed',
     checksState: state, checkCount: 1 }])
 }
+
+it('looks over the threads at most every WATCHER_OBSERVE_MS while one streams, and once more after the last update', async () => {
+  let streamed = 0
+  const looked = vi.fn(() => String(streamed)), after = vi.fn()
+  const f = fixture(true, looked)
+  await f.advance(WATCHER_OBSERVE_MS); looked.mockClear()
+  f.wakes.observeSoon(after)
+  expect(looked).toHaveBeenCalledTimes(1)
+  // A streaming burst: every 16 ms the thread moves on, but no turn, request card, background work or connection does.
+  for (let update = 0; update < 10; update++) { streamed++; f.wakes.observeSoon(after); await f.advance(16) }
+  expect(looked).toHaveBeenCalledTimes(1)
+  expect(after).not.toHaveBeenCalled()
+  await f.advance(WATCHER_OBSERVE_MS)
+  expect(looked).toHaveBeenCalledTimes(2)
+  expect(after).toHaveBeenCalledTimes(1)
+  // Nothing owed once the burst is over: no pass looks again by itself.
+  await f.advance(WATCHER_OBSERVE_MS * 4)
+  expect(looked).toHaveBeenCalledTimes(2)
+})
+
+it('looks at once when a turn finishes or a request card arrives between two looks', async () => {
+  const f = fixture(), after = vi.fn()
+  await f.advance(WATCHER_OBSERVE_MS)
+  f.wakes.observeSoon(after)
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+  f.wakes.observeSoon(after)
+  expect(f.wakes.news().map(event => event.kind)).toContain('turn-finished')
+  f.thread.requests.push({ id: 'question', kind: 'question', text: 'private question', options: [] })
+  f.wakes.observeSoon(after)
+  expect(f.wakes.news().map(event => event.kind)).toContain('needs-user')
+  expect(after).not.toHaveBeenCalled()
+})
+
+it('looks at once when the Watcher record is replaced, and owes nothing once closed', async () => {
+  let record = watcherRecordFixture()
+  record.operations[0]!.deliveryState = 'accepted'
+  const looked = vi.fn(() => 'same'), after = vi.fn()
+  const f = fixture(true, looked, { record: () => record })
+  await f.advance(WATCHER_OBSERVE_MS); f.wakes.observeSoon(after); looked.mockClear()
+  // A receipt that needs Watcher arrives as a new record: the pass runs now, not when the window is up.
+  record = structuredClone(record); record.operations[0]!.deliveryState = 'failed'
+  f.wakes.observeSoon(after)
+  expect(looked).toHaveBeenCalledTimes(1)
+  expect(f.wakes.news().map(event => event.kind)).toContain('delivery-changed')
+  // A streaming update owes a pass; closing cancels it.
+  f.wakes.observeSoon(after)
+  f.wakes.close()
+  await f.advance(WATCHER_OBSERVE_MS * 2)
+  expect(looked).toHaveBeenCalledTimes(1)
+  expect(after).not.toHaveBeenCalled()
+})
+
+it('looks at a thread Watcher does not watch only when Watcher reads', async () => {
+  const looked: string[] = []
+  const f = fixture(false, target => { looked.push(target.threadId); return 'same' })
+  f.snapshot.threads.push({ ...f.thread, id: 'unwatched', lastTurn: { id: 'other-turn', status: 'running' } })
+  f.wakes.start()
+  for (let pass = 0; pass < 3; pass++) { await f.advance(WATCHER_OBSERVE_MS * 40); f.wakes.observe() }
+  expect(looked).toEqual(Array(4).fill(centerTarget.threadId))
+  // Its turn ending is no news to anyone, so no pass looks at it; Watcher's read does.
+  const observed = () => f.wakes.observations.get(watcherObservationKey(f.snapshot.threads[1]!))?.observedAt
+  expect(observed()).toBeUndefined()
+  f.snapshot.threads[1]!.status = 'idle'; f.snapshot.threads[1]!.lastTurn = { id: 'other-turn', status: 'completed' }
+  f.wakes.observeSoon(() => undefined)
+  expect(observed()).toBeUndefined()
+  f.wakes.observeAll()
+  expect(observed()).toBe(new Date(f.now()).toISOString())
+  expect(f.wakes.news().filter(event => event.target.threadId === 'unwatched')).toEqual([])
+})
+
+it('starts a thread that has just become watched from its facts as they are, and tells what changes after', async () => {
+  const f = fixture(), url = 'https://github.com/synthetic/project/pull/41', later = { hostId: centerTarget.hostId, threadId: 'later' }
+  const thread: AgentThread = { ...f.thread, id: 'later', lastTurn: { id: 'later-turn', status: 'running' },
+    pullRequests: [{ url, number: 41, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }] }
+  f.snapshot.threads.push(thread)
+  const checks = (state: 'failed' | 'passed') => f.wakes.pullRequest({ url, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: state, checkCount: 1 })
+  // GitHub's read of its pull request, and a new link, while no one watches it.
+  checks('failed'); f.wakes.observe()
+  thread.pullRequests = [...thread.pullRequests!, { url: url.replace('/41', '/42'), number: 42, title: 'Second synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
+  f.wakes.observe()
+  f.record.requests[0]!.participants.push({ target: later, requestId: f.record.requests[0]!.id, startedBy: 'user', generation: 0, state: 'participating', promptCount: 0 })
+  f.wakes.observe(); await f.advance(5_000)
+  const told = () => f.delivered.flatMap(news => news.events).filter(event => event.kind === 'evidence-changed' && event.target.threadId === 'later')
+  expect(told()).toEqual([])
+  checks('passed'); f.wakes.observe(); await f.advance(5_000)
+  expect(told()).toHaveLength(1)
+})
+
+it('starts a thread watched while disconnected from its facts once it connects', async () => {
+  const f = fixture(), url = 'https://github.com/synthetic/project/pull/44', target = { hostId: centerTarget.hostId, threadId: 'away' }
+  const thread: AgentThread = { ...f.thread, id: 'away', clientConnected: false, lastTurn: { id: 'away-turn', status: 'running' },
+    worktree: { mode: 'shared', status: 'ready', branch: 'feature', baseBranch: 'main', git: { isRepository: true, branch: 'feature', upstream: null,
+      hasRemote: true, defaultBranch: 'main', isDefaultBranch: false, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0,
+      aheadOfDefault: null, pullRequest: { url, number: 44, title: 'Synthetic pull request', state: 'merged', draft: false },
+      readAt: centerTime, fetchedAt: null } } }
+  f.snapshot.threads.push(thread)
+  f.wakes.observe()
+  f.record.requests[0]!.participants.push({ target, requestId: f.record.requests[0]!.id, startedBy: 'user', generation: 0, state: 'participating', promptCount: 0 })
+  f.wakes.observe()
+  // It connects with the pull request it merged long ago: that is where it stands, not news.
+  thread.clientConnected = true
+  f.wakes.observe(); await f.advance(5_000)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'evidence-changed' && event.target.threadId === 'away')).toEqual([])
+})
+
+it('tells what a watched thread that appears after a restart brings, as one on a host that reconnects', async () => {
+  const f = fixture(false), url = 'https://github.com/synthetic/project/pull/43', later = { hostId: centerTarget.hostId, threadId: 'late' }
+  f.record.requests[0]!.participants.push({ target: later, requestId: f.record.requests[0]!.id, startedBy: 'user', generation: 0, state: 'participating', promptCount: 0 })
+  f.wakes.start()
+  // Its pull request merged while this computer could not see it; the host's Git read says so as the thread appears.
+  f.snapshot.threads.push({ ...f.thread, id: 'late', lastTurn: { id: 'late-turn', status: 'running' },
+    worktree: { mode: 'shared', status: 'ready', branch: 'feature', baseBranch: 'main', git: { isRepository: true, branch: 'feature', upstream: null,
+      hasRemote: true, defaultBranch: 'main', isDefaultBranch: false, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0,
+      aheadOfDefault: null, pullRequest: { url, number: 43, title: 'Synthetic pull request', state: 'merged', draft: false },
+      readAt: new Date(f.now()).toISOString(), fetchedAt: null } } })
+  f.wakes.observe(); await f.advance(5_000)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'evidence-changed' && event.target.threadId === 'late')).toHaveLength(1)
+})
+
+it('never marks an unwatched thread Quiet from two reads, and gives its own last activity', async () => {
+  const f = fixture(), activityAt = '2026-10-11T09:00:00.000Z'
+  f.snapshot.threads.push({ ...f.thread, id: 'unwatched', updatedAt: activityAt, lastTurn: { id: 'other-turn', status: 'running' } })
+  f.wakes.observeAll(); await f.advance(WATCHER_QUIET_MS + 60_000); f.wakes.observeAll()
+  const observed = f.wakes.observations.get(watcherObservationKey(f.snapshot.threads[1]!))!
+  expect(observed.connectedAt).toBe(observed.observedAt)
+  expect(observed.lastProgressAt).toBe(activityAt)
+  expect(watcherOverview({ host: f.snapshot }, f.now(), f.wakes.observations).find(row => row.thread.id === 'unwatched')?.group).toBe('Working')
+})
+
+it('lets a read that takes the place of an owed pass publish what it found', async () => {
+  let streamed = 0
+  const f = fixture(true, () => String(streamed)), after = vi.fn()
+  await f.advance(WATCHER_OBSERVE_MS); f.wakes.observeSoon(after)
+  streamed++; f.wakes.observeSoon(after)
+  f.wakes.observeAll()
+  expect(after).toHaveBeenCalledTimes(1)
+  await f.advance(WATCHER_OBSERVE_MS * 2)
+  expect(after).toHaveBeenCalledTimes(1)
+})
 
 it('batches for two seconds and never delays a sustained burst past five seconds', async () => {
   const f = fixture()
