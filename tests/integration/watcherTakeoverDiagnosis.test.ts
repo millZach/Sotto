@@ -302,6 +302,21 @@ it('keeps the display proof on the message that starts a fresh request', async (
   expect(carrying.displayPrompt).toEqual(carrying.userFollowups!.find(item => item.messageId === carrying.rootUserMessageId)!.displayPrompt)
 }, 60_000)
 
+it('keeps an instruction steered into Watcher’s running turn after a takeover inside that turn’s request', async () => {
+  // Bug Bot finding 2 on #1163, kept as documented: a steer joins Watcher's running turn, and a request reaches Watcher
+  // only when a turn starts, so the steered words have no way to carry a new request.
+  const f = await fixture(), text = 'Synthetic instruction steered into Watcher after takeover'
+  const draftId = await queueAfterTakeover(f, text)
+  const requests = f.control.watcherRecord().requests.length
+  const itemId = f.control.shell().followups!.find(item => item.draftId === draftId)!.id
+  expect((await f.control.commandShell({ type: 'steer-followup', threadId: f.watcherId, itemId })).error).toBeNull()
+  await expect.poll(() => f.thread(f.watcherId).messages.findLast(item => item.role === 'user')?.text).toBe(text)
+  expect(f.thread(f.watcherId).status).toBe('running')
+  expect(f.control.watcherRecord().requests).toHaveLength(requests)
+  expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
+    delivery: 'now', text: 'Synthetic forbidden continuation of a steered instruction' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+}, 60_000)
+
 it('keeps an instruction inside its request when the takeover was on a thread the request never used', async () => {
   // Bug Bot finding 4 on #1163: a takeover anywhere split the next queued instruction off request A.
   const f = await fixture(), other = randomUUID(), worker = f.thread(f.target.threadId)
