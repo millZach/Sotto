@@ -47,7 +47,18 @@ const signedInSourceRefused = (source: string): string => `${source} refused the
 const watcherRefused = (held: HeldProviders): string => `OpenCode cannot host Watcher. Nothing was sent. Choose a ${watcherProvidersInWords(held)} model for Watcher.`
 /** OpenCode Zen's provider ID: the model source a folder with no sign-ins offers, its free models (ADR-0087). */
 const ZEN = 'opencode'
+/** How long a thread server is kept for a prompt whose answer was lost, in case OpenCode is still taking it. */
+const UNCONFIRMED_PROMPT_HOLD_MS = 60_000
+/**
+ * Whether an unconfirmed prompt still keeps its thread's server: for a minute from when its answer was lost, or, while it is
+ * still on its way, from when it was sent (#1143). A cold start spends much of a minute before the prompt is even asked, so
+ * timing a lost answer from the send would leave it little or no hold.
+ */
+export function promptHoldsServer(origin: { readonly confirmed: boolean; readonly createdAt: string }, lostAt: number | undefined, now: number): boolean {
+  return !origin.confirmed && now - (lostAt ?? Date.parse(origin.createdAt)) < UNCONFIRMED_PROMPT_HOLD_MS
+}
 const ZEN_NAME = OPENCODE_ZEN_SOURCE
+
 
 /**
  * Sotto's permission modes as OpenCode session rule sets (ADR-0087). The last matching rule wins, and OpenCode's own
@@ -264,6 +275,8 @@ export class OpenCodeHost implements AgentHost {
   private aliases: Record<string, Alias> = {}
   private readonly threads = new Map<string, AgentThread>()
   private readonly pending = new Map<string, Pending>()
+  /** When each prompt's answer was lost, by its inbox ID, while that still holds its server. */
+  private readonly lostPrompts = new Map<string, number>()
   private readonly activePrompts = new Set<string>()
   /** The turn each thread is running, by the Sotto ID of the user message that opened it. */
   private readonly activeTurns = new Map<string, { messageId: string }>()
@@ -330,7 +343,17 @@ export class OpenCodeHost implements AgentHost {
   private busy(id: string): boolean {
     const thread = this.threads.get(id)
     return this.holds.has(id) || this.activePrompts.has(id) || this.activeTurns.has(id) || this.loading.has(id)
-      || !!thread && (thread.status === 'running' || thread.requests.length > 0)
+      || !!thread && (thread.status === 'running' || thread.requests.length > 0) || this.awaitingPrompt(id)
+  }
+  /**
+   * Whether a prompt whose answer was lost may still be in this thread's server: OpenCode may take it after Sotto stopped
+   * waiting, and stopping the server then would end that turn and lose the stream that confirms it (found running the
+   * host contract on OpenCode, #1107). The server is kept for a while; after that, the next open reads history instead.
+   */
+  private awaitingPrompt(id: string): boolean {
+    const now = Date.now()
+    for (const [inboxId, at] of this.lostPrompts) if (now - at >= UNCONFIRMED_PROMPT_HOLD_MS) this.lostPrompts.delete(inboxId)
+    return this.aliases[id]?.origins.some(origin => promptHoldsServer(origin, this.lostPrompts.get(origin.inboxId), now)) ?? false
   }
   private current(historyFromEvents = false): AgentHostSnapshot {
     if (historyFromEvents) return cloneActivitySnapshot(this.activitySnapshot(true))
@@ -1061,7 +1084,7 @@ export class OpenCodeHost implements AgentHost {
     const message = this.userMessage(alias, inboxId, text, at)
     this.log.add(id, message)
     const origin = alias.origins.find(candidate => candidate.inboxId === inboxId)
-    if (origin && !origin.confirmed) { origin.confirmed = true; void this.persist().catch(() => undefined) }
+    if (origin && !origin.confirmed) { origin.confirmed = true; this.lostPrompts.delete(inboxId); void this.persist().catch(() => undefined) }
     return message.id
   }
   /** Record a block of a reply; returns the message ID it is recorded under. */
@@ -1443,6 +1466,7 @@ export class OpenCodeHost implements AgentHost {
             if (ack.data.id !== origin.inboxId) throw new OpenCodeUncertain('OpenCode answered for another prompt.')
           } catch (error) {
             this.activePrompts.delete(command.threadId)
+            if (!(error instanceof OpenCodeRejected)) this.lostPrompts.set(origin.inboxId, Date.now())
             if (error instanceof OpenCodeRejected) {
               alias.origins = alias.origins.filter(item => item !== origin); await this.persist()
               throw new Error(command.type === 'steer' ? 'OpenCode could not steer this turn. Nothing was sent; queue it as a follow-up instead.' : 'OpenCode refused this prompt. Nothing was sent. Review the thread before retrying.', { cause: error })

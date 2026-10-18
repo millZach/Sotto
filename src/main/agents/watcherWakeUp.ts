@@ -26,7 +26,7 @@ interface Progress { fingerprint: string; connected: boolean; connectedAt: numbe
 /** Opaque progress only: no plan, message, tool input or output text crosses the host projection. */
 export function watcherProgressFingerprint(thread: AgentThread): string {
   return observationDigest([thread.status, thread.lastTurn, thread.messages.map(message => [message.id, message.text.length]),
-    thread.activities?.map(activity => [activity.id, activity.status, activity.startedAt, activity.completedAt, activity.text?.length, activity.output?.length, activity.steps?.map(step => [step.status, step.text.length]), activity.agents?.map(agent => [agent.id, agent.status, agent.progress, agent.message?.length]) ]), thread.backgroundWork?.map(work => [work.id, work.type]), thread.monitoring?.map(work => work.id), thread.requests.map(card => [card.id, card.kind])])
+    thread.activities?.map(activity => [activity.id, activity.status, activity.startedAt, activity.completedAt, activity.text?.length, activity.output?.length, activity.steps?.map(step => [step.status, step.text.length]), activity.agents?.map(agent => [agent.id, agent.status, agent.progress, agent.message?.length]) ]), thread.subagentSummary, thread.backgroundWork?.map(work => [work.id, work.type]), thread.monitoring?.map(work => work.id), thread.requests.map(card => [card.id, card.kind])])
 }
 /**
  * Whether a receipt for one of Watcher's own sends is news to it: the send failed, was refused or may not have gone. An
@@ -160,7 +160,8 @@ export class WatcherWakeUp {
   private connected(snapshot: AgentHostSnapshot, thread: AgentThread): boolean {
     return snapshot.connected && thread.clientConnected !== false && isThreadProviderConnected(snapshot, thread)
   }
-  private active(thread: AgentThread): boolean { return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.backgroundWork?.length || thread.monitoring?.length) }
+  /** Unknown roster entries keep work unsettled, but only provider-confirmed working agents can become quiet. */
+  private active(thread: AgentThread): boolean { return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.subagentSummary?.working || thread.backgroundWork?.length || thread.monitoring?.length) }
   /**
    * The thread's work is confirmed ended: nothing running and nothing unknown. A sub-agent a restart left unknown may still
    * be running, so it keeps the turn unsettled until its provider says how it ended. A host that does not report the counts

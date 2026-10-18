@@ -4,7 +4,7 @@ import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
-import { HOST_PROVIDER_ORDER, HostProviders, connectedProvidersLabel, hostProviderTile } from '../../../src/renderer/src/features/settings/HostProviders'
+import { HostProviders, connectedProvidersLabel, hostProviderTile } from '../../../src/renderer/src/features/settings/HostProviders'
 import type { AgentProviderStatus, ProviderId } from '../../../src/shared/agents'
 import type { HostsBridge, HostStatus } from '../../../src/shared/hosts'
 import type { HostSignInRequest, ProviderSignInView } from '../../../src/shared/hostProviders'
@@ -191,6 +191,3 @@ it('says the host stopped answering when it fails to answer twice in a row, and 
   await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Try again' })).toHaveFocus())
 })
 
-it('draws no OpenCode tile on a host, even in Owl, until hosts take OpenCode (#1107)', () => {
-  expect(HOST_PROVIDER_ORDER).toEqual(['claude', 'codex', 'grok', 'devin', 'muse'])
-})

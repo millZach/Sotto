@@ -96,7 +96,8 @@
   "src/main/agents/watcher.ts": {
     "structuredClone(": 1,
     "shell()": 1,
-    "watcherRecord()": 1
+    "watcherRecord()": 1,
+    "clonePlainData(": 1
   },
   "src/main/agents/watcherRoomDesktop.ts": {
     "structuredClone(": 1
