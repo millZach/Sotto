@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { AgentThread } from '../../../shared/agents'
 import type { DelegatedView, DelegationsBridge, DelegationView } from '../../../shared/delegation'
 import { useOwlFeature } from '../state/owlFeature'
@@ -98,6 +98,37 @@ export function useDelegations(threadId: string | undefined, store: DelegationSt
   const subscribe = useCallback((listener: () => void) => id === undefined ? () => undefined : store.subscribe(id, listener), [id, store])
   const delegations = useSyncExternalStore(subscribe, () => id === undefined ? NONE : store.delegations(id), () => NONE)
   useEffect(() => { if (id !== undefined) store.want(id) }, [id, store])
+  return delegations
+}
+
+const NO_THREADS: ReadonlyMap<string, ThreadDelegations> = new Map()
+
+/**
+ * What each of `threadIds` delegated, as main last answered, while the window shows delegation: one subscription for a
+ * roster's worth of delegating threads (Tools › Agents lists a thread's delegated threads and theirs, ADR-0081). Each is
+ * read once and again only when main names it, as `useDelegations` reads one. The map keeps its identity until an answer
+ * changes.
+ */
+export function useDelegationsOf(threadIds: readonly string[], store: DelegationStore = windowStore): ReadonlyMap<string, ThreadDelegations> {
+  const enabled = useDelegationsEnabled()
+  const key = enabled ? JSON.stringify(threadIds) : '[]'
+  const ids = useMemo(() => JSON.parse(key) as string[], [key])
+  const held = useRef<{ readonly ids: readonly string[]; readonly list: readonly ThreadDelegations[]; readonly map: ReadonlyMap<string, ThreadDelegations> } | null>(null)
+  const subscribe = useCallback((listener: () => void) => {
+    const stops = ids.map(id => store.subscribe(id, listener))
+    return () => { for (const stop of stops) stop() }
+  }, [ids, store])
+  const snapshot = useCallback((): ReadonlyMap<string, ThreadDelegations> => {
+    if (!ids.length) return NO_THREADS
+    const list = ids.map(id => store.delegations(id))
+    const last = held.current
+    if (last !== null && last.ids === ids && last.list.every((delegations, index) => delegations === list[index])) return last.map
+    const map = new Map(ids.map((id, index) => [id, list[index]!] as const))
+    held.current = { ids, list, map }
+    return map
+  }, [ids, store])
+  const delegations = useSyncExternalStore(subscribe, snapshot, () => NO_THREADS)
+  useEffect(() => { for (const id of ids) store.want(id) }, [ids, store])
   return delegations
 }
 

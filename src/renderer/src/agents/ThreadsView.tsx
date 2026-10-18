@@ -124,9 +124,9 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued]))
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
   const labels = useShared(useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.thread.id, { title: row.thread.title, providerId: row.providerId, provider: row.provider }] as const)), [rows]))
-  // Delegated threads sit under the thread that delegated to them (ADR-0081; Owl only).
-  const nestDelegated = useOwlFeature('thread-delegation')
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId, nestDelegated), [state, rows, query, nestDelegated]))
+  // Delegated threads have no row of their own: they live in their delegating thread's Tools › Agents (ADR-0081; Owl only).
+  const delegation = useOwlFeature('thread-delegation')
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId, delegation), [state, rows, query, delegation]))
   const originalStored = useSplitLayout(layoutStore)
   const stored = useMemo(() => qualifyLegacyLayout(originalStored, state?.hostId), [originalStored, state?.hostId])
   useEffect(() => { if (stored !== originalStored) layoutStore.set(stored) }, [stored, originalStored, layoutStore])
@@ -139,6 +139,10 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const visible = state === null || rows.length === 0 ? stored : prune(stored, id => rowsById.has(id))
   const layout = retarget(visible, lastFocused.current ?? visible.focused, focusedId)
   const paneIds = useShared(isSplit(layout) ? layout.panes : focusedId !== null ? [focusedId] : [])
+  // A delegated thread in a pane marks the row it is reached from, the top of its delegation, since it has none of its own.
+  const listedAs = organization.listedAs
+  const sidebarCurrent = focusedId === null ? null : listedAs?.get(focusedId) ?? focusedId
+  const sidebarOpen = useShared(useMemo(() => listedAs?.size ? [...new Set(paneIds.map(id => listedAs.get(id) ?? id))] : paneIds, [paneIds, listedAs]))
 
   useEffect(() => { if (layout !== visible) layoutStore.set(layout) }, [layout, visible, layoutStore])
   useEffect(() => {
@@ -309,7 +313,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
       onCreated={() => { setChooser(null); focusNewComposer() }} />}
     <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={setMode} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
-      currentThreadId={focusedId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
+      currentThreadId={sidebarCurrent} openThreadIds={sidebarOpen} onOpenBeside={openBeside} onDragThread={setDragging}
       newThreadError={newThreadError} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} />
     <section className="thread-workspace" aria-label="Thread workspace">
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}

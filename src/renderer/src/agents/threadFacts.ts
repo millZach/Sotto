@@ -1,6 +1,5 @@
 import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentModel, type AgentProject, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
-import { DELEGATION_LEVELS_MAX } from '../../../shared/delegation'
 import { continuedWordsOf } from '../../../shared/continueThread'
 import { HANDOVER_LEAD } from '../../../shared/handover'
 import { babysittingWord } from './babysitting'
@@ -60,6 +59,11 @@ export interface ThreadRow {
   readonly workingSince: number
   /** Your side of the thread, shown under an open row; the sentence already carries the provider's. */
   readonly lastMessage: ThreadLastMessage | undefined
+  /**
+   * The delegated thread below this one whose request the row's needs-you stands for (ADR-0081, October 17, 2026): set
+   * only on a sidebar row that says Needs your approval or Needs your answer for a thread it delegated, never its own.
+   */
+  readonly waitingIn?: string | undefined
 }
 
 export interface ThreadGroup {
@@ -293,11 +297,6 @@ export interface ProjectFolder {
   /** The whole project was settled; its folder sits in Settled with every thread. */
   readonly settled: boolean
   readonly rows: readonly ThreadRow[]
-  /**
-   * Delegated threads listed under the thread that delegated to them (ADR-0081, design A): each one's level below it,
-   * 1 or 2, with the title of the thread above. Absent while the Owl list keeps delegation off or nothing here delegated.
-   */
-  readonly delegation?: ReadonlyMap<string, { readonly level: number; readonly parent: string }>
   readonly working: number
   readonly needs: number
   readonly activityAt: number
@@ -308,6 +307,12 @@ export interface WorkspaceOrganization {
   readonly settled: readonly ProjectFolder[]
   /** Rows the query found, before attention rows are added back. */
   readonly matching: number
+  /**
+   * Each delegated thread the sidebar leaves out, with the listed thread it is reached from: the top of its delegation
+   * (ADR-0081, October 17, 2026). The sidebar marks that row current while the delegated thread is in the pane. Absent
+   * while the Owl list keeps delegation off.
+   */
+  readonly listedAs?: ReadonlyMap<string, string>
 }
 
 const byActivity = (first: { readonly activityAt: number; readonly id: string }, second: { readonly activityAt: number; readonly id: string }): number => {
@@ -317,37 +322,54 @@ const byActivity = (first: { readonly activityAt: number; readonly id: string },
 }
 
 /**
- * Rows in activity order, each delegated thread moved under the thread that delegated to it when that thread is listed
- * here too, its own delegated threads under it in turn (ADR-0081 decision 2). Siblings keep their activity order. A
- * delegated thread whose delegating thread is not listed, settled or filtered away, stands on its own.
+ * Where each delegated thread is reached from (ADR-0081, as Zach settled it on October 17, 2026): the top of its
+ * delegation, the thread at the end of its `delegatedBy` links, which the sidebar lists. A delegated thread whose
+ * delegating thread is gone from the state is the top of its own, so it stays listed and is never out of reach; so is
+ * every thread in a loop of links. Threads no thread started are not in the map.
  */
-export function nestDelegated(rows: readonly ThreadRow[]): { readonly rows: readonly ThreadRow[]; readonly delegation?: ReadonlyMap<string, { readonly level: number; readonly parent: string }> } {
-  const listed = new Map(rows.map(row => [row.thread.id, row]))
-  const children = new Map<string, ThreadRow[]>()
-  for (const row of rows) {
-    const parent = row.thread.delegatedBy
-    if (parent !== undefined && parent !== row.thread.id && listed.has(parent)) children.set(parent, [...children.get(parent) ?? [], row])
+export function delegationTops(threads: readonly Pick<AgentThread, 'id' | 'delegatedBy'>[]): ReadonlyMap<string, string> {
+  const parents = new Map<string, string | undefined>(threads.map(thread => [thread.id, thread.delegatedBy]))
+  const tops = new Map<string, string>()
+  for (const thread of threads) {
+    if (thread.delegatedBy === undefined || !parents.has(thread.delegatedBy)) continue
+    const seen = new Set([thread.id])
+    let top = thread.delegatedBy
+    let loop = false
+    for (let up = parents.get(top); up !== undefined && parents.has(up); up = parents.get(top)) {
+      if (seen.has(top)) { loop = true; break }
+      seen.add(top)
+      top = up
+    }
+    if (!loop && !seen.has(top)) tops.set(thread.id, top)
   }
-  if (!children.size) return { rows }
-  const ordered: ThreadRow[] = [], delegation = new Map<string, { level: number; parent: string }>(), placed = new Set<string>()
-  const place = (row: ThreadRow, level: number): void => {
-    if (placed.has(row.thread.id)) return
-    placed.add(row.thread.id); ordered.push(row)
-    const parent = level > 0 && row.thread.delegatedBy !== undefined ? listed.get(row.thread.delegatedBy) : undefined
-    if (parent) delegation.set(row.thread.id, { level, parent: parent.thread.title })
-    for (const child of children.get(row.thread.id) ?? []) place(child, Math.min(level + 1, DELEGATION_LEVELS_MAX))
-  }
-  for (const row of rows) if (row.thread.delegatedBy === undefined || !listed.has(row.thread.delegatedBy)) place(row, 0)
-  // A loop of links is no family: whatever no top-level row reached stands on its own, in activity order.
-  for (const row of rows) place(row, 0)
-  return { rows: ordered, delegation }
+  return tops
 }
 
-function folder(id: string, project: AgentProject | undefined, rows: readonly ThreadRow[], settled: boolean, nest = false): ProjectFolder {
-  const byTime = [...rows].sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
-  const { rows: sorted, delegation } = nest ? nestDelegated(byTime) : { rows: byTime, delegation: undefined }
+/**
+ * The sidebar's rows while delegation is on: no row for a delegated thread, and each thread a delegated thread below it
+ * waits on says so as its own needs would, Needs your approval ahead of Needs your answer. Its own waiting wins.
+ */
+function withoutDelegated(rows: readonly ThreadRow[], tops: ReadonlyMap<string, string>): ThreadRow[] {
+  const waiting = new Map<string, ThreadRow>()
+  for (const row of rows) {
+    const top = tops.get(row.thread.id)
+    if (top === undefined || row.waitingFor === null) continue
+    const held = waiting.get(top)
+    if (held === undefined || (held.waitingFor === 'question' && row.waitingFor === 'approval')) waiting.set(top, row)
+  }
+  return rows.filter(row => !tops.has(row.thread.id)).map((row): ThreadRow => {
+    const below = waiting.get(row.thread.id)
+    if (below === undefined || row.waitingFor !== null) return row
+    const approval = below.waitingFor === 'approval'
+    return { ...row, state: 'needs', waitingFor: below.waitingFor, stateLabel: approval ? 'Needs your approval' : 'Needs your answer', attention: true,
+      when: clockLabel(row.activityAt), workingSince: Number.NaN, waitingIn: below.thread.title }
+  })
+}
+
+function folder(id: string, project: AgentProject | undefined, rows: readonly ThreadRow[], settled: boolean): ProjectFolder {
+  const sorted = [...rows].sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
   return {
-    id, project, title: project?.title ?? rows[0]?.provider ?? 'Project', settled, rows: sorted, ...(delegation ? { delegation } : {}),
+    id, project, title: project?.title ?? rows[0]?.provider ?? 'Project', settled, rows: sorted,
     working: rows.filter(row => row.state === 'working').length,
     needs: rows.filter(row => row.state === 'needs').length,
     activityAt: rows.reduce((latest, row) => Number.isFinite(row.activityAt) && (!Number.isFinite(latest) || row.activityAt > latest) ? row.activityAt : latest, Number.NaN),
@@ -358,9 +380,13 @@ function folder(id: string, project: AgentProject | undefined, rows: readonly Th
  * Project folders for the sidebar. Open folders hold each unsettled project's open threads;
  * Settled holds whole settled projects plus individually settled threads under their own project.
  * A search keeps attention rows and projects whose name matches; without a search an open project
- * with no threads yet (or the selected project) still shows so a thread can be started there.
+ * with no threads yet (or the selected project) still shows so a thread can be started there. With `delegation` (the Owl
+ * answer for ADR-0081), a delegated thread has no row and no search finds it: it lives in the Tools › Agents of the thread
+ * that delegated to it, whose row says when it waits on you.
  */
-export function organizeWorkspace(state: AgentState, rows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, nestDelegatedThreads = false): WorkspaceOrganization {
+export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false): WorkspaceOrganization {
+  const tops = delegation ? delegationTops(state.host.threads) : undefined
+  const rows = tops?.size ? withoutDelegated(allRows, tops) : allRows
   const { matching, listed } = listThreads(rows, query)
   const needle = query.trim().toLocaleLowerCase()
   const projectMatches = (project: AgentProject): boolean => needle !== '' && `${project.title} ${project.path}`.toLocaleLowerCase().includes(needle)
@@ -376,15 +402,15 @@ export function organizeWorkspace(state: AgentState, rows: readonly ThreadRow[],
     const nameMatch = project !== undefined && projectMatches(project)
     const shown = nameMatch ? all : all.filter(row => listed.includes(row))
     if (isWorkspaceThreadSettled({ workspaceSettledAt: null }, project)) {
-      if (shown.length || nameMatch || (needle === '' && all.length === 0)) settled.push(folder(id, project, shown, true, nestDelegatedThreads))
+      if (shown.length || nameMatch || (needle === '' && all.length === 0)) settled.push(folder(id, project, shown, true))
       continue
     }
     const openRows = shown.filter(row => row.settledBy === null)
     const settledRows = shown.filter(row => row.settledBy !== null)
     const emptyOpen = needle === '' && (all.length === 0 || id === activeProjectId) && openRows.length === 0
-    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length)) open.push(folder(id, project, openRows, false, nestDelegatedThreads))
-    if (settledRows.length) settled.push(folder(id, project, settledRows, false, nestDelegatedThreads))
+    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length)) open.push(folder(id, project, openRows, false))
+    if (settledRows.length) settled.push(folder(id, project, settledRows, false))
   }
   const ordered = (folders: ProjectFolder[]): ProjectFolder[] => folders.sort((first, second) => byActivity(first, second))
-  return { open: ordered(open), settled: ordered(settled), matching: matching.length }
+  return { open: ordered(open), settled: ordered(settled), matching: matching.length, ...(tops ? { listedAs: tops } : {}) }
 }
