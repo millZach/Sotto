@@ -261,6 +261,36 @@ it('resumes from an instruction queued to a busy Watcher after the user took ove
   expect(f.participationA()).toEqual(oldParticipation)
 }, 60_000)
 
+/** Takes the worker over by a settings change, then queues one instruction to Watcher, still busy with request A. */
+async function queueAfterTakeover(f: Awaited<ReturnType<typeof fixture>>, text: string) {
+  await f.finish(f.target.threadId)
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
+  await expect.poll(() => f.participationA().state).toBe('taken-over')
+  await expect.poll(() => f.row().paused).toBe(false)
+  const draftId = randomUUID()
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId, text })).error).toBeNull()
+  return draftId
+}
+const carryingHead = (f: Awaited<ReturnType<typeof fixture>>) => {
+  const head = f.thread(f.watcherId).lastUserMessageId
+  return f.control.watcherRecord().requests.find(item => item.rootUserMessageId === head || item.userFollowups?.some(followup => followup.messageId === head))
+}
+
+it('keeps an instruction queued after a takeover fresh when the user renews a watch before it is read', async () => {
+  // Bug Bot finding 1 on #1163: a renewed watch cleared the mark, so the instruction joined fenced request A again.
+  const f = await fixture(), text = 'Synthetic instruction queued before a renewed watch'
+  await queueAfterTakeover(f, text)
+  expect(await f.watcher.unwatchThread({ target: f.target })).toMatchObject({ status: 'ok' })
+  expect(await f.watcher.watchThread({ target: f.target })).toMatchObject({ status: 'ok' })
+  await f.advanceToQueuedTurn(f.watcherId, text)
+  const carrying = carryingHead(f)
+  expect(carrying?.id).toBeDefined()
+  expect(carrying!.id).not.toBe(f.requestA)
+  const sent = await f.call('send_to_thread', { requestId: carrying!.id, retryKey: randomUUID(), target: f.target,
+    delivery: 'now', text: 'Synthetic continuation after a renewed watch' })
+  expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok' })
+}, 60_000)
+
 it('keeps an instruction queued to a busy Watcher before the takeover inside request A', async () => {
   const f = await fixture()
   await f.finish(f.target.threadId)

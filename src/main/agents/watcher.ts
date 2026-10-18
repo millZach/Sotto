@@ -681,7 +681,6 @@ export class WatcherService implements WatcherControlHooks {
     for (const request of record.requests) for (const followup of request.userFollowups ?? []) if (followup.messageId === undefined) delete followup.afterTakeover
   }
   private recordLocalTakeover(record: WatcherRecord, target: WatcherThreadTarget, at = now(), userDraft?: TakeoverDraft): void {
-    this.revokeQueuedFreshness(record)
     const represented = new Set([...(record.watches ?? []).map(watch => key(watch.target)),
       ...record.requests.flatMap(request => request.participants.map(item => key(item.target)))])
     const lastRequestId = record.requests.findLast(request => request.watcher.hostId === this.hostId() && !request.remoteOrigin && !request.standingWatchId)?.id ?? null
@@ -913,6 +912,8 @@ export class WatcherService implements WatcherControlHooks {
     const operations = new Set<string>()
     this.options.control.mutateWatcher(record => {
       const at = now()
+      // A renewed watch also records a boundary, but only a takeover, Stop or Stop all is the user acting after the queue.
+      this.revokeQueuedFreshness(record)
       this.recordLocalTakeover(record, target, at, userDraft)
       const watch = record.watches?.find(item => key(item.target) === key(target))
       if (watch) { watch.generation++; watch.pausedByUserMessageId = userMessageId ?? nativeHead(this.thread(target)) ?? 'unobserved-user-turn' }
