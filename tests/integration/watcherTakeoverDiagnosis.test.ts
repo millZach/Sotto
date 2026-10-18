@@ -23,9 +23,16 @@ async function fixture() {
   const credentials = await testCredentials(join(directory, 'vault'), { mode: 'unavailable' })
   const settings = { ...DEFAULT_SETTINGS, threadTitles: false }
   let watcherEnabled = true
-  const createRuntime = () => createAgentRuntime({ directory, credentials, watcherEnabled, settings: () => settings,
-    writingSettings: async () => settings, historyEnabled: () => true, openExternal: async () => undefined, reasoner: {},
-    providers: { codex: native.adapter, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
+  const createRuntime = async () => {
+    const created = await createAgentRuntime({ directory, credentials, watcherEnabled, settings: () => settings,
+      writingSettings: async () => settings, historyEnabled: () => true, openExternal: async () => undefined, reasoner: {},
+      providers: { codex: native.adapter, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
+    // These cases are about which user request may send, not Watcher's news. Two seconds after a worker's turn ends,
+    // news would start a hidden wake-up turn on Watcher's thread, and a user request sent behind it waits in the queue
+    // instead of starting a request. A slow runner reaches those two seconds between steps, so news is held back.
+    if (created.watcher) vi.spyOn(created.watcher.wakes, 'observe').mockImplementation(() => undefined)
+    return created
+  }
   let runtime = await createRuntime()
   cleanups.push(() => runtime.close())
   let control = runtime.agentControl, watcher = runtime.watcher!, tools = runtime.watcherTools!
@@ -38,13 +45,30 @@ async function fixture() {
   const call = async <N extends WatcherToolName>(name: N, input: unknown) =>
     watcherToolSchemas[name].output.parse((await tools.call(watcherId, name, input)).structuredContent) as WatcherToolOutput<N>
   const request = async (text: string) => {
+    const known = new Set(watcher.state().requests.map(item => item.id))
     expect((await control.commandShell({ type: 'manual-send', threadId: watcherId, draftId: randomUUID(), text })).error).toBeNull()
-    return watcher.state().requests.at(-1)!.id
+    // A send to a busy Watcher is queued and starts no request; the cases below need the request it starts.
+    const started = watcher.state().requests.at(-1)!.id
+    expect(known.has(started), 'the user request started a new Watcher request').toBe(false)
+    return started
   }
   const thread = (threadId: string) => control.watcherSnapshot().threads.find(item => item.id === threadId)!
   const session = (threadId: string) => runtime.threadRegistry!.byThread(threadId)!.sessionId
   const finish = async (threadId: string) => {
-    await native.driver.completeTurn(session(threadId), 'Synthetic completed reply')
+    const sessionId = session(threadId)
+    const action = await native.action(sessionId, { type: 'complete', text: 'Synthetic completed reply' })
+    // Only an app-server that has the thread loaded carries out a turn action, and after a restart none has until
+    // something reads the thread. Until then Sotto shows it idle from its saved record while its turn still runs
+    // natively, so an idle status alone would let the completion land later, inside the next send. Load the thread,
+    // wait for the completion, and have Sotto take in what Codex now reports: the adapter answers its own read only
+    // to its caller.
+    const unloaded = await native.sessions.stopped(sessionId)
+    if (unloaded) await native.adapter.refreshThread(sessionId)
+    await expect.poll(() => native.acted(action)).toBe(true)
+    if (unloaded) {
+      await expect.poll(async () => (await native.adapter.snapshot()).threads.find(item => item.id === sessionId)?.status).toBe('idle')
+      expect((await control.commandShell({ type: 'refresh', provider: 'codex' })).error).toBeNull()
+    }
     await expect.poll(() => thread(threadId).status).toBe('idle')
   }
   const advanceToQueuedTurn = async (threadId: string, text: string) => {
@@ -336,7 +360,7 @@ it.each(['queue', 'steer'] as const)('allows a fresh request to %s after user re
   const previousTurnId = f.thread(f.target.threadId).lastTurn?.id
   const standing = await f.call('send_to_thread', { requestId: f.watchId, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic running standing work' })
-  expect(standing).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  expect(standing, JSON.stringify(standing)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
   if (standing.status !== 'ok') throw new Error('Synthetic standing work was not admitted')
   const messageId = f.control.watcherRecord().operations.find(item => item.id === standing.receipt.operationId)!.messageId
   expect(messageId).toBeDefined()
