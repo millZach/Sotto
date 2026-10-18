@@ -20,6 +20,12 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       expect(state.error).toBeNull()
       return id
     }
+    /**
+     * A send's own answer can come before the thread reads running. A provider whose echo of the prompt comes before
+     * its acknowledgement, as OpenCode's does, settles the send from the echo, and the coordinator reads nothing more
+     * after it (#765); the running status follows in the next publish. The turn stays open until the driver ends it.
+     */
+    const running = () => expect.poll(() => thread().status).toBe('running')
     const permissionDecision = (record: RecordedRpc): boolean | undefined => f.protocol
       ? f.protocol.permissionDecision(record)
       : record.result?.decision === 'accept' ? true : record.result?.decision === 'decline' ? false : undefined
@@ -38,7 +44,7 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
     it('creates and streams through Sotto identities and exposes the event history', async () => {
       expect(await f.nativeStarted(threadId)).toBe(false)
       expect((await send()).error).toBeNull()
-      expect(thread().status).toBe('running')
+      await running()
       await f.driver.completeTurn(threadId, 'Completed reply')
       await expect.poll(() => thread().status).toBe('idle')
       await expect.poll(() => f.service.threadDetail(threadId)?.messages.some(message => message.text.includes('Completed reply'))).toBe(true)
@@ -54,7 +60,8 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       expect(idle.facts.totalMemoryBytes).toBeGreaterThan(0)
       expect(idle.runningThreads).toBe(0)
       expect((await send()).error).toBeNull()
-      expect(thread().status).toBe('running')
+      // The client reads running only once the host does, so the count read after it is the host's running one.
+      await running()
       expect((await f.service.hostFacts!()).runningThreads).toBe(1)
       await f.driver.completeTurn(threadId, 'Completed reply')
       await expect.poll(() => thread().status).toBe('idle')
@@ -118,7 +125,7 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
 
     it('reaps an unwatched idle session beside a running one and resumes it on send with its history', withFixtureSkip(skips.lazy), async () => {
       await send()
-      await expect.poll(() => thread().status).toBe('running')
+      await running()
       const runningStarts = await f.sessions!.starts(threadId)
       const quiet = await create('Quiet thread')
       await send('Quiet prompt', quiet)
