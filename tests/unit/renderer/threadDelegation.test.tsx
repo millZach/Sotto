@@ -185,6 +185,45 @@ describe('delegated threads in the sidebar', () => {
     expect(ids(looped)).toEqual(expect.arrayContaining([PARENT, CHILD, GRANDCHILD]))
   })
 
+  it('lists an open delegated thread on its own in Open when the thread above it is settled, at either level', () => {
+    const state = delegatingState()
+    const thread = (id: string): AgentThread => state.host.threads.find(item => item.id === id)!
+    const open = (given: AgentState): string[] => folderOf(given).open.flatMap(folder => folder.rows.map(row => row.thread.id))
+    // The top is settled while the review it delegated still works: the review stands in Open, the check it
+    // delegated in turn under it.
+    thread(PARENT).workspaceSettledAt = at(1)
+    thread(CHILD).requests = [{ id: 'review-permission', kind: 'permission', text: 'Run gh pr merge', options: [] }]
+    expect(open(state)).toContain(CHILD)
+    expect(open(state)).not.toContain(GRANDCHILD)
+    expect(folderOf(state).listedAs).toEqual(new Map([[GRANDCHILD, CHILD]]))
+    expect(folderOf(state).open.flatMap(folder => folder.rows).find(row => row.thread.id === CHILD)).toMatchObject({ waitingFor: 'approval', stateLabel: 'Needs your approval' })
+    // The first level is settled and the second is open: the second stands alone; the settled one stays with its top.
+    const second = delegatingState()
+    second.host.threads.find(item => item.id === CHILD)!.workspaceSettledAt = at(1)
+    expect(open(second)).toContain(GRANDCHILD)
+    expect(folderOf(second).listedAs).toEqual(new Map([[CHILD, PARENT]]))
+    // With the top open, nothing changes: both stay hidden under it.
+    expect(open(delegatingState())).not.toContain(CHILD)
+  })
+
+  it('rolls a delegated thread\'s error up onto the delegating row in its own words, below a waiting request', () => {
+    const state = delegatingState()
+    const parent = state.host.threads.find(thread => thread.id === PARENT)!
+    parent.requests = []
+    parent.status = 'idle'
+    const row = (): ThreadRow => folderOf(state).open.flatMap(folder => folder.rows).find(item => item.thread.id === PARENT)!
+    state.host.threads.find(thread => thread.id === GRANDCHILD)!.status = 'error'
+    expect(row()).toMatchObject({ state: 'needs', waitingFor: null, stateLabel: 'Needs attention', attention: true, waitingIn: 'Check the capture' })
+    // A question below outranks an error below.
+    state.host.threads.find(thread => thread.id === CHILD)!.requests = [{ id: 'review-question', kind: 'question', text: 'Which theme?', options: [] }]
+    expect(row()).toMatchObject({ waitingFor: 'question', stateLabel: 'Needs your answer', waitingIn: 'Review the gate fix' })
+    // The thread's own error outranks an error below.
+    state.host.threads.find(thread => thread.id === CHILD)!.requests = []
+    parent.status = 'error'
+    expect(row()).toMatchObject({ stateLabel: 'Needs attention' })
+    expect(row().waitingIn).toBeUndefined()
+  })
+
   it('finds no delegated thread by search', () => {
     const state = delegatingState()
     expect(folderOf(state, 'Check the capture').matching).toBe(0)

@@ -325,17 +325,22 @@ const byActivity = (first: { readonly activityAt: number; readonly id: string },
  * Where each delegated thread is reached from (ADR-0081, as Zach settled it on October 17, 2026): the top of its
  * delegation, the thread at the end of its `delegatedBy` links, which the sidebar lists. A delegated thread whose
  * delegating thread is gone from the state is the top of its own, so it stays listed and is never out of reach; so is
- * every thread in a loop of links. Threads no thread started are not in the map.
+ * every thread in a loop of links. So is an open delegated thread whose delegating thread is settled (`settled`, the
+ * sidebar's own answer: the project or the thread settled, or the provider closed it), at either level: it stands in
+ * Open with its own attention rather than under a thread on the Settled shelf. Threads no thread started are not in
+ * the map.
  */
-export function delegationTops(threads: readonly Pick<AgentThread, 'id' | 'delegatedBy'>[]): ReadonlyMap<string, string> {
+export function delegationTops(threads: readonly Pick<AgentThread, 'id' | 'delegatedBy'>[], settled: (threadId: string) => boolean = () => false): ReadonlyMap<string, string> {
   const parents = new Map<string, string | undefined>(threads.map(thread => [thread.id, thread.delegatedBy]))
+  // A link holds unless it would put an open thread under a settled one.
+  const linked = (child: string, parent: string): boolean => parents.has(parent) && (!settled(parent) || settled(child))
   const tops = new Map<string, string>()
   for (const thread of threads) {
-    if (thread.delegatedBy === undefined || !parents.has(thread.delegatedBy)) continue
+    if (thread.delegatedBy === undefined || !linked(thread.id, thread.delegatedBy)) continue
     const seen = new Set([thread.id])
     let top = thread.delegatedBy
     let loop = false
-    for (let up = parents.get(top); up !== undefined && parents.has(up); up = parents.get(top)) {
+    for (let up = parents.get(top); up !== undefined && linked(top, up); up = parents.get(top)) {
       if (seen.has(top)) { loop = true; break }
       seen.add(top)
       top = up
@@ -345,23 +350,27 @@ export function delegationTops(threads: readonly Pick<AgentThread, 'id' | 'deleg
   return tops
 }
 
+/** How much a row below a thread needs the user, for the roll-up: a permission, then a question, then an error. */
+const needRank = (row: Pick<ThreadRow, 'state' | 'waitingFor'>): number => row.waitingFor === 'approval' ? 3 : row.waitingFor === 'question' ? 2 : row.state === 'needs' ? 1 : 0
+
 /**
  * The sidebar's rows while delegation is on: no row for a delegated thread, and each thread a delegated thread below it
- * waits on says so as its own needs would, Needs your approval ahead of Needs your answer. Its own waiting wins.
+ * needs the user for says so in the words its own row would: Needs your approval, then Needs your answer, then the
+ * error's own words (Needs attention), as one row orders them. Its own waiting wins, and its own error outranks an
+ * error below.
  */
 function withoutDelegated(rows: readonly ThreadRow[], tops: ReadonlyMap<string, string>): ThreadRow[] {
   const waiting = new Map<string, ThreadRow>()
   for (const row of rows) {
     const top = tops.get(row.thread.id)
-    if (top === undefined || row.waitingFor === null) continue
+    if (top === undefined || needRank(row) === 0) continue
     const held = waiting.get(top)
-    if (held === undefined || (held.waitingFor === 'question' && row.waitingFor === 'approval')) waiting.set(top, row)
+    if (held === undefined || needRank(row) > needRank(held)) waiting.set(top, row)
   }
   return rows.filter(row => !tops.has(row.thread.id)).map((row): ThreadRow => {
     const below = waiting.get(row.thread.id)
-    if (below === undefined || row.waitingFor !== null) return row
-    const approval = below.waitingFor === 'approval'
-    return { ...row, state: 'needs', waitingFor: below.waitingFor, stateLabel: approval ? 'Needs your approval' : 'Needs your answer', attention: true,
+    if (below === undefined || row.waitingFor !== null || (below.waitingFor === null && row.state === 'needs')) return row
+    return { ...row, state: 'needs', waitingFor: below.waitingFor, stateLabel: below.stateLabel, attention: true,
       when: clockLabel(row.activityAt), workingSince: Number.NaN, waitingIn: below.thread.title }
   })
 }
@@ -385,7 +394,8 @@ function folder(id: string, project: AgentProject | undefined, rows: readonly Th
  * that delegated to it, whose row says when it waits on you.
  */
 export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false): WorkspaceOrganization {
-  const tops = delegation ? delegationTops(state.host.threads) : undefined
+  const settledIds = delegation ? new Set(allRows.filter(row => row.settledBy !== null).map(row => row.thread.id)) : undefined
+  const tops = delegation ? delegationTops(state.host.threads, threadId => settledIds!.has(threadId)) : undefined
   const rows = tops?.size ? withoutDelegated(allRows, tops) : allRows
   const { matching, listed } = listThreads(rows, query)
   const needle = query.trim().toLocaleLowerCase()

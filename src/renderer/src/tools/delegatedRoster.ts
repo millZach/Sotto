@@ -23,7 +23,15 @@ export function threadWaitingFor(thread: Pick<AgentThread, 'requests' | 'settled
 }
 
 /**
- * The delegated threads below a thread, both levels, that wait on the user and that are working otherwise: what the
+ * Whether a delegated thread needs the user, as its sidebar row would say: a permission or a question waiting, or its
+ * provider reporting an error (Needs attention). A closed thread needs nothing.
+ */
+export function threadNeedsYou(thread: Pick<AgentThread, 'requests' | 'status' | 'settledAt' | 'settledOverride' | 'archivedAt'>): boolean {
+  return threadWaitingFor(thread) !== null || (thread.status === 'error' && !isThreadClosed(thread))
+}
+
+/**
+ * The delegated threads below a thread, both levels, that need the user and that are working otherwise: what the
  * Tools toggle and the Agents tab mark, from the snapshot alone.
  */
 export function delegatedBelow(threads: readonly AgentThread[], threadId: string): { readonly needs: number; readonly working: number } {
@@ -31,13 +39,16 @@ export function delegatedBelow(threads: readonly AgentThread[], threadId: string
   let needs = 0, working = 0
   if (below.size) for (const thread of threads) {
     if (!below.has(thread.id)) continue
-    if (threadWaitingFor(thread) !== null) needs++
+    if (threadNeedsYou(thread)) needs++
     else if (isThreadTurnRunning(thread)) working++
   }
   return { needs, working }
 }
 
-/** A delegated thread's word on its roster row: Needs you while it waits on the user, otherwise its delegation's outcome. */
+/**
+ * A delegated thread's word on its roster row: Needs you while it waits on the user or reports an error, otherwise its
+ * delegation's outcome.
+ */
 export type DelegatedRowStatus = 'needs' | DelegationOutcome
 
 export interface DelegatedRosterRow {
@@ -53,8 +64,13 @@ export interface DelegatedRosterRow {
   /** When its newest outcome was reached, for a finished row's time; NaN while it works or when the record does not say. */
   readonly endedAt: number
   readonly waitingFor: 'approval' | 'question' | null
-  /** Undefined only before the window has read the delegation: nothing is guessed. */
+  /**
+   * Undefined before the window has read the delegation, and for an idle thread on another host, whose delegation this
+   * computer cannot read: nothing is guessed.
+   */
   readonly status: DelegatedRowStatus | undefined
+  /** Finished while no window showed it (ADR-0046): the row says Just finished, as a sidebar row would, until it is opened. */
+  readonly finished: boolean
   /** The newest brief whose words the window holds: the thread's messages, or the excerpt of its newest message to it. */
   readonly brief: string | undefined
   /** Provider · kind of work · model · effort · start time, each only where it is known. */
@@ -103,9 +119,15 @@ function rowOf(thread: AgentThread, level: 1 | 2, delegatedBy: string | undefine
   const work = start?.work ?? newest?.work
   const meta = [provider, work ? DELEGATION_WORK_TITLES[work] : undefined, model, thread.reasoningEffort ? effortLabel(thread.reasoningEffort) : undefined,
     Number.isFinite(startedAt) ? clockLabel(startedAt) : undefined].filter((fact): fact is string => fact !== undefined && fact !== '')
-  const outcome = newest?.outcome ?? (parent !== undefined && own !== undefined ? 'unknown' : undefined)
+  // A thread on another host keeps its delegation on that host, which this computer cannot read: what the snapshot
+  // says of it stands in, Working while its turn runs, and nothing at all otherwise.
+  const remote = thread.remoteHost === true && newest === undefined
+  const outcome = remote ? (isThreadTurnRunning(thread) ? 'working' : undefined)
+    : newest?.outcome ?? (parent !== undefined && own !== undefined ? 'unknown' : undefined)
+  const status = threadNeedsYou(thread) ? 'needs' : outcome
   return { thread, level, delegatedBy, newest, startedAt, endedAt: working ? Number.NaN : time(newest?.outcomeAt), waitingFor,
-    status: waitingFor !== null ? 'needs' : outcome, brief: briefOf(thread, views), meta, provider }
+    status, finished: thread.finishedUnread === true && status !== 'needs' && status !== 'working' && status !== 'background',
+    brief: briefOf(thread, views), meta, provider }
 }
 
 const newestFirst = (first: { readonly startedAt: number }, second: { readonly startedAt: number }): number => {

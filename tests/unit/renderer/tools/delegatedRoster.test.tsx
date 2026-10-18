@@ -7,6 +7,7 @@ import { E2E_THREADS_NOW } from '../../../../src/shared/e2e'
 import { EMPTY_SUBAGENT_SUMMARY, type SubagentRow, type SubagentsBridge } from '../../../../src/shared/subagents'
 import { delegatedBelow, delegatedRoster, mixedRoster, openAction, openDelegatedThread, rosterCounts, threadsMissingStarts, type DelegatedRosterRow, type DelegationReadOf, type DelegationReads } from '../../../../src/renderer/src/tools/delegatedRoster'
 import { ToolsPanel, ToolsPanelToggle } from '../../../../src/renderer/src/tools/ToolsPanel'
+import { delegatedStatusWord } from '../../../../src/renderer/src/tools/DelegatedThreads'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
 import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
@@ -127,6 +128,56 @@ describe('the roster of delegated threads', () => {
     const review = delegatedRoster(PARENT, state.host.threads, new Map<string, DelegationReadOf>([...withOwn, [REVIEW, { made: [], received: [] }]]), state.host).flat().find(row => row.thread.id === REVIEW)!
     expect(review.status).toBe('unknown')
     expect(Number.isNaN(review.startedAt)).toBe(true)
+  })
+
+  it('says Needs attention for a delegated thread in error, counts it as needing you and marks the dots', () => {
+    const state = delegatingState()
+    state.host.threads.find(thread => thread.id === SCOUT)!.status = 'error'
+    const made = new Map(Object.entries(views()).map(([id, list]) => [id, { made: list, received: [] }]))
+    const scout = delegatedRoster(PARENT, state.host.threads, made, state.host).flat().find(row => row.thread.id === SCOUT)!
+    expect(scout).toMatchObject({ status: 'needs', waitingFor: null })
+    expect(delegatedStatusWord(scout)).toBe('Needs attention')
+    expect(openAction(scout, false)).toMatchObject({ kind: 'open', label: 'Open as thread' })
+    expect(rosterCounts([scout], { total: 0, working: 0, unknown: 0 }).detail).toBe('1 needs you')
+    expect(delegatedBelow(state.host.threads, PARENT)).toEqual({ needs: 1, working: 1 })
+  })
+
+  it('reads a delegated thread on another host from the snapshot, since its delegation is kept there', () => {
+    const state = delegatingState()
+    const merge = state.host.threads.find(thread => thread.id === MERGE)!
+    Object.assign(merge, { remoteHost: true, hostId: '22222222-2222-4222-8222-222222222222' })
+    // This computer's reads come back empty for it.
+    const empty = new Map([[PARENT, { made: [], received: [] }], [MERGE, { made: [], received: [] }]])
+    const row = (): DelegatedRosterRow => delegatedRoster(PARENT, state.host.threads, empty, state.host).flat().find(item => item.thread.id === MERGE)!
+    expect(row()).toMatchObject({ status: 'working', brief: undefined })
+    expect(Number.isNaN(row().startedAt)).toBe(true)
+    // Its provider, model and effort from the snapshot; no kind of work or start, which only the record knows.
+    expect(row().meta).toEqual(['Codex', 'GPT-5.4', 'High'])
+    merge.requests = [{ id: 'remote-permission', kind: 'permission', text: 'gh pr merge', options: [] }]
+    expect(row()).toMatchObject({ status: 'needs', waitingFor: 'approval' })
+    merge.requests = []
+    merge.status = 'idle'
+    // Idle there, Sotto here cannot say how its delegation ended: no word, not Unknown.
+    expect(row().status).toBeUndefined()
+    expect(rosterCounts([row()], { total: 0, working: 0, unknown: 0 }).detail).toBe('None working')
+    expect(delegatedBelow(state.host.threads, PARENT).working).toBe(0)
+  })
+
+  it('says Just finished on a delegated thread that finished while no window showed it, until it is opened', () => {
+    const state = delegatingState()
+    const scout = state.host.threads.find(thread => thread.id === SCOUT)!
+    scout.finishedUnread = true
+    const made = new Map(Object.entries(views()).map(([id, list]) => [id, { made: list, received: [] }]))
+    const row = (): DelegatedRosterRow => delegatedRoster(PARENT, state.host.threads, made, state.host).flat().find(item => item.thread.id === SCOUT)!
+    expect(row()).toMatchObject({ status: 'answered', finished: true })
+    expect(delegatedStatusWord(row())).toBe('Just finished')
+    // Opening it clears the mark, as for any thread; the outcome reads again.
+    delete scout.finishedUnread
+    expect(delegatedStatusWord(row())).toBe('Answered')
+    // Waiting on you outranks it, as on a sidebar row.
+    scout.finishedUnread = true
+    scout.requests = [{ id: 'scout-question', kind: 'question', text: 'Which base?', options: [] }]
+    expect(delegatedStatusWord(row())).toBe('Needs your answer')
   })
 
   it('says what opening does: as a thread, to answer its request, or that it is in the pane', () => {

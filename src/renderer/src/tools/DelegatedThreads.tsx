@@ -39,9 +39,13 @@ export function useDelegatedRoster(ownerId: string, source: DelegatedRosterSourc
   return useShared(useMemo(() => host === undefined ? NO_FAMILIES : delegatedRoster(ownerId, threads, reads, host), [host, ownerId, threads, reads]))
 }
 
-/** What a delegated thread's row says it is doing: what it waits on you for, or its delegation's outcome. */
-export function delegatedStatusWord(row: Pick<DelegatedRosterRow, 'status' | 'waitingFor'>): string | undefined {
-  if (row.status === 'needs') return row.waitingFor === 'question' ? 'Needs your answer' : 'Needs your approval'
+/**
+ * What a delegated thread's row says it is doing, in its sidebar row's words where it has them: what it waits on you
+ * for, Needs attention for an error, Just finished until it is opened (ADR-0046), otherwise its delegation's outcome.
+ */
+export function delegatedStatusWord(row: Pick<DelegatedRosterRow, 'status' | 'waitingFor' | 'finished'>): string | undefined {
+  if (row.status === 'needs') return row.waitingFor === 'question' ? 'Needs your answer' : row.waitingFor === 'approval' ? 'Needs your approval' : 'Needs attention'
+  if (row.finished) return 'Just finished'
   return row.status === undefined ? undefined : DELEGATION_OUTCOME_WORDS[row.status]
 }
 
@@ -69,7 +73,8 @@ function DelegatedElapsed({ row, live }: { readonly row: DelegatedRosterRow; rea
 /** The latest word on a delegated thread in its details: what it waits on you for, then how its delegation stands. */
 function latestOutcome(row: DelegatedRosterRow, now: number): string {
   const waiting = row.waitingFor === 'approval' ? 'It is waiting for your approval. Open it to answer there; nothing is answered from here.'
-    : row.waitingFor === 'question' ? 'It is waiting for your answer. Open it to answer there; nothing is answered from here.' : undefined
+    : row.waitingFor === 'question' ? 'It is waiting for your answer. Open it to answer there; nothing is answered from here.'
+    : row.status === 'needs' ? 'Its agent reported an error. Open it to see what happened.' : undefined
   const outcome = row.newest ? delegationWaitLine(row.newest, now, row.delegatedBy) : undefined
   return [waiting, outcome].filter(Boolean).join(' ') || 'Open it to see where it stands.'
 }
@@ -86,7 +91,7 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
   const title = row.thread.title
   const status = delegatedStatusWord(row)
   const action = openAction(row, shown)
-  const outcome = row.status === 'needs' ? 'needs' : row.status
+  const outcome = row.status === 'needs' ? 'needs' : row.finished ? 'finished' : row.status
   // The preview is the excerpt the window holds; open, the row reads the whole brief from main.
   const brief = useFullBrief(row.thread.id, row.newest?.id, open) ?? row.brief
   const close = (event: React.KeyboardEvent): void => {

@@ -81,6 +81,9 @@
 .delegated-row:is([data-needs], [data-shown]) .delegated-row__status[data-outcome='failed'] { color: var(--tt-error-on-tint); }
 .delegated-row:is([data-needs], [data-shown]) .delegated-row__status[data-outcome='unknown'] { color: var(--tt-warning-on-tint); }
 .delegated-row__status .delegation-ring[data-outcome='needs'] { border: 2px solid var(--tt-attention); }
+/* Just finished while no window showed it (ADR-0046): the sidebar's unseen ring and its secondary text. */
+.delegated-row__status[data-outcome='finished'] { color: var(--tt-text-2); }
+.delegated-row__status .delegation-ring[data-outcome='finished'] { border: 1.5px solid var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 28%, transparent 30%); }
 .delegated-row__open { position: absolute; right: 6px; bottom: 16px; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border: 1px solid var(--tt-border);
   border-radius: 6px; background: var(--tt-surface); color: var(--tt-text-2); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
 .delegated-row__open:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
