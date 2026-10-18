@@ -21,7 +21,7 @@
   },
   "src/main/agents/control.ts": {
     "structuredClone(": 24,
-    "shell()": 36,
+    "shell()": 39,
     "watcherRecord()": 2
   },
   "src/main/agents/devin.ts": {
@@ -47,6 +47,11 @@
     "shell()": 1
   },
   "src/main/agents/muse.ts": {
+    "structuredClone(": 1,
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
+  "src/main/agents/opencode.ts": {
     "structuredClone(": 1,
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
@@ -88,7 +93,7 @@
     "structuredClone(": 2
   },
   "src/main/agents/watcher.ts": {
-    "structuredClone(": 1,
+    "structuredClone(": 2,
     "shell()": 1,
     "watcherRecord()": 1
   },
@@ -104,7 +109,7 @@
     "shell()": 1
   },
   "src/main/hosts/desktopHostRouter.ts": {
-    "shell()": 34
+    "shell()": 35
   },
   "src/main/hosts/desktopHosts.ts": {
     "structuredClone(": 1,

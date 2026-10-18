@@ -44,7 +44,7 @@ export const THREAD_PROMPT_ID = 'thread-workspace-prompt'
  * With `besideQueue`, a follow-up the queue owns does not count, so a later revision can line up behind it.
  */
 function threadSendInFlight(state: AgentState, threadId: string, localUnresolved: boolean, besideQueue = false): boolean {
-  return localUnresolved || state.deliveries?.some(item => item.threadId === threadId && deliveryPending(item.status)
+  return localUnresolved || state.deliveries?.some(item => item.threadId === threadId && !item.setAside && deliveryPending(item.status)
     && !state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === item.draftId)
     // Beside the queue, only an unconfirmed prompt holds: one main has admitted and is still delivering can have the queue behind it.
     && !(besideQueue && (queuedRevision(state, threadId, item.draftId) || deliveryOnItsWay(item.status)))) === true
@@ -163,10 +163,12 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const staleAnswer = draft.requestId !== null && draft.requestId !== question?.requestId
   const answering = question !== undefined
   const capabilities = capabilitiesForThread(state.host, row.thread)
-  const direct = submissions.filter(item => item.threadId === threadId && item.mode !== 'queue').map(item => submissionStatus(item, state).status)
+  const direct = submissions.filter(item => item.threadId === threadId && item.mode !== 'queue'
+    && !deliveryFor(state, threadId, item.draftId)?.setAside).map(item => submissionStatus(item, state).status)
   const localUnresolved = direct.some(deliveryPending)
   // Before main has published its admission, and once a delivery is uncertain, even the queue waits.
-  const localUnconfirmed = submissions.some(item => item.threadId === threadId && item.mode !== 'queue' && deliveryPending(submissionStatus(item, state).status)
+  const localUnconfirmed = submissions.some(item => item.threadId === threadId && item.mode !== 'queue'
+    && !deliveryFor(state, threadId, item.draftId)?.setAside && deliveryPending(submissionStatus(item, state).status)
     && !deliveryOnItsWay(deliveryFor(state, threadId, item.draftId)?.status ?? 'uncertain'))
   const localAdmissions = submissions.some(item => item.threadId === threadId && queueAdmissionOpen(item, state) && !(item.resolved && item.error !== null))
   const sendInFlight = threadSendInFlight(state, threadId, localUnresolved)

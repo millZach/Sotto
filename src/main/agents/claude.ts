@@ -21,7 +21,10 @@ import { z } from 'zod'
 import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
+import { claudeSubagents, narrowerMode } from './subagentRoles'
+import { subagentRoleInstructions } from '../../shared/workerRoles'
+import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { questionInstructions } from './questionInstructions'
@@ -199,7 +202,12 @@ type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>;
    * A Watcher's request note, or a wake-up's news for it, and the words of the prompt it was written with. Only that
    * prompt's UserPromptSubmit hook takes it as context: a steer, or a turn Claude Code starts itself, never does.
    */
-  requestNote?: { readonly note: string; readonly text: string } | undefined }
+  requestNote?: { readonly note: string; readonly text: string } | undefined
+  /**
+   * The widest permission this CLI's role agents were given at launch (#1042). The thread's permission narrowing below it
+   * starts the CLI again, so no agent keeps more than its thread.
+   */
+  subagentMode?: AgentRuntimeMode | undefined }
 /**
  * The one hook a Watcher's CLI is started with (ADR-0073): UserPromptSubmit, answered on this process's own control
  * channel with the request note as the prompt's additional context, so the note never joins the user's words.
@@ -247,6 +255,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
   private threadTools: readonly ScopedThreadTools[] = []
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
+  private workerRoles: WorkerRoleSource | undefined
+  useWorkerRoles(roles: WorkerRoleSource): void { this.workerRoles = roles }
+  /** A launch's role agents and the instructions that name them, or nothing while worker roles are off. */
+  private subagentRoles(threadMode: AgentRuntimeMode, canDelegate: boolean) {
+    if (!this.workerRoles) return undefined
+    const table = this.workerRoles.table()
+    const subagents = claudeSubagents(table, threadMode, this.state.models, nativePermissionModes)
+    const instructions = subagentRoleInstructions(table, { provider: 'claude', agents: subagents?.kinds ?? new Set(), agentTool: 'claude', canDelegate })
+    return { subagents, instructions }
+  }
   /** Resolve main's durable identity before even reusing a live process; permission preferences confer no profile. */
   private checkProfileContinuation(id: string, generation: number, runtime?: Runtime): void {
     if (generation !== this.generation || runtime && this.runtimes.get(id) !== runtime) throw new Error('Claude connection was cancelled.')
@@ -1082,7 +1100,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     try {
       // A CLI still starting is the one the change should reach, once it has.
       const runtime = this.starting.has(id) ? await this.starting.get(id)!.catch(() => undefined) : this.runtimes.get(id)
-      const steps = runtime && this.runtimes.get(id) === runtime ? settingsSteps(before, after) : undefined
+      // Role agents keep the permission they launched with, so a thread narrowing below it starts its CLI again (#1042).
+      const steps = runtime && this.runtimes.get(id) === runtime && !(runtime.subagentMode && narrowerMode(after.runtimeMode, runtime.subagentMode))
+        ? settingsSteps(before, after) : undefined
       if (runtime && steps) {
         const live = await this.applySteps(runtime, before, after, steps, watcherGuard)
         if (live.outcome === 'applied') return await this.settleSettings(id, command, after)
@@ -1331,14 +1351,17 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (generation !== this.generation || spare?.exited) { if (mcpConfig) await this.removeConfig(mcpConfig); throw new Error('Claude connection was cancelled.') }
     const toolArguments = mcpConfig ? ['--mcp-config', mcpConfig, ...toolAllowance(servers)] : []
+    // The worker roles (#1042), read once for this launch: one agent per role on Claude, each held to the thread's own
+    // permission, and the table in the instructions. Watcher starts its workers through its own tools instead.
+    const roles = profile ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
       '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
-      '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : CLAUDE_QUESTIONS,
+      '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : roles?.instructions ? `${CLAUDE_QUESTIONS}\n\n${roles.instructions}` : CLAUDE_QUESTIONS,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(alias.reasoningEffort ? ['--effort', alias.reasoningEffort] : [])]
     let runtime: Runtime
     try {
       this.configurationGuards.get(id)?.()
-      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
+      runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, subagentMode: roles?.subagents?.widest, protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
         // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.
@@ -1374,7 +1397,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.trackClosure(runtime.protocol.closed.then(async () => { if (mcpConfig) await this.removeConfig(mcpConfig) }))
     let initialized: ClaudeFrame
     try { initialized = await runtime.protocol.control({ subtype: 'initialize', hooks: profile ? { UserPromptSubmit: [{ hookCallbackIds: [WATCHER_REQUEST_HOOK] }] } : {},
-      sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'] }) }
+      sdkMcpServers: [], promptSuggestions: false, supportedDialogKinds: ['resume_return'], ...(roles?.subagents ? { agents: roles.subagents.agents } : {}) }) }
     // A spare is not the thread's CLI, so it is stopped as one: only a thread on its session ID waits for its exit.
     catch (error) {
       void (spare ? this.stopSpare(id, spare, runtime) : this.stopRuntime(id, runtime))

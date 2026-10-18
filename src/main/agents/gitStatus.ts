@@ -24,7 +24,7 @@ export type RunGitCommand = (cwd: string, command: 'git' | 'gh', args: readonly 
  * askpass and no credential manager to ask, so a remote that needs a sign-in fails quietly and status
  * reads on from the last fetched refs.
  */
-const QUIET_ENV: Readonly<Record<string, string>> = { GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', SSH_ASKPASS: '', SSH_ASKPASS_REQUIRE: 'never', GCM_INTERACTIVE: 'never', GH_PROMPT_DISABLED: '1' }
+export const QUIET_GIT_ENV: Readonly<Record<string, string>> = { GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', SSH_ASKPASS: '', SSH_ASKPASS_REQUIRE: 'never', GCM_INTERACTIVE: 'never', GH_PROMPT_DISABLED: '1' }
 
 const REDIRECTING_GIT_VARIABLES = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_COMMON_DIR', 'GIT_NAMESPACE', 'GIT_CEILING_DIRECTORIES', 'GIT_PREFIX', 'GIT_EXTERNAL_DIFF', 'GIT_EDITOR', 'GIT_SEQUENCE_EDITOR', 'GIT_PAGER'] as const
 /** Thrown when Git itself is missing: no status is published then, rather than a folder called "not a repository". */
@@ -132,6 +132,12 @@ export interface GitStatusSource {
   /** Resolves once no Git or gh process this source started runs in `cwd` or a folder inside it. */
   idle?(cwd: string): Promise<void>
   /**
+   * Runs `work`, Git that Sotto starts in `cwd` outside a thread's order of work (a new worktree's early origin fetch,
+   * ADR-0057), under the same `hold` as this source's own remote half: undefined, having started nothing, for a folder
+   * held for removal or one inside it; otherwise `work`'s promise, which `idle` waits for.
+   */
+  runInFolder?<Result>(cwd: string, work: () => Promise<Result>): Promise<Result> | undefined
+  /**
    * A Git action ran in `folder` (a working folder or its repository's common Git directory): the next remote read of
    * that repository fetches again and asks GitHub again instead of trusting its caches, and no read of it begun before
    * now is shared with a caller after it. Other repositories keep their answers (#820). A folder last read as no
@@ -228,7 +234,7 @@ export class GitStatusReader implements GitStatusSource {
     this.now = options.now ?? (() => Date.now())
     this.rateLimit = options.rateLimit ?? new GitHubRateLimit({ now: this.now })
     this.hosts = options.hosts ?? new GitHubHosts({ run: this.run, now: this.now })
-    this.heads = new PullRequestHeads({ run: this.run, rateLimit: this.rateLimit, env: QUIET_ENV, gatherMs: options.headGatherMs ?? HEAD_GATHER_MS,
+    this.heads = new PullRequestHeads({ run: this.run, rateLimit: this.rateLimit, env: QUIET_GIT_ENV, gatherMs: options.headGatherMs ?? HEAD_GATHER_MS,
       held: cwd => this.isHeld(this.folderKey(cwd)), track: (cwds, work) => { for (const cwd of cwds) this.tracked(cwd, work) } })
   }
   private git(cwd: string, args: readonly string[], options?: GitCommandOptions): Promise<string> { return this.tracked(cwd, this.run(cwd, 'git', args, options)) }
@@ -253,6 +259,9 @@ export class GitStatusReader implements GitStatusSource {
       const count = (this.held.get(key) ?? 1) - 1
       if (count > 0) this.held.set(key, count); else this.held.delete(key)
     }
+  }
+  runInFolder<Result>(cwd: string, work: () => Promise<Result>): Promise<Result> | undefined {
+    return this.isHeld(this.folderKey(cwd)) ? undefined : this.tracked(cwd, work())
   }
   async idle(cwd: string): Promise<void> {
     const key = this.folderKey(cwd)
@@ -528,7 +537,7 @@ export class GitStatusReader implements GitStatusSource {
     if (this.now() < record.nextAt) return Promise.resolve()
     const epoch = this.counter
     const fetch = (): Promise<string> => this.git(cwd, ['fetch', '--quiet', '--no-tags', ...this.fetchHeadFlag ? ['--no-write-fetch-head'] : [], 'origin'],
-      { timeoutMs: FETCH_TIMEOUT_MS, env: QUIET_ENV })
+      { timeoutMs: FETCH_TIMEOUT_MS, env: QUIET_GIT_ENV })
     const done: Promise<void> = fetch().catch((error: unknown) => {
       // A Git older than 2.29 does not know the flag; it fetches without it from then on.
       if (!this.fetchHeadFlag || !/no-write-fetch-head/u.test(error instanceof Error ? error.message : String(error))) throw error

@@ -19,8 +19,9 @@ import { gitListingSchema, gitReviewSchema, type GitChangeListing, type GitRevie
 import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignmentsPage, type SubagentAssignmentsRequest, type SubagentPage, type SubagentPageRequest } from '../../shared/subagents'
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
+import { OPENCODE_HOST_ANSWERS, type OpenCodeHostAnswer, type OpenCodeHostCall } from '../../shared/opencodeSignIn'
 import type { AgentThread, ProviderId } from '../../shared/agents'
-import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema } from '../../shared/hostProtocol'
+import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, PROVIDER_HOST_FEATURES } from '../../shared/hostProtocol'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
@@ -30,7 +31,7 @@ import { requestQuestionsDigest } from './requestDrafts'
 import { version as sourceVersion } from '../../../package.json'
 import { RetainedDraftStore, type RetainedDraft } from './retainedDraftStore'
 import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from './heldProviderGate'
-import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
+import { heldProviderRefusal, heldProvidersOption, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
 import { usageLocalClearRequestSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery } from '../../shared/usageDashboard'
 
@@ -280,7 +281,9 @@ export class SocketHostService implements HostService {
     })
     if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError('This host connection was closed.', 'disconnected') }
     try {
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', 'model-catalog-revision', ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
+      // This desktop knows every provider Sotto has, OpenCode among them, so it accepts each one's feature (#1107); a provider
+      // held on this run is hidden here as on this computer, by the held gate.
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', 'model-catalog-revision', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
@@ -649,7 +652,7 @@ export class SocketHostService implements HostService {
   get supportsWatcherWorkSettled(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-work-settled') }
   get supportsWatcherOutcomes(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-outcomes') }
   get supportsWatcherMuse(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-muse') }
-  private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): ProviderId | undefined {
+  private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): HeldProviderNames | undefined {
     return heldProviderOfWatcherRequest(request, this.held, this.cached?.host, this.dormantProviderThreads)
   }
   async watcherControl(request: WatcherHostControl, _client?: ClientIdentity, guard?: () => void): Promise<unknown> {
@@ -1186,6 +1189,18 @@ export class SocketHostService implements HostService {
   async signIn(operation: { op: 'sign-in-start'; provider: ProviderId } | { op: 'sign-in-read' | 'sign-in-cancel'; signInId: string } | { op: 'sign-in-code'; signInId: string; code: string }): Promise<HostSignIn | null> {
     if (!this.offersSignIn()) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
     return this.read(hostSignInSchema.nullable(), await this.call(operation))
+  }
+  /** Whether the host signs its own OpenCode in to model sources for this client (#1107). */
+  offersOpenCodeSignIn(): boolean { return this.features.includes('opencode-sign-in') }
+  /**
+   * One call of the host's OpenCode sign-in (#1107), answered as the desktop's own dialog is. A key in `key` goes to the host
+   * once and comes back in nothing; `page` answers with the page's address, for main to check and open, never the window.
+   * The caller asks `offersOpenCodeSignIn` first, and says in words that an older host needs an update.
+   */
+  async opencodeSignIn<A extends OpenCodeHostCall['action']>(call: Extract<OpenCodeHostCall, { action: A }>): Promise<OpenCodeHostAnswer<A>> {
+    if (!this.offersOpenCodeSignIn()) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    const schema: z.ZodType<OpenCodeHostAnswer<A>> = OPENCODE_HOST_ANSWERS[call.action as A] as never
+    return this.read(schema, await this.call({ op: 'opencode-sign-in', call }))
   }
   async revokePairing(): Promise<void> {
     const response = await fetch(this.endpoint('/v1/revoke'), { method: 'POST', headers: { Authorization: 'Bearer ' + this.options.token }, signal: AbortSignal.timeout(15000), redirect: 'error' })

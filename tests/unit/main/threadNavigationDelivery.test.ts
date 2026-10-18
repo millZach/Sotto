@@ -200,6 +200,365 @@ describe('navigation independent of action latency', () => {
   })
 })
 
+describe('setting aside unconfirmed sends', () => {
+  it.each(['permission', 'question'] as const)('sets only the uncertain prompt aside while its later %s stays pending for the user', async kind => {
+    const f = await fixture(); f.host.withheld = 'uncertain'; const draftId = randomUUID()
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Prompt with no confirmed echo' })
+    f.host.event({ type: kind, threadId: 'workshop', requestId: 'pending-request', text: 'Answer this explicitly', status: 'running' })
+    const result = await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    expect(result.error).toBeNull()
+    expect(result.host.threads.find(thread => thread.id === 'workshop')!.requests).toHaveLength(1)
+    expect(f.host.attempts.map(command => command.type)).toEqual(['send'])
+    f.host.withheld = null
+    const answered = await f.control.command({ type: 'answer', threadId: 'workshop', requestId: 'pending-request', answer: kind === 'permission' ? 'Deny' : 'Next step', ...(kind === 'permission' ? { approved: false } : {}) })
+    expect(answered.error).toBeNull()
+    expect(answered.host.threads.find(thread => thread.id === 'workshop')!.requests).toEqual([])
+    expect(f.host.attempts.map(command => command.type)).toEqual(['send', 'answer'])
+  })
+
+  it.each(['permission', 'question'] as const)('accepts an explicit new %s answer after recovery without replaying an old prompt', async kind => {
+    const f = await fixture(); f.host.withheld = 'uncertain'; const draftId = randomUUID()
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Old uncertain prompt' })
+    await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    f.host.withheld = null
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'New explicit turn' })
+    f.host.event({ type: kind, threadId: 'workshop', requestId: 'new-request', text: 'The new turn needs an answer', status: 'running' })
+    const command = { type: 'answer' as const, threadId: 'workshop', requestId: 'new-request', answer: kind === 'permission' ? 'Deny' : 'Next step', ...(kind === 'permission' ? { approved: false } : {}) }
+    const result = await f.control.command(command)
+    expect(result.error).toBeNull()
+    expect(result.host.threads.find(thread => thread.id === 'workshop')!.requests).toEqual([])
+    await f.control.command(command)
+    expect(f.host.attempts.filter(command => command.type === 'answer')).toHaveLength(1)
+    expect(f.host.attempts.filter(command => command.type === 'send')).toHaveLength(2)
+    expect(result.deliveredDrafts).not.toContainEqual({ threadId: 'workshop', draftId })
+  })
+
+  it.each([false, true])('holds a concurrently admitted user queue behind recovery durability (failure %s)', async fail => {
+    const f = await fixture(); const draftId = randomUUID(); f.host.withheld = 'uncertain'
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Old uncertain prompt' })
+    f.host.withheld = null
+    const entered = deferred<void>(); const gate = deferred<void>(); const write = AtomicJsonStore.prototype.write
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if ((value as { outbox?: { setAside?: boolean }[] }).outbox?.some(item => item.setAside)) {
+        entered.resolve(); await gate.promise
+        if (fail) throw new Error('Recovery failed')
+      }
+      return write.call(this, value)
+    })
+    const recovery = f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    await entered.promise
+    const queue = f.control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'Explicit new user follow-up' })
+    try {
+      await vi.waitFor(() => expect(f.control.get().followups).toHaveLength(1))
+      expect(f.host.attempts).toHaveLength(1)
+    } finally { gate.resolve() }
+    const result = await recovery; await queue
+    if (fail) {
+      expect(result.error).toMatch(/Could not save this recovery/)
+      await f.control.command({ type: 'refresh' })
+      expect(f.host.attempts).toHaveLength(1)
+    } else {
+      expect(result.error).toBeNull()
+      await expect.poll(() => f.host.attempts.length).toBe(2)
+      await expect.poll(() => f.control.get().followups?.length).toBe(0)
+    }
+  })
+
+  it.each([false, true])('retains recovery when the original echo lands during its write (restart %s)', async restart => {
+    const f = await fixture(), draftId = randomUUID(), entered = deferred<void>(), gate = deferred<void>()
+    f.host.withheld = 'uncertain'
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Original unknown prompt' })
+    const write = AtomicJsonStore.prototype.write, acceptedWrites: { status: string; setAside?: boolean }[] = []
+    let held = false
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      const record = (value as { deliveries?: { draftId: string; status: string; setAside?: boolean }[] }).deliveries?.find(item => item.draftId === draftId)
+      if (record?.status === 'accepted') acceptedWrites.push({ ...record })
+      if (!held && record?.setAside) { held = true; entered.resolve(); await gate.promise }
+      return write.call(this, value)
+    })
+    const recovery = f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    await entered.promise
+    try { await f.host.acknowledge() } finally { gate.resolve() }
+    expect((await recovery).deliveries).toContainEqual(expect.objectContaining({ draftId, status: 'accepted', setAside: true }))
+    await f.control.privacyChanged()
+    expect(acceptedWrites.length).toBeGreaterThan(0)
+    expect(acceptedWrites.every(item => item.setAside)).toBe(true)
+    vi.restoreAllMocks()
+    if (restart) { await f.restart(); await f.control.command({ type: 'connect' }) }
+    f.host.event({ type: 'ready', threadId: 'workshop', text: 'The original turn finished.' })
+    f.host.withheld = null
+    f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+      guardOperation: () => undefined, preserveUserQueue: () => false })
+    expect((await f.control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic before a fresh message' }, { guard: () => undefined })).error).toMatch(/unknown result/)
+    expect(f.host.attempts).toHaveLength(1)
+  })
+
+  it.each([false, true])('reads no provider history to set aside a prompt (missing main record %s)', async missing => {
+    const f = await fixture(); const draftId = randomUUID()
+    if (!missing) {
+      f.host.withheld = 'uncertain'
+      await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unknown old prompt' })
+    }
+    const snapshots = vi.spyOn(f.host, 'snapshot')
+    expect((await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })).error).toBeNull()
+    expect(snapshots).not.toHaveBeenCalled()
+    expect(f.host.attempts).toHaveLength(missing ? 0 : 1)
+  })
+
+  it.each([false, true])('publishes missing-send recovery only after its atomic write (failure %s)', async fail => {
+    const f = await fixture(); const draftId = randomUUID(); const entered = deferred<void>(); const gate = deferred<void>()
+    const states: AgentState[] = []; f.control.subscribe(state => states.push(state))
+    const write = AtomicJsonStore.prototype.write
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if ((value as { deliveries?: { draftId: string; setAside?: boolean }[] }).deliveries?.some(item => item.draftId === draftId && item.setAside)) {
+        entered.resolve(); await gate.promise
+        if (fail) throw new Error('Recovery disk failure')
+      }
+      return write.call(this, value)
+    })
+    const recovery = f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    await entered.promise
+    try {
+      expect(states.some(state => state.deliveries?.some(item => item.draftId === draftId && item.setAside))).toBe(false)
+      expect(f.control.get().deliveries?.some(item => item.draftId === draftId)).toBe(false)
+    } finally { gate.resolve() }
+    const result = await recovery
+    if (fail) {
+      expect(result.error).toMatch(/Could not save this recovery/)
+      expect(result.deliveries?.some(item => item.draftId === draftId)).toBe(false)
+      expect(result.obsoleteDrafts).not.toContainEqual({ threadId: 'workshop', draftId })
+    } else {
+      expect(result.error).toBeNull()
+      expect(result.deliveries).toContainEqual(expect.objectContaining({ draftId, status: 'uncertain', setAside: true }))
+    }
+    vi.restoreAllMocks(); await f.restart()
+    expect(f.control.get().deliveries?.some(item => item.draftId === draftId && item.setAside)).toBe(!fail)
+    expect(f.host.attempts).toEqual([])
+  })
+
+  it('permits normal settings after recovery while keeping a different uncertain setting blocking', async () => {
+    const f = await fixture(); f.host.withheld = 'uncertain'; const draftId = randomUUID()
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Old uncertain prompt' })
+    await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    f.host.withheld = null
+    expect((await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'high' })).error).toBeNull()
+    f.host.withheld = 'uncertain'
+    await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'low' })
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Must wait for settings' })
+    expect(f.host.attempts.map(item => item.type)).toEqual(['send', 'configure-thread', 'configure-thread'])
+    expect(f.control.get().deliveries).toContainEqual(expect.objectContaining({ draftId, status: 'uncertain', setAside: true }))
+  })
+
+  it('preserves a newer draft and its independent revision fence when missing-outbox recovery fails', async () => {
+    const f = await fixture(); const draftId = randomUUID(); const newerId = randomUUID()
+    await f.control.command({ type: 'save-thread-draft', threadId: 'workshop', draftId, text: 'Old draft', requestId: null })
+    const entered = deferred<void>(); const gate = deferred<void>(); const write = AtomicJsonStore.prototype.write
+    let failRecovery = true
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if (failRecovery && (value as { obsoleteDrafts?: { draftId: string }[] }).obsoleteDrafts?.some(item => item.draftId === draftId)) {
+        failRecovery = false; entered.resolve(); await gate.promise; throw new Error('Recovery write failed')
+      }
+      return write.call(this, value)
+    })
+    const recovery = f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    await entered.promise
+    try {
+      await f.control.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: newerId, text: 'Newer text', attachments: [image], requestId: null })
+    } finally { gate.resolve() }
+    expect((await recovery).error).toMatch(/Could not save this recovery/)
+    expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining({ draftId: newerId, text: 'Newer text', attachments: [image] }))
+    expect(f.control.get().obsoleteDrafts).toContainEqual({ threadId: 'workshop', draftId })
+    expect(f.host.attempts).toEqual([])
+  })
+
+  it('lets a new explicit queue command pass a set-aside send without changing another thread', async () => {
+    const f = await fixture(); f.host.withheld = 'uncertain'; const draftId = randomUUID(); const otherDraftId = randomUUID()
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Old A' })
+    await f.control.command({ type: 'manual-send', threadId: 'docs', draftId: otherDraftId, text: 'Old B' })
+    const result = await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    expect(result.error).toBeNull()
+    expect(result.deliveries?.find(item => item.draftId === otherDraftId)?.setAside).not.toBe(true)
+    f.host.withheld = null
+    await f.control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'Wait in the queue' })
+    await f.control.command({ type: 'refresh' })
+    await f.control.privacyChanged()
+    await expect.poll(() => f.host.attempts.length).toBe(3)
+    await expect.poll(() => f.control.get().followups?.length).toBe(0)
+  })
+
+  it('recovers an uncertain prompt delivery with missing outbox without inventing acceptance', async () => {
+    const f = await fixture(); f.host.withheld = 'uncertain'; const draftId = randomUUID()
+    const old = { type: 'manual-send' as const, threadId: 'workshop', draftId, text: 'Unknown with missing outbox' }
+    await f.control.command(old)
+    f.control.dispose(); await f.control.privacyChanged()
+    const path = join(f.root, 'agents.json'); const saved = JSON.parse(await readFile(path, 'utf8'))
+    saved.outbox = []
+    await writeFile(path, JSON.stringify(saved))
+    await f.restart(); await f.control.command({ type: 'connect' })
+    const result = await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    expect(result.error).toBeNull()
+    expect(result.deliveries).toContainEqual(expect.objectContaining({ draftId, status: 'uncertain', setAside: true }))
+    expect(result.obsoleteDrafts).toContainEqual({ threadId: 'workshop', draftId })
+    await f.restart(); await f.control.command({ type: 'connect' })
+    expect((await f.control.command(old)).error).toMatch(/revision/)
+    expect(f.host.attempts).toHaveLength(1)
+    expect(f.control.get().deliveredDrafts).not.toContainEqual({ threadId: 'workshop', draftId })
+  })
+
+  it('rolls back a missing-outbox tombstone when recovery cannot be saved', async () => {
+    const f = await fixture(); const draftId = randomUUID(); const write = AtomicJsonStore.prototype.write
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if ((value as { obsoleteDrafts?: { draftId: string }[] }).obsoleteDrafts?.some(item => item.draftId === draftId)) throw new Error('Storage unavailable')
+      return write.call(this, value)
+    })
+    const result = await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    expect(result.error).toMatch(/Could not save this recovery/)
+    expect(result.obsoleteDrafts).not.toContainEqual({ threadId: 'workshop', draftId })
+    expect(f.host.attempts).toEqual([])
+  })
+
+  it('preserves newer text and images and accepts a late exact native confirmation', async () => {
+    const f = await fixture(); f.host.withheld = 'uncertain'; const draftId = randomUUID()
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Old', attachments: [image] })
+    const newer = { type: 'save-thread-draft' as const, threadId: 'workshop', draftId: randomUUID(), text: 'Keep newer', attachments: [handleOf(OTHER_PNG, 'replacement', 'same.png')], requestId: null }
+    await f.control.command(newer)
+    const wrongThread = await f.control.command({ type: 'set-aside-send', threadId: 'docs', draftId })
+    expect(wrongThread.error).toMatch(/another thread/)
+    expect(f.control.get().deliveries?.find(d => d.draftId === draftId)?.setAside).not.toBe(true)
+    await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    await f.host.acknowledge()
+    expect(f.control.get().deliveries).toContainEqual(expect.objectContaining({ threadId: 'workshop', draftId, status: 'accepted' }))
+    expect(f.control.get().threadDrafts).toContainEqual(expect.objectContaining({ draftId: newer.draftId, text: newer.text, attachments: newer.attachments }))
+    expect(f.host.attempts).toHaveLength(1)
+  })
+
+  it('rolls recovery back when storage fails and keeps a fresh send blocked', async () => {
+    const f = await fixture(); f.host.withheld = 'uncertain'; const draftId = randomUUID()
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unknown' })
+    const write = AtomicJsonStore.prototype.write
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if ((value as { outbox?: { setAside?: boolean }[] }).outbox?.some(item => item.setAside)) throw new Error('Storage unavailable')
+      return write.call(this, value)
+    })
+    const result = await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    expect(result.error).toMatch(/Could not save this recovery/)
+    expect(result.deliveries?.find(d => d.draftId === draftId)?.setAside).not.toBe(true)
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Still blocked' })
+    expect(f.host.attempts).toHaveLength(1)
+    const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8'))
+    expect(saved.outbox[0].setAside).not.toBe(true)
+    vi.restoreAllMocks()
+    await f.restart()
+    expect(f.control.get().deliveries?.find(d => d.draftId === draftId)?.setAside).not.toBe(true)
+  })
+
+  it('keeps recovery hidden and blocks fresh dispatch until its write is durable', async () => {
+    const f = await fixture(); f.host.withheld = 'uncertain'; const draftId = randomUUID()
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unknown' })
+    const gate = deferred<void>(); const entered = deferred<void>(); const write = AtomicJsonStore.prototype.write
+    vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(async function (this: AtomicJsonStore<unknown>, value: unknown) {
+      if ((value as { outbox?: { setAside?: boolean }[] }).outbox?.some(item => item.setAside)) { entered.resolve(); await gate.promise }
+      return write.call(this, value)
+    })
+    const recovery = f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    await entered.promise
+    let send: Promise<AgentState> | undefined
+    try {
+      expect(f.control.get().deliveries?.find(d => d.draftId === draftId)?.setAside).not.toBe(true)
+      send = f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Not before durability' })
+      expect(f.host.attempts).toHaveLength(1)
+    } finally { gate.resolve(); await recovery; await send }
+    expect(f.host.attempts).toHaveLength(1)
+  })
+
+  it.each(['manual-send', 'send'] as const)('refuses recovery during an in-flight %s admission', async type => {
+    const f = await fixture(); const draftId = randomUUID(); const gate = deferred<AgentHostResult>(); const entered = deferred<void>()
+    vi.spyOn(f.host, 'execute').mockImplementationOnce(async () => { entered.resolve(); return gate.promise })
+    const sending = f.control.command(type === 'manual-send'
+      ? { type, threadId: 'workshop', draftId, text: 'In flight' }
+      : { type, draft: { threadId: 'workshop', draftId, text: 'In flight', attachments: [] } })
+    await entered.promise
+    try {
+      const result = await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+      expect(result.error).toMatch(/still submitting/)
+      expect(result.deliveries?.find(d => d.draftId === draftId)?.setAside).not.toBe(true)
+    } finally { gate.resolve({ accepted: false, uncertain: true }); await sending }
+  })
+
+  it('refuses recovery for queued follow-ups and uncertain answers', async () => {
+    const f = await fixture(); f.host.withheld = 'uncertain'; const draftId = randomUUID()
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unknown' })
+    await f.control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'Queued' })
+    expect((await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })).error).toMatch(/pending actions/)
+    f.host.event({ type: 'permission', threadId: 'docs', requestId: 'permission', text: 'Allow?' })
+    await f.control.command({ type: 'answer', threadId: 'docs', requestId: 'permission', answer: 'Deny', approved: false })
+    expect((await f.control.command({ type: 'set-aside-send', threadId: 'docs', draftId: randomUUID() })).error).toMatch(/pending actions/)
+    expect(f.host.attempts.map(item => item.type)).toEqual(['send', 'answer'])
+  })
+
+  it.each(['manual-send', 'send'] as const)('durably fences a lost-reply revision without claiming delivery (%s)', async type => {
+    const f = await fixture(); const draftId = randomUUID()
+    await f.control.command({ type: 'save-thread-draft', threadId: 'workshop', draftId, text: 'Saved before a lost reply', attachments: [], requestId: null })
+    const result = await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    expect(result.error).toBeNull()
+    expect(result.obsoleteDrafts).toContainEqual({ threadId: 'workshop', draftId })
+    expect(result.deliveredDrafts).not.toContainEqual({ threadId: 'workshop', draftId })
+    expect(result.deliveries).toContainEqual(expect.objectContaining({ threadId: 'workshop', draftId, status: 'uncertain', setAside: true }))
+    const evidence = result.deliveries!.find(item => item.draftId === draftId)!
+    expect(evidence.messageId).toBeUndefined(); expect(evidence.commandId).toBeUndefined()
+    const durable = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8'))
+    expect(durable.deliveries).toContainEqual(expect.objectContaining({ draftId, status: 'uncertain', setAside: true }))
+    await f.restart()
+    expect(f.control.get().deliveries).toContainEqual(expect.objectContaining({ draftId, status: 'uncertain', setAside: true }))
+    await f.control.command({ type: 'connect' })
+    const replay = await f.control.command(type === 'manual-send'
+      ? { type, threadId: 'workshop', draftId, text: 'Saved before a lost reply' }
+      : { type, draft: { threadId: 'workshop', draftId, text: 'Saved before a lost reply', attachments: [] } })
+    expect(replay.error).toMatch(/revision/)
+    expect(f.host.attempts).toEqual([])
+    expect((await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Fresh' })).error).toBeNull()
+    expect(f.host.attempts).toHaveLength(1)
+  })
+
+  it('allows a fresh atomic Send while retaining the exact old packet against replay', async () => {
+    const f = await fixture(); f.host.withheld = 'uncertain'; const draftId = randomUUID()
+    const old = { type: 'send' as const, draft: { threadId: 'workshop', draftId, text: 'Atomic old', attachments: [] } }
+    await f.control.command(old)
+    await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+    await f.restart(); await f.control.command({ type: 'connect' })
+    expect((await f.control.command(old)).error).toMatch(/unknown result/)
+    expect((await f.control.command({ ...old, draft: { ...old.draft, text: 'Changed replay' } })).error).toMatch(/revision/)
+    f.host.withheld = null
+    const fresh = await f.control.command({ type: 'send', draft: { threadId: 'workshop', draftId: randomUUID(), text: 'Fresh atomic', attachments: [] } })
+    expect(fresh.error).toBeNull()
+    expect(f.host.attempts).toHaveLength(2)
+  })
+
+  it('sets an uncertain prompt aside durably, permits a new explicit send and never replays the old revision', async () => {
+    const f = await fixture(); f.host.withheld = 'uncertain'
+    const draftId = randomUUID()
+    const old = { type: 'manual-send' as const, threadId: 'workshop', draftId, text: 'Unconfirmed original', attachments: [image] }
+    await f.control.command(old)
+    const result = await f.control.command(agentCommandSchema.parse({ type: 'set-aside-send', threadId: 'workshop', draftId }))
+    expect(result.error).toBeNull()
+    expect(result.deliveries).toContainEqual(expect.objectContaining({ threadId: 'workshop', draftId, status: 'uncertain', setAside: true }))
+    const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8'))
+    const original = f.host.attempts[0]!
+    if (original.type !== 'send') throw new Error('Missing original send')
+    expect(saved.outbox[0]).toMatchObject({ draftId, setAside: true, messageId: original.messageId })
+    expect(saved.outbox[0].draftDigest).toBeTruthy()
+    expect(f.host.attempts).toHaveLength(1)
+    await f.restart(); await f.control.command({ type: 'connect' })
+    await f.control.command(old)
+    expect(f.host.attempts).toHaveLength(1)
+    f.host.withheld = null
+    const fresh = await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'New explicit message' })
+    expect(fresh.error).toBeNull()
+    expect(f.host.attempts).toHaveLength(2)
+    expect(fresh.deliveredDrafts).not.toContainEqual({ threadId: 'workshop', draftId })
+  })
+})
+
 describe('manual delivery receipts', () => {
   it('preserves a foreign answer and images through uncertain manual delivery, restart, and acknowledgement', async () => {
     const f = await fixture()

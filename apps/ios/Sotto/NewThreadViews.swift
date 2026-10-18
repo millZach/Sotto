@@ -338,7 +338,7 @@ struct NewThreadSheet: View {
         Binding(get: { permissionID }, set: { permissionID = $0; heldBack = false })
     }
 
-    private func modelName(_ value: ThreadModel) -> String { "\(Words.provider(value.providerId)) · \(value.name)" }
+    private func modelName(_ value: ThreadModel) -> String { value.label }
 
     private var canCreate: Bool {
         guard !busy, model.online(hostID), !model.pendingCreations.contains(where: { $0.hostID == hostID }),

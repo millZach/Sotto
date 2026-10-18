@@ -220,7 +220,15 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
   providerModes: z.array(agentProviderModeSchema).max(20).optional(),
   /** The provider names one of its own models as the one to reach for; the picker keeps it at the top. */
   recommended: z.boolean().optional(),
+  /**
+   * Where the model runs, for a provider that offers models from several companies under one sign-in: OpenCode's
+   * **model source**, such as OpenCode Zen or Anthropic (ADR-0087). The picker may group by it; `provider` stays the
+   * thread provider's own label, so a model from Anthropic on OpenCode never reads as Claude Code.
+   */
+  source: id.optional(),
 })
+/** The model source OpenCode's free models come from (ADR-0087); the model menu says so on its row. */
+export const OPENCODE_ZEN_SOURCE = 'OpenCode Zen'
 export const agentProjectSchema = z.object({ hostId: z.uuid().optional(), id: providerEntityId, providerId: providerIdSchema.optional(), title: id, path: z.string().max(4_096), workspaceSettledAt: z.string().datetime().nullable().optional() })
 /** How many pages one question carries at most (ADR-0085). */
 export const QUESTION_PAGES_MAX = 8
@@ -454,7 +462,8 @@ export const agentThreadSchema = z.object({
    * send does not start it. Absent while it is stopped or not started yet, and from hosts that predate it. Never saved. */
   providerSessionOpen: z.literal(true).optional(),
   /** The thread's provider client builds its session without Sotto's tool servers: a Muse client that did not grant
-   * session tool servers (ADR-0079). Absent otherwise, and from hosts that predate it. Never saved. */
+   * session tool servers (ADR-0079), or an OpenCode thread's server that refused them or did not connect them (ADR-0087).
+   * Absent otherwise, and from hosts that predate it. Never saved. */
   sottoToolsWithheld: z.literal(true).optional(),
   /** A Devin thread whose host gives Devin Sotto's tool servers, from Devin CLI 3000.11.92 (#1040). Absent from hosts that
    * predate it, whose Devin threads have none, so a Devin thread without it is read as having none. Never saved. */
@@ -659,7 +668,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -742,6 +751,10 @@ export const agentDeliverySchema = z.object({
   commandId: id.optional(), messageId: id.optional(),
   /** The exact stable Send packet this delivery belongs to; evidence, never authority. */
   packetDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+  /** The user released the composer; the original delivery is still unconfirmed. */
+  setAside: z.boolean().optional(),
+  /** A later explicit prompt was confirmed; normal automatic updates may resume without replaying this one. */
+  updatesResumed: z.boolean().optional(),
   localFeedbackMs: z.number().nonnegative().optional(), providerLatencyMs: z.number().nonnegative().optional(),
 })
 export type AgentDelivery = z.infer<typeof agentDeliverySchema>
@@ -955,12 +968,14 @@ export function summarizeThread(thread: Pick<AgentThread, 'messages' | 'activiti
     ...(running?.startedAt === undefined ? {} : { runningTurnStartedAt: running.startedAt }) }
 }
 /** The providers that write Sotto's short text. A provider is named here once it does; one that is not writes none. */
-const SHORT_TEXT_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok'])
+const SHORT_TEXT_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'opencode'])
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git
  * drafts, each in a side call (ADR-0026). Devin has no one-off call that keeps out of its own session
  * list; Muse cannot yet disable every tool in one (ADR-0079). Those threads, and a provider's that has not said it
  * writes them, keep their first-message title or stand-in and are offered no Regenerate that could do nothing.
+ * OpenCode writes them through its stateless generation route (ADR-0087); a model source that refuses it, as OpenCode
+ * Zen's free models do, writes nothing, and its threads keep their stand-ins.
  */
 export function providerWritesShortText(providerId: ProviderId | undefined): boolean {
   return providerId === undefined || SHORT_TEXT_PROVIDERS.has(providerId)
@@ -969,15 +984,16 @@ export function providerWritesShortText(providerId: ProviderId | undefined): boo
  * The providers that take Sotto's tool servers. A provider is named here once it does; one that is not gets none. Devin's
  * threads take them only where their host says it gives them (`threadTakesSottoTools`).
  */
-const SOTTO_TOOLS_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'devin', 'muse'])
+const SOTTO_TOOLS_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
 /** Whether this provider can receive Sotto's tool servers. Older unlabelled local hosts retain their tools. */
 export function providerTakesSottoTools(providerId: ProviderId | undefined): boolean {
   return providerId === undefined || SOTTO_TOOLS_PROVIDERS.has(providerId)
 }
 /**
  * Whether this thread's agent gets Sotto's tool servers. Every listed provider takes them: Muse when its client grants
- * session tool servers (ADR-0079), and Devin from CLI 3000.11.92, which attaches the servers a session is opened with
- * (ADR-0056). A client that cannot take them marks its threads `sottoToolsWithheld`, and a Devin thread counts only when
+ * session tool servers (ADR-0079), Devin from CLI 3000.11.92, which attaches the servers a session is opened with
+ * (ADR-0056), and OpenCode when its thread's server connects every one (ADR-0087). A client that cannot take them marks
+ * its threads `sottoToolsWithheld`, and a Devin thread counts only when
  * its host says it gives them (`sottoToolsGiven`).
  */
 export function threadTakesSottoTools(thread: Pick<AgentThread, 'providerId' | 'sottoToolsWithheld' | 'sottoToolsGiven'> | undefined): boolean {
@@ -1040,6 +1056,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     binding: z.object({ requestId: id.nullable(), questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u).nullable() }).strict()
       .refine(value => (value.requestId === null) === (value.questionsDigest === null), 'Use a question ID with its form digest, or neither.').optional(),
   }).strict().optional() }).strict(),
+  z.object({ type: z.literal('set-aside-send'), threadId: id, draftId: z.uuid() }).strict(),
   z.object({ type: z.literal('manual-send'), threadId: id, text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional(), draftId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('queue-followup'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('edit-followup'), threadId: id, itemId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
@@ -1198,7 +1215,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse'])
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays
@@ -1227,6 +1244,10 @@ export function capabilitiesForThread(host: AgentHostSnapshot, thread: AgentThre
 /** Public model and project IDs; only the provider boundary reverses them. */
 export function publicProviderEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
   return `native:${provider}:${kind}:${encodeURIComponent(value)}`
+}
+/** A thread's provider as a host holds it: its own, or for a thread that names none, its model's public identity's. */
+export function threadProviderOf(thread: Pick<AgentThread, 'providerId' | 'modelId'>): ProviderId | undefined {
+  return thread.providerId ?? parsePublicProviderEntityId(thread.modelId)?.provider
 }
 /** The provider, kind and native value a public ID names, or null for any other ID or one whose value will not decode. */
 export function parsePublicProviderEntityId(id: string): { readonly provider: ProviderId; readonly kind: 'model' | 'project'; readonly value: string } | null {

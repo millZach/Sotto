@@ -394,19 +394,39 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
   readonly state: AgentState; readonly command: Command; readonly store: ThreadDraftStore
 }): ReactNode {
   const { draft } = useThreadComposer(store, row.thread.id)
+  const [settingAside, setSettingAside] = useState(false)
+  const [recoveryError, setRecoveryError] = useState<string | null>(null)
   const queued = submission?.mode === 'queue'
   const restored = submission?.restoredAs !== undefined && draft.draftId === submission.restoredAs
   const provider = state.host.providers && row.providerId ? { provider: row.providerId } : {}
   // The provider's history can show the exact message before Sotto has its confirmation.
   // Repeating the text would read as a second send, so only the delivery state stays here.
-  const messageId = deliveryFor(state, row.thread.id, draftId)?.messageId
+  const receipt = deliveryFor(state, row.thread.id, draftId)
+  const setAside = receipt?.setAside === true && status !== 'accepted'
+  const local = !row.thread.remoteHost
+  const messageId = receipt?.messageId
   const inHistory = messageId !== undefined && row.thread.messages.some(message => message.id === messageId)
   if (submission !== undefined && inHistory && (status === 'queued' || status === 'submitting')) return null
-  const label = <span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{queued && status === 'queued' ? 'Queued' : STATUS_LABELS[status]}</span>
-  const unresolved = status === 'uncertain' || submission === undefined && deliveryPending(status)
+  const label = <span className="thread-message__status" role="status" data-status={status}><i aria-hidden="true" />{setAside ? 'Set aside · Unconfirmed' : queued && status === 'queued' ? 'Queued' : STATUS_LABELS[status]}</span>
+  const unresolved = !setAside && (status === 'uncertain' || submission === undefined && deliveryPending(status))
+  const continueWithNewMessage = async (button: HTMLButtonElement): Promise<void> => {
+    if (settingAside) return
+    const composer = button.closest('.thread-workspace')?.querySelector<HTMLElement>('[role="textbox"]')
+    setSettingAside(true); setRecoveryError(null)
+    try {
+      const result = await command({ type: 'set-aside-send', threadId: row.thread.id, draftId })
+      const delivery = result && deliveryFor(result, row.thread.id, draftId)
+      if (!delivery?.setAside && delivery?.status !== 'accepted') {
+        setRecoveryError(result?.error ?? 'Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing.')
+      } else composer?.focus()
+    } catch {
+      setRecoveryError('Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing.')
+    } finally { setSettingAside(false) }
+  }
   // A queued prompt is told by the queue, which is also where it is edited, moved or removed.
   // Only the header's Reconnect acts on a disconnected provider; Check again needs a connection.
   const detail = queued ? null
+    : setAside ? 'Its delivery is still unknown. Sotto has not sent it again.'
     : status === 'failed' ? `${submission?.error ?? 'The provider did not take this prompt.'}${submission === undefined ? '' : restored ? ' It is back in the composer.' : hasDraftContent(draft) ? ' Restoring it replaces the draft in the composer.' : ''}`
       : unresolved ? `Sotto will not send ${submission === undefined && !inHistory ? 'your last prompt' : 'it'} twice.${row.connected ? '' : ' Reconnect to check it.'}`
         : null
@@ -419,9 +439,13 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
         onClick={() => void sendThreadRevision(store, row, command, performance.now(), submission.mode, draftId)}>Retry</Button> : null}
       {status === 'failed' && submission !== undefined && !restored ? <Button variant="secondary" onClick={() => store.restore(row.thread.id, draftId)}>Restore prompt</Button> : null}
       {/* Checking again refreshes the provider, which is global-lane work. */}
-      {unresolved && row.connected ? <Button variant="secondary" disabled={state.globalLaneBusy} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button> : null}
+      {unresolved && row.connected ? <Button variant="secondary" disabled={state.globalLaneBusy || settingAside} onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button> : null}
+      {status === 'uncertain' && !queued && !setAside && local && row.connected ? <Button variant="secondary" disabled={settingAside || isThreadBusy(state, row.thread.id)}
+        aria-busy={settingAside || undefined} onClick={event => void continueWithNewMessage(event.currentTarget)}>Continue with a new message</Button> : null}
       {status === 'failed' ? <Button variant="ghost" onClick={() => store.dismiss(row.thread.id, draftId)}>Dismiss</Button> : null}
     </div>
+    {status === 'uncertain' && !queued && !setAside && local ? <span>The provider may have received it. Continuing sets it aside without resending it.</span> : null}
+    {recoveryError && !setAside && status !== 'accepted' ? <span role="alert">{recoveryError}</span> : null}
   </div>
   // With no prompt text to show (already in the history, or recovered after a restart),
   // the state is a compact line under the conversation rather than an empty second bubble.

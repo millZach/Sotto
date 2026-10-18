@@ -10,6 +10,7 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestAction, GitPullRequestLink, GitPullRequestRead, GitPullRequestMergeMethod, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { ThreadEvent } from '../../shared/threadEvents'
+import type { SubagentRole } from '../../shared/workerRoles'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import type { UsageHistorySink, UsageRecordedUserMessage } from './usageHistory/sink'
 
@@ -31,6 +32,12 @@ export interface WatcherLaunchProfile {
 }
 export interface ThreadLaunchProfiles {
   profileFor(threadId: string): Promise<WatcherLaunchProfile | undefined>
+}
+/** What each kind of work runs on now, for a thread's own sub-agents (#1042). Read at a launch and when Settings change. */
+export interface WorkerRoleSource {
+  table(): readonly SubagentRole[]
+  /** Called after the user's Settings change; returns what stops it. */
+  onChange(listener: () => void): () => void
 }
 /** Ticket 3 supplies the server; ticket 2 consumes only this thread-bound capability. */
 export interface WatcherProfileTools extends ScopedThreadTools {
@@ -257,6 +264,11 @@ export interface AgentHost {
   profileRefusalHandler?(threadId: string): ((reason: string) => void | Promise<void>) | undefined
   /** Inject shared browser tools before connecting the native providers. */
   useBrowserTools?(tools: BrowserAgentTools): void
+  /**
+   * The worker roles for each thread's own sub-agents (#1042), given only while that Owl feature is on: an adapter reads
+   * the table when a thread launches, and one that keeps files from it writes them again when Settings change.
+   */
+  useWorkerRoles?(roles: WorkerRoleSource): void
   /**
    * Inject Sotto's scoped tool servers before connecting: the host setup tools, which only a host setup thread is
    * given (ADR-0035), and the visual tool (ADR-0056). Each launch offers every one that answers for its thread.

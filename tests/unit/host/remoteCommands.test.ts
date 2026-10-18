@@ -1,11 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_HOST_UPDATE_ACTIONS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
+import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_HOST_UPDATE_ACTIONS, REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
 import { HOST_UPDATE_REQUEST_ACTIONS, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
-const HOST_LOCAL = ['credential', 'check-reasoning', 'update-client', 'open-thread-folder']
+const HOST_LOCAL = ['set-aside-send', 'credential', 'check-reasoning', 'update-client', 'open-thread-folder']
 /** Fields only the desktop window sends, which its router reads and never forwards to a host (ADR-0074). */
 // The desktop's router reads these and never sends them on: the host a patch or Update all's press names (ADR-0074, ADR-0077).
 // A desktop window names the machine a command acts on and its router never sends the name on (ADR-0074, ADR-0077):
@@ -20,6 +20,12 @@ const schemaFields = new Map((agentCommandSchema.options as unknown as Option[])
 const refuse = (command: AgentCommand, mayAnswer = false, askingProviderModes?: string[]) => remoteCommandRefusal(command, { mayAnswer, askingProviderModes })
 
 describe('remote command allow-list', () => {
+  it('keeps unconfirmed-send recovery desktop-only', () => {
+    const command = agentCommandSchema.parse({ type: 'set-aside-send', threadId: 'thread', draftId: 'bc746d85-565c-4e06-b091-556d98551676' })
+    expect(refuse(command, true)).toBe('forbidden')
+    expect(commandFromProtocolV1(protocolAgentCommandSchema.parse(command))).toEqual(command)
+  })
+
   it('accepts v1 connects with optional false-only feedback without granting any other field or command', () => {
     for (const provider of [undefined, 'codex'] as const) {
       for (const feedback of [{}, { notice: false }] as const) {
@@ -75,6 +81,8 @@ describe('remote command allow-list', () => {
     expect([...REMOTE_USAGE_OPERATIONS]).toEqual(['usage-read', 'usage-refresh', 'usage-clear'])
     const decided = ['hello', 'shell', 'detail', 'events', 'observe', 'command', 'preview', 'receipt', 'git-refs', 'git-changed-files', 'git-pull-request',
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
+      // A host's own OpenCode signed in to model sources for the desktop that asks (#1107): the same trust as a sign-in.
+      ...REMOTE_OPENCODE_SIGN_IN_OPERATIONS,
       // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0078).
       ...REMOTE_USAGE_OPERATIONS,
       // Explicit native recovery requires answer-check and current remote-answer authority; it sends no answer.
