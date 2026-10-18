@@ -314,6 +314,8 @@ export const agentMessageSchema = z.object({
   // A projected message combines bounded events and can exceed any one event's limit.
   id, role: z.enum(['user', 'assistant']), text: z.string(), createdAt: z.string(),
   commandId: z.string().optional(),
+  /** The Sotto user message that began this reply's turn, proved by the adapter while it was live. */
+  turnMessageId: z.string().min(1).max(512).optional().catch(undefined),
   attachments: z.array(agentAttachmentReferenceSchema).optional(),
   watcherOwnChange: watcherOwnChangeSchema.optional().catch(undefined),
   watcherObservedChanges: watcherObservedChangesSchema.optional().catch(undefined),
@@ -633,6 +635,16 @@ export type AgentModel = z.infer<typeof agentModelSchema>
 export type AgentProject = z.infer<typeof agentProjectSchema>
 export type AgentRequest = z.infer<typeof agentRequestSchema>
 export type AgentMessage = z.infer<typeof agentMessageSchema>
+
+/** A provider's fresh read cannot erase Sotto's metadata or reassign a reply whose turn was already proved. */
+export function withKeptMessageMetadata(message: AgentMessage, kept: AgentMessage | undefined): AgentMessage {
+  const ownChange = message.watcherOwnChange === undefined ? kept?.watcherOwnChange : undefined
+  const observed = message.watcherObservedChanges === undefined ? kept?.watcherObservedChanges : undefined
+  const owner = message.role === 'assistant' && kept?.role === 'assistant' ? kept.turnMessageId : undefined
+  return ownChange || observed || owner !== undefined && owner !== message.turnMessageId
+    ? { ...message, ...(ownChange ? { watcherOwnChange: ownChange } : {}), ...(observed ? { watcherObservedChanges: observed } : {}),
+      ...(owner === undefined ? {} : { turnMessageId: owner }) } : message
+}
 export type AgentThread = z.infer<typeof agentThreadSchema>
 /**
  * What a thread says about its provider only while the host that said it is connected: its monitors, its background
