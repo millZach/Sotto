@@ -231,17 +231,18 @@ describe('authority at dispatch', () => {
     expect((await f.control.command({ type: 'configure', patch: { newThreadRuntimeMode: 'approval-required' } }, client)).error).toBeNull()
   })
 
-  it.each([false, true])('turns Muse’s shell sandbox off only for a client that may grant, when permitted is %s, and keeps it through other saves', async allowed => {
+  it.each([false, true])('refuses a paired client turning Muse’s shell sandbox off even when permitted is %s, and lets it turn it back on', async allowed => {
     const client: ClientIdentity = { clientId: 'fixture-client', user: 'Fixture client', transport: 'socket' }
     const f = await fixture({ authorizes: () => ({ allowed: false, reason: 'no-policy' }),
       mayGrant: identity => identity.transport === 'ipc' ? { allowed: true, reason: 'local-window' }
         : { allowed, reason: allowed ? 'paired-client' : 'no-policy' } })
-    const result = await f.control.command({ type: 'configure', patch: { museDisableSandbox: true } }, client)
-    expect(result.error).toBe(allowed ? null : REMOTE_PERMISSION_DENIED)
-    expect(f.control.get().configuration.museDisableSandbox).toBe(allowed)
+    expect((await f.control.command({ type: 'configure', patch: { museDisableSandbox: true } }, client)).error).toBe(REMOTE_PERMISSION_DENIED)
+    expect(f.control.get().configuration.museDisableSandbox).toBe(false)
+    // This computer's own window turns it off.
+    expect((await f.control.command({ type: 'configure', patch: { museDisableSandbox: true } })).error).toBeNull()
     // A patch that leaves the field out keeps it, so the switch does not snap back on another save.
     await f.control.command({ type: 'configure', patch: { checkClientUpdates: false } })
-    expect(f.control.get().configuration.museDisableSandbox).toBe(allowed)
+    expect(f.control.get().configuration.museDisableSandbox).toBe(true)
     // Turning the sandbox back on grants nothing, so it needs no policy.
     expect((await f.control.command({ type: 'configure', patch: { museDisableSandbox: false } }, client)).error).toBeNull()
     expect(f.control.get().configuration.museDisableSandbox).toBe(false)
