@@ -100,6 +100,39 @@ change there is lost silently. Instead the record is smaller and cheaper to copy
 Measured in one run on a busy machine, a copy of the owner's record took 3.4 ms with `structuredClone` and 0.66 ms as
 plain data, and a copy with 60 turns 1.2 ms and 0.35 ms. `copySites.test.ts` counts the new copier, and the budget's record count follows either copier.
 
+### October 18: Watcher's pass and the shell
+
+The owner's Owl 0.1.38-owl.20261018.1, with both changes above, still lagged while threads worked. A 30-second profile
+had main busy 96% of the time and an event-loop delay of 68 ms on average, 406 ms at worst. Watcher's record no
+longer showed. What did was work done on each coordinator update, which comes up to every 16 ms while threads stream:
+
+| Work on each update | Share of main |
+| --- | --- |
+| Watcher's wake-up pass over every thread | 19% |
+| The coordinator's shell, copied with `structuredClone` | 13% |
+| Activity snapshots, copied and published | about 29% |
+| The window's same-content check | 9% |
+
+The wake-up pass now runs at once only when something it reacts to moves: a thread's status or last turn, its request
+cards, its background work, its connection, or the Watcher record. A turn that finishes as the next one starts is seen
+only in the update between them, so those never wait. Otherwise, as while a thread streams, it runs at most every 250 ms
+and once more after the last update; news waits two seconds before it goes in any case. With 150 paired threads, where
+one pass took about 70 ms, three seconds of updates every 16 ms ran 29 passes and spent 71% of main in Watcher's
+publish before, and 13 passes and 19% after.
+
+Most of a pass was spent on threads Watcher does not watch. They make no news; their facts only answered Watcher's own
+reads and marked a long-silent thread Quiet in `list_threads`. No pass looks at them now. Each Watcher read looks at
+every thread first, so it reads them as they are; a thread starts from its facts as they are when it becomes watched, so
+what it had before is not told as news; and only a watched thread is marked Quiet, since an unwatched one has no history
+of its progress. With the same 150 threads and nothing watched, three seconds of updates spent 695 ms in passes before
+and 25 ms with a five-second sweep, which was dropped as well (Zach's call, October 18, 2026).
+
+A failed Watcher send that waits in the queue was recorded again on every snapshot with a new time, which replaced the
+record each time and would have run the pass on every update. Its time now changes only when its outcome does.
+
+The shell is copied as plain data, as the record is. The activity snapshots and the window's check are left for a later
+change.
+
 ## When a guard goes red
 
 Read the failure: it says what grew, with the measured numbers. Move the copy off the update path, or read the state

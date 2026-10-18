@@ -20,10 +20,10 @@
     "cloneActivitySnapshot(": 1
   },
   "src/main/agents/control.ts": {
-    "structuredClone(": 23,
+    "structuredClone(": 21,
     "shell()": 39,
     "watcherRecord()": 2,
-    "clonePlainData(": 1
+    "clonePlainData(": 3
   },
   "src/main/agents/devin.ts": {
     "structuredClone(": 1,
