@@ -21,7 +21,7 @@
   },
   "src/main/agents/control.ts": {
     "structuredClone(": 24,
-    "shell()": 36,
+    "shell()": 39,
     "watcherRecord()": 2
   },
   "src/main/agents/devin.ts": {
@@ -109,7 +109,7 @@
     "shell()": 1
   },
   "src/main/hosts/desktopHostRouter.ts": {
-    "shell()": 34
+    "shell()": 35
   },
   "src/main/hosts/desktopHosts.ts": {
     "structuredClone(": 1,

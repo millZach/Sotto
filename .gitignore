@@ -638,6 +638,11 @@ artifacts/linux-test-findings/*
 !artifacts/linux-test-findings/packaged-terminal-1280x800-dark.png
 !artifacts/linux-test-findings/packaged-terminal-820x560-light.png
 
+# Continue after an unconfirmed prompt; retain the two cited captures.
+artifacts/unconfirmed-send/*
+!artifacts/unconfirmed-send/watcher-recovery-dark-1280x800.png
+!artifacts/unconfirmed-send/watcher-set-aside-light-820x560.png
+
 # Linux stable release command; retain only the cited rehearsal evidence.
 artifacts/linux-release-command/*
 !artifacts/linux-release-command/owl-features-stable-package.png

@@ -49,6 +49,16 @@ function unsupportedComposer() {
 }
 
 describe('desktop host routing', () => {
+  it('refuses set-aside recovery on remote hosts before forwarding any command', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+    router.add(remote.connection); router.select(REMOTE)
+    try {
+      const result = await router.command({ type: 'set-aside-send', threadId: hostEntityKey(REMOTE, 'thread'), draftId: randomUUID() }, desktopWindowClient())
+      expect(result.error).toBe('Continue with a new message on the desktop that owns this thread. Nothing was changed.')
+      expect(remote.command).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+  })
+
   it('qualifies and bounds exact retirement and delivery proof across two full host ledgers', () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     for (const f of [local, remote]) {
