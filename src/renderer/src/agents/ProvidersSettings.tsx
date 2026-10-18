@@ -214,8 +214,8 @@ export function ProvidersSettings(): ReactNode {
               <div>
                 <h4>Shell sandbox</h4>
                 <p>{museDisableSandbox
-                  ? "Muse's shell commands run as you on this computer, with no sandbox. Only turn this off where Muse's sandbox cannot be set up. A thread on Ask for approval still asks before a command runs."
-                  : "Muse's shell commands run inside its sandbox on this computer."}</p>
+                  ? "Muse's shell commands and file tools run as you on this computer, with no sandbox: they can reach files outside the project and the network. Only turn this off where Muse's sandbox cannot be set up. A thread on Ask for approval still asks."
+                  : "Muse's shell commands and file tools run inside its sandbox on this computer."}</p>
                 {museSandboxOwed && <p className="provider-client__owed" role="status">{`Muse is still running with its sandbox ${status.sandboxDisabled ? 'off' : 'on'}. Reconnect Muse to apply the change. Reconnecting stops any Muse reply that is under way.`}</p>}
               </div>
               <div className="provider-client__actions" ref={sandboxActions}>
