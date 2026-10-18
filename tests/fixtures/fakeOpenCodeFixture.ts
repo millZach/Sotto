@@ -10,6 +10,8 @@ import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from '.
 export const opencodeFixtureSkips: AdapterContractSkips = {
   backgroundWork: 'OpenCode reports no work a turn leaves running, and the fixture drives none.',
   liveSettings: 'OpenCode takes a model, effort or permission change on the live provider session and has no refusal to recover from by starting it again; opencodeAdapter.test.ts checks the live change itself.',
+  // Traced on forge (#1162): the coordinator answered the send a few milliseconds before the publish that carries running.
+  sendAnswerRunning: 'OpenCode echoes a prompt before it answers the prompt request, so the echo settles the send and the coordinator reads nothing after it (#765); running reaches the host in the next publish.',
 }
 /** A log may not exist before its first event; any other read failure is evidence, not an empty trace. */
 async function readLog(path: string): Promise<string> {
