@@ -11,6 +11,7 @@ import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, type Queu
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
@@ -331,7 +332,11 @@ export class AgentControl {
     return this.persist()
   }
   mutateWatcher(update: (record: WatcherRecord) => void): void {
-    const next = this.watcherRecord(); update(next); this.watcher = watcherRecordSchema.parse(next)
+    const next = this.watcherRecord(); update(next)
+    // Watcher's observe pass offers an update on every streamed chunk, and most change nothing. Checking the record again
+    // costs more than copying it, and both grow with every prompt and wake-up Watcher has had, so an unchanged record stays.
+    if (isDeepStrictEqual(next, this.watcher)) return
+    this.watcher = watcherRecordSchema.parse(next)
     this.watcherMessageDisplay?.update(this.watcher.requests)
   }
   useWatcher(hooks: WatcherControlHooks): () => void {
