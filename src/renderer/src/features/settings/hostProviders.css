@@ -118,3 +118,6 @@
 .host-client-updates__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 
 @media (max-width: 700px) { .host-providers { padding-left: 0; } .host-providers__toggle.tt-button { margin-left: 0; } }
+
+/* A connected OpenCode's Model sources on this host (#1107): the block this computer's OpenCode tile has, under the tiles. */
+.host-providers__panel .oc-sources { margin-top: 0; padding: 14px 0; }

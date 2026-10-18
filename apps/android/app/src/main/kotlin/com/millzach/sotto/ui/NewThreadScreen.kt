@@ -148,8 +148,8 @@ fun NewThreadScreen(model: AppModel, close: () -> Unit, opened: (ThreadRef) -> U
                     } else {
                         Picker(
                             "Model",
-                            chosenModel?.let { "${Words.provider(it.providerId)} · ${it.name}" } ?: "Saved model unavailable — choose a model",
-                            models.map { Triple(it.id, "${Words.provider(it.providerId)} · ${it.name}", true) },
+                            chosenModel?.label ?: "Saved model unavailable — choose a model",
+                            models.map { Triple(it.id, it.label, true) },
                         ) { modelID = it; resetOptions() }
                         val efforts = chosenModel?.reasoningEfforts
                         if (!efforts.isNullOrEmpty()) {

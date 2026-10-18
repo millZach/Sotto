@@ -51,7 +51,8 @@ for the broadcast and the workspace's activity snapshots; sharing unchanged thre
 
 The budgets are 14.5 copies, 3.5 whole-state copies and 1.5 copies of Watcher's record per update on Owl, and 10.5,
 3.5 and none on stable. They only tighten: a change that lowers a count lowers its budget in the same PR, and a change
-that needs more copies on this path asks Zach first.
+that needs more copies on this path asks Zach first. The October 17 Watcher recovery follow-up removed two copies per
+Owl update (matched parent 21.4, candidate 19.4), and its budget fell by two.
 
 ### October 17: Watcher's record
 
@@ -67,15 +68,18 @@ turns and 535 wake-up IDs. One copy of it took 1.7 ms and one schema check 2.5 m
 26 ms per update. The Owl builds of October 16 and 17 measure the same: the lag had grown with the record, not with
 either build.
 
-The record is replaced on every change and never edited, so the readers now use it without a copy. The observe pass
+The record is replaced on every change and never edited, so the readers now use it without a copy. The room state is
+the exception: its readers may change what they are given, so it copies the records it hands out (current, history,
+requests, standing watches and operations) and reads the rest, most of the record, in place. The observe pass
 changes the record only when the record does not already hold the change, and a change that leaves the record equal
 skips the schema check and keeps the record it had. With 230 threads and a record of the owner's shape (180 KB), main's
 CPU per streamed chunk went from 52–56 ms to 29–37 ms, and copying from about 18 ms to under 5 ms per update:
 
 | Owl, per update | Copies | Copies of Watcher's record |
 | --- | ---: | ---: |
-| Before | 20.5 | 11 |
-| After | 11.4 | 1 |
+| Owl 20261017.1 | 20.5 | 11 |
+| Main after the Watcher recovery follow-up | 19.4 | 7 |
+| After | 12.4 | 1 |
 
 The copy left is the operations change in the observe pass, which still copies the record once per update to find out
 whether anything changed. The count is of copies of the record object itself. The window's Watcher room still copies

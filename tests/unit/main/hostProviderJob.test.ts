@@ -79,6 +79,18 @@ describe('the provider job brief', () => {
     expect(hostProviderBrief({ host: 'forge', target: 'forge', provider: 'claude', case: 'update', version: '1.0.3' }))
       .toContain('Sotto needs a newer version (its floor is a set of flags, not a version number).')
   })
+  it('installs and updates OpenCode 2 by its own channels, where the host looks first, never OpenCode 1 (#1107)', () => {
+    const install = hostProviderBrief({ host: 'forge', target: 'forge', provider: 'opencode', case: 'install' })
+    expect(install).toMatch(/^Install OpenCode on forge, where Sotto's host can find it and start it\./u)
+    expect(install).toContain('curl -fsSL https://opencode.ai/v2/install | bash')
+    expect(install).toContain('npm install -g @opencode/cli')
+    expect(install).toContain('Sotto drives OpenCode 2 only: `https://opencode.ai/install` and npm\'s `opencode-ai` install OpenCode 1, which it refuses.')
+    expect(install).toMatch(/Where the host looks for opencode, in order\n~\/\.opencode\/bin \(where OpenCode 2's installer puts it\), then the host's PATH/u)
+    expect(install).toContain('do not start OpenCode itself or sign it in')
+    const update = hostProviderBrief({ host: 'forge', target: 'forge', provider: 'opencode', case: 'update', version: '2.0.30', requiredVersion: '2.0.31' })
+    expect(update).toContain('its own `opencode upgrade`')
+    expect(update).toContain('Sotto needs 2.0.31 or later.')
+  })
 })
 
 describe('a provider job', () => {

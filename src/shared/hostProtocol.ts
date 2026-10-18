@@ -12,9 +12,11 @@ import { gitReviewRequestSchema } from './gitChanges'
 import { toolListRequestSchema } from './tools'
 import { subagentAssignmentsRequestSchema, subagentPageRequestSchema } from './subagents'
 import { PASTED_CODE_MAX } from './hostProviders'
+import { opencodeHostCallSchema } from './opencodeSignIn'
+import type { HeldProviders } from './heldProviders'
 import type { AgentActivity } from './agentActivity'
 import { phoneTerminalAnswerSchema, phoneTerminalListSchema, type PhoneTerminal } from './phoneTerminals'
-import { providerIdSchema, type ProviderClientUpdate } from './agents'
+import { providerIdSchema, type ProviderClientUpdate, type ProviderId } from './agents'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema } from './usageDashboard'
 import { HOST_UPDATE_STEPS, type HostUpdateStep } from './hostUpdates'
 
@@ -181,14 +183,30 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * the host, the way the launch script runs it over SSH, and `host-update-step` pushes say which step it is on to a client
  * that accepts the feature. Offered only to a client the launch script recorded as a desktop whose `remote-answer` policy
  * lets it answer, and only by a host Sotto started from a release's own layout.
+ * `provider-opencode`: the host sends OpenCode's provider row, models, projects and threads to a client whose hello accepts
+ * it, and leaves every one of them out of what it sends any other client, whose provider list may not know `opencode` and
+ * would refuse a whole shell that names it (#1107, ADR-0087). A client that does not accept it reads, observes and
+ * commands no OpenCode thread there.
+ * `opencode-sign-in`: the host signs its own Sotto OpenCode in to model sources, and out of them, for the desktop that asks
+ * (`opencode-sign-in`, #1107, ADR-0037). Only a headless host whose OpenCode runs offers it, and only to a desktop.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'host-update']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'host-update', 'opencode-sign-in']
+/**
+ * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
+ * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
+ * the host leaves the provider's rows, models, projects and threads out of what it sends that client.
+ */
+export const PROVIDER_HOST_FEATURES = { opencode: 'provider-opencode' } as const satisfies Partial<Record<ProviderId, HostFeature>>
+/** The providers a client's hello does not accept the feature of, which the host leaves out of everything it sends it. */
+export function providersUnknownTo(accepts: readonly string[] | undefined): HeldProviders {
+  return new Set((Object.entries(PROVIDER_HOST_FEATURES) as [ProviderId, HostFeature][]).filter(([, feature]) => !accepts?.includes(feature)).map(([provider]) => provider))
+}
 /**
  * What a desktop may ask of a host that updates itself (ADR-0088): download and check a release's archive, install it
  * beside the running version, restart into it, cancel its own download, or read how the last restart went. The client
@@ -372,6 +390,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('sign-in-read'), signInId: z.uuid() }).strict(),
   z.object({ ...base, op: z.literal('sign-in-code'), signInId: z.uuid(), code: z.string().min(1).max(PASTED_CODE_MAX) }).strict(),
   z.object({ ...base, op: z.literal('sign-in-cancel'), signInId: z.uuid() }).strict(),
+  /** The host's own OpenCode signed in to a model source, or out of one, for the desktop that asks (#1107). */
+  z.object({ ...base, op: z.literal('opencode-sign-in'), call: opencodeHostCallSchema }).strict(),
 ])
 export type HostRequest = z.infer<typeof hostRequestSchema>
 export type HostOperation = HostRequest extends infer R ? R extends HostRequest ? Omit<R, 'v' | 'id' | 'session'> : never : never

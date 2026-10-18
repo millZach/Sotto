@@ -116,7 +116,10 @@ fun ThreadScreen(model: AppModel, ref: ThreadRef, close: () -> Unit) {
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Text(thread?.title ?: "Thread", style = figtree(25, FontWeight.SemiBold), color = p.ink, modifier = Modifier.semantics { heading() })
-            Text("${Words.provider(thread?.providerId)} · ${model.name(ref.hostID)}", style = figtree(13), color = p.muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                ProviderMark(thread?.providerId, tint = p.muted)
+                Text("${Words.provider(thread?.providerId)} · ${model.name(ref.hostID)}", style = figtree(13), color = p.muted)
+            }
         }
         Row(Modifier.padding(horizontal = 22.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             listOf("Messages", "Activity").forEach { choice ->
