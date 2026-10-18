@@ -605,6 +605,43 @@ it.each(['desktop', 'native'] as const)('keeps watching through a %s user turn a
   expect(await f.call('send_to_thread', { ...automatic, retryKey: randomUUID() })).toMatchObject({ status: 'ok' })
 })
 
+it('resumes a standing watch after a confirmed fresh desktop turn while the set-aside send stays uncertain', async () => {
+  const f = await fixture(), target = await f.create()
+  expect(await f.service.watchThread({ target })).toMatchObject({ status: 'ok' })
+  const watch = f.service.state().standingWatches![0]!
+  const original = { type: 'manual-send' as const, threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic unconfirmed standing-watch prompt' }
+  const adapter = f.workspace.adapters.codex, execute = adapter.execute.bind(adapter)
+  const spy = vi.spyOn(adapter, 'execute').mockImplementation(async command => {
+    if (command.type === 'send' && command.text === original.text) {
+      // The write has an unknown outcome and no echo. Keep the real coordinator's outbox and IDs.
+      adapter.commands.push(structuredClone(command))
+      return { accepted: false, uncertain: true, error: 'Synthetic lost send acknowledgement' }
+    }
+    return execute(command)
+  })
+  try { await f.control.commandShell(original) } finally { spy.mockRestore() }
+  const oldDelivery = () => f.control.shell().deliveries?.find(item => item.threadId === target.threadId && item.draftId === original.draftId)
+  expect(oldDelivery()).toMatchObject({ status: 'uncertain' })
+  expect((await f.control.commandShell({ type: 'set-aside-send', threadId: target.threadId, draftId: original.draftId })).error).toBeNull()
+  const fresh = { ...original, draftId: randomUUID(), text: 'Synthetic confirmed replacement prompt' }
+  expect((await f.control.commandShell(fresh)).error).toBeNull()
+  const delivery = f.control.shell().deliveries?.find(item => item.draftId === fresh.draftId)
+  expect(delivery).toMatchObject({ status: 'accepted' })
+  expect(f.native(target.threadId).messages.at(-1)).toMatchObject({ id: delivery!.messageId, commandId: delivery!.commandId, text: fresh.text })
+  expect(oldDelivery()).toMatchObject({ status: 'uncertain', setAside: true, updatesResumed: true })
+  expect(f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)).toMatchObject({ watched: true, paused: true })
+  await f.finish(target.threadId)
+  const continuation = 'Synthetic standing-watch continuation after recovery'
+  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: continuation, delivery: 'now' })).toMatchObject({ status: 'ok' })
+  expect(f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)).toMatchObject({ watched: true, paused: false })
+  expect(adapter.commands.filter(command => command.type === 'send' && command.text === continuation)).toHaveLength(1)
+  // Checking the old revision must never repeat its native write or reclassify its unknown delivery.
+  await f.control.commandShell(original)
+  expect(adapter.commands.filter(command => command.type === 'send' && command.text === original.text)).toHaveLength(1)
+  expect(adapter.commands.filter(command => command.type === 'send' && command.text === fresh.text)).toHaveLength(1)
+  expect(oldDelivery()).toMatchObject({ status: 'uncertain', setAside: true, updatesResumed: true })
+})
+
 it('pauses on the unobserved-turn sentinel when the user sends, never on the draft ID', async () => {
   const f = await fixture(), target = await f.create()
   await f.service.watchThread({ target })

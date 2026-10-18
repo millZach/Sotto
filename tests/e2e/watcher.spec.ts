@@ -17,7 +17,7 @@ import { pageBoundProblems } from './support/designCapture'
 import { onReleaseTrack } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
-import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { holdOwlSky } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
 
@@ -107,6 +107,74 @@ async function openRoom(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
 }
 
+test('an unconfirmed prompt has a recovery in the actual Watcher room', async () => {
+  await onReleaseTrack('owl', () => withSotto({ ...launchOptions('t3-code', 'dark'), scenario: 'phase3-workspace' }, async launched => {
+    const { page } = launched
+    await seedRoom(page, { current: true, history: false })
+    await openRoom(page)
+    const prompt = page.getByRole('textbox', { name: 'Watcher message', exact: true })
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'uncertain', threadId, text: '' }), CURRENT)
+    await prompt.fill('The prompt whose delivery could not be confirmed.')
+    await prompt.press('Enter')
+    await expect(page.getByLabel('Pending message')).toContainText('Unconfirmed')
+    // The provider cannot recover the original echo: repeated checks cannot settle its delivery.
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'history', threadId, text: '', messages: [], status: 'idle' }), CURRENT)
+    await prompt.fill('hello')
+    await page.reload()
+    await openRoom(page)
+    await expect(prompt).toHaveText('hello')
+    await page.getByRole('button', { name: 'Check again', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Continue with a new message', exact: true })).toBeEnabled()
+    const evidence = evidenceDirectory('artifacts/unconfirmed-send')
+    await mkdir(evidence, { recursive: true })
+    for (const appearance of ['dark', 'light'] as const) {
+      await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance, reducedMotion: 'on' }), appearance)
+      for (const [width, height] of SIZES) {
+        await resizeContentWindow(launched, width, height, [800, 540])
+        await settle(page)
+        expect(await pageBoundProblems(page)).toEqual([])
+        await page.screenshot({ path: join(evidence, `watcher-recovery-${appearance}-${width}x${height}.png`), animations: 'disabled' })
+        const contrast = await roomContrast(page)
+        expect(contrast.filter(item => item.ratio < 4.5)).toEqual([])
+      }
+    }
+    const recovery = page.getByRole('button', { name: 'Continue with a new message', exact: true })
+    await recovery.focus()
+    await page.keyboard.press('Enter')
+    await expect(prompt).toBeFocused()
+    await expect(prompt).toHaveText('hello')
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled()
+    await expect(page.getByLabel('Pending message')).toContainText('Set aside · Unconfirmed')
+    await page.screenshot({ path: join(evidence, 'watcher-set-aside-light-820x560.png'), animations: 'disabled' })
+    await page.reload()
+    await openRoom(page)
+    await expect(prompt).toHaveText('hello')
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled()
+    await prompt.press('Enter')
+    await expect(prompt).toHaveText('')
+    await expect.poll(() => userMessageTexts(page, CURRENT)).toEqual(['hello'])
+    await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).deliveries?.filter(item => item.setAside)
+      .map(item => ({ status: item.status, updatesResumed: item.updatesResumed })))).toEqual([{ status: 'uncertain', updatesResumed: true }])
+    await prompt.fill('A new follow-up after recovery')
+    await expect(page.getByRole('button', { name: 'Queue prompt', exact: true })).toBeEnabled()
+    await prompt.press('Enter')
+    await expect(prompt).toHaveText('')
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, text: 'The new turn finished.' }), CURRENT)
+    await expect.poll(() => userMessageTexts(page, CURRENT)).toEqual(['hello', 'A new follow-up after recovery'])
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'permission', threadId, requestId: 'recovered-permission', text: 'Allow the next step?', status: 'running' }), CURRENT)
+    const deny = page.getByRole('button', { name: 'Deny', exact: true })
+    await deny.click()
+    await expect(deny).toHaveCount(0)
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'question', threadId, requestId: 'recovered-question', text: 'Which step comes next?' }), CURRENT)
+    const answer = page.getByRole('textbox', { name: 'Your answer', exact: true })
+    await answer.fill('Use the next step')
+    await answer.press('Enter')
+    await expect(answer).toHaveCount(0)
+    expect(await userMessageTexts(page, CURRENT)).toEqual(['hello', 'A new follow-up after recovery'])
+  }))
+})
+
 async function settle(page: Page): Promise<void> {
   await page.mouse.move(0, 0)
   await page.evaluate(async () => {
@@ -184,7 +252,8 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
       '.watcher-watched__lead > p', '.watcher-watched__label', '.watched-card__title', '.watched-card__meta', '.watched-card__doing', '.watched-card__stop',
       '.watcher-handover__lead > p', '.watcher-handover__ledger', '.watcher-handover__read', '.watcher-handover__text', '.thread-prompt__send[data-wide]',
-      '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose']
+      '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose',
+      '.thread-message__status', '.thread-message__delivery > span', '.thread-message__delivery-actions .tt-button']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0).slice(0, 6)
       .flatMap((element, index) => surfaces(element).map(on => ({ name: `${selector} ${index}${element.getAttribute('data-tone') ? ` (${element.getAttribute('data-tone')})` : ''}`, ink: hex(getComputedStyle(element).color), on }))))
   })

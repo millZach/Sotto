@@ -147,6 +147,7 @@ export default tseslint.config(
       'artifacts/opencode-sign-in/**',
       'artifacts/opencode-model-menu/**',
       'artifacts/starting-screen/**',
+      'artifacts/unconfirmed-send/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',

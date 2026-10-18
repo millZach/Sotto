@@ -2,13 +2,13 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import { providerIdOfLabel, type ProviderId } from '../../src/shared/agents'
 import { OPENCODE_FORM_UNSHOWN } from '../../src/main/agents/opencodeRequests'
 import { opencodeRules } from '../../src/main/agents/opencode'
-import { ensureOpenCodeFolders, opencodeDatabase, opencodeEnvironment, opencodeFolders, opencodePassword, opencodeServerLedger, recordOpenCodeServer } from '../../src/main/agents/opencodeServer'
+import { ensureOpenCodeFolders, opencodeDatabase, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, opencodeServerLedger, recordOpenCodeServer, systemProcessStart } from '../../src/main/agents/opencodeServer'
 import { describeAdapterContract } from './adapterContract'
 import { opencodeFixture, opencodeFixtureSkips } from '../fixtures/fakeOpenCodeFixture'
 import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
@@ -28,6 +28,7 @@ const open = async (f?: Fixture, runtimeMode?: 'approval-required' | 'auto-accep
 const thread = async (f: Fixture, id: string) => (await f.host.snapshot()).threads.find(candidate => candidate.id === id)!
 const send = (f: Fixture, id: string, messageId: string, text = 'Synthetic prompt') =>
   f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId, text })
+const serverRecord = (value: unknown) => value as { pid: number; startedAt: number; started?: number; owner: number }
 const running = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' } }
 
 it('gives each server a password of its own and never logs one, even when OpenCode prints it', async () => {
@@ -581,34 +582,54 @@ it('ends a server a crash left running when Sotto next connects, and nothing tha
     const child = spawn(process.execPath, args, { env, stdio: 'ignore', windowsHide: true, detached: process.platform !== 'win32' })
     strays.push(child); return child.pid!
   }
+  let server: OpenCodeServer | undefined
   try {
     const folders = opencodeFolders(join(f.root, 'opencode'))
     await ensureOpenCodeFolders(folders)
+    const ledger = opencodeServerLedger(folders)
     // The Sotto that started them has gone.
     const gone = spawn(process.execPath, ['-e', ''], { stdio: 'ignore', windowsHide: true })
     const owner = gone.pid!
     await new Promise(done => gone.once('close', done))
-    const startedAt = Date.now()
-    // A server Sotto started before it crashed, still running.
-    const left = spawned([resolve('tests/fixtures/fakeOpenCodeServer.mjs'), f.root, 'serve', '--hostname=127.0.0.1', '--port=0'], opencodeEnvironment(process.env, folders, opencodePassword()))
+    // A server started the way Sotto starts one, and written down the way it writes one down.
+    server = await OpenCodeServer.start({ executable: process.execPath, args: [resolve('tests/fixtures/fakeOpenCodeServer.mjs'), f.root], cwd: f.root,
+      env: opencodeEnvironment(process.env, folders, opencodePassword()), timeoutMs: 15_000, ledger })
+    const left = server.pid!
+    const file = join(ledger, `${left}.json`)
+    // Written at once by Sotto's clock, then on macOS and Linux again with the start the system reports for it.
+    if (process.platform !== 'win32') await expect.poll(async () => JSON.parse(await readFile(file, 'utf8')), { timeout: 15_000 }).toHaveProperty('started')
+    const written = serverRecord(JSON.parse(await readFile(file, 'utf8')))
+    expect(written).toMatchObject({ pid: left, owner: process.pid })
+    // Then Sotto crashed: the server runs on, and its record names a Sotto that has gone.
+    await recordOpenCodeServer(ledger, { ...written, owner })
+    const startedAt = written.startedAt
     // Processes that are not servers the crashed Sotto left: one started an hour before its record says, one that is no
     // OpenCode server, and one whose Sotto is still running.
     const late = spawned(['-e', 'setInterval(() => {}, 1000)', 'serve', '--hostname=127.0.0.1', '--port=0'])
     const other = spawned(['-e', 'setInterval(() => {}, 1000)'])
     const owned = spawned(['-e', 'setInterval(() => {}, 1000)', 'serve', '--hostname=127.0.0.1', '--port=0'])
-    const ledger = opencodeServerLedger(folders)
-    await recordOpenCodeServer(ledger, { pid: left, startedAt, owner })
-    await recordOpenCodeServer(ledger, { pid: late, startedAt: startedAt + 3_600_000, owner })
-    await recordOpenCodeServer(ledger, { pid: other, startedAt, owner })
-    await recordOpenCodeServer(ledger, { pid: owned, startedAt, owner: process.pid })
+    // And one whose record cannot be read, long after it was written: while its PID runs OpenCode's server, it stays.
+    const unread = spawned(['-e', 'setInterval(() => {}, 1000)', 'serve', '--hostname=127.0.0.1', '--port=0'])
+    // Written down as Sotto writes a server down: by its own clock, and on macOS and Linux by when the system says it started.
+    const started = async (pid: number, offset = 0): Promise<{ started?: number }> => {
+      const reported = await systemProcessStart(pid)
+      return reported === undefined ? {} : { started: reported + offset }
+    }
+    await recordOpenCodeServer(ledger, { pid: late, startedAt: startedAt + 3_600_000, ...await started(late, 3_600_000), owner })
+    await recordOpenCodeServer(ledger, { pid: other, startedAt, ...await started(other), owner })
+    await recordOpenCodeServer(ledger, { pid: owned, startedAt, ...await started(owned), owner: process.pid })
+    await writeFile(join(ledger, `${unread}.json`), `{"pid":${unread},"start`)
+    const long = new Date(Date.now() - 60_000)
+    await utimes(join(ledger, `${unread}.json`), long, long)
     // The left server has made its database, so the connect check's server does not race it.
     await expect.poll(() => existsSync(opencodeDatabase(folders)), { timeout: 15_000 }).toBe(true)
     await f.host.connect()
-    await expect.poll(() => running(left), { timeout: 5_000 }).toBe(false)
-    expect([late, other, owned].map(running)).toEqual([true, true, true])
+    // Connect sweeps before it starts anything; what is left to wait for is this process reaping the server it ended.
+    await expect.poll(() => running(left), { timeout: 30_000 }).toBe(false)
+    expect([late, other, owned, unread].map(running)).toEqual([true, true, true, true])
     // What was swept is no longer written down; the record of a running Sotto's server stays.
-    expect((await readdir(ledger)).sort()).toEqual([`${owned}.json`])
-    await rm(join(ledger, `${owned}.json`))
+    expect((await readdir(ledger)).sort()).toEqual([`${owned}.json`, `${unread}.json`].sort())
+    await rm(join(ledger, `${owned}.json`)); await rm(join(ledger, `${unread}.json`))
     // A thread's server is written down while it runs, and its record goes with it.
     const id = randomUUID()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
@@ -619,6 +640,7 @@ it('ends a server a crash left running when Sotto next connects, and nothing tha
     f.host.disconnect(); await f.host.closed()
     expect(await readdir(ledger)).toEqual([])
   } finally {
+    if (server?.running) await server.stop()
     for (const child of strays) if (child.pid !== undefined && running(child.pid)) process.kill(child.pid)
     await f.cleanup()
   }
