@@ -29,8 +29,9 @@ async function fixture() {
       providers: { codex: native.adapter, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
     // These cases are about which user request may send, not Watcher's news. Two seconds after a worker's turn ends,
     // news would start a hidden wake-up turn on Watcher's thread, and a user request sent behind it waits in the queue
-    // instead of starting a request. A slow runner reaches those two seconds between steps, so news is held back.
-    if (created.watcher) vi.spyOn(created.watcher.wakes, 'observe').mockImplementation(() => undefined)
+    // instead of starting a request. A slow runner reaches those two seconds between steps, so news is held back:
+    // every pass goes through one of these two, and a pass is what finds news.
+    if (created.watcher) for (const pass of ['observe', 'observeSoon'] as const) vi.spyOn(created.watcher.wakes, pass).mockImplementation(() => undefined)
     return created
   }
   let runtime = await createRuntime()
