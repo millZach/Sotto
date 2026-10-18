@@ -104,9 +104,7 @@ async function fixture() {
   const watchId = watcher.state().standingWatches![0]!.id
   const row = () => watcher.state().watchedThreads.find(item => item.target.threadId === target.threadId)!
   const participationA = () => watcher.state().requests.find(item => item.id === requestA)!.participants.find(item => item.target.threadId === target.threadId)!
-  // A wake-up turn makes Watcher's newest message its own, so a test of how a request ends holds news back.
-  const holdNews = () => vi.spyOn(watcher.wakes, 'observe').mockImplementation(() => undefined)
-  return { native, get control() { return control }, get watcher() { return watcher }, call, request, finish, advanceToQueuedTurn, thread, session, watcherId, requestA, target, watchId, row, participationA, holdNews,
+  return { native, get control() { return control }, get watcher() { return watcher }, call, request, finish, advanceToQueuedTurn, thread, session, watcherId, requestA, target, watchId, row, participationA,
     restart: async (enabled = true) => {
       await runtime.close(); watcherEnabled = enabled; runtime = await createRuntime()
       control = runtime.agentControl; watcher = runtime.watcher!; tools = runtime.watcherTools!
@@ -397,7 +395,6 @@ it('keeps an instruction queued between two takeovers inside the request the sec
 
 it('ends a request with no participants when its queued instruction starts a fresh one', async () => {
   const f = await fixture()
-  f.holdNews()
   await f.finish(f.target.threadId)
   await f.finish(f.watcherId)
   // Watcher is busy with request C, which never sent to the worker; the takeover's boundary still fences C.
@@ -422,7 +419,6 @@ it('ends a request with no participants when its queued instruction starts a fre
 
 it('keeps a request with no participants open while an earlier instruction to it is still queued', async () => {
   const f = await fixture()
-  f.holdNews()
   await f.finish(f.target.threadId)
   await f.finish(f.watcherId)
   const requestC = await f.request('Synthetic request C with two queued instructions')
@@ -448,7 +444,6 @@ it('keeps a request with no participants open while an earlier instruction to it
 
 it('ends a request with no participants when the only other instruction to it was removed', async () => {
   const f = await fixture()
-  f.holdNews()
   await f.finish(f.target.threadId)
   await f.finish(f.watcherId)
   const requestC = await f.request('Synthetic request C with a removed instruction')
