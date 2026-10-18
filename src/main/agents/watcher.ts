@@ -1000,7 +1000,9 @@ export class WatcherService implements WatcherControlHooks {
         // so a Grok retry, which records none, is matched by its request line's provenance like any Grok send.
         if (!sameMessage) { if (displayPrompt) delivered.displayPrompt = displayPrompt; else delete delivered.displayPrompt }
         else if (displayPrompt && delivered.displayPrompt === undefined) delivered.displayPrompt = displayPrompt
-      } else if (displayPrompt && saved.rootUserMessageId === command.messageId && saved.displayPrompt === undefined) saved.displayPrompt = displayPrompt
+      }
+      // A fresh request's root is its moved instruction's own message, so both claims carry the same proof.
+      if (displayPrompt && saved.rootUserMessageId === command.messageId && saved.displayPrompt === undefined) saved.displayPrompt = displayPrompt
       // The handover goes ahead of the words in the same message; its record is how every copy shows the two apart.
       if (handover && saved.rootUserMessageId === command.messageId) saved.handover = handover.provenance
     })

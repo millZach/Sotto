@@ -291,6 +291,17 @@ it('keeps an instruction queued after a takeover fresh when the user renews a wa
   expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok' })
 }, 60_000)
 
+it('keeps the display proof on the message that starts a fresh request', async () => {
+  // Bug Bot finding 5 on #1163: the fresh root claimed the message without a proof, which cancelled the follow-up's.
+  const f = await fixture(), text = 'Synthetic instruction whose display proof is kept'
+  await queueAfterTakeover(f, text)
+  await f.advanceToQueuedTurn(f.watcherId, text)
+  const carrying = carryingHead(f)!
+  expect(carrying.id).not.toBe(f.requestA)
+  expect(carrying.displayPrompt).toBeDefined()
+  expect(carrying.displayPrompt).toEqual(carrying.userFollowups!.find(item => item.messageId === carrying.rootUserMessageId)!.displayPrompt)
+}, 60_000)
+
 it('keeps an instruction inside its request when the takeover was on a thread the request never used', async () => {
   // Bug Bot finding 4 on #1163: a takeover anywhere split the next queued instruction off request A.
   const f = await fixture(), other = randomUUID(), worker = f.thread(f.target.threadId)
