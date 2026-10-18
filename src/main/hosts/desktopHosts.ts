@@ -30,7 +30,8 @@ import type { HostUpdateAction, HostUpdateState } from '../../shared/hostUpdates
 import { nameHostInRefusal, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import type { HostProviderJobSource, ProviderJobHost } from './hostProviderJob'
-import { isProviderSignInPage, type HostClientUpdateRequest, type HostProviderAction, type HostProviderActionResult, type HostSignIn, type HostSignInRequest, type ProviderSignInView } from '../../shared/hostProviders'
+import { HOST_ANSWER_LOST, SIGN_IN_WORDS, isOpenCodeSignInPage, opencodeHostNeedsUpdate, opencodeSignInComesBack, type SignInRefusalReason, type SignInWait } from '../../shared/opencodeSignIn'
+import { isProviderSignInPage, type HostOpenCodeSignInRequest, type HostClientUpdateRequest, type HostProviderAction, type HostProviderActionResult, type HostSignIn, type HostSignInRequest, type ProviderSignInView } from '../../shared/hostProviders'
 
 /** Files from before the switch have no `sshPort` or `enabled` and still read: both are optional, and no `enabled` means on. */
 const savedHostSchema = remoteHostSchema.extend({ hostId: z.uuid().optional(), clientId: z.string().optional() })
@@ -825,6 +826,90 @@ export class DesktopHosts {
     const shown: HostSignIn = { ...view }
     delete shown.url
     return shown
+  }
+  /**
+   * The host's own OpenCode signed in to a model source from its tile's Add a model source dialog (#1107, ADR-0037). Each
+   * call goes to that host alone and is answered as the desktop's own dialog is answered, a refusal in words included, so
+   * the dialog reads one shape for both. A key goes to the host once and comes back in nothing. Open the page asks the host
+   * for the page's address, checks it is https, and opens it in this computer's browser; the window never holds it unless
+   * the browser did not open, as on this computer. A browser sign-in that finishes by sending the browser back to OpenCode
+   * on the host's own machine cannot finish from here, so it is cancelled on the host as soon as it starts and refused.
+   */
+  async opencodeSignIn(request: HostOpenCodeSignInRequest): Promise<unknown> {
+    const refused = (message: string, reason?: SignInRefusalReason) => ({ status: 'refused' as const, ...(reason ? { reason } : {}), message })
+    let target: { host: SavedHost; socket: SocketHostService }
+    try { target = this.connectedSocket(request.id) } catch (error) { return refused(error instanceof Error ? error.message : 'This host is not connected. Nothing was changed.') }
+    const { host, socket } = target
+    if (!socket.offersOpenCodeSignIn()) return refused(opencodeHostNeedsUpdate(host.name))
+    const { call } = request
+    try {
+      if (call.action === 'reopen') {
+        const page = await socket.opencodeSignIn({ action: 'page', request: call.request })
+        if (page.status !== 'ok') return page
+        if (!isOpenCodeSignInPage(page.address)) return refused(SIGN_IN_WORDS.unsafePage)
+        if (!this.options.openExternal) return { status: 'not-opened', message: SIGN_IN_WORDS.pageNotOpened, address: page.address }
+        try { await this.options.openExternal(page.address); return { status: 'ok' } } catch {
+          return { status: 'not-opened', message: SIGN_IN_WORDS.pageNotOpened, address: page.address }
+        }
+      }
+      if (call.action === 'browser') {
+        const started = await socket.opencodeSignIn(call)
+        if (started.status !== 'waiting' || started.attempt.mode !== 'auto' || started.attempt.code !== undefined) return started
+        await socket.opencodeSignIn({ action: 'cancel', request: { attemptId: started.attempt.id } }).catch(() => undefined)
+        return refused(opencodeSignInComesBack(host.name), 'finishes-on-host')
+      }
+      if (call.action === 'wait') return this.afterLostWaits(host.id, call.request.attemptId, await socket.opencodeSignIn(call))
+      return await socket.opencodeSignIn(call)
+    } catch (error) {
+      if (error instanceof HostConnectionError && error.code === 'version_mismatch') return refused(opencodeHostNeedsUpdate(host.name))
+      return this.opencodeAnswerLost(socket, host, call)
+    }
+  }
+  /**
+   * The host sign-ins, as `<host>:<attempt>`, whose answer to a wait was lost (#1143). The next answer that says one waits
+   * no longer cannot say how it ended, since that was in the answer that never came, so it is told as lost.
+   */
+  private readonly lostWaits = new Set<string>()
+  private afterLostWaits(hostId: string, attemptId: string, answer: SignInWait): SignInWait | { status: 'refused'; reason: 'answer-lost'; message: string } {
+    const key = `${hostId}:${attemptId}`
+    if (answer.status === 'pending' || !this.lostWaits.delete(key) || answer.status !== 'refused') return answer
+    const host = this.saved.find(item => item.id === hostId)?.name ?? 'The host'
+    return { status: 'refused', reason: 'answer-lost', message: HOST_ANSWER_LOST.untold(host) }
+  }
+  /**
+   * A host's answer to a sign-in call that never came back (#1107). The host may have acted on it all the same, so Sotto never
+   * says nothing changed: for a key, an existing sign-in or a sign-out it reads the host's model sources again and answers
+   * with what they show, as this computer's own sign-in does when OpenCode's answer is lost (#1104). A wait only reads a
+   * browser sign-in, which still waits on the host, so the dialog waits on and asks again (#1143). A pasted code is followed
+   * by a wait: a sign-in that still waits asks for the code again, and one that waits no longer cannot say how it ended. Any
+   * other call names no source to check, so it is refused as `answer-lost` and the window reads the list again itself.
+   * Reading the list, or a sign-in page's address, changes nothing, so those say only that the host did not answer.
+   */
+  private async opencodeAnswerLost(socket: SocketHostService, saved: SavedHost, call: HostOpenCodeSignInRequest['call']): Promise<unknown> {
+    const host = saved.name
+    const lost = (message: string) => ({ status: 'refused' as const, reason: 'answer-lost' as const, message })
+    if (call.action === 'wait') {
+      this.lostWaits.add(`${saved.id}:${call.request.attemptId}`)
+      while (this.lostWaits.size > 32) this.lostWaits.delete(this.lostWaits.values().next().value!)
+      return { status: 'pending' }
+    }
+    if (call.action === 'finish') {
+      let now: SignInWait
+      try { now = await socket.opencodeSignIn({ action: 'wait', request: { attemptId: call.request.attemptId } }) } catch { return lost(HOST_ANSWER_LOST.untold(host)) }
+      if (now.status === 'pending') return { status: 'refused', reason: 'code-refused', message: HOST_ANSWER_LOST.code(host) }
+      return now.status === 'refused' ? lost(HOST_ANSWER_LOST.untold(host)) : now
+    }
+    if (call.action === 'sources') return { status: 'refused', message: HOST_ANSWER_LOST.unread(host) }
+    if (call.action === 'reopen') return { status: 'refused', message: HOST_ANSWER_LOST.page(host) }
+    if (call.action !== 'key' && call.action !== 'external' && call.action !== 'sign-out') return lost(HOST_ANSWER_LOST.untold(host))
+    let now: Awaited<ReturnType<typeof socket.opencodeSignIn<'sources'>>>
+    try { now = await socket.opencodeSignIn({ action: 'sources' }) } catch { return lost(HOST_ANSWER_LOST.unknown(host)) }
+    if (now.status !== 'ok') return lost(HOST_ANSWER_LOST.unknown(host))
+    const source = now.sources.find(item => item.id === call.request.sourceId)
+    const signingIn = call.action !== 'sign-out'
+    const name = source?.name ?? call.request.sourceId
+    if ((source?.signedIn !== undefined) === signingIn) return { status: 'ok', sources: now, warning: HOST_ANSWER_LOST.took(host, name, signingIn) }
+    return lost(HOST_ANSWER_LOST.notTaken(host, name, signingIn))
   }
   /** The live connection to a saved host that is connected now, for what its tiles ask of it. */
   private connectedSocket(id: string): { host: SavedHost; socket: SocketHostService } {

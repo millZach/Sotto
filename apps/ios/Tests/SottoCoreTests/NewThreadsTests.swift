@@ -63,6 +63,33 @@ final class NewThreadsTests: XCTestCase {
         XCTAssertEqual(command["provider"], .string("claude"))
         XCTAssertThrowsError(try Commands.createProject(providerID: "unknown", title: "Project", path: "/tmp/project"))
     }
+    func testProjectRegistrationAcceptsOpenCode() throws {
+        let command = try Commands.createProject(providerID: "opencode", title: "Panel tools", path: "/home/zach/panel")
+        XCTAssertEqual(command["provider"], .string("opencode"))
+        XCTAssertThrowsError(try Commands.createProject(providerID: "future", title: "Project", path: "/tmp/project"))
+    }
+    /// OpenCode names where it gets each model (ADR-0087). A row reads the source between the agent and the model.
+    func testAnOpenCodeModelReadsItsSourceAndIsAChoiceWhileOpenCodeIsConnected() throws {
+        let host = try JSONDecoder().decode(HostSnapshot.self, from: Data(#"{"name":"Laptop","threads":[],"projects":[],"models":[{"id":"opencode:anthropic/claude-sonnet-4-5","name":"Claude Sonnet 4.5","provider":"OpenCode","providerId":"opencode","source":"Anthropic","ready":true}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true},"providers":[{"id":"opencode","connection":"connected","capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"projects":true,"threads":true}}]}"#.utf8))
+        let opencode = try XCTUnwrap(NewThreads.availableModels(host).first)
+        XCTAssertEqual(opencode.source, "Anthropic")
+        XCTAssertEqual(opencode.label, "OpenCode · Anthropic · Claude Sonnet 4.5")
+        XCTAssertNil(try model().source, "Other providers' models carry no source")
+        XCTAssertEqual(try model().label, "Codex · Model")
+        XCTAssertEqual(ThreadModel.label(providerID: "opencode", source: "", name: "Big Pickle"), "OpenCode · Big Pickle")
+    }
+    /// An older phone reads a provider ID as a plain string, so a provider it doesn't know reads "The agent" and breaks
+    /// nothing: its threads, projects and models decode, and its models are never offered for a new thread.
+    func testAProviderThePhoneDoesNotKnowStillDecodes() throws {
+        let text = #"{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"a","projectId":"p","title":"On OpenCode","providerId":"opencode","status":"idle","requests":[]},{"id":"b","projectId":"p","title":"On a future agent","providerId":"future","status":"running","requests":[]}],"projects":[{"id":"p","title":"Panel","path":"/home/zach/panel","providerId":"future"}],"models":[{"id":"future:model","name":"Model","provider":"Future","providerId":"future","source":"Somewhere","ready":true,"providerModes":[{"id":"ask","name":"Ask","allows":"nothing"}]}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true},"providers":[{"id":"future","connection":"disconnected","capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}]}}"#
+        let shell = try JSONDecoder().decode(Shell.self, from: Data(text.utf8))
+        try shell.validate(hostID: "h")
+        XCTAssertEqual(shell.host.threads.map(\.providerId), ["opencode", "future"])
+        XCTAssertEqual(shell.host.projects.first?.providerId, "future")
+        XCTAssertEqual(AgentNames.name(shell.host.threads.last?.providerId), "The agent")
+        XCTAssertEqual(shell.host.models?.first?.label, "The agent · Somewhere · Model")
+        XCTAssertTrue(NewThreads.availableModels(shell.host).isEmpty)
+    }
     func testFolderRequestsDistinguishHomeDrivesAndAHostPath() throws {
         XCTAssertEqual(try NewThreads.folderRequest()["request"], .object([:]))
         XCTAssertEqual(try NewThreads.folderRequest(path: .null)["request"], .object(["path": .null]))

@@ -19,9 +19,19 @@ data class ThreadModel(
     val defaultReasoningEffort: String? = null,
     val runtimeModes: List<String>? = null,
     val providerModes: List<ProviderMode>? = null,
+    // Where the provider gets the model, such as OpenCode Zen or Anthropic (ADR-0087). Only OpenCode's models say.
+    val source: String? = null,
 ) {
     @Serializable
     data class ProviderMode(val id: String, val name: String, val allows: String? = null, val asks: String? = null)
+
+    // The model as a row reads it: "Codex · GPT-6.1 Sol", or "OpenCode · Anthropic · Claude Sonnet 4.5" with a source.
+    val label: String get() = labelOf(providerId, source, name)
+
+    companion object {
+        fun labelOf(providerID: String?, source: String?, name: String): String =
+            listOfNotNull(AgentNames.name(providerID), source?.takeIf { it.isNotEmpty() }, name).joinToString(" · ")
+    }
 
     val startingEffort: String
         get() {

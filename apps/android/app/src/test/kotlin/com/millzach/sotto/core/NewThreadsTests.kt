@@ -88,6 +88,42 @@ class NewThreadsTests {
         assertThrows(ClientError::class.java) { Commands.createProject(providerID = "unknown", title = "Project", path = "/tmp/project") }
     }
 
+    @Test fun projectRegistrationAcceptsOpenCode() {
+        val command = Commands.createProject(providerID = "opencode", title = "Panel tools", path = "/home/zach/panel")
+        assertEquals(JsonPrimitive("opencode"), command["provider"])
+        assertThrows(ClientError::class.java) { Commands.createProject(providerID = "future", title = "Project", path = "/tmp/project") }
+    }
+
+    // OpenCode names where it gets each model (ADR-0087). A row reads the source between the agent and the model.
+    @Test fun anOpenCodeModelReadsItsSourceAndIsAChoiceWhileOpenCodeIsConnected() {
+        val host = decode<HostSnapshot>("""{"name":"Laptop","threads":[],"projects":[],"models":[{"id":"opencode:anthropic/claude-sonnet-4-5","name":"Claude Sonnet 4.5","provider":"OpenCode","providerId":"opencode","source":"Anthropic","ready":true}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true},"providers":[{"id":"opencode","connection":"connected","capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"projects":true,"threads":true}}]}""")
+        val opencode = NewThreads.availableModels(host).single()
+        assertEquals("Anthropic", opencode.source)
+        assertEquals("OpenCode · Anthropic · Claude Sonnet 4.5", opencode.label)
+        assertNull("Other providers' models carry no source", model().source)
+        assertEquals("Codex · Model", model().label)
+        assertEquals("OpenCode · Big Pickle", ThreadModel.labelOf("opencode", "", "Big Pickle"))
+    }
+
+    // An older phone reads a provider ID as a plain string, so a provider it doesn't know reads "The agent" and breaks
+    // nothing: its threads, projects and models decode, and its models are never offered for a new thread.
+    @Test fun aProviderThePhoneDoesNotKnowStillDecodes() {
+        val shell = decode<Shell>("""{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"a","projectId":"p","title":"On OpenCode","providerId":"opencode","status":"idle","requests":[]},{"id":"b","projectId":"p","title":"On a future agent","providerId":"future","status":"running","requests":[]}],"projects":[{"id":"p","title":"Panel","path":"/home/zach/panel","providerId":"future"}],"models":[{"id":"future:model","name":"Model","provider":"Future","providerId":"future","source":"Somewhere","ready":true,"providerModes":[{"id":"ask","name":"Ask","allows":"nothing"}]}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true},"providers":[{"id":"future","connection":"disconnected","capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}]}}""")
+        shell.validate("h")
+        assertEquals(listOf("opencode", "future"), shell.host.threads.map { it.providerId })
+        assertEquals("future", shell.host.projects.single().providerId)
+        assertEquals("The agent", AgentNames.name(shell.host.threads.last().providerId))
+        assertEquals("The agent · Somewhere · Model", shell.host.models?.single()?.label)
+        assertTrue(NewThreads.availableModels(shell.host).isEmpty())
+    }
+
+    @Test fun openCodeHasItsNameAndAProviderThePhoneDoesNotKnowReadsTheAgent() {
+        assertEquals("OpenCode", AgentNames.name("opencode"))
+        assertEquals("Codex", AgentNames.name("codex"))
+        assertEquals("The agent", AgentNames.name("future"))
+        assertEquals("The agent", AgentNames.name(null))
+    }
+
     @Test fun folderRequestsDistinguishHomeDrivesAndAHostPath() {
         assertEquals(JsonObject(emptyMap()), NewThreads.folderRequest()["request"])
         assertEquals(JsonObject(mapOf("path" to JsonNull)), NewThreads.folderRequest(path = JsonNull)["request"])

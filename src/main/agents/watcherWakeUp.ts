@@ -26,7 +26,7 @@ interface Progress { fingerprint: string; connected: boolean; connectedAt: numbe
 /** Opaque progress only: no plan, message, tool input or output text crosses the host projection. */
 export function watcherProgressFingerprint(thread: AgentThread): string {
   return observationDigest([thread.status, thread.lastTurn, thread.messages.map(message => [message.id, message.text.length]),
-    thread.activities?.map(activity => [activity.id, activity.status, activity.startedAt, activity.completedAt, activity.text?.length, activity.output?.length, activity.steps?.map(step => [step.status, step.text.length]), activity.agents?.map(agent => [agent.id, agent.status, agent.progress, agent.message?.length]) ]), thread.backgroundWork?.map(work => [work.id, work.type]), thread.monitoring?.map(work => work.id), thread.requests.map(card => [card.id, card.kind])])
+    thread.activities?.map(activity => [activity.id, activity.status, activity.startedAt, activity.completedAt, activity.text?.length, activity.output?.length, activity.steps?.map(step => [step.status, step.text.length]), activity.agents?.map(agent => [agent.id, agent.status, agent.progress, agent.message?.length]) ]), thread.subagentSummary, thread.backgroundWork?.map(work => [work.id, work.type]), thread.monitoring?.map(work => work.id), thread.requests.map(card => [card.id, card.kind])])
 }
 /**
  * Whether a receipt for one of Watcher's own sends is news to it: the send failed, was refused or may not have gone. An
@@ -51,7 +51,9 @@ const BUSY_TURN_ID = /^[a-f0-9]{64}\.([a-f0-9]{64})$/u
 const workSettledScope = (requestId: string, target: WatcherThreadTarget, generation: number, turnId: string | undefined) =>
   observationDigest(['work-settled', requestId, target, generation, turnId ?? null])
 export interface WatcherWakeOptions {
-  snapshot: () => AgentHostSnapshot; record: () => WatcherRecord
+  snapshot: () => AgentHostSnapshot
+  /** The Watcher record, read only: the record is replaced on every change and never edited, so it is not copied. */
+  record: () => Readonly<WatcherRecord>
   progress?: (target: WatcherThreadTarget) => string | undefined
   /**
    * Which hosts report their threads' background work counts, read once per pass: the answer it returns is asked for each
@@ -59,7 +61,7 @@ export interface WatcherWakeOptions {
    */
   reportsWork?: () => (hostId: string) => boolean
   /** The Watcher start or send a thread's newest turn answers, so its news can name that operation. */
-  answers?: (target: WatcherThreadTarget, thread: AgentThread, record: WatcherRecord) => string | undefined
+  answers?: (target: WatcherThreadTarget, thread: AgentThread, record: Readonly<WatcherRecord>) => string | undefined
   restoredEvents?: () => readonly WatcherEvent[]
   /** Whether Watcher's queue holds its hidden wake-up (hiddenWakeUp.ts). While it does, news waits here for the next one. */
   wakeUpQueued?: () => boolean
@@ -117,7 +119,7 @@ export class WatcherWakeUp {
   private readonly schedule: NonNullable<WatcherWakeOptions['schedule']>
   private tail: Promise<unknown> = Promise.resolve()
   /** The reads the synchronous pass under way shares; see `withPassReads`. */
-  private pass: { snapshot?: AgentHostSnapshot; record?: WatcherRecord; reportsWork?: (hostId: string) => boolean } | undefined
+  private pass: { snapshot?: AgentHostSnapshot; record?: Readonly<WatcherRecord>; reportsWork?: (hostId: string) => boolean } | undefined
   constructor(private readonly options: WatcherWakeOptions) {
     this.now = options.now ?? Date.now
     this.schedule = options.schedule ?? ((callback, delay) => { const timer = setTimeout(callback, delay); timer.unref?.(); return () => clearTimeout(timer) })
@@ -158,7 +160,8 @@ export class WatcherWakeUp {
   private connected(snapshot: AgentHostSnapshot, thread: AgentThread): boolean {
     return snapshot.connected && thread.clientConnected !== false && isThreadProviderConnected(snapshot, thread)
   }
-  private active(thread: AgentThread): boolean { return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.backgroundWork?.length || thread.monitoring?.length) }
+  /** Unknown roster entries keep work unsettled, but only provider-confirmed working agents can become quiet. */
+  private active(thread: AgentThread): boolean { return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.subagentSummary?.working || thread.backgroundWork?.length || thread.monitoring?.length) }
   /**
    * The thread's work is confirmed ended: nothing running and nothing unknown. A sub-agent a restart left unknown may still
    * be running, so it keeps the turn unsettled until its provider says how it ended. A host that does not report the counts
@@ -173,8 +176,9 @@ export class WatcherWakeUp {
   }
   /**
    * Runs `read` as one synchronous pass that reads the merged snapshot, the Watcher record and which hosts report work at
-   * most once. Each of those reads copies whole state (a paired host's shell, the record) or lists every host, so a pass
-   * that asked again for every thread, operation or event grew with all of them (#1023). Nothing in a pass changes them;
+   * most once. The snapshot copies a paired host's shell and the host list reads every host, so a pass that asked again
+   * for every thread, operation or event grew with all of them (#1023); the record is read without a copy, but sharing it
+   * keeps one pass to one record. Nothing in a pass changes them;
    * a pass already under way shares its reads, and the next pass, after any wait, reads afresh.
    */
   private withPassReads<T>(read: () => T): T {
@@ -183,7 +187,7 @@ export class WatcherWakeUp {
     try { return read() } finally { this.pass = undefined }
   }
   private snapshot(): AgentHostSnapshot { return this.pass ? this.pass.snapshot ??= this.options.snapshot() : this.options.snapshot() }
-  private record(): WatcherRecord { return this.pass ? this.pass.record ??= this.options.record() : this.options.record() }
+  private record(): Readonly<WatcherRecord> { return this.pass ? this.pass.record ??= this.options.record() : this.options.record() }
   /** Records a finished turn whose work is still running, so it is owed one work-settled event when that work ends. */
   private oweWorkSettled(scope: string): void {
     this.owedWorkSettled.delete(scope); this.owedWorkSettled.add(scope)

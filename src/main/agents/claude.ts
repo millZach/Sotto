@@ -1676,7 +1676,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const message = object(event.message)
         if (typeof message?.id === 'string') {
           this.streaming.set(id, message.id)
-          this.addMessage(id, { id: message.id, role: 'assistant', text: '', createdAt: new Date().toISOString() })
+          const turnMessageId = !this.nativeTakeovers.has(id) && thread.lastTurn?.status === 'running' ? thread.lastTurn.messageId : undefined
+          this.addMessage(id, { id: message.id, role: 'assistant', text: '', createdAt: new Date().toISOString(),
+            ...(turnMessageId === undefined ? {} : { turnMessageId }) })
         }
       }
       const delta = object(event?.delta)
@@ -1781,7 +1783,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const blockKey = `${id}:${providerId}`; const blocks = this.assistantBlocks.get(blockKey) ?? new Map<string, string>()
       blocks.set(uuid || digest, text); this.assistantBlocks.set(blockKey, blocks); text = [...blocks.values()].join('\n')
     }
+    // Only a live root reply proves its owner from the running turn. Replay may describe an older reply while another
+    // turn runs; the message log retains its already-proved owner instead of assigning it to that newer turn.
+    const turn = this.threads.get(id)!.lastTurn
+    const turnMessageId = !fromLog && !this.nativeTakeovers.has(id) && frame.type === 'assistant' && turn?.status === 'running' ? turn.messageId : undefined
     this.addMessage(id, { id: origin?.messageId ?? alias.forkMessageIds?.[uuid] ?? providerId, role: frame.type as 'user' | 'assistant', text,
+      ...(turnMessageId === undefined ? {} : { turnMessageId }),
       createdAt: origin?.createdAt ?? (typeof frame.timestamp === 'string' ? frame.timestamp : new Date().toISOString()), ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) })
   }
   private usageContext(id: string, frame: ClaudeFrame, replay: boolean): NativeUsageContext {

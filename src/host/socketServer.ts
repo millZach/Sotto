@@ -9,14 +9,14 @@ import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agent
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/control'
 import { ModelCatalogRevisions } from '../main/agents/agentStateBroadcast'
 import { RefusedImage } from '../main/agents/attachmentStore'
-import { shellForProtocolV1, clientUpdateForOlderClient, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
+import { shellForProtocolV1, clientUpdateForOlderClient, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
 import { hostCatalogKey, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from '../shared/agents'
 import { isAgentThreadDetailDelta } from '../shared/agentThreadDetail'
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
 import { REMOTE_PERMISSION_DENIED } from '../main/agents/authority'
 import { commandFromProtocolV1, managementCommandRefusal } from '../shared/hostProtocol'
-import { REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from './remoteCommands'
+import { REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from './remoteCommands'
 import type { HostSelfUpdate } from './selfUpdate'
 import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageReadBeforeHistory, type UsageLocalHostRead } from '../shared/usageDashboard'
 import { hostMachineReportSchema } from '../shared/hostFacts'
@@ -29,6 +29,10 @@ import type { PhoneTerminals } from '../shared/phoneTerminals'
 import type { WatcherHostRead } from '../shared/watcherHost'
 import type { WatcherThreadTarget } from '../shared/watcher'
 import { visibleWatcherState } from '../shared/watcherVisibility'
+import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, stopResultWithoutProviders, type ProviderScope } from './providerPeers'
+import type { HeldProviders } from '../shared/heldProviders'
+import type { OpenCodeHostCall } from '../shared/opencodeSignIn'
+import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
 
 const errors: Record<HostErrorCode, string> = {
   unauthenticated: HOST_SESSION_REJECTED,
@@ -81,8 +85,11 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  *
  * `hostUpdate` is whether its hello accepted `host-update`, so it is sent the steps of an update it asked for (ADR-0088);
  * `gone` is aborted once its socket has closed, which ends a download it asked for.
+ *
+ * `unknownProviders` are the providers whose host feature its hello did not accept (`PROVIDER_HOST_FEATURES`, #1107): it is
+ * sent nothing of theirs, and their threads are hidden from it. Until its hello, that is every such provider.
  */
-interface Peer { hostUpdate: boolean; gone: AbortController; usageHistory: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>; terminals: boolean; terminalPreviews: Map<string, string> }
+interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; gone: AbortController; usageHistory: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; catalogRevisions: boolean; catalogSent: number | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>; terminals: boolean; terminalPreviews: Map<string, string> }
 /** A desktop from before history import is sent only the Usage read its strict schemas know (ADR-0083). */
 const usageForPeer = (peer: Peer, read: UsageLocalHostRead): UsageLocalHostRead => peer.usageHistory ? read : usageReadBeforeHistory(read)
 /** A shell ready to write to one peer, and the catalog revision it carries whole, if any, to record once it is written. */
@@ -135,6 +142,11 @@ export interface SocketServerOptions {
    * desktop's phone listener, which then neither lists `provider-sign-in` nor answers its requests.
    */
   signIns?: Pick<ProviderSignIns, 'start' | 'read' | 'code' | 'cancel'>
+  /**
+   * A headless host's own OpenCode sign-ins to model sources (#1107), run here for the desktop that asks. Present only where
+   * the host's OpenCode runs; without it the listener neither lists `opencode-sign-in` nor answers its request.
+   */
+  opencodeSignIn?: Pick<OpenCodeSignIn, 'sources' | 'signInWithKey' | 'startBrowserSignIn' | 'useExternalSignIn' | 'wait' | 'finish' | 'pageAddress' | 'cancel' | 'signOut' | 'mayUse'>
   /**
    * The headless host updates its clients for a paired client that asks (`queue-client-updates`, #480). Absent on the
    * desktop's phone listener, which then neither lists `client-updates` nor takes the command.
@@ -202,6 +214,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const hostId = service.shell().hostId
   if (!hostId) throw new Error('The host must have an identity before listening.')
   const features = HOST_FEATURES.filter(feature => (feature !== 'provider-sign-in' || options.signIns !== undefined)
+    && (feature !== 'opencode-sign-in' || options.opencodeSignIn !== undefined)
     && (!feature.startsWith('watcher-phone') || service.watcherPhone !== undefined && options.admin === false && options.watcherDesktops === undefined)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
@@ -249,6 +262,31 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!signIns || !offers(peer, 'provider-sign-in') || !(REMOTE_SIGN_IN_OPERATIONS as readonly string[]).includes(op)) throw new Refusal('invalid_request')
     try { return await run() } catch (error) { throw error instanceof ProviderSignInRefusal ? new Refusal('unavailable', error.message) : new Refusal('unavailable') }
   }
+  /**
+   * The host's own OpenCode signed in to a model source for the desktop that asks (#1107). Only the client that started a
+   * browser sign-in reads it, finishes it, asks for its page or cancels it. The sign-in itself keeps who that is, for as long
+   * as it waits, so the host's other listener knows it too (#1143). Whatever OpenCode's sign-in refuses is its own answer;
+   * anything else is the host's failure to run it. A key is passed on and never kept, logged or sent back.
+   */
+  const opencodeCall = async (peer: Peer, op: HostRequest['op'], call: OpenCodeHostCall): Promise<unknown> => {
+    const signIn = options.opencodeSignIn
+    if (!signIn || !offers(peer, 'opencode-sign-in') || !(REMOTE_OPENCODE_SIGN_IN_OPERATIONS as readonly string[]).includes(op)) throw new Refusal('invalid_request')
+    if ((call.action === 'wait' || call.action === 'finish' || call.action === 'page' || call.action === 'cancel')
+      && !signIn.mayUse(call.request.attemptId, peer.client.clientId)) throw new Refusal('forbidden')
+    try {
+      switch (call.action) {
+        case 'sources': return await signIn.sources()
+        case 'key': return await signIn.signInWithKey(call.request)
+        case 'external': return await signIn.useExternalSignIn(call.request)
+        case 'sign-out': return await signIn.signOut(call.request)
+        case 'browser': return await signIn.startBrowserSignIn(call.request, peer.client.clientId)
+        case 'wait': return await signIn.wait(call.request)
+        case 'finish': return await signIn.finish(call.request)
+        case 'page': return await signIn.pageAddress(call.request)
+        case 'cancel': return await signIn.cancel(call.request)
+      }
+    } catch { throw new Refusal('unavailable') }
+  }
   const adminToken = randomBytes(32).toString('base64url')
   const peers = new Set<Peer>(), operations = new Set<Promise<unknown>>()
   const receipts = options.receipts ?? new CommandReceipts()
@@ -268,11 +306,51 @@ export async function startSocketServer(options: SocketServerOptions) {
   }
   const identity = (clientId: string): ClientIdentity => ({ clientId, user: pairing.list().find(client => client.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' })
   const isPhonePeer = (peer: Peer): boolean => !peer.desktop || options.admin === false && options.watcherDesktops === undefined
-  const hiddenThread = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? ''))
+  /** A thread of a provider this peer does not know (#1107), as the host holds it now, read without copying any state. */
+  const unknownProviderThread = (peer: Peer, threadId: string): boolean => {
+    if (!peer.unknownProviders.size) return false
+    const provider = service.threadProvider?.(threadId)
+    return provider !== undefined && peer.unknownProviders.has(provider)
+  }
+  /** A thread a phone is not shown: Watcher's own, and the ones Watcher's phone exclusions name. */
+  const hiddenFromPhone = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? ''))
+  const hiddenThread = (peer: Peer, threadId: string): boolean => unknownProviderThread(peer, threadId) || hiddenFromPhone(peer, threadId)
+  /** A project of a provider this peer does not know, by its provider as the host holds it (its scoped ID is read as well). */
+  const unknownProviderProject = (peer: Peer, projectId: string): boolean => {
+    const provider = service.projectProvider?.(projectId)
+    return provider !== undefined && peer.unknownProviders.has(provider)
+  }
+  /** What this peer may not be sent (#1107): the providers it does not know, and their threads and projects as the host holds them. */
+  const scopeOf = (peer: Peer): ProviderScope => ({ providers: peer.unknownProviders, thread: id => unknownProviderThread(peer, id), project: id => unknownProviderProject(peer, id) })
+  /** A Watcher answer, projection, phone state or terminal row as this peer may be sent it: without a row of a provider it does not know. */
+  const watcherFor = <T>(peer: Peer, value: T): T => peer.unknownProviders.size ? readWithoutProviders(value, scopeOf(peer)) : value
+  /**
+   * A Watcher request that names a thread, project or model of a provider this peer does not know is refused before the host
+   * reads or acts on it, as one for a thread it was never sent is (#1107).
+   */
+  const refuseHiddenWatcherInput = (peer: Peer, input: unknown): void => {
+    if (peer.unknownProviders.size && input !== null && typeof input === 'object' && namesHidden(input as Record<string, unknown>, scopeOf(peer))) throw new Refusal('forbidden')
+  }
+  /**
+   * A shell without the providers a peer does not know (#1107): made once per read and set of providers, however many
+   * such peers are sent it, and the read itself for a peer that knows them all or a shell that names none of them.
+   */
+  const scrubbed = new WeakMap<AgentState, Map<string, AgentState>>()
+  const withoutUnknown = (state: AgentState, unknown: HeldProviders): AgentState => {
+    if (!unknown.size) return state
+    const key = [...unknown].sort().join(',')
+    let byKey = scrubbed.get(state)
+    if (!byKey) scrubbed.set(state, byKey = new Map())
+    let made = byKey.get(key)
+    if (!made) byKey.set(key, made = stateWithoutProviders(state, unknown))
+    return made
+  }
   /** One phone's view of `original`, which is never edited here, so one read can serve every phone in a publish. */
-  const shell = (peer: Peer, original: AgentState = service.shell()) => {
+  const shell = (peer: Peer, read: AgentState = service.shell()) => {
+    const original = withoutUnknown(read, peer.unknownProviders)
     const visible = isPhonePeer(peer) ? visibleWatcherState(original, false) : original
-    const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenThread(peer, thread.id)).map(thread => thread.projectId),
+    // `original` names no thread of a provider this peer does not know, so only a phone's own rule is asked here.
+    const hiddenProjects = isPhonePeer(peer) ? new Set([...original.host.threads.filter(thread => hiddenFromPhone(peer, thread.id)).map(thread => thread.projectId),
       ...service.watcherPhoneExclusions?.().projectIds ?? []]) : new Set<string>()
     const state = hiddenProjects.size ? { ...visible, host: { ...visible.host, projects: visible.host.projects.filter(project =>
       !hiddenProjects.has(project.id) || visible.host.threads.some(thread => thread.projectId === project.id)) } } : visible
@@ -287,17 +365,26 @@ export async function startSocketServer(options: SocketServerOptions) {
       clientCapabilities: { mayAnswer: options.mayAnswer?.(peer.client) ?? false } })
     // A client from before #480 reads the client updates' channel and state against the values it knows, and one it
     // does not know would make it refuse the whole shell: it is sent them as it knew them.
-    const phoneState = peer.watcherPhone && service.watcherPhone ? service.watcherPhone.state(options.mayAnswer?.(peer.client) ?? false, peer.watcherPhoneManage === true) : undefined
+    // Watcher's phone state is the host's own, so it is filtered for this peer as the shell was (#1107).
+    const phoneState = peer.watcherPhone && service.watcherPhone ? watcherFor(peer, service.watcherPhone.state(options.mayAnswer?.(peer.client) ?? false, peer.watcherPhoneManage === true)) : undefined
     const projected = phoneState ? { ...own, watcher: phoneState, host: { ...own.host, threads: own.host.threads.map(thread => ({ ...thread,
       watchedByWatcher: phoneState.watchedThreads.some(row => row.target.hostId === hostId && row.target.threadId === thread.id && row.watched) })) } } : own
-    const rows = peer.terminals && options.terminals ? { ...projected, terminals: options.terminals.phoneRows() } : projected
+    const rows = peer.terminals && options.terminals ? { ...projected, terminals: watcherFor(peer, options.terminals.phoneRows()) } : projected
     return peer.clientUpdates || !state.clientUpdates ? rows : { ...rows, clientUpdates: state.clientUpdates.map(clientUpdateForOlderClient) }
   }
   /**
-   * The catalog revisions this listener names to peers that accept `model-catalog-revision`. One counter for every
-   * peer, so a revision names one catalog for as long as the listener runs; what each peer was sent is its own.
+   * The catalog revisions this listener names to peers that accept `model-catalog-revision`. A peer that does not know a
+   * provider is sent the catalog without its models (#1107), so each set of unknown providers has its own counter: a
+   * revision names one catalog of that variant for as long as the listener runs, and moves only when that variant's list
+   * changes. What each peer was sent is its own.
    */
-  const catalogRevisions = new ModelCatalogRevisions()
+  const catalogRevisions = new Map<string, ModelCatalogRevisions>()
+  const revisionsFor = (peer: Peer): ModelCatalogRevisions => {
+    const key = [...peer.unknownProviders].sort().join(',')
+    let revisions = catalogRevisions.get(key)
+    if (!revisions) catalogRevisions.set(key, revisions = new ModelCatalogRevisions())
+    return revisions
+  }
   /**
    * A shell as it goes to `peer`, at the moment it is written. A peer that does not accept `model-catalog-revision`
    * gets it whole, as v1 has it. One that does is told the catalog's revision, and sent the catalog itself only when
@@ -306,7 +393,7 @@ export async function startSocketServer(options: SocketServerOptions) {
    */
   const wireShell = (peer: Peer, state: HostClientShell): WireShell => {
     if (!peer.catalogRevisions) return { state, carries: null }
-    const modelsRevision = catalogRevisions.revisionFor(hostCatalogKey(state.host.hostId), state.host.models)
+    const modelsRevision = revisionsFor(peer).revisionFor(hostCatalogKey(state.host.hostId), state.host.models)
     const host: HostWireShell['host'] = { ...state.host, modelsRevision }
     if (peer.catalogSent !== modelsRevision) return { state: { ...state, host }, carries: modelsRevision }
     delete host.models
@@ -331,7 +418,9 @@ export async function startSocketServer(options: SocketServerOptions) {
   const push = (peer: Peer, value: HostPush): boolean => { if (!authenticated(peer)) { peer.frames.close(); return false } return deliver(peer, value, value.event === 'detail' || value.event === 'detail-delta' ? 'thread' : 'list') }
   const events = (peer: Peer, afterSeq: number, threadId?: string) => {
     const all = service.events(afterSeq, threadId, HOST_EVENT_PAGE_SIZE + 1), page = all.slice(0, HOST_EVENT_PAGE_SIZE)
-    return { events: page.filter(row => !hiddenThread(peer, row.threadId) && (peer.messageAliases || row.event.kind !== 'message-aliased')), latestSeq: page.at(-1)?.seq ?? afterSeq, hasMore: all.length > page.length }
+    const shown = page.filter(row => !hiddenThread(peer, row.threadId) && (peer.messageAliases || row.event.kind !== 'message-aliased'))
+    // A message an event carries loses a handover from a thread of a provider this peer does not know (#1107).
+    return { events: eventsWithoutProviders(shown, peer.unknownProviders), latestSeq: page.at(-1)?.seq ?? afterSeq, hasMore: all.length > page.length }
   }
   const observe = async (): Promise<void> => {
     const ids = [...new Set([...peers].flatMap(peer => [...peer.observed, ...peer.watcherPhone && service.watcherPhone?.currentThreadId() ? [service.watcherPhone.currentThreadId()!] : []]))]
@@ -354,10 +443,11 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (detail === null) return detail
     let withoutVisuals = withoutVisualsOf.get(detail)
     if (!withoutVisuals) withoutVisualsOf.set(detail, withoutVisuals = detailWithoutVisuals(detail))
-    if (!peer.activitySummaries) return withoutVisuals
+    // A handover from a thread of a provider this peer does not know loses its record of where it came from (#1107).
+    if (!peer.activitySummaries) return peer.unknownProviders.size ? detailWithoutProviders(withoutVisuals, peer.unknownProviders) : withoutVisuals
     let summary = summarised.get(detail)
     if (!summary) summarised.set(detail, summary = detailWithActivitySummaries(withoutVisuals))
-    return summary
+    return peer.unknownProviders.size ? detailWithoutProviders(summary, peer.unknownProviders) : summary
   }
   const sendWhole = (peer: Peer, threadId: string, detail: AgentThreadDetail | null): void => {
     peer.opening.delete(threadId)
@@ -383,7 +473,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!authenticated(peer)) { peer.frames.close(); return }
     const scope = watcherScopes.get(peer)
     if (scope && offers(peer, 'watcher-reads') && service.watcherProjection) {
-      const projection = service.watcherProjection(scope, peer.client)
+      const projection = watcherFor(peer, service.watcherProjection(scope, peer.client))
       if (watcherRevisions.get(peer) !== projection.revision && push(peer, { v: 1, event: 'watcher-state', projection })) watcherRevisions.set(peer, projection.revision)
     }
     if (peer.frames.backlogged) {
@@ -430,7 +520,8 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) continue
       if (!peer.deltas) { sendWhole(peer, threadId, whole === undefined ? (whole = service.threadDetail(threadId)) : whole); continue }
       strippedDelta ??= deltaWithoutVisuals(update)
-      if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(strippedDelta)) : strippedDelta }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
+      const delta = peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(strippedDelta)) : strippedDelta
+      if (push(peer, { v: 1, event: 'detail-delta', threadId, delta: peer.unknownProviders.size ? deltaWithoutProviders(delta, peer.unknownProviders) : delta }) && held === update.baseRevision) peer.held.set(threadId, update.revision)
       else peer.held.delete(threadId)
     }
   })
@@ -615,13 +706,18 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (closing || peer.frames.isClosed || !authenticated(peer) || !options.watcherDesktops?.has(peer.client.clientId)) throw new Error('Watcher master connection is unavailable.')
       }
       guard()
-      if (request.op === 'watcher-control') return service.watcherControl!(request.request, peer.client, guard)
+      // A read or a direction of a thread, project or model this desktop does not know is refused before it runs (#1107).
+      refuseHiddenWatcherInput(peer, request.op === 'watcher-control' ? request.request.call.input : request.request.call?.input)
+      if (request.op === 'watcher-control') return watcherFor(peer, await service.watcherControl!(request.request, peer.client, guard))
       if (request.request.standingWatches !== undefined && !offers(peer, 'watcher-standing-watch')) throw new Refusal('invalid_request')
       if (!request.request.call && peer.watcherReads) watcherScopes.set(peer, request.request)
-      return service.watcherRead!(request.request, peer.client, guard)
+      const read = await service.watcherRead!(request.request, peer.client, guard)
+      // A desktop that does not know a provider is sent no Watcher row of it (#1107).
+      return watcherFor(peer, read)
     }
     if (request.op.startsWith('watcher-phone-')) {
-      if (!peer.ready || !peer.watcherPhone || !offers(peer, 'watcher-phone') || !service.watcherPhone) throw new Refusal('invalid_request')
+      const phone = service.watcherPhone
+      if (!peer.ready || !peer.watcherPhone || !offers(peer, 'watcher-phone') || !phone) throw new Refusal('invalid_request')
       const guard = () => {
         if (closing || peer.frames.isClosed || !authenticated(peer) || !admits(peer.client.clientId)) throw new Refusal('unauthenticated')
       }
@@ -629,7 +725,16 @@ export async function startSocketServer(options: SocketServerOptions) {
       // A phone that never negotiated management knows nothing of standing watches, and is shown none (ADR-0073).
       const standing = peer.watcherPhoneManage === true
       guard()
-      switch (request.op) {
+      // Watching, sending to or answering in a thread of a provider this phone does not know is refused before Watcher hears
+      // of it, and every answer is Watcher's phone state filtered for this phone as its shell is (#1107).
+      refuseHiddenWatcherInput(peer, 'request' in request ? request.request : undefined)
+      // Stop all stops every thread Watcher drives, so its confirmation lists every one, a thread of a provider this phone
+      // does not know by its title alone; the general filter would leave such a thread out of the list but not out of the stop.
+      if (request.op === 'watcher-phone-prepare-stop-all') {
+        if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
+        return stopPreviewWithoutProviders(phone.prepareStop(peer.client), peer.unknownProviders)
+      }
+      const answer = await (async () => { switch (request.op) {
         case 'watcher-phone-set-permission':
         case 'watcher-phone-watch':
         case 'watcher-phone-unwatch': {
@@ -643,12 +748,12 @@ export async function startSocketServer(options: SocketServerOptions) {
             if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
             const outcome = previous.receipt.watcherManage
             if (!outcome) throw new Refusal('unavailable')
-            return outcome.status === 'refused' ? outcome : service.watcherPhone.get(mayAnswer())
+            return outcome.status === 'refused' ? outcome : phone.get(mayAnswer())
           }
           if (!receipts.makeRoom()) throw new Refusal('busy')
           const receipt: HostReceipt = { status: 'pending' }
           const action = request.op === 'watcher-phone-set-permission' ? 'permission' : request.op === 'watcher-phone-watch' ? 'watch' : 'unwatch'
-          const task = service.watcherPhone.manage(action, request.request, peer.client, guard, mayAnswer).then(result => {
+          const task = phone.manage(action, request.request, peer.client, guard, mayAnswer).then(result => {
             receipt.watcherManage = result.status === 'refused' ? result : { status: 'ok' }
             receipt.status = 'completed'
             return result
@@ -659,7 +764,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           receipts.record(peer.client.clientId, request.id, { digest, receipt, task })
           return task
         }
-        case 'watcher-phone-read': await observe(); return service.watcherPhone.get(mayAnswer(), standing)
+        case 'watcher-phone-read': await observe(); return phone.get(mayAnswer(), standing)
         case 'watcher-phone-send': {
           const digest = createHash('sha256').update(JSON.stringify([request.op, request.request])).digest('hex')
           const previous = receipts.get(peer.client.clientId, request.id)
@@ -667,11 +772,11 @@ export async function startSocketServer(options: SocketServerOptions) {
             if (previous.digest !== digest) throw new Refusal('invalid_request')
             await previous.task
             if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
-            return { status: 'ok', draftId: request.request.draftId, state: service.watcherPhone.state(mayAnswer(), standing) }
+            return { status: 'ok', draftId: request.request.draftId, state: phone.state(mayAnswer(), standing) }
           }
           if (!receipts.makeRoom()) throw new Refusal('busy')
           const receipt: HostReceipt = { status: 'pending' }
-          const task = service.watcherPhone.send(request.request, peer.client, guard, mayAnswer, standing).then(result => {
+          const task = phone.send(request.request, peer.client, guard, mayAnswer, standing).then(result => {
             receipt.status = 'completed'
             if (result.status === 'refused') receipt.error = { code: 'unavailable', message: result.message }
             return result
@@ -679,9 +784,6 @@ export async function startSocketServer(options: SocketServerOptions) {
           receipts.record(peer.client.clientId, request.id, { digest, receipt, task })
           return task
         }
-        case 'watcher-phone-prepare-stop-all':
-          if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
-          return service.watcherPhone.prepareStop(peer.client)
         case 'watcher-phone-stop-all': {
           if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
           const digest = createHash('sha256').update(JSON.stringify([request.op, request.confirmationId])).digest('hex')
@@ -692,11 +794,11 @@ export async function startSocketServer(options: SocketServerOptions) {
             guard()
             if (previous.receipt.error) throw new Refusal(previous.receipt.error.code)
             const outcome = previous.receipt.watcherStop!
-            return outcome.status === 'refused' ? outcome : { ...outcome, state: service.watcherPhone.state(mayAnswer(), standing) }
+            return outcome.status === 'refused' ? outcome : { ...outcome, state: phone.state(mayAnswer(), standing) }
           }
           if (!receipts.makeRoom()) throw new Refusal('busy')
           const receipt: HostReceipt = { status: 'pending' }
-          const task = service.watcherPhone.stop(request.confirmationId, peer.client, guard, mayAnswer, standing).then(result => {
+          const task = phone.stop(request.confirmationId, peer.client, guard, mayAnswer, standing).then(result => {
             receipt.watcherStop = result.status === 'refused' ? result : { status: 'ok', results: result.results }
             receipt.status = 'completed'
             return result
@@ -713,9 +815,11 @@ export async function startSocketServer(options: SocketServerOptions) {
           const result = await command(peer, { ...request, op: 'command', command: input }, target)
           guard()
           if (result.error) throw new Refusal('unavailable')
-          return service.watcherPhone.get(mayAnswer(), standing)
+          return phone.get(mayAnswer(), standing)
         }
-      }
+      } })()
+      // Stop all's result keeps a row for every thread its confirmation listed, so a phone hears which it could not stop.
+      return request.op === 'watcher-phone-stop-all' ? stopResultWithoutProviders(answer, scopeOf(peer)) : watcherFor(peer, answer)
     }
     if ('threadId' in request && request.threadId && hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
     if ('request' in request && request.request && 'threadId' in request.request && hiddenThread(peer, request.request.threadId as string)) throw new Refusal('forbidden')
@@ -741,6 +845,10 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.terminals = (request.accepts?.includes('terminals') ?? false) && offers(peer, 'terminals')
         peer.usageHistory = (request.accepts?.includes('usage-history') ?? false) && offers(peer, 'usage-history')
         peer.hostUpdate = (request.accepts?.includes('host-update') ?? false) && offers(peer, 'host-update')
+        // A provider is sent to this client only once its hello says it knows the provider (#1107).
+        peer.unknownProviders = providersUnknownTo(request.accepts)
+        for (const id of [...peer.observed]) if (hiddenThread(peer, id)) { peer.observed.delete(id); peer.held.delete(id); peer.opening.delete(id) }
+        if (peer.selectedThreadId && hiddenThread(peer, peer.selectedThreadId)) { peer.selectedThreadId = null; peer.editingThreadId = null }
         if (!peer.terminals) { peer.terminalPreviews.clear(); options.terminals?.withdrawVisibility(peer) }
         if (peer.watcherPhone) await observe()
         const phoneAccess = peer.desktop ? options.phoneAccess?.() : undefined
@@ -908,6 +1016,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'sign-in-read': return signingIn(peer, request.op, () => signIns!.read(request.signInId, peer.client.clientId))
       case 'sign-in-code': return signingIn(peer, request.op, () => signIns!.code(request.signInId, peer.client.clientId, request.code))
       case 'sign-in-cancel': return signingIn(peer, request.op, () => { signIns!.cancel(request.signInId, peer.client.clientId); return null })
+      case 'opencode-sign-in': return opencodeCall(peer, request.op, request.call)
       case 'preview':
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
@@ -1086,7 +1195,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text))
-    const peer: Peer = { hostUpdate: false, gone: new AbortController(), usageHistory: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null, answerReceipts: false, answerWatches: new Map(), terminals: false, terminalPreviews: new Map() }
+    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, gone: new AbortController(), usageHistory: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null, answerReceipts: false, answerWatches: new Map(), terminals: false, terminalPreviews: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
     frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peer.terminalPreviews.clear(); options.terminals?.withdrawVisibility(peer); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })

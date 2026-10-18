@@ -1246,10 +1246,16 @@ test.describe("Watcher's room on the built app", () => {
       await writeFile(join(root, 'claude', 'script.json'), JSON.stringify({ reply: 'Claude Watcher here. I have the handover.' }))
       await resizeContentWindow(launched, 1280, 800)
       await openRoom(page)
+      // This journey starts on Codex explicitly; role defaults may choose Claude when both fixtures are ready.
+      await page.getByRole('group', { name: 'Watcher’s model' }).getByRole('combobox', { name: 'Thread model' }).click()
+      const firstPicker = page.getByRole('dialog', { name: 'Choose model' })
+      await firstPicker.getByRole('tab', { name: /Codex/ }).click()
+      await firstPicker.getByRole('option').first().click()
       await page.getByRole('textbox', { name: 'Watcher message' }).click()
       await page.keyboard.type('Check the release notes and tell me what is missing.')
       await page.getByRole('button', { name: 'Start Watcher and send' }).click()
       const pane = watcherPane(page)
+      await expect.poll(async () => (await mainRoom(page)).current?.provider).toBe('codex')
       await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. Release notes is missing the install line.')
       await expect.poll(async () => (await mainRoom(page)).currentOptions?.status).toBe('idle')
       const codex = (await mainRoom(page)).current!
