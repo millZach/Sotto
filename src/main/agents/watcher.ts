@@ -228,9 +228,10 @@ export class WatcherService implements WatcherControlHooks {
       for (const watch of record.watches ?? []) if (ended.includes(watch.id)) watch.pausedByUserMessageId = null
     }).catch(() => undefined)
   }
-  private publish(): void {
+  private publish(observe = true): void {
     if (this.closed) return
-    if (!this.options.workerHost) this.wakes.observe()
+    // A pass put off while threads stream publishes again once it has run, without asking for another.
+    if (observe && !this.options.workerHost) this.wakes.observeSoon(() => this.publish(false))
     this.options.control.refreshWatcherObservation()
     // One room state for every listener: each only reads it, and the window's room copies what it keeps.
     let state: WatcherRoomState | undefined

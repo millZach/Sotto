@@ -5,7 +5,7 @@ import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../.
 import { WATCHER_QUIET_MS, watcherOverview } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
 import type { WatcherRecord } from '../../../src/shared/watcher'
-import { WatcherWakeUp, WAKE_UP_TRIES, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
+import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
@@ -57,6 +57,38 @@ function pairedChecks(wakes: WatcherWakeUp, state: 'passed' | 'failed', at: numb
     observedAt: new Date(at).toISOString(), freshness: 'fresh', availability: 'available', fact: state === 'failed' ? 'checks-failed' : 'checks-passed',
     checksState: state, checkCount: 1 }])
 }
+
+it('looks over the threads at most every WATCHER_OBSERVE_MS while one streams, and once more after the last update', async () => {
+  let streamed = 0
+  const looked = vi.fn(() => String(streamed)), after = vi.fn()
+  const f = fixture(true, looked)
+  await f.advance(WATCHER_OBSERVE_MS); looked.mockClear()
+  f.wakes.observeSoon(after)
+  expect(looked).toHaveBeenCalledTimes(1)
+  // A streaming burst: every 16 ms the thread moves on, but no turn, request card, background work or connection does.
+  for (let update = 0; update < 10; update++) { streamed++; f.wakes.observeSoon(after); await f.advance(16) }
+  expect(looked).toHaveBeenCalledTimes(1)
+  expect(after).not.toHaveBeenCalled()
+  await f.advance(WATCHER_OBSERVE_MS)
+  expect(looked).toHaveBeenCalledTimes(2)
+  expect(after).toHaveBeenCalledTimes(1)
+  // Nothing owed once the burst is over: no pass looks again by itself.
+  await f.advance(WATCHER_OBSERVE_MS * 4)
+  expect(looked).toHaveBeenCalledTimes(2)
+})
+
+it('looks at once when a turn finishes or a request card arrives between two looks', async () => {
+  const f = fixture(), after = vi.fn()
+  await f.advance(WATCHER_OBSERVE_MS)
+  f.wakes.observeSoon(after)
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+  f.wakes.observeSoon(after)
+  expect(f.wakes.news().map(event => event.kind)).toContain('turn-finished')
+  f.thread.requests.push({ id: 'question', kind: 'question', text: 'private question', options: [] })
+  f.wakes.observeSoon(after)
+  expect(f.wakes.news().map(event => event.kind)).toContain('needs-user')
+  expect(after).not.toHaveBeenCalled()
+})
 
 it('batches for two seconds and never delays a sustained burst past five seconds', async () => {
   const f = fixture()

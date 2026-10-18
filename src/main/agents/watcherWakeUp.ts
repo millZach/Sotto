@@ -18,6 +18,11 @@ const NOTHING_TOLD = observationDigest([])
  * would wait for the next turn's end. A read that changes the thread's own facts ends the wait early.
  */
 const TURN_END_SETTLE_MS = 5_000
+/**
+ * How often, at most, an update that changes nothing the pass reacts to at once makes it look over every thread. The
+ * coordinator publishes up to every 16 ms while threads stream, and news waits WATCHER_BATCH_MS before it goes.
+ */
+export const WATCHER_OBSERVE_MS = 250
 const TURN_ENDS: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', 'turn-failed', 'work-settled'])
 /** How many hidden wake-ups in a row may miss Watcher before only news that needs it makes another (hiddenWakeUp.ts). */
 export const WAKE_UP_TRIES = 3
@@ -118,6 +123,10 @@ export class WatcherWakeUp {
   private readonly now: () => number
   private readonly schedule: NonNullable<WatcherWakeOptions['schedule']>
   private tail: Promise<unknown> = Promise.resolve()
+  /** When the last pass ran, what it reacts to at once as it stood then, and the pass owed once WATCHER_OBSERVE_MS is up. */
+  private observedAt = -Infinity
+  private observedEdges: { record: Readonly<WatcherRecord>; threads: string } | undefined
+  private cancelObserve: (() => void) | undefined
   /** The reads the synchronous pass under way shares; see `withPassReads`. */
   private pass: { snapshot?: AgentHostSnapshot; record?: Readonly<WatcherRecord>; reportsWork?: (hostId: string) => boolean } | undefined
   constructor(private readonly options: WatcherWakeOptions) {
@@ -476,9 +485,33 @@ export class WatcherWakeUp {
     })
   }
   observe(): void { this.withPassReads(() => this.observePass()) }
+  /**
+   * The pass for an update. It runs at once when a turn, a request card, background work, a connection or the record
+   * moved, since a turn that finishes as the next one starts is seen only in the update between them. Otherwise, as
+   * while a thread streams, it runs at most every WATCHER_OBSERVE_MS, and once more after the last update, followed by
+   * `after`.
+   */
+  observeSoon(after: () => void): void {
+    if (!this.started || this.closed) return
+    this.withPassReads(() => {
+      const wait = this.observedAt + WATCHER_OBSERVE_MS - this.now(), edges = this.observedEdges
+      if (wait <= 0 || !edges || edges.record !== this.record() || edges.threads !== this.threadEdges(this.snapshot())) { this.observePass(); return }
+      this.cancelObserve ??= this.schedule(() => { this.cancelObserve = undefined; this.observe(); after() }, wait)
+    })
+  }
+  /** Each thread's turn, request cards, background work and connection: what a pass must not miss between two looks. */
+  private threadEdges(snapshot: AgentHostSnapshot): string {
+    let edges = String(snapshot.connected)
+    for (const thread of snapshot.threads) {
+      edges += `|${thread.hostId ?? ''}/${thread.id}:${thread.status}:${thread.lastTurn?.id ?? ''}:${thread.lastTurn?.status ?? ''}:${watcherBackgroundWorkCount(thread)}:${thread.clientConnected ?? ''}:${thread.requests.map(card => card.id).join(',')}`
+    }
+    return edges
+  }
   private observePass(): void {
     if (!this.started || this.closed) return
     const snapshot = this.snapshot(), stamp = new Date(this.now()).toISOString()
+    this.cancelObserve?.(); this.cancelObserve = undefined
+    this.observedAt = this.now(); this.observedEdges = { record: this.record(), threads: this.threadEdges(snapshot) }
     const targets = new Set<string>(), watched = new Set(this.watchedTargets().map(targetKey))
     for (const thread of snapshot.threads) {
       if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || !snapshot.hostId) continue
@@ -695,6 +728,6 @@ export class WatcherWakeUp {
     if (event.kind === 'work-settled') return finishedTurn(thread)?.id === event.turnId && this.workSettled(thread, event.target.hostId)
     return !!thread.lastTurn && thread.lastTurn.id === event.turnId && thread.status !== 'running' && thread.lastTurn.status === (event.kind === 'turn-failed' ? 'failed' : 'completed')
   }
-  close(): void { this.closed = true; this.cancelBatch?.(); for (const progress of this.progress.values()) progress.cancel?.(); this.pending = []; this.rememberPending.clear() }
+  close(): void { this.closed = true; this.cancelBatch?.(); this.cancelObserve?.(); this.cancelObserve = undefined; for (const progress of this.progress.values()) progress.cancel?.(); this.pending = []; this.rememberPending.clear() }
   async drained(): Promise<void> { await this.tail }
 }
