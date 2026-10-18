@@ -52,6 +52,8 @@
 .provider-client > div:first-child { flex: 1 1 210px; min-width: 0; }
 .provider-client h4 { margin: 0 0 4px; color: var(--tt-text); font-size: 14px; font-weight: 600; }
 .provider-client p { margin: 0; max-width: 34em; color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+/* What a saved change still owes the running client, such as Muse's shell sandbox before a reconnect. */
+.provider-client .provider-client__owed { margin-top: 8px; color: var(--tt-text); }
 .provider-client__actions { display: flex; flex: none; flex-wrap: wrap; max-width: 100%; gap: 8px; }
 .provider-login { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 8px; margin-top: 9px; }
 .provider-login code { color: var(--tt-text); font: 13px/1.6 var(--tt-font-mono); user-select: text; }

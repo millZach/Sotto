@@ -20,6 +20,8 @@ import { join } from 'node:path'
 // says `permissionStateHidden`. `session/read` serves a stored session without attaching it.
 const root = process.argv[2]
 const ephemeral = process.argv.includes('--no-session-log')
+// The serve arguments Sotto started this host with, one line per process, beside the frame logs.
+try { appendFileSync(join(root, 'argv.jsonl'), JSON.stringify(process.argv.slice(3)) + '\n') } catch { /* The root is the fixture's; a missing record fails its reader, not the host. */ }
 const path = name => join(root, name)
 const read = (name, fallback) => { try { return JSON.parse(readFileSync(path(name), 'utf8')) } catch { return fallback } }
 const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...frame }) + '\n')
