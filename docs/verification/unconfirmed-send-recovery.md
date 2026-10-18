@@ -1,64 +1,50 @@
 # Continue after an unconfirmed prompt
 
-October 17, 2026. Windows laptop. Branch `fix/unconfirmed-send`, based on `f000d7612`.
+October 17, 2026. Windows laptop. Branch `fix/unconfirmed-send`, based on `f000d7612`; final runtime source `09e638e71`.
+
+The installed app has not been replaced or restarted. Packaged Windows, live Muse, macOS and Linux recovery are **not verified**. The checks below drive the built Windows app with scripted provider effects and real coordinator, IPC, persistence and renderer.
 
 ## Failure and choice
 
-A provider can lose the evidence needed to confirm a prompt. Both the composer and the coordinator then hold every later prompt, while **Check again** can only reconcile the original message. Refreshing cannot resolve a message the provider no longer reports. The original renderer regression failed because the stuck composer offered no recovery.
+A provider can lose the evidence needed to confirm a prompt. **Check again** reconciles the original, so it cannot resolve a prompt the provider no longer reports; every later message stayed blocked. The initial renderer regression reproduced the missing recovery action and disabled composer.
 
-Zach chose **Continue with a new message**, without resending the old prompt. He rejected the standalone approximation, requested distinct views in Sotto's actual layout, and chose A: the recovery beside **Check again**. The prototype compared that with a composer action and a confirmation dialog. The implementation keeps Sotto's existing Watcher room, theme, typography and controls.
+Zach chose **Continue with a new message**, without resending the old prompt. He rejected a standalone approximation and chose A in Sotto's actual Watcher layout: the action beside **Check again**. The throwaway A/B/C prototype is preserved separately in the local tag `prototype/unconfirmed-send-recovery-20261017`.
 
-The throwaway prototype is preserved separately in the local Git tag `prototype/unconfirmed-send-recovery-20261017`; it is not part of the implementation checkout.
+Recovery saves the choice before releasing the composer, preserves a newer draft, and keeps exact identity and delivery evidence. It grants nothing and never replays the old revision. Zach also chose to resume normal updates after a new message: a fresh explicit manual or queued prompt's exact confirmation releases only the recovery holds it follows. Rejected or uncertain new sends, request answers, messages in another thread and echoes of the original release nothing. Existing turn, permission, Stop and news-freshness guards remain.
 
-## Built Windows app
+## Built Windows journey
 
-`tests/e2e/watcher.spec.ts`, **an unconfirmed prompt has a recovery in the actual Watcher room**, drives the built Electron app. It opens Watcher, submits a prompt with an uncertain acknowledgement, removes its provider echo, writes `hello`, reloads, and checks again. The new message remains blocked until explicit recovery. Pressing the recovery from the keyboard returns focus to the composer, preserves `hello`, and leaves the original marked **Set aside · Unconfirmed**. Another reload retains the choice, then Enter sends exactly `hello` once.
+`tests/e2e/watcher.spec.ts`, **an unconfirmed prompt has a recovery in the actual Watcher room**, opens Watcher, sends a prompt with uncertain acknowledgement, removes its provider echo, types `hello`, reloads, and checks again. The new draft remains blocked until explicit recovery. Keyboard recovery returns focus to the composer, preserves `hello`, and leaves the old prompt **Set aside · Unconfirmed**. Reload retains the choice; Enter sends `hello` exactly once. Its confirmation releases the automatic-update hold while the old delivery stays uncertain. The journey then queues another user message, completes the current turn, explicitly denies a permission and answers a question.
 
-The Watcher projection uses the existing fixture bridge; coordinator, draft persistence, IPC, delivery recovery and renderer are real. External provider effects are scripted. This verifies the recovery from missing evidence, not the cause of Zach's original Muse failure.
+The Watcher projection uses its existing fixture bridge. External provider effects are scripted. This proves recovery from missing evidence, not the cause of Zach's original Muse acknowledgement loss.
 
-The journey also checks that confirmation of the fresh message releases the automatic-update hold while the original remains uncertain. It queues another explicit message, waits for the current turn to end, denies a new permission, and answers a new question. Coordinator regressions separately cover a question or permission arriving before recovery: the request remains pending until the user's answer. Hidden Watcher news and plain or mixed restart notes remain held until a fresh explicit prompt is confirmed, then resume under their normal guards, including across a coordinator restart.
+Dark/light and reduced motion passed at 1600×1000, 1280×800 and 820×560. Checks inspect overflow/clipping and recovery text contrast of at least 4.5:1. Captures were opened and inspected; no design baselines were regenerated.
 
-Two independent GPT-6.1-Sol reviewers at high reasoning checked standards and the reported failure. Standards had no material findings. Spec review found the later-answer, hidden-news and leading-restart-note deadlocks; each was reproduced by a failing regression and corrected. The final review is recorded with the run's validation evidence.
+- [Recovery in the actual Watcher room](../../artifacts/unconfirmed-send/watcher-recovery-dark-1280x800.png).
+- [Newer draft ready at the minimum size](../../artifacts/unconfirmed-send/watcher-set-aside-light-820x560.png).
 
-Dark and light, with reduced motion on, passed at 1600×1000, 1280×800 and 820×560. The checks inspect overflow and clipping and measure visible recovery text against its surface at 4.5:1 or better. Captures were opened and inspected.
+## Final validation
 
-- [Blocked composer with recovery in the real Watcher room](../../artifacts/unconfirmed-send/watcher-recovery-dark-1280x800.png).
-- [Newer draft ready after recovery at the minimum size](../../artifacts/unconfirmed-send/watcher-set-aside-light-820x560.png).
+- `npm run typecheck`, `npm run lint`, `npm run notices:verify` (189 components), `npm run assets:verify`: passed.
+- `npm test -- --maxWorkers=2`: 941 files passed / 78 skipped; 12,281 tests passed / 348 skipped (1832.16 seconds).
+- Expanded nine-file recovery group: 246 passed. Includes real standing-watch continuation, paired-phone permission/question answers with denied/revoked grants, atomic sending, restart and unchanged copy budgets.
+- `npm run build`, then `npx playwright test tests/e2e/watcher.spec.ts tests/e2e/thread-composer-recovery.spec.ts --workers=1 -g "an unconfirmed prompt has a recovery|permissions keep composer focus"`: two passed (15.0 seconds).
+- Independent GPT-6.1-Sol/high Standards and Spec reviews of the complete base-to-source diff: no remaining material findings on either axis at `09e638e71`. Reviewers read source; execution evidence above comes from the lead's runs.
 
-Run after `npm run build`:
-
-```sh
-npx playwright test tests/e2e/watcher.spec.ts -g "an unconfirmed prompt has a recovery" --workers=1
-```
+Review exposed deadlocks involving later answers, hidden news and restart notes, stale restart metadata and superseded staged answers, a standing watch's readiness, guarded Stop and phone answers, and late confirmation races. Each material path was reproduced by a failing regression before correction. The final concurrent-write cases hold the recovery write, inject the original exact echo, inspect every accepted write, and repeat with and without restart. Delivery confirmation and recovery choice are both preserved; held evidence survives receipt trimming. Failed persistence never optimistically unlocks the composer.
 
 ## Remaining surfaces
 
-The broader three-spec run had 20 passes, five failures and one test not run. All five failures were reproduced with the same dependencies after checking out and rebuilding the unchanged base `f000d7612`:
+The earlier broader three-spec run had 20 passes, five failures and one test not run. All five failures reproduced after rebuilding unchanged base `f000d7612` with the same dependencies:
 
 | Existing journey | Same failure on the base |
 | --- | --- |
-| Watcher provider-change handover | Initial Watcher starts on the Claude fixture rather than the Codex reply the assertion expects. |
-| Independent text/image draft restart | The assertion looks for bare `docs` in host-qualified draft IDs and reads `undefined.text`. |
-| Project settlement | The assertion looks for bare `docs` in host-qualified thread IDs and reads `undefined.workspaceSettledAt`. |
-| Light provider controls | The journey expects a New thread dialog that does not appear. |
-| Failed-send keyboard recovery | The journey expects Retry to disappear after newer typing; it remains visible. |
+| Watcher provider-change handover | Claude fixture starts where the assertion expects the Codex first reply. |
+| Independent text/image draft restart | Bare `docs` lookup in host-qualified IDs reads `undefined.text`. |
+| Project settlement | Bare `docs` lookup reads `undefined.workspaceSettledAt`. |
+| Light provider controls | Expected New thread dialog does not appear. |
+| Failed-send keyboard recovery | Retry remains visible after newer typing. |
 
-The final focused built-app run passed both the new Watcher recovery journey and the existing composer permission/failed-answer journey. These baseline failures are recorded separately from the new recovery regressions; the broader E2E run is not reported green.
+That broader E2E run is not green. The two focused built-app journeys above pass on final source. Main's existing CI run `39029045551` also failed its host-update cleanup hook and an iOS standing-watch assertion; those failures predate this branch, and PR #1150 is a separate test-repair lane.
 
-The full unit/integration run exposed two regressions in the initial candidate. Restart-note review read a stale selected queue item; it now reads the current record by its exact ID. A prompt already staged at Send was incorrectly refused when newer typing replaced its saved revision; normal replacement now preserves the staged packet, while explicit set-aside still fences it. Each failed separately before correction. The six-file rerun passed all 169 tests across atomic draft sending, restart recovery, delivery navigation, follow-ups and the unchanged copy budgets.
-
-That full run finished with 939 files passing, two failing and 78 skipped: 12,263 tests passed, two failed and 348 skipped. It began before those two corrections, so it is not a green full-suite result for the final code. No other failures were reported. On the final code, typecheck, lint, notice verification (189 components), build, the 169-test rerun and both focused Electron journeys passed. The entire suite has not been repeated after the corrections.
-
-Zach chose to resume normal updates after the new message. The follow-up regression first failed with the original hold, then passed after the change. Confirmed manual and queued user messages release it across restart, including when main had no record of the original send. A failed or uncertain fresh send and a message in another thread keep it held; a later exact echo can release it. The original prompt remains uncertain and same-revision replay is refused. The updated six-file regression group passes all 176 tests, including the unchanged copy budgets.
-
-After that choice, typecheck, lint, notices and build passed again. Both focused Electron journeys passed (12.7 seconds), including the new assertion that `hello` releases the automatic-update hold while the original delivery stays uncertain. No new full-suite run was made for this follow-up; the broader-run limits above still apply.
-
-PR preflight reproduced one further edge: a late confirmation of an earlier replacement could release a recovery hold created after that send. The fresh prompt now retains the exact set-aside draft revisions it follows, so confirmation releases only those holds. The new regression failed before correction; the six-file group then passed all 177 tests. A final full run follows this correction.
-
-The final two-axis review found four more paths. An echo of the original could release updates before a fresh prompt, real standing watches continued counting resumed recovery evidence as pending work, and guarded delegated Stop and explicit phone answers were blocked. Each was reproduced before correction: three unit cases and three real integration cases failed on the pre-fix coordinator. The integration cases use the real Watcher service, workspace adapter and paired-phone socket, including denied and revoked Can answer grants. Recovery holds now survive the original's exact echo and receipt trimming until a fresh prompt confirms; resumed evidence no longer blocks readiness. Stop keeps its authorization guard, and a phone answer's private connection/grant guard is distinguished from automatic work without relaxing it. The full run was stopped for these fixes and restarted afterward; its interrupted output is not a passing result.
-
-The next independent pass found the same hold could still be lost if the original echo arrived during the recovery write, before the choice was published. Two regression cases failed before correction. Pending serialization now merges the recovery flag into accepted evidence, and successful publication retains both facts. The cases inspect every accepted write and repeat with and without coordinator restart; exact native acceptance is preserved while automatic work stays held for a fresh prompt.
-
-After this correction, the expanded nine-file group passed all 246 tests, including the real standing-watch and phone journeys, restart/atomic-send regressions and unchanged streaming copy budgets.
-
-The installed Sotto build has not been replaced or restarted. Live Muse, packaged Windows, macOS and Linux recovery journeys have not been run. Remote hosts and phones cannot perform this recovery; they direct the user to the desktop that owns the thread. Questions, permissions, a live send and queued follow-ups retain their own recovery rules. No design baselines were regenerated.
+Remote hosts and phones cannot perform the owning-desktop recovery. Explicit paired-phone answers remain available under current grants. Uncertain answers, queued deliveries and live sends keep their separate recovery rules. No installer, release or live provider journey was run for this PR preparation.
