@@ -523,6 +523,8 @@ export const agentProviderStatusSchema = z.object({
   name: z.string(), version: z.string(), error: z.string().optional(), capabilities: agentCapabilitiesSchema,
   /** Set when the connected client is newer than the version Sotto's adapter was checked against. */
   verifiedVersion: z.string().max(64).optional(),
+  /** Muse only, while connected: whether its running `muse serve` hosts were started without the shell sandbox. */
+  sandboxDisabled: z.boolean().optional(),
   /** Why it is not connected, when its last connect failed for a reason the adapter could name (ADR-0037). */
   problem: providerProblemSchema.optional(),
   /** With `too-old`: the oldest version Sotto accepts, when the adapter's floor is a version (ADR-0035). */
@@ -607,9 +609,11 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   mayAnswer: z.boolean().optional(),
   /**
    * This computer's own entry only, for Settings > Providers: the providers it has turned on, whether it checks for client
-   * updates, and the model its agent setting starts new threads on, its Models tab's "Agent setting".
+   * updates, whether its Muse starts without the shell sandbox, and the model its agent setting starts new threads on, its
+   * Models tab's "Agent setting".
    */
-  enabledProviders: z.array(providerIdSchema).max(PROVIDER_COUNT).optional(), checkClientUpdates: z.boolean().optional(), agentModelId: z.string().max(512).optional() })
+  enabledProviders: z.array(providerIdSchema).max(PROVIDER_COUNT).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(),
+  agentModelId: z.string().max(512).optional() })
 export type AgentClientHost = z.infer<typeof agentClientHostSchema>
 
 export const agentHostSnapshotSchema = z.object({
@@ -621,6 +625,8 @@ export const agentHostSnapshotSchema = z.object({
   /** Set when the connected client is newer than the version this adapter was checked against. */
   verifiedVersion: z.string().max(64).optional(),
   error: z.string().optional(),
+  /** Muse only, while connected: whether its running `muse serve` hosts were started without the shell sandbox. */
+  sandboxDisabled: z.boolean().optional(),
   /** One adapter's own snapshot: why it is not connected, and what it is signed in with (ADR-0037). */
   problem: providerProblemSchema.optional(),
   requiredVersion: z.string().max(64).optional(),
@@ -702,6 +708,12 @@ export const agentConfigurationSchema = z.object({
   reasoningEffort: z.string().max(64).default(''),
   checkClientUpdates: z.boolean().default(true),
   /**
+   * Whether Muse's `muse serve` hosts on this machine start with `--disable-sandbox` (ADR-0079 amendment).
+   * Off unless turned on in Settings → Providers → Muse, for a machine where Muse's sandbox cannot be
+   * set up. Captured when Muse connects; a change applies on the next connect, never mid-host.
+   */
+  museDisableSandbox: z.boolean().default(false),
+  /**
    * What a new thread in a project starts on, apart from the coordinator's reasoning model and effort
    * (issue #347): the model a create-thread that leaves one unset takes, empty until chosen so an existing
    * install keeps following the reasoning-based default (`defaultThreadModelId`). `newThreadReasoningEffort`
@@ -718,7 +730,7 @@ export type AgentConfiguration = z.infer<typeof agentConfigurationSchema>
 export const defaultAgentConfiguration = (): AgentConfiguration => ({
   provider: 'codex',
   enabled: false, projectsDirectory: '', defaultModelId: '',
-  reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true,
+  reasoning: 'none', reasoningModel: '', reasoningEffort: '', checkClientUpdates: true, museDisableSandbox: false,
   newThreadModelId: '', newThreadReasoningEffort: '',
 })
 
@@ -1023,7 +1035,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   // `newThreadRuntimeMode: null` puts the default back to the provider's own: unlike undefined, JSON carries it to a host.
   // `hostId` is the desktop window's alone: the connected host whose own settings the patch changes, which the router
   // reads and never sends on (ADR-0074). Without it a patch goes to the selected host, and new-thread defaults to this computer.
-  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional(),
+  z.object({ type: z.literal('configure'), patch: agentConfigurationSchema.partial().extend({ provider: providerIdSchema.optional(), reasoningEffort: z.string().max(64).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(), newThreadReasoningEffort: z.string().max(64).optional(),
     newThreadRuntimeMode: agentRuntimeModeSchema.nullable().optional() }), hostId: z.uuid().optional() }).strict(),
   z.object({ type: z.literal('credential'), slot: z.enum(['reasoning']), value: z.string().max(16_384) }).strict(),
   // Setup and Settings show connection status themselves; this can only suppress the Threads notice.

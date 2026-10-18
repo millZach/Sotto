@@ -56,6 +56,9 @@ describe('remote command allow-list', () => {
     for (const patch of [{ speak: false }, { followupLimit: 3 }]) expect(() => commandFromProtocolV1(protocolAgentCommandSchema.parse({ type: 'configure', patch })), Object.keys(patch)[0]).toThrow()
     for (const patch of [{ speechVoice: 'F2' }, { speechProvider: 'grok' }, { wakeModelDirectory: '/tmp' }])
       expect(refuse({ type: 'configure', patch } as AgentCommand, true), Object.keys(patch)[0]).toBe('forbidden')
+    // Muse's shell sandbox, like client update checks, is the host's own Settings' to change, either way.
+    for (const patch of [{ museDisableSandbox: true }, { museDisableSandbox: false }, { checkClientUpdates: false }])
+      expect(refuse({ type: 'configure', patch } as AgentCommand, true), JSON.stringify(patch)).toBe('forbidden')
   })
   it('takes a host’s projects directory and new-thread defaults, and a permission default that grants only with the answer policy (ADR-0074)', () => {
     for (const patch of [{ projectsDirectory: '/home/zach/projects' }, { newThreadModelId: 'claude:sonnet' }, { newThreadReasoningEffort: 'high' },

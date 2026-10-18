@@ -757,6 +757,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(),
       ...(!heldProviders.has('muse') ? { muse: new MuseMspHost(userDataPath, {
         executable: museFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeMuseAgent.mjs'), museFixtureRoot],
+        // Read at connect, as the runtime's own Muse reads it, so a journey proves the switch reaches the host it starts.
+        disableSandbox: (): boolean => localRuntime?.agentControl.configuration().museDisableSandbox === true,
       }) } : {}),
     } } : {}),
     ...(opencodeFixtureRoot ? { providers: {
