@@ -75,19 +75,37 @@ function briefOf(thread: AgentThread, views: readonly DelegatedView[]): string |
   return undefined
 }
 
-function rowOf(thread: AgentThread, level: 1 | 2, delegatedBy: string | undefined, made: readonly DelegationView[], host: AgentHostSnapshot): DelegatedRosterRow {
-  const views = made.filter((view): view is DelegatedView => view.outcome !== 'refused' && view.thread === thread.id)
+/** What the window has read of a thread's delegations: the ones it made and the briefs it was sent. */
+export interface DelegationReadOf { readonly made: readonly DelegationView[]; readonly received: readonly DelegatedView[] }
+/** The reads the window holds, by thread ID; a thread not read yet has no entry. */
+export type DelegationReads = ReadonlyMap<string, DelegationReadOf>
+
+const delegatedViewsOf = (threadId: string, made: readonly DelegationView[]): DelegatedView[] =>
+  made.filter((view): view is DelegatedView => view.outcome !== 'refused' && view.thread === threadId)
+
+/**
+ * One delegated thread's row, from what its delegating thread's read holds of it and, where that read no longer holds
+ * the brief that started it (main returns every open delegation but only the newest finished ones), from the thread's
+ * own read of the briefs it was sent. Its start is only ever the brief that started it, never a later send's. Once both
+ * reads have answered and neither holds anything of it, its outcome is unknown, never guessed.
+ */
+function rowOf(thread: AgentThread, level: 1 | 2, delegatedBy: string | undefined, parent: DelegationReadOf | undefined, own: DelegationReadOf | undefined, host: AgentHostSnapshot): DelegatedRosterRow {
+  const known = new Map(delegatedViewsOf(thread.id, parent?.made ?? []).map(view => [view.id, view] as const))
+  for (const view of own?.received ?? []) if (!known.has(view.id)) known.set(view.id, view)
+  const views = [...known.values()].sort((first, second) => time(first.createdAt) - time(second.createdAt))
   const newest = views.at(-1)
-  const start = views.find(view => view.action === 'start') ?? views[0]
+  const start = views.find(view => view.action === 'start')
   const startedAt = time(start?.createdAt)
   const waitingFor = threadWaitingFor(thread)
   const working = newest?.outcome === 'working' || newest?.outcome === 'background'
   const provider = thread.providerId ? PROVIDER_LABELS[thread.providerId] : undefined
   const model = resolveModel(hostForThread(host, thread).models, thread.modelId)?.name
-  const meta = [provider, start ? DELEGATION_WORK_TITLES[start.work] : undefined, model, thread.reasoningEffort ? effortLabel(thread.reasoningEffort) : undefined,
+  const work = start?.work ?? newest?.work
+  const meta = [provider, work ? DELEGATION_WORK_TITLES[work] : undefined, model, thread.reasoningEffort ? effortLabel(thread.reasoningEffort) : undefined,
     Number.isFinite(startedAt) ? clockLabel(startedAt) : undefined].filter((fact): fact is string => fact !== undefined && fact !== '')
+  const outcome = newest?.outcome ?? (parent !== undefined && own !== undefined ? 'unknown' : undefined)
   return { thread, level, delegatedBy, newest, startedAt, endedAt: working ? Number.NaN : time(newest?.outcomeAt), waitingFor,
-    status: waitingFor !== null ? 'needs' : newest?.outcome, brief: briefOf(thread, views), meta, provider }
+    status: waitingFor !== null ? 'needs' : outcome, brief: briefOf(thread, views), meta, provider }
 }
 
 const newestFirst = (first: { readonly startedAt: number }, second: { readonly startedAt: number }): number => {
@@ -97,17 +115,34 @@ const newestFirst = (first: { readonly startedAt: number }, second: { readonly s
 }
 
 /**
- * The delegated threads below `ownerId`, two levels, each first-level one followed by its own, newest start first. `made`
- * holds what each delegating thread delegated, by its ID: the owner's and each first-level thread's.
+ * The delegated threads below `ownerId`, two levels, each first-level one followed by its own, newest start first. `reads`
+ * holds the window's reads by thread: the owner's and each first-level thread's that delegated, and a delegated thread's
+ * own where its delegating thread's read no longer holds the brief that started it (`threadsMissingStarts`).
  */
-export function delegatedRoster(ownerId: string, threads: readonly AgentThread[], made: ReadonlyMap<string, { readonly made: readonly DelegationView[] }>, host: AgentHostSnapshot): DelegatedRosterRow[][] {
+export function delegatedRoster(ownerId: string, threads: readonly AgentThread[], reads: DelegationReads, host: AgentHostSnapshot): DelegatedRosterRow[][] {
+  return families(ownerId, threads).map(({ thread, below }) => ({ row: rowOf(thread, 1, undefined, reads.get(ownerId), reads.get(thread.id), host), below }))
+    .sort((first, second) => newestFirst(first.row, second.row))
+    .map(({ row, below }) => [row, ...below.map(child => rowOf(child, 2, row.thread.title, reads.get(row.thread.id), reads.get(child.id), host)).sort(newestFirst)])
+}
+
+function families(ownerId: string, threads: readonly AgentThread[]): { readonly thread: AgentThread; readonly below: readonly AgentThread[] }[] {
   const children = new Map<string, AgentThread[]>()
   for (const thread of threads) if (thread.delegatedBy !== undefined && thread.delegatedBy !== thread.id) children.set(thread.delegatedBy, [...children.get(thread.delegatedBy) ?? [], thread])
   const first = (children.get(ownerId) ?? []).filter(thread => thread.id !== ownerId)
   const firstIds = new Set(first.map(thread => thread.id))
-  return first.map(thread => rowOf(thread, 1, undefined, made.get(ownerId)?.made ?? [], host)).sort(newestFirst).map(row => [row,
-    ...(children.get(row.thread.id) ?? []).filter(child => child.id !== ownerId && !firstIds.has(child.id))
-      .map(child => rowOf(child, 2, row.thread.title, made.get(row.thread.id)?.made ?? [], host)).sort(newestFirst)])
+  return first.map(thread => ({ thread, below: (children.get(thread.id) ?? []).filter(child => child.id !== ownerId && !firstIds.has(child.id)) }))
+}
+
+/**
+ * The delegated threads whose delegating thread's read has answered without the brief that started them: their own read
+ * of the briefs they were sent is asked for too, and only theirs.
+ */
+export function threadsMissingStarts(ownerId: string, threads: readonly AgentThread[], reads: DelegationReads): string[] {
+  const missing = (thread: AgentThread, parent: string): boolean => {
+    const made = reads.get(parent)?.made
+    return made !== undefined && !delegatedViewsOf(thread.id, made).some(view => view.action === 'start')
+  }
+  return families(ownerId, threads).flatMap(({ thread, below }) => [...missing(thread, ownerId) ? [thread.id] : [], ...below.filter(child => missing(child, thread.id)).map(child => child.id)])
 }
 
 /** The first-level delegated threads that delegated in turn: whose delegations the roster also reads. */

@@ -54,7 +54,7 @@
 .subagents-list[data-mixed] .subagent-head { grid-template-columns: 16px minmax(0, 1fr) auto; }
 .subagents-list[data-mixed] .subagent-dot { justify-self: center; }
 .subagents-list[data-mixed] .subagent-details { margin-left: 30px; }
-.delegated-row { position: relative; border-radius: 6px; }
+.delegated-row { --delegated-needs: color-mix(in srgb, var(--tt-attention) 7%, transparent); position: relative; border-radius: 6px; }
 /* A delegated thread's row: title and time, then its brief and its outcome, then its facts across the row's width, which
    leave the open control its corner. */
 .subagent-item--thread .subagent-head { grid-template-areas: 'lead title time' 'lead desc status' 'lead meta meta'; }
@@ -77,6 +77,9 @@
 .delegated-row__status[data-outcome='failed'] { color: var(--tt-error-text); }
 .delegated-row__status[data-outcome='unknown'] { color: var(--tt-warning-text); }
 .delegated-row__status[data-outcome='needs'] { color: var(--tt-warning-on-tint); }
+/* On the waiting row's tint and the opened row's selected tone, status words take their on-tint tones, as the sidebar's current row does. */
+.delegated-row:is([data-needs], [data-shown]) .delegated-row__status[data-outcome='failed'] { color: var(--tt-error-on-tint); }
+.delegated-row:is([data-needs], [data-shown]) .delegated-row__status[data-outcome='unknown'] { color: var(--tt-warning-on-tint); }
 .delegated-row__status .delegation-ring[data-outcome='needs'] { border: 2px solid var(--tt-attention); }
 .delegated-row__open { position: absolute; right: 6px; bottom: 16px; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border: 1px solid var(--tt-border);
   border-radius: 6px; background: var(--tt-surface); color: var(--tt-text-2); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
@@ -86,7 +89,7 @@
 .delegated-row__shown { position: absolute; right: 8px; bottom: 20px; display: inline-flex; align-items: center; gap: 5px; color: var(--tt-text-2); font-size: 12px; white-space: nowrap; pointer-events: none; }
 .delegated-row__shown > svg { color: var(--tt-activity); }
 /* A delegated thread waiting on you: the attention edge and a faint tint. The one in the pane: the selected tone. */
-.delegated-row[data-needs] { background: color-mix(in srgb, var(--tt-attention) 9%, transparent); box-shadow: inset 2px 0 0 var(--tt-attention); }
+.delegated-row[data-needs] { background: var(--delegated-needs); box-shadow: inset 2px 0 0 var(--tt-attention); }
 .delegated-row[data-shown] { background: var(--tt-selected); box-shadow: inset 0 0 0 1px var(--tt-selected-border); }
 .subagent-result[data-needs] { border-color: var(--tt-attention); }
 .tools-toggle { position: relative; }

@@ -5,7 +5,7 @@ import type { AgentState, AgentThread } from '../../../../src/shared/agents'
 import type { DelegatedView, DelegationsBridge, DelegationsChanged, DelegationView } from '../../../../src/shared/delegation'
 import { E2E_THREADS_NOW } from '../../../../src/shared/e2e'
 import { EMPTY_SUBAGENT_SUMMARY, type SubagentRow, type SubagentsBridge } from '../../../../src/shared/subagents'
-import { delegatedBelow, delegatedRoster, mixedRoster, openAction, openDelegatedThread, rosterCounts, type DelegatedRosterRow } from '../../../../src/renderer/src/tools/delegatedRoster'
+import { delegatedBelow, delegatedRoster, mixedRoster, openAction, openDelegatedThread, rosterCounts, threadsMissingStarts, type DelegatedRosterRow, type DelegationReadOf, type DelegationReads } from '../../../../src/renderer/src/tools/delegatedRoster'
 import { ToolsPanel, ToolsPanelToggle } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
@@ -54,11 +54,12 @@ function views(): Record<string, DelegationView[]> {
   }
 }
 
-function delegationsBridge(answers: Record<string, DelegationView[]>) {
+function delegationsBridge(answers: Record<string, DelegationView[]>, briefs: Record<string, string> = {}) {
   const listeners = new Set<(change: DelegationsChanged) => void>()
   const bridge: DelegationsBridge & { reads: string[] } = {
     reads: [],
     read: vi.fn(async ({ threadId }: { threadId: string }) => { bridge.reads.push(threadId); return { threadId, delegations: answers[threadId] ?? [], received: [] } }),
+    brief: vi.fn(async ({ threadId }: { threadId: string }) => briefs[threadId] === undefined ? null : { threadId, text: briefs[threadId] }),
     onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
   return { bridge, change: (threadIds: string[]) => { for (const listener of [...listeners]) listener({ threadIds }) } }
@@ -80,7 +81,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 describe('the roster of delegated threads', () => {
   it('lists the first level newest start first, each with its own delegated threads under it', () => {
     const state = delegatingState()
-    const made = new Map(Object.entries(views()).map(([id, list]) => [id, { made: list }]))
+    const made = new Map(Object.entries(views()).map(([id, list]) => [id, { made: list, received: [] }]))
     const families = delegatedRoster(PARENT, state.host.threads, made, state.host)
     expect(families.map(family => family.map(row => [row.thread.id, row.level]))).toEqual([[[MERGE, 1], [REVIEW, 2]], [[SCOUT, 1]]])
     const [merge, review] = families[0]!
@@ -98,11 +99,34 @@ describe('the roster of delegated threads', () => {
 
   it('mixes them with the provider\'s agents by start, each agent keeping the agents under it', () => {
     const state = delegatingState()
-    const made = new Map(Object.entries(views()).map(([id, list]) => [id, { made: list }]))
+    const made = new Map(Object.entries(views()).map(([id, list]) => [id, { made: list, received: [] }]))
     const families = delegatedRoster(PARENT, state.host.threads, made, state.host)
     const blocks = mixedRoster([{ row: agent('newest', 2), depth: 0 }, { row: agent('under', 1, { parentId: 'newest' }), depth: 1 }, { row: agent('oldest', 30), depth: 0 }], families)
     expect(blocks.map(block => block.kind === 'agents' ? block.rows.map(({ row }) => row.id) : block.rows.map(row => row.thread.id)))
       .toEqual([['newest', 'under'], [MERGE, REVIEW], [SCOUT], ['oldest']])
+  })
+
+  it('keeps a delegated thread\'s start, time and outcome when its delegating thread\'s read no longer holds the brief that started it', () => {
+    const state = delegatingState()
+    // Main returns every open delegation but only the newest finished ones: the scout's start is gone, a later send stays.
+    const send = view(SCOUT, 3, { action: 'send', outcome: 'answered', outcomeAt: at(2) })
+    const parentRead = { made: [send, view(MERGE, 13)], received: [] }
+    const reads = new Map<string, DelegationReadOf>([[PARENT, parentRead], [MERGE, { made: [], received: [] }]])
+    expect(threadsMissingStarts(PARENT, state.host.threads, reads)).toEqual([SCOUT, REVIEW])
+    // Before the scout's own read answers, the later send is never taken for its start.
+    const scout = (given: DelegationReads): DelegatedRosterRow => delegatedRoster(PARENT, state.host.threads, given, state.host).flat().find(row => row.thread.id === SCOUT)!
+    expect(Number.isNaN(scout(reads).startedAt)).toBe(true)
+    expect(scout(reads)).toMatchObject({ status: 'answered', newest: { id: send.id } })
+    // Its own read of the briefs it was sent still holds the start.
+    const start = view(SCOUT, 20, { work: 'research', outcome: 'answered', outcomeAt: at(14) })
+    const withOwn = new Map<string, DelegationReadOf>([...reads, [SCOUT, { made: [], received: [start, send] }]])
+    expect(scout(withOwn).startedAt).toBe(Date.parse(start.createdAt))
+    expect(scout(withOwn).meta).toContain('Research')
+    expect(scout(withOwn).newest?.id).toBe(send.id)
+    // Once both reads have answered with nothing of it, its outcome is unknown, and nothing else is guessed.
+    const review = delegatedRoster(PARENT, state.host.threads, new Map<string, DelegationReadOf>([...withOwn, [REVIEW, { made: [], received: [] }]]), state.host).flat().find(row => row.thread.id === REVIEW)!
+    expect(review.status).toBe('unknown')
+    expect(Number.isNaN(review.startedAt)).toBe(true)
   })
 
   it('says what opening does: as a thread, to answer its request, or that it is in the pane', () => {
@@ -140,8 +164,8 @@ describe('the roster of delegated threads', () => {
 })
 
 describe('Tools › Agents with delegated threads', () => {
-  function setup(state: AgentState, focused = PARENT, answers = views()) {
-    const reads = delegationsBridge(answers)
+  function setup(state: AgentState, focused = PARENT, answers = views(), briefs: Record<string, string> = {}) {
+    const reads = delegationsBridge(answers, briefs)
     vi.stubGlobal('sotto', { delegations: reads.bridge })
     const store = new ToolsPanelStore()
     const command = vi.fn(async () => state)
@@ -220,6 +244,33 @@ describe('Tools › Agents with delegated threads', () => {
     fireEvent.keyDown(head, { key: 'Escape' })
     expect(head).toHaveAttribute('aria-expanded', 'false')
     expect(head).toHaveFocus()
+  })
+
+  it('reads the whole brief from main when a row is opened, not before', async () => {
+    owl(true)
+    const whole = `Take PR 1150 to merge. ${'Check every gate before merging. '.repeat(80)}End of brief.`
+    const { reads } = setup(delegatingState(), PARENT, views(), { [MERGE]: whole })
+    const head = await waitFor(() => within(list()).getByRole('button', { name: 'PR 1150 to merge, delegated thread on Codex, Working' }))
+    expect(reads.bridge.brief).not.toHaveBeenCalled()
+    fireEvent.click(head)
+    await waitFor(() => expect(within(list()).getByText(whole)).toBeInTheDocument())
+    expect(reads.bridge.brief).toHaveBeenCalledWith({ threadId: MERGE })
+    expect(within(panel()).queryByText(/Reply words of/u)).toBeNull()
+  })
+
+  it('keeps the Tools dot for a delegated thread still waiting while you answer another of the pinned roster\'s', async () => {
+    owl(true)
+    // The scout waits; the merge thread, whose request you just answered, is in the pane, and Tools is pinned to its parent.
+    const state = delegatingState()
+    state.host.threads.find(thread => thread.id === SCOUT)!.requests = [{ id: 'scout-question', kind: 'question', text: 'Which base?', options: [] }]
+    const { store, rerender } = setup(state)
+    await waitFor(() => expect(within(list()).getByRole('button', { name: 'Open PR 1121 state scout to answer its request' })).toBeInTheDocument())
+    act(() => store.pin(PARENT))
+    rerender(MERGE)
+    expect(document.querySelector('.tools-toggle__agents-dot')).toHaveAttribute('data-needs')
+    // Unpinned, the toggle is the merge thread's own again, and nothing below it waits (#331).
+    act(() => store.unpin())
+    expect(document.querySelector('.tools-toggle__agents-dot[data-needs]')).toBeNull()
   })
 
   it('shows none of it in stable: agents alone, following the focused thread, with no pin on Agents', async () => {

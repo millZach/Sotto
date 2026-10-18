@@ -140,9 +140,8 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const layout = retarget(visible, lastFocused.current ?? visible.focused, focusedId)
   const paneIds = useShared(isSplit(layout) ? layout.panes : focusedId !== null ? [focusedId] : [])
   // A delegated thread in a pane marks the row it is reached from, the top of its delegation, since it has none of its own.
-  const listedAs = organization.listedAs
-  const sidebarCurrent = focusedId === null ? null : listedAs?.get(focusedId) ?? focusedId
-  const sidebarOpen = useShared(useMemo(() => listedAs?.size ? [...new Set(paneIds.map(id => listedAs.get(id) ?? id))] : paneIds, [paneIds, listedAs]))
+  // Only the mark: the sidebar's pane actions still go by the threads really in the panes.
+  const listedThreadId = focusedId === null ? null : organization.listedAs?.get(focusedId) ?? focusedId
 
   useEffect(() => { if (layout !== visible) layoutStore.set(layout) }, [layout, visible, layoutStore])
   useEffect(() => {
@@ -313,7 +312,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
       onCreated={() => { setChooser(null); focusNewComposer() }} />}
     <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={setMode} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
-      currentThreadId={sidebarCurrent} openThreadIds={sidebarOpen} onOpenBeside={openBeside} onDragThread={setDragging}
+      currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
       newThreadError={newThreadError} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} />
     <section className="thread-workspace" aria-label="Thread workspace">
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}

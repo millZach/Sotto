@@ -3,9 +3,9 @@ import { ChevronRight, Eye, SquareArrowOutUpRight } from 'lucide-react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { ProviderMark } from '../agents/ProviderMark'
 import { DELEGATION_OUTCOME_WORDS, delegationWaitLine } from '../agents/delegationWords'
-import { useDelegationsOf } from '../agents/delegations'
+import { useDelegationsOf, useFullBrief } from '../agents/delegations'
 import { useShared } from '../agents/stateSharing'
-import { delegatedRoster, delegatingBelow, openAction, type DelegatedRosterRow } from './delegatedRoster'
+import { delegatedRoster, delegatingBelow, openAction, threadsMissingStarts, type DelegatedRosterRow } from './delegatedRoster'
 import { elapsedLabel } from './rosterTime'
 import '../agents/delegation.css'
 
@@ -32,7 +32,11 @@ export function useDelegatedRoster(ownerId: string, source: DelegatedRosterSourc
   const host = source?.state.host
   const delegating = useMemo(() => host === undefined ? [] : [ownerId, ...delegatingBelow(ownerId, threads)], [host, ownerId, threads])
   const made = useDelegationsOf(delegating)
-  return useShared(useMemo(() => host === undefined ? NO_FAMILIES : delegatedRoster(ownerId, threads, made, host), [host, ownerId, threads, made]))
+  // A delegated thread whose start its delegating thread's read no longer holds is read for its own briefs.
+  const missing = useMemo(() => threadsMissingStarts(ownerId, threads, made), [ownerId, threads, made])
+  const own = useDelegationsOf(missing)
+  const reads = useMemo(() => own.size ? new Map([...made, ...own]) : made, [made, own])
+  return useShared(useMemo(() => host === undefined ? NO_FAMILIES : delegatedRoster(ownerId, threads, reads, host), [host, ownerId, threads, reads]))
 }
 
 /** What a delegated thread's row says it is doing: what it waits on you for, or its delegation's outcome. */
@@ -83,6 +87,8 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
   const status = delegatedStatusWord(row)
   const action = openAction(row, shown)
   const outcome = row.status === 'needs' ? 'needs' : row.status
+  // The preview is the excerpt the window holds; open, the row reads the whole brief from main.
+  const brief = useFullBrief(row.thread.id, open) ?? row.brief
   const close = (event: React.KeyboardEvent): void => {
     if (!open || event.key !== 'Escape' || event.defaultPrevented) return
     event.preventDefault(); setOpen(false); head.current?.focus()
@@ -111,7 +117,7 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
         </button>}
     </div>
     {open ? <div className="subagent-details" id={id}>
-      {row.brief ? <><h3>Brief</h3><p>{row.brief}</p></> : null}
+      {brief ? <><h3>Brief</h3><p>{brief}</p></> : null}
       <h3>Latest outcome</h3>
       <p className="subagent-result" data-needs={row.status === 'needs' || undefined}>{latestOutcome(row, Date.now())}</p>
     </div> : null}

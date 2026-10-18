@@ -9,6 +9,7 @@ import type { SubagentsBridge } from '../../../shared/subagents'
 import { AgentsSurface } from './AgentsSurface'
 import type { DelegatedRosterSource } from './DelegatedThreads'
 import { delegatedBelow, openDelegatedThread } from './delegatedRoster'
+import { delegatedThreadsBelow } from '../../../shared/delegation'
 import { useDelegationsEnabled } from '../agents/delegations'
 import type { AgentContinueOptions } from './AgentContinue'
 import { useThreadStarts } from '../agents/ThreadStart'
@@ -131,7 +132,12 @@ export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly 
   const browserTasks = useBrowserTasks(store.browser)
   // This pane's own thread, never the pin: a pin shows in another pane's Tools, not by lighting every pane's dot (#331).
   const browserWaiting = browserTasks.some(task => task.threadId === selectedThreadId && task.pendingAction !== null)
-  const delegatedWaiting = below.needs > 0
+  // While Tools is pinned to a roster's thread and this pane shows that thread or one it delegated, a delegated thread
+  // waiting on you there still marks this toggle: answering one, Tools stays on the roster where others may wait. The
+  // pin lights nothing else here (#331).
+  const rosterOwner = delegation && agentState && pinned !== null && selectedThreadId && selectedThreadId !== pinned
+    && delegatedThreadsBelow(agentState.host.threads, pinned).includes(selectedThreadId) ? pinned : undefined
+  const delegatedWaiting = (rosterOwner !== undefined && agentState ? delegatedBelow(agentState.host.threads, rosterOwner) : below).needs > 0
   const pinnedElsewhere = chrome.open && (chrome.surface !== 'agents' || delegation) && pinned !== null && paneThreadId !== null && paneThreadId !== pinned
   const pinnedTitle = pinnedElsewhere ? agentState?.host.threads.find(thread => thread.id === pinned)?.title ?? 'another thread' : null
   // Icon only in the pane header; the word stays for a screen reader, and as the title when nothing else explains it.

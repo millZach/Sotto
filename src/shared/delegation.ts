@@ -195,10 +195,21 @@ export const delegationsReadSchema = z.object({ threadId: id,
 }).strict()
 export type DelegationsRead = z.infer<typeof delegationsReadSchema>
 export const delegationsChangedSchema = z.object({ threadIds: z.array(id).max(10_000) }).strict()
+/**
+ * The newest brief a delegated thread was sent, in full, as Tools › Agents shows it when its row is opened (October 17,
+ * 2026): the user message the delegation record names in that thread, and nothing else of it, never a reply. Read only
+ * when a row is opened; null when Sotto no longer holds it.
+ */
+export const DELEGATION_BRIEF_READ = 'sotto:delegations:brief'
+export const delegationBriefRequestSchema = z.object({ threadId: id }).strict()
+export type DelegationBriefRequest = z.infer<typeof delegationBriefRequestSchema>
+export const delegationBriefSchema = z.object({ threadId: id, text: z.string().max(DELEGATION_BRIEF_MAX) }).strict().nullable()
+export type DelegationBrief = z.infer<typeof delegationBriefSchema>
 export type DelegationsChanged = z.infer<typeof delegationsChangedSchema>
 /** What the main window's preload offers while delegation is on. */
 export interface DelegationsBridge {
   read(request: DelegationsRequest): Promise<DelegationsRead>
+  brief(request: DelegationBriefRequest): Promise<DelegationBrief>
   onChanged(listener: (change: DelegationsChanged) => void): () => void
 }
 

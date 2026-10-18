@@ -264,6 +264,13 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
       await expect(reviewRow.locator('.subagent-meta')).toContainText('Codex · Code review')
       await expect(reviewRow.getByRole('button', { name: `Open ${REVIEW} as a thread` })).toBeVisible()
       await expect(tools(page).locator('.tools-chrome__title')).toHaveText('1 delegated thread')
+      // Its details: the whole brief, read from main, and the latest outcome; Escape closes them.
+      const head = reviewRow.getByRole('button', { name: `${REVIEW}, delegated thread on Codex, Working` })
+      await head.click()
+      await expect(reviewRow.locator('.subagent-details')).toContainText('Review the diff on the reconnect fix. Say what blocks a merge.')
+      await expect(reviewRow.locator('.subagent-details h3').nth(1)).toHaveText('Latest outcome')
+      await head.press('Escape')
+      await expect(head).toHaveAttribute('aria-expanded', 'false')
       await expect(tools(page).locator('.tools-chrome__detail')).toHaveText('1 working')
       for (const [width, height] of [[1280, 800], [820, 560]] as const) {
         await resizeWindow(launched, width, height)

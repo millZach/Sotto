@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { AgentThread } from '../../../shared/agents'
 import type { DelegatedView, DelegationsBridge, DelegationView } from '../../../shared/delegation'
 import { useOwlFeature } from '../state/owlFeature'
@@ -106,8 +106,8 @@ const NO_THREADS: ReadonlyMap<string, ThreadDelegations> = new Map()
 /**
  * What each of `threadIds` delegated, as main last answered, while the window shows delegation: one subscription for a
  * roster's worth of delegating threads (Tools › Agents lists a thread's delegated threads and theirs, ADR-0081). Each is
- * read once and again only when main names it, as `useDelegations` reads one. The map keeps its identity until an answer
- * changes.
+ * read once and again only when main names it, as `useDelegations` reads one. A thread main has not answered for yet has
+ * no entry. The map keeps its identity until an answer changes.
  */
 export function useDelegationsOf(threadIds: readonly string[], store: DelegationStore = windowStore): ReadonlyMap<string, ThreadDelegations> {
   const enabled = useDelegationsEnabled()
@@ -123,13 +123,33 @@ export function useDelegationsOf(threadIds: readonly string[], store: Delegation
     const list = ids.map(id => store.delegations(id))
     const last = held.current
     if (last !== null && last.ids === ids && last.list.every((delegations, index) => delegations === list[index])) return last.map
-    const map = new Map(ids.map((id, index) => [id, list[index]!] as const))
+    // A thread main has not answered for yet has no entry, so nothing is drawn from a read that has not landed.
+    const map = new Map(ids.flatMap((id, index) => list[index] === NONE ? [] : [[id, list[index]!] as const]))
     held.current = { ids, list, map }
     return map
   }, [ids, store])
   const delegations = useSyncExternalStore(subscribe, snapshot, () => NO_THREADS)
   useEffect(() => { for (const id of ids) store.want(id) }, [ids, store])
   return delegations
+}
+
+/**
+ * The whole of the newest brief `threadId` was sent, read from main only while `wanted` (a roster row's details are open):
+ * the window's own copy of a thread holds its messages only while a pane shows it, and its summary only an excerpt of
+ * the newest user message, which a later message of the user's replaces. Never a reply. Undefined until it is read, and
+ * when Sotto no longer holds it.
+ */
+export function useFullBrief(threadId: string, wanted: boolean): string | undefined {
+  const enabled = useDelegationsEnabled()
+  const [brief, setBrief] = useState<{ readonly threadId: string; readonly text: string } | undefined>(undefined)
+  useEffect(() => {
+    const bridge = typeof window === 'undefined' ? undefined : window.sotto?.delegations
+    if (!enabled || !wanted || !bridge) return
+    let current = true
+    void bridge.brief({ threadId }).then(answer => { if (current && answer) setBrief({ threadId, text: answer.text }) }, () => undefined)
+    return () => { current = false }
+  }, [enabled, wanted, threadId])
+  return brief?.threadId === threadId ? brief.text : undefined
 }
 
 /** The newest brief a delegated thread was sent, read with the thread's own delegations; none for a thread no thread started. */

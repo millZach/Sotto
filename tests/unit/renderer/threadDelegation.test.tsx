@@ -12,6 +12,7 @@ import { MessageList, type ActivityContext } from '../../../src/renderer/src/age
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 import { describeThreads, organizeWorkspace, type ThreadRow } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
 import { useOptionalApp, type AppContextValue } from '../../../src/renderer/src/state/AppContext'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
@@ -55,6 +56,7 @@ function bridge(views: Record<string, DelegationView[]>, received: Record<string
   const fake: DelegationsBridge & { readonly reads: string[] } = {
     reads: [],
     read: vi.fn(async ({ threadId }: { threadId: string }) => { fake.reads.push(threadId); return { threadId, delegations: views[threadId] ?? [], received: received[threadId] ?? [] } }),
+    brief: vi.fn(async () => null),
     onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
   return { fake, views, change: (threadIds: string[]) => { for (const listener of [...listeners]) listener({ threadIds }) }, listening: () => listeners.size }
@@ -63,7 +65,8 @@ function bridge(views: Record<string, DelegationView[]>, received: Record<string
 function mount(state: AgentState) {
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
-  render(<ThreadsView now={NOW} />)
+  // A layout of its own, so a split one test opens is not the next test's.
+  render(<ThreadsView now={NOW} layoutStore={new SplitLayoutStore()} />)
   return live
 }
 const openFolder = (name: RegExp): void => {
@@ -227,6 +230,13 @@ describe('delegated threads in the sidebar', () => {
     expect(row).toHaveAttribute('aria-current', 'page')
     expect(row).toHaveAccessibleDescription(/Needs your approval.*Waiting in Review the gate fix/u)
     expect(document.querySelector('[data-delegation-level]')).toBeNull()
+    // The mark is all that moves: the delegating row still opens beside the delegated thread in the pane, by its button,
+    // by Ctrl+Enter and by Ctrl+click, rather than replacing it.
+    expect(row).toHaveAttribute('aria-keyshortcuts', 'Control+Enter')
+    expect(within(nav).getByRole('button', { name: 'Open Visual gate flake beside' })).toBeInTheDocument()
+    fireEvent.click(row, { ctrlKey: true })
+    const panes = (): string[] => [...document.querySelectorAll('section.thread-pane[data-thread-id]')].map(pane => pane.getAttribute('data-thread-id')!)
+    expect(panes()).toEqual(expect.arrayContaining([GRANDCHILD, PARENT]))
     cleanup()
     owl(false)
     mount(delegatingState())
