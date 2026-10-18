@@ -430,6 +430,24 @@ describe("Watcher's room", () => {
     expect(button).toHaveFocus()
   })
 
+  it('groups an idle thread whose sub-agents are confirmed working under Working, and one whose agents are unknown under Idle', async () => {
+    // The Overview reads the same active-work rule as Watcher's quiet news and list_threads (#1157, Bug Bot finding 6 on #1163).
+    const groups = async (working: number, unknown: number) => {
+      const state = stateWithWatcher()
+      state.host.threads.find(thread => thread.id === 'grok-previews')!.subagentSummary = { total: 3, working, unknown, completed: 3 - working - unknown, failed: 0, interrupted: 0 }
+      renderRoom(state, roomState())
+      await paneReady()
+      fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
+      const list = within(screen.getByRole('dialog', { name: 'All threads' }))
+      const seen = { headings: list.getAllByRole('heading', { level: 3 }).map(heading => heading.getAttribute('aria-label')),
+        group: list.getByRole('button', { name: 'Open Grok voice previews beside Watcher' }).closest('li')!.getAttribute('data-group') }
+      cleanup()
+      return seen
+    }
+    expect(await groups(2, 0)).toEqual({ headings: ['Needs you, 2 threads', 'Working, 3 threads', 'Idle, 4 threads'], group: 'working' })
+    expect(await groups(0, 3)).toEqual({ headings: ['Needs you, 2 threads', 'Working, 2 threads', 'Idle, 5 threads'], group: 'idle' })
+  })
+
   it('shows a settled thread the filter matches without unfolding Settled, and folds it again once the filter is cleared', async () => {
     renderRoom(stateWithWatcher(), roomState())
     await paneReady()

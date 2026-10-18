@@ -243,7 +243,9 @@ export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThr
   pairedPermissionCeiling: agentRuntimeModeSchema.optional(),
   remoteOrigin: z.object({ clientId: id, master: watcherIdentitySchema, creationOperationId: z.uuid(), ceiling: agentRuntimeModeSchema }).strict().optional(),
   state: z.enum(['active', 'stopped', 'closed']), createdAt: time, closedAt: time.nullable(),
-  userFollowups: z.array(z.object({ draftId: z.uuid(), messageId: id.optional(), displayPrompt: watcherDisplayPromptSchema.optional() }).strict()).max(1_000).optional(),
+  // `afterTakeover`: queued after a user takeover fenced this request. Its first delivery starts a fresh request instead.
+  userFollowups: z.array(z.object({ draftId: z.uuid(), messageId: id.optional(), displayPrompt: watcherDisplayPromptSchema.optional(),
+    afterTakeover: z.literal(true).optional() }).strict()).max(1_000).optional(),
   participants: z.array(watcherParticipantSchema).max(1_000) }).strict()
 export const watcherPromptTurnSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, createdAt: time,
   rootUserMessageId: id.optional(), nativeTurnId: id.optional(), previousNativeTurnId: id.optional() }).strict()

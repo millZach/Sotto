@@ -104,7 +104,9 @@ async function fixture() {
   const watchId = watcher.state().standingWatches![0]!.id
   const row = () => watcher.state().watchedThreads.find(item => item.target.threadId === target.threadId)!
   const participationA = () => watcher.state().requests.find(item => item.id === requestA)!.participants.find(item => item.target.threadId === target.threadId)!
-  return { native, get control() { return control }, get watcher() { return watcher }, call, request, finish, advanceToQueuedTurn, thread, session, watcherId, requestA, target, watchId, row, participationA,
+  // A wake-up turn makes Watcher's newest message its own, so a test of how a request ends holds news back.
+  const holdNews = () => vi.spyOn(watcher.wakes, 'observe').mockImplementation(() => undefined)
+  return { native, get control() { return control }, get watcher() { return watcher }, call, request, finish, advanceToQueuedTurn, thread, session, watcherId, requestA, target, watchId, row, participationA, holdNews,
     restart: async (enabled = true) => {
       await runtime.close(); watcherEnabled = enabled; runtime = await createRuntime()
       control = runtime.agentControl; watcher = runtime.watcher!; tools = runtime.watcherTools!
@@ -257,6 +259,230 @@ it('lets a fresh request B use an active watch after user reconfiguration fences
     delivery: 'now', text: 'Synthetic ordinary continuation after reconfiguration' })
   expect(fresh, JSON.stringify(fresh)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
   expect(f.participationA()).toEqual(oldParticipation)
+}, 60_000)
+
+it('resumes from an instruction queued to a busy Watcher after the user took over its worker', async () => {
+  // Bug Bot finding 3 on #1157: the queued instruction joined taken-over request A, so Watcher's reply could never send.
+  const f = await fixture()
+  await f.finish(f.target.threadId)
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
+  await expect.poll(() => f.participationA().state).toBe('taken-over')
+  await expect.poll(() => f.row().paused).toBe(false)
+  const oldParticipation = structuredClone(f.participationA())
+  // Watcher's turn for request A is still running, so the user's next instruction to it waits in its queue.
+  const text = 'Synthetic instruction queued to a busy Watcher after takeover'
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
+  await f.advanceToQueuedTurn(f.watcherId, text)
+  const head = f.thread(f.watcherId).lastUserMessageId
+  const carrying = f.control.watcherRecord().requests.find(item => item.rootUserMessageId === head || item.userFollowups?.some(followup => followup.messageId === head))
+  expect(carrying, 'the queued instruction has a request').toBeDefined()
+  const fresh = await f.call('send_to_thread', { requestId: carrying!.id, retryKey: randomUUID(), target: f.target,
+    delivery: 'now', text: 'Synthetic continuation from the queued instruction' })
+  expect(fresh, JSON.stringify(fresh)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  // Request A stays fenced and its participation stays whole.
+  expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
+    delivery: 'queue', text: 'Synthetic forbidden request A continuation' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+  expect(f.participationA()).toEqual(oldParticipation)
+}, 60_000)
+
+/** Takes the worker over by a settings change, then queues one instruction to Watcher, still busy with request A. */
+async function queueAfterTakeover(f: Awaited<ReturnType<typeof fixture>>, text: string) {
+  await f.finish(f.target.threadId)
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
+  await expect.poll(() => f.participationA().state).toBe('taken-over')
+  await expect.poll(() => f.row().paused).toBe(false)
+  const draftId = randomUUID()
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId, text })).error).toBeNull()
+  return draftId
+}
+const carryingHead = (f: Awaited<ReturnType<typeof fixture>>) => {
+  const head = f.thread(f.watcherId).lastUserMessageId
+  return f.control.watcherRecord().requests.find(item => item.rootUserMessageId === head || item.userFollowups?.some(followup => followup.messageId === head))
+}
+
+it('keeps an instruction queued after a takeover fresh when the user renews a watch before it is read', async () => {
+  // Bug Bot finding 1 on #1163: a renewed watch cleared the mark, so the instruction joined fenced request A again.
+  const f = await fixture(), text = 'Synthetic instruction queued before a renewed watch'
+  await queueAfterTakeover(f, text)
+  expect(await f.watcher.unwatchThread({ target: f.target })).toMatchObject({ status: 'ok' })
+  expect(await f.watcher.watchThread({ target: f.target })).toMatchObject({ status: 'ok' })
+  await f.advanceToQueuedTurn(f.watcherId, text)
+  const carrying = carryingHead(f)
+  expect(carrying?.id).toBeDefined()
+  expect(carrying!.id).not.toBe(f.requestA)
+  const sent = await f.call('send_to_thread', { requestId: carrying!.id, retryKey: randomUUID(), target: f.target,
+    delivery: 'now', text: 'Synthetic continuation after a renewed watch' })
+  expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok' })
+}, 60_000)
+
+it('keeps the display proof on the message that starts a fresh request', async () => {
+  // Bug Bot finding 5 on #1163: the fresh root claimed the message without a proof, which cancelled the follow-up's.
+  const f = await fixture(), text = 'Synthetic instruction whose display proof is kept'
+  await queueAfterTakeover(f, text)
+  await f.advanceToQueuedTurn(f.watcherId, text)
+  const carrying = carryingHead(f)!
+  expect(carrying.id).not.toBe(f.requestA)
+  expect(carrying.displayPrompt).toBeDefined()
+  expect(carrying.displayPrompt).toEqual(carrying.userFollowups!.find(item => item.messageId === carrying.rootUserMessageId)!.displayPrompt)
+}, 60_000)
+
+it('keeps an instruction steered into Watcher’s running turn after a takeover inside that turn’s request', async () => {
+  // Bug Bot finding 2 on #1163, kept as documented: a steer joins Watcher's running turn, and a request reaches Watcher
+  // only when a turn starts, so the steered words have no way to carry a new request.
+  const f = await fixture(), text = 'Synthetic instruction steered into Watcher after takeover'
+  const draftId = await queueAfterTakeover(f, text)
+  const requests = f.control.watcherRecord().requests.length
+  const itemId = f.control.shell().followups!.find(item => item.draftId === draftId)!.id
+  expect((await f.control.commandShell({ type: 'steer-followup', threadId: f.watcherId, itemId })).error).toBeNull()
+  await expect.poll(() => f.thread(f.watcherId).messages.findLast(item => item.role === 'user')?.text).toBe(text)
+  expect(f.thread(f.watcherId).status).toBe('running')
+  expect(f.control.watcherRecord().requests).toHaveLength(requests)
+  expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
+    delivery: 'now', text: 'Synthetic forbidden continuation of a steered instruction' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+}, 60_000)
+
+it('keeps an instruction inside its request when the takeover was on a thread the request never used', async () => {
+  // Bug Bot finding 4 on #1163: a takeover anywhere split the next queued instruction off request A.
+  const f = await fixture(), other = randomUUID(), worker = f.thread(f.target.threadId)
+  expect((await f.control.commandShell({ type: 'create-thread', threadId: other, projectId: worker.projectId, modelId: worker.modelId,
+    title: 'Synthetic thread request A never used', runtimeMode: 'approval-required', workingCopy: 'shared' })).error).toBeNull()
+  const otherTarget = { hostId: f.target.hostId, threadId: other }
+  expect(await f.watcher.watchThread({ target: otherTarget })).toMatchObject({ status: 'ok' })
+  await f.finish(f.target.threadId)
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: other, reasoningEffort: 'high' })).error).toBeNull()
+  await expect.poll(() => f.control.watcherRecord().localTakeovers?.some(item => item.target.threadId === other)).toBe(true)
+  expect(f.participationA().state).toBe('participating')
+  const text = 'Synthetic instruction after an unrelated takeover'
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
+  const requests = f.control.watcherRecord().requests.length
+  await f.advanceToQueuedTurn(f.watcherId, text)
+  expect(f.control.watcherRecord().requests).toHaveLength(requests)
+  expect(carryingHead(f)?.id).toBe(f.requestA)
+  expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
+    delivery: 'now', text: 'Synthetic continuation of request A' })).toMatchObject({ status: 'ok' })
+}, 60_000)
+
+it('keeps an instruction queued to a busy Watcher before the takeover inside request A', async () => {
+  const f = await fixture()
+  await f.finish(f.target.threadId)
+  const text = 'Synthetic instruction queued to a busy Watcher before takeover'
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
+  await expect.poll(() => f.participationA().state).toBe('taken-over')
+  await expect.poll(() => f.row().paused).toBe(false)
+  const requests = f.control.watcherRecord().requests.length
+  await f.advanceToQueuedTurn(f.watcherId, text)
+  // It was given before the user's change, so it continues request A and stays behind A's fence.
+  expect(f.control.watcherRecord().requests).toHaveLength(requests)
+  expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
+    delivery: 'now', text: 'Synthetic forbidden earlier continuation' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+}, 60_000)
+
+it('keeps an instruction queued between two takeovers inside the request the second one fenced', async () => {
+  const f = await fixture()
+  await f.finish(f.target.threadId)
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
+  await expect.poll(() => f.participationA().state).toBe('taken-over')
+  const text = 'Synthetic instruction queued between two takeovers'
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
+  // The user changes the worker again before Watcher reads the instruction, so the instruction predates this takeover.
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'low' })).error).toBeNull()
+  await expect.poll(() => f.row().paused).toBe(false)
+  const requests = f.control.watcherRecord().requests.length
+  await f.advanceToQueuedTurn(f.watcherId, text)
+  expect(f.control.watcherRecord().requests).toHaveLength(requests)
+  expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
+    delivery: 'now', text: 'Synthetic forbidden continuation between takeovers' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+}, 60_000)
+
+it('ends a request with no participants when its queued instruction starts a fresh one', async () => {
+  const f = await fixture()
+  f.holdNews()
+  await f.finish(f.target.threadId)
+  await f.finish(f.watcherId)
+  // Watcher is busy with request C, which never sent to the worker; the takeover's boundary still fences C.
+  const requestC = await f.request('Synthetic request C without workers')
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
+  await expect.poll(() => f.control.watcherRecord().localTakeovers?.find(item => item.target.threadId === f.target.threadId)?.lastRequestId).toBe(requestC)
+  await expect.poll(() => f.row().paused).toBe(false)
+  const text = 'Synthetic instruction queued behind request C'
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
+  await f.advanceToQueuedTurn(f.watcherId, text)
+  const head = f.thread(f.watcherId).lastUserMessageId
+  const carrying = f.control.watcherRecord().requests.find(item => item.rootUserMessageId === head)
+  expect(carrying, 'the queued instruction has a fresh request').toBeDefined()
+  expect(await f.call('send_to_thread', { requestId: carrying!.id, retryKey: randomUUID(), target: f.target,
+    delivery: 'now', text: 'Synthetic continuation from the instruction behind C' })).toMatchObject({ status: 'ok' })
+  // C ends with the turn its instruction moved to, as it would have had the instruction stayed with it.
+  await f.finish(f.watcherId)
+  await expect.poll(() => f.control.watcherRecord().requests.find(item => item.id === requestC)?.state).toBe('closed')
+  expect(await f.call('send_to_thread', { requestId: requestC, retryKey: randomUUID(), target: f.target,
+    delivery: 'queue', text: 'Synthetic forbidden request C continuation' })).toMatchObject({ status: 'refused' })
+}, 60_000)
+
+it('keeps a request with no participants open while an earlier instruction to it is still queued', async () => {
+  const f = await fixture()
+  f.holdNews()
+  await f.finish(f.target.threadId)
+  await f.finish(f.watcherId)
+  const requestC = await f.request('Synthetic request C with two queued instructions')
+  const earlier = { draftId: randomUUID(), text: 'Synthetic instruction queued before takeover behind C' }
+  const later = { draftId: randomUUID(), text: 'Synthetic instruction queued after takeover behind C' }
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, ...earlier })).error).toBeNull()
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
+  await expect.poll(() => f.row().paused).toBe(false)
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, ...later })).error).toBeNull()
+  // The user moves the later instruction to the front, so it reaches Watcher while the earlier one still waits for C.
+  const queued = f.control.shell().followups!.filter(item => item.threadId === f.watcherId)
+  const ids = [later, earlier].map(draft => queued.find(item => item.draftId === draft.draftId)!.id)
+  expect((await f.control.commandShell({ type: 'reorder-followups', threadId: f.watcherId, itemIds: ids })).error).toBeNull()
+  await f.advanceToQueuedTurn(f.watcherId, later.text)
+  expect(f.control.watcherRecord().requests.find(item => item.rootUserMessageId === f.thread(f.watcherId).lastUserMessageId)?.id).not.toBe(requestC)
+  expect(f.control.watcherRecord().requests.find(item => item.id === requestC)).toMatchObject({ state: 'active', userFollowups: [{ draftId: earlier.draftId }] })
+  // Removing that earlier instruction afterwards leaves C nothing to wait for, so it ends with Watcher's turn.
+  const itemId = f.control.shell().followups!.find(item => item.draftId === earlier.draftId)!.id
+  expect((await f.control.commandShell({ type: 'remove-followup', threadId: f.watcherId, itemId })).error).toBeNull()
+  await f.finish(f.watcherId)
+  await expect.poll(() => f.control.watcherRecord().requests.find(item => item.id === requestC)?.state).toBe('closed')
+}, 60_000)
+
+it('ends a request with no participants when the only other instruction to it was removed', async () => {
+  const f = await fixture()
+  f.holdNews()
+  await f.finish(f.target.threadId)
+  await f.finish(f.watcherId)
+  const requestC = await f.request('Synthetic request C with a removed instruction')
+  const earlier = { draftId: randomUUID(), text: 'Synthetic removed instruction behind C' }
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, ...earlier })).error).toBeNull()
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
+  await expect.poll(() => f.row().paused).toBe(false)
+  const text = 'Synthetic kept instruction behind C'
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
+  const itemId = f.control.shell().followups!.find(item => item.draftId === earlier.draftId)!.id
+  expect((await f.control.commandShell({ type: 'remove-followup', threadId: f.watcherId, itemId })).error).toBeNull()
+  await f.advanceToQueuedTurn(f.watcherId, text)
+  await f.finish(f.watcherId)
+  await expect.poll(() => f.control.watcherRecord().requests.find(item => item.id === requestC)?.state).toBe('closed')
+}, 60_000)
+
+it('keeps an instruction queued after a takeover inside its request when the user stops Watcher', async () => {
+  const f = await fixture()
+  await f.finish(f.target.threadId)
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
+  await expect.poll(() => f.row().paused).toBe(false)
+  const text = 'Synthetic instruction queued before the user stopped Watcher'
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
+  const requests = f.control.watcherRecord().requests.length
+  // Stop comes after the instruction, so the instruction is no longer the user's latest word.
+  expect((await f.control.commandShell({ type: 'interrupt', threadId: f.watcherId })).error).toBeNull()
+  await expect.poll(() => f.thread(f.watcherId).status).not.toBe('running')
+  if (f.control.shell().followups?.some(item => item.threadId === f.watcherId)) {
+    expect((await f.control.commandShell({ type: 'resume-followups', threadId: f.watcherId })).error).toBeNull()
+  }
+  await expect.poll(() => f.thread(f.watcherId).messages.findLast(item => item.role === 'user')?.text).toBe(text)
+  expect(f.control.watcherRecord().requests).toHaveLength(requests)
+  expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
+    delivery: 'now', text: 'Synthetic forbidden continuation after Stop' })).toMatchObject({ status: 'refused' })
 }, 60_000)
 
 it('keeps a fresh request blocked for now, queue and steer until the user turn ends', async () => {

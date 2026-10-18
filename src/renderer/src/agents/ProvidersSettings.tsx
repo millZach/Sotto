@@ -49,6 +49,7 @@ export function ProvidersSettings(): ReactNode {
   const [loginFeedback, showLoginFeedback] = useTransientFlag()
   const inFlight = useRef(new Set<ProviderId>())
   const checkInFlight = useRef(false)
+  const sandboxActions = useRef<HTMLDivElement>(null)
   const tabId = useId()
   const state = agents?.state
   const command = agents?.command
@@ -66,9 +67,10 @@ export function ProvidersSettings(): ReactNode {
   const hostModels = hasHostConnections ? local?.models ?? [] : state.host.models
   const clientUpdates = hasHostConnections ? local?.clientUpdates : state.clientUpdates
   const checkClientUpdates = local?.checkClientUpdates ?? state.configuration.checkClientUpdates
+  const museDisableSandbox = local?.museDisableSandbox ?? state.configuration.museDisableSandbox
   const enabled = local?.enabledProviders ?? enabledThreadProviders(state.configuration)
   const statusFor = (id: ProviderId) => providers.find(provider => provider.id === id)
-    ?? { connection: !hasHostConnections && id === state.configuration.provider ? state.connection : 'disconnected', version: '', error: undefined, verifiedVersion: undefined }
+    ?? { connection: !hasHostConnections && id === state.configuration.provider ? state.connection : 'disconnected', version: '', error: undefined, verifiedVersion: undefined, sandboxDisabled: undefined }
   const status = statusFor(selected)
   const connected = status.connection === 'connected'
   const working = pending[selected] || status.connection === 'connecting'
@@ -145,6 +147,22 @@ export function ProvidersSettings(): ReactNode {
     } catch { setErrors(previous => ({ ...previous, [provider]: 'Could not update this provider. Try again.' })) }
     finally { inFlight.current.delete(provider); setPending(previous => ({ ...previous, [provider]: undefined })) }
   }
+  // Muse's shell sandbox is set when each of its hosts starts, so this computer's saved switch and its running hosts
+  // can disagree until Muse reconnects; the page says so instead of implying the change is live.
+  const museSandboxOwed = selected === 'muse' && connected && status.sandboxDisabled !== undefined && status.sandboxDisabled !== museDisableSandbox
+  // Reconnect leaves the row once Muse disconnects, so focus that went with it lands on the switch beside it.
+  const reconnectMuse = async (): Promise<void> => {
+    await perform('muse', 'disconnect'); await perform('muse', 'connect')
+    if (!document.activeElement || document.activeElement === document.body) sandboxActions.current?.querySelector<HTMLElement>('[role="switch"]')?.focus()
+  }
+  const saveMuseSandbox = async (disable: boolean): Promise<void> => {
+    setErrors(previous => ({ ...previous, muse: undefined }))
+    const failed = 'The shell sandbox setting was not saved, so Muse keeps the one it had. Try again.'
+    try {
+      const result = await command({ type: 'configure', patch: { museDisableSandbox: disable }, ...here })
+      if (!result || result.error) setErrors(previous => ({ ...previous, muse: result?.error ?? failed }))
+    } catch { setErrors(previous => ({ ...previous, muse: failed })) }
+  }
   // The selected host's agent setting is not this computer's, so a joined window reads this computer's from its entry.
   const inheritedModelId = local ? local.agentModelId ?? '' : defaultThreadModelId(state.configuration, hostModels, state.reasoningAccounts)
   // A long-context variant the catalog does not list (`opus[1m]`) is its base model's entry here.
@@ -192,6 +210,20 @@ export function ProvidersSettings(): ReactNode {
               </div>
             </div>
             {selected === 'muse' && checkClientUpdates && update && ((update.behind && !update.canInstall) || update.state === 'failed' || update.state === 'unchanged') && <details className="provider-client__steps"><summary>Installation steps</summary><p>{update.channel === 'unknown' || !update.byHand?.length ? 'Update Muse with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.'}</p>{update.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openMuseGuide()}>Open Muse installation guide</Button></details>}
+            {selected === 'muse' && <div className="provider-client">
+              <div>
+                <h4>Shell sandbox</h4>
+                <p>{museDisableSandbox
+                  ? "Muse's shell commands and file tools run as you on this computer, with no sandbox: they can reach files outside the project and the network. Only turn this off where Muse's sandbox cannot be set up. A thread on Ask for approval still asks."
+                  : "Muse's shell commands and file tools run inside its sandbox on this computer."}</p>
+                {museSandboxOwed && <p className="provider-client__owed" role="status">{`Muse is still running with its sandbox ${status.sandboxDisabled ? 'off' : 'on'}. Reconnect Muse to apply the change. Reconnecting stops any Muse reply that is under way.`}</p>}
+              </div>
+              <div className="provider-client__actions" ref={sandboxActions}>
+                {museSandboxOwed && <Button variant="primary" disabled={Boolean(working) || selectedUpdating} aria-label="Reconnect Muse to apply the shell sandbox setting" onClick={() => void reconnectMuse()}>Reconnect</Button>}
+                <Toggle label="Shell sandbox" checked={!museDisableSandbox}
+                  onCheckedChange={value => void saveMuseSandbox(!value)} />
+              </div>
+            </div>}
             {selected === 'opencode' && (openCodeInstall || checkClientUpdates && update && ((update.behind && !update.canInstall) || update.state === 'failed' || update.state === 'unchanged')) && <details className="provider-client__steps"><summary>Installation steps</summary><p>{openCodeInstall ?? (!update?.byHand?.length ? 'Update OpenCode 2 with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.')}</p>{openCodeInstall ? null : update?.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openOpenCodeGuide()}>Open OpenCode installation guide</Button></details>}
             {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.</p>}
             <p className="provider-models__empty">Choose what new threads start with under Agents.</p>

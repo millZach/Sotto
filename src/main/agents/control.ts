@@ -3294,6 +3294,9 @@ export class AgentControl {
         // Every new thread would start on it, so a default that lets threads act unasked is a grant, checked here as a
         // thread's own permission is, so a policy revoked since the host admitted the command still refuses it (ADR-0074).
         if (newThreadRuntimeMode != null && newThreadRuntimeMode !== 'approval-required') this.guardClientGrant(client, REMOTE_PERMISSION_DENIED)
+        // Turning Muse's shell sandbox off on this machine is this machine's own Settings' to do. A paired client may turn it
+        // back on, which grants nothing, and is refused turning it off whatever its answer policy (ADR-0079).
+        if (command.patch.museDisableSandbox === true && client.transport === 'socket') throw new Error(REMOTE_PERMISSION_DENIED)
         const patch = newThreadRuntimeMode === null ? { ...rest, newThreadRuntimeMode: undefined } : command.patch
         let next = agentConfigurationSchema.parse({ ...this.state.configuration, ...patch })
         const before = this.state.configuration

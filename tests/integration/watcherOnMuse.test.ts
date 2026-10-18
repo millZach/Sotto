@@ -25,8 +25,8 @@ afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.spl
 const TOOL_WAIT_SECONDS = 10
 const SUFFIX = /_[0-9a-f]{10}$/u
 
-async function fixture(script?: Record<string, unknown>) {
-  const muse = await museFixture(undefined, 10_000, {}, { toolWaitSeconds: TOOL_WAIT_SECONDS })
+async function fixture(script?: Record<string, unknown>, options: { disableSandbox?: () => boolean } = {}) {
+  const muse = await museFixture(undefined, 10_000, {}, { toolWaitSeconds: TOOL_WAIT_SECONDS, ...options })
   cleanups.push(muse.cleanup)
   if (script) await muse.script(script)
   const directory = join(muse.root, 'sotto'), projectPath = join(muse.root, 'worker-project')
@@ -141,6 +141,18 @@ it('runs Watcher on Muse with its own tools: lists, reads, starts a worker, and 
   const thread = await call(f, session, 'read_thread', { target })
   expect(thread.result).toMatchObject({ status: 'ok' })
 }, 90_000)
+
+it('starts Watcher’s Muse host without the sandbox when this computer’s Muse connected that way, still on Ask me', async () => {
+  const f = await fixture(undefined, { disableSandbox: () => true })
+  const id = await openWatcher(f)
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic instruction to Watcher on Muse' })).error).toBeNull()
+  const argv = await f.muse.hostArguments()
+  // Watcher's own host keeps a session log, so it is the one the probes are not; it starts as every host of this connection does.
+  expect(argv.filter(args => !args.includes('--no-session-log'))).toHaveLength(1)
+  expect(argv.every(args => args.includes('--disable-sandbox'))).toBe(true)
+  // Sandbox off is not approvals off: Watcher's session still leaves its approvals to the user.
+  expect((await records(f, 'session/start')).at(-1)!.params).toMatchObject({ permissionProfile: ':ask-me' })
+})
 
 it('refuses Watcher on a Muse that cannot take session tool servers, in words that say what to do', async () => {
   const f = await fixture({ sessionMcp: false })
