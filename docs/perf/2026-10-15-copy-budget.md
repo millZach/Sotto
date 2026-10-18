@@ -118,8 +118,18 @@ cards, its background work, its connection, or the Watcher record. A turn that f
 only in the update between them, so those never wait. Otherwise, as while a thread streams, it runs at most every 250 ms
 and once more after the last update; news waits two seconds before it goes in any case. With 150 paired threads, where
 one pass took about 70 ms, three seconds of updates every 16 ms ran 29 passes and spent 71% of main in Watcher's
-publish before, and 13 passes and 19% after. The shell is copied as plain data, as the record is. The activity
-snapshots and the window's check are left for a later change.
+publish before, and 13 passes and 19% after.
+
+Most of a pass was spent on threads Watcher does not watch. They make no news; their facts only answer Watcher's own
+reads and the Quiet group, which waits twenty minutes. A pass now looks at them only on a sweep, at most every five
+seconds, and a Watcher read looks at every thread first. With the same 150 threads and nothing watched, three seconds of
+updates spent 695 ms in passes before and 25 ms after, and Watcher's publish fell from 23% of main to 5%.
+
+A failed Watcher send that waits in the queue was recorded again on every snapshot with a new time, which replaced the
+record each time and would have run the pass on every update. Its time now changes only when its outcome does.
+
+The shell is copied as plain data, as the record is. The activity snapshots and the window's check are left for a later
+change.
 
 ## When a guard goes red
 

@@ -5,7 +5,7 @@ import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../.
 import { WATCHER_QUIET_MS, watcherOverview } from '../../../src/shared/watcherOverview'
 import type { WatcherNews } from '../../../src/shared/watcherNews'
 import type { WatcherRecord } from '../../../src/shared/watcher'
-import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
+import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, WATCHER_SWEEP_MS, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
@@ -88,6 +88,47 @@ it('looks at once when a turn finishes or a request card arrives between two loo
   f.wakes.observeSoon(after)
   expect(f.wakes.news().map(event => event.kind)).toContain('needs-user')
   expect(after).not.toHaveBeenCalled()
+})
+
+it('looks at once when the Watcher record is replaced, and owes nothing once closed', async () => {
+  let record = watcherRecordFixture()
+  record.operations[0]!.deliveryState = 'accepted'
+  const looked = vi.fn(() => 'same'), after = vi.fn()
+  const f = fixture(true, looked, { record: () => record })
+  await f.advance(WATCHER_OBSERVE_MS); f.wakes.observeSoon(after); looked.mockClear()
+  // A receipt that needs Watcher arrives as a new record: the pass runs now, not when the window is up.
+  record = structuredClone(record); record.operations[0]!.deliveryState = 'failed'
+  f.wakes.observeSoon(after)
+  expect(looked).toHaveBeenCalledTimes(1)
+  expect(f.wakes.news().map(event => event.kind)).toContain('delivery-changed')
+  // A streaming update owes a pass; closing cancels it.
+  f.wakes.observeSoon(after)
+  f.wakes.close()
+  await f.advance(WATCHER_OBSERVE_MS * 2)
+  expect(looked).toHaveBeenCalledTimes(1)
+  expect(after).not.toHaveBeenCalled()
+})
+
+it('looks at a thread Watcher does not watch only on a sweep, or when Watcher reads', async () => {
+  const looked: string[] = []
+  const f = fixture(false, target => { looked.push(target.threadId); return 'same' })
+  f.snapshot.threads.push({ ...f.thread, id: 'unwatched', lastTurn: { id: 'other-turn', status: 'running' } })
+  f.wakes.start()
+  // The first pass sweeps every thread.
+  expect(looked).toEqual([centerTarget.threadId, 'unwatched'])
+  looked.length = 0
+  for (let pass = 0; pass < 3; pass++) { await f.advance(WATCHER_OBSERVE_MS); f.wakes.observe() }
+  expect(looked).toEqual([centerTarget.threadId, centerTarget.threadId, centerTarget.threadId])
+  // Its turn ending is no news to anyone, so it waits for the sweep too.
+  looked.length = 0
+  f.snapshot.threads[1]!.status = 'idle'; f.snapshot.threads[1]!.lastTurn = { id: 'other-turn', status: 'completed' }
+  f.wakes.observeSoon(() => undefined)
+  expect(looked).not.toContain('unwatched')
+  await f.advance(WATCHER_SWEEP_MS); f.wakes.observe()
+  expect(looked).toContain('unwatched')
+  looked.length = 0
+  f.wakes.observeAll()
+  expect(looked).toEqual([centerTarget.threadId, 'unwatched'])
 })
 
 it('batches for two seconds and never delays a sustained burst past five seconds', async () => {

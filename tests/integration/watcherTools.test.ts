@@ -1115,6 +1115,11 @@ it.each(['preparation', 'native', 'reconciled'])('refunds a queued prompt after 
   expect(f.service.state().receipts.at(-1)?.deliveryState).toBe('failed')
   expect(f.service.state().requests[0]!.participants[0]!.promptCount).toBe(1)
   expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text === input.text)).toBe(false)
+  // The failed item still waits in the queue, and every snapshot reads it again: that changes nothing, so the record stays
+  // the same object and Watcher's pass is not run again for it.
+  const kept = f.control.watcherRecordView()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.control.watcherRecordView()).toBe(kept)
   spy.mockRestore()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   expect(await f.call('send_to_thread', input)).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE' })

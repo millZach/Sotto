@@ -1647,7 +1647,7 @@ export class WatcherService implements WatcherControlHooks {
     this.dispatchRefusals.delete(operation.id)
   }
   private recordOutcome(record: WatcherRecord, operation: WatcherOperation, state: WatcherOperation['deliveryState'], code?: WatcherRefusal['code']): void {
-    const wasFailed = operation.deliveryState === 'failed'
+    const wasFailed = operation.deliveryState === 'failed', before = JSON.stringify(operation)
     const creationUncertain = operation.action === 'start' && this.options.host.watcherCreationPhase(operation.target.threadId) === 'starting'
     const unresolved = creationUncertain || this.options.control.watcherCommandOutstanding(operation.commandId)
     if (operation.deliveryState !== 'accepted') operation.deliveryState = state === 'failed' && unresolved ? 'uncertain' : state
@@ -1659,7 +1659,8 @@ export class WatcherService implements WatcherControlHooks {
     }
     if (operation.action === 'settle' && operation.deliveryState === 'accepted') record.requests.find(item => item.id === operation.requestId)!.participants.find(item => key(item.target) === key(operation.target))!.state = 'relinquished'
     if ((operation.action === 'stop' || operation.action === 'settle') && operation.deliveryState === 'accepted') this.fenceStandingTurn(record, operation.target)
-    operation.updatedAt = now()
+    // A failed send waiting in the queue is recorded again on every snapshot: only a change is one, so the record stays.
+    if (JSON.stringify(operation) !== before) operation.updatedAt = now()
   }
   private refundPrompt(record: WatcherRecord, operation: WatcherOperation, code: WatcherRefusal['code']): void {
     // A failure heard twice, from the queue and again from a snapshot, refunds once.
@@ -2127,6 +2128,8 @@ export class WatcherService implements WatcherControlHooks {
 
   /** Entry points validate caller or paired receipt ownership before reaching this shared read path. */
   private async dispatchRead(call: NonNullable<WatcherHostRead['call']>, operation?: WatcherOperation, outcomes = false, hosted?: OutcomeRead): Promise<unknown> {
+    // Passes look at unwatched threads only now and then, so a read that may name any thread looks at all of them first.
+    this.wakes.observeAll()
     if (call.name === 'read_operation') {
       if (!operation) refuse('UNKNOWN_OPERATION', 'That operation is unavailable.')
       const base = { status: 'ok' as const, receipt: this.receipt(operation), limits: this.limits(operation), action: operation.action, state: this.operationState(operation.target) }
