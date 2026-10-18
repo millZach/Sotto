@@ -16,16 +16,20 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { copyBudgetPipeline } from '../fixtures/copyBudgetPipeline'
 
-const counter = vi.hoisted(() => ({ threads: Number.POSITIVE_INFINITY, calls: 0, whole: 0, kinds: new Map<string, number>() }))
+const counter = vi.hoisted(() => ({ threads: Number.POSITIVE_INFINITY, calls: 0, whole: 0, watcherRecord: 0, kinds: new Map<string, number>(),
+  record: undefined as (() => unknown) | undefined }))
 function count(kind: string, value: unknown): void {
   counter.calls++
+  // Watcher's whole record, which grows with every prompt Watcher is sent and every wake-up it has had.
+  if (counter.record && value === counter.record()) counter.watcherRecord++
   const holder = value as { host?: { threads?: unknown }; threads?: unknown } | null
   const threads = Array.isArray(holder?.host?.threads) ? holder.host.threads : Array.isArray(holder?.threads) ? holder.threads : undefined
   if (threads && threads.length >= counter.threads) { counter.whole++; counter.kinds.set(kind, (counter.kinds.get(kind) ?? 0) + 1) }
 }
 vi.mock('../../src/main/agents/cloneHostSnapshot', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/main/agents/cloneHostSnapshot')>()
-  return { ...original, cloneHostSnapshot: (snapshot: Parameters<typeof original.cloneHostSnapshot>[0]) => { count('cloneHostSnapshot', snapshot); return original.cloneHostSnapshot(snapshot) } }
+  return { ...original, cloneHostSnapshot: (snapshot: Parameters<typeof original.cloneHostSnapshot>[0]) => { count('cloneHostSnapshot', snapshot); return original.cloneHostSnapshot(snapshot) },
+    clonePlainData: <T>(value: T): T => { count('clonePlainData', value); return original.clonePlainData(value) } }
 })
 vi.mock('../../src/main/agents/activitySnapshots', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/main/agents/activitySnapshots')>()
@@ -52,7 +56,8 @@ async function measure(threads: number, owl: boolean) {
     pipeline.adapter.publish(true)
     await sleep(300)
     globalThis.structuredClone = ((value: unknown, options?: StructuredSerializeOptions) => { count('structuredClone', value); return native(value, options) }) as typeof structuredClone
-    counter.threads = threads; counter.calls = 0; counter.whole = 0; counter.kinds.clear(); pipeline.resetCounts()
+    counter.record = owl ? () => pipeline.control.watcherRecordView() : undefined
+    counter.threads = threads; counter.calls = 0; counter.whole = 0; counter.watcherRecord = 0; counter.kinds.clear(); pipeline.resetCounts()
     for (let chunk = 0; chunk < CHUNKS; chunk++) {
       pipeline.adapter.log.appendText(stream.id, 'reply', ` word${chunk}`)
       pipeline.adapter.publish(true)
@@ -60,10 +65,10 @@ async function measure(threads: number, owl: boolean) {
     }
     await sleep(400)
     const broadcasts = Math.max(1, pipeline.broadcasts())
-    return { broadcasts, copiesPerUpdate: counter.calls / broadcasts, wholeStateCopiesPerUpdate: counter.whole / broadcasts, wholeByKind: Object.fromEntries([...counter.kinds].map(([kind, n]) => [kind, Math.round(n / broadcasts * 100) / 100])) }
+    return { broadcasts, copiesPerUpdate: counter.calls / broadcasts, wholeStateCopiesPerUpdate: counter.whole / broadcasts, watcherRecordCopiesPerUpdate: counter.watcherRecord / broadcasts, wholeByKind: Object.fromEntries([...counter.kinds].map(([kind, n]) => [kind, Math.round(n / broadcasts * 100) / 100])) }
   } finally {
     globalThis.structuredClone = native
-    counter.threads = Number.POSITIVE_INFINITY
+    counter.threads = Number.POSITIVE_INFINITY; counter.record = undefined
     await pipeline.stop()
   }
 }
@@ -74,12 +79,16 @@ async function measure(threads: number, owl: boolean) {
  * branch before them grew with the threads on Owl and copied the whole state 7.9 times per update. The whole-state copies
  * left are the coordinator's shell for the broadcast and the workspace's activity snapshots (#925). A change that lowers
  * a count lowers its budget in the same PR; a change that needs more copies on this path asks Zach first. The October 17
- * Watcher recovery follow-up removed two more copies per Owl update (matched parent 21.4, candidate 19.4); its budget
- * falls by the same two copies. Stable's measured count and budget are unchanged.
+ * Watcher recovery follow-up removed two more copies per Owl update (matched parent 21.4, candidate 19.4).
+ *
+ * October 17, 2026: Owl copied Watcher's whole record 11 times per update. The record grows with every prompt and
+ * wake-up Watcher has had, so the cost grew with use rather than with threads, and the owner's 373 KB record cost main
+ * about 26 ms an update. Reading it without the copy left Owl at 12.4 copies and one copy of the record, in the observe
+ * pass's operations change, per update; the room still copies the records it hands out. Stable reads 9.8.
  */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 21.5, wholeStateCopiesPerUpdate: 3.5 },
-  stable: { copiesPerUpdate: 10.5, wholeStateCopiesPerUpdate: 3.5 },
+  Owl: { copiesPerUpdate: 14.5, wholeStateCopiesPerUpdate: 3.5, watcherRecordCopiesPerUpdate: 1.5 },
+  stable: { copiesPerUpdate: 10.5, wholeStateCopiesPerUpdate: 3.5, watcherRecordCopiesPerUpdate: 0 },
 } as const
 
 describe.each([['Owl', true], ['stable', false]] as const)('what one streaming update copies on %s', (track, owl) => {
@@ -94,5 +103,7 @@ describe.each([['Owl', true], ['stable', false]] as const)('what one streaming u
       .toBeLessThanOrEqual(BUDGET[track].wholeStateCopiesPerUpdate)
     expect(many.copiesPerUpdate, `an update makes more copies than its budget: ${seen}`)
       .toBeLessThanOrEqual(BUDGET[track].copiesPerUpdate)
+    expect(many.watcherRecordCopiesPerUpdate, `an update copies Watcher's whole record more often than its budget: ${seen}`)
+      .toBeLessThanOrEqual(BUDGET[track].watcherRecordCopiesPerUpdate)
   }, 120_000)
 })

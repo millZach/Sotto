@@ -341,8 +341,9 @@ private struct WatcherConversationPane: View {
             .scrollDismissesKeyboard(.interactively)
             .refreshable { await model.readWatcher(hostID) }
             .onUserScrolling { scrolling in
+                let wasScrolling = follow.userScrolling
                 follow.userScrolling = scrolling
-                guard !scrolling else { return }
+                guard wasScrolling && !scrolling else { return }
                 // Where they let go decides whether the page follows. What arrived while they moved it is followed then,
                 // if they let go where it follows; a page moved to earlier messages is left where they put it.
                 follow.settle()
@@ -352,7 +353,11 @@ private struct WatcherConversationPane: View {
             }
             .background(barReader)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                WatcherDock(hostID: hostID).background(dockReader(proxy, newest: newest))
+                WatcherDock(hostID: hostID, willSend: {
+                    // A fast send can begin and end before SwiftUI renders its sending state. The press itself
+                    // resumes following, before the keyboard and the conversation change their layout.
+                    follow.following = true
+                }).background(dockReader(proxy, newest: newest))
             }
             // New words, the user's own or Watcher's, are scrolled to just above the box, for a reader who sees the newest
             // words or the page's end. Cards waiting on the user sit after the whole conversation, where the page opens,
@@ -932,6 +937,7 @@ private struct WatcherDock: View {
     /// The box's words, watched here alone, so a keystroke redraws the box and nothing else.
     @EnvironmentObject var draftStore: DraftStore
     let hostID: String
+    let willSend: () -> Void
     @FocusState private var focused: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1004,7 +1010,7 @@ private struct WatcherDock: View {
                 .accessibilityLabel("Ask Watcher")
                 .accessibilityIdentifier("watcher-reply")
             // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
-            Button { focused = false; Task { await model.sendToWatcher(hostID) } } label: {
+            Button { willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
                 Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold))
                     .frame(width: 44, height: 44)
                     .foregroundStyle(canSend ? Palette.onAccent : Palette.muted)
