@@ -9,6 +9,8 @@ import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 export interface WatcherCommandOrigin {
   readonly phoneOrigin?: WatcherPhoneOrigin
   readonly operationId?: string
+  /** The user's explicit phone card answer; its private writer guard is not automation. */
+  readonly userAnswer?: true
   readonly guard: () => void
 }
 export type WatcherCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'queue-followup' | 'steer' | 'interrupt' | 'settle-thread' }>

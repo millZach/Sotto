@@ -258,6 +258,28 @@ await pending3.promise }
     expect(idle).toBe(true)
     unhold()
   })
+  it('holds Git that Sotto runs beside its own remote half, such as an early origin fetch, for a folder being removed', async () => {
+    const f = await fixture()
+    const inside = join(f.repo, 'app'); await mkdir(inside)
+    // Running in the folder: the removal's wait includes it.
+    const { promise: fetched, resolve: finish } = deferred<string>()
+    expect(f.reader.runInFolder(inside, () => fetched)).toBe(fetched)
+    const unhold = f.reader.hold(f.repo)
+    let idle = false
+    const waited = f.reader.idle(f.repo).then(() => { idle = true })
+    await new Promise(resolve => setImmediate(resolve))
+    expect(idle).toBe(false)
+    // Held: nothing more starts there or in a folder inside it.
+    let started = 0
+    expect(f.reader.runInFolder(inside, async () => { started++ })).toBeUndefined()
+    expect(f.reader.runInFolder(f.repo, async () => { started++ })).toBeUndefined()
+    expect(started).toBe(0)
+    finish('fetched'); await waited
+    expect(idle).toBe(true)
+    unhold()
+    await f.reader.runInFolder(inside, async () => { started++ })
+    expect(started).toBe(1)
+  })
   it('fetches without the FETCH_HEAD flag from then on when Git does not know it', async () => {
     let refusals = 0
     const f = await fixture({ before: async (command, args) => {

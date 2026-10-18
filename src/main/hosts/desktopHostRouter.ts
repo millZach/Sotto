@@ -833,6 +833,7 @@ export class DesktopHostRouter {
       }
       this.emit(); return this.shell()
     }
+    if (connection.kind === 'remote' && command.type === 'set-aside-send') return { ...this.shell(), error: 'Continue with a new message on the desktop that owns this thread. Nothing was changed.' }
     if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again before sending. No command was sent.')
     if (connection.kind === 'remote' && ['open-thread-folder', 'open-folder'].includes(command.type)) throw new Error('This folder is on the host machine. Open it there.')
     if (command.type === 'preview-reclaim-thread-worktree') {

@@ -433,7 +433,7 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, busy, d
       {more !== null ? <button type="button" className="branch-toolbar__more" disabled={loading} onClick={() => void load(query, more, false)}>{loading ? 'Loading…' : 'Show more'}</button> : null}
       {empty ? <p className="branch-toolbar__empty">{failure ?? (page && !page.isRepository ? 'This folder is not a Git repository.' : query ? 'No refs match.' : 'No branches yet.')}</p> : null}
       {failure && !empty ? <p className="branch-toolbar__empty" role="alert">{failure}</p> : null}
-      {draftWorktree ? <label className="branch-toolbar__switch"><input type="checkbox" role="switch" checked={startFromOrigin} onChange={event => onStartFromOrigin(event.target.checked)} />Start from origin<small>{startFromOrigin ? 'Fetches the branch on first send.' : 'Uses the local branch as it is.'}</small></label> : null}
+      {draftWorktree ? <label className="branch-toolbar__switch"><input type="checkbox" role="switch" checked={startFromOrigin} onChange={event => onStartFromOrigin(event.target.checked)} />Start from origin<small>{startFromOrigin ? 'Fetches the branch before first send.' : 'Uses the local branch as it is.'}</small></label> : null}
     </div> : null}
   </div>
 }

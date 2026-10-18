@@ -16,7 +16,7 @@ import { cloneActivitySnapshot, immutableActivities, immutableModels, isImmutabl
 import { readdir, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, THREAD_CONTINUED_IN_MAX, WAKE_UP_MESSAGE_IDS_MAX, type ThreadContinuedFrom, type ThreadContinuedIn, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentMessage, type AgentThread, type AgentThreadStart, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, THREAD_CONTINUED_IN_MAX, WAKE_UP_MESSAGE_IDS_MAX, type ThreadContinuedFrom, type ThreadContinuedIn, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentMessage, type AgentThread, type AgentThreadStart, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink, type UsageRecordedUserMessage } from './usageHistory/sink'
@@ -3736,26 +3736,40 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * and the draft names the thread's folder only when that folder already exists and is the one the send would use,
    * the project checkout it shares. A new worktree is made by the first send and by nothing before it (ADR-0014), so
    * that thread's draft names no folder: a client that runs outside the thread's folder still starts, one that runs in
-   * it does not.
+   * it does not. When the send would fetch that worktree's origin base, typing starts the fetch (`prefetchOriginBase`).
    */
   startThreadSession(threadId: string): Promise<void> {
     const start = this.inner.startThreadSession
-    if (!start) return Promise.resolve()
     return this.onLane(threadId, () => this.withProfileRefusal(threadId, async () => {
       await this.initialize()
       const thread = this.state.snapshot.threads.find(item => item.id === threadId)
       if (!thread || thread.archivedAt || thread.providerSessionOpen) return
       if (!this.visible(thread)) this.refuseDormantThread(thread)
-      if (thread.nativeSessionStarted !== false) return start.call(this.inner, threadId)
+      if (thread.nativeSessionStarted !== false) return start?.call(this.inner, threadId)
       const creation = this.state.creations.find(item => item.threadId === threadId)
       if (creation?.phase !== 'unstarted') return
       const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
+      this.prefetchOriginBase(thread, project)
+      if (!start) return
       const shared = thread.worktree?.mode === 'shared' && thread.worktree.status === 'ready'
       const workingDirectory = shared ? await existingWorkingDirectory(resolveThreadWorkingDirectory(thread, project)) : undefined
       return start.call(this.inner, threadId, { modelId: thread.modelId, ...(workingDirectory ? { workingDirectory } : {}),
         ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
         ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}) })
     }))
+  }
+  /**
+   * A new worktree set to start from origin fetches its base while the first message is typed, outside the thread's
+   * lane so the send queues behind nothing; the send uses that fetch while it runs and for two minutes after. A fetch
+   * that fails says nothing here: the send fetches again and reports its own failure. With the Git fetch interval
+   * Off, Sotto fetches nothing it was not asked for, so only the send fetches. It runs in the project's folder under
+   * the status reader's hold, so a folder being removed gets none and its removal waits for one running (ADR-0027).
+   */
+  private prefetchOriginBase(thread: AgentThread, project: AgentProject | undefined): void {
+    const worktree = thread.worktree
+    if (this.gitStatusOptions.pollIntervalMs() <= 0 || !project || worktree?.mode !== 'independent' || worktree.path || !worktree.startFromOrigin || worktree.existingWorktreePath || worktree.checkoutBranch) return
+    const fetch = (): Promise<void> => this.worktrees.prefetchOriginBase(project.path, worktree.baseBranch)
+    void (this.gitStatus?.runInFolder ? this.gitStatus.runInFolder(project.path, fetch) : fetch())?.catch(() => undefined)
   }
   async clientUpdated(provider: ProviderId): Promise<void> { await this.inner.clientUpdated?.(provider) }
   disconnect(provider?: ProviderId): void {
