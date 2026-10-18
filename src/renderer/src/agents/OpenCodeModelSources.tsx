@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { Check, ChevronLeft, Copy, ExternalLink, Plus, Search } from 'lucide-react'
 import {
-  COMMON_MODEL_SOURCES, KEY_SENTENCE, SIGN_IN_WORDS, type ModelSource, type ModelSourceField, type ModelSourceMethod, type ModelSources,
+  COMMON_MODEL_SOURCES, KEY_SENTENCE, SIGN_IN_WORDS, hostKeySentence, opencodeSignInComesBack, type ModelSource, type ModelSourceField, type ModelSourceMethod, type ModelSources,
   type OpenCodeSignInBridge, type SignInAttempt, type SignInResult, type SignInWait,
 } from '../../../shared/opencodeSignIn'
 import { Button } from '../components/Button'
@@ -17,18 +17,47 @@ const howHint = (source: ModelSource): string => [...new Set(source.methods.map(
 const isKey = (how: string): boolean => /key|token/iu.test(how)
 const expiry = (at: number | undefined): string | undefined => at === undefined ? undefined
   : new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-function aboutMethod(source: ModelSource, method: ModelSourceMethod): string {
+function aboutMethod(source: ModelSource, method: ModelSourceMethod, host: string | undefined): string {
   if (method.kind === 'key') return `Paste ${/^[aeiou]/iu.test(method.label) ? 'an' : 'a'} ${method.label.replace(/^(?!API)\w/u, letter => letter.toLowerCase())} from your ${source.name} account.`
-  if (method.kind === 'external') return 'Uses a sign-in already on this computer.'
+  if (method.kind === 'external') return `Uses a sign-in already on ${host ?? 'this computer'}.`
   return 'In your browser.'
+}
+
+/**
+ * The bridge, with each answer that says a host did not answer (`answer-lost`) followed by `lost`: the host may have signed
+ * in or out all the same, so the list is read again and shown (#1107). Reading the list is never followed, so it cannot loop.
+ */
+function rereadingAfterLostAnswers(bridge: OpenCodeSignInBridge, lost: () => void): OpenCodeSignInBridge {
+  const after = <T,>(answer: Promise<T>): Promise<T> => answer.then(result => {
+    if ((result as { readonly reason?: string }).reason === 'answer-lost') lost()
+    return result
+  })
+  return {
+    sources: () => bridge.sources(),
+    signInWithKey: request => after(bridge.signInWithKey(request)), startBrowserSignIn: request => after(bridge.startBrowserSignIn(request)),
+    useExternalSignIn: request => after(bridge.useExternalSignIn(request)), wait: request => after(bridge.wait(request)),
+    finish: request => after(bridge.finish(request)), reopen: request => after(bridge.reopen(request)),
+    cancel: request => after(bridge.cancel(request)), signOut: request => after(bridge.signOut(request)),
+  }
 }
 
 /**
  * The OpenCode tile's Model sources block (#1104, variant A of `prototype/opencode-sign-in`): OpenCode Zen, then each
  * source Sotto's OpenCode is signed in to with how and its model count, and Add a model source, which opens the dialog.
- * Everything it learns comes through main; it never holds a key past the field it was typed in.
+ * Everything it learns comes through main; it never holds a key past the field it was typed in. With `host`, the same block
+ * and dialog sign a connected host's own OpenCode in, over the host connection, and say so (#1107).
  */
-export function OpenCodeModelSources({ bridge, pollMs = 2_000 }: { readonly bridge: OpenCodeSignInBridge; readonly pollMs?: number }): ReactNode {
+export function OpenCodeModelSources({ bridge, pollMs = 2_000, host }: {
+  readonly bridge: OpenCodeSignInBridge; readonly pollMs?: number
+  /** The saved host whose OpenCode this signs in, by the name this computer saved it under; absent for this computer's own. */
+  readonly host?: string | undefined
+}): ReactNode {
+  const on = host ? ` on ${host}` : ''
+  /**
+   * On a host, the browser sign-ins that turned out to finish by sending the browser back to OpenCode on that machine, by
+   * source and method. OpenCode names a method's mode only when it starts, so each is learned once and then not offered.
+   */
+  const [unreachable, setUnreachable] = useState<ReadonlySet<string>>(() => new Set())
   const [read, setRead] = useState<ModelSources | null>(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -49,13 +78,16 @@ export function OpenCodeModelSources({ bridge, pollMs = 2_000 }: { readonly brid
     void bridge.sources().then(result => { if (live) setRead(result) }, () => { if (live) setRead({ status: 'refused', message: SIGN_IN_WORDS.notRunning }) })
     return () => { live = false }
   }, [bridge])
+  // After a host's lost answer only a list it could read replaces the one shown, so the dialog stays open over it.
+  const rereadShown = useCallback((): void => { void bridge.sources().then(next => { if (next.status === 'ok') setRead(next) }, () => undefined) }, [bridge])
+  const checked = useMemo(() => rereadingAfterLostAnswers(bridge, rereadShown), [bridge, rereadShown])
   const sources = read?.status === 'ok' ? read.sources : []
   const signed = sources.filter(source => source.signedIn)
   const signOut = async (source: ModelSource): Promise<void> => {
     setSigningOut(source.id); setError(null); setNotice('')
     const key = isKey(source.signedIn?.how ?? '')
     try {
-      const result = await bridge.signOut({ sourceId: source.id })
+      const result = await checked.signOut({ sourceId: source.id })
       if (result.status === 'ok') {
         setRead(result.sources)
         setNotice([SIGN_IN_WORDS.signedOut(source.name, key), result.warning ?? ''].filter(Boolean).join(' '))
@@ -71,25 +103,26 @@ export function OpenCodeModelSources({ bridge, pollMs = 2_000 }: { readonly brid
   // A sign-in the dialog was closed over may still have changed what OpenCode keeps, so the list is read again.
   const reread = useCallback((): void => { void bridge.sources().then(setRead, () => undefined) }, [bridge])
   return <div className="oc-sources" role="group" aria-labelledby={headingId} aria-busy={read === null}>
-    <h4 id={headingId}>Model sources</h4>
-    {read === null ? <p className="oc-empty" role="status">Reading what Sotto’s OpenCode is signed in to…</p> : null}
+    <h4 id={headingId}>{host ? `OpenCode model sources on ${host}` : 'Model sources'}</h4>
+    {read === null ? <p className="oc-empty" role="status">Reading what Sotto’s OpenCode{on} is signed in to…</p> : null}
     {read?.status === 'refused' ? <p className="provider-detail__error" role="alert">{read.message}</p> : null}
     {read?.status === 'ok' ? <>
-      <ul className="oc-list" ref={listRef} aria-label="Model sources Sotto’s OpenCode can use">
+      <ul className="oc-list" ref={listRef} aria-label={`Model sources Sotto’s OpenCode${on} can use`}>
         <li><span className="oc-src"><strong>OpenCode Zen</strong><small>Free models. No sign-in needed.</small></span><span className="oc-count">{plural(read.zenModels, 'model')}</span></li>
         {signed.map(source => <li key={source.id}>
           <span className="oc-src"><strong>{source.name}</strong><small>{source.signedIn!.how}</small></span>
           <span className="oc-count">{plural(source.models, 'model')}</span>
-          <Button variant="ghost" aria-label={`Sign out of ${source.name}`} disabled={signingOut !== null} onClick={() => void signOut(source)}>{signingOut === source.id ? 'Signing out…' : 'Sign out'}</Button>
+          <Button variant="ghost" aria-label={`Sign out of ${source.name}${on}`} disabled={signingOut !== null} onClick={() => void signOut(source)}>{signingOut === source.id ? 'Signing out…' : 'Sign out'}</Button>
         </li>)}
       </ul>
-      {!signed.length ? <p className="oc-empty">Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads. That account pays for them.</p> : null}
-      <div className="oc-below"><Button ref={addRef} variant="secondary" aria-haspopup="dialog" aria-expanded={open} onClick={() => { setNotice(''); setError(null); setOpen(true) }}><Plus aria-hidden="true" size={14} />Add a model source</Button></div>
+      {!signed.length ? <p className="oc-empty">Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads{on}. That account pays for them.</p> : null}
+      <div className="oc-below"><Button ref={addRef} variant="secondary" aria-haspopup="dialog" aria-expanded={open} aria-label={host ? `Add a model source to OpenCode on ${host}` : undefined} onClick={() => { setNotice(''); setError(null); setOpen(true) }}><Plus aria-hidden="true" size={14} />Add a model source</Button></div>
     </> : null}
     <p className="oc-notice" role="status">{notice}</p>
     {error ? <p className="provider-detail__error" role="alert">{error}</p> : null}
-    {open && read?.status === 'ok' ? <AddModelSourceDialog bridge={bridge} sources={read.sources} pollMs={pollMs} fallbackFocus={addRef}
-      onClose={() => setOpen(false)} onSignedIn={signedIn} onLeft={reread} /> : null}
+    {open && read?.status === 'ok' ? <AddModelSourceDialog bridge={checked} sources={read.sources} pollMs={pollMs} fallbackFocus={addRef} host={host}
+      onClose={() => setOpen(false)} onSignedIn={signedIn} onLeft={reread} unreachable={unreachable}
+      onUnreachable={key => setUnreachable(current => new Set([...current, key]))} /> : null}
   </div>
 }
 
@@ -133,13 +166,16 @@ function sentAnswers(method: ModelSourceMethod, answers: Record<string, string>)
  * sign in. Focus stays inside, Escape closes and hands focus back to the button that opened it, and a browser sign-in
  * that is waiting is cancelled when the dialog closes.
  */
-function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose, onSignedIn, onLeft }: {
-  readonly bridge: OpenCodeSignInBridge; readonly sources: readonly ModelSource[]; readonly pollMs: number
+function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose, onSignedIn, onLeft, host, unreachable = new Set<string>(), onUnreachable }: {
+  readonly bridge: OpenCodeSignInBridge; readonly sources: readonly ModelSource[]; readonly pollMs: number; readonly host?: string | undefined
   readonly fallbackFocus: RefObject<HTMLButtonElement | null>
   readonly onClose: () => void; readonly onSignedIn: (next: ModelSources, source: ModelSource, method: ModelSourceMethod, warning?: string) => void
   /** A sign-in the dialog left before it answered ended without saying what was saved: the tile reads the list again. */
   readonly onLeft: () => void
+  /** On a host, the browser sign-ins that cannot finish from this computer (`source:method`), and how one is learned. */
+  readonly unreachable?: ReadonlySet<string>; readonly onUnreachable?: (key: string) => void
 }): ReactNode {
+  const on = host ? ` on ${host}` : ''
   const [query, setQuery] = useState('')
   const [flow, setFlowState] = useState<Flow | null>(null)
   const [busy, setBusy] = useState(false)
@@ -150,16 +186,21 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
   const listRef = useRef<HTMLDivElement>(null)
   const titleId = useId(), aboutId = useId(), listId = useId(), errorId = useId(), noteId = useId()
   const setFlow = useCallback((next: Flow | null): void => { flowRef.current = next; setFlowState(next) }, [])
+  // The newest bridge and tile callback, for leaving: Settings makes a host's bridge again whenever what it is made from
+  // changes, and that is no reason to end a sign-in.
+  const latest = useRef({ bridge, onLeft })
+  useEffect(() => { latest.current = { bridge, onLeft } }, [bridge, onLeft])
   /** Cancels the waiting browser sign-in, if there is one; one OpenCode finished meanwhile is kept, so the list is read again. */
   const leave = useCallback((): void => {
     const attempt = flowRef.current?.attempt
     // A start or a key still answering finds no flow: a start cancels its sign-in and opens no page, and a key's answer
     // still reaches the tile.
     flowRef.current = null
-    if (attempt) void bridge.cancel({ attemptId: attempt.id }).then(onLeft, () => undefined)
-  }, [bridge, onLeft])
+    const { bridge: current, onLeft: left } = latest.current
+    if (attempt) void current.cancel({ attemptId: attempt.id }).then(left, () => undefined)
+  }, [])
   const close = useCallback((): void => { leave(); onClose() }, [leave, onClose])
-  // Settings closing under the dialog ends a waiting sign-in as Cancel does.
+  // Settings closing under the dialog ends a waiting sign-in as Cancel does; only the dialog going away does.
   useEffect(() => leave, [leave])
   const dialogRef = useDialogFocus({ onEscape: close, initialFocus: searchRef, fallbackFocus })
   // Each step puts focus on its first field or control, as the eye reads it.
@@ -198,7 +239,11 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
   const shownCommon = common.filter(matches)
   const rest = sources.filter(source => !COMMON_MODEL_SOURCES.includes(source.id as typeof COMMON_MODEL_SOURCES[number]) && matches(source)).sort(byName)
   const options = (): HTMLButtonElement[] => [...listRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []]
-  const pick = (source: ModelSource): void => { if (source.signedIn || !source.methods.length) return; setFlow(freshFlow(source)) }
+  // A source opens on its first way to sign in that can finish from here.
+  const pick = (source: ModelSource): void => {
+    if (source.signedIn || !source.methods.length) return
+    setFlow(freshFlow(source, Math.max(0, source.methods.findIndex(method => !unreachable.has(`${source.id}:${method.id}`)))))
+  }
   const onSearchKey = (event: KeyboardEvent<HTMLInputElement>): void => {
     if (event.key === 'ArrowDown') { event.preventDefault(); options()[0]?.focus() }
     if (event.key === 'Enter') { event.preventDefault(); options().find(option => option.getAttribute('aria-disabled') !== 'true')?.click() }
@@ -222,8 +267,8 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
   if (!flow) {
     return <div className="tt-dialog-backdrop" role="presentation" onPointerDown={event => { if (event.target === event.currentTarget) close() }}>
       <section ref={dialogRef} className="tt-dialog oc-dialog oc-dialog--pick" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={aboutId}>
-        <h2 id={titleId}>Add a model source</h2>
-        <p className="tt-dialog__description" id={aboutId}>Sign Sotto’s OpenCode in to a model source to use its models in OpenCode threads. That account pays for them.</p>
+        <h2 id={titleId}>{host ? `Add a model source to OpenCode on ${host}` : 'Add a model source'}</h2>
+        <p className="tt-dialog__description" id={aboutId}>Sign Sotto’s OpenCode{on} in to a model source to use its models in OpenCode threads{host ? ' there' : ''}. That account pays for them.</p>
         <div className="oc-search"><Search aria-hidden="true" size={14} />
           <input ref={searchRef} type="text" aria-label="Search model sources" aria-controls={listId} placeholder={`Search ${sources.length} model sources`}
             value={query} autoComplete="off" spellCheck={false} onChange={event => setQuery(event.target.value)} onKeyDown={onSearchKey} /></div>
@@ -273,7 +318,11 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
     const result = await bridge.startBrowserSignIn({ sourceId: source.id, methodId: method.id, ...(sentAnswers(method, current.answers) ? { answer: sentAnswers(method, current.answers)! } : {}) })
     // A dialog closed, or a step left, while this started: the sign-in is cancelled, and its page never opens.
     if (flowRef.current !== current) { if (result.status === 'waiting') void bridge.cancel({ attemptId: result.attempt.id }).catch(() => undefined); return }
-    if (result.status !== 'waiting') { setFlow({ ...current, error: result.message }); return }
+    if (result.status !== 'waiting') {
+      // The answer says why, by its reason and never its words: one that finishes on the host is not offered again.
+      if (host && result.reason === 'finishes-on-host') onUnreachable?.(`${source.id}:${method.id}`)
+      setFlow({ ...current, error: result.message }); return
+    }
     setFlow({ ...current, phase: 'waiting', attempt: result.attempt, error: null, code: '', taking: false, unopened: null })
     await openPage(result.attempt.id)
   })
@@ -281,7 +330,8 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
     if (!current.attempt || !current.code.trim()) return
     const result = await bridge.finish({ attemptId: current.attempt.id, code: current.code.trim() })
     if (result.status === 'pending') { if (flowRef.current === current) setFlow({ ...current, taking: true }); return }
-    if (result.status === 'refused' && flowRef.current === current && result.message === SIGN_IN_WORDS.codeRefused(source.name)) { setFlow({ ...current, code: '', taking: false, error: result.message }); return }
+    // A refused code is told by the answer's reason, never its words: the sign-in stays open for another one.
+    if (result.status === 'refused' && flowRef.current === current && result.reason === 'code-refused') { setFlow({ ...current, code: '', taking: false, error: result.message }); return }
     finish(result, current)
   })
   const stopWaiting = (): Promise<void> => run(async current => {
@@ -315,10 +365,10 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
         <input data-autofocus className="tt-input" type="password" value={flow.key} placeholder="Paste the key" autoComplete="off" spellCheck={false}
           aria-describedby={[flow.error ? errorId : '', noteId].filter(Boolean).join(' ')} aria-invalid={flow.error ? true : undefined}
           onChange={event => update({ key: event.target.value })} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void submitKey() } }} /></label>
-      <p className="oc-keynote" id={noteId}>{KEY_SENTENCE}</p>{error}</>
+      <p className="oc-keynote" id={noteId}>{host ? hostKeySentence(host) : KEY_SENTENCE}</p>{error}</>
     actions = <>{cancel}<Button variant="primary" aria-label={`Sign in to ${source.name} with this key`} disabled={busy || !flow.key.trim() || !answered(method, flow.answers)} onClick={() => void submitKey()}>{busy ? 'Signing in…' : 'Sign in'}</Button></>
   } else if (method.kind === 'external') {
-    body = <>{formFields}<p className="oc-open">{aboutMethod(source, method)} Sotto’s OpenCode reads it there, and Sotto keeps no copy.</p>{error}</>
+    body = <>{formFields}<p className="oc-open">{aboutMethod(source, method, host)} Sotto’s OpenCode{on} reads it there, and Sotto keeps no copy.</p>{error}</>
     actions = <>{cancel}<Button data-autofocus={!(method.form?.length) || undefined} variant="primary" disabled={busy || !answered(method, flow.answers)} onClick={() => void useExternal()}>{`Use ${method.label.replace(/^\w/u, letter => letter.toLowerCase())}`}</Button></>
   } else if (flow.phase === 'waiting' && flow.attempt) {
     const attempt = flow.attempt, until = expiry(attempt.expiresAt)
@@ -351,8 +401,12 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
     </div>{error}</>
     actions = <><Button variant="secondary" aria-label={`Cancel signing in to ${source.name}`} disabled={busy} onClick={() => void stopWaiting()}>Cancel</Button>
       <Button data-autofocus={attempt.mode === 'auto' && !attempt.code ? true : undefined} variant="secondary" aria-label={`Open the ${source.name} sign-in page again`} onClick={() => void openAgain()}><ExternalLink aria-hidden="true" size={14} />Open the page again</Button></>
+  } else if (unreachable.has(`${source.id}:${method.id}`)) {
+    // On a host, a sign-in already found to finish on that machine is not offered again.
+    body = <>{formFields}<p className="provider-detail__error" role="alert">{flow.error ?? opencodeSignInComesBack(host ?? 'the host')}</p></>
+    actions = <>{cancel}<Button variant="primary" disabled aria-label={`${method.label} cannot finish from this computer`}><ExternalLink aria-hidden="true" size={14} />Open sign-in page</Button></>
   } else {
-    body = <>{formFields}<p className="oc-open">Opens the {source.name} sign-in page in your browser. Sotto’s OpenCode keeps the sign-in in its own folder, and Sotto keeps no copy.</p>{error}</>
+    body = <>{formFields}<p className="oc-open">Opens the {source.name} sign-in page in your browser{host ? ' on this computer' : ''}. Sotto’s OpenCode{on} keeps the sign-in in its own folder{host ? ' there' : ''}, and Sotto keeps no copy.</p>{error}</>
     actions = <>{cancel}<Button data-autofocus={!(method.form?.length) && source.methods.length < 2 ? true : undefined} variant="primary" aria-label={`Open the ${source.name} sign-in page in your browser`}
       disabled={busy || !answered(method, flow.answers)} onClick={() => void startBrowser()}><ExternalLink aria-hidden="true" size={14} />{busy ? 'Opening…' : flow.error ? 'Open sign-in page again' : 'Open sign-in page'}</Button></>
   }
@@ -363,10 +417,10 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
           onClick={() => { leave(); setFlow(null); queueMicrotask(() => searchRef.current?.focus()) }}>
           <ChevronLeft aria-hidden="true" size={14} />Model sources</button>
         <h2 id={titleId}>Sign in to {source.name}</h2>
-        <p className="tt-dialog__description" id={aboutId}>Its models join the model menu under OpenCode, billed to your {source.name} account.</p>
+        <p className="tt-dialog__description" id={aboutId}>Its models join the model menu under OpenCode{on}, billed to your {source.name} account.</p>
         {source.methods.length > 1 && flow.phase === 'form' ? <fieldset className="oc-methods"><legend>How to sign in</legend>{source.methods.map((choice, index) =>
           <label key={choice.id} className="oc-method"><input data-autofocus={index === flow.method || undefined} type="radio" name="oc-method" value={choice.id} checked={index === flow.method}
-            onChange={() => setFlow(freshFlow(source, index))} /><b>{choice.label}</b><small>{aboutMethod(source, choice)}</small></label>)}</fieldset> : null}
+            onChange={() => setFlow(freshFlow(source, index))} /><b>{choice.label}</b><small>{unreachable.has(`${source.id}:${choice.id}`) ? `Finishes on ${host ?? 'the host'} itself, so not from this computer.` : aboutMethod(source, choice, host)}</small></label>)}</fieldset> : null}
         {body}
       </div>
       <div className="tt-dialog__actions">{actions}</div>

@@ -161,6 +161,26 @@ describe('Add a model source', () => {
     expect(within(dialog).queryByLabelText('OpenAI API key')).toBeNull()
   })
 
+  // Settings makes a host's bridge again whenever what it is made from changes, such as Sotto's own update status. That is
+  // the same bridge, so a sign-in waiting in the dialog goes on waiting; only the dialog closing ends it.
+  it('keeps a waiting sign-in when the bridge it was given is made again', async () => {
+    const api = bridge({
+      startBrowserSignIn: vi.fn(async () => ({ status: 'waiting' as const, attempt: { id: 'con_8', sourceId: 'xai', mode: 'auto' as const, code: 'QX7M-4LRT', page: 'accounts.x.ai/oauth2/device' } })),
+    })
+    const view = render(<OpenCodeModelSources bridge={api} pollMs={20} />)
+    await screen.findByRole('button', { name: 'Add a model source' })
+    await openDialog()
+    const dialog = await pick(/^xAI,/u)
+    fireEvent.click(within(dialog).getByRole('radio', { name: /SuperGrok subscription/u }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open the xAI sign-in page in your browser' }))
+    await within(dialog).findByRole('group', { name: 'Signing in to xAI' })
+    view.rerender(<OpenCodeModelSources bridge={{ ...api }} pollMs={20} />)
+    const waited = vi.mocked(api.wait).mock.calls.length
+    await waitFor(() => expect(vi.mocked(api.wait).mock.calls.length).toBeGreaterThan(waited))
+    expect(api.cancel).not.toHaveBeenCalled()
+    expect(screen.getByRole('group', { name: 'Signing in to xAI' })).toBeVisible()
+  })
+
   it('shows a device code large with Copy code and the page, waits, and closes once the page has finished', async () => {
     let finished = false
     const api = await mount(bridge({
@@ -200,6 +220,22 @@ describe('Add a model source', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('The GitLab Duo sign-in page expired before you finished, so nothing was saved. Open the sign-in page again to start over.')
     expect(api.finish).toHaveBeenCalledWith({ attemptId: 'con_2', code: 'abc' })
     expect(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' })).toHaveTextContent('Open sign-in page again')
+  })
+
+  // A code the source refused is told by the answer's reason, never its words: the sign-in stays open for another code.
+  it('takes another code when the answer says the source refused one, whatever its words', async () => {
+    const api = await mount(bridge({
+      startBrowserSignIn: vi.fn(async () => ({ status: 'waiting' as const, attempt: { id: 'con_7', sourceId: 'gitlab', mode: 'code' as const, page: 'gitlab.com/oauth/authorize' } })),
+      finish: vi.fn(async () => ({ status: 'refused' as const, reason: 'code-refused' as const, message: 'Reworded, as a later build may.' })),
+    }))
+    await openDialog()
+    const dialog = await pick(/^GitLab Duo,/u)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' }))
+    fireEvent.change(await within(dialog).findByLabelText('Code from the GitLab Duo page'), { target: { value: 'wrong' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Finish signing in to GitLab Duo with this code' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Reworded, as a later build may.')
+    expect(within(dialog).getByLabelText('Code from the GitLab Duo page')).toHaveValue('')
+    expect(api.cancel).not.toHaveBeenCalled()
   })
 
   it('says when a page finishes by itself, and cancels a waiting sign-in on Cancel or Escape', async () => {

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_HOST_UPDATE_ACTIONS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
+import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_HOST_UPDATE_ACTIONS, REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
 import { HOST_UPDATE_REQUEST_ACTIONS, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
 
@@ -81,6 +81,8 @@ describe('remote command allow-list', () => {
     expect([...REMOTE_USAGE_OPERATIONS]).toEqual(['usage-read', 'usage-refresh', 'usage-clear'])
     const decided = ['hello', 'shell', 'detail', 'events', 'observe', 'command', 'preview', 'receipt', 'git-refs', 'git-changed-files', 'git-pull-request',
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
+      // A host's own OpenCode signed in to model sources for the desktop that asks (#1107): the same trust as a sign-in.
+      ...REMOTE_OPENCODE_SIGN_IN_OPERATIONS,
       // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0078).
       ...REMOTE_USAGE_OPERATIONS,
       // Explicit native recovery requires answer-check and current remote-answer authority; it sends no answer.

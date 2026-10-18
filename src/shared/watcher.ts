@@ -266,6 +266,10 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   promptTurns: z.array(watcherPromptTurnSchema).max(10_000).optional(),
   lastRuntimeMode: agentRuntimeModeSchema.optional(), watches: z.array(watcherStandingWatchSchema).optional(),
   watchFences: z.array(z.object({ id: z.uuid(), target: watcherThreadTargetSchema.optional(), remoteOrigin: watcherWatchOriginSchema.optional() }).strict()).optional(),
+  // This host's latest takeover or renewed assignment: the last local user request already present at that boundary.
+  // Private to this record, never a paired-host grant. Request insertion order, not wall-clock time, fences old work.
+  localTakeovers: z.array(z.object({ target: watcherThreadTargetSchema, at: time, lastRequestId: z.uuid().nullable(),
+    userDrafts: z.array(z.object({ draftId: z.uuid(), digest: z.string().regex(/^[a-f0-9]{64}$/u), messageId: id.optional() }).strict()).optional() }).strict()).optional(),
   remoteMasters: z.array(z.object({ clientId: id, masterHostId: z.uuid(), creationOperationId: z.uuid(), createdAt: time }).strict()).max(1_000).optional(),
   creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
@@ -284,6 +288,8 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   if (!unique(record.requests.map(request => request.id)) || !unique(record.operations.map(operation => operation.id))
     || !unique((record.promptTurns ?? []).map(turn => turn.id))
     || !unique((record.watches ?? []).map(watch => key(watch.target))) || !unique((record.watches ?? []).map(watch => watch.id))
+    || !unique((record.localTakeovers ?? []).map(takeover => key(takeover.target)))
+    || (record.localTakeovers ?? []).some(takeover => !unique((takeover.userDrafts ?? []).map(draft => draft.draftId)))
     || !unique((record.remoteMasters ?? []).map(master => JSON.stringify([master.clientId, master.masterHostId])))
     || !unique(record.requests.map(request => JSON.stringify([key(request.watcher), request.rootUserMessageId])))
     || !unique(record.operations.map(operation => `${operation.requestId}:${operation.retryKey}`))
