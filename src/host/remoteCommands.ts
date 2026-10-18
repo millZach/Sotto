@@ -105,10 +105,12 @@ export function remoteHostUpdateRefusal(client: { readonly desktop: boolean; rea
  * The account and thread defaults a paired client may change. Keys stay on the host. The projects directory is only
  * where a new project goes, and `create-project` already takes a path from a paired client, so a desktop sets it from
  * its own Settings (ADR-0074). A new-thread permission default that lets threads act without asking is a grant, so it
- * needs the same remote-answer policy a thread's own permission does (see `remoteCommandNeedsAnswerPolicy`).
+ * needs the same remote-answer policy a thread's own permission does (see `remoteCommandNeedsAnswerPolicy`). A paired
+ * client may turn the host's Muse shell sandbox back on, which grants nothing, but never off: that stays the host's own
+ * Settings' to do, whatever the client's answer policy (ADR-0079, `remoteCommandRefusal`).
  */
 export const REMOTE_CONFIGURATION_FIELDS: readonly (keyof AgentConfiguration)[] = ['provider', 'enabledProviders', 'enabled', 'defaultModelId',
-  'reasoning', 'reasoningModel', 'reasoningEffort', 'projectsDirectory', 'newThreadModelId', 'newThreadReasoningEffort', 'newThreadRuntimeMode']
+  'reasoning', 'reasoningModel', 'reasoningEffort', 'projectsDirectory', 'newThreadModelId', 'newThreadReasoningEffort', 'newThreadRuntimeMode', 'museDisableSandbox']
 
 /**
  * Whether a remote command changes what a thread may do without asking, or discards work the user has
@@ -151,6 +153,8 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   if (startsThread(command) && context.threadStarts !== true) return 'forbidden'
   if (Object.keys(command).some(key => key !== 'type' && !fields.includes(key))) return 'forbidden'
   if (command.type === 'configure' && Object.keys(command.patch).some(key => !(REMOTE_CONFIGURATION_FIELDS as readonly string[]).includes(key))) return 'forbidden'
+  // Muse without its shell sandbox is the host's own Settings' to choose, even for a client that may answer (ADR-0079).
+  if (command.type === 'configure' && command.patch.museDisableSandbox === true) return 'forbidden'
   if (command.type === 'compose' && command.threadId !== undefined && command.threadId !== context.selectedThreadId) return 'forbidden'
   if (command.type === 'send' && command.draft && (command.draft.threadId !== context.selectedThreadId
     || Object.keys(command.draft).some(key => !['threadId', 'text', 'attachments', 'binding', 'draftId'].includes(key))

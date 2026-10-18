@@ -51,13 +51,15 @@ describe('remote command allow-list', () => {
     }
   })
   it('lets a paired client change only the coordinator settings decided on purpose, none of them a key, endpoint or voice engine', () => {
-    expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'newThreadModelId', 'newThreadReasoningEffort',
+    expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'museDisableSandbox', 'newThreadModelId', 'newThreadReasoningEffort',
       'newThreadRuntimeMode', 'projectsDirectory', 'provider', 'reasoning', 'reasoningEffort', 'reasoningModel'])
     for (const patch of [{ speak: false }, { followupLimit: 3 }]) expect(() => commandFromProtocolV1(protocolAgentCommandSchema.parse({ type: 'configure', patch })), Object.keys(patch)[0]).toThrow()
     for (const patch of [{ speechVoice: 'F2' }, { speechProvider: 'grok' }, { wakeModelDirectory: '/tmp' }])
       expect(refuse({ type: 'configure', patch } as AgentCommand, true), Object.keys(patch)[0]).toBe('forbidden')
+    // Client update checks are the host's own Settings' to change.
+    expect(refuse({ type: 'configure', patch: { checkClientUpdates: false } } as AgentCommand, true)).toBe('forbidden')
   })
-  it('takes a host’s projects directory and new-thread defaults, and a permission default that grants only with the answer policy (ADR-0074)', () => {
+  it('takes a host’s projects directory and new-thread defaults, and a permission default only with the answer policy (ADR-0074)', () => {
     for (const patch of [{ projectsDirectory: '/home/zach/projects' }, { newThreadModelId: 'claude:sonnet' }, { newThreadReasoningEffort: 'high' },
       { newThreadRuntimeMode: 'approval-required' }, { newThreadRuntimeMode: null }] as const)
       expect(refuse({ type: 'configure', patch } as AgentCommand), Object.keys(patch)[0]).toBeNull()
@@ -65,6 +67,13 @@ describe('remote command allow-list', () => {
       expect(refuse({ type: 'configure', patch: { newThreadRuntimeMode: mode } }), mode).toBe('forbidden')
       expect(refuse({ type: 'configure', patch: { newThreadRuntimeMode: mode } }, true), mode).toBeNull()
     }
+    // Muse's shell sandbox goes back on from any paired client, and off from none, whatever its answer policy (ADR-0079).
+    expect(refuse({ type: 'configure', patch: { museDisableSandbox: false } })).toBeNull()
+    expect(refuse({ type: 'configure', patch: { museDisableSandbox: false } }, true)).toBeNull()
+    expect(refuse({ type: 'configure', patch: { museDisableSandbox: true } })).toBe('forbidden')
+    expect(refuse({ type: 'configure', patch: { museDisableSandbox: true } }, true)).toBe('forbidden')
+    expect(refuse({ type: 'configure', patch: { projectsDirectory: '/srv', museDisableSandbox: true } }, true)).toBe('forbidden')
+    expect(commandFromProtocolV1(protocolAgentCommandSchema.parse({ type: 'configure', patch: { museDisableSandbox: false } }))).toEqual({ type: 'configure', patch: { museDisableSandbox: false } })
     // The desktop's router reads which host a patch is for; a paired client never names one.
     expect(refuse({ type: 'configure', patch: { projectsDirectory: '/srv' }, hostId: '11111111-1111-4111-8111-111111111111' }, true)).toBe('forbidden')
   })

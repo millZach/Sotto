@@ -504,6 +504,7 @@ export class DesktopHostRouter {
           mayAnswer: connection.kind === 'local' || (original as HostClientShell).clientCapabilities?.mayAnswer === true,
           // Settings > Providers is this computer's own page, whichever host is selected for new work.
           ...(connection.kind === 'local' ? { enabledProviders: enabledThreadProviders(original.configuration), checkClientUpdates: original.configuration.checkClientUpdates,
+            museDisableSandbox: original.configuration.museDisableSandbox,
             agentModelId: defaultThreadModelId(original.configuration, original.host.models, original.reasoningAccounts) } : {}),
         })),
       },
