@@ -658,16 +658,30 @@ export class WatcherService implements WatcherControlHooks {
     const previous = record.requests.flatMap(item => item.participants).filter(item => key(item.target) === key(target) && item.state === 'taken-over')
     const latest = record.localTakeovers?.find(item => key(item.target) === key(target))
     if (!previous.length && !latest) return false
-    // Paired requests do not share this host's request insertion order. Keep their existing fence.
+    // Paired requests do not share this host's request insertion order. Keep their existing fence: a taken-over
+    // participation alone. The local marker orders only this host's own requests and fences nothing paired.
+    if (request.remoteOrigin || target.hostId !== this.hostId()) return previous.length > 0
     const watch = record.watches?.find(item => key(item.target) === key(target))
-    if (request.remoteOrigin || target.hostId !== this.hostId() || !watch || !latest || previous.some(item => item.requestId === request.id)) return true
+    if (!watch || !latest || previous.some(item => item.requestId === request.id)) return true
     const requestIndex = record.requests.findIndex(item => item.id === request.id)
     if (latest.lastRequestId === null) return requestIndex < 0
     const frontier = record.requests.findIndex(item => item.id === latest.lastRequestId)
     // The local list is append-only. If retention ever removes the anchor, missing evidence keeps the fence.
     return frontier < 0 || requestIndex <= frontier
   }
+  /** Whether a user takeover, or a renewed watch's boundary, came after this request and fences it on some thread. */
+  private takenOverSince(record: WatcherRecord, request: WatcherRequest): boolean {
+    if (request.participants.some(item => item.state === 'taken-over')) return true
+    const index = record.requests.findIndex(item => item.id === request.id)
+    return index >= 0 && (record.localTakeovers ?? []).some(item => item.lastRequestId !== null
+      && record.requests.findIndex(other => other.id === item.lastRequestId) >= index)
+  }
+  /** Every instruction still queued to Watcher was given before this takeover, Stop or Stop all, so none is fresh now. */
+  private revokeQueuedFreshness(record: WatcherRecord): void {
+    for (const request of record.requests) for (const followup of request.userFollowups ?? []) if (followup.messageId === undefined) delete followup.afterTakeover
+  }
   private recordLocalTakeover(record: WatcherRecord, target: WatcherThreadTarget, at = now(), userDraft?: TakeoverDraft): void {
+    this.revokeQueuedFreshness(record)
     const represented = new Set([...(record.watches ?? []).map(watch => key(watch.target)),
       ...record.requests.flatMap(request => request.participants.map(item => key(item.target)))])
     const lastRequestId = record.requests.findLast(request => request.watcher.hostId === this.hostId() && !request.remoteOrigin && !request.standingWatchId)?.id ?? null
@@ -851,7 +865,8 @@ export class WatcherService implements WatcherControlHooks {
         const request = record.requests.findLast(item => item.watcher.threadId === threadId && !item.standingWatchId)
         if (request && (request.userFollowups?.length ?? 0) < 1_000) {
           request.userFollowups ??= []
-          if (!request.userFollowups.some(item => item.draftId === command.draftId)) request.userFollowups.push({ draftId: command.draftId! })
+          if (!request.userFollowups.some(item => item.draftId === command.draftId)) request.userFollowups.push({ draftId: command.draftId!,
+            ...(this.takenOverSince(record, request) ? { afterTakeover: true as const } : {}) })
         }
       })
     }
@@ -872,6 +887,7 @@ export class WatcherService implements WatcherControlHooks {
       const stopped = new Set(this.record().requests.filter(item => item.state === 'active').map(item => item.id))
       const operations = new Set(this.record().operations.filter(item => stopped.has(item.requestId)).map(item => item.id))
       this.options.control.mutateWatcher(record => {
+        this.revokeQueuedFreshness(record)
         for (const request of record.requests) if (stopped.has(request.id)) { request.state = 'stopped'; request.closedAt = now() }
         for (const operation of record.operations) if (operations.has(operation.id) && operation.deliveryState === 'queued') { operation.deliveryState = 'failed'; operation.refusalCode = 'REQUEST_NOT_ACTIVE' }
       })
@@ -941,14 +957,26 @@ export class WatcherService implements WatcherControlHooks {
     const record = this.record()
     let request = record.requests.find(item => item.rootUserMessageId === command.messageId
       || _draftId && item.userFollowups?.some(followup => followup.draftId === _draftId))
+    // An instruction the user queued after a takeover fenced its request, with no takeover since, is their fresh word.
+    // On its first delivery it starts its own request, ordered after that takeover as a Send to an idle Watcher would
+    // be, even if the old one has closed. A later takeover, Stop or Stop all clears the mark, and a request the user
+    // stopped keeps it, so those still hold; a retry keeps the request its first delivery made.
+    const fresh = request !== undefined && request.state !== 'stopped' && request.rootUserMessageId !== command.messageId
+      && request.userFollowups?.some(item => item.draftId === _draftId && item.afterTakeover && item.messageId === undefined)
     // Decided before anything is recorded, so a refused handover leaves no request behind.
-    const continuing = request !== undefined && request.rootUserMessageId !== command.messageId
+    const continuing = request !== undefined && !fresh && request.rootUserMessageId !== command.messageId
     const handover = continuing ? undefined : this.handoverFor(command.threadId, command.commandId, _draftId)
-    if (!request) {
-      request = { id: randomUUID(), watcher: this.target(command.threadId), rootUserMessageId: command.messageId,
-        state: 'active', createdAt: now(), closedAt: null, participants: [], ...(origin?.phoneOrigin ? { phoneOrigin: origin.phoneOrigin } : {}) }
-      const created = request
-      this.options.control.mutateWatcher(next => { next.requests.push(created) })
+    if (!request || fresh) {
+      const from = fresh ? request!.id : undefined
+      const created: WatcherRequest = { id: randomUUID(), watcher: this.target(command.threadId), rootUserMessageId: command.messageId,
+        state: 'active', createdAt: now(), closedAt: null, participants: [], ...(from ? { userFollowups: [{ draftId: _draftId! }] } : {}),
+        ...(origin?.phoneOrigin ? { phoneOrigin: origin.phoneOrigin } : {}) }
+      request = created
+      this.options.control.mutateWatcher(next => {
+        const old = from ? next.requests.find(item => item.id === from) : undefined
+        if (old) old.userFollowups = old.userFollowups!.filter(item => item.draftId !== _draftId)
+        next.requests.push(created)
+      })
     }
     // The user's text goes as typed. The request rides beside it, through the provider's own context channel.
     const note = watcherRequestNote(request.id, this.hostId())
@@ -1055,11 +1083,14 @@ export class WatcherService implements WatcherControlHooks {
       const watcherMessages = new Set(next.operations.flatMap(item => item.messageId ? [item.messageId] : []))
       for (const operation of next.operations) this.observeOutcome(operation, snapshot, watcherMessages)
       this.pruneReservations(next, snapshot)
-      for (const request of next.requests) if (request.state === 'active' && !request.participants.length && !next.operations.some(item => item.requestId === request.id)) {
+      for (const [index, request] of next.requests.entries()) if (request.state === 'active' && !request.participants.length && !next.operations.some(item => item.requestId === request.id)) {
         const master = request.watcher.hostId === this.hostId() ? snapshot.threads.find(item => item.id === request.watcher.threadId) : undefined
         const head = master && nativeHead(master)
-        if (master?.lastTurn && (head === request.rootUserMessageId || request.userFollowups?.some(item => item.messageId === head))
-          && master.lastTurn.status !== 'running' && master.status !== 'running' && !this.options.control.hasPendingThreadWork(master.id)) { request.state = 'closed'; request.closedAt = now() }
+        const answered = (item: WatcherRequest) => item.rootUserMessageId === head || item.userFollowups?.some(followup => followup.messageId === head)
+        // A later request answering the head means Watcher has gone past this one, as when a queued instruction moved
+        // from it to a fresh request and the user then removed the rest of its queue.
+        if (master?.lastTurn && master.lastTurn.status !== 'running' && master.status !== 'running' && !this.options.control.hasPendingThreadWork(master.id)
+          && (answered(request) || next.requests.some((item, later) => later > index && answered(item)))) { request.state = 'closed'; request.closedAt = now() }
       }
       for (const request of next.requests) if (request.state === 'active' && request.participants.length
         && request.participants.every(item => {
@@ -2311,6 +2342,7 @@ export class WatcherService implements WatcherControlHooks {
     const requestIds = new Set(this.record().requests.filter(request => request.participants.some(item => targets.some(target => key(item.target) === key(target)))).map(item => item.id))
     const operationIds = new Set(this.record().operations.filter(item => requestIds.has(item.requestId)).map(item => item.id))
     await this.options.control.updateWatcher(record => {
+      this.revokeQueuedFreshness(record)
       for (const request of record.requests) if (requestIds.has(request.id) && request.state === 'active') { request.state = 'stopped'; request.closedAt = now() }
       for (const operation of record.operations) if (operationIds.has(operation.id) && operation.deliveryState === 'queued') { operation.deliveryState = 'failed'; operation.refusalCode = 'REQUEST_NOT_ACTIVE' }
     })

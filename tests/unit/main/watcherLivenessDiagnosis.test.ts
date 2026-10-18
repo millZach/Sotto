@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, expect, it } from 'vitest'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
-import { WATCHER_QUIET_MS } from '../../../src/shared/watcherOverview'
+import { WATCHER_QUIET_MS, watcherOverview } from '../../../src/shared/watcherOverview'
 import { WATCHER_BATCH_MS, type WatcherNews } from '../../../src/shared/watcherNews'
 import { WatcherWakeUp } from '../../../src/main/agents/watcherWakeUp'
 import { centerTarget, watcherRecordFixture } from '../../fixtures/watcher'
@@ -56,6 +56,8 @@ function fixture(work: (thread: AgentThread) => void) {
     clock = end; await wakes.drained()
   }
   return { thread, snapshot, delivered, advance, observe: () => wakes.observe(),
+    // The grouping list_threads shows, read from the same observations at the fixture's clock.
+    group: () => watcherOverview({ host: snapshot }, clock, wakes.observations)[0]!.group,
     restart: () => { wakes.close(); wakes = create(); wakes.start() },
     events: () => delivered.flatMap(news => news.events),
     quiet: () => delivered.flatMap(news => news.events).filter(event => event.kind === 'quiet') }
@@ -149,4 +151,24 @@ it('requires a fresh connected episode after reconnecting to an idle parent with
   expect(f.quiet()).toHaveLength(0)
   await f.advance(1 + WATCHER_BATCH_MS)
   expect(f.quiet()).toHaveLength(1)
+})
+
+it.each([
+  ['Codex working subagent roster', (thread: AgentThread) => roster(thread, 4)],
+  ['Claude confirmed background work', (thread: AgentThread) => claudeWork(thread, 4)],
+] as const)('groups an idle parent with %s as Working, then Quiet when its quiet news is due', async (_, work) => {
+  // Bug Bot finding 4 on #1157: the wake called the parent active while list_threads still grouped it Idle.
+  const f = fixture(work)
+  await f.advance(WATCHER_BATCH_MS)
+  expect(f.group()).toBe('Working')
+  await f.advance(WATCHER_QUIET_MS - WATCHER_BATCH_MS + 1 + WATCHER_BATCH_MS)
+  expect(f.quiet()).toHaveLength(1)
+  expect(f.group()).toBe('Quiet')
+})
+
+it('keeps an idle parent whose agents are only unknown out of Working and Quiet', async () => {
+  const f = fixture(thread => roster(thread, 0, 4))
+  await f.advance(44 * 60_000)
+  expect(f.quiet()).toHaveLength(0)
+  expect(f.group()).toBe('Idle')
 })

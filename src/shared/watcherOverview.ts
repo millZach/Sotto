@@ -24,6 +24,15 @@ export interface WatcherOverviewRow {
   observedAt?: string
 }
 
+/**
+ * Work that can go quiet: a running turn, provider-confirmed working sub-agents, background work or monitoring. Unknown
+ * sub-agents keep a turn unsettled but do not alone prove work. The quiet wake and this grouping read the one rule.
+ */
+export function isWatcherWorkActive(thread: AgentThread): boolean {
+  return thread.status === 'running' || thread.lastTurn?.status === 'running'
+    || Boolean(thread.subagentSummary?.working || thread.backgroundWork?.length || thread.monitoring?.length)
+}
+
 /** The same projection can serve a roster and a sidebar without changing either reader's marks. */
 export function watcherOverview(state: Pick<AgentState, 'host'>, now: number,
   observations: ReadonlyMap<string, WatcherObservation> = new Map()): WatcherOverviewRow[] {
@@ -39,7 +48,7 @@ export function watcherOverview(state: Pick<AgentState, 'host'>, now: number,
         const landingAt = Date.parse(observation?.landing?.observedAt ?? '')
         const landing = available && observation?.fresh && observation.landing?.fresh && Number.isFinite(landingAt) && landingAt <= now
         const openPr = thread.pullRequests?.some(pr => pr.state === 'open') || thread.worktree?.git?.pullRequest?.state === 'open'
-        const active = thread.status === 'running' || Boolean(thread.backgroundWork?.length || thread.monitoring?.length)
+        const active = isWatcherWorkActive(thread)
         const connectedAt = Date.parse(observation?.connectedAt ?? '')
         const progressAt = Date.parse(observation?.lastProgressAt ?? '')
         const quietSince = Math.max(connectedAt, progressAt)
