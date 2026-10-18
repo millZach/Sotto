@@ -73,10 +73,12 @@ async function measure(threads: number, owl: boolean) {
  * Measured October 15, 2026 after the fixes: Owl 20.5 copies and 2.9 whole-state copies, stable 8.9 and 2.95; the main
  * branch before them grew with the threads on Owl and copied the whole state 7.9 times per update. The whole-state copies
  * left are the coordinator's shell for the broadcast and the workspace's activity snapshots (#925). A change that lowers
- * a count lowers its budget in the same PR; a change that needs more copies on this path asks Zach first.
+ * a count lowers its budget in the same PR; a change that needs more copies on this path asks Zach first. The October 17
+ * Watcher recovery follow-up removed two more copies per Owl update (matched parent 21.4, candidate 19.4); its budget
+ * falls by the same two copies. Stable's measured count and budget are unchanged.
  */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 23.5, wholeStateCopiesPerUpdate: 3.5 },
+  Owl: { copiesPerUpdate: 21.5, wholeStateCopiesPerUpdate: 3.5 },
   stable: { copiesPerUpdate: 10.5, wholeStateCopiesPerUpdate: 3.5 },
 } as const
 
@@ -84,6 +86,7 @@ describe.each([['Owl', true], ['stable', false]] as const)('what one streaming u
   it('does not grow with the number of threads, and stays within its budget', async () => {
     const few = await measure(20, owl), many = await measure(200, owl)
     const seen = JSON.stringify({ few, many })
+    if (process.env.SOTTO_PERF_BENCH === '1') console.log(`Streaming copy budget ${track}: ${seen}`)
     expect(many.broadcasts, `the stream produced no updates to count: ${seen}`).toBeGreaterThan(1)
     expect(many.copiesPerUpdate, `an update copies more with 200 threads than with 20, so something copies per thread on every update: ${seen}`)
       .toBeLessThanOrEqual(few.copiesPerUpdate * 1.2 + 1)

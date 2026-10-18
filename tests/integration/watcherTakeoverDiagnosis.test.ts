@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createAgentRuntime } from '../../src/main/agents/runtime'
@@ -47,6 +47,28 @@ async function fixture() {
     await native.driver.completeTurn(session(threadId), 'Synthetic completed reply')
     await expect.poll(() => thread(threadId).status).toBe('idle')
   }
+  const advanceToQueuedTurn = async (threadId: string, text: string) => {
+    const nativeId = await native.realId(session(threadId))
+    const nativeTurn = async () => {
+      const state = JSON.parse(await readFile(join(native.root, 'state.json'), 'utf8')) as {
+        threads: Record<string, { turns: { id: string; status: string; items: { type: string; content?: { type: string; text?: string }[] }[] }[] }>
+      }
+      return state.threads[nativeId]?.turns.at(-1)
+    }
+    const previousTurn = await nativeTurn()
+    expect(previousTurn?.status).toBe('inProgress')
+    const action = await native.action(session(threadId), { type: 'complete', text: 'Synthetic completed reply' })
+    await expect.poll(() => native.acted(action)).toBe(true)
+    // The queued turn may start before an idle snapshot is published. Prove its native dispatch and head instead.
+    await expect.poll(async () => {
+      const turn = await nativeTurn(), current = thread(threadId), message = current.messages.findLast(item => item.role === 'user')
+      if (!turn || turn.id === previousTurn!.id || turn.status !== 'inProgress') return false
+      const input = turn.items.filter(item => item.type === 'userMessage').flatMap(item => item.content ?? [])
+      return input.length === 1 && input[0]?.type === 'text' && input[0].text === text
+        && current.lastTurn?.id === turn.id && current.lastTurn.status === 'running'
+        && message?.text === text && current.lastUserMessageId === message.id
+    }).toBe(true)
+  }
   const requestA = await request('Synthetic request A')
   const start = await call('start_thread', { requestId: requestA, retryKey: randomUUID(),
     project: { hostId: control.hostId()!, projectId: project.id }, modelId: model.id,
@@ -58,7 +80,7 @@ async function fixture() {
   const watchId = watcher.state().standingWatches![0]!.id
   const row = () => watcher.state().watchedThreads.find(item => item.target.threadId === target.threadId)!
   const participationA = () => watcher.state().requests.find(item => item.id === requestA)!.participants.find(item => item.target.threadId === target.threadId)!
-  return { native, get control() { return control }, get watcher() { return watcher }, call, request, finish, thread, session, watcherId, requestA, target, watchId, row, participationA,
+  return { native, get control() { return control }, get watcher() { return watcher }, call, request, finish, advanceToQueuedTurn, thread, session, watcherId, requestA, target, watchId, row, participationA,
     restart: async (enabled = true) => {
       await runtime.close(); watcherEnabled = enabled; runtime = await createRuntime()
       control = runtime.agentControl; watcher = runtime.watcher!; tools = runtime.watcherTools!
@@ -105,8 +127,7 @@ it.each(['manual-send', 'queue-followup', 'steer', 'native'] as const)(
     }
     if (origin === 'manual-send' || origin === 'queue-followup') {
       // The original automatic turn ends, then the user's queued turn actually starts.
-      await f.finish(f.target.threadId)
-      await expect.poll(() => f.thread(f.target.threadId).messages.findLast(item => item.role === 'user')?.text).toBe(userText)
+      await f.advanceToQueuedTurn(f.target.threadId, userText)
     }
     await f.finish(f.target.threadId)
     await expect.poll(() => f.control.hasPendingThreadWork(f.target.threadId)).toBe(false)
@@ -232,8 +253,7 @@ it('keeps a fresh request blocked for now, queue and steer until the user turn e
   }
   expect(f.control.watcherRecord().operations).toHaveLength(operations)
   // The queued user's own native echo must not move the fence past request B, which the user already sent.
-  await f.finish(f.target.threadId)
-  await expect.poll(() => f.thread(f.target.threadId).messages.findLast(item => item.role === 'user')?.text).toBe('Synthetic running user turn')
+  await f.advanceToQueuedTurn(f.target.threadId, 'Synthetic running user turn')
   await f.finish(f.target.threadId)
   await expect.poll(() => f.control.hasPendingThreadWork(f.target.threadId)).toBe(false)
   await expect.poll(() => f.row().paused).toBe(false)
@@ -260,6 +280,51 @@ it('keeps a pre-existing nonparticipant request fenced through restart and rewat
   const requestC = await f.request('Synthetic request C after takeover and rewatch')
   expect(await f.call('send_to_thread', { requestId: requestC, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic fresh request after rewatch' })).toMatchObject({ status: 'ok' })
+}, 60_000)
+
+it('keeps an unparticipated worker fenced after unrelated takeover and rewatch', async () => {
+  const f = await fixture(), source = f.thread(f.target.threadId)
+  const createWatchedWorker = async (title: string) => {
+    const target = { hostId: f.target.hostId, threadId: randomUUID() }
+    expect((await f.control.commandShell({ type: 'create-thread', threadId: target.threadId, projectId: source.projectId,
+      modelId: source.modelId, title, runtimeMode: 'approval-required', workingCopy: 'shared' })).error).toBeNull()
+    expect(await f.watcher.watchThread({ target })).toMatchObject({ status: 'ok' })
+    return target
+  }
+  const target = await createWatchedWorker('Synthetic unparticipated worker')
+  const other = await createWatchedWorker('Synthetic unrelated watched worker')
+  const participations = () => f.control.watcherRecord().requests.flatMap(request => request.participants)
+    .filter(item => item.target.threadId === target.threadId)
+  const watch = () => f.control.watcherRecord().watches?.find(item => item.target.threadId === target.threadId)
+  const originalWatchId = watch()!.id
+  expect(participations()).toEqual([])
+
+  const text = 'Synthetic direct user turn before first participation'
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text })).error).toBeNull()
+  await expect.poll(() => f.thread(target.threadId).messages.findLast(item => item.role === 'user')?.text).toBe(text)
+  await f.finish(target.threadId)
+  await expect.poll(() => watch()?.pausedByUserMessageId).toBeNull()
+  expect(participations()).toEqual([])
+  expect(f.control.watcherRecord().localTakeovers).toContainEqual(expect.objectContaining({ target, lastRequestId: f.requestA }))
+  expect(await f.watcher.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+  expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target,
+    delivery: 'now', text: 'Synthetic forbidden continuation while unwatched' })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+
+  // An unrelated takeover must not erase the first worker's boundary merely because it has no participation.
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: other.threadId, reasoningEffort: 'high' })).error).toBeNull()
+  expect(participations()).toEqual([])
+  expect(f.control.watcherRecord().requests.find(request => request.id === f.requestA)?.state).toBe('active')
+  expect(f.control.watcherRecord().watchFences).toContainEqual(expect.objectContaining({ id: originalWatchId, target }))
+  expect(await f.watcher.watchThread({ target })).toMatchObject({ status: 'ok' })
+  expect(watch()!.id).not.toBe(originalWatchId)
+  expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target,
+    delivery: 'now', text: 'Synthetic forbidden pre-user continuation after rewatch' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+  expect(participations()).toEqual([])
+
+  await f.finish(f.watcherId)
+  const requestB = await f.request('Synthetic fresh request after unparticipated worker rewatch')
+  expect(await f.call('send_to_thread', { requestId: requestB, retryKey: randomUUID(), target,
+    delivery: 'now', text: 'Synthetic fresh continuation after unparticipated worker rewatch' })).toMatchObject({ status: 'ok' })
 }, 60_000)
 
 it.each(['queue', 'steer'] as const)('allows a fresh request to %s after user reconfiguration ends', async delivery => {
@@ -369,8 +434,7 @@ it('keeps both queued user echoes inside their original fences', async () => {
   await f.finish(f.watcherId)
   const requestB = await f.request('Synthetic request after both queued user commands')
   for (const text of texts) {
-    await f.finish(f.target.threadId)
-    await expect.poll(() => f.thread(f.target.threadId).messages.findLast(item => item.role === 'user')?.text).toBe(text)
+    await f.advanceToQueuedTurn(f.target.threadId, text)
   }
   await f.finish(f.target.threadId)
   await expect.poll(() => f.control.hasPendingThreadWork(f.target.threadId)).toBe(false)

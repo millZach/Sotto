@@ -356,7 +356,9 @@ export class WatcherService implements WatcherControlHooks {
       freshness: thread && this.connected(thread) ? 'fresh' as const : 'stale' as const }
   }
   state(): WatcherRoomState {
-    const record = this.record()
+    // Detach the room's records without copying private takeover proofs that no room field exposes.
+    const { localTakeovers: _localTakeovers, ...roomRecord } = this.view(); void _localTakeovers
+    const record = structuredClone(roomRecord)
     const current = this.options.control.watcherSnapshot().threads.find(item => item.id === record.current?.target.threadId)
     const watches = record.watches ?? [], targets = new Map([...record.requests.flatMap(request => request.participants.map(item => [key(item.target), item.target] as const)),
       ...watches.map(watch => [key(watch.target), watch.target] as const)])
@@ -568,6 +570,7 @@ export class WatcherService implements WatcherControlHooks {
           else {
             (record.watches ??= []).push(created)
             if (target.hostId === this.hostId() && (record.localTakeovers?.some(item => key(item.target) === key(target))
+              || record.watchFences?.some(item => item.target && !item.remoteOrigin && key(item.target) === key(target))
               || record.requests.some(request => request.participants.some(item => key(item.target) === key(target) && item.state === 'taken-over')))) this.recordLocalTakeover(record, target)
           }
         })
@@ -634,8 +637,10 @@ export class WatcherService implements WatcherControlHooks {
     if (!head || !machineMessage(head)) return true
     // Conversation events can publish before the adapter's native head. A later non-machine user message in the
     // same ordered window proves human work behind a stale machine head; never downgrade an explicit human head.
-    const headIndex = thread.messages.findIndex(message => message.id === head)
     const userIndex = thread.messages.findLastIndex(message => message.role === 'user')
+    // The common streaming case already names this latest user. Do not revisit an expanded older history per update.
+    if (userIndex < 0 || thread.messages[userIndex]!.id === head) return false
+    const headIndex = thread.messages.findIndex(message => message.id === head)
     return headIndex >= 0 && userIndex > headIndex && !machineMessage(thread.messages[userIndex]!.id)
   }
   private hostWatches(hostId: string): WatcherStandingWatch[] {
@@ -1015,14 +1020,21 @@ export class WatcherService implements WatcherControlHooks {
         const baseline = participant.lastUserMessageId !== undefined ? participant.lastUserMessageId : previous ?? durableHead
         return baseline !== undefined && head !== baseline && (participant.lastUserMessageId !== undefined || durableHead !== undefined || !knownUserMessages.has(head))
       }) && !watch) this.takeover(thread.id, 'native-user-send')
-      if (watch && this.connected(thread)) this.options.control.mutateWatcher(next => {
-        const live = next.watches!.find(item => item.id === watch.id)!
-        live.lastUserMessageId = head
-        if (this.humanTurnRunning(thread, next)) live.pausedByUserMessageId = head ?? 'unobserved-user-turn'
+      if (watch && this.connected(thread)) {
+        // Takeover above can replace the record. Compare against that fresh view before copying and parsing it.
+        const observed = this.view(), live = observed.watches!.find(item => item.id === watch.id)!
+        let paused = live.pausedByUserMessageId
+        if (this.humanTurnRunning(thread, observed)) paused = head ?? 'unobserved-user-turn'
         else if (!this.options.control.hasPendingThreadWork(thread.id)
-          || machineHead && !this.userWorkPending(thread.id, next) && (live.pausedByUserMessageId === 'unobserved-user-turn' || live.pausedByUserMessageId === head)) live.pausedByUserMessageId = null
-      })
-      if (participants.length && this.connected(thread)) this.options.control.mutateWatcher(next => {
+          || machineHead && !this.userWorkPending(thread.id, observed) && (paused === 'unobserved-user-turn' || paused === head)) paused = null
+        if (live.lastUserMessageId !== head || live.pausedByUserMessageId !== paused) this.options.control.mutateWatcher(next => {
+          const changed = next.watches!.find(item => item.id === watch.id)!
+          changed.lastUserMessageId = head; changed.pausedByUserMessageId = paused
+        })
+      }
+      if (participants.length && this.connected(thread) && this.view().requests.some(request => request.participants.some(participant =>
+        participant.target.hostId === this.hostId() && participant.target.threadId === thread.id && participant.state === 'participating'
+        && participant.lastUserMessageId !== head))) this.options.control.mutateWatcher(next => {
         for (const request of next.requests) for (const participant of request.participants) if (participant.target.hostId === this.hostId() && participant.target.threadId === thread.id && participant.state === 'participating') participant.lastUserMessageId = head
       })
     }
@@ -1164,7 +1176,7 @@ export class WatcherService implements WatcherControlHooks {
       && item.startedBy === 'watcher' && item.state === 'participating')
   }
   private pruneRemoteGuards(): void {
-    const live = new Set(this.record().operations.filter(item => this.active.has(item.id) || ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState)).map(item => item.id))
+    const live = new Set(this.view().operations.filter(item => this.active.has(item.id) || ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState)).map(item => item.id))
     for (const id of this.remoteGuards.keys()) if (!live.has(id)) this.remoteGuards.delete(id)
   }
   guardOperation(operationId: string): void {
