@@ -15,6 +15,7 @@ import type { HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
   type WatcherPrepareStopAllResult, type WatcherStopAllResult } from '../../shared/watcherRoom'
+import { clonePlainData } from './cloneHostSnapshot'
 import type { AgentHostCommand } from './host'
 import type { AgentControl } from './control'
 import type { WorkspaceHost } from './workspace'
@@ -375,7 +376,7 @@ export class WatcherService implements WatcherControlHooks {
     // place: prompt turns, wake-up IDs, reads and the private takeover proofs are most of the record, which grows with
     // every prompt and wake-up Watcher has had, and this runs on every publish.
     const { localTakeovers: _localTakeovers, ...view } = this.view(); void _localTakeovers
-    const record = { ...view, ...structuredClone({ current: view.current, history: view.history, requests: view.requests,
+    const record = { ...view, ...clonePlainData({ current: view.current, history: view.history, requests: view.requests,
       watches: view.watches, operations: view.operations }) }
     const current = this.options.control.watcherSnapshot().threads.find(item => item.id === record.current?.target.threadId)
     const watches = record.watches ?? [], targets = new Map([...record.requests.flatMap(request => request.participants.map(item => [key(item.target), item.target] as const)),
