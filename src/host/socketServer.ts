@@ -21,7 +21,7 @@ import type { HostSelfUpdate } from './selfUpdate'
 import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageReadBeforeHistory, type UsageLocalHostRead } from '../shared/usageDashboard'
 import { hostMachineReportSchema } from '../shared/hostFacts'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
-import { SocketFrames } from './socketFrames'
+import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
 import { CommandReceipts, type CommandReceipt } from './commandReceipts'
 import { QUESTION_PAGE_PATH, serveQuestionPage } from './questionPageRoute'
@@ -255,6 +255,12 @@ export async function startSocketServer(options: SocketServerOptions) {
   const isDesktop = (clientId: string): boolean => !tailnet || tailnet.desktops.has(clientId)
   /** A client the listener serves now: any desktop, and a phone only while phones are admitted. */
   const admits = (clientId: string): boolean => isDesktop(clientId) || (tailnet?.phonesAdmitted() ?? true)
+  /**
+   * Whether a client that offers `permessage-deflate` is sent compressed messages: a desktop, on a listener that tells
+   * desktops apart or is reached only through SSH (ADR-0025, October 18 amendment). No phone is, on any listener: the
+   * desktop's own phone listener, which serves no desktop, compresses nothing.
+   */
+  const compresses = (clientId: string): boolean => (options.admin !== false || tailnet !== undefined) && isDesktop(clientId)
   const phonesOffMessage = (): string => phonesOff(options.name?.())
   const { signIns } = options
   /** A sign-in's own refusal keeps its sentence; anything else is the host's failure to run it. */
@@ -1190,11 +1196,12 @@ export async function startSocketServer(options: SocketServerOptions) {
   server.headersTimeout = 5000; server.requestTimeout = 10000; server.keepAliveTimeout = 1000
   const refuse = (stream: Duplex, status: string): void => { stream.end('HTTP/1.1 ' + status + '\r\nConnection: close\r\n\r\n') }
   /** Opens a socket the upgrade was checked for: the session is valid and the listener admits its client. */
-  const open = (stream: Duplex, head: Buffer, session: string, clientId: string, key: string): void => {
+  const open = (stream: Duplex, head: Buffer, session: string, clientId: string, key: string, offered: boolean): void => {
     if (closing || peers.size >= 32) { refuse(stream, '503 Service Unavailable'); return }
     const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
-    stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n')
-    const frames = new SocketFrames(stream, false, text => onMessage(peer, text))
+    const deflate = offered && compresses(clientId)
+    stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n' + (deflate ? 'Sec-WebSocket-Extensions: ' + DEFLATE_RESPONSE + '\r\n' : '') + '\r\n')
+    const frames = new SocketFrames(stream, false, text => onMessage(peer, text), { deflate })
     const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, gone: new AbortController(), usageHistory: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, catalogRevisions: false, catalogSent: null, answerReceipts: false, answerWatches: new Map(), terminals: false, terminalPreviews: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
@@ -1207,10 +1214,13 @@ export async function startSocketServer(options: SocketServerOptions) {
     const session = bearer(request), clientId = pairing.verifySession(session)
     const key = request.headers['sec-websocket-key']
     if (request.url !== '/v1/socket' || !clientId || request.headers['sec-websocket-version'] !== '13' || typeof key !== 'string' || !/^[A-Za-z0-9+/]{22}==$/.test(key) || (request.headers.origin && !originAllowed(request.headers.origin, options.origins))) { refuse(stream, '401 Unauthorized'); return }
-    if (admits(clientId)) { open(stream, head, session, clientId, key); return }
+    const offered = deflateOffered(request.headers['sec-websocket-extensions'])
+    // Compression is settled at the upgrade or not at all, so a client offering it that this listener does not know as a
+    // desktop has the record read again first: the launch script may have recorded it since the last read.
+    if (admits(clientId) && !(offered && tailnet && !isDesktop(clientId))) { open(stream, head, session, clientId, key, offered); return }
     if (!tailnet) { refuse(stream, '403 Forbidden'); return }
     // A desktop the launch script recorded since this listener last read the record is let in; anyone else is not.
-    void tailnet.desktops.refresh().catch(() => undefined).then(() => { if (admits(clientId)) open(stream, head, session, clientId, key); else refuse(stream, '403 Forbidden') })
+    void tailnet.desktops.refresh().catch(() => undefined).then(() => { if (admits(clientId)) open(stream, head, session, clientId, key, offered); else refuse(stream, '403 Forbidden') })
   })
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(options.port ?? 0, '127.0.0.1', () => { server.removeListener('error', reject); resolve() }) })
   server.on('error', () => { console.error('host_listener_error') })

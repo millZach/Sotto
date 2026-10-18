@@ -6,7 +6,7 @@ import type { z } from 'zod'
 import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { watcherRoomInputs } from './watcherRoomInput'
 import { type WatcherIdentity, watcherToolSchemas } from '../../shared/watcher'
-import { SocketFrames } from '../../host/socketFrames'
+import { DEFLATE_OFFER, deflateAccepted, SocketFrames } from '../../host/socketFrames'
 import { PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
@@ -264,14 +264,16 @@ export class SocketHostService implements HostService {
     const url = this.endpoint('/v1/socket'), key = randomBytes(16).toString('base64')
     const expected = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
     this.frames = await new Promise<SocketFrames>((resolve, reject) => {
-      const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, { signal: opening.signal, headers: { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': key, Authorization: 'Bearer ' + session.session } })
+      const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, { signal: opening.signal, headers: { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': key, 'Sec-WebSocket-Extensions': DEFLATE_OFFER, Authorization: 'Bearer ' + session.session } })
       request.setTimeout(15000, () => request.destroy(new Error('Host connection timed out.')))
       request.on('error', () => reject(new HostConnectionError('The host connection could not be opened.', 'disconnected')))
       request.on('response', response => { response.resume(); reject(refusal(response.statusCode ?? 503, 'The host refused this connection. Connect again.', 'unavailable')) })
       request.on('upgrade', (response, stream, head) => {
-        if (response.headers['sec-websocket-accept'] !== expected) { stream.destroy(); reject(new HostConnectionError('The host did not accept this protocol.', 'invalid_request')); return }
+        // A host from before compression answers without the extension, and its messages are read as they come.
+        const deflate = deflateAccepted(response.headers['sec-websocket-extensions'])
+        if (response.headers['sec-websocket-accept'] !== expected || deflate === 'invalid') { stream.destroy(); reject(new HostConnectionError('The host did not accept this protocol.', 'invalid_request')); return }
         stream.setTimeout(0)
-        const frames = new SocketFrames(stream, true, text => this.receive(text))
+        const frames = new SocketFrames(stream, true, text => this.receive(text), { deflate })
         frames.onClose(() => this.disconnected(frames))
         frames.startHeartbeat()
         frames.feed(head)
