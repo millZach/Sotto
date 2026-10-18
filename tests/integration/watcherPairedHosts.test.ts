@@ -342,6 +342,22 @@ it('publishes host user takeover and fences queued automated prompts before anot
   expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ code: 'TARGET_CHANGED' })
 })
 
+it('keeps the prior paired fence after a host user changes a watched thread no request took part in', async () => {
+  // Paired requests do not share the owning host's request order, so its local takeover marker grants and fences nothing
+  // for them: only a taken-over participation does, as before the local resume rule (#1157, Bug Bot finding 1).
+  const f = await master(), threadId = randomUUID()
+  expect((await f.socket.command({ type: 'create-thread', threadId, projectId: f.project.id, modelId: f.model.id,
+    title: 'Synthetic user-started remote worker', runtimeMode: 'approval-required', workingCopy: 'shared' })).error).toBeNull()
+  const target = { hostId: f.pairing.hostId, threadId }
+  await expect.poll(() => f.socket.shell().host.threads.some(thread => thread.id === threadId)).toBe(true)
+  expect(await f.watcher.watchThread({ target })).toMatchObject({ status: 'ok' })
+  const effort = f.model.reasoningEfforts?.at(-1)
+  expect((await f.socket.command({ type: 'configure-thread', threadId, ...(effort ? { reasoningEffort: effort } : { runtimeMode: 'approval-required' as const }) })).error).toBeNull()
+  await expect.poll(() => f.watcher.state().watchedThreads.find(item => item.target.threadId === threadId)).toMatchObject({ watched: true, paused: false })
+  const sent = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'now', text: 'Synthetic desktop prompt after host change' })
+  expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok' })
+})
+
 it('rechecks a late native question at the owning Codex writer, without answering', async () => {
   const native = await codexFixture(undefined, false); cleanups.push(native.cleanup)
   const f = await master(native.adapter), first = await f.call('start_thread', f.start())
