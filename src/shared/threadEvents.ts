@@ -5,6 +5,7 @@ import { agentMessageSchema, type AgentMessage } from './agents'
 export function sameMessageContent(duplicate: AgentMessage, canonical: AgentMessage): boolean {
   return duplicate.role === canonical.role && duplicate.text === canonical.text
     && (duplicate.commandId === undefined || duplicate.commandId === canonical.commandId)
+    && (duplicate.turnMessageId === undefined || duplicate.turnMessageId === canonical.turnMessageId)
     && (duplicate.attachments === undefined || JSON.stringify(duplicate.attachments) === JSON.stringify(canonical.attachments))
 }
 
