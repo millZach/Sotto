@@ -93,7 +93,7 @@
     "structuredClone(": 2
   },
   "src/main/agents/watcher.ts": {
-    "structuredClone(": 1,
+    "structuredClone(": 2,
     "shell()": 1,
     "watcherRecord()": 1
   },

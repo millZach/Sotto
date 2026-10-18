@@ -49,7 +49,9 @@ Per coordinator update while one thread streams, with Watcher open and watching 
 Three runs after the fixes gave the same counts to two decimals. The whole-state copies left are the coordinator's shell
 for the broadcast and the workspace's activity snapshots; sharing unchanged threads through those layers is #925's.
 
-The budgets are 23.5 copies and 3.5 whole-state copies per update on Owl, and 10.5 and 3.5 on stable. They only
+The budgets are now 21.5 copies and 3.5 whole-state copies per update on Owl, and 10.5 and 3.5 on stable. The October 17
+Watcher recovery follow-up removed two copies per Owl update (matched parent 21.4, candidate 19.4), so its budget fell
+by two; stable's count and budget stayed unchanged. They only
 tighten: a change that lowers a count lowers its budget in the same PR, and a change that needs more copies on this path
 asks Zach first.
 
