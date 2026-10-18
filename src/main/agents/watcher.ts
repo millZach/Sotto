@@ -669,11 +669,15 @@ export class WatcherService implements WatcherControlHooks {
     // The local list is append-only. If retention ever removes the anchor, missing evidence keeps the fence.
     return frontier < 0 || requestIndex <= frontier
   }
-  /** Whether a user takeover, or a renewed watch's boundary, came after this request and fences it on some thread. */
+  /**
+   * Whether a user takeover, or a renewed watch's boundary, came after this request on a thread it takes part in. A request
+   * that has reached no thread yet is fenced on every watched thread taken over after it, and has no work to strand, so
+   * any later takeover counts. One that has reached threads counts only theirs, so it is not split from them.
+   */
   private takenOverSince(record: WatcherRecord, request: WatcherRequest): boolean {
     if (request.participants.some(item => item.state === 'taken-over')) return true
-    const index = record.requests.findIndex(item => item.id === request.id)
-    return index >= 0 && (record.localTakeovers ?? []).some(item => item.lastRequestId !== null
+    const index = record.requests.findIndex(item => item.id === request.id), targets = new Set(request.participants.map(item => key(item.target)))
+    return index >= 0 && (record.localTakeovers ?? []).some(item => item.lastRequestId !== null && (!targets.size || targets.has(key(item.target)))
       && record.requests.findIndex(other => other.id === item.lastRequestId) >= index)
   }
   /** Every instruction still queued to Watcher was given before this takeover, Stop or Stop all, so none is fresh now. */

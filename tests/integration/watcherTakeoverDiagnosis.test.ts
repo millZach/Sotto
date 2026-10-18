@@ -291,6 +291,27 @@ it('keeps an instruction queued after a takeover fresh when the user renews a wa
   expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok' })
 }, 60_000)
 
+it('keeps an instruction inside its request when the takeover was on a thread the request never used', async () => {
+  // Bug Bot finding 4 on #1163: a takeover anywhere split the next queued instruction off request A.
+  const f = await fixture(), other = randomUUID(), worker = f.thread(f.target.threadId)
+  expect((await f.control.commandShell({ type: 'create-thread', threadId: other, projectId: worker.projectId, modelId: worker.modelId,
+    title: 'Synthetic thread request A never used', runtimeMode: 'approval-required', workingCopy: 'shared' })).error).toBeNull()
+  const otherTarget = { hostId: f.target.hostId, threadId: other }
+  expect(await f.watcher.watchThread({ target: otherTarget })).toMatchObject({ status: 'ok' })
+  await f.finish(f.target.threadId)
+  expect((await f.control.commandShell({ type: 'configure-thread', threadId: other, reasoningEffort: 'high' })).error).toBeNull()
+  await expect.poll(() => f.control.watcherRecord().localTakeovers?.some(item => item.target.threadId === other)).toBe(true)
+  expect(f.participationA().state).toBe('participating')
+  const text = 'Synthetic instruction after an unrelated takeover'
+  expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.watcherId, draftId: randomUUID(), text })).error).toBeNull()
+  const requests = f.control.watcherRecord().requests.length
+  await f.advanceToQueuedTurn(f.watcherId, text)
+  expect(f.control.watcherRecord().requests).toHaveLength(requests)
+  expect(carryingHead(f)?.id).toBe(f.requestA)
+  expect(await f.call('send_to_thread', { requestId: f.requestA, retryKey: randomUUID(), target: f.target,
+    delivery: 'now', text: 'Synthetic continuation of request A' })).toMatchObject({ status: 'ok' })
+}, 60_000)
+
 it('keeps an instruction queued to a busy Watcher before the takeover inside request A', async () => {
   const f = await fixture()
   await f.finish(f.target.threadId)
