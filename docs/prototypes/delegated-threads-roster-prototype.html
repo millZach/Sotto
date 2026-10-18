@@ -1,0 +1,479 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway: answers how delegated threads sit in Tools › Agents. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto · Delegated threads in Tools › Agents · mock-up</title>
+<link rel="stylesheet" href="/src/renderer/src/styles/tokens.css">
+<style>
+@font-face{font-family:Figtree;src:url('/src/shared/fonts/figtree-latin.woff2') format('woff2');font-weight:300 900;font-display:swap}
+@font-face{font-family:Figtree;src:url('/src/shared/fonts/figtree-latin-ext.woff2') format('woff2');font-weight:300 900;font-display:swap;unicode-range:U+0100-02AF,U+1E00-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden}
+body{font:14px/1.45 Figtree,system-ui,sans-serif;color:var(--tt-text);background:var(--tt-canvas)}
+button,select,textarea{font:inherit;color:inherit}button{cursor:pointer}button,select{border:0;background:none}
+:focus-visible{outline:2px solid var(--tt-focus-ring,var(--tt-activity));outline-offset:2px}
+svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+svg.pm{fill:currentColor;stroke:none;width:14px;height:14px}
+[hidden]{display:none!important}.muted{color:var(--tt-text-muted)}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.icon{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:6px;color:var(--tt-text-muted);flex:none}
+button.icon:hover{background:var(--tt-hover);color:var(--tt-text)}
+
+/* Provider marks: colour from the provider roles, mixed toward text in light as the sidebar does. Muse has no role yet. */
+.pm[data-provider=claude]{color:var(--tt-provider-claude)}.pm[data-provider=codex]{color:var(--tt-provider-codex)}.pm[data-provider=grok]{color:var(--tt-provider-grok)}.pm[data-provider=muse]{color:var(--tt-text-2)}
+:root[data-theme=light] .pm[data-provider=claude]{color:color-mix(in srgb,var(--tt-provider-claude) 50%,var(--tt-text))}
+:root[data-theme=light] .pm[data-provider=codex]{color:color-mix(in srgb,var(--tt-provider-codex) 50%,var(--tt-text))}
+
+/* Review bar */
+.review{height:52px;border-bottom:1px solid var(--tt-hairline);background:var(--tt-surface);display:flex;align-items:center;gap:14px;padding:0 16px;position:relative}
+.review strong{font-size:14px;font-weight:600;white-space:nowrap}
+.seg{display:flex;background:var(--tt-sidebar);padding:3px;border-radius:7px;flex:none}
+.seg button{padding:5px 11px;border-radius:5px;color:var(--tt-text-muted);font-size:13.5px;white-space:nowrap}
+.seg button:hover{color:var(--tt-text)}
+.seg button[aria-pressed=true]{background:var(--tt-surface-elevated);color:var(--tt-text)}
+.review label{display:flex;align-items:center;gap:8px;margin-left:auto;color:var(--tt-text-muted);font-size:13px}
+.review select{background:var(--tt-sidebar);border:1px solid var(--tt-hairline);border-radius:6px;padding:5px 8px;max-width:170px}
+.review .plain{border:1px solid var(--tt-hairline);padding:5px 11px;border-radius:6px;white-space:nowrap;font-size:13px}
+.review .plain:hover{background:var(--tt-hover)}
+.review .plain[aria-expanded=true]{background:var(--tt-surface-elevated)}
+.choices{position:absolute;right:16px;top:48px;z-index:20;width:min(460px,calc(100vw - 32px));max-height:calc(100dvh - 70px);overflow:auto;background:var(--tt-surface-overlay);border:1px solid var(--tt-border);border-radius:10px;box-shadow:var(--tt-shadow-lg);padding:14px 16px 16px;font-size:13px;line-height:1.55;color:var(--tt-text-2)}
+.choices h2{font-size:12px;font-weight:600;color:var(--tt-text-muted);margin:12px 0 4px}.choices h2:first-child{margin-top:0}
+.choices p{margin:0 0 6px}.choices b{color:var(--tt-text);font-weight:600}
+.choices kbd{font:inherit;font-size:12px;border:1px solid var(--tt-border);border-radius:4px;padding:0 5px;background:var(--tt-kbd,var(--tt-track))}
+
+/* Frame */
+.app{height:calc(100dvh - 52px);display:flex}
+.sidebar{width:262px;flex:none;background:var(--tt-sidebar);border-right:1px solid var(--tt-hairline);display:flex;flex-direction:column;padding:10px 10px 0;min-height:0}
+.brandbar{height:37px;display:flex;align-items:center;justify-content:space-between;padding:0 5px 0 3px;flex:none}
+.brand{background:var(--tt-accent);color:var(--tt-primary-contrast,var(--tt-on-accent));height:22px;width:22px;border-radius:6px;display:grid;place-items:center}.brand svg{width:16px;height:16px}
+.navtools{display:flex;gap:2px}
+.search{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--tt-hairline);border-radius:9px;color:var(--tt-text-muted);margin:9px 0 16px;flex:none;font-size:13.5px}.search svg{width:15px;height:15px}
+.nav-scroll{flex:1;min-height:0;overflow:auto;margin:0 -4px;padding:0 4px;scrollbar-width:thin;scrollbar-color:var(--tt-scrollbar) transparent}
+.folder-head{display:flex;align-items:center;gap:6px;min-height:28px;padding:0 8px 0 6px;color:var(--tt-text);font-size:14px;font-weight:500}
+.folder-head svg{width:14px;height:14px;color:var(--tt-text-muted)}.folder-head .count{margin-left:auto;color:var(--tt-text-muted);font-size:12px;font-weight:400}
+.nav-list{list-style:none;margin:2px 0 12px;padding:0}
+.nav-row{position:relative;margin:1px 0;border:1px solid transparent;border-radius:7px}
+.nav-row:hover{background:var(--tt-hover)}
+.nav-row[data-current]{background:var(--tt-selected);border-color:var(--tt-selected-border)}
+.nav-item{display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:8px;row-gap:5px;align-items:center;width:100%;padding:9px 10px;border-radius:7px;text-align:left;color:var(--tt-text-2)}
+.nav-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:1.4;font-weight:500}
+.nav-row[data-current] .nav-title{color:var(--tt-text)}
+.nav-time{color:var(--tt-text-muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.nav-meta{grid-column:2/-1;display:flex;align-items:center;gap:7px;min-width:0;color:var(--tt-text-muted);font-size:12px}
+.nav-status{margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.nav-status[data-state=working]{color:var(--tt-activity)}
+.nav-status[data-state=needs]{color:var(--tt-warning-text)}
+.nav-row[data-current] .nav-status[data-state=needs]{color:var(--tt-warning-on-tint,var(--tt-warning-text))}
+.nav-row[data-level]{margin-left:22px}.nav-row[data-level='2']{margin-left:44px}
+.nav-row[data-level]::before{content:'';position:absolute;top:-1px;bottom:-1px;left:-9px;border-left:1px solid var(--tt-hairline)}
+.nav-row[data-level] .nav-title{font-weight:400}
+.host-badge{display:inline-flex;flex:0 1 auto;align-items:center;gap:4px;min-width:0;max-width:110px;overflow:hidden;border:1px solid var(--tt-border-faint);border-radius:var(--tt-radius-pill);padding:0 7px;color:var(--tt-text-muted);font-size:11px;font-weight:500;line-height:18px;white-space:nowrap}
+.host-badge svg{width:12px;height:12px}.host-badge span{overflow:hidden;text-overflow:ellipsis}
+.ring{display:block;width:10px;height:10px;border:1.5px solid var(--tt-hairline);border-radius:50%;justify-self:center}
+.ring[data-state=working]{border:0;background:conic-gradient(var(--tt-activity) 0 32%,color-mix(in srgb,var(--tt-activity) 22%,transparent) 32% 100%);mask:radial-gradient(circle,transparent 38%,currentcolor 42%)}
+.ring[data-state=needs]{border:2px solid var(--tt-attention)}
+.settled{margin:4px 0 0;color:var(--tt-text-muted);display:flex;align-items:center;gap:6px;padding:6px 8px;font-size:13px}.settled svg{width:13px;height:13px}
+.sidebar-foot{flex:none;border-top:1px solid var(--tt-hairline);padding:10px 0 12px;margin-top:8px}
+.modes{display:flex;border-radius:8px;background:var(--tt-track);padding:3px;font-size:13.5px}.modes span{flex:1;text-align:center;padding:6px}.modes .on{background:var(--tt-surface-elevated);border-radius:6px}
+
+/* Thread pane */
+.workspace{display:flex;flex:1;min-width:0}
+.conversation{flex:1;min-width:0;display:flex;flex-direction:column}
+.pane-head{height:52px;display:flex;align-items:center;padding:0 14px 0 18px;gap:10px;flex:none}
+.pane-head .pm{width:18px;height:18px}
+.pane-head h1{font-size:16.5px;line-height:1.2;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pane-actions{margin-left:auto;display:flex;gap:2px}
+.tools-toggle{position:relative}.tools-toggle[aria-expanded=true]{background:var(--tt-accent-wash);color:var(--tt-activity)}
+.tdot{position:absolute;left:4px;top:4px;width:7px;height:7px;border-radius:50%;background:var(--tt-activity);box-shadow:0 0 0 2px var(--tt-canvas)}.tdot[data-needs]{background:var(--tt-attention)}
+.delegated-by{display:flex;flex:none;align-items:center;gap:8px;min-width:0;margin:0 clamp(18px,4vw,48px);padding:2px 0 10px;box-shadow:inset 0 -1px 0 var(--tt-hairline);color:var(--tt-text-muted);font-size:13px}
+.delegated-by svg{width:14px;height:14px}
+.delegated-by>span:first-of-type{display:flex;align-items:baseline;gap:4px;min-width:0;overflow:hidden;white-space:nowrap}
+.link{display:inline;min-width:0;padding:0;border-radius:3px;color:var(--tt-text);font-weight:500;text-decoration:underline;text-decoration-color:color-mix(in srgb,currentColor 45%,transparent);text-underline-offset:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
+.link:hover{text-decoration-color:currentColor}
+.messages{flex:1;min-height:0;overflow:auto;padding:26px clamp(18px,4vw,48px)}
+.user-message{margin:0 0 30px auto;background:var(--tt-bubble);color:var(--tt-bubble-text);padding:12px 15px;border-radius:12px;max-width:470px;font-size:14.5px;line-height:1.6}
+.user-message.brief{background:var(--tt-surface);color:var(--tt-text-2);border:1px dashed var(--tt-field-border);margin-left:0;margin-right:auto}
+.who{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tt-text);font-weight:500;margin-bottom:6px}.who svg{width:13px;height:13px;color:var(--tt-text-muted)}
+.message-by{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--tt-text-muted);margin-bottom:10px}.message-by b{font-weight:600;color:var(--tt-text-2)}
+.reply{font-size:15px;color:var(--tt-text-2);line-height:1.7;margin:0 0 22px}
+.activity{font-size:13px;color:var(--tt-text-muted);display:flex;gap:8px;align-items:center;margin:14px 0}.activity svg{width:14px;height:14px}
+.dcards{display:grid;gap:8px;margin:-8px 0 24px}
+.dcard{display:grid;gap:4px;min-width:0;padding:10px 13px 11px;border:1px solid var(--tt-hairline);border-radius:var(--tt-radius-md,10px);background:var(--tt-surface)}
+.dcard-top{display:flex;align-items:center;gap:8px;min-width:0;font-size:14px}.dcard-top>svg{width:15px;height:15px;color:var(--tt-text-muted)}
+.dcard-lead{flex:none;color:var(--tt-text-muted)}
+.dcard-meta{display:flex;flex-wrap:wrap;align-items:center;gap:2px 7px;margin:0;padding-left:23px;color:var(--tt-text-muted);font-size:12.5px}
+.dcard-wait{margin:0;padding-left:23px;color:var(--tt-text-2);font-size:12.5px}
+.outcome{display:inline-flex;flex:none;align-items:center;gap:6px;white-space:nowrap;font-size:13px;margin-left:auto}
+.outcome[data-o=working]{color:var(--tt-activity)}.outcome:is([data-o=answered],[data-o=stopped]){color:var(--tt-text-muted)}.outcome[data-o=failed]{color:var(--tt-error-text)}.outcome[data-o=needs]{color:var(--tt-warning-text)}.outcome[data-o=paused]{color:var(--tt-text-2)}
+.oring{display:block;flex:none;width:10px;height:10px;border:1.5px solid var(--tt-hairline);border-radius:50%}
+.oring[data-o=working]{border:0;background:conic-gradient(var(--tt-activity) 0 32%,color-mix(in srgb,var(--tt-activity) 22%,transparent) 32% 100%);mask:radial-gradient(circle,transparent 38%,currentcolor 42%)}
+.oring[data-o=answered]{border-color:var(--tt-text-muted);background:color-mix(in srgb,var(--tt-text-muted) 55%,transparent)}
+.oring[data-o=needs]{border:2px solid var(--tt-attention)}
+.oring[data-o=failed]{border-color:var(--tt-error-text)}
+.oring[data-o=running]{border:0;background:var(--tt-activity);width:7px;height:7px;margin:1.5px}
+.oring[data-o=completed]{border:0;background:var(--tt-text-muted);width:7px;height:7px;margin:1.5px}
+.composer-area{padding:10px 18px 12px}
+.composer{border:1px solid var(--tt-field-border);border-radius:15px;background:var(--tt-surface);padding:10px 13px}
+.composer textarea{width:100%;resize:none;background:none;border:0;outline:0;height:52px;font-size:14.5px;line-height:1.5}
+.composer textarea::placeholder{color:var(--tt-text-muted)}
+.composer-bottom{display:flex;align-items:center;gap:8px;color:var(--tt-text-muted);font-size:13px;min-width:0}.composer-bottom .model{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.send{margin-left:auto;background:var(--tt-accent-wash);color:var(--tt-activity);border-radius:8px;height:30px;width:32px;display:grid;place-items:center;flex:none}
+
+/* Tools */
+.tools{width:47%;max-width:600px;min-width:380px;display:flex;flex-direction:column;background:var(--tt-sidebar);border-left:1px solid var(--tt-hairline);container:tools/inline-size}
+.tools-head{height:52px;display:flex;align-items:center;gap:10px;padding:0 10px 0 14px;flex:none}
+.owner{display:flex;align-items:center;gap:8px;min-width:0;flex:1;color:var(--tt-text-2);font-size:13px}.owner span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.owner svg{width:15px;height:15px}
+.owner .pinned{color:var(--tt-activity);flex:none}
+.tools-actions{display:flex;gap:1px}
+.tools-actions [aria-pressed=true]{color:var(--tt-activity)}
+.tools-tabs{height:44px;display:flex;flex:none;border-bottom:1px solid var(--tt-hairline);gap:2px;padding:0 10px}
+.tab{display:flex;gap:7px;align-items:center;justify-content:center;padding:0 10px;color:var(--tt-text-muted);border-bottom:2px solid transparent;font-size:14px;min-width:0;position:relative}
+.tab svg{width:15px;height:15px}.tab:hover{color:var(--tt-text)}
+.tab[aria-selected=true]{border-color:var(--tt-activity);color:var(--tt-text)}
+.tab .tab-dot{position:absolute;top:11px;right:1px;width:6px;height:6px;border-radius:50%;background:var(--tt-attention)}
+.tools-content{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--tt-scrollbar) transparent}
+.roster-footer{padding:10px 16px;border-top:1px solid var(--tt-hairline);display:flex;justify-content:space-between;gap:10px;color:var(--tt-text-muted);font-size:12px;min-height:40px;flex:none;white-space:nowrap;overflow:hidden}
+.roster-footer .w{color:var(--tt-activity)}.roster-footer .n{color:var(--tt-warning-text)}
+.other-surface{padding:24px;font-size:14px;color:var(--tt-text-muted)}
+
+/* The approved roomier roster (agentsSurface.css), with a 16px lead column so a provider mark and a dot line up. */
+.roster{padding:10px 14px 24px}
+.roster-heading{display:flex;align-items:baseline;gap:8px;margin:10px 4px 2px;color:var(--tt-text-muted);font-size:12px;font-weight:600}
+.roster-heading:first-child{margin-top:4px}
+.roster-heading .c{font-weight:400;font-variant-numeric:tabular-nums}
+.roster-heading+.subagents-list{margin-bottom:10px}
+.subagents-list{list-style:none;padding:0;margin:0}
+.subagent-item+.subagent-item{border-top:1px solid var(--tt-hairline)}
+.d-row{position:relative;border-radius:6px}
+.subagent-head{display:grid;grid-template-columns:16px minmax(0,1fr) auto;grid-template-areas:'lead title time' 'lead desc status' 'lead meta meta';align-items:start;column-gap:10px;width:100%;min-height:94px;padding:16px 6px 16px 4px;border-radius:6px;color:var(--tt-text);text-align:left}
+.subagent-head:hover{background:var(--tt-hover)}
+.lead{display:grid;place-items:center;height:20px}.lead .pm{width:15px;height:15px}
+.subagent-dot{width:6px;height:6px;border-radius:50%;background:var(--tt-text-muted)}
+.subagent-dot[data-status=running]{background:var(--tt-activity)}.subagent-dot[data-status=failed]{background:var(--tt-error)}
+.subagent-main,.subagent-right{display:contents}
+.subagent-head .lead{grid-area:lead}.subagent-main>:first-child{grid-area:title;min-width:0}.subagent-description{grid-area:desc}.subagent-meta{grid-area:meta}.subagent-time{grid-area:time;justify-self:end}.subagent-right>:last-child{grid-area:status;justify-self:end;margin-top:6px;line-height:20px}
+.title-line{display:flex;align-items:center;gap:7px;min-width:0}
+.subagent-title{display:block;overflow:hidden;font-size:15px;font-weight:550;line-height:20px;white-space:nowrap;text-overflow:ellipsis;min-width:0}
+.marker{flex:none;font-size:11px;font-weight:500;line-height:16px;padding:0 6px;border-radius:var(--tt-radius-pill);border:1px solid var(--tt-border);color:var(--tt-text-2)}
+.subagent-description{display:block;overflow:hidden;margin-top:6px;color:var(--tt-text-muted);font-size:13px;line-height:20px;text-overflow:ellipsis;white-space:nowrap}
+.subagent-meta{display:flex;align-items:center;gap:6px;min-width:0;margin-top:8px;color:var(--tt-text-muted);font-size:12px;line-height:18px;white-space:nowrap}
+.subagent-meta>span{overflow:hidden;text-overflow:ellipsis}
+.d-row .subagent-meta{padding-right:122px}.d-row[data-needs] .subagent-meta{padding-right:126px}
+.subagent-right{color:var(--tt-text-muted);font-size:12px}.subagent-time{padding-top:2px}
+.subagent-time{display:flex;align-items:center;gap:7px;white-space:nowrap;font-variant-numeric:tabular-nums}.subagent-time svg{width:12px;height:12px}
+.subagent-head[aria-expanded=true] .subagent-time svg{transform:rotate(90deg)}
+.subagent-right .outcome{font-size:12px;margin-left:0}
+.status-run{color:var(--tt-activity)}
+/* "Open as thread": a sibling of the row's expander, at its bottom right, as the sidebar keeps its row actions. */
+.open-thread{position:absolute;right:6px;bottom:13px;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border:1px solid var(--tt-border);border-radius:6px;background:var(--tt-sidebar);color:var(--tt-text-2);font-size:12.5px;white-space:nowrap}
+.open-thread svg{width:13px;height:13px}
+.open-thread:hover{background:var(--tt-hover-strong,var(--tt-hover));color:var(--tt-text)}
+.open-thread[data-needs]{border-color:var(--tt-attention);color:var(--tt-text)}
+.shown-note{position:absolute;right:8px;bottom:17px;font-size:12px;color:var(--tt-text-2);display:inline-flex;gap:5px;align-items:center}.shown-note svg{width:13px;height:13px;color:var(--tt-activity)}
+.d-row[data-needs]{background:color-mix(in srgb,var(--tt-attention) 9%,transparent);box-shadow:inset 2px 0 0 var(--tt-attention)}
+.d-row[data-shown]{background:var(--tt-selected);box-shadow:inset 0 0 0 1px var(--tt-selected-border)}
+.subagent-details{margin:0 5px 10px 30px;padding:4px 0 12px;animation:reveal .14s ease-out}
+.subagent-details h3{margin:12px 0 5px;color:var(--tt-text-muted);font-size:12px;font-weight:600}
+.subagent-details p{margin:0;color:var(--tt-text-2);font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.subagent-result{border-left:2px solid var(--tt-hairline);padding-left:12px}
+.subagent-result[data-needs]{border-color:var(--tt-attention)}
+.facts{margin-top:10px!important;color:var(--tt-text-muted)!important;font-size:12px!important}
+.children{list-style:none;margin:0 0 8px 11px;padding:0 0 0 9px;border-left:1px solid var(--tt-hairline)}
+.children .subagent-item{border-top:0}
+.children .subagent-head{min-height:70px;padding-block:12px}
+.children .subagent-description{display:none}
+.children .subagent-meta{margin-top:6px}
+.children .open-thread{bottom:10px}
+.children .subagent-head{grid-template-columns:16px minmax(0,1fr) auto auto;grid-template-areas:'lead title status time' 'lead meta meta meta'}.children .subagent-right>:last-child{margin-top:0}
+.ot-short{display:none}
+
+/* C: a switch between the thread's delegated threads and its own agents, and threads as cards. */
+.switch{display:flex;gap:2px;padding:3px;margin:4px 2px 12px;border-radius:8px;background:var(--tt-track)}
+.switch button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:6px 10px;border-radius:6px;color:var(--tt-text-muted);font-size:13.5px}
+.switch button[aria-selected=true]{background:var(--tt-surface-elevated);color:var(--tt-text)}
+.switch .c{font-variant-numeric:tabular-nums;color:var(--tt-text-muted)}
+.switch .needs-dot{width:7px;height:7px;border-radius:50%;background:var(--tt-attention)}
+.cards{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.card{border:1px solid var(--tt-hairline);border-radius:10px;background:var(--tt-surface);min-width:0}
+.card[data-needs]{border-color:var(--tt-attention);box-shadow:inset 3px 0 0 var(--tt-attention)}
+.card[data-shown]{border-color:var(--tt-selected-border);background:var(--tt-selected)}
+.card-top{display:grid;grid-template-columns:16px minmax(0,1fr) auto;column-gap:10px;align-items:center;padding:12px 12px 4px 13px}
+.card-top .subagent-title{font-size:14.5px}
+.card-top .outcome{font-size:12.5px}
+.card-sub{display:flex;align-items:center;gap:8px;padding:0 10px 10px 39px;min-width:0;color:var(--tt-text-muted);font-size:12px}
+.card-sub .meta{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.card-sub .open-thread,.card-sub .shown-note{position:static}
+.more{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 7px;border-radius:6px;color:var(--tt-text-muted);font-size:12.5px;white-space:nowrap}
+.more svg{width:12px;height:12px}.more[aria-expanded=true] svg{transform:rotate(90deg)}.more:hover{background:var(--tt-hover);color:var(--tt-text)}
+.card .subagent-details{margin:0 14px 4px 39px;padding:0 0 10px}
+.card .subagent-details h3:first-child{margin-top:2px}
+.card-kids{list-style:none;margin:0;padding:4px 0 4px;border-top:1px solid var(--tt-hairline)}
+.kid{display:grid;grid-template-columns:16px minmax(0,1fr) auto auto;align-items:center;column-gap:9px;padding:6px 10px 6px 39px;min-height:38px;font-size:13px;position:relative}
+.kid::before{content:'';position:absolute;left:21px;top:0;bottom:50%;width:10px;border-left:1px solid var(--tt-hairline);border-bottom:1px solid var(--tt-hairline);border-bottom-left-radius:5px}
+.kid .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--tt-text-2)}.kid .t small{color:var(--tt-text-muted);font-size:12px;margin-left:6px}
+.kid .outcome{font-size:12px}
+.kid .open-thread{position:static;height:24px;padding:0 7px;font-size:12px}
+.kid[data-needs]{background:color-mix(in srgb,var(--tt-attention) 9%,transparent)}
+.kids-label{padding:6px 12px 0 39px;font-size:11.5px;color:var(--tt-text-muted);font-weight:600}
+
+@keyframes reveal{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+@keyframes spin{to{rotate:360deg}}
+@media (prefers-reduced-motion:no-preference){.ring[data-state=working],.oring[data-o=working]{animation:spin 1.5s linear infinite}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@container tools (max-width:520px){.tab svg{display:none}.tools-tabs{gap:0;padding-inline:6px}.tab{padding-inline:8px}.roster{padding-inline:10px}}
+@container tools (max-width:440px){.subagent-head{column-gap:8px}.d-row .subagent-meta{padding-right:78px}.d-row[data-needs] .subagent-meta{padding-right:118px}.open-thread{padding:0 7px}.ot-long{display:none}.ot-short{display:inline}.tab{padding-inline:7px;font-size:13.5px}.children .subagent-time{display:none}.card-sub{padding-left:13px;flex-wrap:wrap}.card .subagent-details{margin-left:13px}.kid{padding-left:30px}.kid::before{left:14px;width:8px}}
+@media (max-width:1100px){.review strong{display:none}}
+@media (max-width:1050px){.sidebar{width:220px}}
+@media (max-width:950px){.sidebar{width:196px;padding-inline:8px}.tools{min-width:330px;width:52%}.review{padding-inline:10px;gap:10px}.review label>span{display:none}.seg button{padding-inline:8px}.seg .long{display:none}.pane-head h1{font-size:15px}.messages{padding-inline:16px}.delegated-by{margin-inline:16px}.nav-item{padding-inline:8px;column-gap:7px}.nav-title{font-size:13.5px}}
+@media (min-width:951px){.seg .short{display:none}}
+@media (max-height:650px){.messages{padding-top:14px}.user-message{margin-bottom:18px}.composer textarea{height:34px}.composer-area{padding-top:6px}.search{margin-bottom:10px}}
+</style>
+</head>
+<body>
+<div class="review" role="region" aria-label="Mock-up controls">
+ <strong>Delegated threads · mock-up</strong>
+ <div class="seg" role="group" aria-label="Roster layout">
+  <button data-v="A" aria-pressed="true"><span class="long">A · Own section</span><span class="short">A</span></button>
+  <button data-v="B" aria-pressed="false"><span class="long">B · Mixed by time</span><span class="short">B</span></button>
+  <button data-v="C" aria-pressed="false"><span class="long">C · Split and cards</span><span class="short">C</span></button>
+ </div>
+ <label><span>Scenario</span><select id="scenario" aria-label="Scenario">
+  <option value="working">Working</option><option value="needs">Needs you</option><option value="done">All done</option><option value="opened">Opened as thread</option><option value="before">Before (today)</option>
+ </select></label>
+ <button class="plain" id="choices-btn" aria-expanded="false" aria-controls="choices">Choices</button>
+ <button class="plain" id="theme">Light theme</button>
+ <div class="choices" id="choices" role="dialog" aria-label="Choices this mock-up makes" hidden>
+  <h2>Variants</h2>
+  <p><b>A · Own section.</b> A “Delegated threads” group above “Muse’s agents”, each delegated thread a roomy roster row with its provider’s mark and an Open as thread button.</p>
+  <p><b>B · Mixed by time.</b> One list, newest start first; a delegated thread is told apart by its provider’s mark and a “Thread” marker, and keeps the same button.</p>
+  <p><b>C · Split and cards.</b> A Threads | Agents switch at the top of the tab. Delegated threads are cards, the second level listed inside its first-level card.</p>
+  <h2>When a delegated thread is opened</h2>
+  <p><b>The parent’s row stays highlighted.</b> The pane is showing one of its threads, so the sidebar keeps your place; no row is added.</p>
+  <p><b>Tools stays on the parent’s roster, pinned.</b> The header reads the parent’s name with the pin pressed, and the opened row says “In the pane”, so the next delegated thread is one press away. Unpin and Tools follows the pane as it does today. Delegated by, or the parent’s row, returns the pane.</p>
+  <h2>When one waits on you</h2>
+  <p>The parent’s sidebar row reads <b>Needs your approval</b> (or Needs your answer). The roster row is edged in the attention colour, says the same, and its button reads <b>Open to answer</b>: a press opens the thread where the request is answered. Nothing is answered from the roster.</p>
+  <h2>Keys</h2>
+  <p><kbd>←</kbd> <kbd>→</kbd> change variant (not while a field, tab or switch has focus). <kbd>Esc</kbd> closes an open row’s details, then this panel. Links: <code>?variant=A|B|C&amp;scenario=needs&amp;theme=light</code>.</p>
+ </div>
+</div>
+<div class="app">
+ <aside class="sidebar" aria-label="Thread navigation">
+  <div class="brandbar"><span class="brand" data-icon="wave"></span><div class="navtools"><span class="icon" data-icon="chat"></span><span class="icon" data-icon="terminal"></span><span class="icon" data-icon="plus"></span></div></div>
+  <div class="search"><span data-icon="search"></span>Search threads</div>
+  <nav class="nav-scroll" aria-label="Threads" id="nav"></nav>
+  <div class="sidebar-foot"><div class="modes"><span>Dictate</span><span class="on">Threads</span></div></div>
+ </aside>
+ <main class="workspace">
+  <section class="conversation" aria-label="Thread" id="pane"></section>
+  <aside class="tools" id="tools" aria-label="Tools">
+   <header class="tools-head"><div class="owner" id="owner"></div><div class="tools-actions"><button class="icon" id="pin" aria-pressed="false" aria-label="Pin Tools to this thread" title="Pin to this thread"><span data-icon="pin"></span></button><button class="icon" aria-label="Expand Tools" title="Expand Tools"><span data-icon="expand"></span></button><button class="icon" id="close" aria-label="Close Tools" title="Close Tools"><span data-icon="close"></span></button></div></header>
+   <div class="tools-tabs" role="tablist" aria-label="Tools surfaces">
+    <button class="tab" role="tab" id="tab-browser" data-tab="browser" aria-selected="false" tabindex="-1"><span data-icon="globe"></span>Browser</button>
+    <button class="tab" role="tab" id="tab-terminal" data-tab="terminal" aria-selected="false" tabindex="-1"><span data-icon="terminal"></span>Terminal</button>
+    <button class="tab" role="tab" id="tab-files" data-tab="files" aria-selected="false" tabindex="-1"><span data-icon="folder"></span>Files</button>
+    <button class="tab" role="tab" id="tab-changes" data-tab="changes" aria-selected="false" tabindex="-1"><span data-icon="branch"></span>Changes</button>
+    <button class="tab" role="tab" id="tab-agents" data-tab="agents" aria-selected="true" tabindex="0"><span data-icon="bot"></span>Agents<i class="tab-dot" id="agents-dot" hidden></i></button>
+   </div>
+   <div class="tools-content" id="content" role="tabpanel" aria-labelledby="tab-agents"></div>
+   <footer class="roster-footer" id="footer"></footer>
+  </aside>
+ </main>
+</div>
+<script>
+const paths={panel:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/>',bot:'<rect x="3" y="7" width="18" height="14" rx="3"/><path d="M12 3v4M8 12v2m8-2v2M9 18h6"/>',folder:'<path d="M3 6h6l2 2h10v12H3z"/>',globe:'<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>',terminal:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 8 4 4-4 4m7 0h3"/>',branch:'<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="6" r="2"/><path d="M6 7v10m0-5h7a5 5 0 0 0 5-4"/>',chevron:'<path d="m9 5 7 7-7 7"/>',close:'<path d="m6 6 12 12M6 18 18 6"/>',pin:'<path d="m8 3 8 0-1 6 4 4H5l4-4zM12 13v8"/>',expand:'<path d="M14 3h7v7m0-7-7 7M10 21H3v-7m0 7 7-7"/>',more:'<circle cx="4" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="20" cy="12" r="1"/>',file:'<path d="M5 3h9l5 5v13H5zM14 3v6h5M8 13h8m-8 4h6"/>',search:'<circle cx="10" cy="10" r="7"/><path d="m15 15 6 6"/>',chat:'<path d="M3 4h18v13H9l-6 4z"/>',plus:'<path d="M12 5v14M5 12h14"/>',wave:'<path d="M4 8v8m4-12v16m4-10v4m4-6v8m4-5v2"/>',attach:'<path d="m8 14 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7L14 2m-8 14 9-9"/>',arrow:'<path d="M12 20V4m-6 6 6-6 6 6"/>',fork:'<circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7v1a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V7M12 11v6"/>',laptop:'<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/>',open:'<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'};
+const icon=n=>'<svg viewBox="0 0 24 24" aria-hidden="true">'+(paths[n]||paths.bot)+'</svg>';
+document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
+// Provider marks from ProviderMark.tsx.
+const MARKS={
+ muse:['0 0 100 100','M24.6257 16.1214C28.2365 16.1214 30.8187 18.9408 30.8187 23.3643C30.8185 27.7868 30.1055 31.7765 28.9225 40.2466C28.0743 46.1813 26.62 55.2418 26.0132 59.0088C27.1782 56.7815 29.9074 51.5757 30.3914 50.5982C36.1081 39.061 42.0657 28.7544 43.7826 26.0254C46.0594 22.382 48.062 20.9229 51.1597 20.9229C52.7685 20.923 54.6826 21.7357 55.6315 22.819C56.9178 24.2895 57.1859 26.6602 57.1411 29.244C57.0738 33.2073 56.5599 39.5264 55.8553 46.5698C55.5416 49.7057 54.9365 56.1066 54.5288 60.4004C58.1883 53.8532 64.9609 41.8109 67.6921 37.6058C70.0727 33.9402 72.466 31.5797 75.6836 31.5796C78.4595 31.5796 81.8809 33.5416 81.6772 38.7573C81.3774 46.4556 80.2673 63.2232 79.7607 70.7479C83.1662 65.7913 87.6377 58.4543 89.3148 55.6966C91.0104 52.908 92.75 50.6542 95.3898 50.5778C98.0987 50.4995 99.913 52.341 99.9959 55.1839C100.078 58.0277 98.3835 61.2256 96.1344 64.856C93.6937 68.7957 90.9621 73.0123 87.6383 76.9491C84.3148 80.8856 81.2604 83.8782 76.5991 83.8786C72.4243 83.8786 69.4869 81.1043 69.283 76.0254C69.1768 73.364 69.6804 67.6405 70.0602 63.1673C70.5 57.9875 71.0315 52.9861 71.403 49.6786C67.7337 56.3979 60.0101 70.4676 56.5348 75.9603C53.1343 81.3339 51.4774 83.2269 47.8882 83.2275C44.2977 83.2275 42.7226 80.6416 42.6717 76.7497C42.6142 72.5285 45.7852 47.1821 46.8587 38.737C45.1183 42.4616 40.839 51.6056 38.1551 57.0435C35.5587 62.3055 31.204 71.3978 28.0436 76.6357C25.7668 80.4094 23.2092 83.2273 19.4173 83.2275C15.6252 83.2275 13.4847 80.6784 13.4847 76.5788C13.4847 72.4794 14.6716 65.6492 15.9465 57.1777C16.5839 53.0781 17.3108 48.6133 18.1315 43.8761C18.7324 40.448 19.7764 34.4169 20.4183 30.7129C17.502 35.2539 12.2536 43.4278 10.6567 45.8903C8.88113 48.6291 7.28747 50.626 4.64681 50.6266C1.7329 50.6266 0.000532901 48.3522 0 45.7113C0 43.0703 1.34323 41.0344 3.52376 37.4512C6.32403 32.8465 11.3578 26.57 14.1154 23.2747C17.3656 19.3912 20.6139 16.1219 24.6257 16.1214Z'],
+ codex:['0 0 256 260','M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z'],
+ claude:['0 0 256 257','m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z']};
+const NAMES={muse:'Muse',codex:'Codex',claude:'Claude',grok:'Grok'};
+const mark=p=>`<svg class="pm" data-provider="${p}" viewBox="${MARKS[p][0]}" aria-hidden="true" focusable="false"><path d="${MARKS[p][1]}"/></svg>`;
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const PARENT='A bunch of work around the orchestrator';
+// Delegated threads (ADR-0081), two levels. o is the delegation's outcome; needs is the thread waiting on you.
+const BASE_D=[
+ {id:'d1',title:'PR 1121 state scout',p:'codex',kind:'Research',model:'GPT-5.5 · Medium',start:'2:04 pm',startN:204,t:'6m 12s',o:'answered',
+  brief:'Read PR 1121 and tell me where it changes thread state in control.ts, and whether anything it touches overlaps PR 1150. Report only; change nothing.',
+  latest:'Answered in 6m 12s. A bunch of work around the orchestrator has read the reply.'},
+ {id:'d2',title:'PR 1150 to merge',p:'codex',kind:'Building',model:'GPT-5.5 · High',start:'2:11 pm',startN:211,t:'14m 34s',o:'working',
+  brief:'Take PR 1150 to merge. Get two native reviews on Muse, fix what they find, wait for Gates (Windows) and Package result, then merge.',
+  latest:'Working on its third turn. Both reviews have answered; it is fixing what the second one found.',
+  kids:[
+   {id:'d2a',title:'PR1150 native review',p:'muse',kind:'Code review',model:'Muse',start:'2:13 pm',startN:213,t:'4m 50s',o:'answered',brief:'Review the PR 1150 diff against AGENTS.md. List findings by severity; change nothing.',latest:'Answered in 4m 50s.'},
+   {id:'d2b',title:'PR1150 native review',p:'muse',kind:'Code review',model:'Muse',start:'2:19 pm',startN:219,t:'5m 31s',o:'answered',brief:'Review PR 1150 again after the fixes in 4c1e2a0. Say whether each earlier finding is fixed.',latest:'Answered in 5m 31s.'}]}];
+// The parent's provider's own agents: the subagent roster today.
+const BASE_S=[
+ {id:'s1',title:'Explore: find delegation call sites',model:'Muse',start:'2:27 pm',startN:227,t:'3m 02s',st:'running',desc:'Search src/ for every reader of delegatedBy and nestDelegated.',task:'Find every place the renderer reads delegatedBy or calls nestDelegated, and list what each one draws.',latest:'Found six call sites so far, in ThreadSidebar.tsx, threadFacts.ts and DelegationCards.tsx.'},
+ {id:'s2',title:'Check sidebar nesting tests',model:'Muse',start:'2:08 pm',startN:208,t:'1m 40s',st:'completed',desc:'Read the unit tests that cover nested rows.',task:'Read tests/unit for nestDelegated and say what each test proves.',latest:'Three tests cover nesting: order, two levels, and a loop of links. None covers a settled parent.'}];
+const OUTCOME={working:'Working',answered:'Answered',failed:'Failed',stopped:'Stopped',paused:'Paused',unknown:'Unknown'};
+
+let variant='A',scenario='working',surface='agents',cTab='threads',shownId='d2';const open=new Set();
+const clone=x=>JSON.parse(JSON.stringify(x));
+function data(){
+ const D=clone(BASE_D),S=clone(BASE_S);const d2=D[1];
+ if(scenario==='needs'){d2.needs='approval';d2.latest='Working, and waiting for your approval to merge PR 1150 with gh. Nothing merges until you answer in that thread.'}
+ if(scenario==='done'){d2.o='answered';d2.t='21m 05s';d2.latest='Answered in 21m 05s. PR 1150 merged after Gates (Windows) and Package result passed.';S[0].st='completed';S[0].t='3m 48s';S[0].latest='Six call sites: three in ThreadSidebar.tsx, two in threadFacts.ts, one in DelegationCards.tsx.'}
+ if(scenario==='opened'){const all=[...D,...D.flatMap(d=>d.kids||[])];const s=all.find(d=>d.id===shownId)||d2;s.shown=true}
+ return {D,S};
+}
+const statusWord=d=>d.needs==='approval'?'Needs your approval':d.needs==='question'?'Needs your answer':OUTCOME[d.o];
+const oKey=d=>d.needs?'needs':d.o;
+const outcomeHtml=d=>`<span class="outcome" data-o="${oKey(d)}"><span class="oring" data-o="${oKey(d)}"></span>${statusWord(d)}</span>`;
+function openBtn(d,compact){
+ if(d.shown)return `<span class="shown-note">${icon('eye')}In the pane</span>`;
+ const label=d.needs?'Open to answer':'Open as thread';
+ const aria=d.needs?`Open ${d.title} to answer its request`:`Open ${d.title} as a thread`;
+ return `<button class="open-thread" data-open="${d.id}" ${d.needs?'data-needs':''} aria-label="${esc(aria)}">${d.needs?label:icon('open')+'<span class="ot-long">'+label+'</span><span class="ot-short">Open</span>'}</button>`;
+}
+function details(d,isThread){
+ if(isThread)return `<div class="subagent-details" id="det-${d.id}"><h3>Brief</h3><p>${esc(d.brief)}</p><h3>Latest outcome</h3><p class="subagent-result" ${d.needs?'data-needs':''}>${esc(d.latest)}</p><p class="facts">${NAMES[d.p]} · ${esc(d.kind)} · started ${d.start} · This computer</p></div>`;
+ return `<div class="subagent-details" id="det-${d.id}"><h3>Task</h3><p>${esc(d.task)}</p><h3>${d.st==='running'?'Latest update':'Result'}</h3><p class="subagent-result">${esc(d.latest)}</p></div>`;
+}
+// One delegated thread as a roomy roster row (A and B).
+function threadRow(d,{marker=false,startMeta=false}={}){
+ const isOpen=open.has(d.id);
+ const meta=`<span>${NAMES[d.p]} · ${esc(d.kind)} · ${esc(d.model)}${startMeta?' · '+d.start:''}</span>`;
+ return `<li class="subagent-item"><div class="d-row" ${d.needs?'data-needs':''} ${d.shown?'data-shown':''}>
+  <button class="subagent-head" id="head-${d.id}" data-row="${d.id}" aria-expanded="${isOpen}" aria-controls="det-${d.id}" aria-label="${esc(d.title)}, delegated thread on ${NAMES[d.p]}, ${statusWord(d)}, ${d.t}">
+   <span class="lead">${mark(d.p)}</span>
+   <span class="subagent-main"><span class="title-line"><span class="subagent-title">${esc(d.title)}</span>${marker?'<span class="marker">Thread</span>':''}</span><span class="subagent-description">${esc(d.brief)}</span><span class="subagent-meta">${meta}</span></span>
+   <span class="subagent-right"><span class="subagent-time">${d.t}${icon('chevron')}</span>${outcomeHtml(d)}</span>
+  </button>${openBtn(d)}</div>
+  ${isOpen?details(d,true):''}
+  ${d.kids?`<ul class="children" aria-label="Threads ${esc(d.title)} delegated">${d.kids.map(k=>threadRow(k,{marker,startMeta})).join('')}</ul>`:''}</li>`;
+}
+function agentRow(s,{startMeta=false}={}){
+ const isOpen=open.has(s.id);const label=s.st==='running'?'Working':'Finished';
+ return `<li class="subagent-item"><button class="subagent-head" id="head-${s.id}" data-row="${s.id}" aria-expanded="${isOpen}" aria-controls="det-${s.id}">
+   <span class="lead"><span class="subagent-dot" data-status="${s.st}"></span></span>
+   <span class="subagent-main"><span class="subagent-title">${esc(s.title)}</span><span class="subagent-description">${esc(s.desc)}</span><span class="subagent-meta"><span>${esc(s.model)}${startMeta?' · '+s.start:''}</span></span></span>
+   <span class="subagent-right"><span class="subagent-time">${s.t}${icon('chevron')}</span><span class="${s.st==='running'?'status-run':''}">${label}</span></span>
+  </button>${isOpen?details(s,false):''}</li>`;
+}
+// C: a delegated thread as a card, its own delegated threads listed inside it.
+function card(d){
+ const isOpen=open.has(d.id);
+ const kids=d.kids?`<div class="kids-label">Delegated by this thread · ${d.kids.length}</div><ul class="card-kids">${d.kids.map(k=>`<li class="kid" ${k.needs?'data-needs':''}><span class="lead">${mark(k.p)}</span><span class="t">${esc(k.title)}<small>${k.t}</small></span>${outcomeHtml(k)}${openBtn(k)}</li>`).join('')}</ul>`:'';
+ return `<li class="card" ${d.needs?'data-needs':''} ${d.shown?'data-shown':''}>
+  <div class="card-top"><span class="lead">${mark(d.p)}</span><span class="subagent-title">${esc(d.title)}</span>${outcomeHtml(d)}</div>
+  <div class="card-sub"><span class="meta">${NAMES[d.p]} · ${esc(d.kind)} · ${d.t}</span><button class="more" id="head-${d.id}" data-row="${d.id}" aria-expanded="${isOpen}" aria-controls="det-${d.id}" aria-label="Details for ${esc(d.title)}">Details${icon('chevron')}</button>${openBtn(d)}</div>
+  ${isOpen?details(d,true):''}${kids}</li>`;
+}
+function roster(D,S){
+ if(scenario==='before')return `<div class="roster"><ul class="subagents-list" aria-label="Spawned agents">${S.map(s=>agentRow(s)).join('')}</ul></div>`;
+ const total=D.length+D.reduce((n,d)=>n+(d.kids?.length||0),0);
+ if(variant==='A')return `<div class="roster"><h2 class="roster-heading" id="h-d">Delegated threads <span class="c">${total}</span></h2><ul class="subagents-list" aria-labelledby="h-d">${D.map(d=>threadRow(d)).join('')}</ul><h2 class="roster-heading" id="h-s">Muse’s agents <span class="c">${S.length}</span></h2><ul class="subagents-list" aria-labelledby="h-s">${S.map(s=>agentRow(s)).join('')}</ul></div>`;
+ if(variant==='B'){const items=[...D.map(d=>({n:d.startN,h:threadRow(d,{marker:true,startMeta:true})})),...S.map(s=>({n:s.startN,h:agentRow(s,{startMeta:true})}))].sort((a,b)=>b.n-a.n);return `<div class="roster"><ul class="subagents-list" aria-label="Delegated threads and agents, newest first">${items.map(i=>i.h).join('')}</ul></div>`}
+ const needs=D.some(d=>d.needs||d.kids?.some(k=>k.needs));
+ const sw=`<div class="switch" role="tablist" aria-label="Show"><button role="tab" id="sw-threads" data-sw="threads" aria-selected="${cTab==='threads'}" tabindex="${cTab==='threads'?0:-1}" aria-controls="sw-panel">Threads <span class="c">${total}</span>${needs?'<i class="needs-dot" aria-hidden="true"></i><span class="vh">, one needs you</span>':''}</button><button role="tab" id="sw-agents" data-sw="agents" aria-selected="${cTab==='agents'}" tabindex="${cTab==='agents'?0:-1}" aria-controls="sw-panel">Agents <span class="c">${S.length}</span></button></div>`;
+ const body=cTab==='threads'?`<ul class="cards" aria-label="Delegated threads">${D.map(card).join('')}</ul>`:`<ul class="subagents-list" aria-label="Muse’s agents">${S.map(s=>agentRow(s)).join('')}</ul>`;
+ return `<div class="roster">${sw}<div id="sw-panel" role="tabpanel" aria-labelledby="sw-${cTab}">${body}</div></div>`;
+}
+function footer(D,S){
+ const all=[...D,...D.flatMap(d=>d.kids||[])];
+ const needs=all.filter(d=>d.needs).length,work=all.filter(d=>d.o==='working'&&!d.needs).length+S.filter(s=>s.st==='running').length;
+ const left=needs?`<span class="n">${needs} needs you${work?' · '+work+' working':''}</span>`:work?`<span class="w">${work} working</span>`:'<span>None working</span>';
+ if(scenario==='before')return `<span class="w">1 working</span><span>2 agents</span>`;
+ return `${left}<span>${all.length} delegated threads · ${S.length} agents</span>`;
+}
+// Sidebar: today's Threads sidebar. After: no delegated rows; the parent says what its delegated threads need from you.
+function navRow(r){
+ return `<li class="nav-row" ${r.current?'data-current':''} ${r.level?`data-level="${r.level}"`:''}><button class="nav-item" aria-label="${esc(r.title)}" ${r.current?'aria-current="page"':''} ${r.id?`data-nav="${r.id}"`:''}>
+  <span class="ring" data-state="${r.state}"></span><span class="nav-title">${esc(r.title)}</span><span class="nav-time">${r.time}</span>
+  <span class="nav-meta">${mark(r.p)}${r.machine?`<span class="host-badge">${icon('laptop')}<span>This computer</span></span>`:''}<span class="nav-status" data-state="${r.state}"><span class="vh">${NAMES[r.p]}, </span>${r.status}</span></span></button></li>`;
+}
+function sidebar(){
+ const ps=scenario==='needs'?{state:'needs',status:'Needs your approval',time:'just now'}:scenario==='done'?{state:'done',status:'Done',time:'1 min'}:{state:'working',status:'Working',time:'22m 10s'};
+ const rows=[{id:'parent',title:PARENT,p:'muse',current:true,...ps}];
+ if(scenario==='before')rows.push(
+  {title:'PR 1150 to merge',p:'codex',level:1,machine:true,state:'working',status:'Working',time:'14m 34s'},
+  {title:'PR1150 native review',p:'muse',level:2,machine:true,state:'done',status:'Done',time:'2 min'},
+  {title:'PR1150 native review',p:'muse',level:2,machine:true,state:'done',status:'Done',time:'8 min'},
+  {title:'PR 1121 state scout',p:'codex',level:1,machine:true,state:'done',status:'Done',time:'18 min'});
+ rows.push({title:'Fix the remote thread backlog',p:'claude',state:'done',status:'Done',time:'2 h'},{title:'Update all host check journey',p:'codex',state:'done',status:'Done',time:'3 h'},{title:'Let Muse switch its sandbox',p:'muse',state:'done',status:'Done',time:'5 h'});
+ return `<div class="folder-head">${icon('folder')}<span>Sotto</span><span class="count">${rows.length}</span></div><ul class="nav-list">${rows.map(navRow).join('')}</ul><div class="settled">${icon('chevron')}Settled</div>`;
+}
+function pane(D){
+ const d2=D[1];
+ if(scenario==='opened'){
+  const all=[...D,...D.flatMap(d=>d.kids||[])];const s=all.find(d=>d.shown)||d2;const up=D.find(d=>d.kids?.includes(s));
+  const upTitle=up?up.title:PARENT,upId=up?up.id:'parent';
+  const body=s.id==='d2'?`<p class="reply">Both native reviews are back. The second found one thing left in the merge path, a retry that could run twice; I’m fixing it now, then I’ll wait for Gates (Windows) and Package result.</p>
+  <div class="dcards">${dcard(d2.kids[0])}${dcard(d2.kids[1])}</div>
+  <div class="activity">${icon('chevron')}${icon('terminal')}Ran gh pr checks 1150</div><div class="activity">${icon('chevron')}${icon('file')}Edited src/main/agents/control.ts</div>`
+   :`<p class="reply">${s.p==='muse'?'Two findings. The retry in the merge path can run twice when a check is re-requested, and the new test waits on a real sleep. Both are in control.ts and its test.':'PR 1121 changes how a thread’s state is read after a command, in control.ts only. It does not touch the files PR 1150 changes, so the two merge cleanly in either order.'}</p>`;
+  return `<header class="pane-head">${mark(s.p)}<h1>${esc(s.title)}</h1><div class="pane-actions">${toolsToggle(D)}<span class="icon">${icon('more')}</span></div></header>
+  <div class="delegated-by">${icon('fork')}<span>Delegated by <button class="link" data-nav="${upId}" aria-label="Open ${esc(upTitle)}, the thread that delegated to this one" title="${esc(upTitle)}">${esc(upTitle)}</button></span><span aria-hidden="true">·</span>${outcomeHtml(s)}</div>
+  <div class="messages"><div class="user-message brief"><div class="who">${icon('fork')}From ${esc(upTitle)}</div>${esc(s.brief)}</div>
+  <div class="message-by"><b>${NAMES[s.p]}</b><span>${s.start}</span></div>${body}</div>${composer(s.model)}`}
+ return `<header class="pane-head">${mark('muse')}<h1>${PARENT}</h1><div class="pane-actions">${toolsToggle(D)}<span class="icon">${icon('more')}</span></div></header>
+  <div class="messages"><p class="user-message">Get PR 1121 and PR 1150 merged. Use a Codex thread for each, and have Muse review 1150 natively before it merges.</p>
+  <div class="message-by"><b>Muse</b><span>2:04 pm</span></div><p class="reply">I’ve started a scout on PR 1121 and a thread to take PR 1150 to merge. I’ll read what they report and tell you where the two overlap.</p>
+  <div class="dcards">${dcard(D[0])}${dcard(d2)}</div>
+  <div class="activity">${icon('chevron')}${icon('file')}Read delegationWords.ts</div><div class="activity">${icon('chevron')}${icon('bot')}Started an agent: Explore: find delegation call sites</div></div>${composer('Muse')}`;
+}
+function dcard(d){return `<div class="dcard"><div class="dcard-top">${icon('fork')}<span class="dcard-lead">Delegated to</span><button class="link" data-open="${d.id}" aria-label="Open ${esc(d.title)} as a thread">${esc(d.title)}</button>${outcomeHtml(d)}</div><p class="dcard-meta">${mark(d.p)}${NAMES[d.p]} · ${esc(d.kind)} · This computer</p>${d.needs?'<p class="dcard-wait">Waiting for your approval in that thread.</p>':''}</div>`}
+function composer(model){return `<div class="composer-area"><div class="composer"><textarea aria-label="Draft a message" placeholder="What would you like to do next?"></textarea><div class="composer-bottom"><span class="icon">${icon('attach')}</span><span class="model">${model}</span><span class="send">${icon('arrow')}</span></div></div></div>`}
+function toolsToggle(D){const needs=D.some(d=>d.needs);const working=scenario!=='done';const label=needs?'Tools — a delegated thread needs you':working?'Tools — agents working':'Tools';return `<button class="icon tools-toggle" aria-expanded="true" aria-controls="tools" aria-label="${label}" title="${label}">${icon('panel')}${needs||working?`<i class="tdot" ${needs?'data-needs':''} aria-hidden="true"></i>`:''}</button>`}
+
+function render(focusId){
+ const {D,S}=data();const content=document.querySelector('#content');const y=content.scrollTop;
+ document.querySelector('#nav').innerHTML=sidebar();
+ document.querySelector('#pane').innerHTML=pane(D);
+ const pinned=scenario==='opened';
+ document.querySelector('#owner').innerHTML=pinned?`${icon('pin')}<span>${PARENT}</span><span class="pinned">Pinned</span>`:`${icon('folder')}<span>Sotto · Project folder</span>`;
+ const pin=document.querySelector('#pin');pin.setAttribute('aria-pressed',String(pinned));pin.setAttribute('aria-label',pinned?`Unpin Tools from ${PARENT}`:'Pin Tools to this thread');
+ document.querySelector('#agents-dot').hidden=!D.some(d=>d.needs)||scenario==='before';
+ document.querySelectorAll('.tab').forEach(el=>{el.setAttribute('aria-selected',String(el.dataset.tab===surface));el.tabIndex=el.dataset.tab===surface?0:-1});
+ content.setAttribute('aria-labelledby','tab-'+surface);
+ document.querySelector('#footer').hidden=surface!=='agents';
+ content.innerHTML=surface==='agents'?roster(D,S):`<div class="other-surface"><p>${surface==='files'?'src/ · docs/ · tests/':surface==='terminal'?'PS D:\\Sotto&gt;':surface==='changes'?'No changes to review.':'Browser preview'}</p><p>Select Agents to return to the mock-up.</p></div>`;
+ document.querySelector('#footer').innerHTML=footer(D,S);
+ content.scrollTop=y;
+ if(focusId)document.getElementById(focusId)?.focus({preventScroll:true});
+}
+function setVariant(v){variant=v;document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===v)));sync();open.clear();render()}
+function setScenario(s){scenario=s;document.querySelector('#scenario').value=s;open.clear();sync();render()}
+function sync(){const p=new URLSearchParams(location.search);p.set('variant',variant);p.set('scenario',scenario);if(document.documentElement.dataset.theme==='light')p.set('theme','light');else p.delete('theme');history.replaceState(null,'','?'+p)}
+document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>setVariant(b.dataset.v));
+document.querySelector('#scenario').onchange=e=>setScenario(e.target.value);
+document.querySelector('#theme').onclick=()=>{const light=document.documentElement.dataset.theme!=='light';document.documentElement.dataset.theme=light?'light':'dark';document.querySelector('#theme').textContent=light?'Dark theme':'Light theme';sync()};
+const choicesBtn=document.querySelector('#choices-btn'),choices=document.querySelector('#choices');
+function toggleChoices(show){choices.hidden=!show;choicesBtn.setAttribute('aria-expanded',String(show));if(!show)choicesBtn.focus()}
+choicesBtn.onclick=()=>toggleChoices(choices.hidden);
+document.querySelectorAll('.tab').forEach(button=>{button.onclick=()=>{surface=button.dataset.tab;render()};button.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const tabs=[...document.querySelectorAll('.tab')];const i=e.key==='Home'?0:e.key==='End'?tabs.length-1:(tabs.indexOf(button)+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[i].click();tabs[i].focus()}});
+document.addEventListener('click',e=>{
+ const row=e.target.closest('[data-row]');if(row){const id=row.dataset.row;open.has(id)?open.delete(id):open.add(id);render('head-'+id);return}
+ const sw=e.target.closest('[data-sw]');if(sw){cTab=sw.dataset.sw;render('sw-'+cTab);return}
+ const o=e.target.closest('[data-open]');if(o){shownId=o.dataset.open;const keep=[...open];setScenario('opened');keep.forEach(id=>open.add(id));render();document.querySelector('#pane .link')?.focus();return}
+ const n=e.target.closest('[data-nav]');if(n&&scenario==='opened'){if(n.dataset.nav==='parent')setScenario('working');else{shownId=n.dataset.nav;render()}return}
+ if(!choices.hidden&&!e.target.closest('#choices')&&e.target!==choicesBtn&&!choicesBtn.contains(e.target))toggleChoices(false);
+});
+document.addEventListener('keydown',e=>{
+ const t=e.target;
+ if(e.key==='Escape'){
+  const host=t.closest?.('.subagent-item,.card');const head=host?.querySelector('[data-row]');
+  if(head&&open.has(head.dataset.row)){open.delete(head.dataset.row);render(head.id);e.preventDefault();return}
+  if(!choices.hidden){toggleChoices(false);return}
+  return;
+ }
+ if(t.closest?.('[data-sw]')&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();cTab=cTab==='threads'?'agents':'threads';render('sw-'+cTab);return}
+ if(!['ArrowLeft','ArrowRight'].includes(e.key)||e.altKey||e.ctrlKey||e.metaKey)return;
+ if(t.matches?.('input,textarea,select,[contenteditable]')||t.closest?.('[role=tablist]'))return;
+ const vs=['A','B','C'];setVariant(vs[(vs.indexOf(variant)+(e.key==='ArrowRight'?1:2))%3]);
+});
+const params=new URLSearchParams(location.search);
+if(['A','B','C'].includes(params.get('variant')))variant=params.get('variant');
+if(params.has('scenario'))scenario=params.get('scenario');
+if(params.get('c')==='agents')cTab='agents';
+if(params.get('theme')==='light'){document.documentElement.dataset.theme='light';document.querySelector('#theme').textContent='Dark theme'}
+document.querySelector('#scenario').value=scenario;
+document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===variant)));
+if(params.has('open'))params.get('open').split(',').forEach(id=>open.add(id));
+render();
+</script>
+</body>
+</html>
