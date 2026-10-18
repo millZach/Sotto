@@ -342,7 +342,7 @@ jobs:
       - name: Exercise the Windows desktop
         run: npm run test:desktop-smoke
 
-      # Keep passing captures during the trial too, so its actual hosted desktop can be inspected.
+      # Keep passing captures too, so the hosted desktop each run used can be inspected.
       - name: Retain desktop journeys and screenshots
         if: always()
         uses: actions/upload-artifact@v4
