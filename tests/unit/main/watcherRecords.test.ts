@@ -2,9 +2,9 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { migrateWatcherRecord, migrateWorkspaceThreadKinds } from '../../../src/main/agents/watcherRecords'
+import { migrateWatcherRecord, migrateWorkspaceThreadKinds, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT } from '../../../src/main/agents/watcherRecords'
 import { agentThreadSchema } from '../../../src/shared/agents'
-import { emptyWatcherRecord } from '../../../src/shared/watcher'
+import { emptyWatcherRecord, watcherRecordSchema } from '../../../src/shared/watcher'
 import { watcherRecordFixture } from '../../fixtures/watcher'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 
@@ -65,5 +65,29 @@ describe('watcher records and workspace migration', () => {
     expect((await readdir(f.root)).some(name => name.includes('.corrupt-'))).toBe(false)
     const persisted = JSON.parse(await readFile(path, 'utf8'))
     expect(persisted.snapshot.threads.find((thread: { id: string }) => thread.id === 'center').kind).toBe('watcher')
+  })
+})
+
+describe('prompt turns Watcher keeps', () => {
+  const turn = (index: number, threadId = 'center') => ({ id: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
+    watcher: { hostId: '11111111-1111-4111-8111-111111111111', threadId }, createdAt: '2026-10-17T12:00:00.000Z', rootUserMessageId: `message-${index}` })
+
+  it('keeps every turn while there are few', () => {
+    const record = watcherRecordFixture()
+    record.promptTurns = Array.from({ length: WATCHER_PROMPT_TURNS_KEPT }, (_, index) => turn(index))
+    prunePromptTurns(record)
+    expect(record.promptTurns).toHaveLength(WATCHER_PROMPT_TURNS_KEPT)
+  })
+
+  it('keeps the turns operations count against, each Watcher\'s newest and the most recent, in order', () => {
+    const record = watcherRecordFixture()
+    // An earlier Watcher's only turn, a turn an operation still counts against, then many newer turns of the current Watcher.
+    record.promptTurns = [turn(0, 'earlier'), ...Array.from({ length: 600 }, (_, index) => turn(index + 1))]
+    record.operations[0]!.promptTurnId = turn(5).id
+    prunePromptTurns(record)
+    expect(record.promptTurns.map(item => item.id)).toEqual([turn(0, 'earlier').id, turn(5).id,
+      ...Array.from({ length: WATCHER_PROMPT_TURNS_KEPT }, (_, index) => turn(600 - WATCHER_PROMPT_TURNS_KEPT + 1 + index).id)])
+    // What is left is still a record the schema accepts.
+    expect(() => watcherRecordSchema.parse(record)).not.toThrow()
   })
 })

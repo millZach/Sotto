@@ -82,6 +82,18 @@ whether anything changed. The count is of copies of the record object itself. Th
 the room state for each publication, and that state carries the record's requests, operations and standing watches; the
 total copy budget counts it, but its size is not measured.
 
+That last copy stays, made cheaper rather than removed. Removing it would mean deciding whether the operations change
+does anything without running it, a second copy of its rules that would have to stay true to the first; a missed
+change there is lost silently. Instead the record is smaller and cheaper to copy:
+
+- Owl keeps only the prompt turns something reads: those an operation counts against, each Watcher's newest, and the
+  50 most recent. The rest go on the next change to the record, so the owner's 513 turns become about 50. Stable keeps
+  the record whole (ADR-0072).
+- The record is copied as plain schema data, its containers copied and its strings kept, as host snapshots already are.
+
+Measured in one run on a busy machine, a copy of the owner's record took 3.4 ms with `structuredClone` and 0.66 ms as
+plain data, and a copy with 60 turns 1.2 ms and 0.35 ms. `copySites.test.ts` counts the new copier, and the budget's record count follows either copier.
+
 ## When a guard goes red
 
 Read the failure: it says what grew, with the measured numbers. Move the copy off the update path, or read the state

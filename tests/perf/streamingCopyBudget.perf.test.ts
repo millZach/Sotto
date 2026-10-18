@@ -16,16 +16,20 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { copyBudgetPipeline } from '../fixtures/copyBudgetPipeline'
 
-const counter = vi.hoisted(() => ({ threads: Number.POSITIVE_INFINITY, calls: 0, whole: 0, watcherRecord: 0, kinds: new Map<string, number>() }))
+const counter = vi.hoisted(() => ({ threads: Number.POSITIVE_INFINITY, calls: 0, whole: 0, watcherRecord: 0, kinds: new Map<string, number>(),
+  record: undefined as (() => unknown) | undefined }))
 function count(kind: string, value: unknown): void {
   counter.calls++
+  // Watcher's whole record, which grows with every prompt Watcher is sent and every wake-up it has had.
+  if (counter.record && value === counter.record()) counter.watcherRecord++
   const holder = value as { host?: { threads?: unknown }; threads?: unknown } | null
   const threads = Array.isArray(holder?.host?.threads) ? holder.host.threads : Array.isArray(holder?.threads) ? holder.threads : undefined
   if (threads && threads.length >= counter.threads) { counter.whole++; counter.kinds.set(kind, (counter.kinds.get(kind) ?? 0) + 1) }
 }
 vi.mock('../../src/main/agents/cloneHostSnapshot', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/main/agents/cloneHostSnapshot')>()
-  return { ...original, cloneHostSnapshot: (snapshot: Parameters<typeof original.cloneHostSnapshot>[0]) => { count('cloneHostSnapshot', snapshot); return original.cloneHostSnapshot(snapshot) } }
+  return { ...original, cloneHostSnapshot: (snapshot: Parameters<typeof original.cloneHostSnapshot>[0]) => { count('cloneHostSnapshot', snapshot); return original.cloneHostSnapshot(snapshot) },
+    clonePlainData: <T>(value: T): T => { count('clonePlainData', value); return original.clonePlainData(value) } }
 })
 vi.mock('../../src/main/agents/activitySnapshots', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/main/agents/activitySnapshots')>()
@@ -51,12 +55,8 @@ async function measure(threads: number, owl: boolean) {
     pipeline.adapter.log.add(stream.id, { id: 'reply', role: 'assistant', text: 'First', createdAt: at })
     pipeline.adapter.publish(true)
     await sleep(300)
-    globalThis.structuredClone = ((value: unknown, options?: StructuredSerializeOptions) => {
-      count('structuredClone', value)
-      // Watcher's whole record, which grows with every prompt Watcher is sent and every wake-up it has had.
-      if (owl && value === pipeline.control.watcherRecordView()) counter.watcherRecord++
-      return native(value, options)
-    }) as typeof structuredClone
+    globalThis.structuredClone = ((value: unknown, options?: StructuredSerializeOptions) => { count('structuredClone', value); return native(value, options) }) as typeof structuredClone
+    counter.record = owl ? () => pipeline.control.watcherRecordView() : undefined
     counter.threads = threads; counter.calls = 0; counter.whole = 0; counter.watcherRecord = 0; counter.kinds.clear(); pipeline.resetCounts()
     for (let chunk = 0; chunk < CHUNKS; chunk++) {
       pipeline.adapter.log.appendText(stream.id, 'reply', ` word${chunk}`)
@@ -68,7 +68,7 @@ async function measure(threads: number, owl: boolean) {
     return { broadcasts, copiesPerUpdate: counter.calls / broadcasts, wholeStateCopiesPerUpdate: counter.whole / broadcasts, watcherRecordCopiesPerUpdate: counter.watcherRecord / broadcasts, wholeByKind: Object.fromEntries([...counter.kinds].map(([kind, n]) => [kind, Math.round(n / broadcasts * 100) / 100])) }
   } finally {
     globalThis.structuredClone = native
-    counter.threads = Number.POSITIVE_INFINITY
+    counter.threads = Number.POSITIVE_INFINITY; counter.record = undefined
     await pipeline.stop()
   }
 }
