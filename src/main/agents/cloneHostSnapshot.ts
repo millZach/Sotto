@@ -9,6 +9,14 @@ export function cloneHostSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapsho
   return cloneValue(snapshot, new WeakMap()) as AgentHostSnapshot
 }
 
+/**
+ * A copy of other plain schema data the same way, such as Watcher's record: several times faster than structuredClone,
+ * which serializes every string again.
+ */
+export function clonePlainData<T>(value: T): T {
+  return cloneValue(value, new WeakMap()) as T
+}
+
 function cloneValue(value: unknown, copies: WeakMap<object, object>): unknown {
   if (value === null || typeof value !== 'object') return value
   const previous = copies.get(value)

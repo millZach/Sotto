@@ -1,4 +1,5 @@
-import { annotateWatcherOwnChanges, withKeptWatcherChanges } from './watcherOwnChanges'
+import { annotateWatcherOwnChanges } from './watcherOwnChanges'
+import { withKeptMessageMetadata } from '../../shared/agents'
 import { catalogWithoutHeld, heldProviderOfThreadRecord } from './heldProviderGate'
 import { heldProviderRefusal, heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 import { summarizePullRequestChecks } from './pullRequestCheckState'
@@ -145,11 +146,11 @@ export type VisualAddition =
   | { readonly added: false; readonly reason: 'unknown-thread' | 'history-unavailable' | 'turn-limit' | 'thread-limit' }
 
 /** How much of a message the last publish left behind: enough to tell an append from a rewrite. */
-interface MessageMark { readonly id: string; readonly length: number; readonly attachments: number; readonly tail: string; readonly watcherChanges: string }
+interface MessageMark { readonly id: string; readonly length: number; readonly attachments: number; readonly tail: string; readonly watcherChanges: string; readonly turnMessageId: string | undefined }
 /** The characters of a message kept for comparison; a rewrite of the same length still differs here. */
 const TAIL = 24
 const markOf = (message: AgentMessage): MessageMark =>
-  ({ id: message.id, length: message.text.length, attachments: message.attachments?.length ?? 0, tail: message.text.slice(-TAIL), watcherChanges: JSON.stringify([message.watcherOwnChange ?? null, message.watcherObservedChanges ?? null]) })
+  ({ id: message.id, length: message.text.length, attachments: message.attachments?.length ?? 0, tail: message.text.slice(-TAIL), watcherChanges: JSON.stringify([message.watcherOwnChange ?? null, message.watcherObservedChanges ?? null]), turnMessageId: message.turnMessageId })
 
 /** A record read back from disk: one still running there was an unfinished observation, not a live process. */
 function savedRecord(activity: AgentActivity): AgentActivity {
@@ -2019,9 +2020,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (mark.id !== message.id) return reset()
       const attachments = message.attachments?.length ?? 0
       if (mark.length === message.text.length && mark.attachments === attachments && mark.tail === message.text.slice(-TAIL)
-        && mark.watcherChanges === JSON.stringify([message.watcherOwnChange ?? null, message.watcherObservedChanges ?? null])) continue
+        && mark.turnMessageId === message.turnMessageId && mark.watcherChanges === JSON.stringify([message.watcherOwnChange ?? null, message.watcherObservedChanges ?? null])) continue
       // A true append leaves the characters the store already holds exactly where they were.
       if (message.text.length > mark.length && mark.attachments === attachments
+        && mark.turnMessageId === message.turnMessageId
         && mark.watcherChanges === JSON.stringify([message.watcherOwnChange ?? null, message.watcherObservedChanges ?? null])
         && message.text.slice(Math.max(0, mark.length - TAIL), mark.length) === mark.tail) {
         events.push({ kind: 'message-text-appended', at, messageId: message.id, appendText: message.text.slice(mark.length) })
@@ -2819,7 +2821,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         const nativeMessages = this.legacyMessages(merged, thread.messages)
         const retained = new Map(old?.messages.filter(message => message.watcherOwnChange || message.watcherObservedChanges).map(message => [message.id, message]) ?? [])
         const messages = merged.kind === 'watcher' ? annotateWatcherOwnChanges({ ...merged, messages: nativeMessages.map(message =>
-          withKeptWatcherChanges(message, retained.get(message.id) ?? this.message(merged.id, message.id))) }) : nativeMessages
+          withKeptMessageMetadata(message, retained.get(message.id) ?? this.message(merged.id, message.id))) }) : nativeMessages
         merged.messages = this.record(merged, messages, old?.historyEpoch)
         merged.summary = this.threadSummary(merged, this.storeUnavailable ? merged.messages : messages)
       }

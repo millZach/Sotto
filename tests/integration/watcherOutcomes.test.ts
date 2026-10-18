@@ -7,6 +7,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentHost } from '../../src/main/agents/host'
 import { WatcherEvidenceStore } from '../../src/main/agents/watcherEvidence'
+import { ThreadMessageLog } from '../../src/main/agents/threadMessageLog'
+import { ThreadStore } from '../../src/main/agents/threadStore'
 import { watcherTurnOutcome } from '../../src/main/agents/watcherOutcomes'
 import type { WatcherOperation } from '../../src/shared/watcher'
 import { claudeFixture } from '../fixtures/claudeFixture'
@@ -115,6 +117,65 @@ describe.each(['claude', 'codex'] as const)('%s', provider => {
 })
 
 describe('claude', () => {
+  it('retains a proven reply owner through stored history replay and timestamp correction', async () => {
+    const w = await worker('claude', { steering: 'queue' })
+    const first = await w.brief('now', 'Synthetic first brief')
+    const steer = await w.brief('steer', 'Synthetic held steer')
+    await w.f.driver.completeTurn(w.id, 'Synthetic first answer')
+    await expect.poll(() => w.outcome(steer)).toMatchObject({ outcome: 'working', turnMessageId: steer.messageId })
+    await w.f.driver.completeTurn(w.id, 'Synthetic second answer')
+    await w.idle()
+    const finished = await w.thread()
+    const reply = finished.messages.find(message => message.text === 'Synthetic first answer')!
+    expect(reply).toMatchObject({ turnMessageId: first.messageId })
+    const store = new ThreadStore(join(w.f.root, 'ownership.sqlite'))
+    store.open()
+    try {
+      store.appendMany(w.id, finished.messages.map(message => ({ kind: 'message-added', at: message.createdAt, message })))
+      store.close()
+      store.open()
+      const corrected = { ...reply, createdAt: new Date(Date.parse(finished.activities!.find(activity => activity.turnId === steer.messageId)!.startedAt!) + 1000).toISOString() }
+      Reflect.deleteProperty(corrected, 'turnMessageId')
+      store.append(w.id, { kind: 'message-replaced', at: corrected.createdAt, message: corrected })
+      expect(store.message(w.id, reply.id)).toMatchObject({ turnMessageId: first.messageId, createdAt: corrected.createdAt })
+      // The adapter can resume from text-free identities; the provider's fresh read carries no Sotto owner.
+      const replay = new ThreadMessageLog()
+      replay.seed(w.id, store.messageIdentities(w.id))
+      replay.observe([w.id])
+      for (const message of finished.messages) {
+        const native = message.id === reply.id ? corrected : { ...message }
+        Reflect.deleteProperty(native, 'turnMessageId')
+        replay.add(w.id, native)
+      }
+      const restored = { ...finished, messages: replay.published(w.id) }
+      expect(restored.messages.find(message => message.id === reply.id)).toMatchObject({ turnMessageId: first.messageId, createdAt: corrected.createdAt })
+      expect(watcherTurnOutcome(first, restored, () => true)).toMatchObject({ replyMessageId: reply.id })
+      expect(watcherTurnOutcome(steer, restored, () => true)?.replyMessageId).not.toBe(reply.id)
+    } finally { store.close() }
+  })
+
+  it('does not give a newer turn reply to an earlier completed turn that emitted no reply', async () => {
+    const w = await worker('claude', { steering: 'queue' })
+    const first = await w.brief('now', 'Synthetic first brief')
+    const steer = await w.brief('steer', 'Synthetic held steer')
+    await w.f.driver.completeTurn(w.id, '')
+    await expect.poll(() => w.outcome(steer)).toMatchObject({ outcome: 'working', turnMessageId: steer.messageId })
+    await w.f.driver.completeTurn(w.id, 'Synthetic newer turn answer')
+    await w.idle()
+    const finished = await w.thread()
+    const reply = finished.messages.find(message => message.text === 'Synthetic newer turn answer')!
+    expect(reply).toMatchObject({ turnMessageId: steer.messageId })
+    const replay = new ThreadMessageLog()
+    for (const message of finished.messages) replay.add(w.id, message)
+    const corrected = { ...reply, createdAt: finished.activities!.find(activity => activity.turnId === first.messageId)!.startedAt! }
+    Reflect.deleteProperty(corrected, 'turnMessageId')
+    replay.add(w.id, corrected)
+    const restored = { ...finished, messages: replay.published(w.id) }
+    expect(watcherTurnOutcome(first, restored, () => true)).toMatchObject({ outcome: 'answered', turnMessageId: first.messageId })
+    expect(watcherTurnOutcome(first, restored, () => true)?.replyMessageId).toBeUndefined()
+    expect(watcherTurnOutcome(steer, restored, () => true)).toMatchObject({ outcome: 'answered', replyMessageId: reply.id })
+  })
+
   it('proves an ordinary worker\'s answer by Claude Code\'s own turn ID, so its turn-finished evidence goes with it', async () => {
     // The fixture's threads are ordinary workers, not Watcher's own runtime.
     const w = await worker('claude')

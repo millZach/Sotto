@@ -78,6 +78,13 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
  * the same trust as `connect`, which pairing already gives, and the iPhone client does not send them.
  */
 export const REMOTE_SIGN_IN_OPERATIONS = ['sign-in-start', 'sign-in-read', 'sign-in-code', 'sign-in-cancel'] as const
+/**
+ * The host's own OpenCode signed in to a model source, or out of one, for the desktop that asks (#1107): the same trust as a
+ * provider's sign-in above. It answers no permission request and signs in the user's own account, finished in the user's
+ * own browser on that desktop, so pairing is enough. Only a host whose OpenCode runs lists `opencode-sign-in`, only a
+ * desktop is offered it, and only the client that started a browser sign-in reads, finishes or cancels it.
+ */
+export const REMOTE_OPENCODE_SIGN_IN_OPERATIONS = ['opencode-sign-in'] as const
 /** Usage reads grant nothing. Clearing numeric history takes the authenticated client's remote-answer policy. */
 export const REMOTE_USAGE_OPERATIONS = ['usage-read', 'usage-refresh', 'usage-clear'] as const
 export function remoteUsageRefusal(operation: typeof REMOTE_USAGE_OPERATIONS[number], mayAnswer: boolean): 'forbidden' | null {

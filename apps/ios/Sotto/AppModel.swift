@@ -237,11 +237,11 @@ extension AppModel {
     }
     /// The name a thread's computer goes by here, or nil for a computer this iPhone isn't paired with.
     func computerName(_ hostID: String) -> String? { computer(hostID)?.name }
-    /// Watcher's model, as its computer names it: "Codex · GPT-6.1 Sol".
+    /// Watcher's model, as its computer names it: "Codex · GPT-6.1 Sol", with OpenCode's model source when it has one.
     func watcherModel(_ hostID: String) -> String? {
         guard let current = watcherPage(hostID)?.current else { return nil }
-        let model = live[hostID]?.shell?.host.models?.first { $0.id == current.modelId }?.name ?? current.modelId
-        return AgentNames.name(current.provider) + " · " + model
+        let model = live[hostID]?.shell?.host.models?.first { $0.id == current.modelId }
+        return ThreadModel.label(providerID: current.provider, source: model?.source, name: model?.name ?? current.modelId)
     }
 
     // MARK: Watcher's page

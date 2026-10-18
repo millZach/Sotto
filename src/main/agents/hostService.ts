@@ -107,6 +107,10 @@ export interface HostService {
   subscribe(listener: (state: AgentState) => void): () => void
   /** One thread's kind as the host holds it now, read without copying any state (#917). Undefined for an unknown thread. */
   threadKind?(threadId: string): AgentThread['kind']
+  /** One thread's provider as the host holds it now, read without copying any state (#1107). Undefined for an unknown thread. */
+  threadProvider?(threadId: string): ProviderId | undefined
+  /** One project's provider as the host holds it now, read without copying any state (#1107). Undefined for an unknown project. */
+  projectProvider?(projectId: string): ProviderId | undefined
   /** The whole published state, history included. */
   state(): AgentState
   /** The published state without any thread's history: what every client needs on every frame. */
@@ -182,6 +186,8 @@ export interface LocalHostControl {
   watcherPhoneExclusions?(): { threadIds: string[]; projectIds: string[] }
   shell(): AgentState
   threadKind?(threadId: string): AgentThread['kind']
+  threadProvider?(threadId: string): ProviderId | undefined
+  projectProvider?(projectId: string): ProviderId | undefined
   threadDetail(threadId: string): AgentThreadDetail | null
   subscribe(listener: (state: AgentState) => void): () => void
   /** Runs one client's command and answers with the shell, without copying any history. */
@@ -300,6 +306,8 @@ export class LocalHostService implements HostService {
   threadKind(threadId: string): AgentThread['kind'] {
     return this.control.threadKind ? this.control.threadKind(threadId) : this.control.shell().host.threads.find(thread => thread.id === threadId)?.kind
   }
+  threadProvider(threadId: string): ProviderId | undefined { return this.control.threadProvider?.(threadId) }
+  projectProvider(projectId: string): ProviderId | undefined { return this.control.projectProvider?.(projectId) }
   threadDetail(threadId: string): AgentThreadDetail | null { return this.control.threadDetail(threadId) }
   async checkRequestAnswer(target: HostAnswerTarget, client: ClientIdentity): Promise<void> {
     if (!this.control.checkRequestAnswer) throw new RequestAnswerCheckRefusal('unsupported')
