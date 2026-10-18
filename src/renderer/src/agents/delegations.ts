@@ -136,20 +136,21 @@ export function useDelegationsOf(threadIds: readonly string[], store: Delegation
 /**
  * The whole of the newest brief `threadId` was sent, read from main only while `wanted` (a roster row's details are open):
  * the window's own copy of a thread holds its messages only while a pane shows it, and its summary only an excerpt of
- * the newest user message, which a later message of the user's replaces. Never a reply. Undefined until it is read, and
- * when Sotto no longer holds it.
+ * the newest user message, which a later message of the user's replaces. Never a reply. `newest` names the newest
+ * brief's delegation, so a brief sent while the details are open is read again rather than leaving the earlier one
+ * shown. Undefined until it is read, and when Sotto no longer holds it.
  */
-export function useFullBrief(threadId: string, wanted: boolean): string | undefined {
+export function useFullBrief(threadId: string, newest: string | undefined, wanted: boolean): string | undefined {
   const enabled = useDelegationsEnabled()
-  const [brief, setBrief] = useState<{ readonly threadId: string; readonly text: string } | undefined>(undefined)
+  const [brief, setBrief] = useState<{ readonly threadId: string; readonly newest: string | undefined; readonly text: string } | undefined>(undefined)
   useEffect(() => {
     const bridge = typeof window === 'undefined' ? undefined : window.sotto?.delegations
     if (!enabled || !wanted || !bridge) return
     let current = true
-    void bridge.brief({ threadId }).then(answer => { if (current && answer) setBrief({ threadId, text: answer.text }) }, () => undefined)
+    void bridge.brief({ threadId }).then(answer => { if (current && answer) setBrief({ threadId, newest, text: answer.text }) }, () => undefined)
     return () => { current = false }
-  }, [enabled, wanted, threadId])
-  return brief?.threadId === threadId ? brief.text : undefined
+  }, [enabled, wanted, threadId, newest])
+  return brief?.threadId === threadId && brief.newest === newest ? brief.text : undefined
 }
 
 /** The newest brief a delegated thread was sent, read with the thread's own delegations; none for a thread no thread started. */

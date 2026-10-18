@@ -88,7 +88,7 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
   const action = openAction(row, shown)
   const outcome = row.status === 'needs' ? 'needs' : row.status
   // The preview is the excerpt the window holds; open, the row reads the whole brief from main.
-  const brief = useFullBrief(row.thread.id, open) ?? row.brief
+  const brief = useFullBrief(row.thread.id, row.newest?.id, open) ?? row.brief
   const close = (event: React.KeyboardEvent): void => {
     if (!open || event.key !== 'Escape' || event.defaultPrevented) return
     event.preventDefault(); setOpen(false); head.current?.focus()

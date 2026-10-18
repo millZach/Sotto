@@ -258,6 +258,22 @@ describe('Tools › Agents with delegated threads', () => {
     expect(within(panel()).queryByText(/Reply words of/u)).toBeNull()
   })
 
+  it('reads the brief again when a newer one is sent while the row is open, never leaving the earlier one shown', async () => {
+    owl(true)
+    const answers = views(), briefs: Record<string, string> = { [MERGE]: 'First brief to merge.' }
+    const { reads } = setup(delegatingState(), PARENT, answers, briefs)
+    const head = await waitFor(() => within(list()).getByRole('button', { name: 'PR 1150 to merge, delegated thread on Codex, Working' }))
+    fireEvent.click(head)
+    await waitFor(() => expect(within(list()).getByText('First brief to merge.')).toBeInTheDocument())
+    // The parent sends the merge thread a second brief while its details are open.
+    answers[PARENT] = [...answers[PARENT]!, view(MERGE, 2, { action: 'send', briefMessageId: `${MERGE}-second` })]
+    briefs[MERGE] = 'Second brief to merge.'
+    act(() => reads.change([PARENT]))
+    await waitFor(() => expect(within(list()).getByText('Second brief to merge.')).toBeInTheDocument())
+    expect(within(list()).queryByText('First brief to merge.')).toBeNull()
+    expect(reads.bridge.brief).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps the Tools dot for a delegated thread still waiting while you answer another of the pinned roster\'s', async () => {
     owl(true)
     // The scout waits; the merge thread, whose request you just answered, is in the pane, and Tools is pinned to its parent.
