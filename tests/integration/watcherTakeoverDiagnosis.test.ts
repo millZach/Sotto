@@ -333,11 +333,22 @@ it.each(['queue', 'steer'] as const)('allows a fresh request to %s after user re
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
   await f.finish(f.watcherId)
   const requestB = await f.request('Synthetic request B for explicit delivery')
-  expect(await f.call('send_to_thread', { requestId: f.watchId, retryKey: randomUUID(), target: f.target,
-    delivery: 'now', text: 'Synthetic running standing work' })).toMatchObject({ status: 'ok' })
+  const previousTurnId = f.thread(f.target.threadId).lastTurn?.id
+  const standing = await f.call('send_to_thread', { requestId: f.watchId, retryKey: randomUUID(), target: f.target,
+    delivery: 'now', text: 'Synthetic running standing work' })
+  expect(standing).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  if (standing.status !== 'ok') throw new Error('Synthetic standing work was not admitted')
+  const messageId = f.control.watcherRecord().operations.find(item => item.id === standing.receipt.operationId)!.messageId
+  expect(messageId).toBeDefined()
+  // Acceptance can precede the native user head even after the running turn is published. Steer only that send's turn.
+  await expect.poll(() => {
+    const current = f.thread(f.target.threadId)
+    return current.status === 'running' && current.lastTurn?.status === 'running' && current.lastTurn.id !== previousTurnId
+      && current.lastUserMessageId === messageId && current.messages.findLast(item => item.role === 'user')?.id === messageId
+  }).toBe(true)
   const result = await f.call('send_to_thread', { requestId: requestB, retryKey: randomUUID(), target: f.target, delivery,
     expectedTurnId: f.thread(f.target.threadId).lastTurn?.id, text: 'Synthetic fresh explicit delivery' })
-  expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: delivery === 'queue' ? 'queued' : 'accepted' } })
+  expect(result, JSON.stringify(result)).toMatchObject({ status: 'ok', receipt: { deliveryState: delivery === 'queue' ? 'queued' : 'accepted' } })
   expect(f.participationA().state).toBe('taken-over')
 }, 60_000)
 
