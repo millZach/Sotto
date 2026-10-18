@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -171,7 +171,13 @@ export class OpenCodeServer {
       const closed = new Promise<void>(done => child.once('close', () => done()))
       // Written down before anything else can happen to it, and taken off once it and what it left are gone.
       const { ledger } = launch, pid = child.pid
-      const recorded = ledger && pid !== undefined ? recordOpenCodeServer(ledger, { pid, startedAt, owner: process.pid }).catch(() => undefined) : Promise.resolve()
+      const recorded = ledger && pid !== undefined ? recordOpenCodeServer(ledger, { pid, startedAt, owner: process.pid })
+        .then(async () => {
+          // Then the start the system itself reports for it, which is what a later sweep reads (ADR-0087). Only while the
+          // server has not exited: until Node reaps it, its PID cannot be anyone else's.
+          const started = await systemProcessStart(pid)
+          if (started !== undefined && !ended(child)) await recordOpenCodeServer(ledger, { pid, startedAt, started, owner: process.pid })
+        }).catch(() => undefined) : Promise.resolve()
       const forget = (): Promise<void> => recorded.then(() => ledger && pid !== undefined ? rm(serverRecordPath(ledger, pid), { force: true }) : undefined).catch(() => undefined)
       let scanned = '', ready = false
       const fail = (error: Error): void => {
@@ -316,37 +322,72 @@ async function killTree(child: ChildProcess, closed: Promise<void>, startedAt: n
 }
 
 /**
- * A server Sotto started, as it is written down while it runs (ADR-0087): its PID, when Sotto started it, and the Sotto
- * process that did. A crash leaves the record behind, and the next connect ends the server it names, if it is still that
- * server, and what it left.
+ * A server Sotto started, as it is written down while it runs (ADR-0087): its PID, when Sotto started it by Sotto's clock,
+ * on macOS and Linux when the system says it started, and the Sotto process that did. A crash leaves the record behind,
+ * and the next connect ends the server it names, if it is still that server, and what it left.
  */
-export interface OpenCodeServerRecord { readonly pid: number; readonly startedAt: number; readonly owner: number }
-const serverRecordSchema = z.object({ pid: z.number().int().positive(), startedAt: z.number().finite(), owner: z.number().int().positive() })
+export interface OpenCodeServerRecord { readonly pid: number; readonly startedAt: number; readonly started?: number | undefined; readonly owner: number }
+const serverRecordSchema = z.object({ pid: z.number().int().positive(), startedAt: z.number().finite(), started: z.number().finite().optional(), owner: z.number().int().positive() })
 /** Where each server Sotto starts on these folders is written down while it runs: one file per server, named by its PID. */
 export function opencodeServerLedger(folders: OpenCodeFolders): string { return folders.servers }
 const serverRecordPath = (ledger: string, pid: number): string => join(ledger, `${pid}.json`)
+let recordWrites = 0
+/**
+ * Write a server down, or write it down again. The record is written whole beside its place, named for the Sotto process
+ * writing it, and then renamed into place, so a sweep running meanwhile reads the old record or the new one and never
+ * half of either. Windows refuses the rename while a sweep has the record open; after a few tries the record is written
+ * in place, which a sweep leaves alone while it is young (`RECORD_SETTLE_MS`).
+ */
 export async function recordOpenCodeServer(ledger: string, record: OpenCodeServerRecord): Promise<void> {
   await mkdir(ledger, { recursive: true })
-  await writeFile(serverRecordPath(ledger, record.pid), JSON.stringify(record))
+  const file = serverRecordPath(ledger, record.pid), whole = `${file}.${process.pid}.${++recordWrites}.tmp`, text = JSON.stringify(record)
+  await writeFile(whole, text)
+  for (let attempt = 1; ; attempt++) {
+    try { await rename(whole, file); return } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY') { await rm(whole, { force: true }).catch(() => undefined); throw error }
+      if (attempt >= 10) break
+      await pause(20)
+    }
+  }
+  try { await writeFile(file, text) } finally { await rm(whole, { force: true }).catch(() => undefined) }
 }
+/** A record younger than this that cannot be read may be an older Sotto's, still writing it in place. */
+const RECORD_SETTLE_MS = 5_000
 
 const isRunning = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' } }
 /**
  * How far a process's start may sit from the moment Sotto wrote down starting it: a little before, for the coarse clocks
- * process start times are kept on (whole seconds from `ps`), and a little after, for a slow spawn.
+ * process start times are kept on, and a little after, for a slow spawn. Windows stamps a process on the clock Node
+ * reads, so this is all it needs. Linux's `ps` adds ticks since boot to a boot time kept in whole seconds and drops the
+ * fraction again, so it reads up to two seconds behind the clock, and a wall-clock step moves what it reads. Room before
+ * costs nothing: a process holding the PID that truly started before the server did would be the server itself, since
+ * the server held the PID from then on. A record written before `ps` answered relies on it.
  */
-const START_BEFORE_MS = 1_500
+const START_BEFORE_MS = 2_500
 const START_AFTER_MS = 10_000
+/**
+ * How far `ps` may read from the start it reported when Sotto wrote the server down: the second it rounds to, once more if
+ * the boot time it adds to is rounded the other way. A clock that steps after the record moves `ps` off it, and then
+ * Sotto's own clock is the other rule a server may match by.
+ */
+const SAME_START_MS = 1_000
 /** The process seen holding a recorded server's PID: when it started, and its command line when the system says. */
 export interface ObservedProcess { readonly started: number; readonly command?: string | undefined }
+/** Whether a command line is OpenCode's server as Sotto starts one. A command line the system will not show is not. */
+function isServerCommand(command: string | undefined): boolean {
+  return !!command && /(?:^|\s)serve(?:\s|$)/u.test(command) && command.includes('--hostname=127.0.0.1') && command.includes('--port=0')
+}
 /**
- * Whether the process holding a recorded server's PID is that server: it started when Sotto wrote down starting it, and
- * its command line is OpenCode's server as Sotto starts one. A command line the system will not show is not proof.
+ * Whether the process holding a recorded server's PID is that server: its command line is OpenCode's server as Sotto
+ * starts one, and it started when Sotto wrote down starting it, by Sotto's clock or within a second of the start `ps`
+ * reported for it then. A command line the system will not show is not proof.
  */
 export function isRecordedServer(record: OpenCodeServerRecord, seen: ObservedProcess | undefined): boolean {
-  if (!seen?.command) return false
-  if (seen.started < record.startedAt - START_BEFORE_MS || seen.started > record.startedAt + START_AFTER_MS) return false
-  return /(?:^|\s)serve(?:\s|$)/u.test(seen.command) && seen.command.includes('--hostname=127.0.0.1') && seen.command.includes('--port=0')
+  if (!seen || !isServerCommand(seen.command)) return false
+  // Like with like: the start the system reported then, against what it reports now.
+  if (record.started !== undefined && Math.abs(seen.started - record.started) <= SAME_START_MS) return true
+  return seen.started >= record.startedAt - START_BEFORE_MS && seen.started <= record.startedAt + START_AFTER_MS
 }
 /** One line of `ps -o lstart= -o args=` in the C locale: the start time, to the second, and the command line. */
 export function parseProcessStart(line: string): ObservedProcess | undefined {
@@ -366,6 +407,10 @@ function processStart(pid: number): Promise<ObservedProcess | undefined> {
     reader.once('error', () => { clearTimeout(timer); resolve(undefined) })
     reader.once('close', () => { clearTimeout(timer); resolve(parseProcessStart(output.split(/\r?\n/u)[0] ?? '')) })
   })
+}
+/** When the system says a process started, on macOS and Linux, as `ps` reads it; undefined on Windows or once it has gone. */
+export async function systemProcessStart(pid: number): Promise<number | undefined> {
+  return process.platform === 'win32' ? undefined : (await processStart(pid))?.started
 }
 const pause = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms).unref() })
 async function gone(pid: number, withinMs: number): Promise<boolean> {
@@ -404,16 +449,32 @@ async function endRecordedServer(record: OpenCodeServerRecord, rows: readonly Pr
  */
 export async function endServersLeftBehind(ledger: string, log?: (event: OpenCodeServerEvent) => void): Promise<void> {
   let names: string[]
-  try { names = (await readdir(ledger)).filter(name => name.endsWith('.json')) } catch { return }
-  const records = await Promise.all(names.map(async name => {
+  try { names = await readdir(ledger) } catch { return }
+  // A record a Sotto that has gone was still writing when it went; one a running Sotto is writing is its own.
+  for (const name of names) {
+    const writer = /^\d+\.json\.(\d+)\.\d+\.tmp$/u.exec(name)?.[1]
+    if (writer && !isRunning(Number(writer))) await rm(join(ledger, name), { force: true }).catch(() => undefined)
+  }
+  const records = await Promise.all(names.filter(name => name.endsWith('.json')).map(async name => {
     const file = join(ledger, name)
     try { return { file, record: serverRecordSchema.parse(JSON.parse(await readFile(file, 'utf8'))) } } catch { return { file, record: undefined } }
   }))
-  const left = records.filter(({ record }) => !record || !isRunning(record.owner))
-  if (!left.length) return
-  const rows = process.platform === 'win32' && left.some(({ record }) => record) ? await processTable() : []
+  // A record that cannot be read is cleared only once nothing can still be writing it.
+  const unread = (await Promise.all(records.filter(({ record }) => !record).map(async ({ file }) => {
+    const written = await stat(file).then(({ mtimeMs }) => mtimeMs, () => undefined)
+    return written === undefined || written > Date.now() - RECORD_SETTLE_MS ? [] : [file]
+  }))).flat()
+  const left = records.flatMap(({ file, record }) => record && !isRunning(record.owner) ? [{ file, record }] : [])
+  if (!left.length && !unread.length) return
+  const rows = process.platform === 'win32' ? await processTable() : []
   for (const { file, record } of left) {
-    if (record && await endRecordedServer(record, rows)) log?.('opencode-server-left-ended')
+    if (await endRecordedServer(record, rows)) log?.('opencode-server-left-ended')
     await rm(file, { force: true }).catch(() => undefined)
+  }
+  for (const file of unread) {
+    // Named by its server's PID: while that PID runs OpenCode's server, the record may be all that shows it is Sotto's.
+    const pid = Number(/(\d+)\.json$/u.exec(file)?.[1])
+    const command = process.platform === 'win32' ? rows.find(row => row.pid === pid)?.command : (await processStart(pid))?.command
+    if (!isServerCommand(command)) await rm(file, { force: true }).catch(() => undefined)
   }
 }

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 
 import { type AgentHostSnapshot } from '../../../src/shared/agents'
+import type { GitStatus } from '../../../src/shared/gitStatus'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { ThreadWorktrees } from '../../../src/main/agents/threadWorktrees'
 
@@ -158,6 +159,46 @@ describe("durable project/thread organization", () => {
     expect(spy).toHaveBeenCalledTimes(1) // the send joined the preparation instead of starting a second one
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.status).toBe('ready')
     expect(f.adapters.codex.commands.map(command => command.type)).toEqual(['create-thread', 'send'])
+  })
+
+  it('fetches a new worktree’s origin base when typing starts, outside the lane, and only where the send would fetch', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const status: GitStatus = { isRepository: true, branch: 'main', upstream: 'origin/main', hasRemote: true, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind: 0, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-10-16T00:00:00.000Z' }
+    let fetchIntervalMs = 0, removing = false
+    const ranIn: string[] = []
+    // The project's folder is held while a removal runs there (ADR-0027): a fetch typing starts then is not started at all.
+    const runInFolder = <Result>(cwd: string, work: () => Promise<Result>): Promise<Result> | undefined => { ranIn.push(cwd); return removing ? undefined : work() }
+    f.host.setGitStatus({ read: async () => status, readRemote: async () => true, invalidate: () => undefined, runInFolder }, { pollIntervalMs: () => fetchIntervalMs, foreground: () => false })
+    const fetching = deferred()
+    const prefetch = vi.spyOn(ThreadWorktrees.prototype, 'prefetchOriginBase').mockReturnValue(fetching.promise)
+    const create = (threadId: string, selection: { workingCopy: 'independent' | 'shared'; startFromOrigin?: boolean; baseBranch?: string; existingWorktreePath?: string }) =>
+      f.host.execute({ type: 'create-thread', commandId: `create-${threadId}`, threadId, projectId: project.id, title: 'New task', modelId: model.id, ...selection })
+    await create('origin', { workingCopy: 'independent', startFromOrigin: true, baseBranch: 'main' })
+    await create('local-base', { workingCopy: 'independent', startFromOrigin: false, baseBranch: 'main' })
+    await create('shared', { workingCopy: 'shared' })
+    // A worktree that exists already is used as it is, so its send fetches nothing either.
+    await create('previous', { workingCopy: 'independent', startFromOrigin: true, baseBranch: 'main', existingWorktreePath: project.path })
+    // With the Git fetch interval Off, Sotto fetches nothing it was not asked for: only the send fetches.
+    await f.host.startThreadSession('origin')
+    expect(prefetch).not.toHaveBeenCalled()
+    fetchIntervalMs = 30_000
+    removing = true
+    await f.host.startThreadSession('origin')
+    expect(ranIn).toEqual([project.path])
+    expect(prefetch).not.toHaveBeenCalled()
+    removing = false
+    // Typing returns while the fetch is still running, so a send typed meanwhile does not queue behind it.
+    for (const threadId of ['origin', 'local-base', 'shared', 'previous']) await f.host.startThreadSession(threadId)
+    expect(prefetch.mock.calls).toEqual([[project.path, 'main']])
+    fetching.reject(new Error('The origin branch main could not be fetched.'))
+    // A failed fetch says nothing here, not even as an unhandled rejection: the send fetches again and reports its own.
+    await new Promise(resolve => setImmediate(resolve))
+    const worktree = f.host.workspaceSnapshot().threads.find(thread => thread.id === 'origin')?.worktree
+    expect(worktree).toMatchObject({ status: 'pending' })
+    expect(worktree?.error).toBeUndefined()
   })
 
   it('uses a configured default only for new threads and keeps existing working-copy selections', async () => {
