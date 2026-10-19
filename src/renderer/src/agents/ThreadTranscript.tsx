@@ -35,7 +35,7 @@ import { ThreadGreeting } from './ThreadGreeting'
 import type { DelegationView } from '../../../shared/delegation'
 import { DelegationCardProvider, DelegationCards, delegationsByTurn, useDelegationCardWorld } from './DelegationCards'
 import { useDelegations, useDelegationsEnabled } from './delegations'
-import { compactionOf, liveTurnId, nestActivities, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
+import { compactionOf, liveTurnId, nestActivities, newsWorkLabel, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
 /** No message is left behind while no fork card is open. */
@@ -229,7 +229,7 @@ function WakeUpWho({ text }: { readonly text: string }): ReactNode {
  * structure of the one before it, so a message the update did not touch is the same object and is not redrawn
  * while the agent streams into the message below it. `threadId` is how a submitted attachment finds its preview.
  */
-const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy, forkable }: {
+const MessageArticle = memo(function MessageArticle({ message, provider, writing, streamText, threadId, speaker, delegatedBy, forkable, work, workGroups, activity }: {
   readonly message: AgentMessage; readonly provider: string; readonly writing: boolean; readonly streamText: boolean
   readonly threadId: string | undefined
   /** Watcher's conversation names its replies Watcher, with the owl, whatever provider it runs on. */
@@ -238,8 +238,26 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   readonly delegatedBy?: string | undefined
   /** A finished turn's newest written reply, which offers Fork from here where the transcript does (#1028, E5b). */
   readonly forkable?: boolean | undefined
+  /**
+   * The work of the turn this reply opens, folded into its header: Watcher's reply to news. Its groups come shared from
+   * the placement, and the rest is plain values, so the memo still holds while other turns change.
+   */
+  readonly work?: string | undefined
+  readonly workGroups?: readonly ActivityGroup[] | undefined
+  readonly activity?: ActivityContext | undefined
 }): ReactNode {
   const article = useRef<HTMLElement>(null)
+  const workButton = useRef<HTMLButtonElement>(null)
+  const [workOpen, setWorkOpen] = useState(false)
+  const workId = useId()
+  const foldWork = (event: React.KeyboardEvent): void => {
+    if (!workOpen || event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || !workButton.current) return
+    event.preventDefault()
+    workButton.current.focus()
+    activity?.onDisclosure(workButton.current)
+    setWorkOpen(false)
+  }
+  const lifecycle = workGroups?.find(group => group.turn)?.turn
   // A wake-up babysitting sent is Sotto's, told by the host's mark and never by its text, and shows every word the
   // provider received, as it received it (ADR-0061 decision 8).
   const wakeUp = isWakeUpMessage(message)
@@ -256,11 +274,18 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   return <>{message.handover && message.role === 'user' ? started === 'off' ? null : started ? <StartHandoverCard view={started} handover={message.handover} createdAt={message.createdAt} />
     : <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
   <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={article}
-    data-not-carried={fork?.after.has(message.id) || undefined}>
+    data-not-carried={fork?.after.has(message.id) || undefined} data-turn-outcome={work && lifecycle?.status === 'failed' ? 'failed' : undefined} onKeyDown={work ? foldWork : undefined}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
       : brief ? <><span className="thread-message__who"><GitFork size={13} aria-hidden="true" />{delegatedBy}</span><span>delegated</span></>
       : <span className="thread-message__who">{message.role === 'user' ? 'You' : message.role === 'assistant' ? speaker === 'watcher' ? <><WatcherOwl size={13} />Watcher</> : provider : 'System'}</span>}
-      <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time></header>
+      <time dateTime={message.createdAt}>{clockLabel(Date.parse(message.createdAt))}</time>
+      {work ? <button type="button" ref={workButton} className="thread-message__work tt-focusable" aria-expanded={workOpen} aria-controls={workOpen ? workId : undefined}
+        onClick={event => { activity?.onDisclosure(event.currentTarget); setWorkOpen(open => !open) }}>
+        {work}<ChevronRight className="thread-activity__chevron" size={13} aria-hidden="true" />
+      </button> : null}</header>
+    {work && lifecycle?.error ? <p className="thread-activity__error thread-activity__error--turn">{lifecycle.error}</p> : null}
+    {work && workOpen && activity ? <div id={workId} className="thread-message__work-body">
+      <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} /></div> : null}
     {writing && !streamText
       ? <p className="thread-message__writing" role="status">Writing a reply…</p>
       : <MessageContent text={markdown} streaming={writing} />}
@@ -294,9 +319,11 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   // A fork carries finished turns, so only a finished turn's newest written reply offers one (#1028, E5b).
   const forkableId = running && last ? undefined : turn.replies.findLast(message => message.role === 'assistant' && !isVisualMessage(message) && !isWakeUpMessage(message) && drawn(message))?.id
   // A visual an agent drew is its card; one this window cannot draw is its text, which says what it showed (ADR-0056).
-  const article = (message: AgentMessage): ReactNode => isDrawableVisual(message) ? <VisualCard visual={message.visual} threadId={threadId} />
+  const article = (message: AgentMessage, work?: { readonly label: string; readonly groups: readonly ActivityGroup[] }): ReactNode => isDrawableVisual(message)
+    ? <VisualCard visual={message.visual} threadId={threadId} />
     : drawn(message) && <MessageArticle message={message} provider={provider} writing={message.id === writing} streamText={streamText} threadId={threadId} speaker={speaker}
-      delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} forkable={message.id === forkableId} />
+      delegatedBy={briefs?.ids.has(message.id) ? briefs.from : undefined} forkable={message.id === forkableId}
+      {...work ? { work: work.label, workGroups: work.groups, activity: context } : {}} />
   const plain = (message: AgentMessage): ReactNode => <React.Fragment key={message.id}>
     {article(message)}
     <ActivityGroups groups={placement.after.get(message.id)} context={context} />
@@ -310,9 +337,13 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     if (isVisualMessage(message)) visuals.push({ message, at })
     else written.push(message)
   }
+  // An unshown turn's work, which happened before the reply that opens the turn. In Watcher's pane a news turn's work
+  // shows only folded into its reply, so a finished one with no written reply to carry it shows none (variant b).
+  const shownOpening = turn.unshown ? placement.unshown.get(turn.replies[0]!.id) : undefined
+  const opening = speaker === 'watcher' && !(running && last) ? withoutFinishedNews(shownOpening, context.liveTurn) : shownOpening
   // The running turn keeps its live layout, and a page that starts mid-turn has no start to fold from;
   // a finished turn folds under its last written reply.
-  const final = !turn.user || running && last ? undefined : written.findLast(message => message.role === 'assistant' && drawn(message))
+  const final = !turn.user && !turn.unshown || running && last ? undefined : written.findLast(message => message.role === 'assistant' && drawn(message))
   // In Watcher's own pane, a reply that carries receipt cards stays in view where it was written, as a visual does: its
   // cards say what Watcher did in that turn, and a closed fold would hide them.
   const kept = useRepliesKeptInView()
@@ -320,13 +351,35 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     if (message !== final && kept.has(message.id) && !isVisualMessage(message)) visuals.push({ message, at })
   }
   visuals.sort((a, b) => a.at - b.at)
-  const groups = everything.flatMap(message => placement.after.get(message.id) ?? [])
+  const replyGroups = everything.flatMap(message => placement.after.get(message.id) ?? [])
+  // Shared across updates, so the reply that carries a news turn's work keeps its memo while other turns change.
+  const groups = useShared(!replyGroups.length && shownOpening ? shownOpening : [...shownOpening ?? [], ...replyGroups])
   // A compaction is where the conversation lost its history, so it stays in view instead of folding with the work.
   const boundaries = groups.filter(group => compactionOf(group))
+  const continued = continuedIn?.length ? <ContinuedInNotes links={continuedIn} /> : null
+  // Watcher's reply to news (Zach's pick on October 19, 2026, variant b of docs/prototypes/watcher-news-turns-prototype.html):
+  // Watcher's conversation leaves out only Sotto's news wake-ups (watcherWakeUpsAsShown), so its unshown turns are news
+  // turns. Each has no line of its own: its work folds into the header of the first reply it wrote, and every reply stays.
+  if (speaker === 'watcher' && turn.unshown && final) {
+    const lifecycle = groups.find(group => group.turn)?.turn
+    const records = groups.flatMap(group => group.records)
+    const head = written.find(message => message.role === 'assistant' && drawn(message))
+    const replyWork = head && records.some(record => record.kind !== 'compaction') ? {
+      label: newsWorkLabel(lifecycle, context.running, lifecycle?.startedAt ?? records.map(record => record.startedAt).filter(Boolean).sort()[0],
+        [...turn.replies.map(message => message.createdAt), ...records.map(record => record.completedAt ?? record.startedAt)]),
+      groups,
+    } : undefined
+    return <>
+      <ActivityGroups groups={replyWork ? boundaries : groups} context={context} />
+      {turn.replies.map(message => <React.Fragment key={message.id}>{article(message, message === head ? replyWork : undefined)}</React.Fragment>)}
+      <DelegationCards views={delegations} />
+      {continued}
+    </>
+  }
   const work = final ? written.filter(message => message !== final && drawn(message) && !visuals.some(visual => visual.message === message)) : []
   // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
-  const continued = continuedIn?.length ? <ContinuedInNotes links={continuedIn} /> : null
-  if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>{everything.map(plain)}<DelegationCards views={delegations} />{continued}</>
+  if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>
+    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<DelegationCards views={delegations} />{continued}</>
   const finalAt = turn.replies.indexOf(final)
   const unfolded = new Set(visuals.map(visual => visual.message))
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
@@ -339,6 +392,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     {turn.user ? article(turn.user) : null}
     <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} error={lifecycle?.error} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
+      <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} />
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
         {message === turn.user || unfolded.has(message) ? null : article(message)}
         <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} />
@@ -353,6 +407,22 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     {continued}
   </>
 })
+
+/**
+ * Watcher's news turns' work without the turns that finished, the same array when none did: what is left says a turn
+ * failed, stopped or is still going. A turn with no lifecycle record has finished once nothing in it runs and it is not
+ * the live turn. Compactions stay, as boundaries do everywhere.
+ */
+function withoutFinishedNews(groups: readonly ActivityGroup[] | undefined, liveTurn: string | null): readonly ActivityGroup[] | undefined {
+  if (!groups?.length) return groups
+  const going = new Set<string>()
+  for (const group of groups) {
+    const status = group.turn?.status
+    if (group.turnId === liveTurn || status !== undefined && status !== 'completed' || group.records.some(record => record.status === 'running')) going.add(group.turnId)
+  }
+  const shown = groups.filter(group => going.has(group.turnId) || compactionOf(group))
+  return shown.length === groups.length ? groups : shown
+}
 
 /** The briefs a delegating thread sent to this thread, by their message IDs, and that thread's name (ADR-0081). */
 export interface DelegatedBriefs { readonly ids: ReadonlySet<string>; readonly from: string }
@@ -376,12 +446,17 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   const writing = running && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
   // Turns are re-split on every arrival but hold the same messages; sharing their structure lets the
   // memoised turns below compare equal.
-  const turns = useShared(useMemo(() => splitTurns(messages), [messages]))
-  return <><ActivityGroups groups={placement.leading} context={context} />
-  {turns.map((turn, index) => <TurnView key={turn.key} turn={turn} provider={provider} running={running}
-    last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
-    delegations={turn.user ? delegations?.get(turn.user.id) : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} />)}
-  <ActivityGroups groups={placement.trailing} context={context} />
+  const turns = useShared(useMemo(() => splitTurns(messages, placement.unshown), [messages, placement.unshown]))
+  // A Watcher news turn that wrote no reply shows nothing once it has finished (variant b); one that failed or stopped still says so.
+  const unshown = (groups: readonly ActivityGroup[] | undefined): readonly ActivityGroup[] | undefined => speaker === 'watcher' ? withoutFinishedNews(groups, context.liveTurn) : groups
+  return <><ActivityGroups groups={unshown(placement.leading)} context={context} />
+  {turns.map((turn, index) => <React.Fragment key={turn.key}>
+    <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
+    <TurnView turn={turn} provider={provider} running={running}
+      last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
+      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} />
+  </React.Fragment>)}
+  <ActivityGroups groups={unshown(placement.trailing)} context={context} />
   <DelegationCards views={delegations?.get('')} />
   </>
 })
