@@ -3,6 +3,7 @@
  * `permessage-deflate` on the host socket (ADR-0025, October 18 amendment): a desktop that offers it is sent its messages
  * compressed, and nobody else is, whatever they offer.
  */
+import { connect, createServer, type AddressInfo, type Server } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFLATE_OFFER, SocketFrames } from '../../src/host/socketFrames'
 import { startSocketServer } from '../../src/host/socketServer'
@@ -15,7 +16,9 @@ import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 const fixture = useSocketHostFixture()
 const listeners: Awaited<ReturnType<typeof startSocketServer>>[] = []
 const raws: SocketFrames[] = []
+const relays: Server[] = []
 afterEach(async () => {
+  for (const relay of relays.splice(0)) relay.close()
   for (const frames of raws.splice(0)) frames.close()
   for (const listener of listeners.splice(0)) await listener.close()
   vi.restoreAllMocks()
@@ -117,6 +120,32 @@ describe('compressed host socket messages', () => {
     const recorded = await peer(port, late.session, DEFLATE_OFFER)
     expect(recorded.frames.deflate).toBe(true)
     expect(reads).toBeGreaterThan(0)
+  })
+
+  it('connects uncompressed when the answer to its offer is one it never made', async () => {
+    const listener = await listen()
+    const { paired } = await session('Sotto desktop')
+    // A proxy in the way that drops a parameter from the host's answer leaves compression the desktop cannot use.
+    const upgrades: boolean[] = []
+    const relay = createServer(inbound => {
+      const outbound = connect(listener.descriptor.port, '127.0.0.1')
+      inbound.once('data', (first: Buffer) => { upgrades.push(first.toString('latin1').includes('Sec-WebSocket-Extensions')); outbound.write(first); inbound.pipe(outbound) })
+      let head = true
+      outbound.on('data', (chunk: Buffer) => {
+        inbound.write(head ? Buffer.from(chunk.toString('latin1').replace('permessage-deflate; server_no_context_takeover; ', 'permessage-deflate; '), 'latin1') : chunk)
+        head = false
+      })
+      inbound.on('close', () => outbound.destroy()); outbound.on('close', () => inbound.destroy())
+      inbound.on('error', () => undefined); outbound.on('error', () => undefined)
+    })
+    relays.push(relay)
+    await new Promise<void>(resolve => relay.listen(0, '127.0.0.1', resolve))
+    const client = new SocketHostService({ url: 'http://127.0.0.1:' + (relay.address() as AddressInfo).port, token: paired.token }); fixture.clients.push(client)
+    await client.connect()
+    expect(framesOf(client).deflate).toBe(false)
+    expect(client.shell().host.hostId).toBe(fixture.host.service.shell().host.hostId)
+    // The health check and session go first; then one upgrade offering compression, and one offering none.
+    expect(upgrades.slice(-2)).toEqual([true, false])
   })
 
   it('compresses nothing on the desktop’s own phone listener, and a desktop client there reads its messages uncompressed', async () => {
