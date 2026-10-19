@@ -249,3 +249,22 @@ it('drains a write the interval is still holding back when the adapter closes', 
   const reopened = new NativeUsage(root, 'claude'); await reopened.load(); await reopened.flushed()
   expect(reopened.get('thread')).toMatchObject({ total: { output: 200 } })
 })
+
+// The whole ledger is written about once a second while a reply streams. Only the thread that changed is serialized
+// again, and the file reads exactly as a whole serialization would (October 19, 2026).
+it('serializes only the ledgers that changed since the last write, and writes the same text as before', async () => {
+  const { root, usage } = await fixture()
+  for (let thread = 0; thread < 30; thread++) for (let entry = 0; entry < 5; entry++) usage.claude(`thread-${thread}`, frame(entry))
+  await usage.flushed()
+  const stringify = vi.spyOn(JSON, 'stringify')
+  usage.claude('thread-7', frame(9, 300))
+  await usage.flushed()
+  const ledgers = stringify.mock.calls.filter(([value]) => typeof value === 'object' && value !== null && 'entries' in value && 'view' in value)
+  stringify.mockRestore()
+  expect(ledgers).toHaveLength(1)
+  const written = await readFile(join(root, 'claude-usage.json'), 'utf8')
+  const archive = JSON.parse(written) as Archive
+  expect(Object.keys(archive)).toHaveLength(30)
+  expect(written.trimEnd()).toBe(JSON.stringify(archive))
+  expect(archive['thread-7']!.entries['message-9']).toBeDefined()
+})

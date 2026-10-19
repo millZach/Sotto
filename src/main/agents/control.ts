@@ -80,6 +80,7 @@ class AnswerDeliveryUnconfirmed extends Error {
 const EMPTY_ACTIVITIES: AgentActivity[] = []
 /** Stands in for a certified catalog while the shell is cloned; the catalog itself goes in afterwards, shared. */
 const EMPTY_MODELS: AgentModel[] = []
+const EMPTY_THREADS: AgentThread[] = []
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'connect', 'refresh', 'send', 'steer', 'steer-followup', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
   'select-thread', 'interrupt',
@@ -937,19 +938,30 @@ export class AgentControl {
     }
     if (state.unconfirmedSettings) state.unconfirmedSettings = state.unconfirmedSettings.filter(item => this.threadAvailable(item.threadId))
   }
-  shell(): AgentState {
+  shell(): AgentState { return this.shellOf(false) }
+  /**
+   * The shell a broadcast carries, for readers that only read it. Its thread records are its own, but what they hold is
+   * the host snapshot's: the workspace's publication, which this coordinator replaces on every accept and never writes
+   * into. Copying that for every thread on every broadcast was most of what the shell cost (October 19, 2026). `shell()`
+   * still copies all of it, for a caller that may change what it is handed.
+   */
+  broadcastShell(): AgentState { return this.shellOf(true) }
+  private shellOf(shareThreads: boolean): AgentState {
     const { threads, models } = this.state.host
     // A certified catalog is frozen and shared by every layer from the adapter on, so the shell carries it as it is rather
     // than clone every model on each broadcast (#917). One that is not certified is copied, as everything else is.
     const shared = isImmutableModels(models)
-    const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, ...(shared ? { models: EMPTY_MODELS } : {}), threads: threads.map(thread => this.finishedUnread.publish({
-      ...thread, messages: EMPTY_MESSAGES,
-      ...(thread.activities === undefined ? {} : { activities: EMPTY_ACTIVITIES }),
+    const shown = threads.map(thread => this.finishedUnread.publish({
+      ...thread, messages: shareThreads ? [] : EMPTY_MESSAGES,
+      ...(thread.activities === undefined ? {} : { activities: shareThreads ? [] : EMPTY_ACTIVITIES }),
       summary: this.presentedSummary(thread),
-    })) } }
-    // Every broadcast makes one, so it copies containers and keeps strings: several times faster than structuredClone.
+    }))
+    const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, ...(shared ? { models: EMPTY_MODELS } : {}),
+      threads: shareThreads ? EMPTY_THREADS : shown } }
+    // Every shell copies containers and keeps strings: several times faster than structuredClone.
     const state = clonePlainData(bare)
     if (shared) state.host.models = models
+    if (shareThreads) state.host.threads = shown
     state.obsoleteDrafts = clonePlainData(this.persistedObsoleteDrafts)
     state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
@@ -1513,7 +1525,7 @@ export class AgentControl {
   private broadcast(): void {
     if (this.disposed) return
     this.broadcastPending = false
-    const value = this.shell()
+    const value = this.broadcastShell()
     this.publishedDraftPersistence = JSON.stringify([value.threadDraftPersistence, value.obsoleteDrafts])
     for (const listener of this.listeners) listener(value)
     this.broadcastDetail()
@@ -4425,7 +4437,8 @@ export class AgentControl {
     for (const timer of this.providerReconnect.values()) clearTimeout(timer)
     this.providerReconnect.clear()
     this.dependencies.host.disconnect()
-    this.state.connection = 'disconnected'; this.state.host.connected = false
+    // The host snapshot is the workspace publication, which usage reads too: replaced, never written into.
+    this.state.connection = 'disconnected'; this.state.host = { ...this.state.host, connected: false }
   }
   private scheduleProviderReconnects(): void {
     const retryable = (provider: ProviderId): boolean => !this.disposed

@@ -121,6 +121,11 @@ export interface HostService {
   state(): AgentState
   /** The published state without any thread's history: what every client needs on every frame. */
   shell(): AgentState
+  /**
+   * The shell as the host last published it or would publish it now, for a caller that only reads it: no copy of the
+   * host's own state is made for it, so what it holds must never be written into. Absent, read `shell()`.
+   */
+  view?(): AgentState
   threadDetail(threadId: string): AgentThreadDetail | null
   /** Runs one client's command and answers with the shell, without history. A socket answer's returned
    * error is its own command outcome; it is independent of the published shell's shared error. */
@@ -191,6 +196,8 @@ export interface LocalHostControl {
   get(): AgentState
   watcherPhoneExclusions?(): { threadIds: string[]; projectIds: string[] }
   shell(): AgentState
+  /** The shell a broadcast carries: its thread records hold the coordinator's own, so it is read and never written into. */
+  broadcastShell?(): AgentState
   threadKind?(threadId: string): AgentThread['kind']
   threadProvider?(threadId: string): ProviderId | undefined
   projectProvider?(projectId: string): ProviderId | undefined
@@ -302,7 +309,7 @@ export class LocalHostService implements HostService {
       changedAt = ++sequence
       if (waiting) return
       waiting = true
-      queueMicrotask(() => { waiting = false; if (!closed && changedAt > broadcastAt) listener(this.shell()) })
+      queueMicrotask(() => { waiting = false; if (!closed && changedAt > broadcastAt) listener(this.view()) })
     }
     const watcherOff = this.options.watcher?.subscribe(forward)
     const phoneOff = this.watcherPhone?.subscribe(forward)
@@ -310,6 +317,8 @@ export class LocalHostService implements HostService {
   }
   state(): AgentState { return this.control.get() }
   shell(): AgentState { return this.control.shell() }
+  /** What a broadcast would carry now. A Watcher change handed on with a whole copy of the shell cost what a broadcast did. */
+  view(): AgentState { return this.control.broadcastShell?.() ?? this.control.shell() }
   threadKind(threadId: string): AgentThread['kind'] {
     return this.control.threadKind ? this.control.threadKind(threadId) : this.control.shell().host.threads.find(thread => thread.id === threadId)?.kind
   }
