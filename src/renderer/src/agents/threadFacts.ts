@@ -4,6 +4,7 @@ import { continuedWordsOf } from '../../../shared/continueThread'
 import { HANDOVER_LEAD } from '../../../shared/handover'
 import { babysittingWord } from './babysitting'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
+import { failureUnseen } from '../../../shared/threadFailures'
 
 const DAY_MS = 86_400_000
 const WEEK_MS = 7 * DAY_MS
@@ -168,7 +169,8 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
     state_ = 'done'
     stateLabel = Number.isFinite(parse(thread.archivedAt)) ? 'Archived' : 'Settled'
     sentence = lastAssistant?.text ?? 'This thread is closed. Its history is still available.'
-  } else if (decision !== undefined || thread.status === 'error') {
+  } else if (decision !== undefined || failureUnseen(thread)) {
+    // A failed turn a client has shown, or the user dismissed, is no longer news: it reads Done below (ADR-0092).
     state_ = 'needs'
     // A permission holds the agent still until you allow or deny it, so it outranks a question here as it does in the composer.
     const kinds = [decision?.kind, ...thread.requests.map(request => request.kind)]
@@ -199,6 +201,7 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
     state_ = 'done'
     stateLabel = 'Done'
     if (lastAssistant !== undefined) sentence = lastAssistant.text
+    else if (thread.status === 'error') sentence = 'The last turn failed. Open the thread to see why.'
     else if (lastUser !== undefined) { sentence = `Waiting to start on “${lastUser.text}”.`; sentenceFromUser = true }
     else sentence = 'Ready for your next prompt.'
   }
@@ -224,6 +227,14 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
     when: state_ === 'working' ? workingLabel(workingSince, now) : clockLabel(activityAt), workingSince,
     lastMessage,
   }
+}
+
+/**
+ * What Dismiss all names: every thread whose row says Needs attention for a failed turn, wherever it is listed, with the
+ * host's name for the failure it showed, so a failure that comes after the press is not marked seen with it (ADR-0092).
+ */
+export function unseenFailures(threads: readonly AgentThread[]): { readonly threadId: string; readonly failure: string }[] {
+  return threads.filter(failureUnseen).map(thread => ({ threadId: thread.id, failure: thread.failureId ?? '' }))
 }
 
 /**

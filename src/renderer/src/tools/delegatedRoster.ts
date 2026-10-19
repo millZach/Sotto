@@ -3,6 +3,7 @@ import { delegatedThreadsBelow, DELEGATION_WORK_TITLES, type DelegatedView, type
 import { resolveModel } from '../../../shared/modelCatalog'
 import type { SubagentRow, SubagentSummary } from '../../../shared/subagents'
 import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActivity'
+import { failureUnseen } from '../../../shared/threadFailures'
 import { effortLabel } from '../agents/EffortPicker'
 import type { AgentConnection } from '../agents/AgentContext'
 import { clockLabel } from '../agents/threadFacts'
@@ -24,10 +25,10 @@ export function threadWaitingFor(thread: Pick<AgentThread, 'requests' | 'settled
 
 /**
  * Whether a delegated thread needs the user, as its sidebar row would say: a permission or a question waiting, or its
- * provider reporting an error (Needs attention). A closed thread needs nothing.
+ * provider reporting an error no client has shown yet (Needs attention, ADR-0092). A closed thread needs nothing.
  */
-export function threadNeedsYou(thread: Pick<AgentThread, 'requests' | 'status' | 'settledAt' | 'settledOverride' | 'archivedAt'>): boolean {
-  return threadWaitingFor(thread) !== null || (thread.status === 'error' && !isThreadClosed(thread))
+export function threadNeedsYou(thread: Pick<AgentThread, 'requests' | 'status' | 'failureSeen' | 'settledAt' | 'settledOverride' | 'archivedAt'>): boolean {
+  return threadWaitingFor(thread) !== null || failureUnseen(thread)
 }
 
 /**
