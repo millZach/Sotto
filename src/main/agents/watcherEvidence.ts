@@ -29,7 +29,8 @@ export interface PullRequestObservation {
 interface PullRequestAttention { conflicting?: boolean; changesRequested?: boolean; remarks?: string; remarksMoved: number; requiredPassedHead?: string; observedAt: string }
 /** One thing a pull request says that needs Watcher, and the key that tells it from what Watcher was told before. */
 export type WatcherAttentionKind = 'checks-failed' | 'checks-passed' | 'required-passed' | 'merged' | 'closed' | 'approved' | 'changes-requested' | 'conflicting' | 'remarks'
-export interface WatcherAttentionFact { readonly pr: string; readonly kind: WatcherAttentionKind; readonly key: string }
+/** `returns` counts how often the fact came back after it was gone, so checks that fail again on a commit are a new fact. */
+export interface WatcherAttentionFact { readonly pr: string; readonly kind: WatcherAttentionKind; readonly key: string; readonly returns: number }
 /** The kinds evidence does not hold, which an evidence event compares beside its facts. */
 const BESIDE_EVIDENCE: ReadonlySet<WatcherAttentionKind> = new Set(['required-passed', 'changes-requested', 'conflicting', 'remarks'])
 export interface CheckpointObservation {
@@ -43,6 +44,11 @@ const EVIDENCE_PROJECTION_MAX = 100
 export class WatcherEvidenceStore {
   private readonly entries = new Map<string, Map<string, WatcherEvidence>>()
   private readonly attending = new Map<string, Map<string, PullRequestAttention>>()
+  /**
+   * Each attention fact of a thread, whether it holds now and how often it came back after it was gone (#1190). In memory
+   * only: after a restart a fact is first seen again, so what Watcher was told before is not told again for it.
+   */
+  private readonly returning = new Map<string, Map<string, { returns: number; present: boolean }>>()
   put(slot: string, input: Omit<WatcherEvidence, 'id'>): boolean {
     const id = evidenceIdentity(slot, input)
     const parsed = watcherEvidenceSchema.safeParse({ ...input, id })
@@ -95,12 +101,33 @@ export class WatcherEvidenceStore {
    * rides with what does.
    */
   attentionFacts(target: WatcherThreadTarget): WatcherAttentionFact[] {
+    const returning = this.returning.get(targetKey(target))
+    return this.heldFacts(target).map(fact => {
+      const returns = returning?.get(fact.key)?.returns ?? 0
+      return returns ? { ...fact, key: JSON.stringify([fact.key, returns]), returns } : fact
+    })
+  }
+  /** Notes which attention facts hold now: one that comes back after it was gone counts a return. */
+  private recount(target: WatcherThreadTarget): void {
+    const key = targetKey(target), held = new Set(this.heldFacts(target).map(fact => fact.key))
+    const seen = this.returning.get(key) ?? new Map<string, { returns: number; present: boolean }>()
+    for (const [fact, entry] of seen) if (!held.has(fact)) entry.present = false
+    for (const fact of held) {
+      const entry = seen.get(fact)
+      if (!entry) seen.set(fact, { returns: 0, present: true })
+      else if (!entry.present) { entry.returns++; entry.present = true }
+    }
+    while (seen.size > 300) seen.delete(seen.keys().next().value!)
+    if (seen.size) this.returning.set(key, seen); else this.returning.delete(key)
+  }
+  private heldFacts(target: WatcherThreadTarget): WatcherAttentionFact[] {
     const facts: WatcherAttentionFact[] = []
-    const add = (pr: string, kind: WatcherAttentionKind, detail = '') => facts.push({ pr, kind, key: JSON.stringify([pr, kind, detail]) })
-    const passed = new Set<string>()
+    const add = (pr: string, kind: WatcherAttentionKind, detail = '') => facts.push({ pr, kind, key: JSON.stringify([pr, kind, detail]), returns: 0 })
+    const passed = new Set<string>(), heads = new Map<string, Set<string>>()
     for (const item of this.entries.get(targetKey(target))?.values() ?? []) {
       if (item.source !== 'github' || !item.url || item.availability !== 'available') continue
       const pr = pullRequestKey(item.url) ?? item.url
+      if (item.headId) heads.set(pr, (heads.get(pr) ?? new Set()).add(item.headId))
       if (item.checksState === 'failed' || item.checksState === 'passed') add(pr, `checks-${item.checksState}`, item.headId ?? '')
       if (item.checksState === 'passed') passed.add(JSON.stringify([pr, item.headId ?? '']))
       if (item.pullRequestState === 'merged' || item.pullRequestState === 'closed') add(pr, item.pullRequestState)
@@ -108,7 +135,9 @@ export class WatcherEvidenceStore {
     }
     for (const [pr, said] of this.attending.get(targetKey(target)) ?? []) {
       // Every check passing already says the required ones did.
-      if (said.requiredPassedHead !== undefined && !passed.has(JSON.stringify([pr, said.requiredPassedHead]))) add(pr, 'required-passed', said.requiredPassedHead)
+      // Only on the commit the pull request is on now, as evidence last read it.
+      const onHead = said.requiredPassedHead !== undefined && (!heads.get(pr)?.size || heads.get(pr)!.has(said.requiredPassedHead))
+      if (onHead && !passed.has(JSON.stringify([pr, said.requiredPassedHead]))) add(pr, 'required-passed', said.requiredPassedHead!)
       if (said.conflicting) add(pr, 'conflicting')
       if (said.changesRequested) add(pr, 'changes-requested')
       if (said.remarksMoved) add(pr, 'remarks', String(said.remarksMoved))
@@ -129,11 +158,12 @@ export class WatcherEvidenceStore {
   }
   /** The facts evidence does not hold, so a change to them is a change too. */
   attentionIdentity(target: WatcherThreadTarget): string[] {
-    return this.attentionFacts(target).filter(fact => BESIDE_EVIDENCE.has(fact.kind)).map(fact => fact.key).sort()
+    return this.attentionFacts(target).filter(fact => BESIDE_EVIDENCE.has(fact.kind) || fact.returns > 0).map(fact => fact.key).sort()
   }
   removeMissing(targets: ReadonlySet<string>): void {
     for (const key of this.entries.keys()) if (!targets.has(key)) this.entries.delete(key)
     for (const key of this.attending.keys()) if (!targets.has(key)) this.attending.delete(key)
+    for (const key of this.returning.keys()) if (!targets.has(key)) this.returning.delete(key)
   }
   observeThread(thread: AgentThread, target: WatcherThreadTarget, observedAt: string): boolean {
     let changed = false
@@ -171,11 +201,14 @@ export class WatcherEvidenceStore {
           availability: branchObserved ? 'available' : 'unavailable', state: pr.state }) || changed
       }
     }
+    if (changed) this.recount(target)
     return changed
   }
   pullRequest(target: WatcherThreadTarget, read: PullRequestObservation): boolean {
     const attended = read.availability === 'available' && this.attend(target, read)
-    return this.observePullRequest(target, read, 'pr:') || attended
+    const changed = this.observePullRequest(target, read, 'pr:') || attended
+    if (changed) this.recount(target)
+    return changed
   }
   /**
    * Keeps what a read says of a conflict, a review asking for changes, its required checks and its remarks. Whether any of
@@ -190,6 +223,8 @@ export class WatcherEvidenceStore {
     if (read.conflicting !== undefined) after.conflicting = read.conflicting
     if (read.changesRequested !== undefined) after.changesRequested = read.changesRequested
     if (read.requiredPassed !== undefined) { if (read.requiredPassed && read.head) after.requiredPassedHead = read.head; else delete after.requiredPassedHead }
+    // A read of another commit, whatever it says of its checks, ends the pass of the one before.
+    else if (read.head && after.requiredPassedHead !== undefined && after.requiredPassedHead !== read.head) delete after.requiredPassedHead
     // The first read of its remarks is where they stand, not news; each move after it is.
     if (read.remarks !== undefined) { if (before.remarks !== undefined && before.remarks !== read.remarks) after.remarksMoved++; after.remarks = read.remarks }
     byPr.set(pr, after)
@@ -200,6 +235,11 @@ export class WatcherEvidenceStore {
   }
   /** Paired observations share fact replacement rules, but shell link summaries cannot erase owning-host facts. */
   paired(fact: WatcherEvidence): boolean {
+    const changed = this.pairedFact(fact)
+    if (changed && fact.source === 'github') this.recount(fact.target)
+    return changed
+  }
+  private pairedFact(fact: WatcherEvidence): boolean {
     if (fact.source === 'github' && fact.url) return this.observePullRequest(fact.target, {
       url: fact.url, head: fact.headId ?? null, observedAt: fact.observedAt,
       availability: fact.availability === 'available' ? 'available' : 'unavailable',

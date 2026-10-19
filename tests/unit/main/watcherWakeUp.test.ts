@@ -1781,3 +1781,32 @@ it('says a busy finish once beside its work-settled news, and lets Sotto’s det
   expect(crowded).toContain('[settled]')
   expect(crowded).not.toContain('xxx')
 })
+
+it('wakes Watcher again when checks fail again on the same commit after it was told of the first failure', async () => {
+  const f = fixture()
+  f.checks('failed'); await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(1)
+  f.wakes.settled(f.delivered[0]!.events, 'told'); await f.wakes.drained()
+  f.checks('pending'); await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(1)
+  f.checks('failed'); await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(2)
+})
+
+it('ends a required-checks pass when the pull request moves to another commit', () => {
+  const store = new WatcherEvidenceStore()
+  store.pullRequest(centerTarget, { url: prUrl, head: 'h1', observedAt: '2026-10-19T10:00:01.000Z', availability: 'available', checks: 'pending', requiredPassed: true })
+  expect([...store.attentionByPullRequest(centerTarget).values()].flatMap(kinds => [...kinds])).toContain('required-passed')
+  store.pullRequest(centerTarget, { url: prUrl, head: 'h2', observedAt: '2026-10-19T10:00:02.000Z', availability: 'available', checks: 'unknown', conflicting: false })
+  expect([...store.attentionByPullRequest(centerTarget).values()].flatMap(kinds => [...kinds])).not.toContain('required-passed')
+})
+
+it('gives no reply for a newest turn Sotto cannot place, never the turn before’s', () => {
+  const thread = { id: 'worker', providerId: 'claude', projectId: 'project', modelId: 'model', title: 'Worker', status: 'error', requests: [],
+    lastTurn: { id: 'self-turn', status: 'failed' },
+    activities: [{ id: 'turn-activity', turnId: 'brief', sequence: 0, kind: 'turn', title: 'Turn', status: 'completed' }],
+    messages: [{ id: 'brief', role: 'user', text: 'Do the thing', createdAt: centerTime },
+      { id: 'reply', role: 'assistant', text: 'Done with the thing.', createdAt: centerTime }] } as unknown as AgentThread
+  expect(watcherNewestTurnReply(thread)).toBeUndefined()
+  expect(watcherNewestTurnReply({ ...thread, status: 'idle', lastTurn: { id: 'brief', status: 'completed' } })?.id).toBe('reply')
+})

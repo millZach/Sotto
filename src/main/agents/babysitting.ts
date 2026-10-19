@@ -463,7 +463,7 @@ export class Babysitter {
     const refusedChecks = !checks ? last?.refusedChecks ?? 0 : checksRead ? 0 : (last?.refusedChecks ?? 0) + 1
     const backOff = !checksRead && refusedChecks >= REFUSED_CHECKS_BEFORE_BACK_OFF
     // Watcher hears when the checks the base branch requires pass, as this thread would (#1190), from the same gate.
-    const required = detail?.checks && detail.head === fingerprint.head && fingerprint.head !== null ? { requiredPassed: gateOf(detail.checks, detail.requiredChecks ?? []).passed } : {}
+    const required = detail?.checks && detail.head === fingerprint.head && fingerprint.head !== null ? { requiredPassed: detail.checksComplete !== false && gateOf(detail.checks, detail.requiredChecks ?? []).passed } : {}
     const observation = this.options.observed ? { ...pullRequestObservation(fingerprint, detail, new Date(now).toISOString(), last?.observation, checks), ...required } : undefined
     if (observation) this.options.observed?.(observation)
     this.lastReads.set(group.key, {

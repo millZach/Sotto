@@ -256,7 +256,8 @@ export class WatcherService implements WatcherControlHooks {
   /**
    * What a wake-up's news carries beside its events (#1190), read once for the note from the threads as they stand, so
    * Watcher need not read a thread to learn what it said: the start of a finished turn's reply, in the worker's words, and
-   * what each of a thread's pull requests now says that needs Watcher. Only the note carries it; nothing saves it.
+   * what each of a thread's pull requests now says that needs Watcher. Only the note carries it: the queue and the control
+   * record never hold it, though the provider's history keeps what it was sent, and Grok Build's, Sotto's history too.
    */
   newsDetail(): (event: WatcherEvent) => string | undefined {
     let snapshot: AgentHostSnapshot | undefined

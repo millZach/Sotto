@@ -118,8 +118,9 @@ function turnOfReply(turns: readonly Turn[], position: number, message: AgentMes
  */
 export function watcherNewestTurnReply(thread: AgentThread): AgentMessage | undefined {
   const messages = thread.messages.filter(message => !isVisualMessage(message))
-  const turns = turnsOf(thread, messages), newest = turns.at(-1)
-  if (!newest) return undefined
+  const turns = turnsOf(thread, messages), newest = turns.at(-1), last = thread.lastTurn
+  // A newest turn Sotto cannot place is not the newest it placed: it has no reply to give, never an earlier turn's.
+  if (!newest || !last || newest.nativeTurnId !== last.id && newest.turnId !== last.id) return undefined
   return messages.findLast((message, position) => message.role === 'assistant' && message.text.trim() !== '' && turnOfReply(turns, position, message) === newest)
 }
 

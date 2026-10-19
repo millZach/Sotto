@@ -323,6 +323,16 @@ export class WatcherWakeUp {
     for (const fact of this.evidence.attention(target)) if (!told?.has(fact)) return true
     return false
   }
+  /**
+   * Forgets the pull request facts Watcher was told that are no longer true, so checks that fail again on the same commit,
+   * or a conflict that comes back, are news again.
+   */
+  private forgetEnded(target: WatcherThreadTarget): void {
+    const key = targetKey(target), told = this.toldAttention.get(key)
+    if (!told?.size) return
+    const now = this.evidence.attention(target), still = new Set([...told].filter(fact => now.has(fact)))
+    if (still.size !== told.size) this.toldAttention.set(key, still)
+  }
   /** News a restart restored from the queue while its facts are not read again yet: it still needs Watcher, as it did. */
   private restoredNews(event: WatcherEvent): boolean {
     const latest = this.latestEvidence.get(observationDigest(['evidence-changed', event.requestId, event.target, event.generation]))
@@ -838,6 +848,7 @@ export class WatcherWakeUp {
    * pull request's facts afresh, as after a restart: they need Watcher, but are no news that came since.
    */
   private evidenceChanged(target: WatcherThreadTarget, before: readonly string[] = [], added = false, wake: boolean | 'again' = true): void {
+    this.forgetEnded(target)
     const evidenceIds = this.evidence.read(target).map(item => item.id).sort()
     // A changed or removed already-observed fact is real news, including an unlink during incomplete recovery.
     const identities = this.evidence.identities(target)
