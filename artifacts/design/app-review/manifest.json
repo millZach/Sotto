@@ -1529,7 +1529,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-files-unavailable-dark.png",
       "width": 820,
       "height": 800,
-      "sha256": "8dcda1b3bab116a02233371e71c782e27771ad7ae5eca8334732d0c0af503239"
+      "sha256": "287dead004896771b6d553910549a7bc82bf8b1a48df9856583f43abf52722e7"
     },
     {
       "theme": "light",
@@ -1571,7 +1571,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-new-thread-chooser-light.png",
       "width": 820,
       "height": 800,
-      "sha256": "162f7d831ceabf99a7573192dc769dcd0a07d2ce5521da20f58d15d88e7bb873"
+      "sha256": "65dadbfd7d53425df51026e5a24e7c1dc52d9a6397525b4fcebeaf1dd6de3a82"
     },
     {
       "theme": "dark",
@@ -1585,7 +1585,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-open-running.png",
       "width": 1080,
       "height": 720,
-      "sha256": "c663497923d242365d7e97229a2fd6367da21a5a9792e1c5cab9a986e07f6bfc"
+      "sha256": "15d622cf4eb74b93138caea5ec58a6318b1dadb3745c25dc1b905d9fb2f62f26"
     },
     {
       "theme": "light",
@@ -1641,7 +1641,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-search.png",
       "width": 1080,
       "height": 720,
-      "sha256": "fc0b2fb70356833faac60d7402747f3b5af97ff86ad11621d452e4f40e3c66db"
+      "sha256": "16f0b61e58a6b2ca634d5676aaa30f188aa5729ec7d456974d187ee62f932ac7"
     },
     {
       "theme": "light",
@@ -1669,7 +1669,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-split-focus-820-dark.png",
       "width": 820,
       "height": 800,
-      "sha256": "e889d494cf3231e689a44331dcb5f07755b859464f4e2b4277c28157625aa1d0"
+      "sha256": "06700244002b826b561cb4f41dbcc188c242e3d206ee4ed5d9c8ccf406eafd94"
     },
     {
       "theme": "light",
@@ -1697,7 +1697,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-split-workspace-dark.png",
       "width": 1600,
       "height": 800,
-      "sha256": "287f467d7bb25fffb3403beff7e07c986e84f034c6e051581c0c8484a8ddad8e"
+      "sha256": "23abaeb688a5fcf9517f8b5dbdb894f2ad2b82bbbf78f6b89909ad92541e1eb3"
     },
     {
       "theme": "light",
@@ -1725,7 +1725,7 @@
       "relativePath": "artifacts/design/app-review/baseline/threads-stopped.png",
       "width": 1080,
       "height": 720,
-      "sha256": "7c628edd0545fbcbf5df88e73c206d1bd66ef9436e89343e0ff6e423bd4f4e01"
+      "sha256": "10d4f6f5db718a24e7c88948ac4944299c097eaf1a9f505793b2a6535b0c0913"
     },
     {
       "theme": "light",
