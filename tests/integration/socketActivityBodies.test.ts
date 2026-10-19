@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { startSocketServer } from '../../src/host/socketServer'
 import type { HostService } from '../../src/main/agents/hostService'
+import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { ACTIVITY_BODY_LIMIT, utf8Bytes } from '../../src/shared/activityBodies'
 import { agentActivitySchema, type AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../src/shared/agents'
@@ -43,7 +44,11 @@ async function bodiesHost(options: { admin?: boolean } = {}) {
   const server = await startSocketServer({ service, pairing: fixture.host.pairing, ...(options.admin === false ? { admin: false } : {}) })
   const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Bodies')
   const peer = () => rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
-  return { stream, server, peer }
+  const desktop = async () => {
+    const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+    await client.connect(); return client
+  }
+  return { stream, server, peer, desktop }
 }
 const detailPush = (messages: Record<string, unknown>[], revision: number) => messages.find(item => item.event === 'detail' && (item.detail as AgentThreadDetail).revision === revision)
 const deltaPush = (messages: Record<string, unknown>[], revision: number) => messages.find(item => item.event === 'detail-delta' && (item.delta as AgentThreadDetailDelta).revision === revision)
@@ -90,6 +95,19 @@ describe('activity bodies over the socket (ADR-0025, October 18 amendment)', () 
       expect(grown.output!.endsWith(carried.output!)).toBe(true)
       expect(carried.output).toContain('linked 49')
     } finally { desktop.frames.close(); await server.close() }
+  })
+
+  it('is accepted by the desktop’s own client, which reads a cut record’s whole body on request', async () => {
+    const { server, desktop } = await bodiesHost()
+    const client = await desktop()
+    try {
+      await client.observe(['streaming'])
+      await expect.poll(() => client.threadDetail('streaming')?.activities?.[0]?.cut).toEqual({ output: utf8Bytes(build.output!) })
+      expect(client.threadDetail('streaming')?.activities?.[2]).toEqual(small)
+      expect(await client.activityBody('streaming', 'build')).toEqual(build)
+      expect(await client.activityBody('streaming', 'edit')).toEqual(edit)
+      expect(await client.activityBody('streaming', 'nothing')).toBeNull()
+    } finally { await client.close(); await server.close() }
   })
 
   it('sends whole records to a client that does not accept them, and refuses it activity-body', async () => {

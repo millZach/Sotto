@@ -443,6 +443,19 @@ describe('desktop host routing', () => {
     router.add({ ...local.connection })
     await expect(router.hostFolders({ hostId: LOCAL })).rejects.toThrow('cannot list its folders yet')
   })
+  it('reads one record whole on the thread’s own host, and answers null for this computer’s threads (ADR-0025, October 18 amendment)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const whole = { id: 'build', turnId: 'turn', sequence: 0, kind: 'command' as const, status: 'completed' as const, title: 'Ran npm test', output: 'all of it' }
+    const activityBody = vi.fn(async () => whole)
+    router.add(local.connection); router.add({ ...remote.connection, activityBody })
+    expect(await router.activityBody({ threadId: hostEntityKey(REMOTE, 'thread'), activityId: 'build' })).toEqual(whole)
+    expect(activityBody).toHaveBeenCalledWith('thread', 'build')
+    expect(await router.activityBody({ threadId: hostEntityKey(LOCAL, 'thread'), activityId: 'build' })).toBeNull()
+    router.remove(REMOTE)
+    router.add({ ...remote.connection, activityBody, available: () => false })
+    await expect(router.activityBody({ threadId: hostEntityKey(REMOTE, 'thread'), activityId: 'build' })).rejects.toThrow('disconnected')
+    expect(activityBody).toHaveBeenCalledTimes(1)
+  })
   it('reads a paired host\'s Files, Changes and Agents by its own IDs and hands every ID back as the window\'s key (ADR-0025, October 5 amendment)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     const key = hostEntityKey(REMOTE, 'thread'), workspaceId = 'a'.repeat(64)

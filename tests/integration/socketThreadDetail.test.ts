@@ -11,10 +11,13 @@ import { ThreadStore } from '../../src/main/agents/threadStore'
 import { agentActivitySchema, type AgentActivity } from '../../src/shared/agentActivity'
 import { type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate } from '../../src/shared/agents'
 import { hostPushSchema } from '../../src/shared/hostProtocol'
+import { cutActivityBodies } from '../../src/shared/activityBodies'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 
 const fixture = useSocketHostFixture()
+/** A detail as a desktop that accepts `activity-bodies` holds it. */
+const cutDetail = (detail: AgentThreadDetail): AgentThreadDetail => ({ ...detail, activities: detail.activities?.map(record => cutActivityBodies(record)) })
 
 const { pair } = fixture
 
@@ -278,9 +281,11 @@ describe('thread detail over the socket', () => {
       expect(deltaPush(wholePeer)!.delta).toEqual({ threadId: 'streaming', baseRevision: 2, revision: 3, messageDeltas: [], activityDeltas: [{ record: grown }, { id: 'plan', removed: true }] })
       await expect.poll(() => detailPush(summariesNoDeltas, 3)).toBeTruthy()
       expect(detailPush(summariesNoDeltas, 3)!.detail).toEqual(summarised(stream.current))
-      // The desktop's own client never asks for summaries and keeps every record whole.
+      // The desktop's own client never asks for summaries: it keeps every record with its bodies cut (ADR-0025, October 18
+      // amendment), and fetches one whole when its row opens.
       await expect.poll(() => client.threadDetail('streaming')?.revision).toBe(3)
-      expect(client.threadDetail('streaming')).toEqual(stream.current)
+      expect(client.threadDetail('streaming')).toEqual(cutDetail(stream.current))
+      expect(await client.activityBody('streaming', 'build')).toEqual(grown)
 
       // A whole detail the service publishes, and the detail a client reads, follow the same rule.
       stream.current = { ...stream.current, revision: 4 }
@@ -291,7 +296,7 @@ describe('thread detail over the socket', () => {
       expect(detailPush(wholePeer, 4)!.detail).toEqual(stream.current)
       expect((await summaries.call('read', { op: 'detail', threadId: 'streaming' })).result).toEqual(summarised(stream.current))
       expect((await wholePeer.call('read', { op: 'detail', threadId: 'streaming' })).result).toEqual(stream.current)
-      expect(await client.readThreadDetail('streaming')).toEqual(stream.current)
+      expect(await client.readThreadDetail('streaming')).toEqual(cutDetail(stream.current))
     } finally { for (const peer of peers) peer.frames.close(); await client.close(); await server.close() }
   })
 

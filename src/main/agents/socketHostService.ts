@@ -21,7 +21,8 @@ import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../..
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import { OPENCODE_HOST_ANSWERS, type OpenCodeHostAnswer, type OpenCodeHostCall } from '../../shared/opencodeSignIn'
 import type { AgentThread, ProviderId } from '../../shared/agents'
-import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, PROVIDER_HOST_FEATURES } from '../../shared/hostProtocol'
+import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, PROVIDER_HOST_FEATURES } from '../../shared/hostProtocol'
+import type { AgentActivity } from '../../shared/agentActivity'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
@@ -285,7 +286,7 @@ export class SocketHostService implements HostService {
     try {
       // This desktop knows every provider Sotto has, OpenCode among them, so it accepts each one's feature (#1107); a provider
       // held on this run is hidden here as on this computer, by the held gate.
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', 'model-catalog-revision', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'answer-receipts', 'usage-history', 'model-catalog-revision', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError('The host identity changed. Connect again.', 'unauthenticated')
@@ -1146,6 +1147,17 @@ export class SocketHostService implements HostService {
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
     this.offers('thread-starts')
     return this.read(hostStartHandoverSchema, await this.call({ op: 'start-handover', threadId })).handover
+  }
+  /**
+   * One activity record whole, for a row whose body the host sent cut (`activity-bodies`, ADR-0025, October 18 amendment).
+   * Null from a host that never cut one, and for a record the thread no longer has.
+   */
+  async activityBody(threadId: string, activityId: string): Promise<AgentActivity | null> {
+    if (!this.threadAvailable(threadId) || !this.features.includes('activity-bodies')) return null
+    const generation = this.generation
+    const record = this.read(hostActivityBodySchema, await this.call({ op: 'activity-body', threadId, activityId }))
+    this.sameGeneration(generation)
+    return record
   }
   get supportsUsage(): boolean { return this.features.includes('usage-dashboard') }
   async usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
