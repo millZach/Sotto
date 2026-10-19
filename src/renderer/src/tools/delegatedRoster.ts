@@ -3,6 +3,7 @@ import { delegatedThreadsBelow, DELEGATION_WORK_TITLES, type DelegatedView, type
 import { resolveModel } from '../../../shared/modelCatalog'
 import type { SubagentRow, SubagentSummary } from '../../../shared/subagents'
 import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActivity'
+import { failureUnseen } from '../../../shared/threadFailures'
 import { effortLabel } from '../agents/EffortPicker'
 import type { AgentConnection } from '../agents/AgentContext'
 import { clockLabel } from '../agents/threadFacts'
@@ -27,7 +28,7 @@ export function threadWaitingFor(thread: Pick<AgentThread, 'requests' | 'settled
  * provider reporting an error no client has shown yet (Needs attention, ADR-0092). A closed thread needs nothing.
  */
 export function threadNeedsYou(thread: Pick<AgentThread, 'requests' | 'status' | 'failureSeen' | 'settledAt' | 'settledOverride' | 'archivedAt'>): boolean {
-  return threadWaitingFor(thread) !== null || (thread.status === 'error' && thread.failureSeen !== true && !isThreadClosed(thread))
+  return threadWaitingFor(thread) !== null || failureUnseen(thread)
 }
 
 /**

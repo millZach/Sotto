@@ -1,21 +1,11 @@
 import { isThreadProviderConnected, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
-import { isThreadClosed } from '../../shared/threadActivity'
+import { failedWithoutRequest } from '../../shared/threadFailures'
 
 /** How many marks are kept, newest last; a thread forgotten while marked is dropped once the list is full. */
 export const FAILURES_SEEN_MAX = 200
 
 /** One saved mark: the thread, and the failure of it that a client showed or Dismiss all named. */
 export interface SavedFailureSeen { readonly threadId: string; readonly failure: string }
-
-type Failed = Pick<AgentThread, 'status' | 'requests' | 'settledAt' | 'archivedAt' | 'settledOverride'>
-
-/**
- * A thread whose last turn failed and that asks the user nothing: the sidebar's Needs attention. One that waits on a
- * permission or a question is the user's to answer (ADR-0004), so nothing here ever stands for it.
- */
-export function failedWithoutRequest(thread: Failed): boolean {
-  return thread.status === 'error' && thread.requests.length === 0 && !isThreadClosed(thread)
-}
 
 /**
  * Which failure a thread stands in: its last turn as its provider reports it. A later turn is a new failure even when

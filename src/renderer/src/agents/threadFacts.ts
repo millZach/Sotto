@@ -4,6 +4,7 @@ import { continuedWordsOf } from '../../../shared/continueThread'
 import { HANDOVER_LEAD } from '../../../shared/handover'
 import { babysittingWord } from './babysitting'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
+import { failureUnseen } from '../../../shared/threadFailures'
 
 const DAY_MS = 86_400_000
 const WEEK_MS = 7 * DAY_MS
@@ -226,15 +227,6 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
     when: state_ === 'working' ? workingLabel(workingSince, now) : clockLabel(activityAt), workingSince,
     lastMessage,
   }
-}
-
-/**
- * A thread whose last turn failed, that asks nothing, and that no client has shown since (ADR-0092): its row says Needs
- * attention. Once a client shows it, or Dismiss all names it, the host marks it seen and the row reads Done, while the
- * pane still says why the turn failed. A thread waiting on a permission or a question is never one of these.
- */
-export function failureUnseen(thread: Pick<AgentThread, 'status' | 'requests' | 'failureSeen' | 'settledAt' | 'settledOverride' | 'archivedAt'>): boolean {
-  return thread.status === 'error' && thread.requests.length === 0 && thread.failureSeen !== true && !isThreadClosed(thread)
 }
 
 /** The threads Dismiss all names: every one whose row says Needs attention for a failed turn, wherever it is listed. */
