@@ -1,0 +1,204 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throw away. Where a watched thread's question or permission card sits in Watcher's pane.
+  Four placements, switchable with ?variant=A..D and the bar at the bottom. Decided already (Zach, October 19, 2026):
+  questions and permissions both come in, an answer leaves a one-line receipt, and the card folds the thread's last reply.
+  Answering here or "in the thread" (the bar's Answer in thread) clears the card in both places. Nothing is sent anywhere.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prototype: answering from Watcher</title>
+<style>
+  :root { --bg:#141518; --surface:#1b1c20; --raised:#22242a; --hair:#2c2e35; --text:#e8e8ea; --muted:#9a9ca4; --accent:#8fb4ff; --needs:#f0b86a; --ok:#7fd1a0; --danger:#ff8a80; }
+  :root[data-theme=light] { --bg:#f6f5f2; --surface:#ffffff; --raised:#f0efeb; --hair:#e2e0da; --text:#1d1e22; --muted:#5d6068; --accent:#2f5fd0; --needs:#9a5a00; --ok:#1f7a45; --danger:#b3261e; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 Figtree, system-ui, sans-serif; }
+  button { font:inherit; color:inherit; cursor:pointer; }
+  button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .window { height:100vh; display:flex; flex-direction:column; }
+  .strip { height:34px; flex:none; display:flex; align-items:center; padding:0 14px; color:var(--muted); font-size:12px; border-bottom:1px solid var(--hair); }
+  .pane { flex:1; min-height:0; display:flex; flex-direction:column; }
+  .col { width:min(760px, calc(100% - 48px)); margin:0 auto; }
+  .head { flex:none; display:flex; align-items:center; gap:8px; padding:10px 0 6px; }
+  .head h1 { margin:0; font-size:15px; font-weight:500; }
+  .owl { width:22px; height:22px; border-radius:6px; background:var(--raised); display:grid; place-items:center; font-size:13px; }
+  .glance { flex:none; display:flex; flex-wrap:wrap; align-items:center; gap:4px 18px; padding:3px 0 10px; box-shadow:inset 0 -1px 0 var(--hair); color:var(--muted); font-size:13px; }
+  .glance strong { color:var(--needs); font-weight:600; }
+  .glance .name { border:0; background:none; padding:0; font-weight:500; text-decoration:underline; text-decoration-color:color-mix(in srgb, var(--text) 30%, transparent); text-underline-offset:3px; }
+  .glance .expand { border:0; background:none; padding:0; color:var(--needs); font-weight:600; display:inline-flex; gap:6px; align-items:center; }
+  .ring { display:inline-block; width:8px; height:8px; border-radius:50%; border:2px solid var(--needs); margin-right:6px; vertical-align:middle; }
+  .timeline { flex:1; min-height:0; overflow:auto; padding:16px 0; }
+  .msg { margin:0 0 14px; }
+  .msg.you { margin-left:auto; max-width:70%; background:var(--raised); border-radius:12px; padding:8px 12px; width:fit-content; }
+  .news { color:var(--muted); font-size:13px; display:flex; gap:8px; align-items:baseline; margin:0 0 14px; }
+  .news b { color:var(--text); font-weight:500; }
+  .news .go { border:0; background:none; padding:0; color:var(--accent); font-size:13px; }
+  .receipt { font-size:13px; color:var(--muted); margin:0 0 14px; display:flex; gap:8px; align-items:baseline; }
+  .receipt::before { content:"✓"; color:var(--ok); }
+  .receipt b { color:var(--text); font-weight:500; }
+  .receipt .go { border:0; background:none; padding:0; color:var(--accent); font-size:13px; }
+  .dock { flex:none; display:flex; flex-direction:column; gap:8px; padding-bottom:8px; max-height:42vh; overflow:auto; }
+  .pane { padding-bottom:52px; }
+  .dock-head { font-size:12px; color:var(--muted); display:flex; justify-content:space-between; }
+  .composer { flex:none; margin-bottom:16px; border:1px solid var(--hair); background:var(--surface); border-radius:14px; padding:10px 12px; color:var(--muted); display:flex; justify-content:space-between; }
+  .card { background:var(--surface); border:1px solid var(--hair); border-left:3px solid var(--needs); border-radius:12px; padding:10px 14px 12px; }
+  .card.flash { animation:flash 1.2s ease; }
+  @keyframes flash { 0%,40% { box-shadow:0 0 0 3px color-mix(in srgb, var(--needs) 55%, transparent); } 100% { box-shadow:none; } }
+  @media (prefers-reduced-motion: reduce) { .card.flash { animation:none; outline:2px solid var(--needs); } }
+  .card-top { display:flex; align-items:baseline; gap:8px; font-size:13px; }
+  .card-top .title { font-weight:600; }
+  .card-top .where { color:var(--muted); }
+  .card-top .open { margin-left:auto; border:0; background:none; padding:0; color:var(--accent); font-size:13px; }
+  .card details { margin:6px 0 2px; font-size:13px; color:var(--muted); }
+  .card details summary { cursor:pointer; width:fit-content; }
+  .card details p { margin:6px 0 0; padding:8px 10px; border-radius:8px; background:var(--raised); color:var(--text); }
+  .ask { margin:8px 0; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { border:1px solid var(--hair); background:var(--raised); border-radius:999px; padding:4px 12px; font-size:13px; }
+  .chip[aria-pressed=true] { border-color:var(--accent); color:var(--accent); }
+  .row { display:flex; gap:8px; margin-top:10px; align-items:center; }
+  .other { flex:1; border:1px solid var(--hair); background:var(--bg); border-radius:8px; padding:6px 10px; color:var(--text); font:inherit; font-size:13px; }
+  .primary { border:0; border-radius:8px; padding:6px 14px; background:var(--accent); color:var(--bg); font-weight:600; font-size:13px; }
+  .primary:disabled { opacity:.45; cursor:default; }
+  .ghost { border:1px solid var(--hair); background:transparent; border-radius:8px; padding:6px 14px; font-size:13px; }
+  pre { margin:8px 0 0; padding:8px 10px; border-radius:8px; background:var(--raised); font-size:12px; white-space:pre-wrap; }
+  .expanded { flex:none; display:flex; flex-direction:column; gap:8px; padding:10px 0; box-shadow:inset 0 -1px 0 var(--hair); max-height:46vh; overflow:auto; }
+  .beside-toast { position:fixed; top:46px; right:16px; background:var(--raised); border:1px solid var(--hair); border-radius:10px; padding:8px 12px; font-size:13px; display:none; }
+  .bar { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); display:flex; gap:6px; align-items:center; padding:6px; border-radius:12px; background:#000c; color:#fff; font-size:12px; box-shadow:0 6px 24px #0006; }
+  .bar button { border:0; border-radius:8px; padding:5px 10px; background:transparent; color:#fff; }
+  .bar button[aria-pressed=true] { background:#fff; color:#000; }
+  .bar .sep { width:1px; height:18px; background:#fff4; }
+  .bar .desc { max-width:340px; padding:0 6px; color:#ddd; }
+  .state { position:fixed; right:12px; bottom:64px; font:11px/1.4 ui-monospace, monospace; background:#000b; color:#cfc; padding:6px 8px; border-radius:6px; max-width:260px; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="strip">Sotto · Threads · <b style="margin-left:6px;color:var(--text);font-weight:500">Watcher</b></div>
+  <div class="pane">
+    <div class="col head"><span class="owl">🦉</span><h1>Watcher</h1><span style="color:var(--muted);font-size:12px">· watching 5 threads</span></div>
+    <div class="col" id="glance"></div>
+    <div class="col" id="expanded"></div>
+    <div class="timeline"><div class="col" id="timeline"></div></div>
+    <div class="col dock" id="dock"></div>
+    <div class="col composer"><span>Message Watcher…</span><span>↑</span></div>
+  </div>
+</div>
+<div class="beside-toast" id="toast"></div>
+<div class="state" id="state"></div>
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <button data-v="A">A</button><button data-v="B">B</button><button data-v="C">C</button><button data-v="D">D</button>
+  <span class="desc" id="desc"></span><span class="sep"></span>
+  <button id="inThread" title="Simulate answering the first waiting card in its own thread">Answer in thread</button>
+  <button id="reset">Reset</button>
+  <button id="theme">Light</button>
+</div>
+<script>
+const VARIANTS = {
+  A: 'Pinned above the composer. The timeline keeps a one-line note. Names in "need you" jump to the card.',
+  B: 'Inline in the timeline where the news arrived. Names in "need you" scroll back to it.',
+  C: 'Both: full card inline and pinned while it waits. Names in "need you" still open the thread beside.',
+  D: '"N need you" expands into the cards under the header. The timeline keeps only a one-line note.',
+}
+const REQUESTS = () => ([
+  { id:'q1', kind:'question', title:'Fix login on staging', where:'Claude Code · this computer', after:2,
+    said:'The login test fails because staging rejects the old key. I can switch the test to the staging key or mock the auth call. Mocking keeps the test offline but stops it from catching key rotation.',
+    ask:'Which should I do for the login test?', options:['Use the staging key','Mock the auth call'] },
+  { id:'p1', kind:'permission', title:'Bump dependencies', where:'Codex · forge', after:3,
+    said:'Lockfile updated. Running the full suite before I commit.',
+    ask:'Run a command?', command:'npm test -- --maxWorkers=2', options:['Allow once','Allow for this thread','Deny'] },
+  { id:'q2', kind:'question', title:'Release notes 1.42', where:'Claude Code · forge', after:4,
+    said:'Draft is ready. Two fixes touch the same flow; I can list them separately or merge them into one line.',
+    ask:'Separate lines or one line for the two widget fixes?', options:['Separate','One line'] },
+])
+const TIMELINE = [
+  { t:'you', text:'Keep an eye on the release threads and tell me when anything needs me.' },
+  { t:'msg', text:'Watching five threads. Two are running tests, three are drafting.' },
+  { t:'msg', text:'Fix login on staging found why the login test fails and stopped to ask you.' },
+  { t:'msg', text:'Bump dependencies wants to run the full suite on forge.' },
+  { t:'msg', text:'Release notes 1.42 has a draft and one question about wording.' },
+]
+let variant = new URLSearchParams(location.search).get('variant') || 'A'
+let reqs = REQUESTS(), answered = [], picks = {}
+const $ = id => document.getElementById(id)
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+const pending = () => reqs.filter(r => !answered.find(a => a.id === r.id))
+
+function card(r, place) {
+  const pick = picks[r.id]
+  const choices = r.kind === 'permission'
+    ? `<div class="row">${r.options.map((o,i) => `<button class="${i===2?'ghost':i===0?'primary':'ghost'}" data-answer="${r.id}" data-value="${esc(o)}">${o}</button>`).join('')}</div>`
+    : `<div class="chips">${r.options.map(o => `<button class="chip" aria-pressed="${pick===o}" data-pick="${r.id}" data-value="${esc(o)}">${o}</button>`).join('')}</div>
+       <div class="row"><input class="other" placeholder="Or write an answer" aria-label="Your own answer to ${esc(r.title)}" data-other="${r.id}">
+       <button class="primary" data-send="${r.id}" ${pick ? '' : 'disabled'}>Send answer</button></div>`
+  return `<section class="card" id="card-${place}-${r.id}" aria-label="${r.kind === 'permission' ? 'Permission' : 'Question'} from ${esc(r.title)}">
+    <div class="card-top"><span class="ring"></span><span class="title">${r.title}</span><span class="where">${r.where} · ${r.kind}</span>
+      <button class="open" data-open="${r.id}" aria-label="Open ${esc(r.title)} beside Watcher">Open</button></div>
+    <details><summary>Show what it said</summary><p>${r.said}</p></details>
+    <div class="ask">${r.ask}</div>${r.command ? `<pre>${r.command}</pre>` : ''}${choices}</section>`
+}
+const note = r => `<div class="news"><span class="ring"></span><span><b>${r.title}</b> asks for ${r.kind === 'permission' ? 'a permission' : 'an answer'}.</span>
+  <button class="go" data-jump="${r.id}">${variant === 'A' ? 'Answer below' : 'Answer'}</button></div>`
+const receipt = a => `<div class="receipt"><span>You answered <b>${a.title}</b>: ${esc(a.value)}${a.where === 'thread' ? ' (in the thread)' : ''}</span>
+  <button class="go" data-open="${a.id}" aria-label="Open ${esc(a.title)} beside Watcher">Open</button></div>`
+
+function render() {
+  document.querySelectorAll('.bar [data-v]').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === variant))
+  $('desc').textContent = VARIANTS[variant]
+  const p = pending()
+  // The "need you" line
+  if (p.length === 0) $('glance').innerHTML = ''
+  else if (variant === 'D') $('glance').innerHTML = `<div class="glance"><button class="expand" id="expandBtn" aria-expanded="${expanded}">${p.length} need${p.length===1?'s':''} you ${expanded ? '▴' : '▾'}</button>
+    ${expanded ? '' : p.map(r => `<span><span class="ring"></span>${r.title} <span>${r.kind}</span></span>`).join('')}</div>`
+  else $('glance').innerHTML = `<div class="glance"><strong>${p.length} need${p.length===1?'s':''} you</strong>${p.map(r => `<span><span class="ring"></span><button class="name" data-${variant === 'C' ? 'open' : 'jump'}="${r.id}">${r.title}</button> ${r.kind}</span>`).join('')}</div>`
+  $('expanded').innerHTML = variant === 'D' && expanded && p.length ? `<div class="expanded">${p.map(r => card(r,'x')).join('')}</div>` : ''
+  // Timeline: the news arrives after the matching Watcher line
+  let html = ''
+  TIMELINE.forEach((m, i) => {
+    html += m.t === 'you' ? `<p class="msg you">${m.text}</p>` : `<p class="msg">${m.text}</p>`
+    for (const r of reqs.filter(r => r.after === i)) {
+      const a = answered.find(a => a.id === r.id)
+      if (a) html += receipt(a)
+      else if (variant === 'A') html += note(r)
+      else if (variant === 'B' || variant === 'C') html += card(r, 't')
+      else html += `<div class="news"><span class="ring"></span><span><b>${r.title}</b> needs you. It waits under "need you".</span></div>`
+    }
+  })
+  $('timeline').innerHTML = html
+  $('dock').innerHTML = (variant === 'A' || variant === 'C') && p.length
+    ? `<div class="dock-head"><span>Waiting on you</span><span>${p.length}</span></div>` + p.map(r => card(r,'d')).join('') : ''
+  $('state').textContent = `variant ${variant}\npending: ${p.map(r => r.id).join(', ') || 'none'}\nanswered: ${answered.map(a => a.id + '=' + a.value + ' (' + a.where + ')').join(', ') || 'none'}`
+  $('state').style.whiteSpace = 'pre-wrap'
+}
+let expanded = false
+function answer(id, value, where) {
+  const r = reqs.find(r => r.id === id); if (!r || answered.find(a => a.id === id)) return
+  answered.push({ id, title:r.title, value, where }); render()
+}
+function jump(id) {
+  const el = $(`card-d-${id}`) || $(`card-t-${id}`) || $(`card-x-${id}`)
+  if (!el) return
+  el.scrollIntoView({ block:'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash')
+  el.querySelector('.chip, .primary')?.focus({ preventScroll:true })
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return
+  if (t.dataset.v) { variant = t.dataset.v; history.replaceState(null, '', '?variant=' + variant); render() }
+  else if (t.dataset.pick) { picks[t.dataset.pick] = t.dataset.value; render(); document.querySelector(`[data-send="${t.dataset.pick}"]`)?.focus() }
+  else if (t.dataset.send) { const other = document.querySelector(`[data-other="${t.dataset.send}"]`)?.value.trim(); answer(t.dataset.send, other || picks[t.dataset.send], 'watcher') }
+  else if (t.dataset.answer) answer(t.dataset.answer, t.dataset.value, 'watcher')
+  else if (t.dataset.jump) jump(t.dataset.jump)
+  else if (t.dataset.open) { const r = reqs.find(r => r.id === t.dataset.open); $('toast').textContent = `Opens ${r.title} beside Watcher`; $('toast').style.display = 'block'; setTimeout(() => $('toast').style.display = 'none', 1600) }
+  else if (t.id === 'expandBtn') { expanded = !expanded; render() }
+  else if (t.id === 'inThread') { const r = pending()[0]; if (r) answer(r.id, r.options[0], 'thread') }
+  else if (t.id === 'reset') { reqs = REQUESTS(); answered = []; picks = {}; expanded = false; render() }
+  else if (t.id === 'theme') { const light = document.documentElement.dataset.theme !== 'light'; document.documentElement.dataset.theme = light ? 'light' : 'dark'; t.textContent = light ? 'Dark' : 'Light' }
+})
+document.addEventListener('input', e => { const id = e.target.dataset.other; if (id) { const b = document.querySelector(`[data-send="${id}"]`); if (b) b.disabled = !(e.target.value.trim() || picks[id]) } })
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && expanded) { expanded = false; render(); $('expandBtn')?.focus() } })
+render()
+</script>
+</body>
+</html>
