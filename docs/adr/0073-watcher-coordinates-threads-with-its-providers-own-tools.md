@@ -308,8 +308,8 @@ history of its progress, so a silent one lists as Working. Watched threads' news
 ## October 19, 2026: answering in Watcher's conversation
 
 When a watched thread asked a question or a permission, Watcher's room said so in the needs-you line and in Watcher's
-reply, and the user had to open the thread to answer. Zach picked variant B of a static answering prototype, kept
-outside the repository, on October 19, 2026. It is the desktop's version of the phone's choice 4B above:
+reply, and the user had to open the thread to answer. Zach picked variant B of the answering prototype, kept as the tag
+`prototype/watcher-answer-in-conversation`, on October 19, 2026. It is the desktop's version of the phone's choice 4B above:
 
 - **Inline in Watcher's conversation.** The thread's own request card sits under the reply in which Watcher told the user
   about it, and scrolls with the conversation. It is the same card the thread's pane shows (`AgentRequestCard`), with the
