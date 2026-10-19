@@ -486,6 +486,9 @@ export const agentThreadSchema = z.object({
   /** The thread's last turn failed and a client has shown it since, or the user dismissed it (ADR-0092): its row reads Done.
    * The host's coordinator sets and clears it; absent otherwise, and from hosts that predate it. */
   failureSeen: z.literal(true).optional(),
+  /** The host's own name for the failure a thread in error stands in (ADR-0092), so Dismiss all can name the failure a row
+   * showed and a later one is not marked seen in its place. Absent while the thread stands in none, and from older hosts. */
+  failureId: z.string().max(64).optional(),
   /** The newest message of the user's the provider's adapter has recorded, whether or not `messages` still
    * holds it. A send names it back so the adapter can refuse one that raced the user's own input; a window
    * the adapter put away and took back up carries none of the older messages, so it cannot say. */

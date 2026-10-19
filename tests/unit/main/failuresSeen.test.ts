@@ -109,16 +109,43 @@ describe('a failed thread a client has seen', () => {
     expect(seen.dismiss(['a'], [settled])).toBe(false)
   })
 
-  it('saves its marks with the failure each was seen in, and takes them back', () => {
-    const seen = new FailuresSeen()
+  it('saves its marks with the failure each was seen in and its turn, and takes them back', () => {
+    let next = 0
+    const seen = new FailuresSeen([], undefined, () => `f${++next}`)
     seen.dismiss(['a', 'b'], [failed('a', 't1'), thread('b', { status: 'error' })])
-    expect(seen.saved()).toEqual([{ threadId: 'a', failure: 't1:failed' }, { threadId: 'b', failure: '' }])
+    expect(seen.saved()).toEqual([{ threadId: 'a', failure: 'f1', turn: 't1' }, { threadId: 'b', failure: 'f2' }])
     const again = new FailuresSeen(seen.saved())
     expect(again.has('a')).toBe(true)
-    // The same failure after a restart stays seen; a different one is news.
+    // After a restart the same failed turn stays seen, and a failure that had no turn stays seen when one is named.
     again.track(snapshot([failed('a', 't1'), failed('b', 't9')]))
     expect(again.has('a')).toBe(true)
-    expect(again.has('b')).toBe(false)
+    expect(again.has('b')).toBe(true)
+    // A different failed turn is a new failure.
+    again.track(snapshot([failed('a', 't2'), failed('b', 't9')]))
+    expect(again.has('a')).toBe(false)
+    expect(again.has('b')).toBe(true)
+  })
+
+  it('keeps one failure across a resume that fails and the history that later names its turn', () => {
+    const seen = new FailuresSeen()
+    const resumed = thread('a', { status: 'error' })
+    seen.track(snapshot([resumed]))
+    const name = seen.failureOf('a')
+    expect(seen.dismiss(['a'], [resumed])).toBe(true)
+    expect(seen.track(snapshot([failed('a', 't1')]))).toBe(true)
+    expect(seen.has('a')).toBe(true)
+    expect(seen.failureOf('a')).toBe(name)
+  })
+
+  it('names each failure on its own and drops the name once the thread works or rests', () => {
+    const seen = new FailuresSeen()
+    seen.track(snapshot([failed('a', 't1')]))
+    const first = seen.failureOf('a')
+    expect(first).toBeDefined()
+    seen.track(snapshot([thread('a', { status: 'running' })]))
+    expect(seen.failureOf('a')).toBeUndefined()
+    seen.track(snapshot([failed('a', 't1')]))
+    expect(seen.failureOf('a')).not.toBe(first)
   })
 
   it('keeps every mark of a listed thread, however many Dismiss all names', () => {
@@ -145,11 +172,14 @@ describe('a failed thread a client has seen', () => {
     expect(kept.saved().map(mark => mark.threadId)).toEqual(['t1', ...ids.slice(5)])
   })
 
-  it('publishes the mark as an optional field and nothing otherwise', () => {
-    const seen = new FailuresSeen([{ threadId: 'a', failure: '' }])
-    expect(seen.publish(thread('a')).failureSeen).toBe(true)
+  it('publishes the name of the failure and the mark as optional fields, and nothing otherwise', () => {
+    const seen = new FailuresSeen([{ threadId: 'a', failure: 'f1' }])
+    expect(seen.publish(thread('a'))).toMatchObject({ failureId: 'f1', failureSeen: true })
+    seen.track(snapshot([failed('c')]))
+    expect(seen.publish(thread('c'))).toMatchObject({ failureId: seen.failureOf('c') })
+    expect(seen.publish(thread('c'))).not.toHaveProperty('failureSeen')
     expect(seen.publish(thread('b'))).not.toHaveProperty('failureSeen')
-    expect(seen.publish({ ...thread('b'), failureSeen: true })).not.toHaveProperty('failureSeen')
+    expect(seen.publish({ ...thread('b'), failureSeen: true, failureId: 'old' })).toEqual(thread('b'))
     const same = thread('b')
     expect(seen.publish(same)).toBe(same)
   })

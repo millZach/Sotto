@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { isThreadProviderConnected, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { failedWithoutRequest } from '../../shared/threadFailures'
 
@@ -7,14 +8,18 @@ import { failedWithoutRequest } from '../../shared/threadFailures'
  */
 export const FAILURES_SEEN_MAX = 200
 
-/** One saved mark: the thread, and the failure of it that a client showed or Dismiss all named. */
-export interface SavedFailureSeen { readonly threadId: string; readonly failure: string }
+/** One saved mark: the thread, the failure of it that a client showed or Dismiss all named, and that failure's turn. */
+export interface SavedFailureSeen { readonly threadId: string; readonly failure: string; readonly turn?: string | undefined }
 
 /**
- * Which failure a thread stands in: its last turn as its provider reports it. A later turn is a new failure even when
- * the snapshots between them never showed the thread working, so a mark never carries over to it.
+ * One failure of one thread. `id` is the host's own name for it, made when the record first sees the thread in error,
+ * or in error on a different failed turn, so it stays the same however the provider describes the failure afterwards.
+ * `turn` is the provider's failed turn, once one is known: a failure first seen with none, as a resume that fails, is
+ * the same failure when history later names its turn.
  */
-const failureOf = (thread: Pick<AgentThread, 'lastTurn'>): string => thread.lastTurn ? `${thread.lastTurn.id}:${thread.lastTurn.status}` : ''
+interface Failure { readonly id: string; turn: string | undefined; seen: boolean }
+
+const failedTurnOf = (thread: Pick<AgentThread, 'lastTurn'>): string | undefined => thread.lastTurn?.status === 'failed' ? thread.lastTurn.id : undefined
 
 /**
  * The failed threads some client has shown since they failed (ADR-0092). A failed turn is attention until a client
@@ -22,42 +27,47 @@ const failureOf = (thread: Pick<AgentThread, 'lastTurn'>): string => thread.last
  * The coordinator owns the record for the reason it owns `FinishedUnread` (ADR-0046): every client reads one answer, a
  * thread opened on the phone is seen on the desktop too, and a restart keeps it.
  *
- * What a client shows is what it observes, as for the finished mark. A thread shown when it fails is seen at once. The
- * mark drops once the thread works or rests again with its provider connected, so its next failure is news; a provider
- * that disconnects says nothing new about the thread, so its mark stays.
+ * What a client shows is what it observes, as for the finished mark. A thread shown when it fails is seen at once. A
+ * failure ends once the thread works or rests again with its provider connected, so its next failure is news; a
+ * provider that disconnects says nothing new about the thread, so its failure stands.
  */
 export class FailuresSeen {
   private shown: ReadonlySet<string> = new Set()
   /** The threads in the latest list read; until one is read, every saved mark is kept. */
   private present: ReadonlySet<string> | undefined
-  /** Marked thread IDs and the failure each was seen in, oldest first: a map keeps the order things were added in. */
-  private readonly marks = new Map<string, string>()
+  /** Each thread in error and the failure it stands in, oldest first: a map keeps the order things were added in. */
+  private readonly failures = new Map<string, Failure>()
 
-  constructor(saved: readonly SavedFailureSeen[] = [], private readonly dormant?: (threadId: string) => boolean) { this.restore(saved) }
+  constructor(saved: readonly SavedFailureSeen[] = [], private readonly dormant?: (threadId: string) => boolean,
+    private readonly newId: () => string = randomUUID) { this.restore(saved) }
 
   /** Takes the saved marks back at start. Nothing is dropped until a list of threads says which are gone. */
   restore(saved: readonly SavedFailureSeen[]): void {
-    this.marks.clear()
-    for (const { threadId, failure } of saved) { this.marks.delete(threadId); this.marks.set(threadId, failure) }
+    this.failures.clear()
+    for (const { threadId, failure, turn } of saved) {
+      this.failures.delete(threadId); this.failures.set(threadId, { id: failure, turn, seen: true })
+    }
   }
 
-  /** Reads one snapshot of the threads; true when a mark was made or dropped. */
+  /** Reads one snapshot of the threads; true when a saved mark was made, changed or dropped. */
   track(snapshot: AgentHostSnapshot): boolean {
     let changed = false
     this.present = new Set(snapshot.threads.map(thread => thread.id))
     for (const thread of snapshot.threads) {
       if (this.dormant?.(thread.id)) continue
-      const mark = this.marks.get(thread.id)
-      if (failedWithoutRequest(thread)) {
-        if (mark !== undefined && mark !== failureOf(thread)) { this.marks.delete(thread.id); changed = true }
+      if (thread.status === 'error') {
+        changed = this.identify(thread) || changed
         if (this.shown.has(thread.id)) changed = this.see(thread) || changed
         continue
       }
-      // A failed thread that now asks something keeps its mark: the request is the user's, the failure is still seen.
-      if (mark === undefined || thread.status === 'error') continue
+      const failure = this.failures.get(thread.id)
+      if (failure === undefined) continue
       if (!snapshot.connected || !isThreadProviderConnected(snapshot, thread)) continue
-      this.marks.delete(thread.id); changed = true
+      this.failures.delete(thread.id)
+      changed = failure.seen || changed
     }
+    // A failure nobody has seen is not saved, so one for a thread no longer listed has nothing left to say.
+    for (const [id, failure] of this.failures) if (!failure.seen && !this.present.has(id) && !this.dormant?.(id)) this.failures.delete(id)
     this.trim()
     return changed
   }
@@ -73,33 +83,59 @@ export class FailuresSeen {
     return this.seeAll(new Set(threadIds), threads)
   }
 
-  has(threadId: string): boolean { return this.marks.has(threadId) }
+  has(threadId: string): boolean { return this.failures.get(threadId)?.seen === true }
+
+  /** The host's name for the failure the thread stands in, or undefined when it stands in none. */
+  failureOf(threadId: string): string | undefined { return this.failures.get(threadId)?.id }
 
   /** The marks as the coordinator saves them. */
-  saved(): SavedFailureSeen[] { return [...this.marks].map(([threadId, failure]) => ({ threadId, failure })) }
+  saved(): SavedFailureSeen[] {
+    return [...this.failures].flatMap(([threadId, { id, turn, seen }]) => seen ? [{ threadId, failure: id, ...(turn === undefined ? {} : { turn }) }] : [])
+  }
 
-  /** The thread as clients read it: with `failureSeen` while it is marked, without it otherwise. */
-  publish<T extends Pick<AgentThread, 'id' | 'failureSeen'>>(thread: T): T {
-    if (this.has(thread.id)) return thread.failureSeen === true ? thread : { ...thread, failureSeen: true }
-    if (thread.failureSeen === undefined) return thread
-    const { failureSeen: _mark, ...rest } = thread
-    void _mark
-    return rest as T
+  /** The thread as clients read it: its failure's name while it stands in one, and `failureSeen` while that is seen. */
+  publish<T extends Pick<AgentThread, 'id' | 'failureSeen' | 'failureId'>>(thread: T): T {
+    const failure = this.failures.get(thread.id)
+    const seen = failure?.seen === true
+    if (thread.failureId === failure?.id && (thread.failureSeen === true) === seen) return thread
+    const { failureSeen: _seen, failureId: _id, ...rest } = thread
+    void _seen; void _id
+    return { ...rest, ...(failure ? { failureId: failure.id } : {}), ...(seen ? { failureSeen: true } : {}) } as T
   }
 
   private seeAll(ids: ReadonlySet<string>, threads: readonly AgentThread[]): boolean {
     let changed = false
     this.present = new Set([...this.present ?? [], ...threads.map(thread => thread.id)])
-    for (const thread of threads) if (ids.has(thread.id) && !this.dormant?.(thread.id)) changed = this.see(thread) || changed
+    for (const thread of threads) {
+      if (!ids.has(thread.id) || this.dormant?.(thread.id) || thread.status !== 'error') continue
+      changed = this.identify(thread) || changed
+      changed = this.see(thread) || changed
+    }
     this.trim()
     return changed
   }
 
+  /**
+   * The failure a thread in error stands in, named when it is new: the thread was not in error before, or it is now in
+   * error on a different failed turn. True when a seen failure was replaced, or gained its turn, so the saved marks moved.
+   */
+  private identify(thread: AgentThread): boolean {
+    const turn = failedTurnOf(thread)
+    const known = this.failures.get(thread.id)
+    if (known !== undefined && (turn === undefined || known.turn === undefined || known.turn === turn)) {
+      if (turn === undefined || known.turn !== undefined) return false
+      known.turn = turn
+      return known.seen
+    }
+    this.failures.delete(thread.id)
+    this.failures.set(thread.id, { id: this.newId(), turn, seen: false })
+    return known?.seen === true
+  }
+
   private see(thread: AgentThread): boolean {
-    if (!failedWithoutRequest(thread)) return false
-    const failure = failureOf(thread)
-    if (this.marks.get(thread.id) === failure) return false
-    this.marks.delete(thread.id); this.marks.set(thread.id, failure)
+    const failure = this.failures.get(thread.id)
+    if (failure === undefined || failure.seen || !failedWithoutRequest(thread)) return false
+    failure.seen = true
     return true
   }
 
@@ -108,10 +144,10 @@ export class FailuresSeen {
     const present = this.present
     if (present === undefined) return
     const gone = (id: string): boolean => !present.has(id) && !this.dormant?.(id)
-    let count = [...this.marks.keys()].filter(gone).length
-    for (const id of this.marks.keys()) {
+    let count = [...this.failures.keys()].filter(gone).length
+    for (const id of this.failures.keys()) {
       if (count <= FAILURES_SEEN_MAX) return
-      if (gone(id)) { this.marks.delete(id); count -= 1 }
+      if (gone(id)) { this.failures.delete(id); count -= 1 }
     }
   }
 }
