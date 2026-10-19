@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
- * What opening a thread on a remote host costs the link, before and after `permessage-deflate` (ADR-0025, October 18
- * amendment). A thread's whole detail and a shell, both synthetic and built from a seeded generator so the uncompressed
+ * What opening a thread on a remote host costs the link, before and after `permessage-deflate` and cut activity bodies
+ * (ADR-0025, October 18 amendment). A thread's whole detail and a shell, both synthetic and built from a seeded generator so the uncompressed
  * byte counts are the same on every run, are sent through the listener's own framing with and without the extension,
  * and the bytes it wrote are counted. Compressed counts depend on the zlib Node carries, so they are asserted as
  * ratios. Timings, level 1 against level 6 and what the host's loop is held for, are reported only under
@@ -16,6 +16,7 @@ import { constants as zlib, deflateRaw, deflateRawSync, inflateRawSync } from 'n
 import { describe, expect, it } from 'vitest'
 import { DEFLATE_LEVEL, SocketFrames } from '../../src/host/socketFrames'
 import type { AgentActivity } from '../../src/shared/agentActivity'
+import { CutBodies } from '../../src/shared/activityBodies'
 import type { AgentThreadDetail } from '../../src/shared/agents'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 
@@ -81,11 +82,34 @@ async function written(message: string, deflate: boolean): Promise<number> {
   return total
 }
 const LINK_BYTES_PER_SECOND = 370_000
+/** The synthetic thread cut: most of its outputs are under the limit and go whole, as about half the field thread's rows did. */
+const CUT_DETAIL_BYTES = 2_047_190
+const CUT_RECORDS = 411
 const seconds = (bytes: number): number => round(bytes / LINK_BYTES_PER_SECOND, 2)
 
 describe('remote thread open bytes', () => {
   const detail = JSON.stringify({ v: 1, event: 'detail', threadId: 'remote-thread', detail: longThread() })
   const shell = JSON.stringify(largeShell())
+
+  it('sends a desktop that accepts activity bodies the long thread with its bodies cut', async () => {
+    const thread = longThread()
+    const cut = new CutBodies().detail(thread)
+    const message = JSON.stringify({ v: 1, event: 'detail', threadId: 'remote-thread', detail: cut })
+    const report = { cutDetailBytes: await written(message, false), cutDetailCompressedBytes: await written(message, true),
+      records: cut.activities!.length, recordsCut: cut.activities!.filter(record => record.cut !== undefined).length }
+    console.info(`remote thread open cut bytes: ${JSON.stringify({ ...report, cutDetailSeconds: seconds(report.cutDetailBytes), cutDetailCompressedSeconds: seconds(report.cutDetailCompressedBytes) })}`)
+    // The cut frame is the generator's and the cut's alone, so its size is the same on every run.
+    expect(report.cutDetailBytes).toBe(Buffer.byteLength(message) + 10)
+    expect(Buffer.byteLength(message)).toBe(CUT_DETAIL_BYTES)
+    expect(report.recordsCut).toBe(CUT_RECORDS)
+    expect(report.records).toBe(1040)
+    // Every cut record still reads whole in every field but its bodies.
+    for (const [index, record] of cut.activities!.entries()) {
+      const whole = thread.activities![index]!
+      expect({ ...record, output: whole.output, text: whole.text, cut: undefined }).toEqual({ ...whole, cut: undefined })
+    }
+    expect(report.cutDetailCompressedBytes).toBeLessThan(report.cutDetailBytes / 2.5)
+  })
 
   it('sends a desktop a long thread and a shell in a fraction of their bytes', async () => {
     const report = {
@@ -134,7 +158,10 @@ describe('remote thread open bytes', () => {
       const packed = deflateRawSync(input, { level: DEFLATE_LEVEL, finishFlush: zlib.Z_SYNC_FLUSH })
       const inflateMs = time(() => inflateRawSync(packed, { finishFlush: zlib.Z_SYNC_FLUSH }))
       const parseMs = time(() => JSON.parse(detail) as unknown)
-      console.info(`remote thread open timing: ${JSON.stringify({ ...levels, detailAsyncLevel6Ms: round(median(asyncSamples), 2), loopHeldPerDetailSendMs: held, detailInflateMs: inflateMs, detailParseMs: parseMs })}`)
+      // What cutting the thread's bodies costs the host the first time, with every record new to it.
+      const source = longThread()
+      const cutMs = time(() => new CutBodies().detail(source))
+      console.info(`remote thread open timing: ${JSON.stringify({ ...levels, detailAsyncLevel6Ms: round(median(asyncSamples), 2), loopHeldPerDetailSendMs: held, detailInflateMs: inflateMs, detailParseMs: parseMs, cutDetailMs: cutMs })}`)
       expect(held).toBeGreaterThanOrEqual(0)
     })
   })
