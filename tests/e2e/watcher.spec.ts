@@ -11,6 +11,7 @@ import { WATCHER_STAND_IN_KEY, type WatcherStandInSeed } from '../../src/rendere
 import type { WatcherOwnChange } from '../../src/shared/watcher'
 import type { WatcherRoomState } from '../../src/shared/watcherRoom'
 import type { AgentMessage } from '../../src/shared/agents'
+import type { AgentActivity } from '../../src/shared/agentActivity'
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { pageBoundProblems } from './support/designCapture'
@@ -38,6 +39,8 @@ const permissionEvidence = evidenceDirectory('artifacts/watcher-permission')
 const handoverEvidence = evidenceDirectory('artifacts/watcher-handover')
 /** Receipt cards, the takeover line and Stop all (#1120): captures for their note. */
 const polishEvidence = evidenceDirectory('artifacts/watcher-room-polish')
+/** Watcher's replies to news in place, their work in the reply's header (Zach's pick on October 19, 2026): captures for their note. */
+const newsEvidence = evidenceDirectory('artifacts/watcher-news-turns')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const THEMES = [['t3-code', 'sotto'], ['tropic', 'tropic']] as const
@@ -63,7 +66,7 @@ function launchOptions(theme: string, appearance: 'dark' | 'light', motion: 'nor
  * each row marked watched, and Watcher's own changes. `permissionConfirms: false` holds a permission change unconfirmed.
  */
 async function seedRoom(page: Page, options: { readonly current: boolean; readonly history?: boolean; readonly permissionConfirms?: boolean
-  readonly ownChanges?: readonly WatcherOwnChange[]; readonly messages?: readonly AgentMessage[]
+  readonly ownChanges?: readonly WatcherOwnChange[]; readonly messages?: readonly AgentMessage[]; readonly activities?: readonly AgentActivity[]
   /** More of the projection, from the host's ID and the request's: receipts and takeovers. */
   readonly more?: (hostId: string, requestId: string) => Partial<WatcherRoomState>
   readonly stopResults?: WatcherStandInSeed['stopResults']; readonly stopDelayMs?: number }): Promise<void> {
@@ -95,14 +98,14 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
     seed.state = { ...seed.state, ...more, ...more.requests ? {} : { requests: seed.state.requests },
       ...more.watchedThreads ? {} : { watchedThreads: seed.state.watchedThreads } }
   }
-  await page.evaluate(async ({ key, seed, master, history, extra }) => {
+  await page.evaluate(async ({ key, seed, master, history, extra, activities }) => {
     localStorage.setItem(key, JSON.stringify(seed))
     if (history) await window.sottoE2E!.agentEvent!({ type: 'history', threadId: master, text: '', messages: [
       { id: 'watcher-ask', role: 'user', text: 'Find why the visual gate flakes and fix the footer links. Keep an eye on both.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 29)).toISOString() },
       { id: 'watcher-reply', role: 'assistant', text: 'Started Visual gate flake on Claude Code and Footer links on Codex, and I am watching both. Visual gate flake is asking to run the unit suite. Only you can allow that, in its own pane.', createdAt: new Date(Date.UTC(2026, 6, 12, 19, 33)).toISOString() },
       ...extra,
-    ] })
-  }, { key: WATCHER_STAND_IN_KEY, seed, master: CURRENT, history: options.history !== false, extra: [...options.messages ?? []] })
+    ], ...activities.length ? { activities } : {} })
+  }, { key: WATCHER_STAND_IN_KEY, seed, master: CURRENT, history: options.history !== false, extra: [...options.messages ?? []], activities: [...options.activities ?? []] })
   await page.reload()
   await openThreads(page)
 }
@@ -265,7 +268,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       '.watcher-watched__lead > p', '.watcher-watched__label', '.watched-card__title', '.watched-card__meta', '.watched-card__doing', '.watched-card__stop',
       '.watcher-handover__lead > p', '.watcher-handover__ledger', '.watcher-handover__read', '.watcher-handover__text', '.thread-prompt__send[data-wide]',
       '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose',
-      '.receipt-card__lead', '.receipt-card__name', '.receipt-link', '.receipt-outcome', '.receipt-card__meta', '.sotto-line p', '.sotto-line time',
+      '.thread-message__work', '.receipt-card__lead', '.receipt-card__name', '.receipt-link', '.receipt-outcome', '.receipt-card__meta', '.sotto-line p', '.sotto-line time',
       '.watcher-stop-all__button', '.watcher-stop h2', '.watcher-stop__name', '.watcher-stop__where', '.watcher-stop__state', '.watcher-stop__note', '.watcher-stop__said',
       '.watcher-stop .tt-button',
       '.thread-message__status', '.thread-message__delivery > span', '.thread-message__delivery-actions .tt-button']
@@ -363,15 +366,17 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => {
-    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence]) await mkdir(folder, { recursive: true })
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence]) await mkdir(folder, { recursive: true })
   })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
     const note = /^(permissions|own-changes|threads-watch|room-watched|list-watch)-/u
     const handover = /^handover-/u
     const polish = /^polish-/u
-    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key))], [permissionEvidence, [...recorded].filter(([key]) => note.test(key))],
-      [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))], [polishEvidence, [...recorded].filter(([key]) => polish.test(key))]] as const
+    const news = /^news-/u
+    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key))],
+      [permissionEvidence, [...recorded].filter(([key]) => note.test(key))], [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))],
+      [polishEvidence, [...recorded].filter(([key]) => polish.test(key))], [newsEvidence, [...recorded].filter(([key]) => news.test(key))]] as const
     for (const [folder, entries] of folders) {
       if (entries.length > 0) await writeFile(resolve(folder, 'readings.json'), `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`, 'utf8')
     }
@@ -930,6 +935,78 @@ test.describe("Watcher's room on the built app", () => {
         await expect(said.getByRole('list', { name: 'Files Watcher changed' })).toHaveCount(0)
         await expect(show).toBeFocused()
         await expect(show).toHaveAccessibleName('Show the 2 files')
+      })
+    })
+  })
+
+  test('Watcher’s replies to news sit in place, their work in the reply’s header, nothing stacked under the last reply', async () => {
+    // What main hands the window (watcherWakeUpsAsShown): Watcher's replies without the news wake-ups that began their
+    // turns, whose work still names them. Times follow Zach's Watcher thread of October 19, 2026.
+    const clock = (minute: number, second: number): string => new Date(Date.UTC(2026, 6, 12, 19, minute, 0) + second * 1000).toISOString()
+    const said = (id: string, role: AgentMessage['role'], minute: number, second: number, text: string): AgentMessage => ({ id, role, text, createdAt: clock(minute, second) })
+    let sequence = 100
+    const work = (turnId: string, from: readonly [number, number], to: readonly [number, number], tools: readonly string[], status: AgentActivity['status'] = 'completed'): AgentActivity[] => [
+      { id: `turn-${turnId}`, turnId, afterMessageId: turnId, sequence: sequence++, kind: 'turn', status, title: 'Turn', startedAt: clock(...from), completedAt: clock(...to) },
+      ...tools.map((title): AgentActivity => ({ id: `${turnId}-${sequence}`, turnId, afterMessageId: turnId, sequence: sequence++, kind: title === 'Thinking' ? 'reasoning' : 'tool',
+        status: 'completed', title, startedAt: clock(...from), completedAt: clock(...to) })),
+    ]
+    const messages: AgentMessage[] = [
+      said('watcher-news-reply-1', 'assistant', 35, 7, 'Visual gate flake asked to run the unit suite. Only you can allow that, in its own pane.'),
+      said('watcher-news-reply-2', 'assistant', 36, 30, 'Footer links finished its turn and pushed its branch. CI is running; I will look again when it ends.'),
+      said('watcher-ask-2', 'user', 38, 0, 'Merge Footer links once CI is green.'),
+      said('watcher-merge', 'assistant', 38, 27, 'Sent Footer links the merge. It merges once its required checks pass.'),
+      said('watcher-news-reply-3', 'assistant', 39, 45, 'Footer links merged.'),
+    ]
+    const activities = [
+      ...work('watcher-ask', [29, 1], [33, 0], ['Thinking', 'list_projects', 'start_thread', 'start_thread']),
+      ...work('news-1', [35, 0], [35, 7.1], ['Thinking', 'read_thread', 'read_operation']),
+      ...work('news-2', [36, 23], [36, 30.4], ['read_operation', 'Thinking']),
+      ...work('news-quiet', [37, 10], [37, 13], ['list_threads']),
+      ...work('watcher-ask-2', [38, 1], [38, 28], ['Thinking', 'send_thread']),
+      ...work('news-3', [39, 40], [39, 45.5], ['read_operation']),
+    ]
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, messages, activities })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        const pane = watcherPane(page)
+        const transcript = pane.locator('.thread-transcript__content')
+        await expect(pane.locator('[data-message-id="watcher-news-reply-3"]')).toBeVisible()
+        // Every turn in time order: the work of each comes before its reply, and the newest reply is the last thing drawn.
+        const words = await transcript.evaluate(element => element.textContent ?? '')
+        const order = ['Find why the visual gate flakes', 'Started Visual gate flake', 'After news · 7.1s', 'asked to run the unit suite', 'After news · 7.4s', 'pushed its branch',
+          'Merge Footer links once CI is green.', 'Sent Footer links the merge.', 'After news · 5.5s', 'Footer links merged.']
+        expect(order.map(text => words.indexOf(text)).every((index, n, all) => index >= 0 && (n === 0 || index > all[n - 1]!)), words).toBe(true)
+        expect(await transcript.locator('.thread-activity').count(), 'no stacked rows of news work').toBe(0)
+        // The news turn that wrote nothing shows nothing; your turns keep their Worked for lines.
+        await expect(transcript.locator('[data-turn-id="news-quiet"]')).toHaveCount(0)
+        await expect(transcript.getByRole('button', { name: /^Worked for/u })).toHaveCount(2)
+        // The work opens from the keyboard under the reply's header, and Escape folds it back.
+        const reply = pane.locator('[data-message-id="watcher-news-reply-1"]')
+        const press = reply.getByRole('button', { name: 'After news · 7.1s' })
+        await press.focus()
+        await page.keyboard.press('Enter')
+        await expect(press).toHaveAttribute('aria-expanded', 'true')
+        await expect(reply.locator('.thread-message__work-body')).toContainText('Used 2 tools, thought once')
+        for (const [width, height] of appearance === 'dark' ? SIZES : [[1280, 800]] as const) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await reply.scrollIntoViewIfNeeded()
+          expect(await pageBoundProblems(page), `news replies at ${width}x${height}`).toEqual([])
+          await captureInto(newsEvidence, launched, `news-open-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `news-${appearance}-${width}x${height}`)
+        }
+        await press.focus()
+        await page.keyboard.press('Escape')
+        await expect(press).toHaveAttribute('aria-expanded', 'false')
+        await expect(press).toBeFocused()
+        await resizeContentWindow(launched, 1280, 800)
+        await settle(page)
+        await pane.locator('[data-message-id="watcher-news-reply-3"]').scrollIntoViewIfNeeded()
+        await captureInto(newsEvidence, launched, `news-folded-${appearance}-1280x800.png`)
       })
     })
   })

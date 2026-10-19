@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
 import {
-  activityLabel, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, openActivityLabel, placeActivities,
+  activityLabel, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, splitTurns,
   statusText, timingNote, turnHeadline, heldLabel, HELD_AFTER_MS,
 } from '../../../src/renderer/src/agents/threadActivityView'
 
@@ -149,6 +149,79 @@ describe('placing activity when the messages are a window of a longer history', 
       expect(placement.leading).toEqual([])
     }
     expect(placeActivities([], [], live).trailing.map(group => group.records.map(item => item.id))).toEqual([['first']])
+  })
+})
+
+describe('placing the work of an unshown turn', () => {
+  // Watcher's conversation leaves out each news wake-up (watcherWakeUpsAsShown), so the news turn's work names a message
+  // the transcript does not have. Times follow Zach's Watcher thread of October 19, 2026.
+  const clock = (time: string): string => `2026-10-19T11:${time}Z`
+  const said = (id: string, role: AgentMessage['role'], time: string, turnMessageId?: string): AgentMessage =>
+    ({ id, role, text: id, createdAt: clock(time), ...(turnMessageId ? { turnMessageId } : {}) })
+  const work = (turnId: string, from: string, to: string, kinds: AgentActivity['kind'][], first: number): AgentActivity[] => [
+    { id: `turn-${turnId}`, turnId, afterMessageId: turnId, sequence: first, kind: 'turn', status: 'completed', title: 'Turn', startedAt: clock(from), completedAt: clock(to) },
+    ...kinds.map((kind, index): AgentActivity => ({ id: `${turnId}-${index}`, turnId, afterMessageId: turnId, sequence: first + index + 1, kind, status: 'completed', title: kind,
+      startedAt: clock(from), completedAt: clock(to) })),
+  ]
+  // You, Watcher's answer, two news turns (one wrote nothing), then you again with the answer.
+  const messages = [
+    said('you-1', 'user', '56:40.379'), said('answer-1', 'assistant', '56:50.463'),
+    said('news-reply-1', 'assistant', '56:59.843'),
+    said('you-2', 'user', '59:05.573'), said('answer-2', 'assistant', '59:33.423'),
+  ]
+  const activities = [
+    ...work('you-1', '56:41.291', '56:50.600', ['reasoning', 'tool'], 0),
+    ...work('news-1', '56:54.086', '57:00.000', ['tool', 'reasoning'], 10),
+    ...work('news-2', '57:29.544', '57:36.613', ['tool'], 20),
+    ...work('you-2', '59:06.224', '59:33.500', ['reasoning', 'tool'], 30),
+  ]
+
+  it('puts a news turn’s work with the reply it wrote, and one that wrote none before the message after it, never at the end', () => {
+    const placement = placeActivities(messages, messages, activities)
+    expect(placement.trailing).toEqual([])
+    expect(placement.unshown.get('news-reply-1')!.map(group => group.turnId)).toEqual(['news-1'])
+    expect(placement.before.get('you-2')!.map(group => group.turnId)).toEqual(['news-2'])
+    expect([...placement.after.keys()]).toEqual(['you-1', 'you-2'])
+  })
+
+  it('takes the reply that names the turn over the one the clocks would pick', () => {
+    const named = [...messages.slice(0, 2), said('stray', 'assistant', '56:55.000', 'you-1'), said('news-reply-1', 'assistant', '56:59.843', 'news-1'), ...messages.slice(3)]
+    expect(placeActivities(named, named, activities).unshown.get('news-reply-1')!.map(group => group.turnId)).toEqual(['news-1'])
+    expect(placeActivities(named, named, activities).unshown.has('stray')).toBe(false)
+  })
+
+  it('opens a turn at the reply, so it never reads as the answer to your message above it', () => {
+    const placement = placeActivities(messages, messages, activities)
+    expect(splitTurns(messages, placement.unshown).map(turn => [turn.user?.id, turn.replies.map(reply => reply.id), turn.unshown])).toEqual([
+      ['you-1', ['answer-1'], undefined], [undefined, ['news-reply-1'], true], ['you-2', ['answer-2'], undefined],
+    ])
+  })
+
+  it('trails a news turn nothing came after, and one it cannot date', () => {
+    const running = [...activities, ...work('news-3', '59:40.000', '59:45.000', ['tool'], 40)]
+    expect(placeActivities(messages, messages, running).trailing.map(group => group.turnId)).toEqual(['news-3'])
+    const undated = activities.map(item => item.turnId === 'news-1' ? { ...item, startedAt: undefined, completedAt: undefined } : item)
+    expect(placeActivities(messages, messages, undated).trailing.map(group => group.turnId)).toEqual(['news-1'])
+  })
+
+  it('opens a turn at a reply that names an unshown message, even once the turn’s work is gone from the records', () => {
+    const named = [...messages.slice(0, 2), said('news-reply-1', 'assistant', '56:59.843', 'news-1'), said('more', 'assistant', '57:01.000', 'news-1'), ...messages.slice(3)]
+    expect([...placeActivities(named, named, []).unshown]).toEqual([['news-reply-1', []]])
+    expect(placeActivities(named, named, activities.filter(item => !item.turnId.startsWith('news'))).unshown.get('news-reply-1')).toEqual([])
+    // A reply before the first user message the window holds may name one above the window, so it is not read.
+    const window = [said('cut', 'assistant', '56:10.000', 'above'), ...named]
+    expect(placeActivities(window, window, []).unshown.has('cut')).toBe(false)
+  })
+
+  it('shows nothing for a reply above the rendered page', () => {
+    expect(placeActivities(messages, messages.slice(3), activities).unshown.size).toBe(0)
+  })
+
+  it('says how long the news turn took, or how it ended', () => {
+    const [lifecycle] = work('news-1', '56:54.086', '57:00.000', [], 0)
+    expect(newsWorkLabel(lifecycle, false, undefined, [])).toBe('After news · 5.9s')
+    expect(newsWorkLabel({ ...lifecycle!, status: 'failed' }, false, undefined, [])).toBe('After news · failed after 5.9s')
+    expect(newsWorkLabel(undefined, false, undefined, [])).toBe('After news')
   })
 })
 
