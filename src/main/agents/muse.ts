@@ -431,6 +431,12 @@ export class MuseMspHost implements AgentHost {
    * session/setModel that was waiting when it came, so that answer leaves the model alone.
    */
   private readonly modelChanges = new Map<string, number>()
+  /**
+   * How many times each thread's wanted model has been chosen, by the user or by Muse. An accepted session/setModel
+   * makes its model the thread's own only if nothing chose another while it waited: a re-apply a resync started for
+   * an older choice must not undo a newer one.
+   */
+  private readonly modelWants = new Map<string, number>()
   /** The turn each thread is running, by MSP turn ID, with the Sotto ID of the message that opened it. */
   private readonly activeTurns = new Map<string, { turnId: string; messageId?: string }>()
   private readonly folds = new Map<string, Fold>()
@@ -924,14 +930,21 @@ export class MuseMspHost implements AgentHost {
     this.settleSettings(id, alias)
     return reapply
   }
+  /** Makes `modelId` the model the thread wants, and counts the choice (see `modelWants`). */
+  private want(id: string, alias: Alias, modelId: string): void {
+    alias.modelId = modelId
+    this.modelWants.set(id, (this.modelWants.get(id) ?? 0) + 1)
+  }
   /**
    * Sets the session's model and counts it as Muse's once Muse accepts it, never from a session's description (see
    * `confirmSession`). Muse also says so with session/modelChanged.
    */
   private async applyModel(id: string, alias: Alias, entry: ThreadProcess, modelId: string): Promise<void> {
-    const changes = this.modelChanges.get(id) ?? 0
+    const changes = this.modelChanges.get(id) ?? 0, wants = this.modelWants.get(id) ?? 0
     await entry.rpc.request('session/setModel', { commandId: museCommandId(), sessionId: alias.museSessionId, model: { modelId } })
-    if ((this.modelChanges.get(id) ?? 0) === changes) { alias.modelId = modelId; alias.nativeModelId = modelId }
+    // Muse runs what it accepted unless it named another since; the thread wants it unless something chose another since.
+    if ((this.modelChanges.get(id) ?? 0) === changes) alias.nativeModelId = modelId
+    if ((this.modelWants.get(id) ?? 0) === wants) alias.modelId = modelId
     this.settleSettings(id, alias)
   }
   /**
@@ -1276,7 +1289,7 @@ export class MuseMspHost implements AgentHost {
           const alias = this.aliases[owner]; if (!alias) return
           // The model Muse moved the session to is the thread's model now, so no send sets the one before it back.
           this.modelChanges.set(owner, (this.modelChanges.get(owner) ?? 0) + 1)
-          alias.modelId = parsed.modelId
+          this.want(owner, alias, parsed.modelId)
           alias.nativeModelId = parsed.modelId
           alias.settingsConfirmed = !alias.pendingRuntimeMode
           this.thread(owner).modelId = parsed.modelId
@@ -1482,12 +1495,12 @@ export class MuseMspHost implements AgentHost {
               // Both are read before anything is awaited, so a model Muse announces from here on is newer than both.
               const previousModelId = alias.modelId, changes = this.modelChanges.get(command.threadId) ?? 0
               // The wanted model is saved before Muse is asked, so one whose answer is lost is still wanted after a reconnect.
-              alias.modelId = modelId; alias.settingsConfirmed = false; await this.persist()
+              this.want(command.threadId, alias, modelId); alias.settingsConfirmed = false; await this.persist()
               try { await this.applyModel(command.threadId, alias, entry, modelId) } catch (error) {
                 // Only an answer that may have reached Muse keeps the new model wanted, for the next send to ask for
                 // again. A refusal leaves the thread on the model Muse last accepted, or the one Muse moved it to since.
                 if (error instanceof MuseUncertain) throw error
-                if ((this.modelChanges.get(command.threadId) ?? 0) === changes) alias.modelId = previousModelId
+                if ((this.modelChanges.get(command.threadId) ?? 0) === changes) this.want(command.threadId, alias, previousModelId)
                 this.settleSettings(command.threadId, alias)
                 await this.persist(); this.emit()
                 if (!(error instanceof MuseRejected)) throw error
@@ -1548,7 +1561,15 @@ export class MuseMspHost implements AgentHost {
           // A model Muse has not confirmed is asked for again before a new turn; a refusal sends on the model Muse has.
           // What the prompt carries must suit the model the turn will run on.
           if (command.type === 'send' && alias.nativeModelId !== alias.modelId) {
-            await this.applyModel(command.threadId, alias, entry, alias.modelId).catch(() => undefined)
+            const wants = this.modelWants.get(command.threadId) ?? 0
+            await this.applyModel(command.threadId, alias, entry, alias.modelId).catch((error: unknown) => {
+              // A model Muse refuses outright is not asked for again: the thread takes the model Muse has. That also ends
+              // a refused change a failed save or an exit left wanted, after asking for it once more.
+              if (!(error instanceof MuseRejected) || !alias.nativeModelId || (this.modelWants.get(command.threadId) ?? 0) !== wants) return
+              this.want(command.threadId, alias, alias.nativeModelId)
+              this.settleSettings(command.threadId, alias)
+              void this.persist().catch(() => undefined)
+            })
             if (alias.nativeModelId && alias.nativeModelId !== alias.modelId) validatePromptAttachments(this.state, alias.nativeModelId, command.attachments)
           }
           this.assertGeneration(generation)

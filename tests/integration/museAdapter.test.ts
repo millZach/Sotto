@@ -193,6 +193,53 @@ it('keeps the model Muse announced while a reopen was answered when it refuses t
   } finally { await f.cleanup() }
 })
 
+it('keeps a newer model choice when Muse accepts a resync\u2019s older re-apply late, without saying so', async () => {
+  const f = await museFixture()
+  try {
+    const id = await twoModelThread(f, 'fixture-full', { reopenedAsDefault: true })
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'Before the gap' })
+    await f.driver.completeTurn(id, 'First reply')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    // A gap makes the thread read again; Muse describes it by its default, so Sotto sets fixture-full again, and Muse
+    // holds that answer while the user picks fixture-base.
+    await f.script({ models: twoModels, reopenedAsDefault: true, silentSetModel: true, delaySetModel: { modelId: 'fixture-full', ms: 1_500 } })
+    await f.action(id, { type: 'gap' })
+    await expect.poll(async () => (await f.driver.requests()).some(record => setModelTo(record) === 'fixture-full')).toBe(true)
+    await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: 'fixture-base' })
+    // Muse answers the older re-apply after the user's choice; the thread still wants fixture-base.
+    await new Promise(resolve => setTimeout(resolve, 2_000))
+    const saved = JSON.parse(await readFile(join(f.root, 'muse-threads.json'), 'utf8')) as Record<string, { modelId: string }>
+    expect(saved[id]?.modelId).toBe('fixture-base')
+    await f.script({ models: twoModels, reopenedAsDefault: true })
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'After the late answer' })
+    await f.driver.completeTurn(id, 'On the chosen model')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    expect((await turnModels(f, id)).at(-1)).toBe('fixture-base')
+  } finally { await f.cleanup() }
+})
+
+it('takes the model Muse has when it refuses a wanted model at a send, and asks for it no more', async () => {
+  const f = await museFixture(undefined, 500)
+  try {
+    const id = await twoModelThread(f, 'fixture-base')
+    // A change whose answer is lost stays wanted, as one a failed save or an exit left wanted does.
+    await f.script({ models: twoModels, holdSetModel: true })
+    await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: 'fixture-full' })
+    await f.script({ models: twoModels, rejectSetModel: ['fixture-full'] })
+    await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'Muse refuses the wanted model' })).resolves.toEqual({ accepted: true })
+    await f.driver.completeTurn(id, 'On the model Muse has')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    const asked = (await f.driver.requests()).filter(record => setModelTo(record) === 'fixture-full').length
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'And again' })
+    await f.driver.completeTurn(id, 'Still on it')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    expect((await f.driver.requests()).filter(record => setModelTo(record) === 'fixture-full')).toHaveLength(asked)
+    expect((await thread(f, id)).modelId).toBe('fixture-base')
+    const saved = JSON.parse(await readFile(join(f.root, 'muse-threads.json'), 'utf8')) as Record<string, { modelId: string }>
+    expect(saved[id]?.modelId).toBe('fixture-base')
+  } finally { await f.cleanup() }
+})
+
 it('sets no model on a reopened thread whose turn started while the resume was answered', async () => {
   const f = await museFixture()
   try {

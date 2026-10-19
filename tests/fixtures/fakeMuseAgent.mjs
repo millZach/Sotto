@@ -18,6 +18,8 @@ import { join } from 'node:path'
 // `permissionProfiles: false`; a session started with one reports its reviewer in `permissionState`, or the one
 // script.json's `reviewerAuthority` names, to a connection that asked for the experimental API and unless script.json
 // says `permissionStateHidden`. `session/read` serves a stored session without attaching it.
+// `delaySetModel: { modelId, ms }` answers one session/setModel for that model only after `ms`, saying nothing, and
+// `silentSetModel` accepts a model change without session/modelChanged, as an answer can arrive without one.
 // `moveDuringApprovalMode` and `moveDuringResume` each move the session to the model they name once, saying so with
 // session/modelChanged before answering session/setApprovalMode or session/resume: a resume's description is then older
 // than Muse's own word.
@@ -316,8 +318,16 @@ createInterface({ input: process.stdin }).on('line', line => {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
     if (script.holdSetModel) return
     if (script.rejectSetModel === true || script.rejectSetModel?.includes?.(p.model.modelId)) { fail('commandRejected', 'Refused by the fixture', 'model_unavailable'); return }
+    if (script.delaySetModel?.modelId === p.model.modelId) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, delaySetModel: undefined }))
+      setTimeout(() => {
+        const previous = session.modelId; session.modelId = p.model.modelId; save()
+        result({ modelId: p.model.modelId, previousModelId: previous })
+      }, script.delaySetModel.ms)
+      return
+    }
     const previousModelId = session.modelId; session.modelId = p.model.modelId; save()
-    notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
+    if (!script.silentSetModel) notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
     if (script.moveAfterSetModel) {
       writeFileSync(path('script.json'), JSON.stringify({ ...script, moveAfterSetModel: undefined }))
       session.modelId = script.moveAfterSetModel; save()

@@ -131,4 +131,10 @@ A model change saves the model it wants before it asks Muse, so one whose answer
 reconnect, and a refusal goes back only to the model the thread had before anything was awaited, never over one Muse
 named since. A reopened session's description counts as older than any model change Muse announced after the resume
 was asked for, and a reopen leaves the model alone while a turn runs, including one that started while the resume was
-answered.
+answered; when the thread's own model is one Muse already accepted, nothing is asked again.
+
+Muse can accept a model change without announcing it, and a resync can ask for a model again outside the order the
+user's changes keep. So an accepted change makes its model the one Muse runs unless Muse named another since, and the
+thread's own unless something chose another since: a late answer to an older request never undoes a newer choice.
+A model Muse refuses outright when a send asks for it is not asked for again; the thread takes the model Muse has.
+That also bounds a refused change a failed save or an exit left wanted: it is asked for once more, then dropped.
