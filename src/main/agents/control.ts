@@ -801,18 +801,23 @@ export class AgentControl {
     void this.persist().catch(() => undefined)
     return true
   }
-  hasPendingThreadWork(threadId: string): boolean {
-    return this.pendingThreadWorkReason(threadId) !== null
+  /**
+   * `setAsideIgnored` is for a change the user makes, such as Watcher's model or provider: a prompt the user set aside is
+   * never sent again, so it holds back only automatic work, until a fresh prompt is confirmed (#1156).
+   */
+  hasPendingThreadWork(threadId: string, options: { readonly setAsideIgnored?: boolean } = {}): boolean {
+    return this.pendingThreadWorkReason(threadId, options) !== null
   }
   /** The existing pending-work guard's reason, so a refusal offers the recovery this work actually needs. */
-  pendingThreadWorkReason(threadId: string): CheckoutPendingWork | null {
+  pendingThreadWorkReason(threadId: string, { setAsideIgnored = false }: { readonly setAsideIgnored?: boolean } = {}): CheckoutPendingWork | null {
+    const released = (item: { readonly setAside?: boolean | undefined; readonly updatesResumed?: boolean | undefined }): boolean => item.setAside === true && (setAsideIgnored || item.updatesResumed === true)
     // A wake-up still waiting is Sotto's news, not the user's work: it holds nothing back until it starts to send.
     const items = this.followupStore.peek().items.filter(item => item.threadId === threadId && !isWaitingWakeUp(item))
-    const deliveries = (this.state.deliveries ?? []).filter(item => item.threadId === threadId && !(item.setAside && item.updatesResumed))
+    const deliveries = (this.state.deliveries ?? []).filter(item => item.threadId === threadId && !released(item))
     if (items.some(item => item.status === 'uncertain') || deliveries.some(item => item.status === 'uncertain')) return 'uncertain-send'
     if (items.some(item => item.status === 'failed')) return 'failed-followups'
     if (items.some(item => item.status === 'paused')) return 'paused-followups'
-    if (items.length || this.outbox.some(item => item.threadId === threadId && !(item.setAside && item.updatesResumed))
+    if (items.length || this.outbox.some(item => item.threadId === threadId && !released(item))
       || deliveries.some(item => ['queued', 'submitting'].includes(item.status) || setAsideUpdatesHeld(item))) return 'pending-work'
     return null
   }
