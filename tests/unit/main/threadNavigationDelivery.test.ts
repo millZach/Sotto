@@ -264,6 +264,17 @@ describe('setting aside unconfirmed sends', () => {
     }
   })
 
+  it('lets a change the user makes pass a prompt set aside, while automatic work still waits for a fresh one', async () => {
+    const f = await fixture(), draftId = randomUUID()
+    f.host.withheld = 'uncertain'
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Original unknown prompt' })
+    expect(f.control.pendingThreadWorkReason('workshop')).toBe('uncertain-send')
+    expect((await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })).error).toBeNull()
+    // Set aside, it is never sent again, so a model or provider change need not wait for it; automatic work still does.
+    expect(f.control.hasPendingThreadWork('workshop')).toBe(true)
+    expect(f.control.hasPendingThreadWork('workshop', { setAsideIgnored: true })).toBe(false)
+  })
+
   it.each([false, true])('retains recovery when the original echo lands during its write (restart %s)', async restart => {
     const f = await fixture(), draftId = randomUUID(), entered = deferred<void>(), gate = deferred<void>()
     f.host.withheld = 'uncertain'

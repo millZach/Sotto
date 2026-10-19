@@ -811,7 +811,7 @@ export class WatcherService implements WatcherControlHooks {
         if (thread.kind !== 'watcher' || thread.providerId !== previous.provider || thread.projectId !== previous.projectId) refuse('NOT_CURRENT_WATCHER', 'The saved Watcher identity does not match its thread. Nothing was changed.')
         if (previous.provider === input.provider && thread.modelId === input.modelId
           && (!input.reasoningEffort || thread.reasoningEffort === input.reasoningEffort)) return this.get()
-        if (thread.status === 'running' || thread.requests.length || this.invocations || this.active.size || previous.provider !== input.provider && this.inFlight(record) > 0 || this.options.control.hasPendingThreadWork(thread.id)
+        if (thread.status === 'running' || thread.requests.length || this.invocations || this.active.size || previous.provider !== input.provider && this.inFlight(record) > 0 || this.options.control.hasPendingThreadWork(thread.id, { setAsideIgnored: true })
           || record.operations.some(operation => ['queued', 'dispatching', 'uncertain'].includes(operation.deliveryState))) {
           refuse('THREAD_BUSY', 'Wait for Watcher and its pending deliveries before changing its provider, model or effort.', true)
         }

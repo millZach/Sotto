@@ -259,9 +259,13 @@ export interface ThreadContinueOffer {
 
 const providerNameOf = (thread: AgentThread): string | undefined => thread.providerId ? PROVIDER_LABELS[thread.providerId] : undefined
 
-/** Whether a prompt on this thread is on its way to the provider, which a settings change would have to wait behind. */
+/**
+ * Whether a prompt on this thread is on its way to the provider, which a settings change would have to wait behind. One
+ * the user set aside is not: Sotto never sends it again, whatever became of it (#1156).
+ */
 const sending = (state: AgentState, threadId: string): boolean =>
-  state.deliveries?.some(delivery => delivery.threadId === threadId && (delivery.status === 'queued' || delivery.status === 'submitting' || delivery.status === 'uncertain')) === true
+  state.deliveries?.some(delivery => delivery.threadId === threadId && !delivery.setAside
+    && (delivery.status === 'queued' || delivery.status === 'submitting' || delivery.status === 'uncertain')) === true
 
 /** Why Watcher's permissions are fixed now, as a thread's are while it works: main refuses a change until then. */
 export function watcherPermissionFixedReason(state: AgentState, thread: AgentThread): string | undefined {
