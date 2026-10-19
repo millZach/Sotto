@@ -953,6 +953,10 @@ export class WatcherWakeUp {
       const latest = this.latestEvidence.get(scope)
       if (!latest || latest.id !== event.id && latest.legacyId !== event.id) return false
       if (latest.restoredRefs) return true
+      // What its pull requests said beside the evidence when it was made: a conflict that cleared since, with the
+      // evidence otherwise the same, makes it outdated, and what is still true is told again as it stands.
+      const attention = this.evidence.attentionIdentity(event.target)
+      if ((latest.attention ?? '') !== (attention.length ? observationDigest(attention) : '')) return false
       const current = observationDigest(this.evidence.read(event.target).map(item => item.id).sort())
       return event.revision === current || Boolean(latest.legacyId === event.id && event.evidenceIds
         && event.revision === observationDigest(event.evidenceIds) && current === observationDigest([...event.evidenceIds].sort()))

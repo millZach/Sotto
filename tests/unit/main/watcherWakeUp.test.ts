@@ -1810,3 +1810,18 @@ it('gives no reply for a newest turn Sotto cannot place, never the turn beforeâ€
   expect(watcherNewestTurnReply(thread)).toBeUndefined()
   expect(watcherNewestTurnReply({ ...thread, status: 'idle', lastTurn: { id: 'brief', status: 'completed' } })?.id).toBe('reply')
 })
+
+it('lets queued news of a conflict go no more once the conflict has cleared', async () => {
+  const f = fixture()
+  f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
+  f.wakes.pullRequest({ url: prUrl, head: 'h1', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'pending', conflicting: false })
+  await f.advance(WATCHER_BATCH_MS)
+  f.wakes.pullRequest({ url: prUrl, head: 'h1', observedAt: new Date(f.now() + 1).toISOString(), availability: 'available', checks: 'pending', conflicting: true })
+  // The wake-up is made and waits in Watcher's queue while Watcher is busy.
+  await f.advance(WATCHER_BATCH_MS)
+  const queued = f.delivered.at(-1)!.events.filter(event => event.kind === 'evidence-changed')
+  expect(queued).toHaveLength(1)
+  expect(f.wakes.dueAll(queued)).toEqual([true])
+  f.wakes.pullRequest({ url: prUrl, head: 'h1', observedAt: new Date(f.now() + 2).toISOString(), availability: 'available', checks: 'pending', conflicting: false })
+  expect(f.wakes.dueAll(queued)).toEqual([false])
+})
