@@ -499,23 +499,44 @@ export function groupSummary(records: readonly AgentActivity[]): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
+/** The record and change a turn's diff came from, when its host sent the diff cut (ADR-0025, October 18 amendment). */
+export interface TurnDiffSource { readonly record: AgentActivity; readonly index: number }
+
 export interface TurnChange {
   readonly path: string
   /** How the file was first touched: a file created then edited still reads as created. */
   readonly verb: string
   /** Every diff reported for the path, in the order they happened. */
   readonly diffs: readonly string[]
+  /** Beside `diffs`, where each cut diff came from; only a change with a cut diff has it. */
+  readonly sources?: readonly (TurnDiffSource | undefined)[]
+}
+
+/**
+ * Whether the diff a record's change shows is cut: the host sent the diff itself cut, or the change has none and the row
+ * draws it from the record's tool input, which was cut.
+ */
+export function changeDiffIsCut(record: AgentActivity, index: number): boolean {
+  if (record.cut === undefined) return false
+  if (record.cut.diffs?.some(item => item.index === index)) return true
+  return record.cut.text !== undefined && record.changes?.[index]?.diff === undefined
 }
 
 /** Every file a turn changed, first touched first, so a finished turn can say what it left behind. */
 export function turnChanges(groups: readonly ActivityGroup[]): readonly TurnChange[] {
-  const files = new Map<string, { path: string; verb: string; diffs: string[] }>()
+  const files = new Map<string, { path: string; verb: string; diffs: string[]; sources?: (TurnDiffSource | undefined)[] }>()
   const records = groups.flatMap(group => [...group.records]).sort(bySequence)
   for (const record of records) {
     if (record.kind !== 'file-change') continue
-    for (const change of activityChanges(record)) {
+    for (const [index, change] of activityChanges(record).entries()) {
       const file = files.get(change.path) ?? { path: change.path, verb: changeVerb(change.kind), diffs: [] }
-      if (change.diff && !file.diffs.includes(change.diff)) file.diffs.push(change.diff)
+      if (change.diff && !file.diffs.includes(change.diff)) {
+        file.diffs.push(change.diff)
+        if (changeDiffIsCut(record, index)) {
+          file.sources ??= file.diffs.slice(0, -1).map(() => undefined)
+          file.sources.push({ record, index })
+        } else file.sources?.push(undefined)
+      }
       files.set(change.path, file)
     }
   }

@@ -4,7 +4,7 @@ import { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 import { subagentSummarySchema } from './subagents'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
 import { agentFileReferencesSchema } from './agentFiles'
-import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
+import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './visuals'
 import { compactionSchema } from './compaction'
@@ -1204,6 +1204,8 @@ export interface AgentBridge {
   onState(listener: (state: AgentState) => void): () => void
   /** One viewed thread's messages, for a thread the window opened before main pushed them. */
   threadDetail?(threadId: string): Promise<AgentThreadDetail | null>
+  /** One record of a remote thread whole, for a row whose body its host sent cut; null for this computer's threads. */
+  activityBody?(request: AgentActivityBodyRequest): Promise<AgentActivity | null>
   /** Whole details and the deltas between them; a delta the window cannot apply sends it back to `threadDetail`. */
   onThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   /**

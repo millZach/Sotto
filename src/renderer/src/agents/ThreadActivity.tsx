@@ -5,9 +5,11 @@ import type { AgentThread } from '../../../shared/agents'
 import { MessageContent } from './MessageContent'
 import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
-  activityChanges, activityInput, activityLabel, agentStatusLabel, changeVerb, compactionSummary, currentAction, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
+  activityChanges, activityInput, activityLabel, agentStatusLabel, changeDiffIsCut, changeVerb, compactionSummary, currentAction, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
   isTurnRecord, liveTurnId, nestActivities, openActivityLabel, statusText, timingNote, turnHeadline, type ActivityGroup, type ActivityNode, type TurnChange,
 } from './threadActivityView'
+import { useActivityBodies, useActivityBody } from './activityBodies'
+import { CutCode, CutProse } from './ActivityBody'
 import './activity.css'
 
 /** A running turn shows its newest rows; older ones stay one click away. */
@@ -94,6 +96,9 @@ export function TurnChangedFiles({ changes, onDisclosure }: {
 }): ReactNode {
   const [open, setOpen] = useState(false)
   const bodyId = useId()
+  // A diff its host sent cut is read whole when the list opens, from the same answer its Edit row reads.
+  const sources = [...new Set(changes.flatMap(change => change.sources ?? []).flatMap(source => source ? [source.record] : []))]
+  const views = new Map(useActivityBodies(sources, open).map(view => [view.sent, view]))
   if (!changes.length) return null
   const label = `Changed ${changes.length} ${changes.length === 1 ? 'file' : 'files'}`
   return <div className="thread-changes" data-expanded={open || undefined} onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
@@ -106,7 +111,12 @@ export function TurnChangedFiles({ changes, onDisclosure }: {
     {open ? <ul id={bodyId} className="thread-changes__list" aria-label={label}>
       {changes.map(change => <li key={change.path}>
         <p className="thread-activity__fact">{change.verb} <code>{change.path}</code></p>
-        {change.diffs.map((diff, index) => <MessageContent key={index} text={fenced(displayDiff(diff), 'diff')} />)}
+        {change.diffs.map((diff, index) => {
+          const source = change.sources?.[index], view = source && views.get(source.record)
+          if (!source || !view) return <MessageContent key={index} text={fenced(displayDiff(diff), 'diff')} />
+          const whole = view.state === 'loaded' ? activityChanges(view.record)[source.index]?.diff ?? diff : diff
+          return <CutCode key={index} view={view} kind="diff" text={displayDiff(whole)} language="diff" cut />
+        })}
       </li>)}
     </ul> : null}
   </div>
@@ -149,11 +159,12 @@ function WorkingWord(): ReactNode {
 
 /** A finished subagent whose provider sent no result says so, instead of opening to nothing. */
 function missingAgentOutput(record: AgentActivity): boolean {
-  return record.kind === 'subagent' && isTerminalActivity(record.status) && !record.output && !record.error && !record.agents?.some(agent => agent.message)
+  // Output its host kept back is there, at its whole size, even when none of it came with the record.
+  return record.kind === 'subagent' && isTerminalActivity(record.status) && !record.output && record.cut?.output === undefined && !record.error && !record.agents?.some(agent => agent.message)
 }
 
 function hasDetails(record: AgentActivity): boolean {
-  return Boolean(record.command || record.cwd || record.output || record.error || record.text || record.changes?.length || record.steps?.length || record.agents?.length || record.truncated)
+  return Boolean(record.command || record.cwd || record.output || record.error || record.text || record.changes?.length || record.steps?.length || record.agents?.length || record.truncated || record.cut)
     || missingAgentOutput(record)
 }
 
@@ -172,23 +183,34 @@ function PlanSteps({ record }: { readonly record: AgentActivity }): ReactNode {
   </ol>
 }
 
-function ActivityDetails({ record, provider, connected }: { readonly record: AgentActivity; readonly provider: string; readonly connected: boolean }): ReactNode {
+function ActivityDetails({ record: sent, provider, connected }: { readonly record: AgentActivity; readonly provider: string; readonly connected: boolean }): ReactNode {
+  // A remote row whose host kept its long bodies back reads the record whole now that it is open (ADR-0025, October 18
+  // amendment), and draws the part it was sent until then. Every other row draws exactly as it always has.
+  const body = useActivityBody(sent, true)
+  const record = body.record, cut = body.state === 'whole' ? undefined : sent.cut
   const notes = [timingNote(record, provider), record.truncated ? 'Some details were not kept.' : ''].filter(Boolean)
   // Native tool input arrives as JSON: it reads formatted, and is left out where the command or diff already shows it.
   const parsed = activityInput(record) !== null
   const text = parsed ? inputDetail(record) : record.text
   const json = parsed && record.kind !== 'command'
+  // Cut input matters only where the row shows it: a command shows its description and an edit its diff instead.
+  const cutText = cut?.text !== undefined && !(parsed && (record.kind === 'command' || record.kind === 'file-change'))
   return <div className="thread-activity__details">
     {record.steps?.length ? <PlanSteps record={record} /> : null}
     {record.command ? <MessageContent text={fenced(record.command, 'command')} /> : null}
     {record.cwd ? <p className="thread-activity__fact">In <code>{record.cwd}</code></p> : null}
-    {text ? record.kind === 'reasoning'
-      ? <MessageContent text={text} />
-      : json ? <MessageContent text={fenced(text, 'json')} /> : <p className="thread-activity__text">{text}</p> : null}
+    {cutText ? record.kind === 'reasoning' || !json
+      ? <CutProse view={body} kind={record.kind === 'reasoning' ? 'thinking' : 'text'} text={text ?? ''} cut />
+      : <CutCode view={body} kind="input" text={text ?? ''} language="json" cut />
+      : text ? record.kind === 'reasoning'
+        ? <MessageContent text={text} />
+        : json ? <MessageContent text={fenced(text, 'json')} /> : <p className="thread-activity__text">{text}</p> : null}
     {activityChanges(record).map((change, index, changes) => <div className="thread-activity__change" key={`${change.path}:${index}`}>
       {/* A single changed file is already named by its row; a tool's files are what it touched. */}
       {changes.length > 1 || record.kind !== 'file-change' ? <p className="thread-activity__fact">{changeVerb(change.kind)} <code>{change.path}</code></p> : null}
-      {change.diff ? <MessageContent text={fenced(displayDiff(change.diff), 'diff')} /> : null}
+      {cut && changeDiffIsCut(sent, index)
+        ? <CutCode view={body} kind="diff" text={displayDiff(change.diff ?? '')} language="diff" cut />
+        : change.diff ? <MessageContent text={fenced(displayDiff(change.diff), 'diff')} /> : null}
     </div>)}
     {/* A workflow's own entry stands for its run; the list is its agents. */}
     {record.agents?.some(agent => agent.kind !== 'workflow') ? <ol className="thread-activity__agents" aria-label="Agents" data-connected={connected || undefined}>
@@ -198,7 +220,10 @@ function ActivityDetails({ record, provider, connected }: { readonly record: Age
         {agent.message ? <span className="thread-activity__agent-message">{agent.message}</span> : null}
       </li>)}
     </ol> : null}
-    {record.output ? <MessageContent text={fenced(record.output, 'output')} /> : null}
+    {cut?.output !== undefined
+      // Held output opens at its end, before and after the rest arrives.
+      ? <CutCode view={body} kind="output" text={record.output ?? ''} language="output" cut />
+      : record.output ? <MessageContent text={fenced(record.output, 'output')} /> : null}
     {record.error ? <p className="thread-activity__error">{record.error}</p> : null}
     {missingAgentOutput(record) ? <p className="thread-activity__fact">{provider} did not report this agent’s result.</p> : null}
     {notes.length ? <p className="thread-activity__fact">{notes.join(' · ')}</p> : null}
