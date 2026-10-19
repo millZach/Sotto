@@ -17,9 +17,9 @@ struct ProviderLogo: View {
                 .accessibilityHidden(true)
         }
     }
-    /// The logo's name in the asset catalog, for the four providers Sotto knows.
+    /// The logo's name in the asset catalog, for each provider that has one. Muse has none.
     static func asset(_ providerID: String?) -> String? {
-        ["codex": "ProviderCodex", "claude": "ProviderClaude", "grok": "ProviderGrok", "devin": "ProviderDevin"][providerID ?? ""]
+        ["codex": "ProviderCodex", "claude": "ProviderClaude", "grok": "ProviderGrok", "devin": "ProviderDevin", "opencode": "ProviderOpenCode"][providerID ?? ""]
     }
 }
 

@@ -9,6 +9,7 @@ import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { WATCHER_SYSTEM_PROMPT } from '../../src/main/agents/watcherPrompt'
 import { watcherRequestLine, watcherRequestNote, watcherTextAsTyped } from '../../src/main/agents/watcherRequestNote'
+import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
 import { questionInstructions } from '../../src/main/agents/questionInstructions'
 import type { AgentHost, WatcherProfileTools } from '../../src/main/agents/host'
 import type { ScopedThreadTools } from '../../src/main/agents/threadToolServer'
@@ -18,13 +19,19 @@ import { claudeFixture } from '../fixtures/claudeFixture'
 import { codexFixture } from '../fixtures/codexFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { devinFixture } from '../fixtures/devinFixture'
+import { museFixture } from '../fixtures/museFixture'
+import { MUSE_WATCHER_INSTRUCTIONS } from '../../src/main/agents/muse'
+import { museToolName } from '../../src/main/agents/museRequests'
 import { interruptWatcherLiveTurn, observeWatcherLivePermissionAnswers } from '../fixtures/watcherLiveInterrupt'
 import type { RecordedRpc } from '../fixtures/adapterFixture'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 const factories = { codex: () => codexFixture(undefined, false, 10_000), claude: () => claudeFixture(undefined, 10_000),
-  grok: () => grokFixture(undefined, 10_000, 60_000) }
+  grok: () => grokFixture(undefined, 10_000, 60_000), muse: () => museFixture(undefined, 10_000) }
+/** Each of Sotto's servers on Muse goes by its own name and the thread's suffix (ADR-0079). */
+const MUSE_SUFFIX = /_[0-9a-f]{10}$/u
+const MSP_MODE: Record<AgentRuntimeMode, string | undefined> = { 'approval-required': 'promptUnmatched', 'auto-accept-edits': undefined, auto: 'onRequest', 'full-access': 'allowAll' }
 const flag = (args: string[], name: string) => args[args.indexOf(name) + 1]
 const names = ['sotto_threads', 'sotto_visual', 'sotto_pull_requests']
 function scoped(name: string): ScopedThreadTools {
@@ -34,12 +41,14 @@ function scoped(name: string): ScopedThreadTools {
 async function seedModels(root: string, provider: keyof typeof factories, updated = false) {
   const ids = ['fixture-model', 'fixture-second-model']
   if (provider === 'claude') await writeFile(join(root, 'models.json'), JSON.stringify(ids.map(value => ({ value, displayName: value, supportsEffort: true, supportedEffortLevels: ['low', 'high'] }))))
+  else if (provider === 'muse') await writeFile(join(root, 'script.json'), JSON.stringify({ ...(updated ? { cliVersion: '1.2.0' } : {}),
+    models: ids.map(modelId => ({ modelId, providerId: 'meta', displayLabel: modelId, isDefault: modelId === ids[0] })) }))
   else await writeFile(join(root, 'script.json'), JSON.stringify(provider === 'codex' ? {
     ...(updated ? { version: 'codex/0.200.0' } : {}), developerInstructions: 'Synthetic project developer instructions',
     models: ids.map(model => ({ id: model, model, displayName: model, isDefault: model === ids[0], defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] })),
   } : { ...(updated ? { cliVersion: '1.0.41' } : {}), catalog: { currentModelId: ids[0], availableModels: ids.map(modelId => ({ modelId, name: modelId, _meta: { reasoningEffort: 'high', supportsReasoningEffort: true, reasoningEfforts: [{ id: 'high' }] } })) } }))
 }
-async function attach(host: AgentHost, root: string, threadId: string, projectId: string, provider: 'codex' | 'claude' | 'grok', hostId: string = randomUUID()) {
+async function attach(host: AgentHost, root: string, threadId: string, projectId: string, provider: 'codex' | 'claude' | 'grok' | 'muse', hostId: string = randomUUID()) {
   const record = emptyWatcherRecord()
   record.current = { target: { hostId, threadId }, projectId, provider, creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
   await writeFile(join(root, 'agents.json'), JSON.stringify({ watcher: record }))
@@ -83,6 +92,20 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
     for (const record of records.filter(record => record.method === 'watcher-launch')) {
       expect((record.params!.frame as { serverNames: string[] }).serverNames.sort()).toEqual([...names].sort())
     }
+  } else if (provider === 'muse') {
+    // Watcher's session starts on Ask me, so no reviewer of Muse's decides what it asks; each new host gets its servers.
+    const launches = records.filter(record => ['session/start', 'session/resume'].includes(record.method ?? ''))
+    expect(launches.some(record => record.params?.config !== undefined)).toBe(true)
+    for (const { method, params } of launches) {
+      if (method === 'session/start') expect(params).toMatchObject({ permissionProfile: ':ask-me' })
+      const given = (params?.config as { mcpServers?: Record<string, unknown> } | undefined)?.mcpServers
+      if (given) expect(Object.keys(given).map(name => { expect(name).toMatch(MUSE_SUFFIX); return name.replace(MUSE_SUFFIX, '') }).sort()).toEqual([...names].sort())
+    }
+    // MSP takes no instructions from a client, so they go ahead of each message to Watcher, which is shown alone.
+    for (const record of records.filter(record => record.method === 'turn/start')) {
+      expect((record.params!.input as unknown[])[0]).toEqual({ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS })
+      expect(record.params!.displayText).toEqual(expect.any(String))
+    }
   } else {
     const launches = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? ''))
     expect(launches.length).toBeGreaterThan(0)
@@ -124,6 +147,10 @@ function assertRuntimeConfiguration(provider: keyof typeof factories, records: R
         expect(frame.args.includes('--allow-dangerously-skip-permissions')).toBe(mode === 'full-access')
       }
     }
+  } else if (provider === 'muse') {
+    // Muse keeps a session's approval mode itself; a start or a change names it, and a resume carries none.
+    for (const record of records.filter(record => record.method === 'session/start')) expect(record.params!.approvalMode).toBe(MSP_MODE[mode])
+    for (const record of records.filter(record => record.method === 'session/setApprovalMode')) expect(record.params!.mode).toBe(MSP_MODE[mode])
   } else {
     const settings = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? ''))
     expect(settings.length).toBeGreaterThan(0)
@@ -132,7 +159,8 @@ function assertRuntimeConfiguration(provider: keyof typeof factories, records: R
 }
 
 for (const provider of Object.keys(factories) as (keyof typeof factories)[]) describe(`${provider} watcher own tools`, () => {
-  it('discovers and sends selected native skills while retaining the launch profile', async () => {
+  // MSP has no skill catalog a client may read, so Muse offers no skills (ADR-0079).
+  it.skipIf(provider === 'muse')('discovers and sends selected native skills while retaining the launch profile', async () => {
     const f = await factories[provider](); cleanups.push(f.cleanup)
     const id = randomUUID(), tools = await attach(f.host, f.root, id, f.projectId, provider)
     const path = join(f.root, 'SKILL.md')
@@ -145,7 +173,7 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Watcher', modelId: f.modelId })
-    const catalog = await f.host.listThreadSkills!(id, true)
+    const catalog = await (f.host as AgentHost).listThreadSkills!(id, true)
     expect(catalog).toMatchObject({ threadId: id, providerId: provider, status: 'ready' })
     const skill = catalog.skills[0]!
     expect(skill.name).toBe('check')
@@ -157,7 +185,7 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
     else expect(JSON.stringify(prompt.params)).toContain('/check verify')
     expect(tools.revoke).not.toHaveBeenCalled()
     await writeFile(join(f.root, 'agents.json'), '{')
-    await expect(f.host.listThreadSkills!(id, true)).rejects.toThrow('saved identity')
+    await expect((f.host as AgentHost).listThreadSkills!(id, true)).rejects.toThrow('saved identity')
     expect(tools.revoke).toHaveBeenCalledWith(id)
   })
 
@@ -174,7 +202,7 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
     await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
     assertConfiguration(provider, await f.driver.requests())
     assertRuntimeConfiguration(provider, await f.driver.requests(), 'full-access')
-    const modes: AgentRuntimeMode[] = provider === 'grok' ? ['approval-required', 'auto', 'full-access'] : ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
+    const modes: AgentRuntimeMode[] = provider === 'grok' || provider === 'muse' ? ['approval-required', 'auto', 'full-access'] : ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
     for (const runtimeMode of modes) {
       const before = (await f.driver.requests()).length
       expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode })).accepted).toBe(true)
@@ -229,7 +257,7 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
 })
 
 /** A Watcher thread and an ordinary thread beside it on one provider, for the request note checks. */
-async function watcherBesideOrdinary(f: { host: AgentHost; root: string; projectId: string; modelId: string }, provider: 'codex' | 'claude' | 'grok') {
+async function watcherBesideOrdinary(f: { host: AgentHost; root: string; projectId: string; modelId: string }, provider: 'codex' | 'claude' | 'grok' | 'muse') {
   const id = randomUUID(), ordinary = randomUUID()
   await attach(f.host, f.root, id, f.projectId, provider)
   await f.host.connect()
@@ -304,6 +332,105 @@ it('gives a Grok Watcher its request note as one Sotto line after the user’s w
   expect(watcherTextAsTyped((await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.find(message => message.role === 'user')!.text, request)).toBe(typed)
 })
 
+it('gives a Muse Watcher its instructions ahead of each message and its request note after the words, and shows the words as typed', async () => {
+  const f = await museFixture(undefined, 10_000); cleanups.push(f.cleanup)
+  const { id, ordinary } = await watcherBesideOrdinary(f, 'muse')
+  const typed = 'Synthetic instruction to Watcher', note = watcherRequestNote(randomUUID(), randomUUID())
+  for (const threadId of [id, ordinary]) {
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: typed, watcherRequestNote: note })).accepted).toBe(true)
+  }
+  const [watcher, other] = (await f.driver.requests()).filter(record => record.method === 'turn/start')
+  expect(watcher!.params!.input).toEqual([{ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS }, { type: 'text', text: typed + watcherRequestLine(note) }])
+  expect(watcher!.params!.displayText).toBe(typed)
+  // An ordinary thread is sent the words alone, even when a command carried a note.
+  expect(other!.params!.input).toEqual([{ type: 'text', text: typed }])
+  expect(other!.params).not.toHaveProperty('displayText')
+  // Muse's transcript keeps the display text, and that is what Sotto shows: no line comes off, none was shown.
+  await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.messages.find(message => message.role === 'user')?.text).toBe(typed)
+  // Muse's own servers for an ordinary thread include the browser; Watcher's never do.
+  const starts = (await f.driver.requests()).filter(record => record.method === 'session/start')
+  const named = (index: number) => Object.keys((starts[index]!.params!.config as { mcpServers: Record<string, unknown> }).mcpServers).map(name => name.replace(MUSE_SUFFIX, ''))
+  expect(named(0)).not.toContain('sotto_browser')
+  expect(named(1)).toContain('sotto_browser')
+  expect(starts[0]!.params).toMatchObject({ permissionProfile: ':ask-me' })
+  expect(starts[1]!.params).not.toHaveProperty('permissionProfile')
+})
+
+it.each([
+  ['keeps no display text', { dropDisplayText: true }, (typed: string) => typed],
+  ['cuts the message short', { truncateUserText: MUSE_WATCHER_INSTRUCTIONS.length + 12 }, (typed: string) => typed.slice(0, 12)],
+])('shows a Muse Watcher message without Sotto’s instructions or note when Muse %s', async (_case, script, shown) => {
+  const f = await museFixture(undefined, 10_000); cleanups.push(f.cleanup)
+  const { id } = await watcherBesideOrdinary(f, 'muse')
+  await writeFile(join(f.root, 'script.json'), JSON.stringify(script))
+  const typed = 'Synthetic instruction to Watcher on Muse', note = watcherRequestNote(randomUUID(), randomUUID())
+  expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: typed, watcherRequestNote: note })).accepted).toBe(true)
+  await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.messages.find(message => message.role === 'user')?.text).toBe(shown(typed))
+  // A cold read of Muse's history, as a handover reads it, shows the same.
+  f.host.disconnect(); await f.adapter.closed(); await f.host.connect(); await f.host.startThreadSession!(id)
+  await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.messages.find(message => message.role === 'user')?.text).toBe(shown(typed))
+})
+
+it('admits only Watcher’s own suffixed Muse tool names and shows a folded lookalike as an ordinary card', async () => {
+  const f = await museFixture(undefined, 10_000); cleanups.push(f.cleanup)
+  const id = randomUUID(), tools = await attach(f.host, f.root, id, f.projectId, 'muse')
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId })
+  const given = Object.keys(((await f.driver.requests()).find(record => record.method === 'session/start')!.params!.config as { mcpServers: Record<string, unknown> }).mcpServers)
+  const server = (plain: string) => given.find(name => name.replace(MUSE_SUFFIX, '') === plain)!
+  const decided = async () => (await f.driver.requests()).filter(record => record.method === 'approval/decide').length
+  for (const [plain, tool] of [['sotto_threads', 'list_threads'], ['sotto_visual', 'fixture_tool'], ['sotto_pull_requests', 'fixture_tool']] as const) {
+    const before = await decided()
+    await f.action(id, { type: 'tool-permission', toolName: museToolName(server(plain), tool) })
+    await expect.poll(decided).toBe(before + 1)
+    expect((await f.host.snapshot()).threads.find(thread => thread.id === id)!.requests).toEqual([])
+  }
+  // A user server named `sotto-threads` shows Sotto's plain tool name; without the thread's suffix it is the user's card.
+  const before = await decided()
+  await f.action(id, { type: 'tool-permission', toolName: museToolName('sotto-threads', 'list_threads') })
+  await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests[0]?.kind).toBe('permission')
+  expect(await decided()).toBe(before)
+  expect(tools.revoke).not.toHaveBeenCalled()
+})
+
+it.each(['codex', 'claude', 'grok'] as const)('gives a %s Watcher a wake-up’s news through its request note’s channel and never in the message', async provider => {
+  const f = await (provider === 'codex' ? codexFixture(undefined, false, 10_000) : provider === 'claude' ? claudeFixture(undefined, 10_000) : grokFixture(undefined, 10_000))
+  cleanups.push(f.cleanup)
+  const { id, ordinary } = await watcherBesideOrdinary(f, provider)
+  const news = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.\nSynthetic news line'
+  for (const threadId of [id, ordinary]) {
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: WATCHER_WAKE_UP_PROMPT, watcherNews: news })).accepted).toBe(true)
+  }
+  const records = await f.driver.requests()
+  if (provider === 'codex') {
+    const [watcher, other] = records.filter(record => record.method === 'turn/start')
+    expect(watcher!.params!.input).toEqual([expect.objectContaining({ type: 'text', text: WATCHER_WAKE_UP_PROMPT })])
+    expect(watcher!.params!.additionalContext).toEqual({ sotto_watcher_news: { value: news, kind: 'application' } })
+    expect(other!.params).not.toHaveProperty('additionalContext')
+  } else if (provider === 'claude') {
+    const frame = (record: RecordedRpc) => record.params!.frame as { message?: { content?: unknown }; additionalContext?: string | null; prompt?: string }
+    expect(records.filter(record => record.method === 'user').map(record => frame(record).message?.content)).toEqual([WATCHER_WAKE_UP_PROMPT, WATCHER_WAKE_UP_PROMPT])
+    expect(records.filter(record => record.method === 'hook-context').map(record => [frame(record).prompt, frame(record).additionalContext])).toEqual([[WATCHER_WAKE_UP_PROMPT, news]])
+  } else {
+    expect(records.filter(record => record.method === 'session/prompt').map(record => record.params!.prompt))
+      .toEqual([[{ type: 'text', text: WATCHER_WAKE_UP_PROMPT + watcherRequestLine(news) }], [{ type: 'text', text: WATCHER_WAKE_UP_PROMPT }]])
+  }
+})
+
+it('gives a Muse Watcher a wake-up’s news on its request note’s line and shows only the wake-up message', async () => {
+  const f = await museFixture(undefined, 10_000); cleanups.push(f.cleanup)
+  const { id, ordinary } = await watcherBesideOrdinary(f, 'muse')
+  const news = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.\nSynthetic news line'
+  for (const threadId of [id, ordinary]) {
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: randomUUID(), text: WATCHER_WAKE_UP_PROMPT, watcherNews: news })).accepted).toBe(true)
+  }
+  const [watcher, other] = (await f.driver.requests()).filter(record => record.method === 'turn/start')
+  expect(watcher!.params!.input).toEqual([{ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS }, { type: 'text', text: WATCHER_WAKE_UP_PROMPT + watcherRequestLine(news) }])
+  expect(watcher!.params!.displayText).toBe(WATCHER_WAKE_UP_PROMPT)
+  expect(other!.params!.input).toEqual([{ type: 'text', text: WATCHER_WAKE_UP_PROMPT }])
+})
+
 it('keeps Devin unavailable because its adapter cannot attach a scoped Sotto server', async () => {
   const f = await devinFixture(); cleanups.push(f.cleanup)
   f.host.useLaunchProfiles!({ profileFor: async () => ({ kind: 'watcher', server: { name: 'sotto_threads', type: 'http', url: 'http://127.0.0.1:12345/mcp', headers: [] }, toolNames: ['list_threads'], revoke: vi.fn() }) })
@@ -328,30 +455,39 @@ it('preallows only exact Grok Sotto tool names and shows other tools as ordinary
   expect(tools.revoke).not.toHaveBeenCalled()
 })
 
-for (const provider of ['codex', 'grok'] as const) it(`${provider} refuses remembered permission grants while allowing a single native approval`, async () => {
+/** A native permission request offering one-time, session and lasting grants, in each provider's own form. */
+function rememberedPermission(provider: 'codex' | 'grok' | 'muse') {
+  return provider === 'codex' ? { type: 'permission', text: 'Synthetic write', params: { availableDecisions: ['accept', 'acceptForSession', { applyNetworkPolicyAmendment: { network_policy_amendment: { action: 'allow', host: 'synthetic.invalid' } } }, 'decline'] } }
+    : provider === 'grok' ? { type: 'permission', text: 'Synthetic write', options: [{ optionId: 'yes', name: 'Allow once', kind: 'allow_once' }, { optionId: 'always', name: 'Always', kind: 'allow_always' }, { optionId: 'no', name: 'Deny', kind: 'reject_once' }] }
+      : { type: 'permission', text: 'Synthetic write', choices: [{ choiceId: 'yes', decision: 'approved', label: 'Allow once', scope: 'once' },
+        { choiceId: 'session', decision: 'approvedForSession', label: 'Allow for this session', scope: 'session' },
+        { choiceId: 'always', decision: 'approved', label: 'Always allow', scope: 'localPersistent' }, { choiceId: 'no', decision: 'denied', label: 'Deny', scope: 'once' }] }
+}
+const rememberedChoices = { codex: ['acceptForSession', 'native-decision:2'], grok: ['always'], muse: ['session', 'always'] }
+const onceChoice = { codex: 'accept', grok: 'yes', muse: 'yes' }
+for (const provider of ['codex', 'grok', 'muse'] as const) it(`${provider} refuses remembered permission grants while allowing a single native approval`, async () => {
   const f = await factories[provider](); cleanups.push(f.cleanup)
   const id = randomUUID()
   await attach(f.host, f.root, id, f.projectId, provider)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Synthetic', path: f.root })
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, title: 'Center', modelId: f.modelId })
-  await f.action(id, provider === 'codex' ? { type: 'permission', text: 'Synthetic write', params: { availableDecisions: ['accept', 'acceptForSession', { applyNetworkPolicyAmendment: { network_policy_amendment: { action: 'allow', host: 'synthetic.invalid' } } }, 'decline'] } }
-    : { type: 'permission', text: 'Synthetic write', options: [{ optionId: 'yes', name: 'Allow once', kind: 'allow_once' }, { optionId: 'always', name: 'Always', kind: 'allow_always' }, { optionId: 'no', name: 'Deny', kind: 'reject_once' }] })
+  await f.action(id, rememberedPermission(provider))
   await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests[0]?.kind).toBe('permission')
   const request = (await f.host.snapshot()).threads.find(thread => thread.id === id)!.requests[0]!
   const answer = { type: 'answer' as const, commandId: randomUUID(), threadId: id, requestId: request.id, answer: '', approved: true }
-  for (const permissionChoice of provider === 'codex' ? ['acceptForSession', 'native-decision:2'] : ['always']) {
+  for (const permissionChoice of rememberedChoices[provider]) {
     await expect(f.host.execute({ ...answer, commandId: randomUUID(), permissionChoice })).rejects.toThrow('cannot remember')
   }
   expect((await f.host.snapshot()).threads.find(thread => thread.id === id)!.requests).toHaveLength(1)
-  expect((await f.host.execute({ ...answer, commandId: randomUUID(), permissionChoice: provider === 'codex' ? 'accept' : 'yes' })).accepted).toBe(true)
+  expect((await f.host.execute({ ...answer, commandId: randomUUID(), permissionChoice: onceChoice[provider] })).accepted).toBe(true)
 })
 
-for (const provider of ['codex', 'grok'] as const) it(`${provider} keeps the workspace session and card after refusing a remembered grant`, async () => {
+for (const provider of ['codex', 'grok', 'muse'] as const) it(`${provider} keeps the workspace session and card after refusing a remembered grant`, async () => {
   const f = await factories[provider](); cleanups.push(f.cleanup)
   const native = new ConfiguredProviderHost({ directory: f.root, provider: () => provider, enabledProviders: () => [provider],
-    threadProvider: () => provider, hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), [provider]: f.host } })
-  const workspace = new WorkspaceHost(native, f.root, () => true, undefined, true)
+    threadProvider: () => provider, hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), [provider]: f.host } })
+  const workspace = new WorkspaceHost(native, f.root, () => true, undefined, true, true)
   cleanups.push(() => workspace.close())
   await workspace.initialize()
   await workspace.connect()
@@ -364,8 +500,7 @@ for (const provider of ['codex', 'grok'] as const) it(`${provider} keeps the wor
   await workspace.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic first turn' })
   await f.driver.completeTurn(id, 'Synthetic complete')
   await expect.poll(async () => (await workspace.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
-  await f.action(id, provider === 'codex' ? { type: 'permission', text: 'Synthetic write', params: { availableDecisions: ['accept', 'acceptForSession', 'decline'] } }
-    : { type: 'permission', text: 'Synthetic write', options: [{ optionId: 'yes', name: 'Allow once', kind: 'allow_once' }, { optionId: 'always', name: 'Always', kind: 'allow_always' }, { optionId: 'no', name: 'Deny', kind: 'reject_once' }] })
+  await f.action(id, provider === 'codex' ? { type: 'permission', text: 'Synthetic write', params: { availableDecisions: ['accept', 'acceptForSession', 'decline'] } } : rememberedPermission(provider))
   await expect.poll(async () => (await workspace.snapshot()).threads.find(thread => thread.id === id)?.requests[0]?.kind).toBe('permission')
   const request = (await workspace.snapshot()).threads.find(thread => thread.id === id)!.requests[0]!
   await expect(workspace.configureThreadWorkingCopy(id, { workingCopy: 'independent' })).rejects.toThrow('working folder cannot be changed')
@@ -373,7 +508,7 @@ for (const provider of ['codex', 'grok'] as const) it(`${provider} keeps the wor
   await expect(workspace.execute({ ...answer, permissionChoice: provider === 'codex' ? 'acceptForSession' : 'always' })).rejects.toThrow('Allow this request once')
   expect(tools.revoke).not.toHaveBeenCalled()
   expect((await workspace.snapshot()).threads.find(thread => thread.id === id)!.requests).toEqual([request])
-  expect((await workspace.execute({ ...answer, commandId: randomUUID(), permissionChoice: provider === 'codex' ? 'accept' : 'yes' })).accepted).toBe(true)
+  expect((await workspace.execute({ ...answer, commandId: randomUUID(), permissionChoice: onceChoice[provider] })).accepted).toBe(true)
   await expect.poll(async () => (await workspace.snapshot()).threads.find(thread => thread.id === id)?.requests).toEqual([])
   expect((await workspace.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic retry turn' })).accepted).toBe(true)
   expect(tools.revoke).not.toHaveBeenCalled()
@@ -467,7 +602,7 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) it(
   const guard = () => { if (++checks > checksBeforeDisconnect) throw new Error('Synthetic phone disconnected') }
   await expect(f.host.executeFromWatcher!({ type: 'configure-thread', commandId: randomUUID(), threadId: id, runtimeMode: 'full-access' }, guard)).rejects.toThrow('phone disconnected')
   const traffic = (await f.driver.requests()).slice(before)
-  expect(traffic.some(record => ['thread/settings/update', 'set_permission_mode', 'session/load', '_x.ai/session/close'].includes(record.method ?? ''))).toBe(false)
+  expect(traffic.some(record => ['thread/settings/update', 'set_permission_mode', 'session/load', '_x.ai/session/close', 'session/setApprovalMode'].includes(record.method ?? ''))).toBe(false)
   expect(traffic.filter(record => ['launch', 'resume'].includes(record.method ?? '')).some(record => {
     const args = (record.params!.frame as { args: string[] }).args
     return flag(args, '--permission-mode') === 'bypassPermissions'

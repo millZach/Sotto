@@ -41,7 +41,7 @@ export function hostClientBridge<T extends object>(bridge: T): T {
       const outgoing = args.map(arg => {
         if (typeof arg === 'function') return (value: unknown) => (arg as (value: unknown) => void)(routed && domain === 'agents' && name !== 'onState' ? value : receive(value))
         if (routed && domain === 'agents') return arg
-        if (typeof arg === 'string' && domain === 'agents' && (name === 'threadDetail' || name === 'workingCopyOptions')) return decode(arg)
+        if (typeof arg === 'string' && domain === 'agents' && (name === 'threadDetail' || name === 'workingCopyOptions' || name === 'startHandover')) return decode(arg)
         const request = mapHostReferences(arg, id => routed && (domain === 'requestDrafts' && parseHostEntityKey(id)?.hostId !== hostId || hostReads[domain]?.has(name) && elsewhere(id)) ? id : decode(id))
         return request
       })

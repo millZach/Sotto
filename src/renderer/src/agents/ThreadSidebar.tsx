@@ -9,7 +9,7 @@ import type { AgentConnection } from './AgentContext'
 import { ProjectSettleAction, SidebarFrame, type SidebarMode } from './SidebarFrame'
 import { rowStatus, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
-import { HostBadge, hostIdOf, listedHosts, threadHostName, type ListedHost } from './HostBadge'
+import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WATCHED_BY_WATCHER, WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchRowToggle } from '../watcher/WatchControls'
@@ -53,6 +53,11 @@ export function RowTime({ row, live, id }: { readonly row: ThreadRow; readonly l
 export interface PaneActions {
   /** The focused pane's thread; a row can open beside it. */
   readonly currentThreadId: string | null
+  /**
+   * The row marked current: the focused thread's own, or for a delegated thread, which has no row, the top of its
+   * delegation (ADR-0081). Pane actions still go by `currentThreadId`. Absent, the focused thread's own row.
+   */
+  readonly listedThreadId?: string | null | undefined
   /** Threads open in the workspace, the focused one included. */
   readonly openThreadIds: readonly string[]
   readonly onOpenBeside: (threadId: string) => void
@@ -65,14 +70,8 @@ export interface PaneActions {
  * row whose thread the update did not touch keeps every prop it had and does not re-render. Its props stay
  * cheap to compare — no object or array is built for it here.
  */
-const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, liveClock, onOpen, command, panes, settle, level = 0, delegatedBy, machine }: {
+const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, liveClock, onOpen, command, panes, settle }: {
   readonly row: ThreadRow; readonly current: boolean; readonly open: boolean; readonly onOpen: (threadId: string) => void; readonly command: Command
-  /** How far below the thread that delegated to it this row sits (ADR-0081): 0 for a thread no listed thread delegated to. */
-  readonly level?: number | undefined
-  /** The title of the thread that delegated to this one, when it is listed above it. */
-  readonly delegatedBy?: string | undefined
-  /** Where a delegated thread runs, as the host list names it, for its machine badge. */
-  readonly machine?: string | undefined
   /** This thread's own lane is running a command. Another thread's work leaves this row's actions live. */
   readonly busy: boolean
   readonly liveClock: boolean
@@ -82,7 +81,8 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const title = row.thread.title
   // Just finished (ADR-0046) and Babysitting #74 (ADR-0061) both stand where the row would say Done.
   const { text: status, finished, babysitting } = rowStatus(row)
-  const besideAvailable = panes.currentThreadId !== null && !current
+  // Beside the focused pane's own thread, which a row marked current only for a delegated thread in the pane is not.
+  const besideAvailable = panes.currentThreadId !== null && panes.currentThreadId !== row.thread.id
   const [renaming, setRenaming] = useState(false)
   const renameButton = useRef<HTMLButtonElement>(null)
   const restoreRenameFocus = useRef(false)
@@ -100,16 +100,15 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const copyLabel = copy.status === 'error' ? 'Worktree not ready' : copy.status === 'pending' ? (copy.mode === 'independent' ? 'New worktree pending' : 'Project folder pending') : copy.mode === 'independent' ? 'Worktree' : copy.mode === 'shared' ? 'Project folder' : copy.label
   const branchName = branch ?? (copy.status === 'ready' && copy.repositoryRoot ? 'Detached HEAD' : copyLabel)
   const watched = useWatchedThread(row.thread.id)
-  const copyDetails = [...new Set([delegatedBy ? `Delegated by ${delegatedBy}` : undefined, machine && !row.thread.hostLabel ? `on ${machine}` : undefined,
-    row.thread.hostLabel, row.model?.name, branchName, copyLabel, watched ? WATCHED_BY_WATCHER : undefined].filter(Boolean))].join(', ')
+  // A row that says it needs you for a thread it delegated names that thread (ADR-0081, October 17, 2026).
+  const copyDetails = [...new Set([row.waitingIn ? `Waiting in ${row.waitingIn}` : undefined, row.thread.hostLabel, row.model?.name, branchName, copyLabel, watched ? WATCHED_BY_WATCHER : undefined].filter(Boolean))].join(', ')
   if (renaming) return <li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <span className="thread-nav__item thread-nav__item--renaming">
       <ThreadNameField title={title} label={`Rename ${title}`} className="thread-nav__rename tt-focusable"
         onRename={next => void command({ type: 'rename-thread', threadId: row.thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} />
     </span>
   </li>
-  return <li className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined}
-    data-delegation-level={level || undefined} aria-level={level ? level + 1 : undefined}>
+  return <li className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <button type="button" className="thread-nav__item tt-focusable" aria-label={title} title={title} aria-describedby={[statusId, timeId, detailsId].join(' ')} aria-current={current ? 'page' : undefined} draggable
       aria-keyshortcuts={besideAvailable ? 'Control+Enter' : undefined}
       onClick={event => { if (besideAvailable && (event.ctrlKey || event.metaKey)) panes.onOpenBeside(row.thread.id); else onOpen(row.thread.id) }}
@@ -125,7 +124,6 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
         <span className="thread-nav__provider" title={[row.provider, row.model?.name].filter(Boolean).join(' · ')}>
           <span className="thread-nav__mark" data-provider={row.providerId}><ProviderMark provider={row.providerId} name={row.provider} /></span>
           {watched ? <WatchedBadge size={14} /> : null}
-          {machine ? <HostBadge host={{ hostId: row.thread.hostId ?? '', name: machine, kind: row.thread.remoteHost ? 'remote' : 'local' }} /> : null}
           <span className="thread-nav__model">{row.model?.name ?? ''}</span>
         </span>
         <span id={statusId} className="thread-nav__status" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-babysitting={babysitting || undefined} data-disconnected={row.connected ? undefined : true} title={status + disconnectedLabel(row)}><span className="tt-visually-hidden">{row.provider}, </span>{status}{disconnectedLabel(row)}</span>
@@ -195,7 +193,7 @@ function useFolderToggles(): readonly [(key: string) => boolean, (key: string) =
 }
 
 /** One project folder and its rows. Memoised for the same reason a row is: its folder is shared across updates. */
-const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, machineOf }: {
+const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
   /** The host the project is on, once a remote host is connected; its badge tells same-named projects apart. */
   readonly host?: ListedHost | undefined
@@ -208,14 +206,13 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   /** The threads whose own lane is running; each row reads only its own entry. */
   readonly busyThreadIds: readonly string[] | undefined
   readonly newThreadShortcut?: { readonly suffix: string; readonly keys: string } | undefined
-  /** Where a delegated thread runs, for its machine badge (ADR-0081). */
-  readonly machineOf: (row: ThreadRow) => string
 }): ReactNode {
   const listId = `thread-folder-${section}-${folder.id}`
   const indicatorsId = `${listId}-indicators`
   const project = folder.project
   // The chord opens a thread in the focused pane's project, so only this project's pen answers to it while one of its threads is focused.
-  const chordAppliesHere = panes.currentThreadId !== null && folder.rows.some(row => row.thread.id === panes.currentThreadId)
+  const listed = panes.listedThreadId ?? panes.currentThreadId
+  const chordAppliesHere = listed !== null && folder.rows.some(row => row.thread.id === listed)
   return <div className="thread-folder" data-section={section} data-active={activeProjectId === folder.id || undefined}>
     <div className="thread-folder__head">
       {/* The toggle includes the visible count in its accessible name, with the project title first. */}
@@ -234,12 +231,8 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
       </span> : null}
     </div>
     {expanded ? <ul className="thread-folder__rows" id={listId}>
-      {folder.rows.map(row => {
-        const delegated = folder.delegation?.get(row.thread.id)
-        return <ThreadNavRow key={row.thread.id} row={row} current={panes.currentThreadId === row.thread.id} open={panes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
-          liveClock={liveClock} onOpen={onOpen} command={command} panes={panes} settle={settle}
-          level={delegated?.level} delegatedBy={delegated?.parent} machine={delegated ? machineOf(row) : undefined} />
-      })}
+      {folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={listed === row.thread.id} open={panes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
+        liveClock={liveClock} onOpen={onOpen} command={command} panes={panes} settle={settle} />)}
       {!folder.rows.length ? <li className="thread-nav__empty">{section === 'open' ? 'No open threads.' : 'No threads yet.'}</li> : null}
     </ul> : null}
   </div>
@@ -247,7 +240,7 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
 
 /** The Threads sidebar: project folders of open work, then the Settled shelf. */
 export function ThreadSidebar({ state, command, organization, query, liveClock = true, mode = 'threads', onMode = () => {}, onQuery, onOpen, onNewThread,
-  currentThreadId, openThreadIds, onOpenBeside, onDragThread, title, newThreadError, onDismissNewThreadError, newThreadShortcut }: PaneActions & {
+  currentThreadId, listedThreadId, openThreadIds, onOpenBeside, onDragThread, title, newThreadError, onDismissNewThreadError, newThreadShortcut }: PaneActions & {
   readonly state: AgentState
   readonly command: Command
   readonly organization: WorkspaceOrganization
@@ -272,18 +265,17 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const { settle, dialog: settleDialog } = useSettleThread(command, settledButton)
   const [isFolderOpen, toggle] = useFolderToggles()
   // One object for the whole list, rebuilt only when a pane action actually changes: every row compares it.
-  const panes = useMemo<PaneActions>(() => ({ currentThreadId, openThreadIds, onOpenBeside, onDragThread }),
-    [currentThreadId, openThreadIds, onOpenBeside, onDragThread])
+  const panes = useMemo<PaneActions>(() => ({ currentThreadId, listedThreadId, openThreadIds, onOpenBeside, onDragThread }),
+    [currentThreadId, listedThreadId, openThreadIds, onOpenBeside, onDragThread])
+  const listed = listedThreadId ?? currentThreadId
   const searching = query.trim() !== ''
   const connections = state.connections
   const hosts = useMemo(() => listedHosts({ connections }), [connections])
-  // A delegated thread's machine badge: This computer until delegation can start threads elsewhere (E9).
-  const machineOf = useCallback((row: ThreadRow): string => threadHostName({ connections }, row.thread), [connections])
   const folderView = (section: Section) => (folder: ProjectFolder): ReactNode => {
     const key = folderKey(section, folder.id)
     const hostId = hosts.length ? hostIdOf(folder.project) ?? hostIdOf({ id: folder.id }) ?? folder.rows[0]?.thread.hostId : undefined
     return <FolderView key={key} folder={folder} section={section} panes={panes} activeProjectId={state.activeProjectId} liveClock={liveClock}
-      host={hosts.find(item => item.hostId === hostId)} newThreadShortcut={newThreadShortcut} machineOf={machineOf}
+      host={hosts.find(item => item.hostId === hostId)} newThreadShortcut={newThreadShortcut}
       expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settle} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} />
   }
   const { open, settled } = organization
@@ -296,8 +288,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const topShortcut = newThreadShortcut ? { title: `New thread ${newThreadShortcut.suffix}`, keys: currentThreadId === null ? newThreadShortcut.keys : undefined } : undefined
   return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Thread sidebar" query={query} searchPlaceholder="Search threads" onQuery={onQuery}
     onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen} newShortcut={topShortcut} title={title}
-    extraError={newThreadError} onDismissExtraError={onDismissNewThreadError}
-    collapsedContent={<nav aria-label="Threads">{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === currentThreadId)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row).text}`} aria-current={currentThreadId === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
+    extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread}
+    collapsedContent={<nav aria-label="Threads">{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
       <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
     </button>)}</nav>}>
       <section aria-label="Projects">

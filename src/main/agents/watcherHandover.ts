@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
-import type { AgentHostSnapshot, AgentMessage, AgentThread, HandoverCounts } from '../../shared/agents'
+import type { AgentHostSnapshot, AgentMessage, AgentThread, HandoverCounts, ProviderId } from '../../shared/agents'
 import type { WatcherHandoverProvenance, WatcherIdentity, WatcherRequest } from '../../shared/watcher'
 import type { HandoverSummary } from './handover'
 import { projectWatcherMessages } from './watcherMessageDisplay'
 import { watcherReplyAsShown } from './watcherOwnChanges'
 import { watcherMessageRequests, watcherTextAsTyped } from './watcherRequestNote'
+import { watcherWakeUpShown } from './watcherNews'
 
 /**
  * Watcher's handover after a provider change (ADR-0073). When the user chooses to continue, the new Watcher's first
@@ -16,9 +17,12 @@ import { watcherMessageRequests, watcherTextAsTyped } from './watcherRequestNote
 /** The line after the handover that says where the user's own message begins. */
 export const HANDOVER_CLOSE = '[End of the handover. The user’s message to Watcher follows.]'
 
-/** What goes ahead of the user's words: the handover, then the line that closes it. */
-export function handoverPrefix(text: string): string {
-  return `${text}\n\n${HANDOVER_CLOSE}\n\n`
+/**
+ * What goes ahead of the user's words: the handover, then the line that closes it. Watcher's says the user's message to
+ * Watcher follows; a continued thread's says the user's message does (ADR-0089).
+ */
+export function handoverPrefix(text: string, close: string = HANDOVER_CLOSE): string {
+  return `${text}\n\n${close}\n\n`
 }
 
 /** A handover's summary as counts, the only part of it that is kept or shown beside its words. */
@@ -30,17 +34,33 @@ export function handoverCounts(summary: HandoverSummary): HandoverCounts {
 
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
 
+/** How long a prefix is and its digest: the only record kept of which characters of a message were a handover. */
+export function handoverPrefixProof(prefix: string): { readonly prefixLength: number; readonly prefixDigest: string } {
+  return { prefixLength: prefix.length, prefixDigest: sha256(prefix) }
+}
+/** What a split needs: the recorded length and digest, and what to show beside the words it splits off. */
+export interface HandoverSplitProof { readonly prefixLength: number; readonly prefixDigest: string; readonly provider: ProviderId; readonly counts: HandoverCounts }
+
 export function watcherHandoverProvenance(prefix: string, source: WatcherIdentity, counts: HandoverCounts): WatcherHandoverProvenance {
   return { prefixLength: prefix.length, prefixDigest: sha256(prefix), source: source.target, provider: source.provider, counts }
 }
 
-/** The handover a sent message begins with, when its words still match the record; otherwise the message is shown whole. */
-function split(message: AgentMessage, proof: WatcherHandoverProvenance): AgentMessage {
+/**
+ * The characters a sent message's handover was, when the message still begins with them: the recorded length of its text,
+ * checked against the recorded digest. Undefined otherwise, and the message is shown whole.
+ */
+export function recordedPrefix(text: string, proof: { readonly prefixLength: number; readonly prefixDigest: string }): string | undefined {
   const length = proof.prefixLength
-  if (!Number.isSafeInteger(length) || length <= 0 || length > message.text.length) return message
-  const prefix = message.text.slice(0, length)
-  if (sha256(prefix) !== proof.prefixDigest) return message
-  return { ...message, text: message.text.slice(length), handover: { text: prefix.trimEnd(), provider: proof.provider, counts: proof.counts } }
+  if (!Number.isSafeInteger(length) || length <= 0 || length > text.length) return undefined
+  const prefix = text.slice(0, length)
+  return sha256(prefix) === proof.prefixDigest ? prefix : undefined
+}
+
+/** The handover a sent message begins with, when its words still match the record; otherwise the message is shown whole. */
+export function splitHandover(message: AgentMessage, proof: HandoverSplitProof): AgentMessage {
+  const prefix = recordedPrefix(message.text, proof)
+  if (prefix === undefined) return message
+  return { ...message, text: message.text.slice(prefix.length), handover: { text: prefix.trimEnd(), provider: proof.provider, counts: proof.counts } }
 }
 
 type Proofs = ReadonlyMap<string, WatcherHandoverProvenance>
@@ -73,7 +93,7 @@ export function watcherHandoversShown(snapshot: AgentHostSnapshot, requests: rea
     if (!proof) return message
     const cached = shownCopies.get(message)
     if (cached?.proof === proof && cached.text === message.text) return cached.shown
-    const result = split(message, proof)
+    const result = splitHandover(message, proof)
     shownCopies.set(message, { text: message.text, proof, shown: result })
     return result
   }
@@ -89,13 +109,15 @@ export function watcherHandoversShown(snapshot: AgentHostSnapshot, requests: rea
  * One message of an earlier Watcher conversation as its pane shows it, for a handover of that conversation: a reply
  * without the reason line its own-change line shows; a user message without a handover it carried itself, without a line
  * Sotto put after the user's words, and cut at its display proof. A handover of a handover would only repeat an older
- * conversation, so the newer one carries the user's words alone.
+ * conversation, so the newer one carries the user's words alone. A wake-up the host recorded as Sotto's own is shown as
+ * the conversation shows it: without Watcher's news, or not at all (`null`).
  */
-export function watcherMessageAsShown(hostId: string, threadId: string, message: AgentMessage, requests: readonly WatcherRequest[]): AgentMessage {
+export function watcherMessageAsShown(hostId: string, threadId: string, message: AgentMessage, requests: readonly WatcherRequest[]): AgentMessage | null {
   if (message.role === 'assistant') { const text = watcherReplyAsShown(message); return text === message.text ? message : { ...message, text } }
   if (message.role !== 'user') return message
+  if (message.wakeUp === true) return watcherWakeUpShown(message)
   const proof = proofsOf(requests).get(`${threadId}\n${message.id}`)
-  let shown = proof ? split(message, proof) : message
+  let shown = proof ? splitHandover(message, proof) : message
   if (shown.handover) { const { handover: _handover, ...words } = shown; void _handover; shown = words }
   const request = watcherMessageRequests(requests)(threadId, shown.id)
   if (request) { const text = watcherTextAsTyped(shown.text, request); if (text !== shown.text) shown = { ...shown, text } }

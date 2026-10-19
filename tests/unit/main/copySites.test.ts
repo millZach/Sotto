@@ -23,7 +23,9 @@ const patterns: Record<string, RegExp> = {
   'shell()': /\.shell\(\)/g,
   'watcherRecord()': /\bwatcherRecord\(\)/g,
   'cloneHostSnapshot(': /\bcloneHostSnapshot\(/g,
+  'clonePlainData(': /\bclonePlainData\(/g,
   'cloneActivitySnapshot(': /\bcloneActivitySnapshot\(/g,
+  'copyUnshared(': /\bcopyUnshared\(/g,
   'JSON round trip': /JSON\.parse\(\s*JSON\.stringify\(/g,
 }
 

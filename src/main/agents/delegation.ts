@@ -5,11 +5,12 @@ import { isThreadProviderConnected, lastUserMessageIdOf, providerIdSchema, threa
   type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
+import { capRuntimeMode, roleInForce, roleStartNote, startFromRole, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
-  DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
-  type DelegateInput, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
+  DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
+  type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { WATCHER_FINAL_OUTCOMES, watcherTurnOutcome } from './watcherOutcomes'
 import type { AgentState } from '../../shared/agents'
@@ -61,7 +62,14 @@ export interface DelegationServiceOptions {
   readonly otherStartsInFlight?: () => number
   /** Whether a thread has Sotto's pull request tools, for babysitting news a wake-up may be folded with. */
   readonly tool?: (threadId: string) => boolean
+  /**
+   * The user's worker roles, present only while that Owl feature is on (#1041): a new thread's model, effort and
+   * permission come from its kind of work unless the call names them. Read once per `delegate` call, in admission.
+   */
+  readonly roles?: () => WorkerRoleChoices
 }
+/** A start's worker role as the `delegate` result says it (#1041). Never saved: a retry's result has none. */
+interface RoleReceipt { readonly work: DelegationWork; readonly named: RoleField[]; readonly note: string }
 
 const now = (): string => new Date().toISOString()
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -272,7 +280,7 @@ export class DelegationService {
         : delegationRefusal('NOT_ADMITTED', NOT_ADMITTED)
     }
     const input = parsed.data
-    let admitted: { record: DelegationRecord; retry: boolean; start?: DelegatedStart }
+    let admitted: { record: DelegationRecord; retry: boolean; start?: DelegatedStart; role?: RoleReceipt }
     try { admitted = await this.transaction(() => this.admit(threadId, input)) }
     catch (error) {
       return error instanceof Refusal ? await this.refused(threadId, input, error.result)
@@ -291,7 +299,8 @@ export class DelegationService {
         if (waitMs > 0) await this.wait(record.id, waitMs)
         if (this.open(this.record(record.id)!)) this.update(record.id, saved => { saved.wentOnAt = now() })
       }
-      return await this.result(this.record(record.id)!)
+      const answer = await this.result(this.record(record.id)!)
+      return admitted.role ? { ...answer, role: admitted.role } : answer
     } finally { this.calling.delete(record.id); this.touched(record) }
   }
 
@@ -324,6 +333,20 @@ export class DelegationService {
     }
     refusedAfter('')
     return { made: made.reverse(), received: received.reverse().map(record => this.view(record)) }
+  }
+  /**
+   * The newest brief `threadId` was sent that Sotto still holds, for Tools › Agents when a row is opened: the user
+   * message a delegation names in that thread, once it was sent, read by its ID from the thread's record, never from a
+   * snapshot, and never a reply. Undefined when none is held, as with Keep local history off after a restart.
+   */
+  brief(threadId: string): string | undefined {
+    for (let index = this.records.length - 1; index >= 0; index--) {
+      const record = this.records[index]!
+      if (record.delegatedThreadId !== threadId || record.deliveryState === 'queued') continue
+      const message = this.options.host.threadMessage(threadId, record.messageId)
+      if (message?.role === 'user') return message.text.slice(0, DELEGATION_BRIEF_MAX)
+    }
+    return undefined
   }
   /**
    * Hears which delegating threads' delegations changed, batched so a pass that moves many outcomes, for many threads,
@@ -520,14 +543,7 @@ export class DelegationService {
    */
   private permission(model: AgentModel, caller: AgentThread, models: readonly AgentModel[], explicit?: AgentRuntimeMode): { runtimeMode?: AgentRuntimeMode; providerMode?: string } {
     const index = (mode: AgentRuntimeMode) => RUNTIME_MODE_ORDER.indexOf(mode)
-    let own: AgentRuntimeMode = caller.runtimeMode ?? 'approval-required'
-    if (caller.providerMode) {
-      const mode = resolveModel(models, caller.modelId)?.providerModes?.find(item => item.id === caller.providerMode)
-      if (mode?.allows !== 'nothing') refuse('PERMISSION_NOT_COMPARABLE', 'This thread\'s own permission profile cannot be compared with Sotto\'s modes, so Sotto cannot tell how much a thread it starts may have. Nothing was started.')
-      own = 'approval-required'
-    }
-    const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
-    const ceiling = resolveNewThreadPermission(model, index(own) < index(configured) ? own : configured)
+    const ceiling = this.ceiling(model, caller, models)
     if (ceiling.providerMode !== undefined) {
       const mode = model.providerModes?.find(item => item.id === ceiling.providerMode)
       if (mode?.allows !== 'nothing' || explicit) refuse('PERMISSION_NOT_COMPARABLE', 'This provider\'s permission profile cannot be compared safely. Choose a provider with an asking mode. Nothing was started.')
@@ -538,6 +554,34 @@ export class DelegationService {
     if (!model.runtimeModes?.includes(mode)) refuse('PERMISSION_NOT_COMPARABLE', 'This model does not offer that permission mode. Nothing was started.')
     if (index(mode) > index(ceiling.runtimeMode)) refuse('PERMISSION_TOO_WIDE', 'A delegated thread cannot have more permission than this thread has, or than the user\'s new-thread default. Nothing was started.')
     return { runtimeMode: mode }
+  }
+  /** The widest a delegated thread may start on: the narrower of the calling thread's own and the new-thread default. */
+  private ceiling(model: AgentModel, caller: AgentThread, models: readonly AgentModel[]) {
+    const index = (mode: AgentRuntimeMode) => RUNTIME_MODE_ORDER.indexOf(mode)
+    let own: AgentRuntimeMode = caller.runtimeMode ?? 'approval-required'
+    if (caller.providerMode) {
+      const mode = resolveModel(models, caller.modelId)?.providerModes?.find(item => item.id === caller.providerMode)
+      if (mode?.allows !== 'nothing') refuse('PERMISSION_NOT_COMPARABLE', 'This thread\'s own permission profile cannot be compared with Sotto\'s modes, so Sotto cannot tell how much a thread it starts may have. Nothing was started.')
+      own = 'approval-required'
+    }
+    const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
+    return resolveNewThreadPermission(model, index(own) < index(configured) ? own : configured)
+  }
+  /**
+   * A role's permission held to the ceiling: what it starts on, and, when that was narrower than the role wanted, which
+   * limit held it: the calling thread's own permission when it is the narrower, the new-thread default otherwise.
+   */
+  private heldToCeiling(wanted: AgentRuntimeMode, model: AgentModel, caller: AgentThread, models: readonly AgentModel[]): { mode: AgentRuntimeMode; held?: HeldPermission } | undefined {
+    const ceiling = this.ceiling(model, caller, models)
+    if (ceiling.providerMode !== undefined || !ceiling.runtimeMode) return undefined
+    const mode = capRuntimeMode(wanted, ceiling.runtimeMode)
+    if (mode === wanted) return { mode }
+    const index = (value: AgentRuntimeMode) => RUNTIME_MODE_ORDER.indexOf(value)
+    const own = caller.providerMode ? 'approval-required' : caller.runtimeMode ?? 'approval-required'
+    const configured = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
+    const thread = index(own) < index(configured)
+    // A limit the model does not offer starts on the nearest mode it does, and the receipt says that is why.
+    return { mode, held: { wanted, startedOn: mode, by: thread ? 'delegating-thread' : 'new-thread-default', ...(ceiling.nearestFit ? { unoffered: thread ? own : configured } : {}) } }
   }
   private humanTurnRunning(thread: AgentThread): boolean {
     if (!isThreadTurnRunning(thread)) return false
@@ -599,15 +643,26 @@ export class DelegationService {
       this.touched(record)
       return { record, retry: false }
     }
-    if (!input.provider || !input.model) refuse('INVALID_INPUT', `Name the provider and model for a new thread. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
-    const model = resolveModel(snapshot.models, input.model)
-    if (!model?.ready || model.providerId !== input.provider) refuse('PROVIDER_UNAVAILABLE', `That model is not ready on this computer. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
+    // With worker roles on, a new thread names its kind of work and the user's Settings fill in the rest (#1041): read
+    // here, once per call. A provider and model named together override the role's; one without the other is refused.
+    const named = input.provider !== undefined && input.model !== undefined
+    let byRole: RoleStart | undefined
+    if (this.options.roles && (named || input.provider === undefined && input.model === undefined)) {
+      byRole = startFromRole(input.work, this.options.roles(), snapshot.models, { ...(named ? { modelId: input.model } : {}), reasoningEffort: input.effort, runtimeMode: input.permission })
+      if (!byRole.modelId) refuse('PROVIDER_UNAVAILABLE', 'No ready model can do that kind of work. Connect a provider in Settings, under Providers. Nothing was started.')
+    } else if (!named) refuse('INVALID_INPUT', `Name the provider and model for a new thread. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
+    const model = resolveModel(snapshot.models, byRole?.modelId ?? input.model!)
+    if (!model?.ready || named && model.providerId !== input.provider) refuse('PROVIDER_UNAVAILABLE', `That model is not ready on this computer. ${this.readyModels(snapshot, input.provider)} Nothing was started.`)
     const efforts = model.reasoningEfforts ?? []
-    if (input.effort === undefined ? efforts.length > 0 : !efforts.includes(input.effort)) refuse('INVALID_INPUT', `Name the effort for this model, one of: ${efforts.join(', ') || 'none, so leave it out'}. Nothing was started.`)
-    if (!model.providerModes?.length && input.permission === undefined) refuse('INVALID_INPUT', `Name the permission for a new thread, one of: ${(model.runtimeModes ?? []).join(', ') || 'none'}. It may be no wider than this thread's own or the user's new-thread default. Nothing was started.`)
+    const roleEffort = byRole && input.effort === undefined && byRole.reasoningEffort && efforts.includes(byRole.reasoningEffort) ? byRole.reasoningEffort : undefined
+    const effort = input.effort ?? roleEffort
+    if (effort === undefined ? efforts.length > 0 && !byRole : !efforts.includes(effort)) refuse('INVALID_INPUT', `Name the effort for this model, one of: ${efforts.join(', ') || 'none, so leave it out'}. Nothing was started.`)
+    if (!byRole && !model.providerModes?.length && input.permission === undefined) refuse('INVALID_INPUT', `Name the permission for a new thread, one of: ${(model.runtimeModes ?? []).join(', ') || 'none'}. It may be no wider than this thread's own or the user's new-thread default. Nothing was started.`)
     const project = snapshot.projects.find(item => item.id === caller.projectId)
     if (!project || this.reserved(project.path)) refuse('NOT_ADMITTED', NOT_ADMITTED)
-    const permission = this.permission(model, caller, snapshot.models, input.permission)
+    // A permission the call named keeps its refusal. One the role gave is held to the ceiling instead.
+    const fromRole = byRole?.runtimeMode && input.permission === undefined ? this.heldToCeiling(byRole.runtimeMode, model, caller, snapshot.models) : undefined
+    const permission = this.permission(model, caller, snapshot.models, input.permission ?? fromRole?.mode)
     const inFlight = this.startsInFlight() + (this.options.otherStartsInFlight?.() ?? 0), limit = this.options.limit()
     if (inFlight >= limit) refuse('IN_FLIGHT_LIMIT', `${inFlight} new ${inFlight === 1 ? 'thread is' : 'threads are'} in flight on this computer, delegated or Watcher's, against a limit of ${limit}. Wait for one to finish. Nothing was started.`)
     const delegatedThreadId = randomUUID()
@@ -617,9 +672,11 @@ export class DelegationService {
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
     await this.saveAdmission(record)
     this.touched(record)
-    const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], titleSource: input.title ? 'user' : 'default', modelId: model.id,
-      ...(input.effort ? { reasoningEffort: input.effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared' }
-    return { record, retry: false, start }
+    const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], titleSource: input.title ? 'user' : 'default',
+      // A role's own choice may name a long-context variant the catalog lists under its base, so its ID is kept.
+      modelId: byRole && !named ? byRole.modelId! : model.id, ...(effort ? { reasoningEffort: effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared' }
+    const role: RoleReceipt | undefined = byRole ? { work: input.work, named: [...byRole.named], note: roleStartNote(byRole, snapshot.models, fromRole?.held) } : undefined
+    return { record, retry: false, start, ...(role ? { role } : {}) }
   }
   /**
    * Saves an admitted brief before anything is sent, so a retry after a restart finds it. A save that fails takes the
@@ -968,7 +1025,20 @@ export class DelegationService {
       .map(({ thread, refusal, ...item }) => ({ ...item, ...(thread ? { thread } : {}), ...(refusal ? { refusal } : {}) }))
     const ready = this.ready(snapshot).map(model => ({ provider: model.providerId!, model: model.id, name: model.name,
       efforts: model.reasoningEfforts ?? [], permissions: model.runtimeModes ?? [] }))
-    return { status: 'ok' as const, delegations: own, models: ready, limits: this.limits() }
+    return { status: 'ok' as const, delegations: own, models: ready, ...(this.options.roles ? { roles: this.roles(caller, snapshot, this.options.roles()) } : {}), limits: this.limits() }
+  }
+  /**
+   * What each kind of work would start on now with nothing named (#1041): the worker role's model, effort and permission,
+   * held to this thread's ceiling. A kind no ready model can do is left out.
+   */
+  private roles(caller: AgentThread, snapshot: AgentHostSnapshot, choices: WorkerRoleChoices) {
+    return WORKER_KINDS.flatMap(work => {
+      const start = roleInForce(work, choices, snapshot.models).start
+      if (!start) return []
+      let permission: AgentRuntimeMode | undefined
+      try { permission = start.runtimeMode ? this.heldToCeiling(start.runtimeMode, start.model, caller, snapshot.models)?.mode : undefined } catch { permission = undefined }
+      return [{ work, provider: start.model.providerId, model: start.modelId, ...(start.reasoningEffort ? { effort: start.reasoningEffort } : {}), ...(permission ? { permission } : {}) }]
+    })
   }
   /** Whether the thread's running turn is this brief's own. */
   private answering(record: DelegationRecord, thread: AgentThread): boolean {

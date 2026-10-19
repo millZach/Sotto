@@ -46,6 +46,15 @@ describe('what Update all offers', () => {
     expect(words.notes).toEqual(['Threads keep working while clients update.'])
   })
 
+  it('includes OpenCode: an install it can update is offered, and a package manager’s copy names its command (#1104)', () => {
+    const view = updateAllView(sources({ local: [
+      client({ id: 'opencode', installed: '2.0.31', published: '2.0.40', channel: 'self-update', command: 'opencode upgrade' }),
+    ] }), null)
+    expect(view.items.map(item => [item.key, item.state, item.name])).toEqual([[clientKey('local', 'opencode'), 'offered', 'OpenCode']])
+    const byHand = updateAllView(sources({ local: [client({ id: 'opencode', installed: '2.0.31', published: '2.0.40', channel: 'unknown', canInstall: false, command: 'brew upgrade opencode-v2' })] }), null)
+    expect(byHand.items[0]!.detail).toBe('Update it yourself with brew upgrade opencode-v2.')
+  })
+
   it('shows a host Sotto did not start with its commands, and offers no press for it', () => {
     const view = updateAllView(sources({ hostUpdates: [hostUpdate({ owned: false })] }), null)
     expect(view.items[0]).toMatchObject({ state: 'by-hand', commands: 'sotto-host update' })

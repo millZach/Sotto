@@ -105,7 +105,15 @@ test.describe('Watcher follows the running release track', () => {
         await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
         await openPage(page, 'Settings')
         await page.getByRole('tab', { name: 'Agents', exact: true }).click()
-        await expect(page.getByText(/Watcher|Watched by Watcher/)).toHaveCount(0)
+        // Agents holds nothing of Watcher on either track. Stable shows nothing of Watcher anywhere in Settings; Owl has
+        // Settings, under Watcher (#1097's worker roles), and every mention of Watcher it shows is that section or its tab.
+        await expect(page.locator('#settings-agents').getByText(/Watcher|Watched by Watcher/)).toHaveCount(0)
+        if (track === 'stable') await expect(page.getByText(/Watcher|Watched by Watcher/)).toHaveCount(0)
+        else {
+          await expect(page.locator('#settings-watcher')).toHaveCount(1)
+          expect(await page.getByText(/Watcher|Watched by Watcher/).evaluateAll(elements => elements
+            .filter(element => element.closest('#settings-watcher, #tab-settings-watcher') === null).map(element => element.textContent))).toEqual([])
+        }
         await expect(page.getByRole('spinbutton', { name: /Watcher/ })).toHaveCount(0)
         if (track === 'stable') {
           await resizeContentWindow(launched, 1600, 1000)

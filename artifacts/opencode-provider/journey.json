@@ -1,0 +1,39 @@
+{
+  "threadId": "host:0a5fdbdc-ce60-49c4-9bae-9f5897ef2e98:bafc3e36-e9e3-4a58-836e-5064f5e096d4",
+  "nativeId": "ses_1449559e8000faa80aabcc5119",
+  "firstTurn": "b3c2ec5a-acbf-40bd-9642-ab8eafbd5a33",
+  "secondTurn": "7ec55d57-0fe3-4eea-b825-2a4d727933ba",
+  "activities": [
+    [
+      "command",
+      "npm run format",
+      "b3c2ec5a-acbf-40bd-9642-ab8eafbd5a33"
+    ],
+    [
+      "file-change",
+      "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-opencode-UqU1UB\\opencode-fixture\\project\\notes.txt",
+      "b3c2ec5a-acbf-40bd-9642-ab8eafbd5a33"
+    ],
+    [
+      "command",
+      "npm run build",
+      "b3c2ec5a-acbf-40bd-9642-ab8eafbd5a33"
+    ],
+    [
+      "command",
+      "rm -rf build",
+      "b3c2ec5a-acbf-40bd-9642-ab8eafbd5a33"
+    ],
+    [
+      "file-change",
+      "C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-opencode-UqU1UB\\opencode-fixture\\project\\probe.txt",
+      "7ec55d57-0fe3-4eea-b825-2a4d727933ba"
+    ]
+  ],
+  "decisions": [
+    "once",
+    "reject"
+  ],
+  "stableStartedOpenCodeProcesses": 0,
+  "pageErrors": []
+}

@@ -53,7 +53,7 @@ async function fixture(optimized = false) {
       claude: new SottoThreadHost('claude', adapters.claude, registry),
       grok: new SottoThreadHost('grok', adapters.grok, registry),
       devin: new SottoThreadHost('devin', adapters.devin, registry),
-      muse: new FakeProviderHost(),
+      muse: new FakeProviderHost(), opencode: new FakeProviderHost(),
     },
   })
   const workspace = new WorkspaceHost(providers, directory)
@@ -264,9 +264,10 @@ describe('multi-provider workspace update replay', () => {
     const firstBefore = firstInternal.at(-1)!
     const secondBefore = secondInternal.at(-1)!
     expect(isImmutableActivities(f.thread(firstBefore, codex).activities)).toBe(false)
-    expect(f.thread(firstBefore, codex).activities).not.toBe(f.thread(secondBefore, codex).activities)
+    // The activity subscribers share one copy of each publication (ADR-0016, October 19); the workspace's own state is
+    // not part of it, so a write into the publication never reaches what the workspace holds.
+    expect(secondBefore).toBe(firstBefore)
     f.thread(firstBefore, codex).activities![0]!.changes![0]!.diff = 'Local change'
-    expect(f.thread(secondBefore, codex).activities![0]!.changes![0]!.diff).toBe('Before')
     expect(f.thread(f.workspace.workspaceSnapshot(), codex).activities![0]!.changes![0]!.diff).toBe('Before')
     native.activities[0]!.output = 'After'
     native.activities[0]!.changes![0]!.diff = 'After'
@@ -276,7 +277,7 @@ describe('multi-provider workspace update replay', () => {
     expect(f.thread(after, codex).activities?.[0]).toMatchObject({ output: 'After', changes: [{ diff: 'After' }] })
     expect(f.thread(before, codex).activities?.[0]).toMatchObject({ output: 'Before', changes: [{ diff: 'Before' }] })
     expect(f.thread(firstBefore, codex).activities![0]!.changes![0]!.diff).toBe('Local change')
-    expect(f.thread(secondBefore, codex).activities![0]!.changes![0]!.diff).toBe('Before')
+    expect(secondInternal.at(-1)).toBe(firstInternal.at(-1))
     expect(f.thread(firstInternal.at(-1)!, codex).activities![0]!.changes![0]!.diff).toBe('After')
     expect(f.thread(secondInternal.at(-1)!, codex).activities![0]!.changes![0]!.diff).toBe('After')
   })

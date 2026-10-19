@@ -37,6 +37,7 @@ const customSettings = {
   babysitPullRequests: false,
   resumeThreadsAfterRestart: false,
   watcherInFlightLimit: 6,
+  workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
   terminalFontSize: 17,
@@ -291,6 +292,7 @@ describe('settings', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
       watcherInFlightLimit: 4,
+      workerRoles: {},
       terminalFontSize: 13,
       memoryEnabled: false,
       webLinkDestination: 'external',

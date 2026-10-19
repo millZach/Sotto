@@ -1,14 +1,17 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
+import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_HOST_UPDATE_ACTIONS, REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
-import { hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
+import { HOST_UPDATE_REQUEST_ACTIONS, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
-const HOST_LOCAL = ['credential', 'check-reasoning', 'update-client', 'open-thread-folder']
+const HOST_LOCAL = ['set-aside-send', 'credential', 'check-reasoning', 'update-client', 'open-thread-folder']
 /** Fields only the desktop window sends, which its router reads and never forwards to a host (ADR-0074). */
 // The desktop's router reads these and never sends them on: the host a patch or Update all's press names (ADR-0074, ADR-0077).
-const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'], 'queue-client-updates': ['hostId'] }
+// A desktop window names the machine a command acts on and its router never sends the name on (ADR-0074, ADR-0077):
+// a settings save, Update all, and Settings > Providers' presses on this computer's own clients.
+const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'], 'queue-client-updates': ['hostId'],
+  connect: ['hostId'], disconnect: ['hostId'], refresh: ['hostId'], 'check-client-updates': ['hostId'], 'update-client': ['hostId'] }
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]
@@ -17,6 +20,12 @@ const schemaFields = new Map((agentCommandSchema.options as unknown as Option[])
 const refuse = (command: AgentCommand, mayAnswer = false, askingProviderModes?: string[]) => remoteCommandRefusal(command, { mayAnswer, askingProviderModes })
 
 describe('remote command allow-list', () => {
+  it('keeps unconfirmed-send recovery desktop-only', () => {
+    const command = agentCommandSchema.parse({ type: 'set-aside-send', threadId: 'thread', draftId: 'bc746d85-565c-4e06-b091-556d98551676' })
+    expect(refuse(command, true)).toBe('forbidden')
+    expect(commandFromProtocolV1(protocolAgentCommandSchema.parse(command))).toEqual(command)
+  })
+
   it('accepts v1 connects with optional false-only feedback without granting any other field or command', () => {
     for (const provider of [undefined, 'codex'] as const) {
       for (const feedback of [{}, { notice: false }] as const) {
@@ -42,13 +51,15 @@ describe('remote command allow-list', () => {
     }
   })
   it('lets a paired client change only the coordinator settings decided on purpose, none of them a key, endpoint or voice engine', () => {
-    expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'newThreadModelId', 'newThreadReasoningEffort',
+    expect([...REMOTE_CONFIGURATION_FIELDS].sort()).toEqual(['defaultModelId', 'enabled', 'enabledProviders', 'museDisableSandbox', 'newThreadModelId', 'newThreadReasoningEffort',
       'newThreadRuntimeMode', 'projectsDirectory', 'provider', 'reasoning', 'reasoningEffort', 'reasoningModel'])
     for (const patch of [{ speak: false }, { followupLimit: 3 }]) expect(() => commandFromProtocolV1(protocolAgentCommandSchema.parse({ type: 'configure', patch })), Object.keys(patch)[0]).toThrow()
     for (const patch of [{ speechVoice: 'F2' }, { speechProvider: 'grok' }, { wakeModelDirectory: '/tmp' }])
       expect(refuse({ type: 'configure', patch } as AgentCommand, true), Object.keys(patch)[0]).toBe('forbidden')
+    // Client update checks are the host's own Settings' to change.
+    expect(refuse({ type: 'configure', patch: { checkClientUpdates: false } } as AgentCommand, true)).toBe('forbidden')
   })
-  it('takes a host’s projects directory and new-thread defaults, and a permission default that grants only with the answer policy (ADR-0074)', () => {
+  it('takes a host’s projects directory and new-thread defaults, and a permission default only with the answer policy (ADR-0074)', () => {
     for (const patch of [{ projectsDirectory: '/home/zach/projects' }, { newThreadModelId: 'claude:sonnet' }, { newThreadReasoningEffort: 'high' },
       { newThreadRuntimeMode: 'approval-required' }, { newThreadRuntimeMode: null }] as const)
       expect(refuse({ type: 'configure', patch } as AgentCommand), Object.keys(patch)[0]).toBeNull()
@@ -56,6 +67,13 @@ describe('remote command allow-list', () => {
       expect(refuse({ type: 'configure', patch: { newThreadRuntimeMode: mode } }), mode).toBe('forbidden')
       expect(refuse({ type: 'configure', patch: { newThreadRuntimeMode: mode } }, true), mode).toBeNull()
     }
+    // Muse's shell sandbox goes back on from any paired client, and off from none, whatever its answer policy (ADR-0079).
+    expect(refuse({ type: 'configure', patch: { museDisableSandbox: false } })).toBeNull()
+    expect(refuse({ type: 'configure', patch: { museDisableSandbox: false } }, true)).toBeNull()
+    expect(refuse({ type: 'configure', patch: { museDisableSandbox: true } })).toBe('forbidden')
+    expect(refuse({ type: 'configure', patch: { museDisableSandbox: true } }, true)).toBe('forbidden')
+    expect(refuse({ type: 'configure', patch: { projectsDirectory: '/srv', museDisableSandbox: true } }, true)).toBe('forbidden')
+    expect(commandFromProtocolV1(protocolAgentCommandSchema.parse({ type: 'configure', patch: { museDisableSandbox: false } }))).toEqual({ type: 'configure', patch: { museDisableSandbox: false } })
     // The desktop's router reads which host a patch is for; a paired client never names one.
     expect(refuse({ type: 'configure', patch: { projectsDirectory: '/srv' }, hostId: '11111111-1111-4111-8111-111111111111' }, true)).toBe('forbidden')
   })
@@ -72,6 +90,8 @@ describe('remote command allow-list', () => {
     expect([...REMOTE_USAGE_OPERATIONS]).toEqual(['usage-read', 'usage-refresh', 'usage-clear'])
     const decided = ['hello', 'shell', 'detail', 'events', 'observe', 'command', 'preview', 'receipt', 'git-refs', 'git-changed-files', 'git-pull-request',
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
+      // A host's own OpenCode signed in to model sources for the desktop that asks (#1107): the same trust as a sign-in.
+      ...REMOTE_OPENCODE_SIGN_IN_OPERATIONS,
       // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0078).
       ...REMOTE_USAGE_OPERATIONS,
       // Explicit native recovery requires answer-check and current remote-answer authority; it sends no answer.
@@ -88,9 +108,28 @@ describe('remote command allow-list', () => {
       // A thread's Files, Changes and Agents: reads only, never commands (ADR-0025, October 5 amendment).
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
       // The machine's host facts: numbers and the system's own name, read only by a desktop that lists host-facts (#1031).
-      'host-facts']
+      'host-facts',
+      // A started thread's handover, read only on a listener that offers thread-starts, and only when the user asks (#1028).
+      'start-handover',
+      // A host update the host runs on itself: a recorded desktop whose remote-answer policy lets it answer (ADR-0088).
+      'host-update',
+      // One activity record whole, a read for a desktop that accepted activity-bodies (ADR-0025, October 18 amendment).
+      'activity-body']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
+  })
+  it('lets only a recorded desktop that may answer have its host update itself, naming a version and never a URL or path (ADR-0088)', () => {
+    expect([...REMOTE_HOST_UPDATE_ACTIONS]).toEqual([...HOST_UPDATE_REQUEST_ACTIONS])
+    expect(remoteHostUpdateRefusal({ desktop: true, mayAnswer: true })).toBeNull()
+    // A phone, a desktop the launch script never recorded, and a desktop whose grant was revoked with --deny-answers.
+    expect(remoteHostUpdateRefusal({ desktop: false, mayAnswer: true })).toBe('forbidden')
+    expect(remoteHostUpdateRefusal({ desktop: false, mayAnswer: false })).toBe('forbidden')
+    expect(remoteHostUpdateRefusal({ desktop: true, mayAnswer: false })).toBe('forbidden')
+    const base = { v: 1, id: 'update', session: 'session', op: 'host-update' }
+    for (const action of HOST_UPDATE_REQUEST_ACTIONS) expect(hostRequestSchema.safeParse({ ...base, action }).success, action).toBe(true)
+    expect(hostRequestSchema.safeParse({ ...base, action: 'install', version: '0.2.0', file: 'Sotto-host-0.2.0-linux-x64.tar.gz', sha256: 'a'.repeat(64) }).success).toBe(true)
+    for (const extra of [{ releasesUrl: 'http://127.0.0.1:1' }, { installPath: '/tmp' }, { op: 'host-update', action: 'rollback' }, { sha256: 'not hex' }, { node: '/usr/bin/node' }])
+      expect(hostRequestSchema.safeParse({ ...base, action: 'fetch', ...extra }).success, JSON.stringify(extra)).toBe(false)
   })
   it('admits numeric Usage reads and refreshes, and requires the answer policy for Clear', () => {
     for (const operation of ['usage-read', 'usage-refresh'] as const) {
@@ -116,6 +155,20 @@ describe('remote command allow-list', () => {
       expect(remoteCommandRefusal(command, { mayAnswer: false, clientUpdates: true }), command.type).toBeNull()
     }
     expect(remoteCommandRefusal({ type: 'update-client', provider: 'codex' }, { mayAnswer: true, clientUpdates: true })).toBe('forbidden')
+  })
+  it('takes Continue as a thread only on a listener that offers thread-starts, with no field beyond its own (#1028)', () => {
+    const command = { type: 'continue-agent', threadId: 'thread', agentId: 'codex-agent-1', newThreadId: '7a4c2e1f-0b3d-4e5f-8a9b-1c2d3e4f5a6b', modelId: 'codex:model', workingCopy: 'shared' } as AgentCommand
+    expect(remoteCommandRefusal(command, { mayAnswer: true })).toBe('forbidden')
+    expect(remoteCommandRefusal(command, { mayAnswer: false, threadStarts: true })).toBeNull()
+    expect(remoteCommandRefusal({ ...command, approved: true } as unknown as AgentCommand, { mayAnswer: true, threadStarts: true })).toBe('forbidden')
+    // Fork from here goes the same way (E5b).
+    const fork = { type: 'fork-thread', threadId: 'thread', messageId: 'reply', newThreadId: '7a4c2e1f-0b3d-4e5f-8a9b-1c2d3e4f5a6b', modelId: 'codex:model', workingCopy: 'independent', baseBranch: 'main' } as AgentCommand
+    expect(remoteCommandRefusal(fork, { mayAnswer: true })).toBe('forbidden')
+    expect(remoteCommandRefusal(fork, { mayAnswer: false, threadStarts: true })).toBeNull()
+    expect(remoteCommandRefusal({ ...fork, agentId: 'codex-agent-1' } as unknown as AgentCommand, { mayAnswer: true, threadStarts: true })).toBe('forbidden')
+    const base = { v: 1, id: 'read', session: 'session' }
+    expect(hostRequestSchema.safeParse({ ...base, op: 'start-handover', threadId: 'thread' }).success).toBe(true)
+    expect(hostRequestSchema.safeParse({ ...base, op: 'start-handover', threadId: 'thread', text: 'words' }).success).toBe(false)
   })
   it('takes the user’s Babysit pull request and Stop babysitting without the answer policy, and no field beyond the pull request (ADR-0061)', () => {
     const url = 'https://github.com/o/r/pull/42'

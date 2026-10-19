@@ -2,8 +2,8 @@ import { z } from 'zod'
 import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema, watcherRefusalSchema,
   watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema } from './watcher'
 import { watcherEventSchema } from './watcherNews'
-import { agentRuntimeModeSchema, handoverCountsSchema } from './agents'
-import { watcherOwnChangeSchema, watcherStandingWatchSchema } from './watcher'
+import { agentRuntimeModeSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
+import { watcherOwnChangeSchema, watcherStandingWatchSchema, type WatcherThreadTarget } from './watcher'
 
 /** Private desktop channels. A host may project the same state later without acquiring command authority. */
 export const WATCHER_GET = 'sotto:watcher:get'
@@ -49,6 +49,13 @@ export const watcherRoomStateSchema = z.object({
    * or the user puts the offer away (ADR-0073): where it comes from and what it carries, in counts. Never its words.
    */
   handover: z.object({ source: watcherThreadTargetSchema, provider: watcherProviderSchema, counts: handoverCountsSchema }).strict().nullable().optional(),
+  /**
+   * Where each of the current Watcher's receipts goes in its conversation (ADR-0073, receipt cards): the message it is
+   * shown under, the last reply of the Watcher turn that took the action, or that turn's own message while no reply has
+   * come. Found from the record's turn for the operation, never from anyone's words. A receipt with no entry is not shown
+   * there: its turn is not in the conversation the window holds.
+   */
+  receiptReplies: z.array(z.object({ operationId: z.uuid(), messageId: z.string() }).strict()).optional(),
 }).strict()
 export const watcherOpenRequestSchema = z.object({ provider: watcherProviderSchema,
   modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).optional() }).strict()
@@ -96,6 +103,57 @@ export function takesPartInActiveRequest(participation: WatcherRoomRow['particip
  */
 export function isWatchedRow(row: WatcherRoomRow, requests: WatcherRoomState['requests']): boolean {
   return row.watched ?? takesPartInActiveRequest(row.participation, new Set(requests.filter(request => request.state === 'active').map(request => request.id)))
+}
+/**
+ * A Watcher reply the transcript draws: an assistant message with words or attachments, never a visual (the
+ * transcript's own rule for what it draws). Main places receipt cards by it and the window places takeover lines by it,
+ * so both mean the same reply.
+ */
+export function isShownReply(message: Pick<AgentMessage, 'id' | 'role' | 'text' | 'attachments' | 'visual'>): boolean {
+  return message.role === 'assistant' && !isVisualMessage(message) && (message.text.length > 0 || Boolean(message.attachments?.length))
+}
+
+/** One takeover line (CONTEXT.md): the user sent in a thread the current Watcher was driving, and when. */
+export interface WatcherTakeover { readonly target: WatcherThreadTarget; readonly at: string }
+
+/**
+ * The takeover lines for Watcher's conversation, oldest first: each thread the user took over by sending there while
+ * the current Watcher drove it for one of its requests. A standing watch is paused by such a send, not taken over, so
+ * it has no line; nor has a stop, a settle or a change of options, which take a thread over without a send. One send
+ * that ended several requests' work on a thread is one line.
+ */
+export function watcherTakeovers(room: Pick<WatcherRoomState, 'current' | 'requests'>): WatcherTakeover[] {
+  const watcher = room.current?.target
+  if (!watcher) return []
+  const lines = new Map<string, WatcherTakeover>()
+  for (const request of room.requests) {
+    if (request.standingWatchId !== undefined || request.watcher.hostId !== watcher.hostId || request.watcher.threadId !== watcher.threadId) continue
+    for (const participant of request.participants) {
+      const takeover = participant.takeover
+      if (participant.state !== 'taken-over' || !takeover || (takeover.reason !== 'user-send' && takeover.reason !== 'native-user-send')) continue
+      lines.set(JSON.stringify([participant.target.hostId, participant.target.threadId, takeover.at]), { target: participant.target, at: takeover.at })
+    }
+  }
+  return [...lines.values()].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+}
+
+/**
+ * The threads Stop all is offered for: started by Watcher for a request that is still active, still Watcher's (not
+ * taken over or let go), and running now, a turn or work it left in the background. Main's own preview decides what a
+ * press stops; this decides only whether the room offers it.
+ */
+export function stopAllRunning(room: Pick<WatcherRoomState, 'requests' | 'watchedThreads'>): WatcherThreadTarget[] {
+  const running = new Map(room.watchedThreads.filter(row => row.status === 'running' || row.backgroundWorkCount > 0)
+    .map(row => [JSON.stringify([row.target.hostId, row.target.threadId]), row.target] as const))
+  const found = new Map<string, WatcherThreadTarget>()
+  for (const request of room.requests) {
+    if (request.state !== 'active') continue
+    for (const participant of request.participants) {
+      const key = JSON.stringify([participant.target.hostId, participant.target.threadId])
+      if (participant.startedBy === 'watcher' && participant.state === 'participating' && running.has(key)) found.set(key, running.get(key)!)
+    }
+  }
+  return [...found.values()]
 }
 export type WatcherOpenRequest = z.infer<typeof watcherOpenRequestSchema>
 export type WatcherRoomResult = z.infer<typeof watcherRoomResultSchema>

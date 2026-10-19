@@ -145,6 +145,7 @@ private final class HostResponses: URLProtocol {
         XCTAssertEqual(accepts.filter { $0 == .string(WatcherWire.feature) }.count, 1)
         XCTAssertEqual(accepts.filter { $0 == .string(WatcherWire.stopFeature) }.count, 1)
         XCTAssertEqual(accepts.filter { $0 == .string(WatcherWire.manageFeature) }.count, 1)
+        XCTAssertEqual(accepts.filter { $0 == .string("provider-opencode") }.count, 1, "OpenCode's threads and models reach this phone")
         XCTAssertEqual(HostConnection.hello["op"], .string("hello"))
         XCTAssertEqual(HostConnection.hello["afterSeq"], Wire.snapshotHello["afterSeq"])
     }

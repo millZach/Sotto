@@ -231,6 +231,58 @@ it('projects worker cards inside Watcher and routes the user answer to the worke
   expect(await peer.call('stale', answer)).toMatchObject({ ok: false, error: { code: 'stale_request' } })
 })
 
+it.each([
+  { kind: 'permission' as const, answer: 'Deny', approved: false },
+  { kind: 'question' as const, answer: 'Synthetic explicit phone answer' },
+])('delivers an explicit phone $kind answer after desktop recovery without releasing the set-aside prompt', async choice => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  await f.finish(worker.threadId)
+  const original = { type: 'manual-send' as const, threadId: worker.threadId, draftId: randomUUID(), text: 'Synthetic unconfirmed phone-worker prompt' }
+  const adapter = f.workspace.adapters.codex, execute = adapter.execute.bind(adapter)
+  const spy = vi.spyOn(adapter, 'execute').mockImplementation(async command => {
+    if (command.type === 'send' && command.text === original.text) {
+      adapter.commands.push(structuredClone(command))
+      return { accepted: false, uncertain: true, error: 'Synthetic lost send acknowledgement' }
+    }
+    return execute(command)
+  })
+  try { await f.control.commandShell(original) } finally { spy.mockRestore() }
+  const oldDelivery = () => f.control.shell().deliveries?.find(item => item.threadId === worker.threadId && item.draftId === original.draftId)
+  expect(oldDelivery()).toMatchObject({ status: 'uncertain' })
+  expect((await f.control.commandShell({ type: 'set-aside-send', threadId: worker.threadId, draftId: original.draftId })).error).toBeNull()
+  const requestId = randomUUID(), otherId = randomUUID()
+  f.native(worker.threadId).requests = [
+    { id: requestId, kind: choice.kind, text: 'Synthetic pending worker card', options: [] },
+    { id: otherId, kind: 'question', text: 'Synthetic other worker card', options: [] },
+  ]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const answer = { op: 'watcher-phone-answer', request: { target: worker, command: { type: 'answer', threadId: worker.threadId,
+    requestId, answer: choice.answer, ...('approved' in choice ? { approved: choice.approved } : {}) } } }
+  const answers = () => adapter.commands.filter(command => command.type === 'answer')
+  expect(f.phone.state(false).needsYou).toEqual(expect.arrayContaining([expect.objectContaining({ target: worker, request: expect.objectContaining({ id: requestId }), mayAnswer: false })]))
+  expect(await peer.call('not-granted', answer)).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(answers()).toHaveLength(0)
+  f.canAnswer(true)
+  expect(f.phone.state(true).needsYou).toEqual(expect.arrayContaining([expect.objectContaining({ target: worker, request: expect.objectContaining({ id: requestId }), mayAnswer: true })]))
+  expect(await peer.call('explicit-answer', answer)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  expect(answers()).toEqual([expect.objectContaining({ threadId: f.native(worker.threadId).id, requestId, answer: choice.answer,
+    ...('approved' in choice ? { approved: choice.approved } : {}) })])
+  expect(f.native(worker.threadId).requests.map(request => request.id)).toEqual([otherId])
+  f.canAnswer(false)
+  expect(await peer.call('revoked', { ...answer, request: { ...answer.request, command: { ...answer.request.command, requestId: otherId, answer: 'Synthetic later answer' } } }))
+    .toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(answers()).toHaveLength(1)
+  expect(f.native(worker.threadId).requests.map(request => request.id)).toEqual([otherId])
+  expect(oldDelivery()).toMatchObject({ status: 'uncertain', setAside: true })
+  expect(oldDelivery()?.updatesResumed).not.toBe(true)
+  const watch = f.watcher.state().standingWatches!.find(row => row.target.threadId === worker.threadId)!
+  expect(await f.watcher.invoke(f.target.threadId, 'send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target: worker,
+    text: 'Synthetic forbidden automatic continuation', delivery: 'now' })).toMatchObject({ status: 'refused' })
+  await f.control.commandShell(original)
+  expect(adapter.commands.filter(command => command.type === 'send' && command.text === original.text)).toHaveLength(1)
+})
+
 it('holds Watcher behind a phone direct send and binds Stop all previews to the exact user and ownership', async () => {
   const f = await fixture(), peer = await f.pair(), other = await f.pair()
   await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()

@@ -14,7 +14,7 @@ import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import type { AgentState } from '../../../src/shared/agents'
 import type { WatcherEvent } from '../../../src/shared/watcherNews'
 import type { FollowupStore, WordWakeUp } from '../../../src/main/agents/followups'
-import { isWatcherNews, queuedWakeUpText } from '../../../src/main/agents/wakeUp'
+import { queuedWakeUpText } from '../../../src/main/agents/wakeUp'
 import { agentControlFixture } from '../../fixtures/agentControlFixture'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 
@@ -65,6 +65,8 @@ async function pairedWatcher(size: number) {
   const readRecord = f.control.watcherRecord.bind(f.control)
   f.control.watcherRecord = () => { if (counted()) tally.records++; return readRecord() }
   watcher.wakes.start()
+  // These count reads per pass, so every update runs its pass at once, as one does after WATCHER_OBSERVE_MS.
+  Object.defineProperty(watcher.wakes, 'observedAt', { get: () => -Infinity, set: () => undefined })
   const measure = async (read: () => unknown) => {
     for (const name of Object.keys(tally) as (keyof typeof tally)[]) tally[name] = 0
     const token = measuring = {}
@@ -87,16 +89,17 @@ async function counts(size: number) {
 it('reads the paired shell, the host list and the Watcher record a fixed number of times per pass, whatever the size', async () => {
   const small = await counts(2), large = await counts(24)
   expect(large).toEqual(small)
-  // A pass reads the merged snapshot and the record once; a state read copies the shell once for the room's inputs and
-  // once for the news it checks, and lists the hosts once for outcomes and once for the news.
-  expect(small.observe).toMatchObject({ shells: 1, records: 1 })
+  // A pass reads the merged snapshot once and the record without copying it; a state read copies the shell once for the
+  // room's inputs and once for the news it checks, and lists the hosts once for outcomes and once for the news.
+  expect(small.observe).toMatchObject({ shells: 1, records: 0 })
+  expect(small.state.records).toBe(0)
   expect(small.state.shells).toBeLessThanOrEqual(2)
   expect(small.state.hostLists).toBeLessThanOrEqual(2)
 }, 120_000)
 
 /**
  * Counts for one prune of queued Watcher wake-ups (#1070): `wakeUps` waiting wake-ups, each holding the paired host's
- * `size` finishes, which are still due, and one event that is not, so every wake-up is pruned to its due news.
+ * `size` finishes, which are still due, and one event that is not, so every wake-up is withdrawn whole.
  */
 async function pruneCounts(size: number, wakeUps: number) {
   const { f, watcher, local, measure } = await pairedWatcher(size)
@@ -109,10 +112,8 @@ async function pruneCounts(size: number, wakeUps: number) {
   for (let index = 0; index < wakeUps; index++) await store.queueWakeUp(`watcher-${index}`,
     { source: 'watcher', watcher: { hostId: local, threadId: `watcher-${index}` }, events: [...due, outdated], omitted: 0 }, word)
   const prune = await measure(() => f.control.pruneWatcherWakeUps())
-  // The same wake-ups stay, each with exactly the news still due.
-  const kept = store.peek().items.filter(item => item.wakeUp)
-  expect(kept).toHaveLength(wakeUps)
-  for (const item of kept) expect(item.news?.flatMap(news => isWatcherNews(news) ? news.events.map(event => event.id) : [])).toEqual(due.map(event => event.id))
+  // Each holds news no longer true, and a hidden wake-up never changes: all of them leave in one change (ADR-0073).
+  expect(store.peek().items.filter(item => item.wakeUp)).toEqual([])
   return prune
 }
 

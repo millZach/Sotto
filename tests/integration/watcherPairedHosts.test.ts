@@ -30,8 +30,10 @@ import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 import { codexFixture } from '../fixtures/codexFixture'
 import { heldOperation } from '../fixtures/deferred'
 import type { CodexAppServerHost } from '../../src/main/agents/codex'
+import { storedFollowups } from '../fixtures/followupQueue'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
+import type { AgentState } from '../../src/shared/agents'
 
 const remote = useSocketHostFixture()
 const cleanups: (() => Promise<void>)[] = []
@@ -105,6 +107,29 @@ it('negotiates host-v1 features only for recorded desktops and never for stable 
   await expect(stable.socket.watcherRead({ master: { target: { hostId: randomUUID(), threadId: 'master' }, projectId: 'master', provider: 'codex', creationOperationId: randomUUID(), createdAt: new Date().toISOString() } })).rejects.toMatchObject({ code: 'invalid_request' })
 })
 
+it('reads and directs a paired host for a Watcher on Muse only when the host lists watcher-muse, and says to update one that does not', async () => {
+  const f = await master()
+  // Watcher on Muse: its identity names muse as its provider (ADR-0079); this host is new enough to take it.
+  await f.control.updateWatcher(record => { record.current!.provider = 'muse' })
+  expect(f.socket.supportsWatcherMuse).toBe(true)
+  expect(f.hello.features).toContain('watcher-muse')
+  const project = { hostId: f.pairing.hostId, projectId: f.project.id }
+  expect(await f.call('list_threads', { project })).toMatchObject({ status: 'ok' })
+  // An older host does not know a Watcher on Muse, so it is asked nothing and Watcher is told to update it.
+  vi.spyOn(f.socket, 'supportsWatcherMuse', 'get').mockReturnValue(false)
+  const reads = vi.spyOn(f.socket, 'watcherRead'), controls = vi.spyOn(f.socket, 'watcherControl')
+  for (const [name, input] of [['list_threads', { project }], ['start_thread', f.start()]] as const) {
+    expect(await f.call(name, input)).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE', message: expect.stringMatching(/Update Sotto on this host before Watcher on Muse/u) })
+  }
+  expect(reads).not.toHaveBeenCalled(); expect(controls).not.toHaveBeenCalled()
+  // Its projects say so too, rather than offering control Watcher would be refused.
+  const listed = await f.call('list_projects', {})
+  if (listed.status !== 'ok') throw new Error('projects-refused')
+  const remoteRows = listed.projects.filter(item => item.target.hostId === f.pairing.hostId)
+  expect(remoteRows.length).toBeGreaterThan(0)
+  expect(remoteRows.every(item => !item.controlAvailable && !item.readsAvailable)).toBe(true)
+})
+
 it('lists This computer and each paired machine with its facts, running threads and starts in flight; an older host reads unknown, a disconnected one not connected (#1031)', async () => {
   const f = await master()
   const family = ({ win32: 'windows', darwin: 'macos', linux: 'linux' } as Record<string, string>)[process.platform] ?? null
@@ -119,18 +144,21 @@ it('lists This computer and each paired machine with its facts, running threads 
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start-refused')
   // The owning host's reply can arrive before the desktop's copy of the thread shows its first turn. A reconcile in
   // that gap reads a created thread with no turn and no message yet: the start is still in flight, not finished.
-  const shell = f.socket.shell.bind(f.socket)
-  const behind = vi.spyOn(f.socket, 'shell').mockImplementation(() => {
-    const state = shell()
+  // The router reads the host's state through its view, and some readers through its shell, so both stand in for it.
+  const behindOf = (read: () => AgentState) => (): AgentState => {
+    const state = read()
     return { ...state, host: { ...state.host, threads: state.host.threads.map(thread => {
       if (thread.id !== started.target.threadId) return thread
       const created = { ...thread }; delete created.lastTurn
       return { ...created, status: 'idle' as const, messages: [], ...thread.summary ? { summary: { ...thread.summary, messageCount: 0 } } : {} }
     }) } }
-  })
+  }
+  // Read the originals before spying: a spy is installed before its implementation's arguments are evaluated.
+  const shell = behindOf(f.socket.shell.bind(f.socket)), view = behindOf(f.socket.view.bind(f.socket))
+  const behind = [vi.spyOn(f.socket, 'shell').mockImplementation(shell), vi.spyOn(f.socket, 'view').mockImplementation(view)]
   await (f.watcher as unknown as { reconcileRemote(hostId: string): Promise<void> }).reconcileRemote(f.pairing.hostId)
   expect((await machines())[1]).toMatchObject({ inFlight: 1 })
-  behind.mockRestore()
+  for (const spy of behind) spy.mockRestore()
   await expect.poll(async () => (await machines())[1]).toMatchObject({ runningThreads: 1, inFlight: 1 })
   expect((await machines())[0]).toMatchObject({ inFlight: 0 })
   // An older host does not list host-facts: it reads unknown, and nothing is asked of it.
@@ -316,6 +344,22 @@ it('publishes the host user’s turn and holds automated prompts behind it befor
   await vi.waitFor(() => expect(f.watcher.state().watchedThreads[0]).toMatchObject({ watched: true, paused: true, participation: [{ state: 'participating' }] }))
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic refused', delivery: 'queue' })).toMatchObject({ code: 'THREAD_BUSY' })
   expect(await f.watcher.stopAll(confirmation.confirmationId)).toMatchObject({ code: 'TARGET_CHANGED' })
+})
+
+it('keeps the prior paired fence after a host user changes a watched thread no request took part in', async () => {
+  // Paired requests do not share the owning host's request order, so its local takeover marker grants and fences nothing
+  // for them: only a taken-over participation does, as before the local resume rule (#1157, Bug Bot finding 1).
+  const f = await master(), threadId = randomUUID()
+  expect((await f.socket.command({ type: 'create-thread', threadId, projectId: f.project.id, modelId: f.model.id,
+    title: 'Synthetic user-started remote worker', runtimeMode: 'approval-required', workingCopy: 'shared' })).error).toBeNull()
+  const target = { hostId: f.pairing.hostId, threadId }
+  await expect.poll(() => f.socket.shell().host.threads.some(thread => thread.id === threadId)).toBe(true)
+  expect(await f.watcher.watchThread({ target })).toMatchObject({ status: 'ok' })
+  const effort = f.model.reasoningEfforts?.at(-1)
+  expect((await f.socket.command({ type: 'configure-thread', threadId, ...(effort ? { reasoningEffort: effort } : { runtimeMode: 'approval-required' as const }) })).error).toBeNull()
+  await expect.poll(() => f.watcher.state().watchedThreads.find(item => item.target.threadId === threadId)).toMatchObject({ watched: true, paused: false })
+  const sent = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, delivery: 'now', text: 'Synthetic desktop prompt after host change' })
+  expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok' })
 })
 
 it('rechecks a late native question at the owning Codex writer, without answering', async () => {
@@ -740,19 +784,22 @@ it('refuses a remote mutation before transmission when the master closes during 
   } finally { gate.release(); await start }
 })
 
-
 it('attributes returning paired evidence to its host, queues news after user work and withdraws it on Stop', async () => {
   const f = await master(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
   let checks: 'failed' | 'passed' = 'failed'
-  const shell = f.socket.shell.bind(f.socket)
-  // The synthetic evidence belongs to a PR the owning roster still links.
-  vi.spyOn(f.socket, 'shell').mockImplementation(() => {
-    const state = shell()
+  // The synthetic evidence belongs to a PR the owning roster still links. The router reads the host's state through its
+  // view, and some readers through its shell, so both carry the link.
+  const linkedOf = (read: () => AgentState) => (): AgentState => {
+    const state = read()
     return { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id !== first.target.threadId ? thread
       : { ...thread, pullRequests: [{ url: 'https://github.com/synthetic/project/pull/5', number: 5, title: 'Synthetic PR',
         state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }] }) } }
-  })
+  }
+  // Read the originals before spying: a spy is installed before its implementation's arguments are evaluated.
+  const linkedShell = linkedOf(f.socket.shell.bind(f.socket)), linkedView = linkedOf(f.socket.view.bind(f.socket))
+  vi.spyOn(f.socket, 'shell').mockImplementation(linkedShell)
+  vi.spyOn(f.socket, 'view').mockImplementation(linkedView)
   const original = f.socket.watcherRead.bind(f.socket)
   vi.spyOn(f.socket, 'watcherRead').mockImplementation(async packet => {
     const result = await original(packet)
@@ -777,15 +824,17 @@ it('attributes returning paired evidence to its host, queues news after user wor
     }, { timeout: 15_000 })
     const event = f.watcher.state().news!.find(item => item.kind === 'evidence-changed' && item.target.threadId === first.target.threadId)!
     occurrences.push(event.id)
-    await vi.waitFor(() => expect(f.control.shell().followups?.filter(item => item.threadId === f.id).at(-1)?.wakeUp).toBe(true), { timeout: 15_000 })
-    expect(f.control.shell().followups!.filter(item => item.threadId === f.id)[0]!.text).toBe('Synthetic user continuation')
+    await vi.waitFor(() => expect(storedFollowups(f.control).filter(item => item.threadId === f.id).at(-1)?.wakeUp).toBe(true), { timeout: 15_000 })
+    expect(storedFollowups(f.control).filter(item => item.threadId === f.id)[0]!.text).toBe('Synthetic user continuation')
+    // The user's follow-up shows; Sotto's wake-up for Watcher behind it does not.
+    expect(f.control.shell().followups!.filter(item => item.threadId === f.id).map(item => item.text)).toEqual(['Synthetic user continuation'])
   }
   expect(new Set(occurrences).size).toBe(3)
   expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })).toMatchObject({ status: 'ok' })
   expect(await f.watcher.unwatchThread({ target: first.target })).toMatchObject({ status: 'ok' })
   checks = 'passed'; f.router.replace(f.connection)
   await vi.waitFor(() => expect(f.watcher.state().news?.some(item => item.target.threadId === first.target.threadId)).toBe(false))
-  await vi.waitFor(() => expect(f.control.shell().followups?.some(item => item.threadId === f.id && item.wakeUp)).toBe(false))
+  await vi.waitFor(() => expect(storedFollowups(f.control).some(item => item.threadId === f.id && item.wakeUp)).toBe(false))
   expect(f.control.shell().followups!.find(item => item.threadId === f.id)?.text).toBe('Synthetic user continuation')
   expect(f.watcher.state().watchedThreads.find(item => item.target.threadId === first.target.threadId)!.participation[0]).toMatchObject({ automationStopped: true, promptCount: 1 })
   expect((await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic remote worker')!.messages.filter(item => item.role === 'user')).toHaveLength(1)

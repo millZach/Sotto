@@ -49,6 +49,16 @@ function unsupportedComposer() {
 }
 
 describe('desktop host routing', () => {
+  it('refuses set-aside recovery on remote hosts before forwarding any command', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+    router.add(remote.connection); router.select(REMOTE)
+    try {
+      const result = await router.command({ type: 'set-aside-send', threadId: hostEntityKey(REMOTE, 'thread'), draftId: randomUUID() }, desktopWindowClient())
+      expect(result.error).toBe('Continue with a new message on the desktop that owns this thread. Nothing was changed.')
+      expect(remote.command).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+  })
+
   it('qualifies and bounds exact retirement and delivery proof across two full host ledgers', () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     for (const f of [local, remote]) {
@@ -433,6 +443,19 @@ describe('desktop host routing', () => {
     router.add({ ...local.connection })
     await expect(router.hostFolders({ hostId: LOCAL })).rejects.toThrow('cannot list its folders yet')
   })
+  it('reads one record whole on the thread’s own host, and answers null for this computer’s threads (ADR-0025, October 18 amendment)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const whole = { id: 'build', turnId: 'turn', sequence: 0, kind: 'command' as const, status: 'completed' as const, title: 'Ran npm test', output: 'all of it' }
+    const activityBody = vi.fn(async () => whole)
+    router.add(local.connection); router.add({ ...remote.connection, activityBody })
+    expect(await router.activityBody({ threadId: hostEntityKey(REMOTE, 'thread'), activityId: 'build' })).toEqual(whole)
+    expect(activityBody).toHaveBeenCalledWith('thread', 'build')
+    expect(await router.activityBody({ threadId: hostEntityKey(LOCAL, 'thread'), activityId: 'build' })).toBeNull()
+    router.remove(REMOTE)
+    router.add({ ...remote.connection, activityBody, available: () => false })
+    await expect(router.activityBody({ threadId: hostEntityKey(REMOTE, 'thread'), activityId: 'build' })).rejects.toThrow('disconnected')
+    expect(activityBody).toHaveBeenCalledTimes(1)
+  })
   it('reads a paired host\'s Files, Changes and Agents by its own IDs and hands every ID back as the window\'s key (ADR-0025, October 5 amendment)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     const key = hostEntityKey(REMOTE, 'thread'), workspaceId = 'a'.repeat(64)
@@ -591,6 +614,43 @@ describe('a host restarting for an update (ADR-0040)', () => {
     await router.command({ type: 'queue-client-updates', providers: ['claude'], hostId: LOCAL }, desktopWindowClient())
     expect(local.command).toHaveBeenCalledWith({ type: 'queue-client-updates', providers: ['claude'] }, desktopWindowClient())
     expect(remote.command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'queue-client-updates' }), expect.anything())
+  })
+  it('sends Settings > Providers’ presses to this computer while another host is selected, answering with their own outcome', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState, { museEnabled: true }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    local.state.configuration = { ...local.state.configuration, enabledProviders: ['codex', 'muse'], checkClientUpdates: false }
+    remote.state.error = 'Codex did not confirm the connection.'
+    router.add(local.connection); router.add(remote.connection)
+    router.select(REMOTE)
+    // This computer's entry carries its own provider settings, which the selected host's configuration does not.
+    expect(router.shell().host.clientHosts!.find(item => item.hostId === LOCAL)).toMatchObject({ enabledProviders: ['codex', 'muse'], checkClientUpdates: false, agentModelId: expect.any(String) })
+    expect(router.shell().host.clientHosts!.find(item => item.hostId === REMOTE)).not.toHaveProperty('enabledProviders')
+    for (const command of [{ type: 'connect', provider: 'muse', notice: false }, { type: 'disconnect', provider: 'muse' }, { type: 'refresh', provider: 'muse' },
+      { type: 'check-client-updates' }, { type: 'update-client', provider: 'muse' }] as const) {
+      const result = await router.command({ ...command, hostId: LOCAL }, desktopWindowClient())
+      expect(local.command).toHaveBeenLastCalledWith(command, desktopWindowClient())
+      // The selected host's last error belongs to some other command.
+      expect(result.error).toBeNull()
+    }
+    expect(remote.command).not.toHaveBeenCalled()
+    expect(router.shell().hostId).toBe(REMOTE)
+    // This computer's own refusal is what the press answers with.
+    local.command.mockResolvedValueOnce({ ...local.state, error: 'Could not connect Muse. Sign in to Muse on this machine with muse login, then connect it again.' })
+    expect((await router.command({ type: 'connect', provider: 'muse', hostId: LOCAL }, desktopWindowClient())).error)
+      .toBe('Could not connect Muse. Sign in to Muse on this machine with muse login, then connect it again.')
+  })
+  it('names a remote host where its provider errors say “this machine”, and leaves this computer’s as they are', () => {
+    const router = new DesktopHostRouter(emptyDesktopState, { museEnabled: true }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const said = 'Could not connect Muse. Sign in to Muse on this machine with muse login, then connect it again.'
+    const muse = { id: 'muse' as const, name: 'Muse', capabilities: local.state.host.capabilities, connection: 'error' as const, problem: 'signed-out' as const, version: '1.4.8', error: said }
+    local.state.host.providers = [muse]; remote.state.host.providers = [muse]
+    router.add(local.connection); router.add(remote.connection)
+    const entry = (hostId: string) => router.shell().host.clientHosts!.find(item => item.hostId === hostId)!.providers![0]!.error
+    expect(entry(LOCAL)).toBe(said)
+    expect(entry(REMOTE)).toBe('Could not connect Muse. Sign in to Muse on Forge with muse login, then connect it again.')
+    router.select(REMOTE)
+    expect(router.shell().host.providers![0]!.error).toBe('Could not connect Muse. Sign in to Muse on Forge with muse login, then connect it again.')
+    // The host's own state is never rewritten.
+    expect(remote.state.host.providers?.[0]?.error).toBe(said)
   })
   it('marks the hosts that babysit pull requests, so the window offers Babysit pull request only on their threads (ADR-0061)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), older = fixture(LOCAL, 'remote'), newer = fixture(REMOTE, 'remote')
@@ -937,5 +997,82 @@ describe('a question’s pages (ADR-0085)', () => {
     expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'question', token: other })).toBeNull()
     expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'another', token })).toBeNull()
     expect(router.questionPageOpening({ threadId: hostEntityKey(REMOTE, 'thread'), requestId: 'question', token })).toBeNull()
+  })
+})
+
+describe('a remote thread after its host restarts (#1098)', () => {
+  function remoteDetails() {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const connect = (inPlace = false) => {
+      const host = fixture(REMOTE, 'remote')
+      let push: ((detail: AgentThreadDetailUpdate) => void) | undefined
+      host.connection.subscribeDetail = listener => { push = listener; return () => { push = undefined } }
+      if (inPlace) router.replace(host.connection); else router.add(host.connection)
+      return { host, push: (detail: AgentThreadDetailUpdate) => push!(detail) }
+    }
+    const forwarded: AgentThreadDetailUpdate[] = []
+    router.subscribeThreadDetail(detail => forwarded.push(detail))
+    return { router, connect, forwarded }
+  }
+  const whole = (revision: number) => ({ threadId: 'thread', revision, messages: [] })
+  const delta = (baseRevision: number, revision: number) => ({ threadId: 'thread', baseRevision, revision, messageDeltas: [], activityDeltas: [] })
+
+  it('gives the window revisions that never go back when a restarted host counts them again from one', async () => {
+    const { router, connect, forwarded } = remoteDetails()
+    const before = connect()
+    before.push(whole(40)); before.push(delta(40, 41))
+    expect(forwarded.map(item => item.revision)).toEqual([40, 41])
+    router.remove(REMOTE)
+    // The host restarted: its count starts again, and every revision it sends now lands past the window's last.
+    const after = connect()
+    after.push(whole(2)); after.push(delta(2, 3))
+    expect(forwarded.slice(2)).toEqual([whole(42), delta(42, 43)].map(item => ({ ...item, threadId: hostEntityKey(REMOTE, 'thread') })))
+    // A read the window asks for is on the same line.
+    after.host.detail.mockResolvedValueOnce(whole(3))
+    expect((await router.threadDetail(hostEntityKey(REMOTE, 'thread')))?.revision).toBe(43)
+    router.dispose()
+  })
+
+  it('moves revisions the same way when a reconnect takes the old connection’s place, and keeps them through a rename', async () => {
+    const { router, connect, forwarded } = remoteDetails()
+    connect().push(whole(40))
+    const after = connect(true)
+    after.push(whole(2))
+    // A rename replaces the connection object; a read through it and the pushes that follow stay on one line.
+    router.rename(REMOTE, 'Forge at home')
+    after.host.detail.mockResolvedValueOnce(whole(2))
+    expect((await router.threadDetail(hostEntityKey(REMOTE, 'thread')))?.revision).toBe(41)
+    after.push(delta(2, 3)); after.push(delta(3, 4))
+    expect(forwarded.map(item => item.revision)).toEqual([40, 41, 42, 43])
+    expect(forwarded.at(-1)).toMatchObject({ baseRevision: 42, revision: 43 })
+    router.dispose()
+  })
+
+  it('drops a read the replaced connection answers late, and a delta a new connection sends before its whole detail', async () => {
+    const { router, connect, forwarded } = remoteDetails()
+    const before = connect()
+    before.push(whole(40))
+    let answer: (detail: ReturnType<typeof whole>) => void = () => undefined
+    before.host.detail.mockImplementationOnce(() => new Promise(resolve => { answer = resolve }))
+    const read = router.threadDetail(hostEntityKey(REMOTE, 'thread'))
+    const after = connect(true)
+    after.push(delta(2, 3))
+    after.push(whole(2))
+    answer(whole(40))
+    expect(await read).toBeNull()
+    expect(forwarded.map(item => item.revision)).toEqual([40, 41])
+    after.push(delta(2, 3))
+    expect(forwarded.at(-1)).toMatchObject({ baseRevision: 41, revision: 42 })
+    router.dispose()
+  })
+
+  it('leaves revisions as they are while a reconnected host carries on counting past them', () => {
+    const { router, connect, forwarded } = remoteDetails()
+    connect().push(whole(5))
+    router.remove(REMOTE)
+    const after = connect()
+    after.push(whole(9)); after.push(delta(9, 10))
+    expect(forwarded.map(item => item.revision)).toEqual([5, 9, 10])
+    router.dispose()
   })
 })

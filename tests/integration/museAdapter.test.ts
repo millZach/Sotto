@@ -8,6 +8,37 @@ import { museFixture, museFixtureSkips } from '../fixtures/museFixture'
 
 describeAdapterContract('Muse MSP', session => museFixture(undefined, undefined, session), museFixtureSkips)
 
+it('starts every host without the sandbox only when the setting says so, captured at connect', async () => {
+  let off = false
+  const f = await museFixture(undefined, undefined, {}, { disableSandbox: () => off })
+  const argv = f.hostArguments
+  // A thread's own host keeps a session log; the connect and update probes do not.
+  const threadHosts = async () => (await argv()).filter(args => !args.includes('--no-session-log'))
+  const sendTo = async (title: string) => {
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title })
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'Synthetic prompt' })
+  }
+  try {
+    expect((await f.host.connect()).sandboxDisabled).toBe(false)
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    await sendTo('Before the switch')
+    // Turning the switch off changes nothing until Muse connects again: a thread started now gets the sandbox too.
+    off = true
+    await sendTo('After the switch, before reconnecting')
+    expect(await threadHosts()).toHaveLength(2)
+    expect((await argv()).every(args => !args.includes('--disable-sandbox'))).toBe(true)
+    expect((await f.host.snapshot()).sandboxDisabled).toBe(false)
+    expect((await f.host.connect()).sandboxDisabled).toBe(true)
+    const probe = (await argv()).at(-1)!
+    expect(probe).toEqual(expect.arrayContaining(['--disable-sandbox', '--no-session-log']))
+    await sendTo('After reconnecting')
+    expect((await threadHosts()).at(-1)).toContain('--disable-sandbox')
+    f.host.disconnect()
+    expect((await f.host.snapshot()).sandboxDisabled).toBeUndefined()
+  } finally { await f.cleanup() }
+})
+
 const open = async () => {
   const f = await museFixture()
   await f.host.connect()
@@ -202,6 +233,21 @@ it('refuses a client Sotto cannot drive: an older one, and another MSP version',
     await future.script({ schemaVersion: 2 })
     await expect(future.host.connect()).rejects.toThrow('Could not connect Muse.')
   } finally { await future.cleanup() }
+})
+
+it('calls an empty catalog signed out only when it is the bundled one a client with no sign-in answers with', async () => {
+  // Muse 1.4.8 and 1.4.9 with no sign-in answer `bundledCatalog` and no models; signed in, `providerCatalog`, even offline.
+  for (const [source, problem, said] of [['bundledCatalog', 'signed-out', 'Sign in to Muse on this machine with muse login'],
+    ['', 'cannot-start', 'Muse is set up but listed no models'],
+    ['unresolvedCatalog', 'cannot-start', 'Muse is set up but listed no models']] as const) {
+    const f = await museFixture()
+    try {
+      await f.script({ models: [], catalogSource: source })
+      const refusal = await f.host.connect().then(() => undefined, (error: unknown) => error)
+      expect(refusal).toMatchObject({ problem, message: expect.stringContaining(said) })
+      expect((await f.host.snapshot()).connected).toBe(false)
+    } finally { await f.cleanup() }
+  }
 })
 
 it('keeps the account’s keys out of the client’s environment', async () => {

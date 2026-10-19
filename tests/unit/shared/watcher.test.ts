@@ -18,6 +18,19 @@ function withUnknownFields(value: unknown): unknown[] {
 }
 
 describe('closed watcher contracts', () => {
+  it('keeps optional local takeover markers unique, text-free and compatible with older records', () => {
+    const record = watcherRecordFixture(), marker = { target: record.requests[0]!.participants[0]!.target, at: record.requests[0]!.createdAt, lastRequestId: record.requests[0]!.id }
+    expect(watcherRecordSchema.parse(record).localTakeovers).toBeUndefined()
+    expect(watcherRecordSchema.parse({ ...record, localTakeovers: [marker] }).localTakeovers).toEqual([marker])
+    expect(watcherRecordSchema.parse({ ...record, localTakeovers: [{ ...marker, lastRequestId: null }] }).localTakeovers?.[0]?.lastRequestId).toBeNull()
+    const draft = { draftId: record.requests[0]!.id, digest: 'a'.repeat(64), messageId: 'native-user-message' }
+    expect(watcherRecordSchema.parse({ ...record, localTakeovers: [{ ...marker, userDrafts: [draft] }] }).localTakeovers?.[0]?.userDrafts).toEqual([draft])
+    for (const localTakeovers of [[marker, marker], [{ ...marker, at: 'unknown' }], [{ ...marker, lastRequestId: 'unknown' }], [{ ...marker, text: 'private words' }]]) {
+      expect(watcherRecordSchema.safeParse({ ...record, localTakeovers }).success).toBe(false)
+    }
+    expect(watcherRecordSchema.safeParse({ ...record, localTakeovers: [{ ...marker, userDrafts: [draft, draft] }] }).success).toBe(false)
+    expect(watcherRecordSchema.safeParse({ ...record, localTakeovers: [{ ...marker, userDrafts: [{ ...draft, text: 'private words' }] }] }).success).toBe(false)
+  })
   it('retains optional text-free display proofs without changing older request records', () => {
     const record = watcherRecordFixture(), proof = { originalLength: 12, wireDigest: 'a'.repeat(64) }
     expect(watcherRecordSchema.safeParse(record).success).toBe(true)

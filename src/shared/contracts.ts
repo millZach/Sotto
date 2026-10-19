@@ -333,6 +333,10 @@ export interface SottoBridge {
   readonly usage?: import('./usageDashboard').UsageBridge
   /** Delegation between threads (ADR-0081), present only while the Owl list turns it on. */
   readonly delegations?: import('./delegation').DelegationsBridge
+  /** Continuing a thread on another provider (ADR-0089), present only while the Owl list turns it on. */
+  readonly continueThread?: import('./continueThread').ContinueBridge
+  /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
+  readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
 
   readonly omarchySetup?: import('./omarchySetup').OmarchySetupBridge
   readonly watcher?: import('./watcherRoom').WatcherBridge

@@ -375,6 +375,12 @@ lines.on('line', async line => {
     if (script.delay) { writeFileSync(scriptPath, '{}'); setTimeout(() => output(reply), script.delay) } else output(reply)
     // script.json `reply`: a model that answers every prompt at once, as the scripted `complete` action answers it.
     if (!script.delay && script.reply !== undefined) { writeFileSync(join(root, `control-${session}.json`), JSON.stringify({ id: randomUUID(), type: 'complete', text: script.reply })); act() }
+    // script.json `limit`: every prompt stops at the plan's usage limit, which resets at `limit`, as Claude Code ends a
+    // rate-limited turn: an error result with the API's 429 and its own words, which Sotto reads and never shows.
+    else if (!script.delay && script.limit !== undefined) {
+      output({ type: 'result', subtype: 'success', session_id: session, is_error: true, api_error_status: 429, result: `You've hit your limit · resets ${script.limit}`, user_message_uuid: frame.uuid })
+      turnEnded()
+    }
   } else if (frame.type === 'control_response') {
     const envelope = frame.response; const request = pending.get(envelope?.request_id); const answer = envelope?.response
     const hookWait = hookWaits.get(envelope?.request_id)
