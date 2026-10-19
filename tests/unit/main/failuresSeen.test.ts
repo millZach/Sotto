@@ -121,12 +121,28 @@ describe('a failed thread a client has seen', () => {
     expect(again.has('b')).toBe(false)
   })
 
-  it('keeps at most the newest marks, and dormant ones whole', () => {
+  it('keeps every mark of a listed thread, however many Dismiss all names', () => {
+    const many = Array.from({ length: FAILURES_SEEN_MAX + 50 }, (_, index) => failed(`t${index}`))
+    const seen = new FailuresSeen()
+    expect(seen.dismiss(many.map(item => item.id), many)).toBe(true)
+    seen.track(snapshot(many))
+    expect(many.every(item => seen.has(item.id))).toBe(true)
+    expect(seen.saved()).toHaveLength(FAILURES_SEEN_MAX + 50)
+  })
+
+  it('keeps at most the newest marks of threads that are gone, and dormant ones whole', () => {
     const ids = Array.from({ length: FAILURES_SEEN_MAX + 5 }, (_, index) => `t${index}`)
     const saved = ids.map(threadId => ({ threadId, failure: '' }))
-    expect(new FailuresSeen(saved).saved().map(mark => mark.threadId)).toEqual(ids.slice(5))
-    const dormant = new Set(['t0'])
-    expect(new FailuresSeen(saved, id => dormant.has(id)).saved().map(mark => mark.threadId)).toEqual(['t0', ...ids.slice(5)])
+    // Restoring drops nothing: until the host lists its threads, it cannot tell which are gone.
+    expect(new FailuresSeen(saved).saved()).toHaveLength(ids.length)
+    const listed = new FailuresSeen(saved)
+    listed.track(snapshot([failed('t0', '')].map(item => ({ ...item, lastTurn: undefined }))))
+    // t0 is still listed in its failure; of the gone ones, the four oldest past the limit go.
+    expect(listed.saved().map(mark => mark.threadId)).toEqual(['t0', ...ids.slice(5)])
+    const dormant = new Set(['t1'])
+    const kept = new FailuresSeen(saved, id => dormant.has(id))
+    kept.track(snapshot([]))
+    expect(kept.saved().map(mark => mark.threadId)).toEqual(['t1', ...ids.slice(5)])
   })
 
   it('publishes the mark as an optional field and nothing otherwise', () => {

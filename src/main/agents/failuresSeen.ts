@@ -1,7 +1,10 @@
 import { isThreadProviderConnected, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { failedWithoutRequest } from '../../shared/threadFailures'
 
-/** How many marks are kept, newest last; a thread forgotten while marked is dropped once the list is full. */
+/**
+ * How many marks are kept for threads that are gone from the host's list, newest last. A thread still listed keeps its
+ * mark whatever the count, since dropping it would bring back a failure the user already saw or dismissed.
+ */
 export const FAILURES_SEEN_MAX = 200
 
 /** One saved mark: the thread, and the failure of it that a client showed or Dismiss all named. */
@@ -25,21 +28,23 @@ const failureOf = (thread: Pick<AgentThread, 'lastTurn'>): string => thread.last
  */
 export class FailuresSeen {
   private shown: ReadonlySet<string> = new Set()
+  /** The threads in the latest list read; until one is read, every saved mark is kept. */
+  private present: ReadonlySet<string> | undefined
   /** Marked thread IDs and the failure each was seen in, oldest first: a map keeps the order things were added in. */
   private readonly marks = new Map<string, string>()
 
   constructor(saved: readonly SavedFailureSeen[] = [], private readonly dormant?: (threadId: string) => boolean) { this.restore(saved) }
 
-  /** Takes the saved marks back at start. */
+  /** Takes the saved marks back at start. Nothing is dropped until a list of threads says which are gone. */
   restore(saved: readonly SavedFailureSeen[]): void {
     this.marks.clear()
     for (const { threadId, failure } of saved) { this.marks.delete(threadId); this.marks.set(threadId, failure) }
-    this.trim()
   }
 
   /** Reads one snapshot of the threads; true when a mark was made or dropped. */
   track(snapshot: AgentHostSnapshot): boolean {
     let changed = false
+    this.present = new Set(snapshot.threads.map(thread => thread.id))
     for (const thread of snapshot.threads) {
       if (this.dormant?.(thread.id)) continue
       const mark = this.marks.get(thread.id)
@@ -84,6 +89,7 @@ export class FailuresSeen {
 
   private seeAll(ids: ReadonlySet<string>, threads: readonly AgentThread[]): boolean {
     let changed = false
+    this.present = new Set([...this.present ?? [], ...threads.map(thread => thread.id)])
     for (const thread of threads) if (ids.has(thread.id) && !this.dormant?.(thread.id)) changed = this.see(thread) || changed
     this.trim()
     return changed
@@ -97,12 +103,15 @@ export class FailuresSeen {
     return true
   }
 
-  /** Drops the oldest ordinary marks past the limit; dormant marks stay whole. */
+  /** Drops the oldest marks of threads gone from the list past the limit; listed and dormant threads' marks stay whole. */
   private trim(): void {
-    let ordinary = this.dormant ? [...this.marks.keys()].filter(id => !this.dormant?.(id)).length : this.marks.size
+    const present = this.present
+    if (present === undefined) return
+    const gone = (id: string): boolean => !present.has(id) && !this.dormant?.(id)
+    let count = [...this.marks.keys()].filter(gone).length
     for (const id of this.marks.keys()) {
-      if (ordinary <= FAILURES_SEEN_MAX) return
-      if (!this.dormant?.(id)) { this.marks.delete(id); ordinary -= 1 }
+      if (count <= FAILURES_SEEN_MAX) return
+      if (gone(id)) { this.marks.delete(id); count -= 1 }
     }
   }
 }
