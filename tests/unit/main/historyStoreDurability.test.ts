@@ -182,6 +182,11 @@ describe('sub-agent history durability', () => {
     expect(synchronous(connection(store))).toBe(NORMAL)
     expect(Number(connection(store).prepare('PRAGMA secure_delete').get()?.secure_delete)).toBe(1)
     expect(committed(() => store.ingest('thread', [observation]))).toEqual([NORMAL])
+    // A new epoch takes the thread's earlier tasks out, as a rewind does, so it waits for the disk; the same epoch does not.
+    expect(committed(() => store.ingest('thread', [observation], 'epoch-a'))).toEqual([NORMAL])
+    expect(committed(() => store.ingest('thread', [observation], 'epoch-a'))).toEqual([NORMAL])
+    expect(committed(() => store.ingest('thread', [], 'epoch-b'))).toEqual([FULL])
+    expect(synchronous(connection(store))).toBe(NORMAL)
     const erasing = committed(() => store.privacyChanged(false))
     expect(erasing.length).toBeGreaterThan(0)
     expect(erasing.every(setting => setting === FULL)).toBe(true)

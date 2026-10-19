@@ -133,7 +133,19 @@ export class SubagentStore {
     this.counts.assignmentWrites++
     this.requireOpen().prepare('INSERT INTO subagent_assignments VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(thread_id, agent_id, assignment_id) DO UPDATE SET value=excluded.value, fingerprint=excluded.fingerprint, observed_at=excluded.observed_at').run(threadId, agentId, value.id, value.sequence, JSON.stringify(value), hash, observedAt)
   }
+  /**
+   * A new epoch takes the thread's earlier tasks out, as a rewind does, so that commit waits for the disk: a power cut
+   * that undid it would bring back tasks the rewind removed.
+   */
   ingest(threadId: string, observations: NonNullable<AgentActivity['agents']>, epoch?: string, activities: readonly AgentActivity[] = []): SubagentChange | undefined {
+    const known = epoch === undefined ? undefined
+      : this.requireOpen().prepare("SELECT json_extract(value, '$.epoch') AS epoch FROM subagent_threads WHERE thread_id = ?").get(threadId)?.epoch
+    const resets = epoch !== undefined && known !== undefined && known !== null && epoch !== known
+    return resets ? flushedCommits(this.requireOpen(), () => this.ingestNow(threadId, observations, epoch, activities)) : this.ingestNow(threadId, observations, epoch, activities)
+  }
+  /** Puts every commit so far on the disk: SQLite flushes the log before a checkpoint, whatever `synchronous` is. */
+  flushToDisk(): void { this.requireOpen().exec('PRAGMA wal_checkpoint(FULL)') }
+  private ingestNow(threadId: string, observations: NonNullable<AgentActivity['agents']>, epoch?: string, activities: readonly AgentActivity[] = []): SubagentChange | undefined {
     const db = this.requireOpen()
     db.exec('BEGIN IMMEDIATE')
     try {

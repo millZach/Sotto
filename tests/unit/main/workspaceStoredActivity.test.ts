@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, expect, it, vi } from 'vitest'
+import { SubagentStore } from '../../../src/main/agents/subagentStore'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
@@ -87,6 +88,18 @@ it('reads every record once on a profile whose store has not said subagent words
   expect(workshop(second).activities).toBeUndefined()
 })
 
+it('puts the roster on the disk before it marks subagent words moved, so a power cut cannot lose their only copy', async () => {
+  const f = await stored([record('a', 0)])
+  const db = new DatabaseSync(join(f.directory, 'threads.sqlite'))
+  try { db.prepare("DELETE FROM meta WHERE key = 'subagentWordsMoved'").run() } finally { db.close() }
+  const flushed = vi.spyOn(SubagentStore.prototype, 'flushToDisk'), marked = vi.spyOn(ThreadStore.prototype, 'markSubagentWordsMoved')
+  const host = await f.open()
+  await f.close(host)
+  expect(marked).toHaveBeenCalled()
+  expect(flushed).toHaveBeenCalled()
+  expect(flushed.mock.invocationCallOrder[0]).toBeLessThan(marked.mock.invocationCallOrder[0]!)
+})
+
 // The start that moved every thread's subagent words to the roster reads only the threads it shows, so a Watcher thread
 // hidden then still has its words in its rows when it is first read back.
 it('moves subagent words still in a thread\'s rows to the roster when it reads them back, before saving them away', async () => {
@@ -98,9 +111,12 @@ it('moves subagent words still in a thread\'s rows to the roster when it reads t
   try { store.syncActivities(THREAD, [record('a', 0), spawn]) } finally { store.close() }
   const host = await f.open()
   await host.connect()
+  const flushed = vi.spyOn(SubagentStore.prototype, 'flushToDisk')
   host.observeThreads([THREAD])
   expect((await host.subagentAssignments({ threadId: THREAD, agentId: 'child' })).assignments[0]).toMatchObject({ prompt: 'Private moved task', result: 'Private moved result' })
   await f.close(host)
+  // The roster held the words' only copy once the save stripped them, so it reached the disk first.
+  expect(flushed).toHaveBeenCalled()
   expect(f.disk().find(item => item.id === 'spawn')).toMatchObject({ title: 'Subagent' })
   expect(JSON.stringify(f.disk())).not.toContain('Private')
 })
