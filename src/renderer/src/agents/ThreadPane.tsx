@@ -15,6 +15,7 @@ import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, requestAnswerStore } from './requests/requestAnswers'
 import { ThreadComposer } from './ThreadComposer'
 import { FailedTurnNotice, failedTurnExplanation } from './FailedTurnNotice'
+import { isThreadFailureText } from '../../../shared/threadFailures'
 import { usePendingSettings } from './pendingSettings'
 import { hasDraftContent, submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
 import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
@@ -198,10 +199,12 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const settings = usePendingSettings(thread.id)
   const settingsExplains = error !== null && (Object.values(settings.refusals).some(refusal => refusal?.error === error)
     || Object.values(settings.pending).some(pending => pending?.error === error))
-  // Why the last turn failed is said once (ADR-0092): by its line in the transcript when that carries the reason, so the
-  // banner stays down when it would say the same; otherwise by the notice above the composer.
-  const failure = failedTurnExplanation(thread, row.provider)
-  const turnExplains = error !== null && failure?.kind === 'transcript' && failure.reason === error
+  // Why the last turn failed is said once (ADR-0092): by its line in the transcript when that carries the reason,
+  // otherwise by the notice above the composer. While either explains it, a banner about a thread failing, this one's or
+  // another's, stands down; one about the provider's own health still shows.
+  const failure = failedTurnExplanation(thread, row.provider, row.providerId, error)
+  const turnExplains = error !== null && failure !== null
+    && (failure.kind === 'transcript' && failure.reason === error || isThreadFailureText(error, state.host.threads))
   /** A branch switched in a terminal leaves no activity behind, so a draft that begins re-reads the folder once. */
   const branchRead = useRef<string | null>(null)
   const worktreeReady = thread.worktree?.status === 'ready' || (!thread.worktree && thread.nativeSessionStarted !== false)

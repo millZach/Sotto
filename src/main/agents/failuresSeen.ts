@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { isThreadProviderConnected, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
-import { failedWithoutRequest } from '../../shared/threadFailures'
+import { failedTurnReason, failedWithoutRequest } from '../../shared/threadFailures'
 
 /**
  * How many marks are kept for threads that are gone from the host's list, newest last. A thread still listed keeps its
@@ -17,7 +17,10 @@ export interface SavedFailureSeen { readonly threadId: string; readonly failure:
  * `turn` is the provider's failed turn, once one is known: a failure first seen with none, as a resume that fails, is
  * the same failure when history later names its turn.
  */
-interface Failure { readonly id: string; turn: string | undefined; seen: boolean }
+interface Failure { readonly id: string; turn: string | undefined; seen: boolean; reason?: string | undefined }
+
+/** The longest reason published with a failure, as `failureReason` allows. */
+const REASON_MAX = 600
 
 const failedTurnOf = (thread: Pick<AgentThread, 'lastTurn'>): string | undefined => thread.lastTurn?.status === 'failed' ? thread.lastTurn.id : undefined
 
@@ -57,6 +60,7 @@ export class FailuresSeen {
       if (this.dormant?.(thread.id)) continue
       if (thread.status === 'error') {
         changed = this.identify(thread) || changed
+        this.recordReason(thread)
         if (this.shown.has(thread.id)) changed = this.see(thread) || changed
         continue
       }
@@ -98,14 +102,25 @@ export class FailuresSeen {
     return [...this.failures].flatMap(([threadId, { id, turn, seen }]) => seen ? [{ threadId, failure: id, ...(turn === undefined ? {} : { turn }) }] : [])
   }
 
-  /** The thread as clients read it: its failure's name while it stands in one, and `failureSeen` while that is seen. */
-  publish<T extends Pick<AgentThread, 'id' | 'failureSeen' | 'failureId'>>(thread: T): T {
+  /**
+   * The thread as clients read it: its failure's name and reason while it stands in one, and `failureSeen` while that is
+   * seen. A thread that stands in none carries none of the three.
+   */
+  publish<T extends Pick<AgentThread, 'id' | 'failureSeen' | 'failureId' | 'failureReason'>>(thread: T): T {
     const failure = this.failures.get(thread.id)
     const seen = failure?.seen === true
-    if (thread.failureId === failure?.id && (thread.failureSeen === true) === seen) return thread
-    const { failureSeen: _seen, failureId: _id, ...rest } = thread
-    void _seen; void _id
-    return { ...rest, ...(failure ? { failureId: failure.id } : {}), ...(seen ? { failureSeen: true } : {}) } as T
+    if (thread.failureId === failure?.id && (thread.failureSeen === true) === seen && thread.failureReason === failure?.reason) return thread
+    const { failureSeen: _seen, failureId: _id, failureReason: _reason, ...rest } = thread
+    void _seen; void _id; void _reason
+    return { ...rest, ...(failure ? { failureId: failure.id } : {}), ...(failure?.reason ? { failureReason: failure.reason } : {}),
+      ...(seen ? { failureSeen: true } : {}) } as T
+  }
+
+  /** Keeps the failed turn's reason with its failure; a snapshot that carries no activity leaves what was read before. */
+  private recordReason(thread: AgentThread): void {
+    const failure = this.failures.get(thread.id)
+    const reason = failedTurnReason(thread)
+    if (failure !== undefined && reason !== undefined) failure.reason = reason.slice(0, REASON_MAX)
   }
 
   private seeAll(threads: readonly AgentThread[], named: (thread: AgentThread) => boolean, still: (thread: AgentThread) => boolean = () => true): boolean {

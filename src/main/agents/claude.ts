@@ -50,6 +50,7 @@ import { ClaudeMonitoring } from './claudeMonitoring'
 import { SessionReaper } from './sessionReaper'
 import { markCompactionActivity } from './compactionActivity'
 import { markTurnActivity } from './turnActivity'
+import { CLAUDE_RESUME_FAILED, CLAUDE_RESUME_FAILED_SESSION } from '../../shared/threadFailures'
 import { ReadsBeforeSend } from './readsBeforeSend'
 import { MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
@@ -584,7 +585,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const watched = [...this.observed].filter(id => aliases[id] && aliases[id].kind !== 'personal' && !aliases[id].rollbackPending)
     const startNext = async (): Promise<void> => {
       for (let id = watched.shift(); id !== undefined && generation === this.generation; id = watched.shift()) {
-        try { await this.start(id) } catch (error) { if (generation === this.generation) { this.threads.get(id)!.status = 'error'; this.state.error = error instanceof WatcherProfileRefusal ? error.message : 'A Claude thread could not resume. Check its native session before sending again.' } }
+        try { await this.start(id) } catch (error) { if (generation === this.generation) { this.threads.get(id)!.status = 'error'; this.state.error = error instanceof WatcherProfileRefusal ? error.message : CLAUDE_RESUME_FAILED_SESSION } }
       }
     }
     await Promise.all(Array.from({ length: Math.min(Math.max(1, this.options.connectStarts ?? CONNECT_STARTS), watched.length) }, startNext))
@@ -636,7 +637,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         void this.start(id).catch(() => {
           if (generation !== this.generation) return
           const thread = this.threads.get(id); if (thread) thread.status = 'error'
-          this.state.error = 'A Claude thread could not resume. Check the native client.'; this.emit()
+          this.state.error = CLAUDE_RESUME_FAILED; this.emit()
         })
       }))
     }
@@ -729,7 +730,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     for (const id of this.observed) if (this.aliases[id]) void this.start(id).catch(error => {
       if (generation !== this.generation) return
       const thread = this.threads.get(id); if (thread) thread.status = 'error'
-      this.state.error = error instanceof WatcherProfileRefusal ? error.message : 'A Claude thread could not resume. Check the native client.'; this.emit()
+      this.state.error = error instanceof WatcherProfileRefusal ? error.message : CLAUDE_RESUME_FAILED; this.emit()
     })
   }
   rollbackCapability(id: string): { supported: boolean; reason?: string } {

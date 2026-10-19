@@ -1,44 +1,48 @@
 import React, { type ReactNode } from 'react'
 import { CircleAlert } from 'lucide-react'
-import type { AgentActivity } from '../../../shared/agentActivity'
-import type { AgentThread } from '../../../shared/agents'
+import type { AgentThread, ProviderId } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
-import { isTurnRecord } from './threadActivityView'
+import { failedTurnReason, THREAD_RESUME_FAILURES } from '../../../shared/threadFailures'
 
 /**
  * Why a thread's last turn failed, said once in its pane for as long as the thread stands failed (ADR-0092), whether or
  * not a client has seen it: opening it later still explains the Turn failed line. The reason is the failed turn's own,
  * the error its turn record carries, never the provider's latest error, which may belong to another thread.
  *
- * `transcript`: the failed turn's line in the transcript already says the reason, so nothing else repeats it and the
- * pane's error banner stays down when it would say the same. `notice`: the transcript has no reason to show, so the pane
- * says what it knows above the composer. Null when the thread is not failed, waits on a request, has a request notice of
- * its own, or its history has not arrived yet.
+ * `transcript`: the failed turn's line in the transcript already says the reason. `notice`: the transcript has no reason
+ * to show, so the pane says what it knows above the composer: the reason the host published with the failure, or, for a
+ * thread that could not be resumed, the provider's own words for that, otherwise only that it failed. Either way the
+ * pane's error banner stands down when it is about a thread failing (`isThreadFailureText`), so the reason is said once.
+ * Null when the thread is not failed, waits on a request, has a request notice of its own, or its history has not
+ * arrived yet.
  */
 export type FailedTurnExplanation =
   | { readonly kind: 'transcript'; readonly reason: string }
   | { readonly kind: 'notice'; readonly title: string; readonly body: string }
 
-type Explained = Pick<AgentThread, 'status' | 'requests' | 'requestNotice' | 'historyStatus' | 'activities' | 'lastTurn' | 'settledAt' | 'settledOverride' | 'archivedAt'>
+type Explained = Pick<AgentThread, 'status' | 'requests' | 'requestNotice' | 'historyStatus' | 'activities' | 'lastTurn' | 'failureReason'
+  | 'settledAt' | 'settledOverride' | 'archivedAt'>
 
 const NEXT = 'Nothing in the transcript was lost. Send a message to try again.'
 
-/** The record of the thread's last turn: the one its provider names, otherwise the newest turn record. */
-function lastTurnRecord(thread: Pick<AgentThread, 'activities' | 'lastTurn'>): AgentActivity | undefined {
-  const turns = (thread.activities ?? []).filter(isTurnRecord)
-  const anchor = thread.lastTurn?.messageId ?? thread.lastTurn?.id
-  return (anchor === undefined ? undefined : turns.findLast(record => record.turnId === anchor)) ?? turns.at(-1)
-}
-
-export function failedTurnExplanation(thread: Explained, provider: string): FailedTurnExplanation | null {
+/**
+ * `providerId` and `banner` let a thread that could not be resumed, which records no turn, give the provider's own words
+ * for that as its reason: the banner is the only place they are.
+ */
+export function failedTurnExplanation(thread: Explained, provider: string, providerId?: ProviderId | undefined, banner?: string | null): FailedTurnExplanation | null {
   if (thread.status !== 'error' || thread.requests.length > 0 || isThreadClosed(thread)) return null
   // A request the provider sent that Sotto could not show says why in its own alert.
   if (thread.requestNotice) return null
   if (thread.historyStatus === 'loading') return null
-  const turn = lastTurnRecord(thread)
-  if (turn?.status === 'failed' && turn.error) return { kind: 'transcript', reason: turn.error }
-  if (turn?.status === 'failed') return { kind: 'notice', title: 'The last turn failed.', body: NEXT }
-  return { kind: 'notice', title: `${provider} reported an error on this thread.`, body: NEXT }
+  const reason = failedTurnReason(thread)
+  if (reason !== undefined) return { kind: 'transcript', reason }
+  const turnFailed = thread.lastTurn?.status === 'failed' || (thread.activities ?? []).findLast(record => record.kind === 'turn')?.status === 'failed'
+  const title = turnFailed ? 'The last turn failed.' : `${provider} reported an error on this thread.`
+  if (thread.failureReason) return { kind: 'notice', title, body: `${thread.failureReason} Nothing in the transcript was lost.` }
+  if (!turnFailed && banner && providerId !== undefined && THREAD_RESUME_FAILURES[providerId]?.includes(banner)) {
+    return { kind: 'notice', title, body: `${banner} Nothing in the transcript was lost.` }
+  }
+  return { kind: 'notice', title, body: NEXT }
 }
 
 /** The notice above the composer when the transcript cannot say why the last turn failed. Quiet: it announces nothing. */

@@ -489,6 +489,9 @@ export const agentThreadSchema = z.object({
   /** The host's own name for the failure a thread in error stands in (ADR-0092), so Dismiss all can name the failure a row
    * showed and a later one is not marked seen in its place. Absent while the thread stands in none, and from older hosts. */
   failureId: z.string().max(64).optional(),
+  /** Why that failure happened, as the failed turn's own record says, cut to its first 600 characters; absent when it says
+   * nothing, and from older hosts. The pane reads it to tell the thread's own failure from the provider's other errors. */
+  failureReason: z.string().max(600).optional(),
   /** The newest message of the user's the provider's adapter has recorded, whether or not `messages` still
    * holds it. A send names it back so the adapter can refuse one that raced the user's own input; a window
    * the adapter put away and took back up carries none of the older messages, so it cannot say. */

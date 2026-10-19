@@ -9,6 +9,7 @@ import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { describeThreads, rowStatus, unseenFailures } from '../../../src/renderer/src/agents/threadFacts'
 import { failedTurnExplanation } from '../../../src/renderer/src/agents/FailedTurnNotice'
+import { CLAUDE_RESUME_FAILED } from '../../../src/shared/threadFailures'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 /**
@@ -124,6 +125,35 @@ describe('why the last turn failed', () => {
     expect(screen.getAllByText(REASON)).toHaveLength(1)
     expect(document.querySelector('.thread-workspace__error')).toBeNull()
     expect(document.querySelector('.thread-failed-notice')).toBeNull()
+  })
+
+  it('hides a banner that is another thread\'s failure while this thread\'s own is explained', () => {
+    const other = 'Codex could not finish the release notes turn: the model is overloaded.'
+    const state = edit(edit({ ...threadsStateFixture(), activeThreadId: 'wav-stall', error: other }, 'release-notes', thread => ({ ...thread, status: 'error', failureReason: other })),
+      'wav-stall', thread => ({ ...thread, activities: [failedTurn(REASON)] }))
+    mount(state)
+    expect(screen.getAllByText(REASON)).toHaveLength(1)
+    expect(screen.queryByText(other)).toBeNull()
+  })
+
+  it('still shows a banner about the provider itself beside the thread\'s own reason', () => {
+    const health = 'Codex is not signed in. Sign in from Settings > Agents, then reconnect.'
+    mount({ ...edit(threadsStateFixture(), 'wav-stall', thread => ({ ...thread, activities: [failedTurn(REASON)] })), activeThreadId: 'wav-stall', error: health })
+    expect(document.querySelector('.thread-workspace__error')).toHaveTextContent(health)
+    expect(screen.getAllByText(REASON)).toHaveLength(1)
+  })
+
+  it('gives a thread that could not resume the provider\'s own words, said once in the notice', () => {
+    // Grok voice previews runs on Claude; its resume failed, which no turn records, and Claude said so in its banner.
+    mount({ ...edit(threadsStateFixture(), 'grok-previews', thread => ({ ...thread, status: 'error' })), activeThreadId: 'grok-previews', error: CLAUDE_RESUME_FAILED })
+    expect(document.querySelector('.thread-failed-notice')).toHaveTextContent(`Claude reported an error on this thread. ${CLAUDE_RESUME_FAILED} Nothing in the transcript was lost.`)
+    expect(document.querySelector('.thread-workspace__error')).toBeNull()
+    expect(screen.getAllByText(CLAUDE_RESUME_FAILED, { exact: false })).toHaveLength(1)
+  })
+
+  it('says the reason the host published when the transcript cannot show it', () => {
+    expect(failedTurnExplanation(failed({ failureReason: REASON }), 'Codex'))
+      .toEqual({ kind: 'notice', title: 'Codex reported an error on this thread.', body: `${REASON} Nothing in the transcript was lost.` })
   })
 
   it('shows the notice above the composer when the transcript has no reason, seen or not', () => {

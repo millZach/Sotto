@@ -127,6 +127,18 @@ describe('a failed thread a client has seen', () => {
     expect(direct.dismiss([{ threadId: 'a', failure: '' }], [failed('a', 't4')])).toBe(false)
   })
 
+  it('publishes the failed turn\'s reason with its failure, and keeps it when a snapshot carries no activity', () => {
+    const seen = new FailuresSeen()
+    const turn = { id: 'claude-turn-m1', turnId: 'm1', sequence: 0, kind: 'turn' as const, status: 'failed' as const, title: 'Turn failed',
+      startedAt: '2026-10-19T09:00:00.000Z', timingSource: 'observed' as const, error: 'Claude returned an error: overloaded.' }
+    seen.track(snapshot([{ ...failed('a', 'm1'), activities: [turn] }]))
+    expect(seen.publish(thread('a')).failureReason).toBe('Claude returned an error: overloaded.')
+    seen.track(snapshot([failed('a', 'm1')]))
+    expect(seen.publish(thread('a')).failureReason).toBe('Claude returned an error: overloaded.')
+    seen.track(snapshot([thread('a')]))
+    expect(seen.publish({ ...thread('a'), failureReason: 'old' })).not.toHaveProperty('failureReason')
+  })
+
   it('never sees a closed thread', () => {
     const seen = new FailuresSeen()
     const settled = thread('a', { status: 'error', settledAt: '2026-10-19T10:00:00.000Z' })
