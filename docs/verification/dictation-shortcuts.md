@@ -49,7 +49,7 @@ The macOS e2e conflict spec failed on the first review. It was fixed by comparin
 - **The Input Monitoring note and the dimmed hold chips were not produced.** Without the built Mac key-listener helper, the listener never reports a permission. The router reads that `unknown` as `not-needed`, so the renderer never sees `denied`.
 - **Fn and hold on a real keyboard with Input Monitoring granted.** Playwright cannot send Fn, and no physical key was pressed.
 - **The packaged Mac helper** (`native/key-listener/darwin.swift`), built and signed in a package.
-- **The Windows hook** (`keyListenerWin32`). It was never run, and Windows was not captured.
+- **A real keypress through the Windows hook** (`keyListenerWin32`). Windows CI compiled the C# with PowerShell 5.1, installed the hook and checked the protocol (`tests/integration/keyListenerWin32.test.ts`), but no real key has gone through it, and Windows was not captured.
 - **Microsoft Defender's reaction to the Windows hook.**
 - Focus rings on ×, + Add and the menu items. Only the chip button was focused from the keyboard.
 - Measured contrast ratios. Contrast was judged from the screenshots by eye.
