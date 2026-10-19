@@ -75,12 +75,17 @@ export class FailuresSeen {
   /** The threads some client shows now, out of `threads`: each that has failed is seen. True when a mark was made. */
   show(threadIds: readonly string[], threads: readonly AgentThread[]): boolean {
     this.shown = new Set(threadIds)
-    return this.seeAll(this.shown, threads)
+    return this.seeAll(threads, thread => this.shown.has(thread.id))
   }
 
-  /** Dismiss all: the named threads that have failed are seen, as if a client had shown them. True when a mark was made. */
-  dismiss(threadIds: readonly string[], threads: readonly AgentThread[]): boolean {
-    return this.seeAll(new Set(threadIds), threads)
+  /**
+   * Dismiss all: each named thread is seen, as if a client had shown it, when it still stands in the failure the client
+   * named. One that has failed again since the press is news the user has not seen, so it keeps its Needs attention.
+   * True when a mark was made.
+   */
+  dismiss(failures: readonly { readonly threadId: string; readonly failure: string }[], threads: readonly AgentThread[]): boolean {
+    const named = new Map(failures.map(item => [item.threadId, item.failure]))
+    return this.seeAll(threads, thread => named.has(thread.id), thread => this.failures.get(thread.id)?.id === named.get(thread.id))
   }
 
   has(threadId: string): boolean { return this.failures.get(threadId)?.seen === true }
@@ -103,13 +108,13 @@ export class FailuresSeen {
     return { ...rest, ...(failure ? { failureId: failure.id } : {}), ...(seen ? { failureSeen: true } : {}) } as T
   }
 
-  private seeAll(ids: ReadonlySet<string>, threads: readonly AgentThread[]): boolean {
+  private seeAll(threads: readonly AgentThread[], named: (thread: AgentThread) => boolean, still: (thread: AgentThread) => boolean = () => true): boolean {
     let changed = false
     this.present = new Set([...this.present ?? [], ...threads.map(thread => thread.id)])
     for (const thread of threads) {
-      if (!ids.has(thread.id) || this.dormant?.(thread.id) || thread.status !== 'error') continue
+      if (!named(thread) || this.dormant?.(thread.id) || thread.status !== 'error') continue
       changed = this.identify(thread) || changed
-      changed = this.see(thread) || changed
+      if (still(thread)) changed = this.see(thread) || changed
     }
     this.trim()
     return changed

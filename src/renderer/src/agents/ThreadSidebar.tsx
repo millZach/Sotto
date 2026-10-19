@@ -244,15 +244,15 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
  * user's to answer and is never counted or dismissed. One press marks every counted thread seen, on every host that holds
  * one; the search field just above takes the focus, since the line goes once the hosts say so.
  */
-function NeedsAttentionLine({ threadIds, command }: { readonly threadIds: readonly string[]; readonly command: Command }): ReactNode {
+function NeedsAttentionLine({ failures, command }: { readonly failures: ReturnType<typeof unseenFailures>; readonly command: Command }): ReactNode {
   const line = useRef<HTMLDivElement>(null)
   const [dismissing, setDismissing] = useState(false)
-  if (!threadIds.length) return null
-  const count = threadIds.length
+  if (!failures.length) return null
+  const count = failures.length
   const dismiss = (): void => {
     line.current?.closest('.thread-nav')?.querySelector<HTMLInputElement>('.threads-search input')?.focus()
     setDismissing(true)
-    void command({ type: 'dismiss-failures', threadIds: threadIds.slice(0, AGENT_DISMISS_FAILURES_MAX) }).finally(() => setDismissing(false))
+    void command({ type: 'dismiss-failures', failures: failures.slice(0, AGENT_DISMISS_FAILURES_MAX) }).finally(() => setDismissing(false))
   }
   return <div ref={line} className="thread-nav__attention">
     <i aria-hidden="true" />
@@ -315,7 +315,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   return <SidebarFrame state={state} command={command} mode={mode} onMode={onMode} label="Thread sidebar" query={query} searchPlaceholder="Search threads" onQuery={onQuery}
     onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen} newShortcut={topShortcut} title={title}
     extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread}
-    afterSearch={<NeedsAttentionLine threadIds={failures} command={command} />}
+    afterSearch={<NeedsAttentionLine failures={failures} command={command} />}
     collapsedContent={<nav aria-label="Threads">{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
       <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
     </button>)}</nav>}>

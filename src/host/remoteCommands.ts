@@ -67,7 +67,7 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId'],
   // Dismiss all marks failed threads seen, as opening each would (ADR-0092). It answers no request: a thread waiting on a
   // permission or a question is never marked, so pairing is enough.
-  'dismiss-failures': ['threadIds'],
+  'dismiss-failures': ['failures'],
   // Early start: typing in a thread's composer starts its provider session. It grants and sends nothing.
   'start-thread-session': ['threadId'],
   interrupt: ['threadId'], 'compact-thread': ['threadId'],

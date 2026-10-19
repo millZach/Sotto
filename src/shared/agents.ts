@@ -1176,9 +1176,12 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100) }).strict(),
-  /** Dismiss all: the named threads whose last turn failed read as seen, as if a client had shown them (ADR-0092). It
-   * answers no request and grants nothing; a thread waiting on a permission or a question is never one of them. */
-  z.object({ type: z.literal('dismiss-failures'), threadIds: z.array(id).min(1).max(AGENT_DISMISS_FAILURES_MAX) }).strict(),
+  /** Dismiss all: each named thread reads as seen, as if a client had shown it, when it still stands in the failure its
+   * row showed (ADR-0092); one that failed again since is left as news. It answers no request and grants nothing; a
+   * thread waiting on a permission or a question is never one of them. `failure` is the thread's `failureId`, empty
+   * for a host that names none. */
+  z.object({ type: z.literal('dismiss-failures'), failures: z.array(z.object({ threadId: id, failure: z.string().max(64) }).strict())
+    .min(1).max(AGENT_DISMISS_FAILURES_MAX) }).strict(),
   /** Widen one thread's loaded window by another twenty turns, because the pane asked for earlier messages. */
   z.object({ type: z.literal('load-earlier-messages'), threadId: id }).strict(),
   /** Early start: the user began typing in this thread's composer, so its provider session is started now rather than

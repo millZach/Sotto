@@ -814,17 +814,21 @@ export class DesktopHostRouter {
     if (type === 'observe-threads' || type === 'dismiss-failures') {
       const parsed = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
       if (parsed.type !== type) throw new Error(type === 'observe-threads' ? 'The viewed threads could not be read.' : 'The threads to dismiss could not be read.')
-      const rawIds = (input as { threadIds: string[] }).threadIds
+      // Dismiss all names each thread with the failure its row showed; showing names threads alone.
+      const raw = type === 'observe-threads' ? (input as { threadIds: string[] }).threadIds.map(threadId => ({ threadId, failure: '' }))
+        : (input as { failures: { threadId: string; failure: string }[] }).failures
       const left: { name: string; older: boolean }[] = []
       await Promise.all([...this.hosts.values()].map(async ({ connection }) => {
-        const ids = rawIds.filter(id => (parseHostEntityKey(id)?.hostId ?? this.selectedHostId) === connection.hostId).map(id => parseHostEntityKey(id)?.id ?? id)
-        const visibleIds = ids.filter(id => this.watcherAvailable(connection, id))
+        const mine = raw.filter(item => (parseHostEntityKey(item.threadId)?.hostId ?? this.selectedHostId) === connection.hostId)
+          .map(item => ({ ...item, threadId: parseHostEntityKey(item.threadId)?.id ?? item.threadId }))
+          .filter(item => this.watcherAvailable(connection, item.threadId))
+        const visibleIds = mine.map(item => item.threadId)
         if (type === 'dismiss-failures') {
-          if (!visibleIds.length) return
+          if (!mine.length) return
           if (connection.available?.() === false || connection.kind === 'remote' && connection.service.supportsFailureSeen !== true) {
             left.push({ name: connection.name, older: connection.available?.() !== false }); return
           }
-          const answer = await connection.service.command({ type: 'dismiss-failures', threadIds: visibleIds }, client).catch(() => null)
+          const answer = await connection.service.command({ type: 'dismiss-failures', failures: mine }, client).catch(() => null)
           if (answer === null || answer.error) left.push({ name: connection.name, older: false })
           return
         }

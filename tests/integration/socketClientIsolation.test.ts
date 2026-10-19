@@ -134,7 +134,9 @@ describe('socket client isolation and reconnect', () => {
     await expect.poll(() => seen(desktop.client, ids.Workshop!)).toBe(true)
     expect(seen(desktop.client, ids.Docs!)).toBeUndefined()
     // Dismiss all from the desktop sees the rest, on the phone too.
-    expect((await desktop.client.command({ type: 'dismiss-failures', threadIds: [ids.Docs!] })).error).toBeNull()
+    const failure = desktop.client.shell().host.threads.find(thread => thread.id === ids.Docs)?.failureId
+    expect(failure).toEqual(expect.any(String))
+    expect((await desktop.client.command({ type: 'dismiss-failures', failures: [{ threadId: ids.Docs!, failure: failure! }] })).error).toBeNull()
     await expect.poll(() => seen(phone.client, ids.Docs!)).toBe(true)
   })
   it('lists a temp folder\'s subfolders over the socket for the Add project dialog\'s folder browser', async () => {

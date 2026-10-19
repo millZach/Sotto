@@ -185,9 +185,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     if ('threadId' in request && typeof request.threadId === 'string' && !visible(request.threadId)) return Promise.resolve(null)
     if (request.type === 'observe-threads') request = { ...request, threadIds: request.threadIds.filter(visible) }
     if (request.type === 'dismiss-failures') {
-      const threadIds = request.threadIds.filter(visible)
-      if (!threadIds.length) return Promise.resolve(null)
-      request = { ...request, threadIds }
+      const failures = request.failures.filter(item => visible(item.threadId))
+      if (!failures.length) return Promise.resolve(null)
+      request = { ...request, failures }
     }
     // Telling main which panes are open is also this window's own record of whose history it needs.
     if (request.type === 'observe-threads') {

@@ -812,12 +812,12 @@ export class AgentControl {
     return true
   }
   /**
-   * Dismiss all (ADR-0092): each named thread whose last turn failed reads as seen, on every client, as if one had shown
-   * it, and the record is saved. A thread that waits on a permission or a question is not seen this way; it is the user's
+   * Dismiss all (ADR-0092): each named thread that still stands in the failure its row showed reads as seen, on every
+   * client, as if one had shown it, and the record is saved. A thread that waits on a permission or a question is not seen this way; it is the user's
    * to answer.
    */
-  private dismissFailures(threadIds: readonly string[]): void {
-    if (!this.failuresSeen.dismiss(threadIds.filter(id => this.threadAvailable(id)), this.state.host.threads)) return
+  private dismissFailures(failures: readonly { readonly threadId: string; readonly failure: string }[]): void {
+    if (!this.failuresSeen.dismiss(failures.filter(item => this.threadAvailable(item.threadId)), this.state.host.threads)) return
     this.publish()
     void this.persist().catch(() => undefined)
   }
@@ -2714,7 +2714,7 @@ export class AgentControl {
     if (command.type === 'select-thread') return this.navigate(command.threadId)
     // Dismiss all is Sotto's own record of what the user has seen, like showing a thread: it waits on no lane.
     if (command.type === 'observe-threads' || command.type === 'dismiss-failures') {
-      if (command.type === 'dismiss-failures') this.dismissFailures(command.threadIds)
+      if (command.type === 'dismiss-failures') this.dismissFailures(command.failures)
       else {
         this.viewedThreadIds = [...new Set(command.threadIds)].filter(id => this.state.host.threads.some(thread => thread.id === id))
         this.observe()

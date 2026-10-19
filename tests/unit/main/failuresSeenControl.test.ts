@@ -42,6 +42,8 @@ async function start(root?: string, prepare?: (host: E2EAgentHost) => void) {
 }
 const phones = { clientId: 'socket-observations', user: '', transport: 'socket' as const }
 const seen = (state: AgentState, id: string): boolean | undefined => state.host.threads.find(thread => thread.id === id)?.failureSeen
+/** What the window names for Dismiss all: each thread with the failure the host published for it. */
+const named = (control: AgentControl, ...ids: string[]) => ids.map(threadId => ({ threadId, failure: control.shell().host.threads.find(thread => thread.id === threadId)?.failureId ?? '' }))
 /** A turn on the fixture thread that fails: the prompt starts it running, the failure leaves it in error. */
 function failTurn(host: E2EAgentHost, threadId: string): void {
   host.event({ type: 'manual', threadId, text: 'Synthetic prompt' })
@@ -82,7 +84,7 @@ describe('the coordinator\'s record of failures seen', () => {
   it('sees every failed thread Dismiss all names and leaves the rest', async () => {
     const { host, control, service } = await start()
     failTurn(host, 'workshop'); failTurn(host, 'docs')
-    const reply = await service.command({ type: 'dismiss-failures', threadIds: ['workshop'] }, phones)
+    const reply = await service.command({ type: 'dismiss-failures', failures: named(control, 'workshop') }, phones)
     expect(reply.error).toBeNull()
     expect(seen(reply, 'workshop')).toBe(true)
     expect(seen(control.shell(), 'docs')).toBeUndefined()
@@ -93,7 +95,7 @@ describe('the coordinator\'s record of failures seen', () => {
     host.event({ type: 'manual', threadId: 'workshop', text: 'Synthetic prompt' })
     host.event({ type: 'permission', threadId: 'workshop', text: 'Run the build?', status: 'error' })
     host.event({ type: 'question', threadId: 'docs', text: 'Which branch?', status: 'error' })
-    await service.command({ type: 'dismiss-failures', threadIds: ['workshop', 'docs'] }, phones)
+    await service.command({ type: 'dismiss-failures', failures: named(control, 'workshop', 'docs') }, phones)
     await service.command({ type: 'observe-threads', threadIds: ['workshop', 'docs'] }, phones)
     expect(seen(control.shell(), 'workshop')).toBeUndefined()
     expect(seen(control.shell(), 'docs')).toBeUndefined()
@@ -103,7 +105,7 @@ describe('the coordinator\'s record of failures seen', () => {
   it('makes the next failure news again once the thread works again', async () => {
     const { host, control, service } = await start()
     failTurn(host, 'workshop')
-    await service.command({ type: 'dismiss-failures', threadIds: ['workshop'] }, phones)
+    await service.command({ type: 'dismiss-failures', failures: named(control, 'workshop') }, phones)
     expect(seen(control.shell(), 'workshop')).toBe(true)
     host.event({ type: 'manual', threadId: 'workshop', text: 'Try again' })
     expect(seen(control.shell(), 'workshop')).toBeUndefined()
@@ -111,10 +113,22 @@ describe('the coordinator\'s record of failures seen', () => {
     expect(seen(control.shell(), 'workshop')).toBeUndefined()
   })
 
+  it('leaves a failure that came after the press as news', async () => {
+    const { host, control, service } = await start()
+    failTurn(host, 'workshop')
+    const pressed = named(control, 'workshop')
+    expect(pressed[0]!.failure).not.toBe('')
+    // The thread's next turn fails before Dismiss all reaches the host.
+    failTurn(host, 'workshop')
+    const reply = await service.command({ type: 'dismiss-failures', failures: pressed }, phones)
+    expect(reply.error).toBeNull()
+    expect(seen(control.shell(), 'workshop')).toBeUndefined()
+  })
+
   it('keeps a seen failure across a restart', async () => {
     const first = await start()
     failTurn(first.host, 'workshop'); failTurn(first.host, 'docs')
-    await first.service.command({ type: 'dismiss-failures', threadIds: ['workshop'] }, phones)
+    await first.service.command({ type: 'dismiss-failures', failures: named(first.control, 'workshop') }, phones)
     await first.control.closed()
     first.control.dispose(); controls.delete(first.control)
     // The thread ID and the host's name for its failure only: nothing the thread said is saved with the mark.

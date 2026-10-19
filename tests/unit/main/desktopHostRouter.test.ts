@@ -524,21 +524,22 @@ describe('desktop host routing', () => {
     third.connection.name = 'Studio'
     for (const f of [local, remote, third]) router.add(f.connection)
     try {
-      const both = [hostEntityKey(LOCAL, 'thread'), hostEntityKey(REMOTE, 'thread')]
-      const result = await router.command({ type: 'dismiss-failures', threadIds: both }, desktopWindowClient())
+      const both = [{ threadId: hostEntityKey(LOCAL, 'thread'), failure: 'here' }, { threadId: hostEntityKey(REMOTE, 'thread'), failure: 'there' }]
+      const result = await router.command({ type: 'dismiss-failures', failures: both }, desktopWindowClient())
       expect(result.error).toBeNull()
-      expect(local.command).toHaveBeenCalledWith({ type: 'dismiss-failures', threadIds: ['thread'] }, desktopWindowClient())
-      expect(remote.command).toHaveBeenCalledWith({ type: 'dismiss-failures', threadIds: ['thread'] }, desktopWindowClient())
+      // Each host hears its own threads by their own IDs, each with the failure its row showed.
+      expect(local.command).toHaveBeenCalledWith({ type: 'dismiss-failures', failures: [{ threadId: 'thread', failure: 'here' }] }, desktopWindowClient())
+      expect(remote.command).toHaveBeenCalledWith({ type: 'dismiss-failures', failures: [{ threadId: 'thread', failure: 'there' }] }, desktopWindowClient())
       // A host none of whose threads were named hears nothing.
       expect(third.command).not.toHaveBeenCalled()
       // A host that predates the seen record is not sent it, and the window is told its threads still need attention.
-      const older = await router.command({ type: 'dismiss-failures', threadIds: [hostEntityKey(third.connection.hostId, 'thread')] }, desktopWindowClient())
+      const older = await router.command({ type: 'dismiss-failures', failures: [{ threadId: hostEntityKey(third.connection.hostId, 'thread'), failure: '' }] }, desktopWindowClient())
       expect(third.command).not.toHaveBeenCalled()
       expect(older.error).toBe('Studio runs an older Sotto, so its threads still say Needs attention. Nothing was changed there. Update it in Settings > Hosts, then press Dismiss all again.')
       // One that is out of reach is not sent it either.
       Object.assign(third.connection.service, { supportsFailureSeen: true })
       third.connection.available = () => false
-      const away = await router.command({ type: 'dismiss-failures', threadIds: [hostEntityKey(third.connection.hostId, 'thread')] }, desktopWindowClient())
+      const away = await router.command({ type: 'dismiss-failures', failures: [{ threadId: hostEntityKey(third.connection.hostId, 'thread'), failure: '' }] }, desktopWindowClient())
       expect(third.command).not.toHaveBeenCalled()
       expect(away.error).toBe('Studio did not answer, so its threads still say Needs attention. Nothing was changed there. Connect to it again, then press Dismiss all again.')
     } finally { router.dispose() }

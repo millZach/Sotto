@@ -229,9 +229,12 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
   }
 }
 
-/** The threads Dismiss all names: every one whose row says Needs attention for a failed turn, wherever it is listed. */
-export function unseenFailures(threads: readonly AgentThread[]): string[] {
-  return threads.filter(failureUnseen).map(thread => thread.id)
+/**
+ * What Dismiss all names: every thread whose row says Needs attention for a failed turn, wherever it is listed, with the
+ * host's name for the failure it showed, so a failure that comes after the press is not marked seen with it (ADR-0092).
+ */
+export function unseenFailures(threads: readonly AgentThread[]): { readonly threadId: string; readonly failure: string }[] {
+  return threads.filter(failureUnseen).map(thread => ({ threadId: thread.id, failure: thread.failureId ?? '' }))
 }
 
 /**

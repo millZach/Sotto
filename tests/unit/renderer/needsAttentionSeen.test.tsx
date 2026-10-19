@@ -51,7 +51,7 @@ describe('a failed thread\'s row', () => {
   it('keeps asking for an approval or an answer whatever the seen mark says', () => {
     const state = edit(threadsStateFixture(), 'visual-gate', thread => seen({ ...thread, status: 'error' }))
     expect(row(state, 'visual-gate')).toMatchObject({ state: 'needs', stateLabel: 'Needs your approval', waitingFor: 'approval' })
-    expect(unseenFailures(state.host.threads)).toEqual(['wav-stall'])
+    expect(unseenFailures(state.host.threads)).toEqual([{ threadId: 'wav-stall', failure: '' }])
   })
 
   it('says the turn failed when a seen failure has no reply to show', () => {
@@ -65,7 +65,7 @@ describe('a failed thread\'s row', () => {
 describe('the sidebar\'s Needs attention line', () => {
   it('counts failed turns only, and Dismiss all sends every one of them to be marked seen', async () => {
     // Two failures and a thread waiting on an approval: the approval is never counted or dismissed.
-    const state = edit(threadsStateFixture(), 'grok-previews', thread => ({ ...thread, status: 'error' }))
+    const state = edit(edit(threadsStateFixture(), 'grok-previews', thread => ({ ...thread, status: 'error', failureId: 'f2' })), 'wav-stall', thread => ({ ...thread, failureId: 'f1' }))
     const live = mount(state)
     const line = document.querySelector('.thread-nav__attention')!
     expect(line).toHaveTextContent('2 need attention')
@@ -77,8 +77,9 @@ describe('the sidebar\'s Needs attention line', () => {
     expect(dismiss.compareDocumentPosition(screen.getByRole('button', { name: 'Streaming WAV stall' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     await act(async () => { fireEvent.click(dismiss) })
     const sent = live.command.mock.calls.map(([request]) => request).filter(request => request.type === 'dismiss-failures')
-    expect(sent).toEqual([{ type: 'dismiss-failures', threadIds: expect.arrayContaining(['wav-stall', 'grok-previews']) }])
-    expect(sent[0]!.type === 'dismiss-failures' && sent[0]!.threadIds).toHaveLength(2)
+    // Each with the failure its row showed, so one that comes later is not marked seen with it.
+    expect(sent).toEqual([{ type: 'dismiss-failures', failures: expect.arrayContaining([{ threadId: 'wav-stall', failure: 'f1' }, { threadId: 'grok-previews', failure: 'f2' }]) }])
+    expect(sent[0]!.type === 'dismiss-failures' && sent[0]!.failures).toHaveLength(2)
     // The line goes once the host says so, and the search field keeps the focus the button had.
     expect(search).toHaveFocus()
     act(() => { live.publish(edit(edit(live.state, 'wav-stall', seen), 'grok-previews', seen)) })
