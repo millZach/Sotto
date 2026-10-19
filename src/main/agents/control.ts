@@ -402,9 +402,11 @@ export class AgentControl {
   /** User-requested setup only, never exposed as a tool. */
   commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>, connectionGuard?: () => void): Promise<AgentState> {
     if (!this.watcherHooks) throw new Error('Watcher is unavailable.')
+    // `userSetup` lets a command pass a prompt set aside, so only setup may carry it, whatever a caller's type allows.
+    if (!['create-project', 'create-thread', 'configure-thread'].includes(command.type)) throw new Error('Watcher\'s room only sets up Watcher. Nothing was sent.')
     const parsed = agentCommandSchema.parse(command)
     const guard = () => { connectionGuard?.(); if (this.disposed) throw new Error('Sotto is stopping.') }
-    guard(); this.watcherOrigins.set(parsed, { guard })
+    guard(); this.watcherOrigins.set(parsed, { guard, userSetup: true })
     return this.admitCommandShell(parsed)
   }
   hasWatcherQueue(operationIds: ReadonlySet<string>): boolean { return this.followupStore.peek().items.some(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)) }
@@ -3858,7 +3860,8 @@ export class AgentControl {
     if (wakeUp) draftId = undefined
     else if (prompt) draftId ??= randomUUID()
     // Stop has its own intent and may pass an unresolved prompt; it cannot settle or replay that prompt.
-    const automatic = Boolean(origin) && !(command.type === 'answer' && origin?.userAnswer) || wakeUp
+    // The user's own answer or Watcher room setup carries a Watcher origin for its guard, but is the user's, not automation.
+    const automatic = Boolean(origin) && !(command.type === 'answer' && origin?.userAnswer) && !origin?.userSetup || wakeUp
     const mayPassSetAside = prompt !== null || !automatic && (command.type === 'configure-thread' || command.type === 'answer')
     if (command.type !== 'interrupt' && (threadId && automatic && this.hasSetAsideUpdateHold(threadId)
       || this.outbox.some(item => threadId

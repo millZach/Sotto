@@ -11,6 +11,8 @@ export interface WatcherCommandOrigin {
   readonly operationId?: string
   /** The user's explicit phone card answer; its private writer guard is not automation. */
   readonly userAnswer?: true
+  /** Setup the user asked for in Watcher's room, such as its model or permissions; it is not automation either. */
+  readonly userSetup?: true
   readonly guard: () => void
 }
 export type WatcherCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'queue-followup' | 'steer' | 'interrupt' | 'settle-thread' }>
