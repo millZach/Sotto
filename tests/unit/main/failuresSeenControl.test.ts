@@ -152,9 +152,9 @@ describe('the coordinator\'s record of failures seen', () => {
     await first.service.command({ type: 'dismiss-failures', failures: named(first.control, 'workshop') }, phones)
     await first.control.closed()
     first.control.dispose(); controls.delete(first.control)
-    // The thread ID and the host's name for its failure only: nothing the thread said is saved with the mark.
+    // The thread ID, the host's name for its failure and when it was named: nothing the thread said is saved with the mark.
     const saved = JSON.parse(await readFile(join(first.root, 'agents.json'), 'utf8')) as { failuresSeen: unknown }
-    expect(saved.failuresSeen).toEqual([{ threadId: 'workshop', failure: expect.any(String) }])
+    expect(saved.failuresSeen).toEqual([{ threadId: 'workshop', failure: expect.any(String), since: expect.any(Number) }])
     // The provider reports both threads failed again when Sotto starts.
     const second = await start(first.root, host => {
       host.event({ type: 'failure', threadId: 'workshop', text: 'Synthetic failure' })

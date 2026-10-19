@@ -154,7 +154,7 @@ const savedSchema = z.object({
   /** The threads that finished while no client showed them, oldest first (ADR-0046). */
   finishedUnread: z.array(z.string()).default([]),
   /** The failed threads a client has shown since they failed, or Dismiss all named, oldest first (ADR-0092). */
-  failuresSeen: z.array(z.object({ threadId: z.string(), failure: z.string(), turn: z.string().optional() })).default([]),
+  failuresSeen: z.array(z.object({ threadId: z.string(), failure: z.string(), turn: z.string().optional(), since: z.number().optional() })).default([]),
   composing: z.boolean(), outbox: z.array(z.object({
     id: z.string(), type: z.enum(['send', 'steer', 'create-project', 'create-thread', 'configure-thread', 'answer', 'interrupt', 'compact-thread']),
     provider: providerIdSchema.optional(),

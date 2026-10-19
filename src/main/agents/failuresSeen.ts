@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { isThreadProviderConnected, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
-import { failedTurnReason, failedWithoutRequest } from '../../shared/threadFailures'
+import { failedTurnReason, failedWithoutRequest, lastTurnRecord } from '../../shared/threadFailures'
 
 /**
  * How many marks are kept for threads that are gone from the host's list, newest last. A thread still listed keeps its
@@ -9,7 +9,11 @@ import { failedTurnReason, failedWithoutRequest } from '../../shared/threadFailu
 export const FAILURES_SEEN_MAX = 200
 
 /** One saved mark: the thread, the failure of it that a client showed or Dismiss all named, and that failure's turn. */
-export interface SavedFailureSeen { readonly threadId: string; readonly failure: string; readonly turn?: string | undefined }
+export interface SavedFailureSeen {
+  readonly threadId: string; readonly failure: string; readonly turn?: string | undefined
+  /** When the record named the failure, in milliseconds since the epoch; absent from marks saved before it was kept. */
+  readonly since?: number | undefined
+}
 
 /**
  * One failure of one thread. `id` is the host's own name for it, made when the record first sees the thread in error,
@@ -17,7 +21,7 @@ export interface SavedFailureSeen { readonly threadId: string; readonly failure:
  * `turn` is the provider's failed turn, once one is known: a failure first seen with none, as a resume that fails, is
  * the same failure when history later names its turn.
  */
-interface Failure { readonly id: string; turn: string | undefined; seen: boolean; reason?: string | undefined }
+interface Failure { readonly id: string; turn: string | undefined; seen: boolean; reason?: string | undefined; readonly since?: number | undefined }
 
 /** The longest reason published with a failure, as `failureReason` allows. */
 const REASON_MAX = 600
@@ -42,13 +46,13 @@ export class FailuresSeen {
   private readonly failures = new Map<string, Failure>()
 
   constructor(saved: readonly SavedFailureSeen[] = [], private readonly dormant?: (threadId: string) => boolean,
-    private readonly newId: () => string = randomUUID) { this.restore(saved) }
+    private readonly newId: () => string = randomUUID, private readonly now: () => number = Date.now) { this.restore(saved) }
 
   /** Takes the saved marks back at start. Nothing is dropped until a list of threads says which are gone. */
   restore(saved: readonly SavedFailureSeen[]): void {
     this.failures.clear()
-    for (const { threadId, failure, turn } of saved) {
-      this.failures.delete(threadId); this.failures.set(threadId, { id: failure, turn, seen: true })
+    for (const { threadId, failure, turn, since } of saved) {
+      this.failures.delete(threadId); this.failures.set(threadId, { id: failure, turn, seen: true, ...(since === undefined ? {} : { since }) })
     }
   }
 
@@ -99,7 +103,8 @@ export class FailuresSeen {
 
   /** The marks as the coordinator saves them. */
   saved(): SavedFailureSeen[] {
-    return [...this.failures].flatMap(([threadId, { id, turn, seen }]) => seen ? [{ threadId, failure: id, ...(turn === undefined ? {} : { turn }) }] : [])
+    return [...this.failures].flatMap(([threadId, { id, turn, seen, since }]) => seen
+      ? [{ threadId, failure: id, ...(turn === undefined ? {} : { turn }), ...(since === undefined ? {} : { since }) }] : [])
   }
 
   /**
@@ -137,19 +142,29 @@ export class FailuresSeen {
 
   /**
    * The failure a thread in error stands in, named when it is new: the thread was not in error before, or it is now in
-   * error on a different failed turn. True when a seen failure was replaced, or gained its turn, so the saved marks moved.
+   * error on a different failed turn. A failure named with no turn takes the first failed turn named for it, as history
+   * that loads after a resume failed does, unless that turn's record says it started after the failure was named: then it
+   * is a later turn that failed, and a new failure. True when a seen failure was replaced, or gained its turn, so the
+   * saved marks moved.
    */
   private identify(thread: AgentThread): boolean {
     const turn = failedTurnOf(thread)
     const known = this.failures.get(thread.id)
-    if (known !== undefined && (turn === undefined || known.turn === undefined || known.turn === turn)) {
+    const later = known?.turn === undefined && turn !== undefined && this.startedAfter(thread, known?.since)
+    if (known !== undefined && !later && (turn === undefined || known.turn === undefined || known.turn === turn)) {
       if (turn === undefined || known.turn !== undefined) return false
       known.turn = turn
       return known.seen
     }
     this.failures.delete(thread.id)
-    this.failures.set(thread.id, { id: this.newId(), turn, seen: false })
+    this.failures.set(thread.id, { id: this.newId(), turn, seen: false, since: this.now() })
     return known?.seen === true
+  }
+
+  /** Whether the thread's last turn record says it started after `since`; unknown either way reads as not. */
+  private startedAfter(thread: AgentThread, since: number | undefined): boolean {
+    const started = Date.parse(lastTurnRecord(thread)?.startedAt ?? '')
+    return since !== undefined && Number.isFinite(started) && started > since
   }
 
   private see(thread: AgentThread): boolean {

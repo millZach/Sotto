@@ -150,7 +150,7 @@ describe('a failed thread a client has seen', () => {
     const seen = new FailuresSeen([], undefined, () => `f${++next}`)
     const both = [failed('a', 't1'), thread('b', { status: 'error' })]
     seen.dismiss(rows(seen, both, 'a', 'b'), both)
-    expect(seen.saved()).toEqual([{ threadId: 'a', failure: 'f1', turn: 't1' }, { threadId: 'b', failure: 'f2' }])
+    expect(seen.saved()).toEqual([{ threadId: 'a', failure: 'f1', turn: 't1', since: expect.any(Number) }, { threadId: 'b', failure: 'f2', since: expect.any(Number) }])
     const again = new FailuresSeen(seen.saved())
     expect(again.has('a')).toBe(true)
     // After a restart the same failed turn stays seen, and a failure that had no turn stays seen when one is named.
@@ -172,6 +172,29 @@ describe('a failed thread a client has seen', () => {
     expect(seen.track(snapshot([failed('a', 't1')]))).toBe(true)
     expect(seen.has('a')).toBe(true)
     expect(seen.failureOf('a')).toBe(name)
+  })
+
+  it('tells a later turn that failed from the history of the failure seen without one, by when the turn started', () => {
+    let clock = Date.parse('2026-10-19T10:00:00.000Z')
+    const record = (turnId: string, startedAt: string) => ({ id: `claude-turn-${turnId}`, turnId, sequence: 0, kind: 'turn' as const, status: 'failed' as const,
+      title: 'Turn failed', startedAt, timingSource: 'observed' as const })
+    const resumed = thread('a', { status: 'error' })
+    const fresh = () => { const seen = new FailuresSeen([], undefined, undefined, () => clock); seen.track(snapshot([resumed])); seen.dismiss([{ threadId: 'a', failure: seen.failureOf('a')! }], [resumed]); return seen }
+    // History names a turn that started before the failure was seen: the same failure, still seen.
+    const history = fresh()
+    history.track(snapshot([{ ...failed('a', 't1'), activities: [record('t1', '2026-10-19T09:00:00.000Z')] }]))
+    expect(history.has('a')).toBe(true)
+    // A turn that started after it, and failed with no snapshot of it working between: a new failure, news again.
+    const later = fresh()
+    clock += 60_000
+    later.track(snapshot([{ ...failed('a', 't2'), activities: [record('t2', '2026-10-19T10:00:30.000Z')] }]))
+    expect(later.has('a')).toBe(false)
+    // With no record of when the turn started, it cannot tell, and keeps the failure it saw.
+    const unknown = fresh()
+    unknown.track(snapshot([failed('a', 't3')]))
+    expect(unknown.has('a')).toBe(true)
+    // The time it was named is saved with the mark.
+    expect(history.saved()[0]).toMatchObject({ threadId: 'a', since: Date.parse('2026-10-19T10:00:00.000Z') })
   })
 
   it('names each failure on its own and drops the name once the thread works or rests', () => {
