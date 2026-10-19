@@ -20,3 +20,14 @@ const DEFAULT_HOTKEYS: Readonly<Record<SottoPlatform, string>> = Object.freeze({
 export function defaultHotkey(platform: SottoPlatform): string {
   return DEFAULT_HOTKEYS[platform]
 }
+
+// Willow's defaults: Fn on macOS; Windows never sees Fn, so Ctrl+Win. Linux holds through compositor bindings.
+const DEFAULT_HOLD_SHORTCUTS: Readonly<Record<SottoPlatform, readonly string[]>> = Object.freeze({
+  win32: Object.freeze(['CommandOrControl+Super']),
+  darwin: Object.freeze(['Fn']),
+  linux: Object.freeze([]),
+})
+
+export function defaultHoldShortcuts(platform: SottoPlatform): readonly string[] {
+  return DEFAULT_HOLD_SHORTCUTS[platform]
+}

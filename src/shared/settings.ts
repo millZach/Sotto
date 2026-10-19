@@ -185,6 +185,10 @@ export interface AppSettings {
   reducedMotion: ReducedMotion
   microphoneId: string | null
   hotkey: string
+  /** Further press shortcuts beyond `hotkey`; used only while the Owl feature `dictation-hold-shortcuts` is on. */
+  pressShortcuts: string[]
+  /** Shortcuts held to talk; used only while the Owl feature `dictation-hold-shortcuts` is on, and kept whole while it is off. */
+  holdShortcuts: string[]
   /** Text size in every terminal, in pixels; changed from the focused terminal's zoom chords. */
   terminalFontSize: number
   /**
@@ -267,7 +271,7 @@ export interface AppSettings {
 }
 
 export type SettingsPatch = Partial<
-  Omit<AppSettings, 'hotkey' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
+  Omit<AppSettings, 'hotkey' | 'pressShortcuts' | 'holdShortcuts' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
 > & {
   /** Merge only the supplied cleanup rules with the latest saved settings. */
   worktreeCleanup?: Partial<WorktreeCleanupRules>
@@ -301,6 +305,8 @@ const fieldSchemas = {
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
+  pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
+  holdShortcuts: z.array(z.string().min(1).max(64)).max(4),
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
@@ -382,6 +388,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
+  pressShortcuts: [],
+  holdShortcuts: [],
   terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
@@ -451,11 +459,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
 }
 
 /**
- * The defaults for one platform. Only the hotkey differs today, and the caller
- * supplies it from the platform profile so this module stays platform-free.
+ * The defaults for one platform. Only the shortcuts differ today, and the caller
+ * supplies them from the platform profile so this module stays platform-free.
  */
-export function defaultSettings(defaultHotkey: string): AppSettings {
-  return { ...DEFAULT_SETTINGS, hotkey: defaultHotkey }
+export function defaultSettings(defaultHotkey: string, defaultHoldShortcuts: readonly string[] = []): AppSettings {
+  return { ...DEFAULT_SETTINGS, hotkey: defaultHotkey, holdShortcuts: [...defaultHoldShortcuts] }
+}
+
+/** Entry by entry, so one damaged shortcut costs only itself; a damaged list holds nothing rather than a default. */
+function parseShortcutList(input: unknown, max: number): string[] {
+  if (!Array.isArray(input)) return []
+  const entries = input.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0 && entry.length <= 64)
+  return [...new Set(entries)].slice(0, max)
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {
@@ -506,6 +521,11 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: parseField(persisted, 'hotkey', defaults),
+    pressShortcuts: parseShortcutList(persisted.pressShortcuts, 3),
+    // The hold default is for new installs only: an existing profile without the field, or with a damaged one, holds nothing.
+    holdShortcuts: persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
+      ? [...defaults.holdShortcuts]
+      : parseShortcutList(persisted.holdShortcuts, 4),
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),

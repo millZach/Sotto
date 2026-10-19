@@ -21,6 +21,7 @@ export const OWL_FEATURES = [
   { id: 'continue-on-provider', name: 'Continue a thread on another provider', owlSince: '2026-10-16', owner: 'docs/adr/0089-a-thread-continues-on-another-provider-as-a-new-linked-thread.md', sentToStable: false },
   { id: 'continue-agent-thread', name: 'Continue an agent as its own thread, and Fork from here', owlSince: '2026-10-16', owner: 'docs/adr/0090-an-agent-or-a-reply-can-start-a-thread-of-its-own.md', sentToStable: false },
   { id: 'opencode', name: 'OpenCode provider', owlSince: '2026-10-16', owner: 'docs/adr/0087-opencode-is-a-thread-provider.md', sentToStable: false },
+  { id: 'dictation-hold-shortcuts', name: 'Hold shortcuts, Fn and extra dictation shortcuts', owlSince: '2026-10-19', owner: 'docs/adr/0092-dictation-shortcuts-listen-for-held-keys.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

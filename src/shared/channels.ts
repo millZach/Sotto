@@ -14,6 +14,14 @@ export const HISTORY_CLEAR = 'sotto:history:clear' as const
 
 export const HOTKEY_GET = 'sotto:hotkey:get' as const
 export const HOTKEY_REPLACE = 'sotto:hotkey:replace' as const
+export const DICTATION_SHORTCUTS_REPLACE = 'sotto:dictation-shortcuts:replace' as const
+export const DICTATION_SHORTCUTS_SUSPEND = 'sotto:dictation-shortcuts:suspend' as const
+export const DICTATION_KEYS_RECORD = 'sotto:dictation-keys:record' as const
+export const DICTATION_KEYS_RECORD_CANCEL = 'sotto:dictation-keys:record-cancel' as const
+export const DICTATION_KEYS_HELD = 'sotto:dictation-keys:held' as const
+export const KEY_LISTENER_PERMISSION_GET = 'sotto:key-listener:permission' as const
+export const KEY_LISTENER_PERMISSION_REQUEST = 'sotto:key-listener:permission-request' as const
+export const KEY_LISTENER_PERMISSION_CHANGED = 'sotto:key-listener:permission-changed' as const
 
 export const DICTATION_REQUEST = 'sotto:dictation:request' as const
 export const DICTATION_COMMAND = 'sotto:dictation:command' as const

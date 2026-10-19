@@ -311,6 +311,22 @@ export type HotkeyChangeResult =
   | Readonly<{ ok: true }>
   | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable' }>
 
+/** Every dictation shortcut at once; `press[0]` is `settings.hotkey`. */
+export type DictationShortcutsChange = Readonly<{ press: readonly string[]; hold: readonly string[] }>
+
+/** A refused change names the chord that failed when one did; the previous shortcuts stay in force. */
+export type DictationShortcutsResult =
+  | Readonly<{ ok: true }>
+  | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; chord?: string | undefined }>
+
+export type KeyRecordResult =
+  | Readonly<{ kind: 'recorded'; chord: string }>
+  | Readonly<{ kind: 'cancelled' }>
+  | Readonly<{ kind: 'unavailable' }>
+
+/** The key listener's standing: macOS Input Monitoring granted or denied; `not-needed` while nothing needs it or where no grant exists (Windows); `unsupported` where the listener cannot run. */
+export type KeyListenerPermission = 'granted' | 'denied' | 'not-needed' | 'unsupported'
+
 export type DictationCommand = Readonly<{
   /** `cancel` stops work in progress; `dismiss` clears an error and a kept recording; `retry` sends it again. */
   type: 'toggle' | 'start' | 'stop' | 'cancel' | 'retry' | 'dismiss'
@@ -372,6 +388,19 @@ export interface SottoBridge {
 
   getHotkey(): Promise<string | null>
   replaceHotkey(accelerator: string): Promise<HotkeyChangeResult>
+  /** Owl feature `dictation-hold-shortcuts`: replaces every dictation shortcut at once. */
+  replaceDictationShortcuts?(change: DictationShortcutsChange): Promise<DictationShortcutsResult>
+  /** While Settings records a shortcut, every dictation shortcut stands down so the keys reach the recorder; main resumes them after 60 s regardless. */
+  suspendDictationShortcuts?(suspended: boolean): Promise<CommandResult>
+  /** Windows and macOS with the Owl feature on: records one chord through the key listener, Fn and the Win key included. */
+  recordDictationKeys?(): Promise<KeyRecordResult>
+  cancelDictationKeyRecord?(): Promise<CommandResult>
+  /** The keys held during a recording, as chord tokens. */
+  onDictationKeysHeld?(listener: (tokens: readonly string[]) => void): Unsubscribe
+  getKeyListenerPermission?(): Promise<KeyListenerPermission>
+  /** Asks macOS for Input Monitoring and opens its pane in System Settings. */
+  requestKeyListenerPermission?(): Promise<KeyListenerPermission>
+  onKeyListenerPermission?(listener: (permission: KeyListenerPermission) => void): Unsubscribe
 
   requestDictation(command: DictationCommand): Promise<CommandResult>
   onDictationCommand(listener: (command: DictationCommand) => void): Unsubscribe

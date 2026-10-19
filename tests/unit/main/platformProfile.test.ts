@@ -41,6 +41,7 @@ describe('platformProfile', () => {
       pasteUsesWarmHelper: true,
       requiresMediaAccessGate: false,
       defaultHotkey: 'CommandOrControl+Shift+Space',
+      defaultHoldShortcuts: ['CommandOrControl+Super'],
     })
   })
 
@@ -60,6 +61,7 @@ describe('platformProfile', () => {
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: true,
       defaultHotkey: 'Control+Shift+Space',
+      defaultHoldShortcuts: ['Fn'],
     })
   })
 
@@ -80,6 +82,7 @@ describe('platformProfile', () => {
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: false,
       defaultHotkey: 'CommandOrControl+Shift+Space',
+      defaultHoldShortcuts: [],
     })
     if (profile.trayIcon.kind !== 'image') throw new Error('Linux needs a colour PNG')
     expect(existsSync(join('build', profile.trayIcon.relativePath))).toBe(true)
