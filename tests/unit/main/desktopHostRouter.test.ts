@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { DesktopHostRouter, hostAbsolutePath, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import type { FileListRequest, FileRequest } from '../../../src/shared/files'
 import { EMPTY_SUBAGENT_SUMMARY } from '../../../src/shared/subagents'
-import { hostVersionMismatch, type HostOperation } from '../../../src/shared/hostProtocol'
+import { hostRequestSchema, hostVersionMismatch, type HostOperation } from '../../../src/shared/hostProtocol'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
 import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
@@ -529,6 +529,43 @@ describe('desktop host routing', () => {
     await expect(router.command({ type: 'open-thread-folder', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())).rejects.toThrow('host machine')
     router.remove(REMOTE)
     await expect(router.threadDetail(hostEntityKey(REMOTE, 'thread'))).rejects.toThrow('Connect a host')
+  })
+  it('tells each remote host that keeps what is shown when the window loses or regains the focus, with the threads it observes (ADR-0092)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const older = fixture('33333333-3333-4333-8333-333333333333', 'remote')
+    Object.assign(remote.connection.service, { supportsFailureSeen: true })
+    for (const f of [local, remote, older]) router.add(f.connection)
+    try {
+      await router.command({ type: 'observe-threads', threadIds: [hostEntityKey(REMOTE, 'thread'), hostEntityKey(older.connection.hostId, 'thread')] }, desktopWindowClient())
+      expect(remote.observe).toHaveBeenLastCalledWith(['thread'])
+      for (const f of [remote, older]) f.observe.mockClear()
+      router.setWindowFocused(false)
+      expect(remote.observe).toHaveBeenCalledWith(['thread'], false)
+      // A host from before the seen record is told nothing new: it counts what it observes as shown, as it always did.
+      expect(older.observe).not.toHaveBeenCalled()
+      // The window's next change of panes carries the focus too, and so does coming back to the front.
+      await router.command({ type: 'observe-threads', threadIds: [hostEntityKey(REMOTE, 'thread')] }, desktopWindowClient())
+      expect(remote.observe).toHaveBeenLastCalledWith(['thread'], false)
+      router.setWindowFocused(true)
+      expect(remote.observe).toHaveBeenLastCalledWith(['thread'])
+      // Telling it the same twice sends nothing more.
+      remote.observe.mockClear(); router.setWindowFocused(true)
+      expect(remote.observe).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+  })
+  it('says a window is behind another app only to a host that lists failure-seen, whose observe takes the field (ADR-0092)', async () => {
+    const remote = fixture(REMOTE, 'remote')
+    for (const features of [[], ['failure-seen']]) {
+      const service = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+      const call = vi.fn(async (_operation: HostOperation) => { void _operation; return null })
+      Object.assign(service, { cached: remote.state, features, call })
+      await service.observe(['thread'], false)
+      // A host from before the record would refuse an observe carrying a field it does not know, so it is sent none.
+      expect(call.mock.lastCall?.[0]).toEqual(features.length ? { op: 'observe', threadIds: ['thread'], shown: false } : { op: 'observe', threadIds: ['thread'] })
+      expect(hostRequestSchema.safeParse({ v: 1, id: 'one', session: 'session', ...call.mock.lastCall?.[0] }).success).toBe(true)
+      await service.observe(['thread'])
+      expect(call.mock.lastCall?.[0]).toEqual({ op: 'observe', threadIds: ['thread'] })
+    }
   })
   it('sends Dismiss all to each host for its own failed threads, and says which host kept them (ADR-0092)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')

@@ -151,6 +151,8 @@ export class SocketHostService implements HostService {
   private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; command: boolean }>()
   private connecting: Promise<HostHello> | undefined
   private observed: string[] = []
+  /** Whether this desktop's window has the focus, so its observed threads are shown (ADR-0046, ADR-0092). */
+  private shown = true
   /** The threads the host confirmed this connection observes: `observed` once its observe was answered, and nothing before. */
   private confirmedObserved: ReadonlySet<string> = new Set()
   private generation = 0
@@ -304,7 +306,7 @@ export class SocketHostService implements HostService {
         let page: HostEventPage = hello
         while (page.hasMore) page = await this.readEvents(this.latestSeq)
       }
-      await this.observe(this.observed)
+      await this.observe(this.observed, this.shown)
       const pickedThreadId = this.options.getSelectedThreadId ? this.options.getSelectedThreadId() : selectedThreadId
       if (this.threadAvailable(pickedThreadId) && pickedThreadId && hello.shell.host.threads.some(thread => thread.id === pickedThreadId)) {
         const selected = this.read(protocolAgentStateSchema, await this.call({ op: 'command', command: { type: 'select-thread', threadId: pickedThreadId } }))
@@ -660,12 +662,14 @@ export class SocketHostService implements HostService {
   async readThreadDetail(threadId: string): Promise<AgentThreadDetail | null> { if (!this.threadAvailable(threadId)) return null; const generation = this.generation; const detail = this.read(agentThreadDetailResultSchema, await this.call({ op: 'detail', threadId })); this.sameGeneration(generation); this.cacheDetail(threadId, detail); return this.threadDetail(threadId) }
   async readEvents(afterSeq: number, threadId?: string): Promise<HostEventPage> { if (!this.threadAvailable(threadId)) return { events: [], latestSeq: this.latestSeq, hasMore: false }; const page = this.read(hostEventPageSchema, await this.call({ op: 'events', afterSeq, ...(threadId ? { threadId } : {}) })); this.cacheEvents(page, threadId === undefined); return page }
   /** Observing a thread again lets one the host found too large be tried again: the host sends whole each observed thread this client does not hold. */
-  async observe(threadIds: string[]): Promise<void> {
+  /** `shown`: false while this desktop's window is behind another app (ADR-0092); absent, its threads are shown. */
+  async observe(threadIds: string[], shown = true): Promise<void> {
     threadIds = threadIds.filter(id => this.threadAvailable(id))
     const requested = [...threadIds]
-    this.observed = requested; this.confirmedObserved = new Set()
+    this.observed = requested; this.confirmedObserved = new Set(); this.shown = shown
     for (const id of threadIds) this.tooLarge.delete(id)
-    await this.call({ op: 'observe', threadIds })
+    // A host from before the seen record refuses a field it does not know, and counts every observed thread as shown.
+    await this.call({ op: 'observe', threadIds, ...(!shown && this.features.includes('failure-seen') ? { shown: false as const } : {}) })
     if (this.observed === requested) this.confirmedObserved = new Set(requested)
   }
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
@@ -967,7 +971,7 @@ export class SocketHostService implements HostService {
       if (command.type === 'send' && command.draft) return { ...this.state(), error: 'Update the host before sending this draft. Your draft is kept on this computer.' }
       if (command.type === 'compose' && command.threadId !== undefined) return { ...this.state(), error: REMOTE_COMPOSE_UNSAVED }
     }
-    if (command.type === 'observe-threads') { await this.observe(command.threadIds); return this.state() }
+    if (command.type === 'observe-threads') { await this.observe(command.threadIds, this.shown); return this.state() }
     commandId ??= randomUUID()
     const before = this.shell()
     const thread = command.type === 'answer' ? before.host.threads.find(item => item.id === command.threadId) : undefined

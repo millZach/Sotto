@@ -49,7 +49,9 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   offersClientUpdates?(): boolean
   /** Whether this host babysits pull requests: only then does the window offer Babysit pull request on its threads (ADR-0061). */
   offersBabysitting?(): boolean
-  observe?(threadIds: string[]): Promise<unknown>
+  /** `shown`: false while the desktop's window is behind another app, so the host does not count these threads as shown
+   * (ADR-0092). Absent, they are shown. */
+  observe?(threadIds: string[], shown?: boolean): Promise<unknown>
   /** One activity record whole, by the host's own thread ID, for a row whose body the host sent cut; absent on this computer. */
   activityBody?(threadId: string, activityId: string): Promise<AgentActivity | null>
   subscribeDetail?(listener: (detail: AgentThreadDetailUpdate) => void): () => void
@@ -208,6 +210,13 @@ export class DesktopHostRouter {
    */
   private readonly windowRevisions = new Map<string, { run: number; offset: number; last: number }>()
   private selectedHostId: string | undefined
+  /**
+   * Whether this computer's window has the focus. Its panes show their threads only while it does (ADR-0046), on a
+   * remote host as on this one: each remote host is told with the threads it observes for the window (ADR-0092).
+   */
+  private windowFocused = true
+  /** The threads the window last observed on each host, by the host's own IDs, to send again when the focus moves. */
+  private readonly observedOn = new Map<string, string[]>()
   private selectedThreadId: string | null | undefined
   private selectedProjectId: string | null = null
   private notice: RouterNotice | undefined
@@ -424,11 +433,26 @@ export class DesktopHostRouter {
     this.hosts.get(hostId)?.off.forEach(off => off())
     this.hosts.delete(hostId)
     this.dormantProviderIds.delete(hostId)
+    this.observedOn.delete(hostId)
     this.watcherChanged(hostId)
     this.reconnecting.delete(hostId)
     if (this.selectedHostId === hostId) this.selectedHostId = this.hosts.keys().next().value
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
     this.emit()
+  }
+  /**
+   * Main reports the window's focus as it moves. Each remote host that keeps what is shown hears it with the threads the
+   * window observes there, so a thread in a pane behind another app neither reads its finish nor sees its failure; this
+   * computer's own host hears it from main directly.
+   */
+  setWindowFocused(focused: boolean): void {
+    if (focused === this.windowFocused) return
+    this.windowFocused = focused
+    for (const { connection } of this.hosts.values()) {
+      if (connection.kind !== 'remote' || connection.available?.() === false || connection.service.supportsFailureSeen !== true || !connection.observe) continue
+      const ids = this.observedOn.get(connection.hostId) ?? []
+      void (focused ? connection.observe(ids) : connection.observe(ids, false)).catch(() => undefined)
+    }
   }
   select(hostId: string): void {
     if (!this.hosts.has(hostId)) throw new Error('Connect this host before selecting it.')
@@ -845,7 +869,8 @@ export class DesktopHostRouter {
           return
         }
         if (connection.available?.() === false) return
-        if (connection.observe) await connection.observe(visibleIds)
+        this.observedOn.set(connection.hostId, visibleIds)
+        if (connection.observe) await (connection.kind === 'remote' && !this.windowFocused ? connection.observe(visibleIds, false) : connection.observe(visibleIds))
         else await connection.service.command({ type: 'observe-threads', threadIds: visibleIds }, client)
       }))
       if (left.length) this.notice = { message: dismissLeft(left) }

@@ -349,7 +349,10 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('shell') }).strict(),
   z.object({ ...base, op: z.literal('detail'), threadId: id }).strict(),
   z.object({ ...base, op: z.literal('events'), afterSeq: z.number().int().nonnegative(), threadId: id.optional() }).strict(),
-  z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100) }).strict(),
+  /** `shown: false`: a desktop whose window is behind another app, minimised or in the tray. Its threads stay observed, so
+   * they keep streaming, but none counts as shown, which reads a finish or sees a failure (ADR-0046, ADR-0092). Sent only
+   * to a host that lists `failure-seen`; absent, the threads are shown, as from every older client and every phone. */
+  z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100), shown: z.literal(false).optional() }).strict(),
   z.object({ ...base, op: z.literal('terminal-approval'), terminalId: z.uuid() }).strict(),
   z.object({ ...base, op: z.literal('observe-terminals'), terminalIds: z.array(z.uuid()).max(64) }).strict(),
   z.object({ ...base, op: z.literal('answer-terminal'), answer: phoneTerminalAnswerSchema }).strict(),

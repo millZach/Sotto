@@ -1180,7 +1180,10 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
-  z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100) }).strict(),
+  /** `shownThreadIds`: which of them the client shows now, where that is fewer; the socket server says so for the paired
+   * desktops whose windows are behind another app (ADR-0092). Absent, every observed thread is shown. A paired client
+   * cannot send it: it is not on the remote allow-list. */
+  z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100), shownThreadIds: z.array(id).max(100).optional() }).strict(),
   /** Dismiss all: each named thread reads as seen, as if a client had shown it, when it still stands in the failure its
    * row showed (ADR-0092); one that failed again since is left as news. It answers no request and grants nothing; a
    * thread waiting on a permission or a question is never one of them. `failure` is the thread's `failureId`, empty

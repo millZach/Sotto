@@ -115,6 +115,40 @@ describe('socket client isolation and reconnect', () => {
     await expect.poll(() => workshop()?.status).toBe('idle')
     expect(marked(desktop.client)).toBeUndefined()
   })
+  it('counts a paired desktop\'s panes as shown only while its window has the focus, for a failure and a finish alike (ADR-0092)', async () => {
+    const desktop = await pair('Desktop'), phone = await pair('Phone')
+    await desktop.client.command({ type: 'configure', patch: { enabledProviders: ['codex'], provider: 'codex' } })
+    await desktop.client.command({ type: 'connect', provider: 'codex' })
+    await expect.poll(() => desktop.client.shell().host.threads.find(thread => thread.title === 'Docs')).toBeDefined()
+    const ids = Object.fromEntries(['Workshop', 'Docs'].map(title => [title, desktop.client.shell().host.threads.find(thread => thread.title === title)!.id]))
+    const on = (id: string) => desktop.client.shell().host.threads.find(thread => thread.id === id)
+    // The desktop's window goes behind another app with both threads in its panes: they stay observed, not shown.
+    await desktop.client.observe([ids.Workshop!, ids.Docs!], false)
+    // The host reads the provider's snapshots coalesced, so each turn is seen running before it ends.
+    const turn = async (native: string, id: string, end: 'failure' | 'ready'): Promise<void> => {
+      fixture.native.event({ type: 'manual', threadId: native, text: 'Synthetic prompt' })
+      await expect.poll(() => on(id)?.status).toBe('running')
+      fixture.native.event({ type: end, threadId: native, text: end === 'ready' ? 'Synthetic reply' : 'Synthetic failure' })
+    }
+    await turn('workshop', ids.Workshop!, 'failure')
+    await turn('docs', ids.Docs!, 'ready')
+    await expect.poll(() => on(ids.Docs!)?.finishedUnread).toBe(true)
+    await expect.poll(() => on(ids.Workshop!)?.status).toBe('error')
+    expect(on(ids.Workshop!)?.failureSeen).toBeUndefined()
+    // Their history still streams to the window behind the app.
+    await expect.poll(() => desktop.client.threadDetail(ids.Docs!)?.messages.some(message => message.text === 'Synthetic reply')).toBe(true)
+    // The window comes back to the front: both are shown, so the failure is seen and the finish read.
+    await desktop.client.observe([ids.Workshop!, ids.Docs!], true)
+    await expect.poll(() => on(ids.Workshop!)?.failureSeen).toBe(true)
+    await expect.poll(() => on(ids.Docs!)?.finishedUnread).toBeUndefined()
+    // A phone shows what it has open, whatever a desktop's window does.
+    await desktop.client.observe([ids.Docs!], false)
+    await turn('docs', ids.Docs!, 'failure')
+    await expect.poll(() => on(ids.Docs!)?.status).toBe('error')
+    expect(on(ids.Docs!)?.failureSeen).toBeUndefined()
+    await phone.client.observe([ids.Docs!])
+    await expect.poll(() => on(ids.Docs!)?.failureSeen).toBe(true)
+  })
   it('carries a seen failure to every paired client, from a client opening the thread or one pressing Dismiss all (ADR-0092)', async () => {
     const phone = await pair('Phone'), desktop = await pair('Desktop')
     await phone.client.command({ type: 'configure', patch: { enabledProviders: ['codex'], provider: 'codex' } })
