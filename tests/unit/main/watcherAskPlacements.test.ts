@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { watcherAskPlacements } from '../../../src/main/agents/watcherAskPlacements'
 import { WATCHER_WAKE_UP_PROMPT, watcherNewsText } from '../../../src/main/agents/watcherNews'
 import type { AgentMessage } from '../../../src/shared/agents'
-import { watcherToolSchemas } from '../../../src/shared/watcher'
+import { watcherToolSchemas, type WatcherRecord } from '../../../src/shared/watcher'
 import { WATCHER_ASKS_MAX, watcherAsksOf, type WatcherAsk } from '../../../src/shared/watcherAsks'
 import type { WatcherEvent } from '../../../src/shared/watcherNews'
 
@@ -27,6 +27,35 @@ describe('where a waiting request’s card shows in Watcher’s conversation', (
     expect(watcherAskPlacements({ messages: [user('u1'), reply('r1'), wakeUp('w1', [ask('card-1')]), reply('empty', { text: '' })] }).map(item => item.messageId)).toEqual(['r1'])
     const resumed = user('w2', { text: 'Sotto restarted. Review the last turn.', wakeUp: true, watcherAsks: [ask('card-1')] })
     expect(watcherAskPlacements({ messages: [user('u1'), resumed] }).map(item => item.messageId)).toEqual(['w2'])
+  })
+
+  it('goes under the reply that came after the user wrote into the wake-up’s running turn, never back before the wake-up', () => {
+    const messages = [user('u1'), reply('r1'), wakeUp('w1', [ask('card-1')]), user('steer'), reply('r2')]
+    expect(watcherAskPlacements({ messages, status: 'idle' }).map(item => item.messageId)).toEqual(['r2'])
+  })
+
+  it('never crosses a message that began a turn of its own, a wake-up or one the record ties to a turn', () => {
+    const turns = { current: { target: { hostId: HOST, threadId: 'watcher' } },
+      promptTurns: [{ id: 't2', watcher: { hostId: HOST, threadId: 'watcher' }, rootUserMessageId: 'u2' }] } as unknown as Pick<WatcherRecord, 'promptTurns' | 'current'>
+    expect(watcherAskPlacements({ messages: [user('u1'), reply('r1'), wakeUp('w1', [ask('card-1')]), user('u2'), reply('r2')], status: 'idle' }, turns)
+      .map(item => item.messageId)).toEqual(['r1'])
+    expect(watcherAskPlacements({ messages: [user('u1'), reply('r1'), wakeUp('w1', [ask('card-1')]), wakeUp('w2'), reply('r2')], status: 'idle' })
+      .map(item => item.messageId)).toEqual(['r1'])
+  })
+
+  it('waits for the reply while the wake-up’s turn still runs, so the card does not move once it shows', () => {
+    const messages = [user('u1'), reply('r1'), wakeUp('w1', [ask('card-1')])]
+    expect(watcherAskPlacements({ messages, status: 'running' })).toEqual([])
+    expect(watcherAskPlacements({ messages: [...messages, reply('r2')], status: 'running' }).map(item => item.messageId)).toEqual(['r2'])
+    // A turn that ended without a reply keeps its card in view, under the last message shown before it.
+    expect(watcherAskPlacements({ messages, status: 'idle' }).map(item => item.messageId)).toEqual(['r1'])
+  })
+
+  it('reads a history again only when it changed', () => {
+    const messages = [user('u1'), reply('r1'), wakeUp('w1', [ask('card-1')]), reply('r2')]
+    const first = watcherAskPlacements({ messages, status: 'idle' })
+    expect(watcherAskPlacements({ messages, status: 'idle' })).toBe(first)
+    expect(watcherAskPlacements({ messages: [...messages], status: 'idle' })).toEqual(first)
   })
 
   it('places nothing for a history with no asks, or a wake-up with nothing shown before or after it', () => {

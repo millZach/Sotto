@@ -428,7 +428,7 @@ export class WatcherService implements WatcherControlHooks {
       receipts: record.operations.map(operation => { const outcome = this.outcomeOf(operation, reportsOutcomes); return outcome ? { ...operation, outcome } : operation }),
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(),
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
-      receiptReplies: watcherReceiptReplies(record, current), asks: watcherAskPlacements(current) }
+      receiptReplies: watcherReceiptReplies(record, current), asks: watcherAskPlacements(current, record) }
   }
   private roomObservation(observation: WatcherObservation) { const { landing: _landing, ...result } = observation; void _landing; return result }
   get(): WatcherRoomResult { return { status: 'ok', state: this.state() } }

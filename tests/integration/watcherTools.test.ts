@@ -787,6 +787,9 @@ it('records the request its news says waits on the user with the wake-up, and pl
   expect(recorded).toEqual([[ask]])
   // The provider hears the news beside its message, never the asks, and the room places the card from the host's record.
   expect(sends().every(command => !('watcherAsks' in command))).toBe(true)
+  // While the turn the wake-up began still runs with no reply, the card waits for it; once the turn ends it is placed.
+  expect(f.service.state().asks).toEqual([])
+  await f.finish(f.id)
   await vi.waitFor(() => expect(f.service.state().asks).toEqual([expect.objectContaining(ask)]), { timeout: 15_000 })
   // Nothing answered the worker's request: only the user's own answer from its card does that.
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toEqual([])
