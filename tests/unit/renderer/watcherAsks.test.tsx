@@ -19,6 +19,7 @@ import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
 import { WatcherAfterMessage } from '../../../src/renderer/src/watcher/WatcherReceipts'
 import { placeAsks, receiptWords, type WatcherAskPlacement } from '../../../src/renderer/src/watcher/WatcherAsks'
 import { answeredChoices, answerWords, chosenWords, OWN_WORDS } from '../../../src/renderer/src/agents/requests/answeredChoices'
+import { requestAnswerOwnerKey, requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { threadsStateFixture } from '../../fixtures/agentState'
@@ -161,6 +162,21 @@ describe('a watched thread’s request in Watcher’s conversation', () => {
     view.update(agentState())
     expect(await screen.findByText('Footer links no longer waits on you.')).toBeInTheDocument()
     reply({ ...agentState(), error: null })
+    expect(await screen.findByText('You answered Footer links: Allow once.')).toBeInTheDocument()
+  })
+
+  it('still names the choice when the answer’s state is cleared a moment before the card leaves', async () => {
+    const id = `ask-${sequence}`
+    const asked = permission(id)
+    const view = renderRoom(roomState([place(id, 'watcher-2', { kind: 'permission' })]), agentState([asked]))
+    const card = await askCard('Permission request from Footer links')
+    fireEvent.click(within(card).getByRole('button', { name: 'Allow once' }))
+    await waitFor(() => expect(view.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'answer', threadId: 'footer-links', requestId: id })))
+    await waitFor(() => expect(within(card).getByText('Answer sent.')).toBeInTheDocument())
+    // The store lets the answer go as the request leaves the thread, while this card is still drawn for it.
+    requestAnswerStore.prune(requestAnswerOwnerKey('footer-links', asked, { kind: 'thread', ownerId: 'footer-links', providerId: 'codex' }), [])
+    await waitFor(() => expect(within(card).queryByText('Answer sent.')).toBeNull())
+    view.update(agentState())
     expect(await screen.findByText('You answered Footer links: Allow once.')).toBeInTheDocument()
   })
 
