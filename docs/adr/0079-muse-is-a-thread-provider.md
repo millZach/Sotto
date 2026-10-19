@@ -95,3 +95,47 @@ Zach decided on October 18 that a machine where Muse's sandbox cannot be set up 
 **Watcher's host too.** A Watcher thread's `muse serve` host (the October 16 amendment) is spawned by the same connection as every other, so it starts with or without `--disable-sandbox` as they do, and its shell commands and file tools then reach as far as any thread's. Watcher on a computer whose Muse cannot set its sandbox up would otherwise fail every shell command in the same way. Its session still starts on Ask me, and every approval still reaches the user: the sandbox is where a command runs, not who allows it.
 
 **The flag.** `--disable-sandbox` is `muse serve`'s own flag, listed under "Sandbox posture (fixed for the host's lifetime)" in Muse 1.4.9's `muse serve --help`. The same build describes it as turning "the operational sandbox off for direct shell execution; permission-profile filesystem and local-command network restrictions remain recorded but are not enforced". The review of #1161 read Muse's changelog the same way: from 1.4.4 its file tools read and write outside the workspace with the sandbox off, whatever the trust or permission profile, and from 1.1.1 direct shell commands lose the profile's filesystem and network limits. The fake MSP host records the arguments each host started with (`argv.jsonl`), and `museAdapter.test.ts` and `watcherOnMuse.test.ts` check them.
+
+## Amendment: a Muse thread's model is the one Muse accepted (October 18, 2026)
+
+Muse 1.4.10 runs a session on the model it started on or was last set to, and says so in its start reply and with
+`session/modelChanged`; its own session log records that model on every turn. But it describes a resumed or read
+session by its catalog's default model. Sotto took that description as the session's model, so every Muse thread on a
+model other than the default read as unconfirmed once it was reopened, after a restart or reconnect, and every send
+was refused until it was confirmed, which it never was. The owner's Watcher and several delegated reviews on
+`muse-wonder-full-1.0` were stuck that way while Muse was running them on that model.
+
+A Muse thread's model is now the one Muse started it on or accepted from `session/setModel`, and `session/modelChanged`
+still changes it. A reopened session's description never does: where it names another model, or Muse has not accepted
+the thread's own, Sotto sets the thread's model again and counts it as Muse's once Muse accepts, unless a turn is
+running, when the next send asks instead. Creation and a model change are confirmed the same way, by Muse's acceptance,
+not by reading the session back. A model change Muse refuses changes nothing: the user is told, the thread stays on the
+model Muse last accepted, and nothing asks for the refused model again. One whose answer was lost stays wanted, since
+Muse may have taken it. A model Muse has not confirmed never holds a send or a steer back (Zach's call, October 18,
+2026: nothing blocks sending another message or changing the model). Before a new turn Sotto asks for the thread's
+model again, and if Muse refuses, the turn runs on the model Muse has, which the thread's model chip shows. A
+permission mode Muse has not confirmed still holds a send back, since a turn under a wider mode than the user chose
+could act without asking.
+
+Bug Bot's review added three details. When Muse moves a session to another model on its own, with
+`session/modelChanged`, that model becomes the thread's, so no later send sets the one before it back; when Muse moves
+it while answering Sotto's own `session/setModel`, the newest model Muse named wins. When Muse refuses to set a reopened
+thread's model again, the model Muse last accepted stays the chip's, since Muse 1.4.10 describes a reopened session by
+its default; the description stands in only when Sotto never recorded one, and the
+thread's own, where it differs, stays unconfirmed for the next send to ask again. A model Muse has not confirmed leaves the thread idle,
+not in error, so a queued follow-up runs as it would on any thread; only a permission mode Muse has not confirmed reads
+as an error.
+
+A second review settled the order of things when Muse moves a session while Sotto waits on it. A change sets a model
+only when it names one, so a permission or effort change keeps whatever model Muse has moved the thread to meanwhile.
+A model change saves the model it wants before it asks Muse, so one whose answer is lost is still wanted after a
+reconnect, and a refusal goes back only to the model the thread had before anything was awaited, never over one Muse
+named since. A reopened session's description counts as older than any model change Muse announced after the resume
+was asked for, and a reopen leaves the model alone while a turn runs, including one that started while the resume was
+answered. Once Muse accepts the thread's own model on a reopen, the next send asks for nothing.
+
+Muse can accept a model change without announcing it, and a resync can ask for a model again outside the order the
+user's changes keep. So an accepted change makes its model the one Muse runs unless Muse named another since, and the
+thread's own unless something chose another since: a late answer to an older request never undoes a newer choice.
+A model Muse refuses outright when a send asks for it is not asked for again; the thread takes the model Muse has.
+That also bounds a refused change a failed save or an exit left wanted: it is asked for once more, then dropped.

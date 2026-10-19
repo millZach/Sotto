@@ -193,8 +193,12 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * answer with each body over 2,048 UTF-8 bytes cut, its whole size named in the record's `cut`, and answers
  * `activity-body` with one whole record (ADR-0025, October 18 amendment). A client that accepts `activity-summaries` too
  * is sent summaries. Only a desktop is offered it, and the desktop's own phone listener never offers it.
+ * `failure-seen`: every thread in error carries the host's name for its failure (`failureId`) and its recorded reason
+ * (`failureReason`), one that some client has shown or Dismiss all named carries `failureSeen`, and the host takes
+ * `dismiss-failures`, which names each thread with the failure its row showed (ADR-0092). A desktop sends Dismiss all
+ * only to a host that lists it, and says to update any other whose threads it named.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -345,7 +349,10 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('shell') }).strict(),
   z.object({ ...base, op: z.literal('detail'), threadId: id }).strict(),
   z.object({ ...base, op: z.literal('events'), afterSeq: z.number().int().nonnegative(), threadId: id.optional() }).strict(),
-  z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100) }).strict(),
+  /** `shown: false`: a desktop whose window is behind another app, minimised or in the tray. Its threads stay observed, so
+   * they keep streaming, but none counts as shown, which reads a finish or sees a failure (ADR-0046, ADR-0092). Sent only
+   * to a host that lists `failure-seen`; absent, the threads are shown, as from every older client and every phone. */
+  z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100), shown: z.literal(false).optional() }).strict(),
   z.object({ ...base, op: z.literal('terminal-approval'), terminalId: z.uuid() }).strict(),
   z.object({ ...base, op: z.literal('observe-terminals'), terminalIds: z.array(z.uuid()).max(64) }).strict(),
   z.object({ ...base, op: z.literal('answer-terminal'), answer: phoneTerminalAnswerSchema }).strict(),

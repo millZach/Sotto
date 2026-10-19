@@ -61,6 +61,8 @@ export const AGENT_TEXT_MAX = 100_000
 const text = z.string().max(AGENT_TEXT_MAX)
 export const AGENT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
 export const AGENT_MAX_ATTACHMENTS = 8
+/** The most threads one Dismiss all names; a window with more failed threads sends them in turn. */
+export const AGENT_DISMISS_FAILURES_MAX = 500
 export const AGENT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 export const AGENT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 // What a screenshot is refused with wherever it is checked: the composer before it reads a file, and staging after.
@@ -491,6 +493,15 @@ export const agentThreadSchema = z.object({
   /** The thread finished its work while no client showed it, and no client has shown it since (ADR-0046). The host's
    * coordinator sets and clears it; absent otherwise, and from hosts that predate it. */
   finishedUnread: z.literal(true).optional(),
+  /** The thread's last turn failed and a client has shown it since, or the user dismissed it (ADR-0092): its row reads Done.
+   * The host's coordinator sets and clears it; absent otherwise, and from hosts that predate it. */
+  failureSeen: z.literal(true).optional(),
+  /** The host's own name for the failure a thread in error stands in (ADR-0092), so Dismiss all can name the failure a row
+   * showed and a later one is not marked seen in its place. Absent while the thread stands in none, and from older hosts. */
+  failureId: z.string().max(64).optional(),
+  /** Why that failure happened, as the failed turn's own record says, cut to its first 600 characters; absent when it says
+   * nothing, and from older hosts. The pane reads it to tell the thread's own failure from the provider's other errors. */
+  failureReason: z.string().max(600).optional(),
   /** The newest message of the user's the provider's adapter has recorded, whether or not `messages` still
    * holds it. A send names it back so the adapter can refuse one that raced the user's own input; a window
    * the adapter put away and took back up carries none of the older messages, so it cannot say. */
@@ -1177,7 +1188,16 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
-  z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100) }).strict(),
+  /** `shownThreadIds`: which of them the client shows now, where that is fewer; the socket server says so for the paired
+   * desktops whose windows are behind another app (ADR-0092). Absent, every observed thread is shown. A paired client
+   * cannot send it: it is not on the remote allow-list. */
+  z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100), shownThreadIds: z.array(id).max(100).optional() }).strict(),
+  /** Dismiss all: each named thread reads as seen, as if a client had shown it, when it still stands in the failure its
+   * row showed (ADR-0092); one that failed again since is left as news. It answers no request and grants nothing; a
+   * thread waiting on a permission or a question is never one of them. `failure` is the thread's `failureId`, empty
+   * for a host that names none. */
+  z.object({ type: z.literal('dismiss-failures'), failures: z.array(z.object({ threadId: id, failure: z.string().max(64) }).strict())
+    .min(1).max(AGENT_DISMISS_FAILURES_MAX) }).strict(),
   /** Widen one thread's loaded window by another twenty turns, because the pane asked for earlier messages. */
   z.object({ type: z.literal('load-earlier-messages'), threadId: id }).strict(),
   /** Early start: the user began typing in this thread's composer, so its provider session is started now rather than

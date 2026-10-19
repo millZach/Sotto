@@ -147,6 +147,11 @@
 .thread-workspace__compose { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
 .thread-workspace__compose > * { flex: none; }
 .thread-workspace__compose > .thread-followups { flex: 0 1 auto; }
+/* Why the last turn failed, above the composer, when the transcript's failed turn line has no reason to give (ADR-0092). */
+.thread-failed-notice { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 10px; padding: 10px 14px 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-warning-surface); color: var(--tt-text-2); }
+.thread-failed-notice__icon { flex: none; margin-top: 3px; color: var(--tt-attention); }
+.thread-failed-notice > p { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.thread-failed-notice strong { color: var(--tt-text); font-weight: 500; }
 /* The attach button sits in the options row instead of a row of its own, so the transcript keeps the height. */
 .thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid var(--threads-field-border); border-radius: 16px; background: var(--threads-field); }
 .thread-prompt > *, .thread-prompt .screenshot-input > * { grid-column: 1 / -1; }
