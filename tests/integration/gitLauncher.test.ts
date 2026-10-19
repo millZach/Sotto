@@ -6,6 +6,7 @@
  * `runWorktreeGitProcess` keep their folders, environments, deadlines, output caps, process-tree stops and errors.
  */
 import { spawn } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -152,7 +153,12 @@ describe('the launcher without its worker', () => {
 })
 
 describe('a launch the worker started, when the worker goes', () => {
-  const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch { return false } }
+  // A process stopped after the worker that started it died stays defunct on Linux until Sotto exits, since no loop is
+  // left to collect it. It runs nothing and holds no lock, so it counts as stopped.
+  const alive = (pid: number): boolean => {
+    try { process.kill(pid, 0) } catch { return false }
+    try { return !/^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, 'utf8')) } catch { return true }
+  }
   async function sleeper(made: GitLauncher): Promise<{ child: LaunchedProcess; result: Promise<Ended>; pid: number }> {
     const child = made.launch(...node('process.stdout.write(String(process.pid)); setTimeout(() => {}, 30_000)'), { cwd: process.cwd(), env: process.env })
     const result = ended(child)
