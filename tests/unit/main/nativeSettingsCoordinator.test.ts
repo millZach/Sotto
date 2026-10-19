@@ -420,6 +420,8 @@ describe('NativeSettingsCoordinator dictation shortcuts', () => {
     [{ press: [], hold: [] }],
     [{ press: ['Alt+Space'], hold: ['Fn', 'Fn+Shift', 'Alt+Shift', 'Shift+Control', 'Fn+Alt'] }],
     [{ press: ['Alt+Space', 'A+'.repeat(40)], hold: [] }],
+    [{ press: ['Alt+Space'], hold: ['+'] }],
+    [{ press: ['Alt+Space', ' + '], hold: [] }],
   ])('refuses a malformed set before any effect', async (change) => {
     const { harness, router, coordinator } = withRouter()
     await expect(coordinator.replaceDictationShortcuts(change)).resolves.toEqual({ ok: false, reason: 'invalid' })
@@ -500,7 +502,8 @@ describe('NativeSettingsCoordinator dictation shortcuts with real registrations'
     const router = createDictationShortcutRouter({
       shortcuts: adapter,
       createListener: () => ({ watch: vi.fn(), record: vi.fn(), request: vi.fn(), running: () => false, ready: () => false, permission: () => 'unknown' as const, dispose: vi.fn() }),
-      isIdle: () => true,
+      canStart: () => true,
+      isFocused: () => true,
       dispatch: extraToggle,
       showWidget: vi.fn(),
       pushHeld: vi.fn(),

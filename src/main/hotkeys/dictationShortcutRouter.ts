@@ -33,7 +33,9 @@ export type KeyListenerHandlers = Pick<KeyListenerOptions, 'onKey' | 'onReset' |
 export interface DictationShortcutRouterDependencies {
   readonly shortcuts: GlobalShortcutAdapter
   readonly createListener: (handlers: KeyListenerHandlers) => KeyListener
-  readonly isIdle: () => boolean
+  readonly canStart: () => boolean
+  /** The main window is visible and focused: record mode names every key system-wide, so it runs only then. */
+  readonly isFocused: () => boolean
   readonly dispatch: (command: DictationCommand) => void
   readonly showWidget: () => void
   readonly pushHeld: (tokens: readonly string[]) => void
@@ -73,6 +75,10 @@ const RECORD_LIMIT_MS = 30_000
 const RECORD_READY_MS = 3_000
 // The preload's held-keys schema accepts at most 8 tokens.
 const MAX_HELD_PUSHED = 8
+// Back-to-back recordings are capped, so a renderer cannot keep record mode on by asking again and again.
+const RECORD_COOLDOWN_MS = 750
+const RECORD_WINDOW_MS = 60_000
+const RECORDS_PER_WINDOW = 10
 
 interface Recording {
   held: string[]
@@ -95,10 +101,12 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
   let retryTimer: ReturnType<typeof setTimeout> | undefined
   // Token sets of the last applied set: strict apply re-validates only chords not in it.
   let saved = new Set<string>()
-  let matcher: ChordMatcher = createChordMatcher([], () => undefined, { isIdle: deps.isIdle })
+  let matcher: ChordMatcher = createChordMatcher([], () => undefined, { canStart: deps.canStart })
   let suspended = false
   let suspendTimer: ReturnType<typeof setTimeout> | undefined
   let recording: Recording | null = null
+  let recordEndedAt = -Infinity
+  let recordStarts: number[] = []
   let disposed = false
 
   // A press toggle takes the session over, so a hold in progress ends silently.
@@ -129,6 +137,8 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
   const listener = deps.createListener({
     onKey(type, token) {
       if (recording === null) matcher.key(type, token)
+      // A key typed after the window lost focus belongs to another app: end the recording before it is seen.
+      else if (!deps.isFocused()) finishRecord({ kind: 'cancelled' })
       else if (recording.ready) recordKey(type, token)
     },
     onReset: () => matcher.reset(),
@@ -192,6 +202,7 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
     const active = recording
     if (active === null) return
     recording = null
+    recordEndedAt = Date.now()
     clearTimeout(active.timer)
     listener.record(false)
     suspend(false)
@@ -211,8 +222,11 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
 
   function recordKey(type: 'down' | 'up', token: string): void {
     const active = recording!
-    // Keys outside the shortcut table can never be part of a chord.
-    if (token === 'Other') return
+    // Record mode names every supported key, so Other is a key no shortcut can use.
+    if (token === 'Other') {
+      if (type === 'down') finishRecord({ kind: 'unsupported-key' })
+      return
+    }
     if (type === 'down') {
       if (token === 'Escape' && active.held.length === 0) {
         finishRecord({ kind: 'cancelled' })
@@ -304,7 +318,7 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
         } else {
           deps.dispatch({ type: event.type })
         }
-      }, { isIdle: deps.isIdle })
+      }, { canStart: deps.canStart })
       if (recording === null) watchMatcher()
       else listener.watch(matcher.watchedTokens())
       return { ok: true }
@@ -314,7 +328,12 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
 
     record() {
       if (disposed) return Promise.resolve({ kind: 'unavailable' })
+      const now = Date.now()
+      recordStarts = recordStarts.filter((at) => now - at < RECORD_WINDOW_MS)
+      const refused = !deps.isFocused() || now - recordEndedAt < RECORD_COOLDOWN_MS || recordStarts.length >= RECORDS_PER_WINDOW
       finishRecord({ kind: 'cancelled' })
+      if (refused) return Promise.resolve({ kind: 'cancelled' })
+      recordStarts.push(now)
       return new Promise<KeyRecordResult>((resolve) => {
         recording = {
           held: [],

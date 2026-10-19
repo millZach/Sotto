@@ -4,7 +4,7 @@ import type {
   HotkeyChangeResult,
   StartupState,
 } from '../../shared/contracts'
-import { chordNeedsListener, MAX_SHORTCUTS_PER_ROLE, type DictationShortcutSet } from '../../shared/dictationShortcuts'
+import { chordNeedsListener, chordTokens, MAX_SHORTCUTS_PER_ROLE, type DictationShortcutSet } from '../../shared/dictationShortcuts'
 import type { SottoPlatform } from '../../shared/platform'
 import {
   DEFAULT_SETTINGS,
@@ -168,7 +168,7 @@ export class NativeSettingsCoordinator {
     const hold = change.hold.map((chord) => chord.trim())
     return this.enqueue(async (): Promise<DictationShortcutsResult> => {
       const fits = (list: readonly string[], min: number): boolean =>
-        list.length >= min && list.length <= MAX_SHORTCUTS_PER_ROLE && list.every((chord) => chord.length >= 1 && chord.length <= 64)
+        list.length >= min && list.length <= MAX_SHORTCUTS_PER_ROLE && list.every((chord) => chord.length >= 1 && chord.length <= 64 && chordTokens(chord).length > 0)
       if (!fits(press, 1) || !fits(hold, 0)) return { ok: false, reason: 'invalid' }
       const previous = await this.dependencies.repository.get()
       const primary = press[0]!

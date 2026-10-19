@@ -93,6 +93,7 @@ import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
 import { HotkeyManager, syncEscapeForWidgetSnapshot } from './hotkeys/hotkeyManager'
 import { createDictationShortcutRouter, type DictationShortcutEvent } from './hotkeys/dictationShortcutRouter'
+import { holdCanStart } from './hotkeys/chordMatcher'
 import { createKeyListener } from './hotkeys/keyListener'
 import { createDictationShortcutLifecycle, interruptOnLockAndSleep } from './hotkeys/dictationShortcutLifecycle'
 import { spawnKeyListenerHelper } from './hotkeys/keyListenerHelpers'
@@ -1253,8 +1254,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     platform,
     logOperational,
   )
-  // The widget's latest status: a hold shortcut starts dictation only from idle.
+  // The widget's latest status: a hold shortcut starts dictation only when no session is under way.
   let widgetStatus: WidgetSnapshot['status'] = 'idle'
+  const mainWindowFocused = (): boolean => {
+    const focused = BrowserWindow.getFocusedWindow()
+    return focused !== null && focused.webContents === windows.getMainWebContents() && focused.isVisible()
+  }
   // Extra and hold shortcuts are an Owl feature, and Linux binds shortcuts in the compositor.
   const dictationShortcuts = platform !== 'linux' && owlFeatures['dictation-hold-shortcuts']
     ? createDictationShortcutRouter({
@@ -1270,7 +1275,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           log: event => logOperational(event as DictationShortcutEvent),
           ...handlers,
         }),
-        isIdle: () => widgetStatus === 'idle',
+        canStart: () => holdCanStart(widgetStatus),
+        isFocused: mainWindowFocused,
         dispatch: dispatchDictation,
         showWidget,
         pushHeld: tokens => { windows.sendToMain(DICTATION_KEYS_HELD, tokens) },
@@ -1290,7 +1296,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       dictationShortcuts?.suspend(suspended)
     },
     router: dictationShortcuts,
+    isFocused: mainWindowFocused,
   })
+  // Record mode sees keys typed in other apps, so it ends the moment the main window loses the focus.
+  const watchMainWindowFocus = (window: BrowserWindow): void => {
+    const lost = (): void => { if (window.webContents === windows.getMainWebContents()) shortcutLifecycle.windowLostFocus() }
+    window.on('blur', lost)
+    window.on('hide', lost)
+    window.on('minimize', lost)
+  }
+  BrowserWindow.getAllWindows().forEach(watchMainWindowFocus)
+  app.on('browser-window-created', (_event, window) => watchMainWindowFocus(window))
 
   const nativeTray = e2eConfiguration === null
     ? await createTrayResource({

@@ -1,3 +1,5 @@
+import type { WidgetSnapshot } from '../../shared/dictation'
+
 export type ChordRole = 'hold' | 'press'
 export type ChordEventType = 'start' | 'stop' | 'cancel' | 'toggle'
 
@@ -14,7 +16,13 @@ export interface ChordEvent {
 }
 
 export interface ChordMatcherOptions {
-  readonly isIdle: () => boolean
+  /** Whether a hold may start a session now. */
+  readonly canStart: () => boolean
+}
+
+/** A hold may start unless dictation is already under way; a finished session (success, error, cancelled) does not block it. */
+export function holdCanStart(status: WidgetSnapshot['status']): boolean {
+  return status !== 'requesting-permission' && status !== 'listening' && status !== 'processing'
 }
 
 export interface ChordMatcher {
@@ -81,7 +89,7 @@ export function createChordMatcher(
       if (state.role === 'press') {
         state.phase = 'inert'
         emit({ id: state.id, role: state.role, type: 'toggle' })
-      } else if (options.isIdle()) {
+      } else if (options.canStart()) {
         state.phase = 'started'
         emit({ id: state.id, role: state.role, type: 'start' })
       } else {

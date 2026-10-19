@@ -40,6 +40,7 @@ function createHarness(options: { platform?: SottoPlatform; taken?: readonly str
     dispose: vi.fn(),
   } satisfies KeyListener
   let idle = true
+  let focused = true
   const dispatch = vi.fn()
   const showWidget = vi.fn()
   const pushHeld = vi.fn()
@@ -52,7 +53,8 @@ function createHarness(options: { platform?: SottoPlatform; taken?: readonly str
       handlers = next
       return listener
     },
-    isIdle: () => idle,
+    canStart: () => idle,
+    isFocused: () => focused,
     dispatch,
     showWidget,
     pushHeld,
@@ -66,6 +68,7 @@ function createHarness(options: { platform?: SottoPlatform; taken?: readonly str
     key: (type: 'down' | 'up', token: string) => handlers.onKey(type, token),
     handlers: () => handlers,
     setIdle: (value: boolean) => { idle = value },
+    setFocused: (value: boolean) => { focused = value },
     setPermission: (value: KeyListenerPermissionState) => { permission = value },
   }
 }
@@ -240,16 +243,59 @@ describe('dictation shortcut router record', () => {
     expect([...h.active.keys()]).toEqual(['Alt+Shift+D'])
   })
 
-  it('ignores keys outside the shortcut table while recording', async () => {
+  it('finishes unsupported-key when a key outside the shortcut table goes down, and resumes the shortcuts', async () => {
     const h = createHarness()
-    h.router.apply({ press: ['Control+Shift+Space'], hold: [] }, 'strict')
+    h.router.apply({ press: ['Control+Shift+Space', 'Alt+Shift+D'], hold: [] }, 'strict')
     const recorded = h.router.record()
     h.key('down', 'Control')
     h.key('down', 'Other')
-    h.key('up', 'Other')
+    await expect(recorded).resolves.toEqual({ kind: 'unsupported-key' })
+    expect(h.listener.record).toHaveBeenLastCalledWith(false)
+    expect([...h.active.keys()]).toEqual(['Alt+Shift+D'])
+  })
+
+  it('refuses to record while the main window is not focused: record mode never turns on', async () => {
+    const h = createHarness()
+    h.router.apply({ press: ['Control+Shift+Space'], hold: [] }, 'strict')
+    h.setFocused(false)
+    await expect(h.router.record()).resolves.toEqual({ kind: 'cancelled' })
     h.key('down', 'K')
-    h.key('up', 'K')
-    await expect(recorded).resolves.toEqual({ kind: 'recorded', chord: 'Control+K' })
+    expect(h.listener.record).not.toHaveBeenCalledWith(true)
+    expect(h.pushHeld).not.toHaveBeenCalled()
+  })
+
+  it('cancels with nothing pushed when a key arrives after the window lost focus', async () => {
+    const h = createHarness()
+    h.router.apply({ press: ['Control+Shift+Space'], hold: [] }, 'strict')
+    const recorded = h.router.record()
+    h.setFocused(false)
+    h.key('down', 'K')
+    await expect(recorded).resolves.toEqual({ kind: 'cancelled' })
+    expect(h.pushHeld).not.toHaveBeenCalled()
+    expect(h.listener.record).toHaveBeenLastCalledWith(false)
+  })
+
+  it('refuses a recording within 750 ms of the last one ending, and more than 10 in 60 s', async () => {
+    vi.useFakeTimers()
+    const h = createHarness()
+    h.router.apply({ press: ['Control+Shift+Space'], hold: [] }, 'strict')
+    void h.router.record()
+    h.router.cancelRecord()
+    vi.advanceTimersByTime(749)
+    await expect(h.router.record()).resolves.toEqual({ kind: 'cancelled' })
+    expect(h.listener.record.mock.calls.filter(([on]) => on)).toHaveLength(1)
+    for (let started = 1; started < 10; started += 1) {
+      vi.advanceTimersByTime(750)
+      void h.router.record()
+      h.router.cancelRecord()
+    }
+    expect(h.listener.record.mock.calls.filter(([on]) => on)).toHaveLength(10)
+    vi.advanceTimersByTime(750)
+    await expect(h.router.record()).resolves.toEqual({ kind: 'cancelled' })
+    expect(h.listener.record.mock.calls.filter(([on]) => on)).toHaveLength(10)
+    vi.advanceTimersByTime(60_000)
+    void h.router.record()
+    expect(h.listener.record.mock.calls.filter(([on]) => on)).toHaveLength(11)
   })
 
   it('is unavailable without Input Monitoring, at once or when the helper reports it', async () => {

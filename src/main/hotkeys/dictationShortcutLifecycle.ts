@@ -8,18 +8,22 @@ export interface LockAndSleepSource {
 }
 
 export interface DictationShortcutLifecycle {
-  /** Stands every dictation shortcut down, or back up; a suspension ends on its own after the limit. */
+  /** Stands every dictation shortcut down, or back up; a suspension ends on its own after the limit. Standing down needs the main window focused. */
   suspend(suspended: boolean): void
   /** Records one chord with every shortcut stood down. A later call wins: an earlier one's end never resumes the shortcuts. */
   record(): Promise<KeyRecordResult>
   /** The main renderer reloaded or crashed: its recording can no longer end, so the shortcuts come back now. */
   rendererGone(): void
+  /** The main window blurred, hid or minimised: a recording ends cancelled and the shortcuts come back now. */
+  windowLostFocus(): void
 }
 
 export function createDictationShortcutLifecycle(deps: {
   /** The primary hotkey and the router together. */
   suspend: (suspended: boolean) => void
   router: Pick<DictationShortcutRouter, 'record' | 'cancelRecord'> | null
+  /** The main window is visible and focused. */
+  isFocused: () => boolean
   limitMs?: number
 }): DictationShortcutLifecycle {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -30,19 +34,24 @@ export function createDictationShortcutLifecycle(deps: {
     deps.suspend(suspended)
     if (suspended) timer = setTimeout(() => suspend(false), deps.limitMs ?? 60_000)
   }
+  const standUp = (): void => {
+    generation += 1
+    deps.router?.cancelRecord()
+    suspend(false)
+  }
   return {
-    suspend,
+    // A renderer may stand the shortcuts down only while its window has the focus; standing them up always works.
+    suspend: suspended => { if (!suspended || deps.isFocused()) suspend(suspended) },
     async record() {
       if (deps.router === null) return { kind: 'unavailable' }
+      // Refused before anything stands down: the router would refuse an unfocused window anyway.
+      if (!deps.isFocused()) return { kind: 'cancelled' }
       const mine = ++generation
       suspend(true)
       try { return await deps.router.record() } finally { if (mine === generation) suspend(false) }
     },
-    rendererGone() {
-      generation += 1
-      deps.router?.cancelRecord()
-      suspend(false)
-    },
+    rendererGone: standUp,
+    windowLostFocus: standUp,
   }
 }
 

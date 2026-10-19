@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { createChordMatcher, type ChordEvent, type MatcherChord } from '../../../src/main/hotkeys/chordMatcher'
+import { createChordMatcher, holdCanStart, type ChordEvent, type MatcherChord } from '../../../src/main/hotkeys/chordMatcher'
 
 function setup(chords: readonly MatcherChord[], idle = true) {
   const events: string[] = []
@@ -9,7 +9,7 @@ function setup(chords: readonly MatcherChord[], idle = true) {
   const matcher = createChordMatcher(
     chords,
     (event: ChordEvent) => events.push(`${event.id}:${event.type}`),
-    { isIdle: () => state.idle },
+    { canStart: () => state.idle },
   )
   const play = (...steps: string[]) => {
     for (const step of steps) {
@@ -65,6 +65,13 @@ describe('createChordMatcher', () => {
     expect(events).toEqual([])
     play('down Fn')
     expect(events).toEqual(['hold-fn:start'])
+  })
+
+  it.each([
+    ['idle', true], ['success', true], ['error', true], ['cancelled', true],
+    ['requesting-permission', false], ['listening', false], ['processing', false],
+  ] as const)('lets a hold start from %s: %s', (status, allowed) => {
+    expect(holdCanStart(status)).toBe(allowed)
   })
 
   it('keeps a skipped hold inert until all its tokens are up', () => {
