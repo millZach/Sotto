@@ -8,6 +8,7 @@ import { threadHostName } from './HostBadge'
 import { ProviderMark } from './ProviderMark'
 import { DELEGATION_OUTCOME_WORDS, delegatedNote, delegationRefusalLine, delegationWaitLine, stopLine, userTurnRunning, workingDelegatedThreads } from './delegationWords'
 import { useDelegations, useDelegationsEnabled, useNewestBrief } from './delegations'
+import { openDelegatedThread } from '../tools/delegatedRoster'
 import './delegation.css'
 
 /** What a card needs of the window besides its delegation: the threads it names, where they run, and a way to open one. */
@@ -21,14 +22,21 @@ export interface DelegationCardWorld {
 }
 const DelegationCardContext = createContext<DelegationCardWorld | null>(null)
 
-/** The transcript's world for its cards, built once per state the transcript is given. */
+/**
+ * The transcript's world for its cards, built once per state the transcript is given. A card's link opens its thread as
+ * a delegated thread's roster row does: in the pane, with an open Tools kept on the thread that delegated it.
+ */
 export function useDelegationCardWorld(state: AgentState, command: AgentConnection['command'], now?: number): DelegationCardWorld {
   const threads = state.host.threads
   const connections = state.connections
   return useMemo(() => {
     const byId = new Map(threads.map(thread => [thread.id, thread]))
     return { thread: id => byId.get(id), hostName: thread => threadHostName({ connections }, thread),
-      open: id => { void command({ type: 'select-thread', threadId: id }) }, liveClock: now === undefined, now }
+      open: id => {
+        const from = byId.get(id)?.delegatedBy
+        if (from === undefined) void command({ type: 'select-thread', threadId: id })
+        else openDelegatedThread(command, id, from)
+      }, liveClock: now === undefined, now }
   }, [threads, connections, command, now])
 }
 export function DelegationCardProvider({ world, children }: { readonly world: DelegationCardWorld; readonly children: ReactNode }): ReactNode {

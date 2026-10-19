@@ -9,7 +9,7 @@ import { capRuntimeMode, roleInForce, roleStartNote, startFromRole, WORKER_KINDS
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
-  DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
+  DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
   type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { WATCHER_FINAL_OUTCOMES, watcherTurnOutcome } from './watcherOutcomes'
@@ -330,6 +330,20 @@ export class DelegationService {
     }
     refusedAfter('')
     return { made: made.reverse(), received: received.reverse().map(record => this.view(record)) }
+  }
+  /**
+   * The newest brief `threadId` was sent that Sotto still holds, for Tools › Agents when a row is opened: the user
+   * message a delegation names in that thread, once it was sent, read by its ID from the thread's record, never from a
+   * snapshot, and never a reply. Undefined when none is held, as with Keep local history off after a restart.
+   */
+  brief(threadId: string): string | undefined {
+    for (let index = this.records.length - 1; index >= 0; index--) {
+      const record = this.records[index]!
+      if (record.delegatedThreadId !== threadId || record.deliveryState === 'queued') continue
+      const message = this.options.host.threadMessage(threadId, record.messageId)
+      if (message?.role === 'user') return message.text.slice(0, DELEGATION_BRIEF_MAX)
+    }
+    return undefined
   }
   /**
    * Hears which delegating threads' delegations changed, batched so a pass that moves many outcomes, for many threads,

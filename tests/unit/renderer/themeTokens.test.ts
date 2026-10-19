@@ -240,6 +240,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/settings/workerRoles.css',
       'src/renderer/src/features/settings/dictationShortcuts.css',
       'src/renderer/src/agents/hostBadge.css',
+      'src/renderer/src/agents/activityBodies.css',
       'src/renderer/src/agents/requests/requests.css',
       'src/renderer/src/styles/global.css',
       'src/renderer/src/styles/crossing-settings.css',

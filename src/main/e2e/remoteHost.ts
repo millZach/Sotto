@@ -45,6 +45,7 @@ export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: 
           },
           detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request),
           observe: ids => socket.observe(ids), subscribeDetail: listener => socket.subscribeThreadDetail(listener),
+          activityBody: (threadId, activityId) => socket.activityBody(threadId, activityId),
         })
         sockets.set(hello.hostId, socket)
       } catch (error) { await socket.close(); throw error }

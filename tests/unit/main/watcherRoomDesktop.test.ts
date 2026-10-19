@@ -52,15 +52,15 @@ afterEach(() => vi.restoreAllMocks())
 describe('desktop Watcher room publication', () => {
   it.each([[false, false], [false, true], [true, false], [true, true]])('checks both startup answers (%s, %s) before capture or scheduling', (watcher, cost) => {
     const f = fixture(watcher, cost), state = room('event')
-    const clone = vi.spyOn(globalThis, 'structuredClone')
     try {
       f.publish(state)
       expect(f.service.subscribe).toHaveBeenCalledTimes(watcher ? 1 : 0)
       expect(f.desktop === undefined).toBe(!watcher)
-      expect(clone).toHaveBeenCalledTimes(watcher && cost ? 1 : 0)
       expect(f.clock.entries).toHaveLength(watcher && cost ? 1 : 0)
       expect(f.send).toHaveBeenCalledTimes(watcher ? 1 : 0)
       if (watcher && !cost) expect(f.send.mock.calls[0]![0]).toBe(state)
+      // With the publish window on, the room sends a capture of the state, never the state itself.
+      if (watcher && cost) { expect(f.send.mock.calls[0]![0]).not.toBe(state); expect(f.send.mock.calls[0]![0]).toEqual(state) }
     } finally { f.desktop?.dispose() }
   })
 

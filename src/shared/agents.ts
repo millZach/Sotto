@@ -4,7 +4,7 @@ import { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 import { subagentSummarySchema } from './subagents'
 import { agentSkillCatalogSchema, agentSkillReferencesSchema } from './agentSkills'
 import { agentFileReferencesSchema } from './agentFiles'
-import { agentActivitySchema, MAX_AGENT_ACTIVITIES } from './agentActivity'
+import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from './agentActivity'
 import { threadUsageSchema } from './threadUsage'
 import { agentVisualSchema, VISUAL_MESSAGE_PREFIX, type AgentVisual } from './visuals'
 import { compactionSchema } from './compaction'
@@ -32,6 +32,8 @@ export const AGENT_THREAD_DETAIL = 'sotto:agents:thread-detail'
 export const AGENT_THREAD_DETAIL_GET = 'sotto:agents:thread-detail-get'
 /** The words of a started thread's handover, read only when the user asks to read them (#1028). */
 export const AGENT_START_HANDOVER = 'sotto:agents:start-handover'
+/** One activity record whole, for a remote row whose body its host sent cut (ADR-0025, October 18 amendment). */
+export const AGENT_ACTIVITY_BODY = 'sotto:agents:activity-body'
 export { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 /** How many thread providers Sotto has: the cap on every list that names each provider at most once. */
 export const PROVIDER_COUNT = providerIdSchema.options.length
@@ -1202,6 +1204,8 @@ export interface AgentBridge {
   onState(listener: (state: AgentState) => void): () => void
   /** One viewed thread's messages, for a thread the window opened before main pushed them. */
   threadDetail?(threadId: string): Promise<AgentThreadDetail | null>
+  /** One record of a remote thread whole, for a row whose body its host sent cut; null for this computer's threads. */
+  activityBody?(request: AgentActivityBodyRequest): Promise<AgentActivity | null>
   /** Whole details and the deltas between them; a delta the window cannot apply sends it back to `threadDetail`. */
   onThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   /**
@@ -1211,6 +1215,9 @@ export interface AgentBridge {
   startHandover?(threadId: string): Promise<AgentStartHandover | null>
 }
 export const agentStartHandoverSchema = z.object({ text: z.string() }).strict()
+/** A window's request for one record whole: the thread by the window's own key, and the record's ID. */
+export const agentActivityBodyRequestSchema = z.object({ threadId: id, activityId: z.string().min(1).max(512) }).strict()
+export type AgentActivityBodyRequest = z.infer<typeof agentActivityBodyRequestSchema>
 export type AgentStartHandover = z.infer<typeof agentStartHandoverSchema>
 
 /**

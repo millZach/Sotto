@@ -682,6 +682,10 @@ artifacts/watcher-room-polish/*
 !artifacts/watcher-room-polish/polish-stop-ask-dark-820x560.png
 !artifacts/watcher-room-polish/polish-stop-done-light-820x560.png
 !artifacts/watcher-room-polish/readings.json
+artifacts/watcher-news-turns/*
+!artifacts/watcher-news-turns/news-folded-dark-1280x800.png
+!artifacts/watcher-news-turns/news-open-dark-820x560.png
+!artifacts/watcher-news-turns/news-open-light-1280x800.png
 
 # macOS key listener helper, built by scripts/build-key-listener.mjs
 native/key-listener/build/

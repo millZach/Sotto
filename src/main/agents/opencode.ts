@@ -16,7 +16,8 @@ import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHos
 import { opencodeReasoningActivity, opencodeStepFilesActivity, opencodeTextMessageId, opencodeToolActivity, opencodeToolOutput, opencodeToolStatus, type OpenCodeTool } from './opencodeActivity'
 import { locationQuery, OpenCodeClient, OpenCodeRejected, type OpenCodeEvent } from './opencodeClient'
 import { OPENCODE_DECLINED, OPENCODE_FORM_UNSHOWN, opencodeFormAnswer, opencodeFormPending, opencodeFormSchema, opencodePermissionDecision, opencodePermissionPending, opencodePermissionSchema, type OpenCodePending } from './opencodeRequests'
-import { endServersLeftBehind, ensureOpenCodeFolders, findOpenCodeExecutable, OPENCODE_CLI_VERSION, parseOpenCodeVersion, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
+import { chooseOpenCode, endServersLeftBehind, rememberOpenCodeChoice, type OpenCodeChoice, ensureOpenCodeFolders, OPENCODE_CLI_VERSION, parseOpenCodeVersion, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
+import { acceptOpenCode } from './opencodeLookup'
 import { opencodeToolServers, toolServerStatuses, type OpenCodeToolServer } from './opencodeTools'
 import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
@@ -679,6 +680,24 @@ export class OpenCodeHost implements AgentHost {
     }
   }
 
+  /** Asks a client its version, on Sotto's own OpenCode folders, without starting a server. */
+  private readVersion(executable: string, timeoutMs?: number): Promise<string | undefined> {
+    return readOpenCodeVersion(executable, this.options.args ?? [], opencodeEnvironment(this.environment, this.folders, opencodePassword()), timeoutMs).catch(() => undefined)
+  }
+  /**
+   * The client to use, with what it said when asked its version: the one the adapter was given, or else `current`, the
+   * client in use, while it is still there and says it is an OpenCode 2 Sotto drives, or else the first the lookup finds
+   * that does (`chooseOpenCode`). When none does, `current` and what it said, or the first found and what it said.
+   */
+  private async findClient(generation: number, current?: string): Promise<OpenCodeChoice | undefined> {
+    if (this.options.executable) return { executable: this.options.executable, said: await this.readVersion(this.options.executable) }
+    const still = current ? await acceptOpenCode(current) : undefined
+    const kept = still ? { executable: still, said: await this.readVersion(still) } : undefined
+    if (kept && !opencodeVersionRefusal(kept.said ?? '')) return kept
+    const chosen = await chooseOpenCode((executable, timeoutMs) => this.readVersion(executable, timeoutMs), this.environment, {}, () => generation !== this.generation)
+    return chosen && !opencodeVersionRefusal(chosen.said ?? '') ? chosen : kept ?? chosen
+  }
+
   /**
    * Connecting checks the client and reads its catalog on a server of its own, which stops once it has answered, as Grok's
    * check keeps no process between connects. Threads start their own servers as they are needed.
@@ -690,11 +709,15 @@ export class OpenCodeHost implements AgentHost {
     // Servers a Sotto that crashed left running on this folder are ended before any of this run's start (ADR-0087).
     await endServersLeftBehind(this.folders.servers, this.options.log)
     this.assertGeneration(generation)
-    const executable = this.options.executable ?? await findOpenCodeExecutable(this.environment)
+    const found = await this.findClient(generation).catch(() => undefined)
+    this.assertGeneration(generation)
+    const executable = found?.executable
+    // The update check and presence ask about the client connect chose, not an OpenCode 1 found ahead of it.
+    if (!this.options.executable) rememberOpenCodeChoice(found && !opencodeVersionRefusal(found.said ?? '') ? found.executable : undefined)
     if (!executable || !isAbsolute(executable)) throw new ProviderUnavailable('not-installed', 'Install OpenCode 2, then connect again. Your threads and drafts are kept.')
     let tooOld: string | undefined
     try {
-      const said = await readOpenCodeVersion(executable, this.options.args ?? [], opencodeEnvironment(this.environment, this.folders, opencodePassword()))
+      const said = found.said
       const refusal = opencodeVersionRefusal(said ?? '')
       if (refusal instanceof OpenCodeTooOld) tooOld = refusal.version
       // OpenCode 1 is older than the floor too: setup offers its install guide for it, as for any client too old to use.
@@ -832,10 +855,11 @@ export class OpenCodeHost implements AgentHost {
   async clientUpdated(): Promise<void> {
     if (!this.state.connected) return
     const generation = this.generation
-    const executable = this.options.executable ?? await findOpenCodeExecutable(this.environment).catch(() => undefined)
+    const found = await this.findClient(generation, this.executable).catch(() => undefined)
+    const executable = found?.executable
     if (generation !== this.generation || !this.state.connected) return
     if (!executable || !isAbsolute(executable)) throw new Error('OpenCode was updated, but Sotto cannot find it now. Threads that are working carry on and nothing was lost. Check the OpenCode install, then connect OpenCode again.')
-    const said = await readOpenCodeVersion(executable, this.options.args ?? [], opencodeEnvironment(this.environment, this.folders, opencodePassword()))
+    const said = found.said
     const refusal = opencodeVersionRefusal(said ?? '')
     if (generation !== this.generation || !this.state.connected) return
     if (refusal) throw new Error(`OpenCode was updated, but Sotto cannot run the new version. ${refusal.message} Threads that are working carry on and nothing was lost.`)
@@ -858,6 +882,7 @@ export class OpenCodeHost implements AgentHost {
       this.executable = previous
       throw new Error('OpenCode was updated, but the new version did not answer. Threads that are working carry on and nothing was lost. Connect OpenCode again to try the new version.', { cause: error })
     } finally { await started?.server.stop() }
+    if (!this.options.executable) rememberOpenCodeChoice(executable)
     this.renew()
     // The sign-in server moves too, so nothing of Sotto's keeps running the old client once it is free.
     this.signIn.renew()
