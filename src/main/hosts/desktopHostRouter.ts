@@ -138,14 +138,14 @@ export class DesktopHostRouter {
       return entry
     }
     const heldProvider = (host: DesktopHostConnection, request: WatcherHostRead | WatcherHostControl) => this.held.size
-      ? heldProviderOfWatcherRequest(request, this.held, host.service.shell().host, this.dormantProviderIds.get(host.hostId)) : undefined
+      ? heldProviderOfWatcherRequest(request, this.held, readView(host.service).host, this.dormantProviderIds.get(host.hostId)) : undefined
     return {
       ...this.options.watcherEnabled === true && this.options.streamingPublishCost === true ? { roomThreads: (id: string, ids: readonly string[]) => {
         const entry = this.hosts.get(id)?.connection
         if (!entry || entry.kind !== 'remote') return undefined
         const connected = !this.reconnecting.has(id) && entry.available?.() !== false
         if (!entry.service.watcherRoomThreads) {
-          const snapshot = this.visibleState(entry.service.shell(), id).host
+          const snapshot = this.visibleState(readView(entry.service), id).host
           return watcherRoomInputs(snapshot, ids, this.held, this.dormantProviderIds.get(id))
             .map(thread => ({ ...thread, connected: connected && thread.connected }))
         }
@@ -158,12 +158,12 @@ export class DesktopHostRouter {
         workSettled: host.service.supportsWatcherWorkSettled === true, outcomes: host.service.supportsWatcherOutcomes === true,
         muse: host.service.supportsWatcherMuse === true,
         connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
-        // Read only when asked: the shell read copies the host's whole cached shell, and Watcher lists hosts on every pass (#1023).
-        get permissionCeiling() { return host.service.shell().configuration.newThreadRuntimeMode ?? 'approval-required' } })),
+        // Read only when asked, and without a copy: Watcher lists hosts on every pass (#1023).
+        get permissionCeiling() { return readView(host.service).configuration.newThreadRuntimeMode ?? 'approval-required' } })),
       snapshot: id => {
         allowed(); const entry = this.hosts.get(id)?.connection
         if (!entry || entry.kind !== 'remote') return undefined
-        const snapshot = this.visibleState(entry.service.shell(), id).host, connected = !this.reconnecting.has(id) && entry.available?.() !== false
+        const snapshot = this.visibleState(readView(entry.service), id).host, connected = !this.reconnecting.has(id) && entry.available?.() !== false
         return { ...snapshot, hostId: id, connected: snapshot.connected && connected,
           threads: snapshot.threads.map(thread => ({ ...thread, hostId: id, ...!connected ? { clientConnected: false } : {} })) }
       },
@@ -364,8 +364,7 @@ export class DesktopHostRouter {
   requiresManagementUpdate(hostId: string): boolean {
     const connection = this.hosts.get(hostId)?.connection
     if (connection?.kind !== 'remote') return false
-    const state = connection.service.shell()
-    return state.legacyManagement === true
+    return readView(connection.service).legacyManagement === true
   }
 
   /**
@@ -1081,7 +1080,8 @@ export class DesktopHostRouter {
    */
   private emit(broadcast?: { hostId: string; state: AgentState }): void {
     if (this.listeners.size) {
-      const state = this.build(connection => connection.hostId === broadcast?.hostId ? broadcast.state : connection.service.shell())
+      // Built from each host's state as it is, without a copy: what is published is read, never written into.
+      const state = this.build(connection => connection.hostId === broadcast?.hostId ? broadcast.state : readView(connection.service))
       this.published = state
       for (const listener of this.listeners) listener(state)
     } else {
@@ -1098,3 +1098,6 @@ export class DesktopHostRouter {
     this.draftPass.disposed = true; clearTimeout(this.draftPass.gap); this.draftPass.gap = undefined; this.draftPass.wanted = undefined
   }
 }
+
+/** A host's state for a reader that only reads it: its view where it has one, a copy of its shell where it does not. */
+function readView(service: Pick<HostService, 'shell' | 'view'>): AgentState { return service.view?.() ?? service.shell() }
