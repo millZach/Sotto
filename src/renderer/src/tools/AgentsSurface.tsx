@@ -5,14 +5,15 @@ import { distinctModels, type SubagentAssignment, type SubagentRow, type Subagen
 import { type SubagentsStore, useThreadSubagents } from './subagentsStore'
 import { ToolsChrome, ToolsChromeLead } from './ToolsChrome'
 import { AgentContinue, AgentContinueContext, type AgentContinueOptions } from './AgentContinue'
+import { clockLabel } from '../agents/threadFacts'
+import { DelegatedThreadRow, useDelegatedRoster, type DelegatedRosterSource } from './DelegatedThreads'
+import { mixedRoster, rosterCounts } from './delegatedRoster'
+import { elapsedLabel } from './rosterTime'
 import './agentsSurface.css'
 
 const STATUS: Record<SubagentRow['status'], string> = { running: 'Working', completed: 'Finished', failed: 'Failed', interrupted: 'Interrupted', unknown: 'Last seen working' }
 
-export function elapsedLabel(milliseconds: number): string {
-  const seconds = Math.max(0, Math.floor(milliseconds / 1_000))
-  return seconds >= 3_600 ? `${Math.floor(seconds / 3_600)}h ${Math.floor(seconds % 3_600 / 60)}m` : seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`
-}
+export { elapsedLabel }
 
 /** The clock alone renders each second; hidden surfaces and uncertain agents own no timer. */
 export function SubagentElapsed({ row }: { readonly row: SubagentRow }): ReactNode {
@@ -89,8 +90,11 @@ function AssignmentDetails({ threadId, row, bridge }: { readonly threadId: strin
   </>
 }
 
-const AgentRow = memo(function AgentRow({ threadId, row, depth, bridge }: { readonly threadId: string; readonly row: SubagentRow; readonly depth: number; readonly bridge: SubagentsBridge | undefined }): ReactNode {
+const AgentRow = memo(function AgentRow({ threadId, row, depth, bridge, startMeta = false }: { readonly threadId: string; readonly row: SubagentRow; readonly depth: number; readonly bridge: SubagentsBridge | undefined
+  /** Beside delegated threads the roster runs by start time, so each agent says when it started. */
+  readonly startMeta?: boolean }): ReactNode {
   const [open, setOpen] = useState(false)
+  const started = startMeta && row.startedAt ? clockLabel(Date.parse(row.startedAt)) : ''
   const id = useId()
   const button = useRef<HTMLButtonElement>(null)
   return <li className="subagent-item" data-agent-id={row.id} data-nested={depth > 0 || undefined} style={{ '--subagent-depth': Math.min(depth, 4) } as React.CSSProperties} onKeyDown={event => { if (open && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); setOpen(false); button.current?.focus() } }}>
@@ -98,7 +102,7 @@ const AgentRow = memo(function AgentRow({ threadId, row, depth, bridge }: { read
       <span className="subagent-dot" data-status={row.status} aria-hidden="true" />
       <span className="subagent-main"><span className="subagent-title" title={row.title || undefined}>{row.title || 'Agent task'}</span>
         {row.description && row.description !== row.title ? <span className="subagent-description">{row.description}</span> : null}
-        <span className="subagent-meta"><span className="subagent-model">{row.model || 'Model not reported'}</span>{row.assignmentCount > 1 ? <span className="subagent-run">· Run {row.assignmentCount}</span> : null}</span>
+        <span className="subagent-meta"><span className="subagent-model">{row.model || 'Model not reported'}{started ? ` · ${started}` : ''}</span>{row.assignmentCount > 1 ? <span className="subagent-run">· Run {row.assignmentCount}</span> : null}</span>
       </span>
       <span className="subagent-right"><span className="subagent-time"><SubagentElapsed row={row} /><ChevronRight size={12} aria-hidden="true" /></span><span>{STATUS[row.status]}</span></span>
     </button>
@@ -203,10 +207,14 @@ function WorkflowPage({ threadId, row, agents, bridge }: { readonly threadId: st
  * `rosterSignal` is for a thread on a paired host, whose host pushes no roster changes: what the thread's shell says of
  * its agents, so a change there reads the roster again.
  */
-export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuation }: { readonly threadId: string; readonly store: SubagentsStore; readonly bridge: SubagentsBridge | undefined; readonly rosterSignal?: string | undefined
+export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuation, delegation }: { readonly threadId: string; readonly store: SubagentsStore; readonly bridge: SubagentsBridge | undefined; readonly rosterSignal?: string | undefined
   /** Continue as a thread on each finished agent (#1028), where the feature is on and the thread's provider reports agents. */
-  readonly continuation?: AgentContinueOptions | undefined }): ReactNode {
+  readonly continuation?: AgentContinueOptions | undefined
+  /** The thread's delegated threads, listed with its agents (ADR-0081), where the Owl list turns delegation on. */
+  readonly delegation?: DelegatedRosterSource | undefined }): ReactNode {
   const state = useThreadSubagents(store, threadId)
+  const families = useDelegatedRoster(threadId, delegation)
+  const delegatedRows = useMemo(() => families.flat(), [families])
   useEffect(() => { store.activate(bridge, threadId); return () => store.deactivate() }, [store, bridge, threadId])
   const followed = useRef(rosterSignal)
   useEffect(() => {
@@ -238,6 +246,11 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
     else if (next) surface.current?.querySelector<HTMLButtonElement>(`[data-agent-id="${CSS.escape(next.row)}"] .subagent-head`)?.focus()
   }, [openId])
   const { total, working, unknown } = state.summary
+  // Beside delegated threads, the count names both and says what needs you (variant B of the roster prototype).
+  const counts = families.length ? rosterCounts(delegatedRows, state.summary) : null
+  const blocks = useMemo(() => families.length ? mixedRoster(roster, families) : null, [families, roster])
+  const live = delegation?.liveClock !== false
+  const onOpenThread = delegation?.open
   const loadEarlier = state.before !== undefined ? <button type="button" className="files-link tt-focusable subagents-older" disabled={state.loading} onClick={() => void store.page(threadId, true)}>{state.loading ? 'Loading agents…' : 'Load earlier agents'}</button> : null
   const error = state.error ? <p role="status">{state.error} <button type="button" className="files-link tt-focusable" onClick={() => void store.page(threadId)}>Try again</button></p> : null
   // An open agent inside the page answers Escape first; only then does Escape leave the page.
@@ -248,13 +261,21 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
       <ToolsChromeLead title={open.title || 'Workflow'} detail={workflowCount(open.progress)} />
     </div>
     // The roster's count leads its line of chrome; what is working, or not confirmed, sits beside it.
+      : counts ? <ToolsChrome title={counts.title} detail={counts.detail} />
       : <ToolsChrome title={total > 0 ? `${total} ${total === 1 ? 'agent' : 'agents'}` : 'Agents'} detail={total > 0 ? working ? `${working} working` : unknown ? 'Activity not confirmed' : 'None working' : null} />}
     <div className="subagents-roster">
       {open ? <WorkflowPage key={`${state.resetVersion}:${open.id}`} threadId={threadId} row={open} agents={pageAgents} bridge={bridge} /> : <>
-        {!roster.length && !state.error ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p>{state.loading ? 'Loading agents…' : 'No agents spawned in this thread yet.'}</p></div> : null}
-        <ul className="subagents-list" aria-label="Spawned agents">{roster.map(({ row, depth }) => row.kind === 'workflow'
-          ? <WorkflowRow key={`${state.resetVersion}:${row.id}`} row={row} agents={members.get(row.id) ?? []} onOpen={openPage} />
-          : <AgentRow key={`${state.resetVersion}:${row.id}`} threadId={threadId} row={row} depth={depth} bridge={bridge} />)}</ul>
+        {!roster.length && !blocks && !state.error ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p>{state.loading ? 'Loading agents…' : 'No agents spawned in this thread yet.'}</p></div> : null}
+        {blocks && onOpenThread
+          // Delegated threads and the provider's own agents in one list, newest start first (ADR-0081, variant B).
+          ? <ul className="subagents-list" data-mixed="" aria-label="Delegated threads and agents, newest first">{blocks.flatMap(block => block.kind === 'threads'
+            ? block.rows.map(row => <DelegatedThreadRow key={`thread:${row.thread.id}`} row={row} shown={row.thread.id === delegation?.shownThreadId} live={live} onOpen={onOpenThread} />)
+            : block.rows.map(({ row, depth }) => row.kind === 'workflow'
+              ? <WorkflowRow key={`${state.resetVersion}:${row.id}`} row={row} agents={members.get(row.id) ?? []} onOpen={openPage} />
+              : <AgentRow key={`${state.resetVersion}:${row.id}`} threadId={threadId} row={row} depth={depth} bridge={bridge} startMeta />))}</ul>
+          : <ul className="subagents-list" aria-label="Spawned agents">{roster.map(({ row, depth }) => row.kind === 'workflow'
+            ? <WorkflowRow key={`${state.resetVersion}:${row.id}`} row={row} agents={members.get(row.id) ?? []} onOpen={openPage} />
+            : <AgentRow key={`${state.resetVersion}:${row.id}`} threadId={threadId} row={row} depth={depth} bridge={bridge} />)}</ul>}
       </>}
       {error}
       {loadEarlier}

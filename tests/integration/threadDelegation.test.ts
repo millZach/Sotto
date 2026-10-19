@@ -268,6 +268,9 @@ it('gives the window each delegation\'s outcome and wait, by the user\'s message
   expect(answered).toMatchObject({ outcome: 'answered', waiting: false, told: true, wait: { seconds: 60 } })
   expect(answered.wait?.wentOnAt).toBeUndefined()
   expect(answered.outcomeAt).toBeDefined()
+  // Opening its roster row reads the whole brief it was sent from its own record, never the reply.
+  expect(f.service.brief(waiting.thread)).toBe('Synthetic brief')
+  expect(f.service.brief('another-thread')).toBeUndefined()
   // A call that waits for nothing goes on at once; the card says the answer comes later.
   f.ok(await f.delegate(parent, { provider: 'codex', model: f.model('codex').id, wait_seconds: 0, work: 'research' }))
   expect(f.service.views(parent).made[1]).toMatchObject({ outcome: 'working', waiting: false, wait: { seconds: 0, wentOnAt: expect.any(String) } })
