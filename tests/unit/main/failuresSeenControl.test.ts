@@ -7,7 +7,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
 import { LocalHostService } from '../../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
@@ -123,6 +123,27 @@ describe('the coordinator\'s record of failures seen', () => {
     const reply = await service.command({ type: 'dismiss-failures', failures: pressed }, phones)
     expect(reply.error).toBeNull()
     expect(seen(control.shell(), 'workshop')).toBeUndefined()
+  })
+
+  it('saves a failure seen while the host is disconnected, without waiting for it to connect again', async () => {
+    const { root, host, control, service } = await start()
+    await service.command({ type: 'observe-threads', threadIds: ['workshop'] }, phones)
+    const saved = async () => {
+      try { return (JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')) as { failuresSeen?: { threadId: string }[] }).failuresSeen?.map(mark => mark.threadId) }
+      catch { return undefined }
+    }
+    host.event({ type: 'manual', threadId: 'workshop', text: 'Synthetic prompt' })
+    host.event({ type: 'disconnect', threadId: 'workshop', text: '' })
+    // What the connected snapshots before it queued is written first, so only the disconnected one can save the mark.
+    await expect.poll(saved).toEqual([])
+    // A reconnect would save it in a few seconds anyway; the snapshot that saw it saves it now.
+    const persist = vi.spyOn(control as unknown as { persist: () => Promise<void> }, 'persist')
+    host.event({ type: 'failure', threadId: 'workshop', text: 'Synthetic failure' })
+    expect(control.shell().host.connected).toBe(false)
+    expect(seen(control.shell(), 'workshop')).toBe(true)
+    await Promise.resolve()
+    expect(persist).toHaveBeenCalled()
+    await expect.poll(saved).toEqual(['workshop'])
   })
 
   it('keeps a seen failure across a restart', async () => {

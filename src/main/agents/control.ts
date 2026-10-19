@@ -4351,9 +4351,10 @@ export class AgentControl {
         if (this.state.draftThreadId === threadId && !this.hasDraft()) this.clearDraft()
       }
     }
-    // Saved with the persist below; a disconnected snapshot changes no mark, so its early return loses nothing.
+    // Saved with the persist below. A disconnected snapshot changes no finished mark, but it can see a failure: a thread
+    // shown as it fails, or a failure that moves to a later turn, so its early return saves the failures it changed.
     this.finishedUnread.track(snapshot)
-    this.failuresSeen.track(snapshot)
+    const failuresChanged = this.failuresSeen.track(snapshot)
     this.scheduleProviderReconnects()
     if (this.state.activeProjectId) this.state.activeProjectId = this.dependencies.host.resolveProjectId?.(this.state.activeProjectId) ?? this.state.activeProjectId
     if (this.state.configuration.defaultModelId) this.state.configuration.defaultModelId = this.dependencies.host.resolveModelId?.(this.state.configuration.defaultModelId) ?? this.state.configuration.defaultModelId
@@ -4365,6 +4366,7 @@ export class AgentControl {
         // the live host instead, so a failed reconnect never empties the histories it holds.
         void this.commandShell(this.automaticConnect()).then(s => { if (s.connection !== 'connected') this.acceptSnapshot({ ...this.state.host, connected: false }) })
       }, 5000)
+      if (failuresChanged) this.persistAfterSnapshots()
       this.publish(); return
     }
     if (this.reconnect) clearTimeout(this.reconnect)
