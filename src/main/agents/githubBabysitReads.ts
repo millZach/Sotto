@@ -14,6 +14,8 @@ export function pullRequestObservation(fingerprint: PullRequestFingerprint, deta
   const known = (!detail || matching && !checksRequested) && fingerprint.head !== null && previous?.head === fingerprint.head
     && pullRequestKey(previous.url) === pullRequestKey(fingerprint.url) && previous.availability === 'available' ? previous : undefined
   return { url: fingerprint.url, head: fingerprint.head, state: fingerprint.state, availability: 'available', observedAt,
+    // Watcher wakes on a conflict and on its comments or reviews moving (#1190); both are counts and states, never words.
+    ...(fingerprint.mergeable !== 'unknown' ? { conflicting: fingerprint.mergeable === 'conflicting' } : {}), remarks: fingerprint.remarks,
     checks: checks ? summarizePullRequestChecks(fingerprint.head, checks) : known?.checks ?? 'unknown',
     checksObservedAt: checks || !known ? observedAt : known.checksObservedAt ?? known.observedAt,
     ...(checks ? { checkCount: checks.length } : known?.checkCount !== undefined ? { checkCount: known.checkCount } : {}),

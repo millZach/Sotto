@@ -19,13 +19,14 @@ import { clonePlainData } from './cloneHostSnapshot'
 import type { AgentHostCommand } from './host'
 import type { AgentControl } from './control'
 import type { WorkspaceHost } from './workspace'
-import { WatcherWakeUp, watcherProgressFingerprint } from './watcherWakeUp'
+import { WatcherWakeUp, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
 import { watcherRequestNote } from './watcherRequestNote'
 import { watcherDisplayPrompt } from './watcherMessageDisplay'
 import { followupDigest } from './followups'
 import type { Handover } from './handover'
 import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessageAsShown } from './watcherHandover'
 import type { WatcherEvent } from '../../shared/watcherNews'
+import { watcherPullRequestWords, watcherReplyStart } from './watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
@@ -156,8 +157,10 @@ export class WatcherService implements WatcherControlHooks {
      */
     roles?: () => WorkerRoleChoices
     /** This computer's host facts and running threads, read as a host reads its own (#1031). Without it they read unknown. */
-    machineFacts?: () => Promise<HostMachineReport> }) {
-    this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), record: () => this.view(),
+    machineFacts?: () => Promise<HostMachineReport>
+    /** The ordinary news batch's timing (WatcherWakeOptions), for tests on the real clock; the default is #1190's. */
+    ordinaryBatch?: WatcherWakeOptions['ordinaryBatch'] }) {
+    this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), record: () => this.view(), ...options.ordinaryBatch ? { ordinaryBatch: options.ordinaryBatch } : {},
       progress: target => this.remoteProgress.get(key(target))?.fingerprint,
       reportsWork: () => {
         // One host list per pass, and only once a paired host's thread asks.
@@ -250,6 +253,22 @@ export class WatcherService implements WatcherControlHooks {
   pullRequestObserved(read: PullRequestObservation): void { this.wakes.pullRequest(read) }
   restoreCheckpoint(read: CheckpointObservation): void { this.wakes.restoreCheckpoint(read) }
   checkpointObserved(read: CheckpointObservation): void { this.wakes.checkpoint(read) }
+  /**
+   * What a wake-up's news carries beside its events (#1190), read once for the note from the threads as they stand, so
+   * Watcher need not read a thread to learn what it said: the start of a finished turn's reply, in the worker's words, and
+   * what each of a thread's pull requests now says that needs Watcher. Only the note carries it; nothing saves it.
+   */
+  newsDetail(): (event: WatcherEvent) => string | undefined {
+    let snapshot: AgentHostSnapshot | undefined
+    return event => {
+      snapshot ??= this.snapshot()
+      const thread = snapshot.threads.find(item => item.id === event.target.threadId && (item.hostId ?? snapshot!.hostId) === event.target.hostId)
+      if (!thread) return undefined
+      if (event.kind === 'evidence-changed') return watcherPullRequestWords(this.wakes.evidence.attentionByPullRequest(event.target), thread)
+      if (event.kind !== 'turn-finished' && event.kind !== 'turn-failed' && event.kind !== 'work-settled') return undefined
+      return watcherReplyStart(thread, event.turnId)
+    }
+  }
   private transaction<T>(work: () => Promise<T>): Promise<T> {
     const task = this.tail.catch(() => undefined).then(work); this.tail = task; return task
   }
@@ -1314,12 +1333,22 @@ export class WatcherService implements WatcherControlHooks {
     const progress: CallProgress = {}
     const work = this.invokeNow(threadId, name, args, progress)
     const settled = work.then(() => undefined, () => undefined)
-    if (context.waitMs === undefined) return { answer: work, settled }
+    if (context.waitMs === undefined) return { answer: work.then(result => this.toldReceipt(result)), settled }
     let timer: ReturnType<typeof setTimeout> | undefined
     const late = new Promise<typeof LATE>(resolve => { timer = setTimeout(() => resolve(LATE), Math.max(context.waitMs! - CLIENT_WAIT_MARGIN_MS, context.waitMs! / 2)) })
-    const answer = Promise.race([work, late]).then(result => result === LATE ? this.stillWorking(name, progress) : result)
+    const answer = Promise.race([work, late]).then(result => this.toldReceipt(result === LATE ? this.stillWorking(name, progress) : result))
       .finally(() => { clearTimeout(timer) })
     return { answer, settled }
+  }
+  /**
+   * A tool's answer that carries a receipt gives Watcher that receipt as it stands now, a refusal included, so the same
+   * receipt is no news to it afterwards (#1190). Only a later change to it is.
+   */
+  private toldReceipt<T>(result: T): T {
+    const operationId = (result as { receipt?: { operationId?: unknown } } | null)?.receipt?.operationId
+    const operation = typeof operationId === 'string' ? this.view().operations.find(item => item.id === operationId) : undefined
+    if (operation) this.wakes.toldReceipt(operation)
+    return result
   }
   /** The answer to a call its client would otherwise give up on: where it stands, and how to read how it ends. */
   private stillWorking(name: WatcherToolName, progress: CallProgress): unknown {
@@ -2223,6 +2252,12 @@ export class WatcherService implements WatcherControlHooks {
   private listThreads(input: WatcherToolInput<'list_threads'>) {
     if (input.hostId && input.hostId !== this.hostId() || input.project && input.project.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Remote Watcher thread reads are not available yet.')
     const record = this.record(), snapshot = this.snapshot()
+    // A thread waits on the cards of the threads it delegated to as well as its own (#1190): they are its to see through.
+    const delegatedCards = new Map<string, { id: string; kind: 'question' | 'permission'; openTarget: WatcherThreadTarget }[]>()
+    for (const child of snapshot.threads) if (child.delegatedBy && child.requests.length) {
+      const hostId = child.hostId ?? this.hostId(), parent = key({ hostId, threadId: child.delegatedBy })
+      delegatedCards.set(parent, [...delegatedCards.get(parent) ?? [], ...child.requests.map(card => ({ id: card.id, kind: card.kind, openTarget: { hostId, threadId: child.id } }))])
+    }
     const rows = watcherOverview({ host: snapshot }, Date.now(), this.wakes.observations).filter(row => (!input.hostId || (row.thread.hostId ?? this.hostId()) === input.hostId)
       && (!input.project || row.thread.projectId === input.project.projectId && (row.thread.hostId ?? this.hostId()) === input.project.hostId)
       && (!input.group || row.group === input.group) && (input.includeSettled || !isWorkspaceThreadSettled(row.thread, this.owningSnapshot(row.thread.hostId ?? this.hostId())?.projects.find(item => item.id === row.thread.projectId))))
@@ -2233,7 +2268,8 @@ export class WatcherService implements WatcherControlHooks {
         return { target, title: thread.title, projectId: thread.projectId, provider: thread.providerId ?? resolveModel(this.owningSnapshot(target.hostId)?.models ?? [], thread.modelId)?.providerId,
           ...(standingWatch ? { standingWatch } : {}),
           modelId: thread.modelId, ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}), status: thread.status, group: row.group,
-          waitsOn: thread.requests.map(item => ({ id: item.id, kind: item.kind, label: item.kind === 'permission' ? 'Open to answer permission' : 'Open to answer question', openTarget: target })),
+          waitsOn: [...thread.requests.map(item => ({ id: item.id, kind: item.kind, openTarget: target })), ...delegatedCards.get(key(target)) ?? []].slice(0, 100)
+            .map(item => ({ ...item, label: item.kind === 'permission' ? 'Open to answer permission' : 'Open to answer question' })),
           branch: thread.worktree?.branch ?? null, workingCopy: thread.worktree ? { kind: thread.worktree.mode === 'shared' ? 'shared' as const : 'new-worktree' as const } : null,
           pullRequests: (thread.pullRequests ?? []).map(item => ({ number: item.number, url: item.url, title: item.title ?? '', state: item.state, draft: item.draft ?? false })),
           evidence: this.wakes.evidence.read(target, this.connected(thread)), lastActivityAt: this.wakes.observations.get(JSON.stringify([thread.hostId ?? null, thread.id]))?.lastProgressAt ?? null, observedAt: row.observedAt ?? null, connected: this.connected(thread),

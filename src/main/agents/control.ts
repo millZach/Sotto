@@ -3089,7 +3089,7 @@ export class AgentControl {
           // The turn this starts is the resumed one, which counts the resumes before it (ADR-0076 decision 6).
           if (item.news?.some(isRestartNews)) this.restartHooks?.sending(threadId)
           // Watcher's news goes beside the message, as its request note does, never in it (ADR-0073).
-          const watcherNews = item.wakeUp && item.news ? watcherWakeUpNote(item.news) : undefined
+          const watcherNews = item.wakeUp && item.news?.some(isWatcherNews) ? watcherWakeUpNote(item.news, this.watcherHooks?.newsDetail?.()) : undefined
           await this.dispatch({ type: 'send', commandId: item.commandId!, threadId, messageId: item.messageId!, text: item.text.trim(), attachments: item.attachments, ...(item.skills ? { skills: item.skills } : {}), ...(item.files ? { files: item.files } : {}),
             expectedLastUserMessageId: lastUserMessageIdOf(this.thread(threadId)), ...(item.wakeUp ? { wakeUp: true as const } : {}), ...(watcherNews ? { watcherNews } : {}) }, turn, validate, item.wakeUp ? undefined : item.draftId,
             this.localClient, undefined, undefined, writeGuard)

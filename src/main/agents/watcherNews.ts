@@ -1,5 +1,6 @@
-import type { AgentMessage } from '../../shared/agents'
-import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_TARGETS_MAX, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
+import { isVisualMessage, type AgentMessage, type AgentThread } from '../../shared/agents'
+import { pullRequestKey } from '../../shared/gitPullRequests'
+import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_REPLY_CHARS, WATCHER_NEWS_TARGETS_MAX, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
 import { observationDigest, targetKey } from './watcherEvidence'
 
 export function eventSlot(event: WatcherEvent): string {
@@ -41,23 +42,78 @@ const words: Record<WatcherEvent['kind'], string> = {
 }
 const NEWS_OPENING = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.'
 /**
- * Watcher's news as its provider reads it: the text the wake-up carries beside its message, through the same per-turn
- * context channel as the request note (ADR-0073), never in the message itself.
+ * What Sotto adds to one event's line as the wake-up goes (#1190): the start of a finished turn's reply, or what a pull
+ * request now says. Worked out from the thread as it stands then, so nothing of it is ever saved with the news.
  */
-export function watcherNewsText(news: WatcherNews): string {
+export type WatcherNewsDetail = (event: WatcherEvent) => string | undefined
+const kindWords = (event: WatcherEvent): string => event.kind === 'needs-user' && event.delegatedThreadId !== undefined
+  ? `A thread this one delegated to, ${event.delegatedThreadId}, has a ${event.requestCardKind === 'permission' ? 'permission request' : 'question'} for the user. Open that thread to answer it. Only the user can answer.`
+  : words[event.kind]
+/**
+ * Watcher's news as its provider reads it: the text the wake-up carries beside its message, through the same per-turn
+ * context channel as the request note (ADR-0073), never in the message itself. A finish told with its own work-settled
+ * news is said once, by the work-settled line. Sotto's detail goes while there is room for it: it gives way, the newest
+ * line's first, before any event does.
+ */
+export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail): string {
   const opening = NEWS_OPENING
-  const lines = news.events.map(event => `${JSON.stringify(event.target)}: ${words[event.kind]}${(event.kind === 'turn-finished' || event.kind === 'turn-failed') && event.backgroundWorkCount
+  const settled = new Set(news.events.filter(event => event.kind === 'work-settled').map(event => JSON.stringify([targetKey(event.target), event.turnId ?? null])))
+  const shown = news.events.filter(event => !(event.kind === 'turn-finished' && settled.has(JSON.stringify([targetKey(event.target), event.turnId ?? null]))))
+  const details = shown.map(event => detail?.(event))
+  const line = (event: WatcherEvent, extra: string | undefined) => `${JSON.stringify(event.target)}: ${kindWords(event)}${(event.kind === 'turn-finished' || event.kind === 'turn-failed') && event.backgroundWorkCount
     ? ` Background work or monitoring is still running (${event.backgroundWorkCount}), so the turn is not done until Sotto sends work-settled news for it.` : ''}${event.operationId && event.kind !== 'delivery-changed'
-    ? ` This turn answers operation ${event.operationId}; read_operation gives its outcome and reply.` : ''} Use requestId ${event.requestId} for this thread. [${event.id}]`)
-  let count = lines.length
-  while (count >= 0) {
-    const omitted = news.omitted + lines.length - count
-    const text = [opening, ...lines.slice(0, count), ...(omitted ? [`${omitted} more events omitted. Read list_threads for the current roster.`] : []),
+    ? ` This turn answers operation ${event.operationId}; read_operation gives its outcome and reply.` : ''}${extra ? ` ${extra}` : ''} Use requestId ${event.requestId} for this thread. [${event.id}]`
+  const compose = (count: number, detailed: number) => {
+    const lines = shown.slice(0, count).map((event, index) => line(event, index < detailed ? details[index] : undefined))
+    const omitted = news.omitted + shown.length - count
+    return [opening, ...lines, ...(omitted ? [`${omitted} more events omitted. Read list_threads for the current roster.`] : []),
       'Use read_operation for a brief’s receipt, outcome and, once answered, its reply. Use read_thread for evidence and other worker messages. A standing watch requestId authorizes a bounded continuation for that watched thread. Share four prompts per target within this Watcher turn across request and standing-watch IDs.'].join('\n')
+  }
+  for (let detailed = shown.length; detailed >= 0; detailed--) {
+    const text = compose(shown.length, detailed)
+    if (Buffer.byteLength(text) <= WATCHER_NEWS_BYTES_MAX) return text
+  }
+  let count = shown.length
+  while (count >= 0) {
+    const text = compose(count, 0)
     if (Buffer.byteLength(text) <= WATCHER_NEWS_BYTES_MAX) return text
     count--
   }
   return opening
+}
+
+/**
+ * The start of a finished turn's reply, for its news (#1190): the thread's newest worker message after the message that
+ * began its newest turn, while that turn is the one the news is of and nothing runs. Labelled as the worker's words, and
+ * cut at WATCHER_NEWS_REPLY_CHARS characters; read_operation or read_thread has the rest.
+ */
+export function watcherReplyStart(thread: AgentThread, turnId: string | undefined): string | undefined {
+  if (thread.status === 'running' || !thread.lastTurn || thread.lastTurn.id !== turnId) return undefined
+  const messages = thread.messages
+  const reply = messages.findLastIndex(message => message.role === 'assistant' && !isVisualMessage(message) && message.text.trim() !== '')
+  if (reply < 0 || messages.findLastIndex(message => message.role === 'user') > reply) return undefined
+  const characters = [...messages[reply]!.text.trim()]
+  const cut = characters.length > WATCHER_NEWS_REPLY_CHARS
+  return `Its reply ${cut ? 'begins' : 'is'}, in the worker's words: ${JSON.stringify(characters.slice(0, WATCHER_NEWS_REPLY_CHARS).join(''))}${cut ? ' (cut; read_operation or read_thread has the rest)' : ''}.`
+}
+const ATTENTION_WORDS: Record<string, string> = {
+  'checks-failed': 'checks failed on its newest commit', 'checks-passed': 'all checks passed on its newest commit', merged: 'merged', closed: 'closed without merging',
+  approved: 'approved', 'changes-requested': 'a review asks for changes', conflicting: 'conflicts with its base branch',
+}
+/**
+ * What a thread's pull requests now say that needs Watcher, in Sotto's words (#1190): checks, merged or closed, the review
+ * decision, a conflict, and comments or reviews that moved. Numbers come from the thread's links; never a comment's words.
+ */
+export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlySet<string>>, thread: Pick<AgentThread, 'pullRequests' | 'worktree'>): string | undefined {
+  const links = [...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []]
+  const parts: string[] = []
+  for (const [pr, facts] of attention) {
+    const number = links.find(link => pullRequestKey(link.url) === pr)?.number
+    const said = [...facts].flatMap(fact => ATTENTION_WORDS[fact] ?? [])
+    if (facts.has('remarks')) said.push('its comments or reviews changed; read them on GitHub')
+    if (said.length) parts.push(`Pull request ${number ? `#${number}` : pr}: ${said.join('; ')}.`)
+  }
+  return parts.length ? parts.join(' ') : undefined
 }
 
 /**

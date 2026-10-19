@@ -21,7 +21,7 @@ async function fixture(history = true) {
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => history, watcherEnabled: true } })
-  let service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history, limit: () => 4 })
+  let service = new WatcherService({ ordinaryBatch: { quietMs: 2_000, maxMs: 5_000 }, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history, limit: () => 4 })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
@@ -66,7 +66,7 @@ async function fixture(history = true) {
   }
   const restart = async () => {
     service.close()
-    service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history, limit: () => 4 })
+    service = new WatcherService({ ordinaryBatch: { quietMs: 2_000, maxMs: 5_000 }, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => history, limit: () => 4 })
     await service.recover()
   }
   return { ...f, workspace, id, requestId, call, native, emit, endTurn, start, read, restart, get service() { return service } }
@@ -107,6 +107,7 @@ it('names the operation a finished turn answers in its news', async () => {
     .map(item => watcherWakeUpNote(item.news ?? []) ?? '').find(text => text.includes('foreground turn finished'))
   await vi.waitFor(() => expect(note()).toBeDefined(), { timeout: 15_000 })
   expect(note()).toContain(`This turn answers operation ${started.receipt.operationId}`)
+  // The queued news holds identities only: Sotto adds the reply's start when the note is sent (#1190), never to the queue.
   expect(note()).not.toContain('Synthetic worker reply')
 })
 
