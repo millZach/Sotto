@@ -1,0 +1,1482 @@
+{
+  "answer-card-dark-1600x1000": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-glance__why 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 11.41
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-ask__title 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-ask__meta 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-ask__kind 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-ask__open 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-ask__toggle 0",
+      "ratio": 12.5
+    },
+    {
+      "name": ".watcher-ask__said-body 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    }
+  ],
+  "answer-card-dark-1280x800": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-glance__why 1",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 11.41
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-ask__title 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-ask__meta 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-ask__kind 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-ask__open 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-ask__toggle 0",
+      "ratio": 12.5
+    },
+    {
+      "name": ".watcher-ask__said-body 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    }
+  ],
+  "answer-card-dark-820x560": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 11.41
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-ask__title 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-ask__title 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-ask__meta 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-ask__meta 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-ask__kind 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-ask__kind 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-ask__open 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-ask__toggle 0",
+      "ratio": 12.5
+    },
+    {
+      "name": ".watcher-ask__said-body 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    }
+  ],
+  "answer-line-dark-1600x1000": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 11.41
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-ask__open 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-ask-receipt__words 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    }
+  ],
+  "answer-line-dark-1280x800": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 11.41
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-ask__open 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-ask-receipt__words 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    }
+  ],
+  "answer-line-dark-820x560": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.48
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 9.13
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 17.84
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 13.08
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 12.7
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 19.55
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 18.81
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 13.19
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 9.2
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 9.2
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 11.41
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 9.09
+    },
+    {
+      "name": ".watcher-ask__open 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-ask-receipt__words 0",
+      "ratio": 13.59
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 13.59
+    }
+  ],
+  "answer-card-light-1600x1000": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-glance__why 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 6.75
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-ask__title 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-ask__meta 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-ask__kind 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-ask__open 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-ask__toggle 0",
+      "ratio": 7.23
+    },
+    {
+      "name": ".watcher-ask__said-body 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    }
+  ],
+  "answer-card-light-1280x800": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-glance__why 1",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 6.75
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-ask__title 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-ask__meta 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-ask__kind 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-ask__open 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-ask__toggle 0",
+      "ratio": 7.23
+    },
+    {
+      "name": ".watcher-ask__said-body 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    }
+  ],
+  "answer-card-light-820x560": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 1",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 6.75
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-ask__title 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-ask__title 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-ask__meta 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-ask__meta 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-ask__kind 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-ask__kind 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-ask__open 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-ask__toggle 0",
+      "ratio": 7.23
+    },
+    {
+      "name": ".watcher-ask__said-body 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    }
+  ],
+  "answer-line-light-1600x1000": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 6.75
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-ask__open 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-ask-receipt__words 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    }
+  ],
+  "answer-line-light-1280x800": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-glance__why 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 6.75
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-ask__open 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-ask-receipt__words 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    }
+  ],
+  "answer-line-light-820x560": [
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-head h1 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-head__list 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.72
+    },
+    {
+      "name": ".watcher-head__count 0",
+      "ratio": 6.78
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 14.69
+    },
+    {
+      "name": ".watcher-tabs__tab 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-tabs__tab 1",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-tabs__count 0",
+      "ratio": 10.54
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.73
+    },
+    {
+      "name": ".watcher-glance__lead 0",
+      "ratio": 6.79
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.74
+    },
+    {
+      "name": ".watcher-glance__name 0",
+      "ratio": 15.88
+    },
+    {
+      "name": ".watcher-pane .thread-chip 0",
+      "ratio": 10.81
+    },
+    {
+      "name": ".watcher-pane .thread-chip 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".thread-options__caption 0",
+      "ratio": 6.95
+    },
+    {
+      "name": ".thread-options__caption 1",
+      "ratio": 6.95
+    },
+    {
+      "name": ".watcher-dock__switch button 0",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-dock__switch button 1",
+      "ratio": 6.75
+    },
+    {
+      "name": ".watcher-dock__switch button 2",
+      "ratio": 6.05
+    },
+    {
+      "name": ".watcher-ask__open 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-ask-receipt__words 0",
+      "ratio": 10.44
+    },
+    {
+      "name": ".watcher-stop-all__button 0",
+      "ratio": 10.44
+    }
+  ]
+}

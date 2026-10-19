@@ -10,6 +10,7 @@ import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type Thr
 import { isImmutableActivities, isImmutableActivity } from './activitySnapshots'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
+import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
 
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
@@ -108,6 +109,11 @@ const migrations = [{
   // An observed reply keeps its Sotto turn anchor when native history corrects its timestamp.
   version: 7,
   sql: 'ALTER TABLE messages ADD COLUMN turn_message_id TEXT;',
+}, {
+  // The requests a Watcher wake-up's news said waited on the user, kept with the wake-up as identities alone, so its
+  // conversation shows their cards under it after a messages-reset and a restart (ADR-0073). Null for every other wake-up.
+  version: 8,
+  sql: 'ALTER TABLE wake_ups ADD COLUMN watcher_asks TEXT;',
 }]
 
 /** One visual as the store keeps it: the visual, when it arrived, and where in the thread it was drawn. */
@@ -222,6 +228,8 @@ export class ThreadStore {
   private readonly visualCache = new Map<string, readonly StoredVisual[]>()
   /** Each thread's wake-up message IDs as last read or written, for the same reason. */
   private readonly wakeUpCache = new Map<string, ReadonlySet<string>>()
+  /** Each thread's Watcher wake-up asks, by wake-up message ID, as last read or written. */
+  private readonly wakeUpAskCache = new Map<string, ReadonlyMap<string, readonly WatcherAsk[]>>()
 
   /** The main runtime supplies a path under `app.getPath('userData')`. */
   constructor(private readonly path: string, private readonly preserveThread?: (threadId: string) => boolean) {}
@@ -295,6 +303,7 @@ export class ThreadStore {
     this.redactionChecks.clear()
     this.visualCache.clear()
     this.wakeUpCache.clear()
+    this.wakeUpAskCache.clear()
     this.db?.close()
     this.db = undefined
     this.memory = false
@@ -802,6 +811,7 @@ export class ThreadStore {
     this.activityMetas.delete(threadId)
     this.visualCache.delete(threadId)
     this.wakeUpCache.delete(threadId)
+    this.wakeUpAskCache.delete(threadId)
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
     this.redactionChecks.clear()
@@ -875,26 +885,60 @@ export class ThreadStore {
     return ids
   }
 
-  /** Keeps a wake-up's message ID with its thread. Throws when the store refuses it. */
-  addWakeUp(threadId: string, messageId: string): void {
-    const before = this.wakeUps(threadId)
-    if (before.has(messageId)) return
-    this.statement('INSERT OR IGNORE INTO wake_ups (thread_id, message_id) VALUES (?, ?)').run(threadId, messageId)
-    this.wakeUpCache.set(threadId, new Set([...before, messageId]))
+  /**
+   * The requests each of this thread's Watcher wake-ups said waited on the user, by the wake-up's message ID
+   * (ADR-0073). Identities alone; a row this build cannot read is left out.
+   */
+  wakeUpAsks(threadId: string): ReadonlyMap<string, readonly WatcherAsk[]> {
+    const held = this.wakeUpAskCache.get(threadId)
+    if (held) return held
+    const asks = new Map<string, readonly WatcherAsk[]>()
+    for (const row of this.statement('SELECT message_id, watcher_asks FROM wake_ups WHERE thread_id = ? AND watcher_asks IS NOT NULL').all(threadId)) {
+      let parsed: ReturnType<typeof watcherAsksSchema.safeParse> | undefined
+      try { parsed = watcherAsksSchema.safeParse(JSON.parse(String(row.watcher_asks))) } catch { /* Unreadable: left out. */ }
+      if (parsed?.success && parsed.data.length) asks.set(String(row.message_id), parsed.data)
+    }
+    this.wakeUpAskCache.set(threadId, asks)
+    return asks
   }
 
-  /** Keeps every one of these wake-up message IDs with its thread, in one transaction. Throws when the store refuses them. */
-  addWakeUps(threadId: string, messageIds: readonly string[]): void {
+  /**
+   * Keeps a wake-up's message ID with its thread, and, for a Watcher wake-up, the requests its news said waited on the
+   * user. Throws when the store refuses it.
+   */
+  addWakeUp(threadId: string, messageId: string, asks?: readonly WatcherAsk[]): void {
     const before = this.wakeUps(threadId)
-    const added = [...new Set(messageIds)].filter(id => !before.has(id))
+    const beforeAsks = asks?.length ? this.wakeUpAsks(threadId) : undefined
+    if (before.has(messageId) && (beforeAsks === undefined || beforeAsks.has(messageId))) return
+    if (beforeAsks === undefined) this.statement('INSERT OR IGNORE INTO wake_ups (thread_id, message_id) VALUES (?, ?)').run(threadId, messageId)
+    else this.statement('INSERT INTO wake_ups (thread_id, message_id, watcher_asks) VALUES (?, ?, ?) ON CONFLICT (thread_id, message_id) DO UPDATE SET watcher_asks = excluded.watcher_asks')
+      .run(threadId, messageId, JSON.stringify(asks))
+    this.wakeUpCache.set(threadId, new Set([...before, messageId]))
+    if (beforeAsks !== undefined) this.wakeUpAskCache.set(threadId, new Map([...beforeAsks, [messageId, [...asks!]]]))
+  }
+
+  /**
+   * Keeps every one of these wake-up message IDs with its thread, with the asks of those that have them, in one
+   * transaction. Throws when the store refuses them.
+   */
+  addWakeUps(threadId: string, messageIds: readonly string[], asks?: ReadonlyMap<string, readonly WatcherAsk[]>): void {
+    const before = this.wakeUps(threadId)
+    const beforeAsks = asks?.size ? this.wakeUpAsks(threadId) : new Map<string, readonly WatcherAsk[]>()
+    const added = [...new Set(messageIds)].filter(id => !before.has(id) || asks?.has(id) && !beforeAsks.has(id))
     if (!added.length) return
     const db = this.requireOpen()
     db.exec('BEGIN IMMEDIATE')
     try {
-      for (const id of added) this.statement('INSERT OR IGNORE INTO wake_ups (thread_id, message_id) VALUES (?, ?)').run(threadId, id)
+      for (const id of added) {
+        const kept = asks?.get(id)
+        if (kept?.length) this.statement('INSERT INTO wake_ups (thread_id, message_id, watcher_asks) VALUES (?, ?, ?) ON CONFLICT (thread_id, message_id) DO UPDATE SET watcher_asks = excluded.watcher_asks')
+          .run(threadId, id, JSON.stringify(kept))
+        else this.statement('INSERT OR IGNORE INTO wake_ups (thread_id, message_id) VALUES (?, ?)').run(threadId, id)
+      }
       db.exec('COMMIT')
     } catch (error) { db.exec('ROLLBACK'); throw error }
     this.wakeUpCache.set(threadId, new Set([...before, ...added]))
+    if (asks?.size) this.wakeUpAskCache.set(threadId, new Map([...beforeAsks, ...added.flatMap(id => asks.get(id)?.length ? [[id, asks.get(id)!] as const] : [])]))
   }
 
   /** Keeps one visual with its thread. Throws when the store refuses it, so nothing is shown that was not kept. */

@@ -6,6 +6,7 @@ import { isShownReply, type WatcherTakeover } from '../../../shared/watcherRoom'
 import { SottoMark } from '../components/SottoMark'
 import { ProviderMark } from '../agents/ProviderMark'
 import { clockLabel } from '../agents/threadFacts'
+import { WatcherAsks, type WatcherAskAnswering, type WatcherAskPlacement } from './WatcherAsks'
 
 /** A thread as a receipt card or a takeover line names it: what the window knows of it now. */
 export interface ConversationThread {
@@ -27,11 +28,16 @@ export interface ConversationThread {
 
 /**
  * What Watcher's own pane adds to its conversation (ADR-0073): the receipt cards under each reply, by the message they
- * go under, and the takeover lines after the message they follow. Only Watcher's pane provides it.
+ * go under, the takeover lines after the message they follow, and the cards of the requests its wake-ups said waited on
+ * the user, by the message they go under. Only Watcher's pane provides it.
  */
 export interface WatcherConversation {
   readonly receipts: ReadonlyMap<string, readonly WatcherOperation[]>
   readonly takeovers: ReadonlyMap<string, readonly WatcherTakeover[]>
+  /** The requests each message's wake-up said waited on the user, answered on their cards here (answering in Watcher's conversation). */
+  readonly asks?: ReadonlyMap<string, readonly WatcherAskPlacement[]> | undefined
+  /** What those cards answer with; absent, they are not drawn. */
+  readonly answering?: WatcherAskAnswering | undefined
   readonly describe: (target: WatcherThreadTarget) => ConversationThread
   /** A press on a thread's name: beside Watcher, or with Shift in the Threads room, as everywhere in the room. */
   readonly press: (threadId: string) => Pick<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'onKeyDown'>
@@ -43,8 +49,9 @@ export const WatcherConversationContext = createContext<WatcherConversation | nu
  * outside Watcher's own pane.
  */
 export function useRepliesKeptInView(): ReadonlySet<string> | null {
-  const receipts = useContext(WatcherConversationContext)?.receipts
-  return useMemo(() => receipts === undefined ? null : new Set(receipts.keys()), [receipts])
+  const conversation = useContext(WatcherConversationContext)
+  const receipts = conversation?.receipts, asks = conversation?.asks
+  return useMemo(() => receipts === undefined ? null : new Set([...receipts.keys(), ...asks?.keys() ?? []]), [receipts, asks])
 }
 
 /**
@@ -139,15 +146,20 @@ function TakeoverLine({ line, conversation }: { readonly line: WatcherTakeover; 
   </div>
 }
 
-/** What follows a message in Watcher's own pane: its receipt cards, then any takeover line. Nothing anywhere else. */
+/**
+ * What follows a message in Watcher's own pane: its receipt cards, then the cards of the requests its wake-up said wait
+ * on the user, then any takeover line. Nothing anywhere else.
+ */
 export function WatcherAfterMessage({ message }: { readonly message: AgentMessage }): ReactNode {
   const conversation = useContext(WatcherConversationContext)
   if (conversation === null) return null
   const operations = conversation.receipts.get(message.id)
   const lines = conversation.takeovers.get(message.id)
-  if (operations === undefined && lines === undefined) return null
+  const asks = conversation.answering === undefined ? undefined : conversation.asks?.get(message.id)
+  if (operations === undefined && lines === undefined && asks === undefined) return null
   return <>
     {operations?.length ? <WatcherReceipts operations={operations} conversation={conversation} /> : null}
+    {asks?.length && conversation.answering ? <WatcherAsks asks={asks} describe={conversation.describe} answering={conversation.answering} press={conversation.press} /> : null}
     {lines?.map(line => <TakeoverLine key={`${line.target.hostId}:${line.target.threadId}:${line.at}`} line={line} conversation={conversation} />)}
   </>
 }

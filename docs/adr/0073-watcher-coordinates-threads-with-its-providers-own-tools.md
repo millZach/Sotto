@@ -304,3 +304,44 @@ most every 250 ms. Each Watcher read looks at every thread first, so it reads th
 watched starts from its facts as they are, so what it had before is not told as news; after a restart, what changed is
 still told. Quiet in `list_threads` therefore applies only to watched threads: an unwatched thread has no observed
 history of its progress, so a silent one lists as Working. Watched threads' news, Quiet included, is unchanged.
+
+## October 19, 2026: answering in Watcher's conversation
+
+When a watched thread asked a question or a permission, Watcher's room said so in the needs-you line and in Watcher's
+reply, and the user had to open the thread to answer. Zach picked variant B of a static answering prototype, kept
+outside the repository, on October 19, 2026. It is the desktop's version of the phone's choice 4B above:
+
+- **Inline in Watcher's conversation.** The thread's own request card sits under the reply in which Watcher told the user
+  about it, and scrolls with the conversation. It is the same card the thread's pane shows (`AgentRequestCard`), with the
+  thread's name, its provider and computer, whether it is a question or a permission, and **Open**, which opens the thread
+  beside Watcher. The pinned dock (A), the card in both places (C) and the needs-you line expanding into cards (D) were not
+  picked.
+- **Questions and permissions both.**
+- **The thread's last reply is folded** under **Show what it said**, so the user can answer without opening the thread.
+  Escape folds it again.
+- **Once answered, one line.** When the request leaves the thread, answered here, in the thread's pane or on the phone, or
+  withdrawn by its provider, the card gives way to one line with **Open**. When this window sent the answer, the line says
+  what was chosen in the card's own words, "You answered Fix login on staging: Use the staging key.", or that the user
+  answered in their own words, never repeating them. Otherwise it says only what Sotto knows: "Fix login on staging no
+  longer waits on you." The chosen words are kept in the window's memory alone; no answer record is saved.
+- **The needs-you line goes to the card.** A name whose request has its card in the loaded conversation scrolls to that
+  card and focuses it, at once when motion is reduced. Otherwise it opens the thread beside Watcher at its request, as
+  before.
+
+Watcher still answers nothing. The card is the user's own control: its answer is the ordinary user `answer` command for
+the watched thread's request, from this window, the one the thread's pane sends, and it shares that pane's answer state
+in the window, so a press in either shows as sending in both. No tool was added, the wake-up's news still tells Watcher
+that only the user answers, and a wake-up's turn still cannot answer a permission (`guardAuthority`).
+
+Which card goes under which reply comes from the host's own record, never from anyone's words. When the coordinator sends
+a wake-up holding Watcher's news, it passes the requests that news said wait on the user, as identities alone (host,
+thread, request and kind), and the workspace records them with the wake-up: in the thread store's `wake_ups` row
+(migration 8, `watcher_asks`) and on the thread's record in `workspace.json` (`wakeUpAsks`, the newest 200), as the
+wake-up's own ID is kept, so they survive the history being read again and a restart with Keep local history on or off.
+No adapter hears them. The workspace marks the wake-up message with them (`watcherAsks`), and the room's projection
+places each (`asks`) under the last shown reply of the turn that wake-up began, or the message before it while Watcher
+has not replied, since a wake-up holding only news is shown nowhere. The card itself is drawn from the thread's live
+request alone: nothing keeps a copy of a request to draw a card from, so a request answered anywhere leaves every card at
+once. A request two wake-ups named, because it changed between them, has its card only under the newer. A thread on a
+paired host is found and answered through its own row, as its pane does, and a card that cannot be answered now says why
+in the pane's own words, such as "Reconnect Codex to answer."
