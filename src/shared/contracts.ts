@@ -319,9 +319,11 @@ export type DictationShortcutsResult =
   | Readonly<{ ok: true }>
   | Readonly<{ ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; chord?: string | undefined }>
 
+/** `unsupported-key`: a key outside the shortcut table was pressed, so no chord was taken. */
 export type KeyRecordResult =
   | Readonly<{ kind: 'recorded'; chord: string }>
   | Readonly<{ kind: 'cancelled' }>
+  | Readonly<{ kind: 'unsupported-key' }>
   | Readonly<{ kind: 'unavailable' }>
 
 /** The key listener's standing: macOS Input Monitoring granted or denied; `not-needed` while nothing needs it or where no grant exists (Windows); `unsupported` where the listener cannot run. */

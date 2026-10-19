@@ -166,6 +166,7 @@ const dictationShortcutsResultSchema = z.discriminatedUnion('ok', [
 const keyRecordResultSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('recorded'), chord: z.string().min(1).max(64) }).strict(),
   z.object({ kind: z.literal('cancelled') }).strict(),
+  z.object({ kind: z.literal('unsupported-key') }).strict(),
   z.object({ kind: z.literal('unavailable') }).strict(),
 ])
 const keyListenerPermissionSchema = z.enum(['granted', 'denied', 'not-needed', 'unsupported'])
