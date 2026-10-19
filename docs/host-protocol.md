@@ -216,6 +216,8 @@ A push has `event` in place of `id`. The host coalesces them the way the desktop
 
 Shell pushes are also paced to what the client reads. While output to a client is still backed up in the host's side of its socket, the host sends it no further shell; once that output drains, the host sends the newest shell, built then, with an event page from the client's own place in the event stream. A slow link therefore gets shells as fast as it reads them, with never more than about one waiting in the host's buffer, and a shell it is not sent loses no event. The `detail` and `detail-delta` pushes a thread's own changes make, and answers, are never held back for this, so a delta still follows the revision it applies to. The host still closes a client whose unread output would pass 32 MiB, twice the frame limit.
 
+A shell push whose `state` is byte for byte the state of the last shell push written to that client, and whose event page would carry no events and no `hasMore`, is not sent (October 18, 2026): the client already shows it. Its place in the event stream does not move until a push tells it where it is. A hello, a `shell` read or a command answers with a shell of its own, so after any of them the next push is sent whatever it repeats, and a new connection starts with nothing remembered.
+
 | `event` | Fields | Sent |
 | --- | --- | --- |
 | `shell` | `state`, `eventPage?` | When the shell changes, after a successful hello reply has been delivered. A v1 client that never sends hello receives no shell pushes. `eventPage` is `{ events, latestSeq, hasMore }` after this client's place in the event stream; `hasMore` means read the rest with `events`. |

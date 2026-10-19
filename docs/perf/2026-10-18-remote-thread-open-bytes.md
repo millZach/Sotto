@@ -13,7 +13,7 @@ laptop; 948,574 to 220,448) and its shells about 3.75 times (130 KB to 35 KB, ab
 ## The change
 
 The host socket speaks `permessage-deflate` (RFC 7692) with desktops, with no compression context kept between
-messages ([ADR-0025, October 18 amendment](../adr/0025-headless-host-and-client-identity.md#october-18-amendment-a-desktops-socket-messages-are-compressed),
+messages ([ADR-0025, October 18 amendment](../adr/0025-headless-host-and-client-identity.md#october-18-amendment-a-desktops-socket-messages-are-compressed-and-a-repeated-shell-is-not-sent),
 `docs/host-protocol.md` under Compression). Phones are not offered it yet.
 
 ## How it was measured
@@ -48,3 +48,11 @@ choice was level 6 with large messages compressed on Node's thread pool. A messa
 order on the wire is unchanged. Sending the 3.6 MB detail then holds the host's loop for 3 to 5 ms, the cost of turning
 the string into bytes and queueing it, while the compression itself takes 180 to 200 ms on the pool. The desktop
 inflates on its own loop: about 21 ms for that detail, against about 6 ms to parse the JSON it yields.
+
+## Shells the desktop already has
+
+Each open also sent two to four shells of about 130 KB, some with a state byte for byte the one just sent. The
+listener no longer pushes a shell whose state matches the last one it pushed to that client while there are no events
+to bring (`docs/host-protocol.md` under Pushes). A repeated shell now costs nothing on the link instead of about 35 KB
+compressed or 130 KB before compression; `tests/integration/socketShellRepeats.test.ts` checks that a repeat is not
+sent and that a change, an event or an answer that carried a shell is.

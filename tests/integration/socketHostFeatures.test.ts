@@ -277,11 +277,12 @@ describe('model catalog revisions (#699)', () => {
       expect(answered).toMatchObject({ ok: true }); expect(answered.result!.host).toMatchObject({ modelsRevision: first })
       expect(answered.result!.host).not.toHaveProperty('models')
 
-      // A client that did not accept the feature is sent exactly what v1 sends: the whole catalog, every time.
-      const olderPush = await nextShell(older, publish)
-      expect(olderPush.models).toEqual(models); expect(olderPush).not.toHaveProperty('modelsRevision')
+      // A client that did not accept the feature is sent exactly what v1 sends: the whole catalog, every time. Its answer
+      // comes first: a push of the shell it was already pushed is not sent again, and one after an answer is.
       const olderAnswer = await older.call('select', { op: 'command', command: { type: 'select-project', projectId: 'project' } }) as Frame
       expect(olderAnswer.result!.host!.models).toEqual(models); expect(olderAnswer.result!.host).not.toHaveProperty('modelsRevision')
+      const olderPush = await nextShell(older, publish)
+      expect(olderPush.models).toEqual(models); expect(olderPush).not.toHaveProperty('modelsRevision')
 
       // A changed catalog goes whole once, under a new revision, then is named again.
       models = syntheticModelCatalog(6)
