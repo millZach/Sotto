@@ -24,6 +24,12 @@ async function fixture() {
   const credentials = await testCredentials(join(directory, 'vault'), { mode: 'unavailable' })
   const settings = { ...DEFAULT_SETTINGS, threadTitles: false }
   let watcherEnabled = true
+  // These cases are about which user request may send, not Watcher's news. Two seconds after a worker's turn ends,
+  // news would start a hidden wake-up turn on Watcher's thread, and a user request sent behind it waits in the queue
+  // instead of starting a request. A slow runner reaches those two seconds between steps, so every case holds news
+  // back for every Watcher, including the one a restart makes before its first pass. Every pass goes through observe.
+  const held = vi.spyOn(WatcherWakeUp.prototype, 'observe').mockImplementation(() => undefined)
+  cleanups.push(async () => { held.mockRestore() })
   const createRuntime = () => createAgentRuntime({ directory, credentials, watcherEnabled, settings: () => settings,
     writingSettings: async () => settings, historyEnabled: () => true, openExternal: async () => undefined, reasoner: {},
     providers: { codex: native.adapter, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
@@ -39,13 +45,30 @@ async function fixture() {
   const call = async <N extends WatcherToolName>(name: N, input: unknown) =>
     watcherToolSchemas[name].output.parse((await tools.call(watcherId, name, input)).structuredContent) as WatcherToolOutput<N>
   const request = async (text: string) => {
+    const known = new Set(watcher.state().requests.map(item => item.id))
     expect((await control.commandShell({ type: 'manual-send', threadId: watcherId, draftId: randomUUID(), text })).error).toBeNull()
-    return watcher.state().requests.at(-1)!.id
+    // A send to a busy Watcher is queued and starts no request; the cases below need the request it starts.
+    const started = watcher.state().requests.at(-1)!.id
+    expect(known.has(started), 'the user request started a new Watcher request').toBe(false)
+    return started
   }
   const thread = (threadId: string) => control.watcherSnapshot().threads.find(item => item.id === threadId)!
   const session = (threadId: string) => runtime.threadRegistry!.byThread(threadId)!.sessionId
   const finish = async (threadId: string) => {
-    await native.driver.completeTurn(session(threadId), 'Synthetic completed reply')
+    const sessionId = session(threadId)
+    const action = await native.action(sessionId, { type: 'complete', text: 'Synthetic completed reply' })
+    // Only an app-server that has the thread loaded carries out a turn action, and after a restart none has until
+    // something reads the thread. Until then Sotto shows it idle from its saved record while its turn still runs
+    // natively, so an idle status alone would let the completion land later, inside the next send. Load the thread,
+    // wait for the completion, and have Sotto take in what Codex now reports: the adapter answers its own read only
+    // to its caller.
+    const unloaded = await native.sessions.stopped(sessionId)
+    if (unloaded) await native.adapter.refreshThread(sessionId)
+    await expect.poll(() => native.acted(action)).toBe(true)
+    if (unloaded) {
+      await expect.poll(async () => (await native.adapter.snapshot()).threads.find(item => item.id === sessionId)?.status).toBe('idle')
+      expect((await control.commandShell({ type: 'refresh', provider: 'codex' })).error).toBeNull()
+    }
     await expect.poll(() => thread(threadId).status).toBe('idle')
   }
   const advanceToQueuedTurn = async (threadId: string, text: string) => {
@@ -81,10 +104,7 @@ async function fixture() {
   const watchId = watcher.state().standingWatches![0]!.id
   const row = () => watcher.state().watchedThreads.find(item => item.target.threadId === target.threadId)!
   const participationA = () => watcher.state().requests.find(item => item.id === requestA)!.participants.find(item => item.target.threadId === target.threadId)!
-  // A wake-up turn makes Watcher's newest message its own, so a test of how a request ends holds news back, through a
-  // restart too: the next Watcher's first pass would find the takeover's news and wake it as it rests.
-  const holdNews = () => { const held = vi.spyOn(WatcherWakeUp.prototype, 'observe').mockImplementation(() => undefined); cleanups.push(async () => { held.mockRestore() }) }
-  return { native, get control() { return control }, get watcher() { return watcher }, call, request, finish, advanceToQueuedTurn, thread, session, watcherId, requestA, target, watchId, row, participationA, holdNews,
+  return { native, get control() { return control }, get watcher() { return watcher }, call, request, finish, advanceToQueuedTurn, thread, session, watcherId, requestA, target, watchId, row, participationA,
     restart: async (enabled = true) => {
       await runtime.close(); watcherEnabled = enabled; runtime = await createRuntime()
       control = runtime.agentControl; watcher = runtime.watcher!; tools = runtime.watcherTools!
@@ -375,7 +395,6 @@ it('keeps an instruction queued between two takeovers inside the request the sec
 
 it('ends a request with no participants when its queued instruction starts a fresh one', async () => {
   const f = await fixture()
-  f.holdNews()
   await f.finish(f.target.threadId)
   await f.finish(f.watcherId)
   // Watcher is busy with request C, which never sent to the worker; the takeover's boundary still fences C.
@@ -400,7 +419,6 @@ it('ends a request with no participants when its queued instruction starts a fre
 
 it('keeps a request with no participants open while an earlier instruction to it is still queued', async () => {
   const f = await fixture()
-  f.holdNews()
   await f.finish(f.target.threadId)
   await f.finish(f.watcherId)
   const requestC = await f.request('Synthetic request C with two queued instructions')
@@ -426,7 +444,6 @@ it('keeps a request with no participants open while an earlier instruction to it
 
 it('ends a request with no participants when the only other instruction to it was removed', async () => {
   const f = await fixture()
-  f.holdNews()
   await f.finish(f.target.threadId)
   await f.finish(f.watcherId)
   const requestC = await f.request('Synthetic request C with a removed instruction')
@@ -491,7 +508,6 @@ it('keeps a fresh request blocked for now, queue and steer until the user turn e
 
 it('keeps a pre-existing nonparticipant request fenced through restart and rewatch', async () => {
   const f = await fixture()
-  f.holdNews()
   await f.finish(f.target.threadId); await f.finish(f.watcherId)
   const requestB = await f.request('Synthetic request B before takeover')
   expect(f.watcher.state().requests.find(item => item.id === requestB)?.participants).toEqual([])
@@ -565,7 +581,7 @@ it.each(['queue', 'steer'] as const)('allows a fresh request to %s after user re
   const previousTurnId = f.thread(f.target.threadId).lastTurn?.id
   const standing = await f.call('send_to_thread', { requestId: f.watchId, retryKey: randomUUID(), target: f.target,
     delivery: 'now', text: 'Synthetic running standing work' })
-  expect(standing).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
+  expect(standing, JSON.stringify(standing)).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
   if (standing.status !== 'ok') throw new Error('Synthetic standing work was not admitted')
   const messageId = f.control.watcherRecord().operations.find(item => item.id === standing.receipt.operationId)!.messageId
   expect(messageId).toBeDefined()
@@ -583,7 +599,6 @@ it.each(['queue', 'steer'] as const)('allows a fresh request to %s after user re
 
 it('uses the latest takeover when the next request has never participated', async () => {
   const f = await fixture()
-  f.holdNews()
   await f.finish(f.target.threadId)
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
   const firstTakeover = structuredClone(f.participationA().takeover)
