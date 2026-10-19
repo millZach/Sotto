@@ -4,6 +4,7 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createAgentRuntime } from '../../src/main/agents/runtime'
+import { WatcherWakeUp } from '../../src/main/agents/watcherWakeUp'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { watcherToolSchemas, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
 import { codexFixture } from '../fixtures/codexFixture'
@@ -80,8 +81,9 @@ async function fixture() {
   const watchId = watcher.state().standingWatches![0]!.id
   const row = () => watcher.state().watchedThreads.find(item => item.target.threadId === target.threadId)!
   const participationA = () => watcher.state().requests.find(item => item.id === requestA)!.participants.find(item => item.target.threadId === target.threadId)!
-  // A wake-up turn makes Watcher's newest message its own, so a test of how a request ends holds news back.
-  const holdNews = () => vi.spyOn(watcher.wakes, 'observe').mockImplementation(() => undefined)
+  // A wake-up turn makes Watcher's newest message its own, so a test of how a request ends holds news back, through a
+  // restart too: the next Watcher's first pass would find the takeover's news and wake it as it rests.
+  const holdNews = () => { const held = vi.spyOn(WatcherWakeUp.prototype, 'observe').mockImplementation(() => undefined); cleanups.push(async () => { held.mockRestore() }) }
   return { native, get control() { return control }, get watcher() { return watcher }, call, request, finish, advanceToQueuedTurn, thread, session, watcherId, requestA, target, watchId, row, participationA, holdNews,
     restart: async (enabled = true) => {
       await runtime.close(); watcherEnabled = enabled; runtime = await createRuntime()
@@ -489,6 +491,7 @@ it('keeps a fresh request blocked for now, queue and steer until the user turn e
 
 it('keeps a pre-existing nonparticipant request fenced through restart and rewatch', async () => {
   const f = await fixture()
+  f.holdNews()
   await f.finish(f.target.threadId); await f.finish(f.watcherId)
   const requestB = await f.request('Synthetic request B before takeover')
   expect(f.watcher.state().requests.find(item => item.id === requestB)?.participants).toEqual([])
@@ -580,6 +583,7 @@ it.each(['queue', 'steer'] as const)('allows a fresh request to %s after user re
 
 it('uses the latest takeover when the next request has never participated', async () => {
   const f = await fixture()
+  f.holdNews()
   await f.finish(f.target.threadId)
   expect((await f.control.commandShell({ type: 'configure-thread', threadId: f.target.threadId, reasoningEffort: 'high' })).error).toBeNull()
   const firstTakeover = structuredClone(f.participationA().takeover)

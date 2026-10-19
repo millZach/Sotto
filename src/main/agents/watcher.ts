@@ -171,7 +171,7 @@ export class WatcherService implements WatcherControlHooks {
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
       prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),
       changed: () => this.publish(), failed: () => { this.recoveryNotice = 'Watcher news could not be saved. Reconnect or refresh its threads to retry. Nothing was approved.' } })
-    const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => { this.endFinishedPauses(); this.publish() })
+    const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => { this.endFinishedPauses(); this.closeAnsweredRequests(); this.publish() })
     this.unsubscribe = () => { unhook(); unsubscribe() }
   }
   private record(): WatcherRecord { return this.options.control.watcherRecord() }
@@ -1115,15 +1115,7 @@ export class WatcherService implements WatcherControlHooks {
       const watcherMessages = new Set(next.operations.flatMap(item => item.messageId ? [item.messageId] : []))
       for (const operation of next.operations) this.observeOutcome(operation, snapshot, watcherMessages)
       this.pruneReservations(next, snapshot)
-      for (const [index, request] of next.requests.entries()) if (request.state === 'active' && !request.participants.length && !next.operations.some(item => item.requestId === request.id)) {
-        const master = request.watcher.hostId === this.hostId() ? snapshot.threads.find(item => item.id === request.watcher.threadId) : undefined
-        const head = master && nativeHead(master)
-        const answered = (item: WatcherRequest) => item.rootUserMessageId === head || item.userFollowups?.some(followup => followup.messageId === head)
-        // A later request answering the head means Watcher has gone past this one, as when a queued instruction moved
-        // from it to a fresh request and the user then removed the rest of its queue.
-        if (master?.lastTurn && master.lastTurn.status !== 'running' && master.status !== 'running' && !this.options.control.hasPendingThreadWork(master.id)
-          && (answered(request) || next.requests.some((item, later) => later > index && answered(item)))) { request.state = 'closed'; request.closedAt = now() }
-      }
+      for (const request of this.answeredWithoutWorkers(next, snapshot)) { request.state = 'closed'; request.closedAt = now() }
       for (const request of next.requests) if (request.state === 'active' && request.participants.length
         && request.participants.every(item => {
           if (item.state !== 'participating') return true
@@ -1683,6 +1675,31 @@ export class WatcherService implements WatcherControlHooks {
     const refusal = this.dispatchRefusals.get(operation.id)?.result.code
     this.recordOutcome(record, operation, 'failed', refusal ?? operation.refusalCode ?? 'PROVIDER_UNAVAILABLE')
     this.dispatchRefusals.delete(operation.id)
+  }
+  /**
+   * Requests with no workers that Watcher's last turn answered, once nothing is left queued to Watcher. A later request
+   * answering the head means Watcher has gone past this one, as when a queued instruction moved from it to a fresh
+   * request and the user then removed the rest of its queue.
+   */
+  private answeredWithoutWorkers<R extends Readonly<WatcherRecord>>(record: R, snapshot: AgentHostSnapshot): R['requests'][number][] {
+    return record.requests.filter((request, index) => {
+      if (request.state !== 'active' || request.participants.length || record.operations.some(item => item.requestId === request.id)) return false
+      const master = request.watcher.hostId === this.hostId() ? snapshot.threads.find(item => item.id === request.watcher.threadId) : undefined
+      const head = master && nativeHead(master)
+      const answered = (item: WatcherRequest) => item.rootUserMessageId === head || item.userFollowups?.some(followup => followup.messageId === head)
+      return Boolean(master?.lastTurn && master.lastTurn.status !== 'running' && master.status !== 'running' && !this.options.control.hasPendingThreadWork(master.id)
+        && (answered(request) || record.requests.some((item, later) => later > index && answered(item))))
+    })
+  }
+  /**
+   * Watcher's turn ending arrives with a provider snapshot, but its queue can empty after it, with only a publish to say
+   * so. A request that has been waiting on that queue ends then.
+   */
+  private closeAnsweredRequests(): void {
+    const snapshot = this.options.control.watcherSnapshot()
+    if (this.answeredWithoutWorkers(this.view(), snapshot).length) this.options.control.mutateWatcher(next => {
+      for (const request of this.answeredWithoutWorkers(next, snapshot)) { request.state = 'closed'; request.closedAt = now() }
+    })
   }
   private recordOutcome(record: WatcherRecord, operation: WatcherOperation, state: WatcherOperation['deliveryState'], code?: WatcherRefusal['code']): void {
     const wasFailed = operation.deliveryState === 'failed', before = JSON.stringify(operation)
