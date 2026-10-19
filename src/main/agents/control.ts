@@ -61,6 +61,7 @@ import { watcherMessageRequests, watcherMessagesAsTyped } from './watcherRequest
 import { watcherHandoversShown } from './watcherHandover'
 import { startHandoverSend, startHandoversShown } from './startHandover'
 import { NATIVE_FORKS, START_HANDOVER_UNREADABLE, startsThread } from '../../shared/threadStarts'
+import { FailuresSeen } from './failuresSeen'
 import { FinishedUnread } from './finishedUnread'
 import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
@@ -151,6 +152,8 @@ const savedSchema = z.object({
   deliveries: z.array(agentDeliverySchema).default([]),
   /** The threads that finished while no client showed them, oldest first (ADR-0046). */
   finishedUnread: z.array(z.string()).default([]),
+  /** The failed threads a client has shown since they failed, or Dismiss all named, oldest first (ADR-0092). */
+  failuresSeen: z.array(z.object({ threadId: z.string(), failure: z.string() })).default([]),
   composing: z.boolean(), outbox: z.array(z.object({
     id: z.string(), type: z.enum(['send', 'steer', 'create-project', 'create-thread', 'configure-thread', 'answer', 'interrupt', 'compact-thread']),
     provider: providerIdSchema.optional(),
@@ -513,6 +516,8 @@ export class AgentControl {
   private viewedThreadIds: readonly string[] = []
   /** Threads that finished while no client showed them; what a client shows is what it observes (ADR-0046). */
   private readonly finishedUnread: FinishedUnread
+  /** Failed threads a client has shown since they failed, or the user dismissed; their rows read Done (ADR-0092). */
+  private readonly failuresSeen: FailuresSeen
   /** The sends whose reply's first output the coordinator is watching for, to time it. */
   private readonly firstOutputs = new FirstOutputWatches()
   private broadcastCancel: (() => void) | null = null
@@ -596,6 +601,7 @@ export class AgentControl {
     this.watcherMessageDisplay = dependencies.watcherEnabled === true ? new WatcherMessageDisplay() : undefined
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
     this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id))
+    this.failuresSeen = new FailuresSeen([], id => !this.threadAvailable(id))
     this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')) })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -662,9 +668,10 @@ export class AgentControl {
     this.persistedDrafts = this.draftSignatures(images.threadDrafts)
     this.persistedObsoleteDrafts = saved.obsoleteDrafts
     await this.attachmentPreviews.load(this.stageInline)
-    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
+    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, failuresSeen, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
     void _watcher; void _dormantLegacyDraft; void _dormantMuseConfiguration; void _dormantProviderConfigurations
     this.finishedUnread.restore(finishedUnread)
+    this.failuresSeen.restore(failuresSeen)
     this.deliveredPromptDigests = deliveredPromptDigests
     this.answeredRequests = answeredRequests
     this.manualDraftId = manualDraftId
@@ -796,10 +803,23 @@ export class AgentControl {
    * and the cleared mark is saved so a restart keeps it read. True when a mark was cleared.
    */
   showThreads(threadIds: readonly string[]): boolean {
-    if (!this.finishedUnread.show(threadIds.filter(id => this.threadAvailable(id)))) return false
+    const shown = threadIds.filter(id => this.threadAvailable(id))
+    // Showing a thread reads its finish and sees its failure (ADR-0092), so both records hear every show.
+    const finished = this.finishedUnread.show(shown)
+    if (!this.failuresSeen.show(shown, this.state.host.threads) && !finished) return false
     this.publish()
     void this.persist().catch(() => undefined)
     return true
+  }
+  /**
+   * Dismiss all (ADR-0092): each named thread whose last turn failed reads as seen, on every client, as if one had shown
+   * it, and the record is saved. A thread that waits on a permission or a question is not seen this way; it is the user's
+   * to answer.
+   */
+  private dismissFailures(threadIds: readonly string[]): void {
+    if (!this.failuresSeen.dismiss(threadIds.filter(id => this.threadAvailable(id)), this.state.host.threads)) return
+    this.publish()
+    void this.persist().catch(() => undefined)
   }
   /**
    * `setAsideIgnored` is for a change the user makes, such as Watcher's model or provider: a prompt the user set aside is
@@ -856,8 +876,8 @@ export class AgentControl {
     state.obsoleteDrafts = structuredClone(this.persistedObsoleteDrafts)
     state.host.threads = state.host.threads.map(thread => {
       const presented = this.presentedMessages(thread), summary = thread.summary && this.presentedSummary(thread)
-      return this.finishedUnread.publish(presented === thread.messages && summary === thread.summary ? thread
-        : { ...thread, messages: [...presented], ...(summary ? { summary } : {}) })
+      return this.failuresSeen.publish(this.finishedUnread.publish(presented === thread.messages && summary === thread.summary ? thread
+        : { ...thread, messages: [...presented], ...(summary ? { summary } : {}) }))
     })
     state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
@@ -932,11 +952,11 @@ export class AgentControl {
     // A certified catalog is frozen and shared by every layer from the adapter on, so the shell carries it as it is rather
     // than clone every model on each broadcast (#917). One that is not certified is copied, as everything else is.
     const shared = isImmutableModels(models)
-    const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, ...(shared ? { models: EMPTY_MODELS } : {}), threads: threads.map(thread => this.finishedUnread.publish({
+    const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, ...(shared ? { models: EMPTY_MODELS } : {}), threads: threads.map(thread => this.failuresSeen.publish(this.finishedUnread.publish({
       ...thread, messages: EMPTY_MESSAGES,
       ...(thread.activities === undefined ? {} : { activities: EMPTY_ACTIVITIES }),
       summary: this.presentedSummary(thread),
-    })) } }
+    }))) } }
     // Every broadcast makes one, so it copies containers and keeps strings: several times faster than structuredClone.
     const state = clonePlainData(bare)
     if (shared) state.host.models = models
@@ -1274,6 +1294,7 @@ export class AgentControl {
       outbox: this.outbox, manualDraftId: this.manualDraftId, deliveredDrafts: this.state.deliveredDrafts ?? [],
       obsoleteDrafts: this.state.obsoleteDrafts ?? [],
       finishedUnread: this.finishedUnread.saved(),
+      failuresSeen: this.failuresSeen.saved(),
       deliveredPromptDigests: this.deliveredPromptDigests,
       answeredRequests: this.answeredRequests,
       threadDrafts: (this.state.threadDrafts ?? []).map(item => this.dormantThreadDrafts.get(item.threadId) ?? item), deliveries: this.savedDeliveries() }
@@ -2691,11 +2712,15 @@ export class AgentControl {
     }
     // Selection owns no action authority and must not wait for provider actions.
     if (command.type === 'select-thread') return this.navigate(command.threadId)
-    if (command.type === 'observe-threads') {
-      this.viewedThreadIds = [...new Set(command.threadIds)].filter(id => this.state.host.threads.some(thread => thread.id === id))
-      this.observe()
-      // A newly viewed thread needs its history now, not at the next provider frame.
-      this.broadcastDetail()
+    // Dismiss all is Sotto's own record of what the user has seen, like showing a thread: it waits on no lane.
+    if (command.type === 'observe-threads' || command.type === 'dismiss-failures') {
+      if (command.type === 'dismiss-failures') this.dismissFailures(command.threadIds)
+      else {
+        this.viewedThreadIds = [...new Set(command.threadIds)].filter(id => this.state.host.threads.some(thread => thread.id === id))
+        this.observe()
+        // A newly viewed thread needs its history now, not at the next provider frame.
+        this.broadcastDetail()
+      }
       return Promise.resolve(this.shell())
     }
     if (command.type === 'save-thread-draft') {
@@ -4305,6 +4330,7 @@ export class AgentControl {
     }
     // Saved with the persist below; a disconnected snapshot changes no mark, so its early return loses nothing.
     this.finishedUnread.track(snapshot)
+    this.failuresSeen.track(snapshot)
     this.scheduleProviderReconnects()
     if (this.state.activeProjectId) this.state.activeProjectId = this.dependencies.host.resolveProjectId?.(this.state.activeProjectId) ?? this.state.activeProjectId
     if (this.state.configuration.defaultModelId) this.state.configuration.defaultModelId = this.dependencies.host.resolveModelId?.(this.state.configuration.defaultModelId) ?? this.state.configuration.defaultModelId

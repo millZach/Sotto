@@ -1141,6 +1141,8 @@ export class SocketHostService implements HostService {
   }
   /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
   get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }
+  /** The host lists `failure-seen`: it publishes `failureSeen` and takes `dismiss-failures` (ADR-0092). */
+  get supportsFailureSeen(): boolean { return this.features.includes('failure-seen') }
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
     this.offers('thread-starts')
     return this.read(hostStartHandoverSchema, await this.call({ op: 'start-handover', threadId })).handover

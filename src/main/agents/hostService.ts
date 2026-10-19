@@ -100,6 +100,9 @@ export interface HostService {
   hostFacts?(): Promise<HostMachineReport>
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
+  /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
+   * threads say Needs attention until their next turn. */
+  readonly supportsFailureSeen?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
   startHandover?(threadId: string): Promise<{ readonly text: string } | null>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
@@ -255,6 +258,8 @@ export class LocalHostService implements HostService {
 
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
+  /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
+  readonly supportsFailureSeen = true
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
     if (!this.options.threadStarts) throw new Error('Continuing an agent as a thread is unavailable on this host.')
     const built = this.options.threadStarts.startHandover(threadId)

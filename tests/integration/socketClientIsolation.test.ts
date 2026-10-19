@@ -115,6 +115,28 @@ describe('socket client isolation and reconnect', () => {
     await expect.poll(() => workshop()?.status).toBe('idle')
     expect(marked(desktop.client)).toBeUndefined()
   })
+  it('carries a seen failure to every paired client, from a client opening the thread or one pressing Dismiss all (ADR-0092)', async () => {
+    const phone = await pair('Phone'), desktop = await pair('Desktop')
+    await phone.client.command({ type: 'configure', patch: { enabledProviders: ['codex'], provider: 'codex' } })
+    await phone.client.command({ type: 'connect', provider: 'codex' })
+    await expect.poll(() => phone.client.shell().host.threads.find(thread => thread.title === 'Docs')).toBeDefined()
+    const ids = Object.fromEntries(['Workshop', 'Docs'].map(title => [title, phone.client.shell().host.threads.find(thread => thread.title === title)!.id]))
+    const seen = (client: SocketHostService, id: string) => client.shell().host.threads.find(thread => thread.id === id)?.failureSeen
+    expect(desktop.client.supportsFailureSeen).toBe(true)
+    for (const native of ['workshop', 'docs']) {
+      fixture.native.event({ type: 'manual', threadId: native, text: 'Synthetic prompt' })
+      fixture.native.event({ type: 'failure', threadId: native, text: 'Synthetic failure' })
+    }
+    await expect.poll(() => desktop.client.shell().host.threads.find(thread => thread.id === ids.Docs)?.status).toBe('error')
+    expect(seen(desktop.client, ids.Workshop!)).toBeUndefined()
+    // Opening a failed thread on the phone sees it on the desktop too.
+    await phone.client.observe([ids.Workshop!])
+    await expect.poll(() => seen(desktop.client, ids.Workshop!)).toBe(true)
+    expect(seen(desktop.client, ids.Docs!)).toBeUndefined()
+    // Dismiss all from the desktop sees the rest, on the phone too.
+    expect((await desktop.client.command({ type: 'dismiss-failures', threadIds: [ids.Docs!] })).error).toBeNull()
+    await expect.poll(() => seen(phone.client, ids.Docs!)).toBe(true)
+  })
   it('lists a temp folder\'s subfolders over the socket for the Add project dialog\'s folder browser', async () => {
     const { client } = await pair()
     const folder = join(fixture.root, 'browse')

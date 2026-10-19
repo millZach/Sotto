@@ -58,6 +58,8 @@ export const AGENT_TEXT_MAX = 100_000
 const text = z.string().max(AGENT_TEXT_MAX)
 export const AGENT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
 export const AGENT_MAX_ATTACHMENTS = 8
+/** The most threads one Dismiss all names; a window with more failed threads sends them in turn. */
+export const AGENT_DISMISS_FAILURES_MAX = 500
 export const AGENT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 export const AGENT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 // What a screenshot is refused with wherever it is checked: the composer before it reads a file, and staging after.
@@ -481,6 +483,9 @@ export const agentThreadSchema = z.object({
   /** The thread finished its work while no client showed it, and no client has shown it since (ADR-0046). The host's
    * coordinator sets and clears it; absent otherwise, and from hosts that predate it. */
   finishedUnread: z.literal(true).optional(),
+  /** The thread's last turn failed and a client has shown it since, or the user dismissed it (ADR-0092): its row reads Done.
+   * The host's coordinator sets and clears it; absent otherwise, and from hosts that predate it. */
+  failureSeen: z.literal(true).optional(),
   /** The newest message of the user's the provider's adapter has recorded, whether or not `messages` still
    * holds it. A send names it back so the adapter can refuse one that raced the user's own input; a window
    * the adapter put away and took back up carries none of the older messages, so it cannot say. */
@@ -1168,6 +1173,9 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('observe-threads'), threadIds: z.array(id).max(100) }).strict(),
+  /** Dismiss all: the named threads whose last turn failed read as seen, as if a client had shown them (ADR-0092). It
+   * answers no request and grants nothing; a thread waiting on a permission or a question is never one of them. */
+  z.object({ type: z.literal('dismiss-failures'), threadIds: z.array(id).min(1).max(AGENT_DISMISS_FAILURES_MAX) }).strict(),
   /** Widen one thread's loaded window by another twenty turns, because the pane asked for earlier messages. */
   z.object({ type: z.literal('load-earlier-messages'), threadId: id }).strict(),
   /** Early start: the user began typing in this thread's composer, so its provider session is started now rather than

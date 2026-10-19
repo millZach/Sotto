@@ -236,6 +236,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
     && (feature !== 'thread-starts' || service.supportsThreadStarts === true && service.startHandover !== undefined)
+    // A host that keeps which failed threads were seen publishes it and takes Dismiss all (ADR-0092).
+    && (feature !== 'failure-seen' || service.supportsFailureSeen === true)
     // A host that can update itself offers it on both listeners, to SSH-recorded desktops only (ADR-0088).
     && (feature !== 'host-update' || options.hostUpdate !== undefined && options.watcherDesktops !== undefined))
   /**
