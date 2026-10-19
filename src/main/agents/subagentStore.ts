@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { flushedCommits, SAVE_SYNCHRONOUS } from '../storage/sqliteDurability'
 import type { AgentActivity, ObservedAgent } from '../../shared/agentActivity'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, SUBAGENT_ASSIGNMENT_PAGE_SIZE, SUBAGENT_PAGE_SIZE, type SubagentAssignment, type SubagentAssignmentsPage, type SubagentAssignmentsRequest, type SubagentChange, type SubagentPage, type SubagentPageRequest, type SubagentRow, type SubagentSummary } from '../../shared/subagents'
 
@@ -53,7 +54,9 @@ export class SubagentStore {
     mkdirSync(dirname(this.path), { recursive: true })
     const db = new DatabaseSync(ephemeral ? ':memory:' : this.path, { timeout: 5_000 })
     try {
-      db.exec(`PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON;
+      // A save does not wait for the disk (`SAVE_SYNCHRONOUS`); erasing does (`flushedCommits`). The attached
+      // `privacy` file of an ephemeral store keeps SQLite's default, FULL: it holds only erased identities.
+      db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=${SAVE_SYNCHRONOUS}; PRAGMA secure_delete=ON;
         CREATE TABLE IF NOT EXISTS subagent_redactions (identity TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS subagent_classifications (thread_id TEXT NOT NULL, activity_id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(thread_id, activity_id));
         CREATE TABLE IF NOT EXISTS subagent_threads (thread_id TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -89,6 +92,9 @@ export class SubagentStore {
     statement.run(privacyIdentity(threadId, agentId))
   }
   private erase(): void {
+    flushedCommits(this.requireOpen(), () => this.eraseFlushed())
+  }
+  private eraseFlushed(): void {
     const db = this.requireOpen()
     const threadIds = this.preserveThread ? db.prepare('SELECT thread_id FROM subagent_threads UNION SELECT thread_id FROM subagent_rows UNION SELECT thread_id FROM subagent_assignments UNION SELECT thread_id FROM subagent_classifications').all().map(row => String(row.thread_id)) : undefined
     const selected = threadIds?.some(id => this.preserveThread!(id)) ? threadIds.filter(id => !this.preserveThread!(id)) : undefined

@@ -11,6 +11,7 @@ import { isImmutableActivities, isImmutableActivity } from './activitySnapshots'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
 import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
+import { flushedCommits, SAVE_SYNCHRONOUS } from '../storage/sqliteDurability'
 
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
 export const FIRST_WINDOW_TURNS = 10
@@ -332,11 +333,14 @@ export class ThreadStore {
       this.durableRedactions.rememberActivityRedactions(added)
     } else {
       const db = this.requireOpen()
-      db.exec('BEGIN IMMEDIATE')
-      try {
-        for (const hash of added) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
-        db.exec('COMMIT')
-      } catch (error) { db.exec('ROLLBACK'); throw error }
+      // A redaction a power cut undid would let a provider replay bring the record back.
+      flushedCommits(db, () => {
+        db.exec('BEGIN IMMEDIATE')
+        try {
+          for (const hash of added) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
+          db.exec('COMMIT')
+        } catch (error) { db.exec('ROLLBACK'); throw error }
+      })
     }
     for (const hash of added) this.activityRedactions.add(hash)
     this.redactionRevision++
@@ -782,6 +786,10 @@ export class ThreadStore {
 
   /** Drops one thread's projection and takes the words out of its log, leaving only that it happened. */
   forget(threadId: string): void {
+    flushedCommits(this.requireOpen(), () => this.forgetFlushed(threadId))
+  }
+
+  private forgetFlushed(threadId: string): void {
     const db = this.requireOpen()
     const hashes = this.activityIdentityHashes(threadId)
     db.exec('BEGIN IMMEDIATE')
@@ -810,6 +818,10 @@ export class ThreadStore {
 
   /** The same for every thread: what Keep local history turning off asks of the file. */
   redactAll(): void {
+    flushedCommits(this.requireOpen(), () => this.redactAllFlushed())
+  }
+
+  private redactAllFlushed(): void {
     const db = this.requireOpen()
     // A release gate can keep dormant threads outside this runtime's privacy ownership.
     const threadIds = this.preserveThread ? this.statement('SELECT thread_id FROM events UNION SELECT thread_id FROM messages UNION SELECT thread_id FROM activities UNION SELECT thread_id FROM activity_epochs UNION SELECT thread_id FROM visuals').all().map(row => String(row.thread_id)) : undefined
@@ -913,11 +925,13 @@ export class ThreadStore {
     const removed = before.filter(stored => stored.anchorUserMessageId !== null && doomed.has(stored.anchorUserMessageId))
     if (removed.length === 0) return 0
     const db = this.requireOpen()
-    db.exec('BEGIN IMMEDIATE')
-    try {
-      for (const stored of removed) this.statement('DELETE FROM visuals WHERE thread_id = ? AND visual_id = ?').run(threadId, stored.visual.id)
-      db.exec('COMMIT')
-    } catch (error) { db.exec('ROLLBACK'); throw error }
+    flushedCommits(db, () => {
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        for (const stored of removed) this.statement('DELETE FROM visuals WHERE thread_id = ? AND visual_id = ?').run(threadId, stored.visual.id)
+        db.exec('COMMIT')
+      } catch (error) { db.exec('ROLLBACK'); throw error }
+    })
     this.visualCache.set(threadId, before.filter(stored => !removed.includes(stored)))
     return removed.length
   }
@@ -925,14 +939,14 @@ export class ThreadStore {
   /**
    * This thread's history is now exactly these messages: a rewind the provider confirmed, or the
    * one-time move of a thread out of `workspace.json`. One transaction, so a failure leaves the
-   * thread as it was.
+   * thread as it was. It waits for the disk, so a power cut cannot bring back turns a rewind took out.
    */
   replaceThreadMessages(threadId: string, messages: readonly AgentMessage[], historyEpoch?: string): void {
     const at = new Date().toISOString()
-    this.appendMany(threadId, [
+    flushedCommits(this.requireOpen(), () => this.appendMany(threadId, [
       { kind: 'messages-reset', at, ...(historyEpoch === undefined ? {} : { historyEpoch }) },
       ...messages.map(message => ({ kind: 'message-added' as const, at: message.createdAt || at, message })),
-    ])
+    ]))
   }
 
   /** Rebuilds every projection from the log; the log is the record, the projection only reads faster. */
@@ -1063,9 +1077,9 @@ function writeMeta(db: DatabaseSync, key: string, value: string): void {
 
 /** The memory store's pattern: each pending migration in its own transaction, checked inside it. */
 export function prepareThreadDatabase(db: DatabaseSync): void {
-  // Provider cursors are saved independently: history cannot rely on replay after a lost commit.
+  // A save does not wait for the disk (`SAVE_SYNCHRONOUS`); what the user takes out does (`flushedCommits`).
   // `secure_delete` overwrites a deleted row rather than leaving its text in a freed page.
-  db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;')
+  db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=${SAVE_SYNCHRONOUS}; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;`)
   db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, appliedAt TEXT NOT NULL)')
   for (const migration of migrations) {
     db.exec('BEGIN IMMEDIATE')
