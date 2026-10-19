@@ -36,7 +36,6 @@ const customSettings = {
   visualsInThreads: false,
   babysitPullRequests: false,
   resumeThreadsAfterRestart: false,
-  watcherInFlightLimit: 6,
   workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
@@ -122,16 +121,11 @@ describe('settings', () => {
     expect(parseSettings({ resumeThreadsAfterRestart: false }).resumeThreadsAfterRestart).toBe(false)
     expect(parseSettings({ resumeThreadsAfterRestart: 'no' }).resumeThreadsAfterRestart).toBe(true)
   })
-  it('defaults watcher capacity to four and accepts only integers from one to eight', () => {
-    expect(parseSettings({}).watcherInFlightLimit).toBe(4)
-    for (const watcherInFlightLimit of [1, 4, 8]) {
-      expect(parseSettings({ watcherInFlightLimit }).watcherInFlightLimit).toBe(watcherInFlightLimit)
-      expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, watcherInFlightLimit }).success).toBe(true)
-    }
-    for (const watcherInFlightLimit of [0, 9, 2.5, '4', null]) {
-      expect(parseSettings({ watcherInFlightLimit }).watcherInFlightLimit).toBe(4)
-      expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, watcherInFlightLimit }).success).toBe(false)
-    }
+  it('reads a saved Threads in flight limit as nothing, since Sotto no longer has one (#1183)', () => {
+    const parsed = parseSettings({ ...DEFAULT_SETTINGS, watcherInFlightLimit: 6 })
+    expect(parsed).toEqual(DEFAULT_SETTINGS)
+    expect('watcherInFlightLimit' in parsed).toBe(false)
+    expect('watcherInFlightLimit' in settingsSchema.shape).toBe(false)
   })
   it('starts every worktree cleanup rule off and recovers an unusable rule set to the defaults', () => {
     expect(parseSettings({}).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
@@ -291,7 +285,6 @@ describe('settings', () => {
   it('defines the complete versioned defaults', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
-      watcherInFlightLimit: 4,
       workerRoles: {},
       terminalFontSize: 13,
       memoryEnabled: false,

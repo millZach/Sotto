@@ -33,7 +33,7 @@ const identity: WatcherIdentity = { target: { hostId: HOST, threadId: 'watcher' 
 const watcherThread: AgentThread = { id: 'watcher', kind: 'watcher', title: 'Watcher', projectId: 'workshop', modelId: 'codex:gpt', providerId: 'codex', status: 'idle', requests: [], messages: [] }
 const room = (current: boolean): WatcherRoomState => ({ current: current ? identity : null,
   currentOptions: current ? { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true } : null, history: [], requests: [], watchedThreads: [],
-  inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at })
+  receipts: [], recoveryNotice: null, observedAt: at })
 const kept = (phase: 'writing' | 'starting' | 'started', text = 'Keep an eye on the footer links.') =>
   sessionStorage.setItem(FIRST_MESSAGE_KEY, JSON.stringify({ text, modelId: '', effort: null, phase }))
 
@@ -48,7 +48,7 @@ function renderRoom(current: boolean) {
   vi.mocked(useOptionalAgents).mockReturnValue(connection)
   const ok = (next: WatcherRoomState): WatcherRoomResult => ({ status: 'ok', state: next })
   const listeners = new Set<(next: WatcherRoomState) => void>()
-  const bridge = { get: vi.fn(async () => ok(room(current))), open: vi.fn(async () => ok(room(true))), setLimit: vi.fn(), prepareStopAll: vi.fn(), stopAll: vi.fn(),
+  const bridge = { get: vi.fn(async () => ok(room(current))), open: vi.fn(async () => ok(room(true))), prepareStopAll: vi.fn(), stopAll: vi.fn(),
     onChanged: vi.fn((listener: (next: WatcherRoomState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }) } as unknown as WatcherBridge
   const view = render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
   return { ...view, command, connection, publish: (next: WatcherRoomState) => { for (const listener of listeners) listener(next) } }

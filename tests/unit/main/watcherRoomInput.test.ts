@@ -87,8 +87,8 @@ describe('owned cached Watcher room inputs', () => {
         target: { hostId: remoteId, threadId }, requestId: 'request', startedBy: 'watcher', generation: 0, state: 'participating', promptCount: 1 })) })
     const control = { watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherSnapshot: () => emptyDesktopState(localId).host,
       hostId: () => localId, useWatcher: () => () => undefined, subscribe: () => () => undefined } as unknown as AgentControl
-    const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, limit: () => 4, historyEnabled: () => false, streamingPublishCost: optimized })
-    const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, limit: () => 4, historyEnabled: () => false })
+    const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false, streamingPublishCost: optimized })
+    const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false })
     const remote: WatcherRemoteHosts = f.router.watcherHosts()
     // The router reads a remote host's whole state through its view, in place, rather than a copied shell (October 19, 2026).
     const room = vi.spyOn(remote, 'roomThreads'), snapshot = vi.spyOn(remote, 'snapshot'), shell = vi.spyOn(f.socket, 'view')
@@ -127,8 +127,8 @@ describe('owned cached Watcher room inputs', () => {
       createdAt: at, generation: 0, pausedByUserMessageId: 'user' }]
     const control = { watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherSnapshot: () => emptyDesktopState(localId).host,
       hostId: () => localId, useWatcher: () => () => undefined, subscribe: () => () => undefined } as unknown as AgentControl
-    const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, limit: () => 4, historyEnabled: () => false, streamingPublishCost: true })
-    const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, limit: () => 4, historyEnabled: () => false })
+    const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false, streamingPublishCost: true })
+    const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false })
     const remote = f.router.watcherHosts(), read = vi.spyOn(remote, 'roomThreads'), snapshot = vi.spyOn(remote, 'snapshot'), shell = vi.spyOn(f.socket, 'shell')
     Object.assign(service, { remote }); Object.assign(legacy, { remote })
     const timestamp = vi.spyOn(Date.prototype, 'toISOString').mockReturnValue(at)

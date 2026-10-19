@@ -1,11 +1,9 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { ArrowUp, ChevronDown, List, MoreHorizontal } from 'lucide-react'
+import { ArrowUp, ChevronDown, List } from 'lucide-react'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { releaseTrackName } from '../../../shared/releaseTrack'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { Button } from '../components/Button'
-import { Field } from '../components/Field'
-import { Select } from '../components/Select'
 import { SottoMark } from '../components/SottoMark'
 import { PageWindowControls } from '../components/WindowControls'
 import { claimRoomFocus } from '../components/AppShell'
@@ -47,7 +45,6 @@ import { useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole
 
 const WATCHER_PROMPT_ID = 'watcher-prompt'
 const WATCHER_PANE_ID = 'watcher-pane'
-const LIMITS = [1, 2, 3, 4, 5, 6, 7, 8] as const
 
 const ROOM_TABS: readonly RoomTab[] = ['conversation', 'watched']
 const TAB_KEYS: Readonly<Record<string, (index: number) => number>> = {
@@ -81,73 +78,25 @@ function RoomTabs({ tab, count, ids }: { readonly tab: RoomTab; readonly count: 
   </div>
 }
 
-/**
- * More Watcher actions: a small panel under its button, holding Threads in flight, the one setting Watcher has.
- * It saves as it changes, like Settings. Escape closes it and returns focus to the button; a press outside closes it
- * and leaves focus where that press put it.
- */
-function WatcherActions({ room, limit }: { readonly room: WatcherRoom; readonly limit: number }): ReactNode {
-  const [open, setOpen] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const button = useRef<HTMLButtonElement>(null)
-  const panel = useRef<HTMLDivElement>(null)
-  const select = useRef<HTMLSelectElement>(null)
-  const panelId = useId()
-  useEffect(() => {
-    if (!open) return
-    select.current?.focus()
-    const away = (event: PointerEvent): void => {
-      const target = event.target as Node
-      if (!panel.current?.contains(target) && !button.current?.contains(target)) setOpen(false)
-    }
-    document.addEventListener('pointerdown', away, true)
-    return () => document.removeEventListener('pointerdown', away, true)
-  }, [open])
-  const close = (): void => { setOpen(false); button.current?.focus() }
-  const change = async (next: number): Promise<void> => {
-    if (room.setLimit === null) return
-    setError(null)
-    // The field stays live while main saves, so it keeps focus; main's answer, or the next change, is what shows.
-    try { setError(room.settle(await room.setLimit({ limit: next }))) } catch { setError('Sotto could not save the limit. It is unchanged.') }
-  }
-  // Escape answers on the button as well as in the panel: Shift+Tab back to the button leaves the panel open.
-  return <div className="watcher-actions" onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
-    <button ref={button} type="button" className="pane-action tt-focusable" aria-label="More Watcher actions" title="More Watcher actions"
-      aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={() => setOpen(value => !value)}>
-      <MoreHorizontal size={16} aria-hidden="true" />
-    </button>
-    {open ? <div ref={panel} id={panelId} className="watcher-actions__panel" role="dialog" aria-label="Watcher settings"
-      onBlur={event => { const next = event.relatedTarget as Node | null; if (next !== null && !event.currentTarget.contains(next) && next !== button.current) setOpen(false) }}>
-      <Field label="Threads in flight" description="Watcher starts new work only while fewer than this many threads are working for it. It watches any number, and lowering this stops nothing.">
-        <Select ref={select} value={String(limit)} onChange={event => void change(Number(event.currentTarget.value))}>
-          {LIMITS.map(value => <option key={value} value={value}>{value}</option>)}
-        </Select>
-      </Field>
-      {error ? <p className="watcher-actions__error" role="alert">{error}</p> : null}
-    </div> : null}
-  </div>
-}
-
-/** What Watcher's header holds besides its name: All threads and its count, and, once Watcher runs, its tabs and its actions. */
+/** What Watcher's header holds besides its name: All threads and its count, and, once Watcher runs, its tabs and Stop all. */
 interface HeaderParts {
   readonly room: WatcherRoom | null
-  readonly limit: number
   readonly count: number
   readonly tab: RoomTab
   readonly tabIds: { readonly watchedTab: string; readonly watchedPanel: string }
   readonly listOpen: boolean
   readonly listButton: React.RefObject<HTMLButtonElement | null>
   readonly onToggleList: () => void
-  /** Stop all, before More Watcher actions, while threads Watcher started are running. */
+  /** Stop all, at the header's end, while threads Watcher started are running. */
   readonly stopAll: ReactNode
 }
 
 /**
  * Watcher's header: the Sotto Owl tile in the window's corner, as on every other Owl page, then Watcher's name and
- * All threads, which opens the Overview over the room; once Watcher runs, Conversation and Watched, and at its end More
- * Watcher actions. The night sky spreads behind the corner. The row is the window's drag strip.
+ * All threads, which opens the Overview over the room; once Watcher runs, Conversation and Watched, and at its end Stop
+ * all while threads Watcher started are running. The night sky spreads behind the corner. The row is the window's drag strip.
  */
-function WatcherHeader({ room, limit, count, tab, tabIds, listOpen, listButton, onToggleList, stopAll }: HeaderParts): ReactNode {
+function WatcherHeader({ room, count, tab, tabIds, listOpen, listButton, onToggleList, stopAll }: HeaderParts): ReactNode {
   const started = room?.state?.current != null
   return <header className="thread-workspace__head watcher-head">
     <span className="watcher-head__tile" role="img" aria-label={releaseTrackName('owl')}><SottoMark className="thread-nav__tile" /></span>
@@ -160,7 +109,7 @@ function WatcherHeader({ room, limit, count, tab, tabIds, listOpen, listButton, 
       </button>
       {started && room !== null ? <RoomTabs tab={tab} count={watchedCount(room)} ids={tabIds} /> : null}
     </div>
-    {started && room !== null ? <div className="thread-workspace__actions">{stopAll}<WatcherActions room={room} limit={limit} /></div> : null}
+    {started && room !== null ? <div className="thread-workspace__actions">{stopAll}</div> : null}
   </header>
 }
 
@@ -563,12 +512,11 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   const jumpToAsk = useCallback((threadId: string, requestId: string | undefined): boolean => focusInlineAsk(threadId, requestId), [])
 
   const error = state?.error ?? agents.error ?? null
-  const limit = room?.state?.inFlightLimit ?? app?.settings?.watcherInFlightLimit ?? 4
   const tab = current === null ? 'conversation' : view.tab
   const stopAll = room === null ? null : <WatcherStopAll room={room} conversation={{ describe, press }}
-    fallbackFocus={() => document.querySelector<HTMLElement>('.watcher-head .watcher-actions > button')?.focus()} />
+    fallbackFocus={() => document.querySelector<HTMLElement>('.watcher-head .watcher-tabs__tab[aria-selected="true"]')?.focus()} />
   const header = <>
-    <WatcherHeader room={room} limit={limit} count={overviewCount(groups)} tab={tab} tabIds={tabIds} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
+    <WatcherHeader room={room} count={overviewCount(groups)} tab={tab} tabIds={tabIds} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
       stopAll={stopAll} />
     <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} />
   </>

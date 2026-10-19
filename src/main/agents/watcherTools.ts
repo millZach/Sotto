@@ -5,23 +5,26 @@ import { watcherRefusal, type WatcherService } from './watcher'
 import type { WatcherProfileTools } from './host'
 import { watcherSystemPrompt } from './watcherPrompt'
 import { WORKER_KIND_LIST } from '../../shared/workerRoles'
+import { WORKING_THREADS_QUIET_MAX } from '../../shared/workingThreads'
 
+/** Nothing limits how many threads start (#1183); past ten working on this computer the start's result says so. */
+const WORKING_WARNING = `When more than ${WORKING_THREADS_QUIET_MAX} threads are working on this computer after a start, the result carries a warning: tell the user what it says.`
 const descriptions: Record<WatcherToolName, string> = {
   watch_thread: 'Keep watching and managing a thread until the user stops watching. This does not send a prompt or answer a card.',
   unwatch_thread: 'Stop watching a thread and fence automatic messages for its standing watch. Does not interrupt the user\'s turn.',
   list_threads: 'List worker threads and their state using Sotto identities: each row gives the thread’s title, status, group, what it waits on, whether you watch it and its open pull requests. watchedOnly: true lists only the threads you watch. detail: "full" adds every evidence fact, model and participation; ask for it only when you need those. Does not mark anything read by the user.',
   read_thread: 'Read a bounded window of a worker thread. Its pull requests come as one summary each, beside its own facts such as a failed turn or a takeover; evidence: "full" gives every pull request fact as well. Questions and permissions must be answered by the user on that thread.',
-  start_thread: 'Start one worker in a known project and send its first prompt under an active user Watcher request. Retry with the same key to read the original receipt.',
+  start_thread: `Start one worker in a known project and send its first prompt under an active user Watcher request. Retry with the same key to read the original receipt. ${WORKING_WARNING}`,
   send_to_thread: 'Send now, queue or steer explicitly under an active Watcher request. Cannot answer pending questions or permissions.',
   stop_thread: 'Request interrupt of one eligible worker under the active Watcher request. Does not delete or reclaim anything.',
   settle_thread: 'Move an idle worker to Settled, preserving the thread and working copy. Does not stop background work.',
   list_projects: 'List known worker projects. Narrow it with hostId, projectId or a query on the title or folder. includeModels: true adds the ready models, efforts and comparable default permissions, which are the same for every project on a computer, so ask for one project. Project roots are display information.',
-  list_machines: 'List This computer and each connected machine: its operating system, architecture, memory and CPUs, how many threads it is running, and your starts in flight on it against the limit. A machine that does not report these reads unknown; one not connected says so.',
+  list_machines: 'List This computer and each connected machine: its operating system, architecture, memory and CPUs, and how many threads it is running. A machine that does not report these reads unknown; one not connected says so.',
   list_working_copies: 'Read host-issued working-copy and base-ref choices for a known project. No arbitrary paths or remote fetch.',
   read_operation: 'Read an admitted operation’s receipt and, for a start or send, its outcome: working, background, answered, failed, stopped, paused or unknown. Accepted means delivered; the outcome says how its turn ended. Once answered it carries that turn’s reply, the worker’s own words. Uncertain or unknown means reconcile, never resend.',
 }
 /** With worker roles on (#1041), a start names its role and leaves the rest to the user's Settings. */
-const START_BY_ROLE = `Start one worker in a known project and send its first prompt under an active user Watcher request. Name its role (${WORKER_KIND_LIST}) and leave out the model, effort and permission: Sotto starts it on what the user's Settings give that role, never wider than the new-thread default. Name a model, effort or permission only when the user asked for one for this request; that overrides the role for this start only, and the receipt says so. Retry with the same key to read the original receipt.`
+const START_BY_ROLE = `Start one worker in a known project and send its first prompt under an active user Watcher request. Name its role (${WORKER_KIND_LIST}) and leave out the model, effort and permission: Sotto starts it on what the user's Settings give that role, never wider than the new-thread default. Name a model, effort or permission only when the user asked for one for this request; that overrides the role for this start only, and the receipt says so. Retry with the same key to read the original receipt. ${WORKING_WARNING}`
 /** Without worker roles, a start names its model, as it always has, and the offered schema has no role. */
 const startByModel = watcherToolSchemas.start_thread.input.omit({ role: true }).extend({ modelId: z.string().min(1).max(6_144) })
 

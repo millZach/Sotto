@@ -57,7 +57,7 @@ function roomState(patch: Partial<WatcherRoomState> = {}): WatcherRoomState {
     current: identity, currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [],
     requests: [{ id: REQUEST, watcher: identity.target, rootUserMessageId: 'watcher-1', state: 'active', createdAt: at, closedAt: null, participants: [participant] }],
     watchedThreads: [{ target: target('footer-links'), title: 'Footer links', status: 'running', connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [participant] }],
-    inFlight: 1, inFlightLimit: 4, receipts: [start], recoveryNotice: null, observedAt: at, ...patch,
+    receipts: [start], recoveryNotice: null, observedAt: at, ...patch,
   }
 }
 
@@ -67,7 +67,6 @@ function fakeBridge(state: WatcherRoomState) {
   const bridge = {
     get: vi.fn(async () => ok(state)),
     open: vi.fn(async () => ok({ ...state, current: identity })),
-    setLimit: vi.fn(async () => ok(state)),
     prepareStopAll: vi.fn(async () => ({ status: 'ok' as const, confirmationId: CONFIRMATION, targets: [target('footer-links')], expiresAt: new Date(NOW + 60_000).toISOString() })),
     stopAll: vi.fn(async (): Promise<WatcherStopAllResult> => ({ status: 'ok' as const, state: { ...state, watchedThreads: state.watchedThreads.map(row => ({ ...row, status: 'idle' as const })) },
       results: [{ target: target('footer-links'), status: 'stopped' as const, message: 'Stopped.' }] })),
@@ -183,8 +182,8 @@ describe('Stop all', () => {
     expect(done).toHaveTextContent('Stopped.')
     fireEvent.keyDown(within(done).getByRole('button', { name: 'Close' }), { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Stopped Footer links.' })).toBeNull())
-    // Its threads stopped, so Stop all is gone, and focus goes to More Watcher actions beside it.
-    await waitFor(() => expect(screen.getByRole('button', { name: 'More Watcher actions' })).toHaveFocus())
+    // Its threads stopped, so Stop all is gone, and focus goes back along the header to the tab that is shown.
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Conversation' })).toHaveFocus())
   })
 
   it('answers Escape while its stop runs, and keeps what came of each thread for the button’s next press', async () => {

@@ -90,7 +90,7 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
       requests: options.current ? [{ id: requestId, watcher: identity.target, rootUserMessageId: 'watcher-ask', state: 'active', createdAt: at(12), closedAt: null, participants }] : [],
       watchedThreads: options.current ? participants.map(part => ({ target: part.target, title: part.target.threadId, watched: true, paused: false, status: 'running' as const, connected: true,
         settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [part] })) : [],
-      inFlight: options.current ? 2 : 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at(0),
+      receipts: [], recoveryNotice: null, observedAt: at(0),
     },
     created: identity,
     ...options.permissionConfirms === false ? { permissionConfirms: false } : {},
@@ -733,8 +733,8 @@ test.describe("Watcher's room on the built app", () => {
       await press('ArrowRight', 'Watcher')
       await press('ArrowRight', 'Threads')
       await press('ArrowLeft', 'Watcher')
-      // Tab from All threads: the header (its tabs, one stop on the one shown, then Stop all while threads Watcher started run,
-      // then More Watcher actions), the needs-you
+      // Tab from All threads: the header (its tabs, one stop on the one shown, then Stop all while threads Watcher started run;
+      // with no limit to set, nothing follows it), the needs-you
       // line, the conversation, the composer, then the floating switch's row.
       await allThreads(page).focus()
       const order: string[] = []
@@ -744,8 +744,9 @@ test.describe("Watcher's room on the built app", () => {
       }
       recorded.set('tab-order', order)
       const indexOf = (name: string | RegExp): number => order.findIndex(entry => typeof name === 'string' ? entry === name : name.test(entry))
-      expect(order.slice(0, 3)).toEqual(['Conversation', 'Stop all threads Watcher started, 2 threads', 'More Watcher actions'])
-      expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(indexOf('More Watcher actions'))
+      expect(order.slice(0, 2)).toEqual(['Conversation', 'Stop all threads Watcher started, 2 threads'])
+      expect(order).not.toContain('More Watcher actions')
+      expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(indexOf('Stop all threads Watcher started, 2 threads'))
       expect(indexOf('Watcher message')).toBeGreaterThan(indexOf(/^Open Streaming WAV stall/))
       expect(indexOf('History')).toBeGreaterThan(indexOf('Watcher message'))
       expect(order.slice(indexOf('History'), indexOf('History') + 6)).toEqual(['History', 'Usage', 'Settings', 'Help', 'Watcher', 'Check for updates'])
@@ -759,7 +760,7 @@ test.describe("Watcher's room on the built app", () => {
     }))
   })
 
-  test('badges and Threads in flight, with Watcher kept out of Threads', async () => {
+  test('badges, and no Threads in flight to set, with Watcher kept out of Threads', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
       const { page } = launched
       await openThreads(page)
@@ -796,18 +797,9 @@ test.describe("Watcher's room on the built app", () => {
       await expect(watchedRow.getByRole('button', { name: 'Open Visual gate flake beside Watcher' })).toHaveAccessibleDescription(/Watched by Watcher/)
       await page.keyboard.press('Escape')
 
-      // Threads in flight saves the real setting.
-      const more = pane.getByRole('button', { name: 'More Watcher actions' })
-      await more.click()
-      const limit = page.getByRole('dialog', { name: 'Watcher settings' }).getByRole('combobox', { name: 'Threads in flight' })
-      await expect(limit).toBeFocused()
-      await limit.selectOption('3')
-      await expect(limit).toHaveValue('3')
-      await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).watcherInFlightLimit)).toBe(3)
-      await page.keyboard.press('Escape')
-      await expect(page.getByRole('dialog', { name: 'Watcher settings' })).toHaveCount(0)
-      await expect(more).toBeFocused()
-      recorded.set('limit', { saved: await page.evaluate(async () => (await window.sotto!.getSettings()).watcherInFlightLimit) })
+      // There is no Threads in flight limit to set (#1183), so the header has no More Watcher actions.
+      await expect(page.getByRole('button', { name: 'More Watcher actions' })).toHaveCount(0)
+      await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveCount(0)
     }))
   })
 
@@ -1485,7 +1477,7 @@ test.describe("Watcher's room on the built app", () => {
         .toMatchObject({ status: 'ok', state: { runtimeMode: 'approval-required', currentOptions: { runtimeMode: 'approval-required' } } })
       const worker = await createWorker(page, join(root, 'worker'), 'Standing watch worker')
       expect(await page.evaluate(async target => window.sotto!.watcher!.watchThread!({ target }), worker.target))
-        .toMatchObject({ status: 'ok', state: { inFlight: 0, standingWatches: [expect.objectContaining({ target: worker.target })] } })
+        .toMatchObject({ status: 'ok', state: { standingWatches: [expect.objectContaining({ target: worker.target })] } })
       const detail = await page.evaluate(async threadId => window.sotto!.agents!.threadDetail!(threadId), worker.id)
       expect(detail?.messages).toHaveLength(0)
       expect(await page.evaluate(async target => window.sotto!.watcher!.unwatchThread!({ target }), worker.target))
@@ -1494,26 +1486,10 @@ test.describe("Watcher's room on the built app", () => {
       await switchTab(page, 'Threads').click()
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
       await expect(page.getByRole('complementary', { name: 'Thread sidebar' }).getByText('Watcher', { exact: true })).toHaveCount(0)
-      // Threads in flight saves through main's own setLimit.
+      // A fresh renderer recovers the prompt. Get and notifications may both participate.
       await switchTab(page, 'Watcher').click()
-      await page.getByRole('button', { name: 'More Watcher actions' }).click()
-      await page.getByRole('combobox', { name: 'Threads in flight' }).selectOption('3')
-      await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('3')
-      await expect.poll(async () => (await page.evaluate(() => window.sotto!.getSettings())).watcherInFlightLimit).toBe(3)
-      // Ordinary Settings updates supply no room reply. The populated room's limit overrides the Settings fallback,
-      // so this select needs the final quiet notification rather than a test get() flushing the desktop publisher.
-      await page.evaluate(async () => {
-        await window.sotto!.updateSettings({ watcherInFlightLimit: 1 })
-        await window.sotto!.updateSettings({ watcherInFlightLimit: 2 })
-      })
-      await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('2')
-      await page.keyboard.press('Escape')
-      // A fresh renderer recovers the current limit and prompt. Get and notifications may both participate.
       await page.reload()
       await openRoom(page)
-      await page.getByRole('button', { name: 'More Watcher actions' }).click()
-      await expect(page.getByRole('combobox', { name: 'Threads in flight' })).toHaveValue('2')
-      await page.keyboard.press('Escape')
       await expect(watcherPane(page).locator('[data-role="user"] .rich-message')).toHaveText(original)
       await settle(page)
       expect(await pageBoundProblems(page)).toEqual([])

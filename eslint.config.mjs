@@ -36,6 +36,7 @@ export default tseslint.config(
       'artifacts/watcher-answer/**',
       'artifacts/macos-traffic-light-room/**',
       'artifacts/watcher-news-turns/**',
+      'artifacts/working-threads-warning/**',
       'artifacts/watcher-permission/**',
       'artifacts/terminal-truths/**',
       'artifacts/voice-control-removal/merged-setup/**',

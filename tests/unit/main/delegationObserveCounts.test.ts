@@ -64,7 +64,7 @@ async function counts(size: number, parents = 1) {
     deliverWakeUp: async (_threadId, news) => { if (measuring) { tally.wakeUps++; tally.items += news.items.length } },
   }
   const live = new DelegationService({ directory: root, control, host: { setDelegatedBy: async () => undefined, threadMessage: () => undefined },
-    historyEnabled: () => true, limit: () => 4 })
+    historyEnabled: () => true })
   await live.recover()
   // Recovery tells each delegating thread once that what was open is now unknown; that news has gone before the measure.
   const quiet = live as unknown as { untold: Map<string, unknown>; telling: Set<string> }

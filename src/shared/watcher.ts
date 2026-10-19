@@ -13,7 +13,6 @@ export const WATCHER_PARTICIPATION_HISTORY_MAX = 100
 export const WATCHER_MESSAGES_MAX = 50
 export const WATCHER_TOOL_CALLS_MAX = 8
 export const WATCHER_PROMPTS_PER_THREAD = 4
-export const WATCHER_IN_FLIGHT_DEFAULT = 4
 
 const id = z.string().min(1).max(512)
 const entityId = z.string().min(1).max(6_144)
@@ -75,7 +74,7 @@ export const WATCHER_REPLY_BYTES_MAX = 32 * 1_024
  */
 export const watcherOutcomeReferenceSchema = z.object({ target: watcherThreadTargetSchema, turnMessageId: id.optional(),
   nativeTurnId: id.optional(), replyMessageId: id.optional() }).strict()
-export const watcherLimitsSchema = z.object({ inFlight: counter, inFlightLimit: z.number().int().min(1).max(8),
+export const watcherLimitsSchema = z.object({
   promptCount: z.number().int().min(0).max(WATCHER_PROMPTS_PER_THREAD), promptLimit: z.literal(WATCHER_PROMPTS_PER_THREAD) }).strict()
 export const watcherDeliveryReceiptSchema = z.object({ operationId: z.uuid(), target: watcherThreadTargetSchema,
   requestId: z.uuid(), deliveryState: watcherDeliveryStateSchema, receiptId: id, cardId: id,
@@ -146,17 +145,42 @@ const result = <S extends z.ZodRawShape>(shape: S) => z.union([z.object({ status
 const boundedRead = <S extends z.ZodType>(schema: S) => schema.refine(value => new TextEncoder().encode(JSON.stringify(value)).byteLength <= WATCHER_READ_BYTES_MAX, 'Response exceeds the byte limit.')
 
 /**
+ * Host protocol version 1 carried two more numbers in every receipt's `limits`, a Threads in flight count and its limit of
+ * one to eight, until #1183 removed the limit. A desktop from before then still requires them in a paired host's reply, so
+ * a host adds these harmless values to what it answers a desktop, and a desktop takes them off a host's reply before
+ * reading it. Neither number means anything now, and no Watcher result shows them.
+ */
+const HOST_V1_LIMITS = { inFlight: 0, inFlightLimit: 8 } as const
+const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+/**
+ * A Watcher control or read result as a host sends it to a desktop: the old limit numbers added, and the working threads
+ * warning taken off, since it speaks for this computer alone and an older desktop refuses a key it does not know.
+ */
+export function watcherResultForHostV1(value: unknown): unknown {
+  if (!isPlainObject(value)) return value
+  const { warning: _warning, ...rest } = value
+  void _warning
+  return isPlainObject(rest.limits) ? { ...rest, limits: { ...rest.limits, ...HOST_V1_LIMITS } } : rest
+}
+/** A paired host's Watcher result as a desktop reads it: the old limit numbers, from any host, taken off. */
+export function watcherResultFromHostV1(value: unknown): unknown {
+  if (!isPlainObject(value) || !isPlainObject(value.limits)) return value
+  const { inFlight: _inFlight, inFlightLimit: _inFlightLimit, ...limits } = value.limits
+  void _inFlight; void _inFlightLimit
+  return { ...value, limits }
+}
+
+/**
  * One machine as list_machines shows it (#1031): This computer or a connected host, its host facts when it reported them,
- * how many of its threads are running a turn, and Watcher's starts in flight on it against the limit, which today is one
- * limit for the whole computer. `factsState` says why there are none: `unknown` for a host that does not report them or could
- * not be read, `not-connected` for one that is not connected now. Never guessed.
+ * and how many of its threads are running a turn. `factsState` says why there are none: `unknown` for a host that does not
+ * report them or could not be read, `not-connected` for one that is not connected now. Never guessed.
  */
 export const WATCHER_MACHINES_MAX = 100
 // Strict here, as every Watcher result is: the host's own report was already read leniently, so nothing extra remains.
 const machineFacts = hostFactsSchema.extend({ os: hostOsSchema.strict() }).strict()
 const machine = z.object({ hostId: id, name: z.string().min(1).max(200), thisComputer: z.boolean(), connected: z.boolean(),
   factsState: z.enum(['reported', 'unknown', 'not-connected']), facts: machineFacts.nullable(), note: shortText.min(1).optional(),
-  runningThreads: counter.nullable(), inFlight: counter, inFlightLimit: z.number().int().min(1).max(8) }).strict()
+  runningThreads: counter.nullable() }).strict()
 
 /** Only these named operations can cross the future sotto_threads boundary. None serve tools yet. */
 export const watcherToolSchemas = {
@@ -194,7 +218,9 @@ export const watcherToolSchemas = {
       permission: permission.optional(), workingCopy, baseRefChoiceId: id.optional(), title: z.string().min(1).max(WATCHER_TITLE_MAX), firstPrompt: prompt }).strict(),
     output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id,
       // What the start's worker role gave it and what the request named in its place. In memory only: a retry after a restart has none.
-      role: z.object({ id: workerKindSchema, named: z.array(z.enum(['model', 'effort', 'permission'])).max(3), note: shortText.min(1) }).strict().optional() }),
+      role: z.object({ id: workerKindSchema, named: z.array(z.enum(['model', 'effort', 'permission'])).max(3), note: shortText.min(1) }).strict().optional(),
+      // The working threads warning (#1183), when more than ten threads are working on this computer after this start. Never on a paired host's start.
+      warning: shortText.min(1).optional() }),
   },
   send_to_thread: {
     input: z.object({ ...mutation, target: watcherThreadTargetSchema, text: prompt, delivery: deliveryMode,
@@ -307,8 +333,11 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
   history: z.array(watcherIdentitySchema).max(1_000), requests: z.array(watcherRequestSchema).max(10_000),
   operations: z.array(watcherOperationSchema).max(40_000),
+  // One per thread Watcher has work in flight on, counting its starts still working. The limit that kept these to eight
+  // went in #1183, so the live record holds more; agents.json still holds at most eight, which older builds require
+  // (watcherRecordForDisk), and recovery rebuilds the rest (rebuildReservations).
   reservations: z.array(z.object({ target: watcherThreadTargetSchema, requestId: z.uuid(), operationId: z.uuid(), generation: counter,
-    reason: z.enum(['creation', 'active-turn', 'background-work', 'queued', 'dispatching', 'uncertain', 'needs-user']) }).strict()).max(8),
+    reason: z.enum(['creation', 'active-turn', 'background-work', 'queued', 'dispatching', 'uncertain', 'needs-user']) }).strict()).max(1_000),
   reads: z.array(z.object({ target: watcherThreadTargetSchema, position: watcherPositionSchema, readAt: time,
     lastWakeEventId: id.optional() }).strict()).max(10_000),
   // Exact negative reads fence late admission. These are scoped identities only, never protocol bodies.

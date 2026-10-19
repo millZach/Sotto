@@ -17,7 +17,7 @@ afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); for (const cle
 async function fixture() {
   const workspace = await workspaceFixture(undefined, { history: false })
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => false, watcherEnabled: true } })
-  const watcher = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false, limit: () => 4 })
+  const watcher = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false })
   cleanups.push(async () => { watcher.close(); await f.dispose(); await workspace.stop(); await workspace.remove() })
   await f.control.start(); await f.control.commandShell({ type: 'connect', provider: 'codex' })
   const record = watcherRecordFixture(), local = f.control.hostId()!, hostId = randomUUID()
@@ -69,7 +69,7 @@ it('keeps a validated accepted control receipt when its follow-up projection rea
   f.snapshot.threads[0]!.lastUserMessageId = operation.messageId!
   const input = { requestId: operation.requestId, retryKey: operation.retryKey, target: operation.target, delivery: 'now' as const, text: 'Synthetic send' }
   const receipt = { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'accepted', receiptId: operation.receiptId, cardId: operation.cardId }
-  vi.mocked(f.remote.control).mockResolvedValue({ status: 'ok', receipt, limits: { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }, delivery: 'now' })
+  vi.mocked(f.remote.control).mockResolvedValue({ status: 'ok', receipt, limits: { promptCount: 1, promptLimit: 4 }, delivery: 'now' })
   f.read.mockRejectedValue(new Error('synthetic-read-failed'))
   const result = await (f.watcher as unknown as { executeRemote(name: string, saved: typeof operation, input: unknown): Promise<unknown> }).executeRemote('send_to_thread', operation, input)
   expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
@@ -171,7 +171,7 @@ it('holds a mismatched control receipt uncertain until the owning operation conf
     deliveryState: 'accepted', receiptId: operation.receiptId, cardId: operation.cardId }
   vi.mocked(f.remote.control).mockResolvedValue({ status: 'ok', receipt: { ...receipt, operationId: randomUUID(),
     receiptId: 'foreign-receipt', cardId: 'foreign-card', itemId: 'foreign-item', messageId: 'foreign-message' },
-    limits: { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }, delivery: 'now' })
+    limits: { promptCount: 1, promptLimit: 4 }, delivery: 'now' })
   f.read.mockRejectedValue(new Error('synthetic-read-failed'))
   await f.control.updateWatcher(record => { record.operations[0]!.inputDigest = createHash('sha256').update(JSON.stringify(['send_to_thread', input])).digest('hex') })
   const result = await (f.watcher as unknown as { executeRemote(name: string, saved: typeof operation, input: unknown): Promise<unknown> }).executeRemote('send_to_thread', operation, input)
@@ -230,7 +230,7 @@ it('keeps a bounded omitted operation until an exact owning receipt answers', as
   const f = await fixture(), record = f.control.watcherRecord(), operation = record.operations[0]!
   f.read.mockImplementation(async (_id, request) => request.call ? { status: 'ok', action: 'send',
     receipt: { operationId: operation.id, requestId: operation.requestId, target: operation.target, receiptId: operation.receiptId, cardId: operation.cardId, deliveryState: 'accepted' },
-    limits: { inFlight: 1, inFlightLimit: 4, promptCount: 1, promptLimit: 4 }, state: { status: 'running', stopped: false, settled: false, backgroundWorkCount: 0, observedAt: new Date().toISOString(), freshness: 'fresh' } }
+    limits: { promptCount: 1, promptLimit: 4 }, state: { status: 'running', stopped: false, settled: false, backgroundWorkCount: 0, observedAt: new Date().toISOString(), freshness: 'fresh' } }
     : { hostId: f.hostId, master: record.current!, revision: 'bounded', observedAt: new Date().toISOString(), requests: [], operations: [], evidence: [] })
   await f.reconcile()
   expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('accepted')
@@ -251,7 +251,7 @@ it('does not treat an unknown receipt in another client scope as proof of non-ad
     : { hostId: f.hostId, master: record.current!, revision: 'other-scope', observedAt: new Date().toISOString(), requests: [], operations: [], evidence: [] })
   await f.reconcile()
   expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('uncertain')
-  expect(f.watcher.state().inFlight).toBe(0)
+  expect(f.watcher.startsInFlight()).toBe(0)
 })
 
 it.each(['removed', 'reads-unavailable'])('holds an uncertain existing receipt without start capacity when its host is %s', async unavailable => {
@@ -260,7 +260,7 @@ it.each(['removed', 'reads-unavailable'])('holds an uncertain existing receipt w
   else f.hosts[0]!.reads = false
   await f.reconcile(); f.watcher.observe(f.control.watcherSnapshot(), new Set())
   expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('uncertain')
-  expect(f.watcher.state().inFlight).toBe(0)
+  expect(f.watcher.startsInFlight()).toBe(0)
   expect(f.control.watcherRecord().requests[0]!.participants[0]!.promptCount).toBe(1)
 })
 

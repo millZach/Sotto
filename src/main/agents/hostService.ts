@@ -2,7 +2,7 @@ import { startHandoverPrefix } from '../../shared/threadStarts'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { userInfo } from 'node:os'
 import type { WatcherHostControl, WatcherHostRead, WatcherHostProjection, WatcherRoomThreadInput } from '../../shared/watcherHost'
-import type { WatcherIdentity } from '../../shared/watcher'
+import { watcherResultForHostV1, type WatcherIdentity } from '../../shared/watcher'
 import type { WatcherService } from './watcher'
 import type { WatcherPhoneService } from './watcherPhone'
 
@@ -237,8 +237,9 @@ export class LocalHostService implements HostService {
   get supportsWatcherControl(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherReads(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherStandingWatch(): boolean { return this.options.watcher !== undefined }
-  watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void, mayAnswer?: () => boolean): Promise<unknown> { return this.options.watcher!.admitRemote(request, client.clientId, guard, mayAnswer) }
-  watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void, mayAnswer?: () => boolean): Promise<unknown> { return this.options.watcher!.readRemote(request, client.clientId, guard, mayAnswer) }
+  // Answered as host protocol version 1 has them, so a desktop from before #1183 still reads them.
+  async watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void, mayAnswer?: () => boolean): Promise<unknown> { return watcherResultForHostV1(await this.options.watcher!.admitRemote(request, client.clientId, guard, mayAnswer)) }
+  async watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void, mayAnswer?: () => boolean): Promise<unknown> { return watcherResultForHostV1(await this.options.watcher!.readRemote(request, client.clientId, guard, mayAnswer)) }
   watcherProjection(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection { return this.options.watcher!.remoteProjection(request.master, client.clientId) }
   readonly supportsAtomicSend = true
   readonly supportsDraftRevisions = true

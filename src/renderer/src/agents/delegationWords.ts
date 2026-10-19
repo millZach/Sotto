@@ -94,7 +94,8 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
       ? `Sotto could not compare the permission it asked for with this thread's own, so it could not tell how much a new thread may have. ${nothing}`
       : `Sotto could not compare that thread's permission with this thread's safely. ${nothing}`
     case 'PERMISSION_TOO_WIDE': return `It asked for more permission than this thread has, or than your new-thread default allows. A delegated thread gets no more than either. ${nothing} To give it more, raise the lower of the two first.`
-    case 'IN_FLIGHT_LIMIT': return `This computer already had as many new threads working as Threads in flight allows, delegated and Watcher's together. ${nothing} It can ask again once one finishes.`
+    // Refused only by versions of Sotto before #1183, which had a Threads in flight limit.
+    case 'IN_FLIGHT_LIMIT': return `This computer already had as many new threads working as Threads in flight allowed, a limit Sotto no longer has. ${nothing}`
     case 'PROMPT_LIMIT': return `That thread already had ${DELEGATION_PROMPTS_PER_THREAD} briefs from this thread in this turn. Your next message to this thread renews the limit. ${nothing}`
     case 'PAUSED': return `You were working in that thread, so it takes no brief until your turn there ends. ${nothing}`
     case 'TARGET_CHANGED': return `You had sent your own message in that thread since this thread last read it. ${nothing}`

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { watcherDisplayPromptSchema, watcherRecordSchema, watcherRefusalSchema, watcherToolSchemas, WATCHER_REFUSAL_CODES,
+import { watcherDisplayPromptSchema, watcherResultForHostV1, watcherResultFromHostV1, watcherRecordSchema, watcherRefusalSchema, watcherToolSchemas, WATCHER_REFUSAL_CODES,
   WATCHER_PROMPT_BYTES_MAX, WATCHER_READ_BYTES_MAX } from '../../../src/shared/watcher'
 import { agentThreadKindSchema } from '../../../src/shared/agents'
 import { watcherPhoneSendSchema } from '../../../src/shared/watcherPhone'
@@ -141,5 +141,23 @@ describe('closed watcher contracts', () => {
     expect(watcherRecordSchema.safeParse({ ...record, current: { ...record.current, provider: 'devin' } }).success).toBe(false)
     expect(watcherRecordSchema.safeParse({ ...record, requests: [{ ...record.requests[0], participants: [{ ...record.requests[0]!.participants[0], promptCount: 5 }] }] }).success).toBe(false)
     expect(agentThreadKindSchema.options).toEqual(['project', 'watcher', 'watcher-history'])
+  })
+})
+
+describe('host protocol version 1 and the removed Threads in flight limit (#1183)', () => {
+  const ok = watcherToolFixtures.send_to_thread.output as { limits: Record<string, unknown> }
+  it('reads an older host’s reply, which still carries the limit’s numbers, without them', () => {
+    const older = { ...ok, limits: { ...ok.limits, inFlight: 3, inFlightLimit: 4 } }
+    expect(() => watcherToolSchemas.send_to_thread.output.parse(older)).toThrow()
+    expect(watcherToolSchemas.send_to_thread.output.parse(watcherResultFromHostV1(older))).toEqual(ok)
+  })
+  it('answers a desktop with harmless values for them, and no working threads warning', () => {
+    const answered = watcherResultForHostV1({ ...ok, warning: '11 threads are working. This computer may slow down or use its battery faster.' }) as typeof ok
+    expect(answered).not.toHaveProperty('warning')
+    expect(answered.limits).toEqual({ ...ok.limits, inFlight: 0, inFlightLimit: 8 })
+    expect(watcherToolSchemas.send_to_thread.output.parse(watcherResultFromHostV1(answered))).toEqual(ok)
+    // A refusal has no limits, and passes as it is.
+    const refused = { status: 'refused', code: 'THREAD_BUSY', message: 'Busy.', retryable: true }
+    expect(watcherResultForHostV1(refused)).toEqual(refused)
   })
 })

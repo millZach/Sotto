@@ -28,7 +28,6 @@ export interface WatcherRoom {
   /** Watched threads under a standing watch, which lasts until the user stops it; the rest are watched for a request. */
   readonly standingThreadIds: ReadonlySet<string>
   readonly open: WatcherBridge['open'] | null
-  readonly setLimit: WatcherBridge['setLimit'] | null
   /** What Watcher may do without asking; null where the bridge cannot change it, and the room says it as a fact. */
   readonly setPermission: NonNullable<WatcherBridge['setPermission']> | null
   /** Watch and Stop watching; null where the bridge offers neither, and no thread offers the owl as a control. */
@@ -224,7 +223,6 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
     status: !live ? 'unavailable' : answered ? 'ready' : 'loading',
     state, error, currentThreadId, watchedThreadIds, pausedThreadIds, standingThreadIds, settle,
     open: live ? request => bridge.open(request) : null,
-    setLimit: live ? request => bridge.setLimit(request) : null,
     setPermission: manage.setPermission,
     watchThread: manage.watch?.watchThread ?? null,
     unwatchThread: manage.watch?.unwatchThread ?? null,

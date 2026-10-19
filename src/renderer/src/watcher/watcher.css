@@ -153,10 +153,6 @@
   .threads-view--mac .watcher-head:has(.watcher-tabs) > .thread-workspace__actions { grid-row: 2; grid-column: 5; }
 }
 
-.watcher-actions { position: relative; display: flex; }
-.watcher-actions__panel { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; width: min(300px, calc(100vw - 24px)); padding: 14px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); color: var(--tt-text); }
-.watcher-actions__panel .tt-field { margin: 0; }
-.watcher-actions__error { margin: 10px 0 0; color: var(--tt-error-text); font-size: 12.5px; }
 
 /* ---------- The needs-you line ---------- */
 /* One quiet line under the header, on the conversation's own column, gone when nothing waits. */
@@ -424,7 +420,7 @@
 .watcher-ask-receipt > .watcher-ask__open { margin-left: 0; }
 
 /* ---------- Stop all ---------- */
-/* In Watcher's header beside More Watcher actions, only while threads Watcher started are running: a quiet pill like
+/* At the end of Watcher's header, only while threads Watcher started are running: a quiet pill like
    Watch, whose stop square takes the error ink only on hover, since a press asks first. Narrow panes keep the square. */
 .watcher-stop-all { position: relative; display: flex; }
 .watcher-stop-all__button { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 999px;
@@ -432,7 +428,7 @@
 .watcher-stop-all__button:hover, .watcher-stop-all__button[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watcher-stop-all__button:hover > svg, .watcher-stop-all__button[aria-expanded='true'] > svg { color: var(--tt-error-text); }
 @container thread-pane (width < 520px) { .watcher-stop-all__button { padding: 0 7px; } .watcher-stop-all__text { display: none; } }
-/* The popover, More Watcher actions' shape: the question, the threads it names with what each is doing, what a stop
+/* The popover, in the shape of a small panel under its button: the question, the threads it names with what each is doing, what a stop
    keeps, then Cancel and the stop on the error plate. After the press, each thread's result. */
 .watcher-stop { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; width: min(344px, calc(100cqw - 24px)); padding: 14px; border: 1px solid var(--tt-hairline); border-radius: 10px;
   background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); color: var(--tt-text); -webkit-app-region: no-drag; }

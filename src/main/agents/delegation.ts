@@ -7,6 +7,7 @@ import { resolveModel } from '../../shared/modelCatalog'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
 import { capRuntimeMode, roleInForce, roleStartNote, startFromRole, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
+import { countWorkingThreads, workingThreadsWarning } from '../../shared/workingThreads'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
   DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
@@ -64,10 +65,6 @@ export interface DelegationServiceOptions {
   readonly control: DelegationCoordinator
   readonly host: DelegationHost
   readonly historyEnabled: () => boolean
-  /** The starts-only in-flight limit Watcher's starts take from too (ADR-0073), read at every start. */
-  readonly limit: () => number
-  /** Watcher's own starts in flight, which share the limit (decision 5). */
-  readonly otherStartsInFlight?: () => number
   /** Whether a thread has Sotto's pull request tools, for babysitting news a wake-up may be folded with. */
   readonly tool?: (threadId: string) => boolean
   /**
@@ -318,11 +315,6 @@ export class DelegationService {
     if (this.closed) return false
     try { this.caller(threadId, this.snapshot()); return true } catch { return false }
   }
-  /** Delegation's starts in flight on this computer: the delegated threads it started that are still working on a brief. */
-  startsInFlight(): number {
-    const started = new Set(this.records.filter(record => record.action === 'start').map(record => record.delegatedThreadId))
-    return new Set(this.records.filter(record => started.has(record.delegatedThreadId) && this.open(record)).map(record => record.delegatedThreadId)).size
-  }
 
   async delegate(threadId: string, args: unknown, context: { readonly waitMs?: number } = {}): Promise<unknown> {
     const parsed = delegateInputSchema.safeParse(args)
@@ -342,6 +334,8 @@ export class DelegationService {
     this.calling.add(record.id)
     try {
       await this.execute(record, input.brief, admitted.start)
+      // Nothing is held back at any count (#1183); past ten working threads on this computer a start's reply says so.
+      const warning = admitted.start ? workingThreadsWarning(countWorkingThreads(this.snapshot().threads, record.delegatedThreadId)) : undefined
       const waitMs = Math.max(0, Math.min((input.wait_seconds ?? DELEGATION_WAIT_MAX_SECONDS) * 1000,
         context.waitMs === undefined ? Infinity : context.waitMs - 2_000))
       if (this.open(this.record(record.id)!)) {
@@ -351,7 +345,7 @@ export class DelegationService {
         if (this.open(this.record(record.id)!)) this.update(record.id, saved => { saved.wentOnAt = now() })
       }
       const answer = await this.result(this.record(record.id)!)
-      return admitted.role ? { ...answer, role: admitted.role } : answer
+      return { ...answer, ...admitted.role ? { role: admitted.role } : {}, ...warning ? { warning } : {} }
     } finally { this.calling.delete(record.id); this.touched(record) }
   }
 
@@ -584,8 +578,7 @@ export class DelegationService {
     return this.records.filter(record => record.delegatingThreadId === callerId && record.rootUserMessageId === root && record.delegatedThreadId === threadId && record.charged).length
   }
   private limits(record?: DelegationRecord) {
-    return { inFlight: this.startsInFlight() + (this.options.otherStartsInFlight?.() ?? 0), inFlightLimit: this.options.limit(),
-      ...(record ? { prompts: this.prompts(record.delegatingThreadId, record.rootUserMessageId, record.delegatedThreadId) } : {}), promptLimit: DELEGATION_PROMPTS_PER_THREAD }
+    return { ...(record ? { prompts: this.prompts(record.delegatingThreadId, record.rootUserMessageId, record.delegatedThreadId) } : {}), promptLimit: DELEGATION_PROMPTS_PER_THREAD }
   }
   /**
    * The permission a delegated thread may have: no wider than the narrower of the delegating thread's own and the user's
@@ -721,8 +714,6 @@ export class DelegationService {
     // A permission the call named keeps its refusal. One the role gave is held to the ceiling instead.
     const fromRole = byRole?.runtimeMode && input.permission === undefined ? this.heldToCeiling(byRole.runtimeMode, model, caller, snapshot.models) : undefined
     const permission = this.permission(model, caller, snapshot.models, input.permission ?? fromRole?.mode)
-    const inFlight = this.startsInFlight() + (this.options.otherStartsInFlight?.() ?? 0), limit = this.options.limit()
-    if (inFlight >= limit) refuse('IN_FLIGHT_LIMIT', `${inFlight} new ${inFlight === 1 ? 'thread is' : 'threads are'} in flight on this computer, delegated or Watcher's, against a limit of ${limit}. Wait for one to finish. Nothing was started.`)
     const delegatedThreadId = randomUUID()
     const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null })
     this.records.push(record)

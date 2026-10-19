@@ -12,7 +12,6 @@ export function createWatcherRoomDesktop(options: {
   watcherEnabled: boolean
   streamingPublishCost: boolean
   watcher?: RoomService | undefined
-  setLimit(limit: number): Promise<unknown>
   send(state: WatcherRoomState): boolean
   schedule?: PublishScheduler
 }): { bridge: RoomBridge; dispose(): void } | undefined {
@@ -25,7 +24,6 @@ export function createWatcherRoomDesktop(options: {
     open: request => watcher?.open(request) ?? Promise.resolve(unavailable()),
     prepareStopAll: async () => watcher?.prepareStopAll() ?? unavailable(),
     stopAll: request => watcher?.stopAll(request.confirmationId) ?? Promise.resolve(unavailable()),
-    setLimit: async request => { if (!watcher) return unavailable(); await options.setLimit(request.limit); return watcher.get() },
     setPermission: request => watcher?.setPermission(request) ?? Promise.resolve(unavailable()),
     watchThread: request => watcher?.watchThread(request) ?? Promise.resolve(unavailable()),
     unwatchThread: request => watcher?.unwatchThread(request) ?? Promise.resolve(unavailable()),
@@ -51,7 +49,6 @@ export function createWatcherRoomDesktop(options: {
       open: request => reply(() => bridge.open(request)),
       prepareStopAll: () => reply(() => bridge.prepareStopAll()),
       stopAll: request => reply(() => bridge.stopAll(request)),
-      setLimit: request => reply(() => bridge.setLimit(request)),
       setPermission: request => reply(() => bridge.setPermission(request)),
       watchThread: request => reply(() => bridge.watchThread(request)),
       unwatchThread: request => reply(() => bridge.unwatchThread(request)),

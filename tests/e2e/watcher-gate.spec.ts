@@ -188,15 +188,14 @@ test('Owl refuses the private room actions plainly when the local host is off', 
       const results = await launched.page.evaluate(async () => {
         const room = window.sotto!.watcher!
         return [await room.get(), await room.open({ provider: 'codex', modelId: 'codex:test' }),
-          await room.prepareStopAll(), await room.stopAll({ confirmationId: '24c7c937-b368-4bbb-9595-31c7c8463e29' }), await room.setLimit({ limit: 1 })]
+          await room.prepareStopAll(), await room.stopAll({ confirmationId: '24c7c937-b368-4bbb-9595-31c7c8463e29' })]
       })
       for (const result of results) expect(result).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE', message: expect.stringContaining('Run the local host') })
-      expect(await launched.page.evaluate(async () => (await window.sotto!.getSettings()).watcherInFlightLimit)).toBe(DEFAULT_SETTINGS.watcherInFlightLimit)
     } finally { if (launched) await closeSotto(launched); await profile.dispose() }
   })
 })
 
-test('Owl applies a changed in-flight limit to the running Watcher at once', async () => {
+test('Owl offers no limit on threads in flight to set (#1183)', async () => {
   await onReleaseTrack('owl', async () => {
     const profile = await ownedE2EProfile({ prefix: 'sotto-e2e-watcher-gate-', settings: {
       ...DEFAULT_SETTINGS, onboardingComplete: true, showWidgetWhenIdle: false,
@@ -204,17 +203,11 @@ test('Owl applies a changed in-flight limit to the running Watcher at once', asy
     let launched: Awaited<ReturnType<typeof launchSotto>> | undefined
     try {
       launched = await launchSotto('success', profile.directory)
-      const [before, changed, after, saved] = await launched.page.evaluate(async () => {
-        const room = window.sotto!.watcher!
-        const before = await room.get()
-        const changed = await room.setLimit({ limit: 1 })
-        return [before, changed, await room.get(), (await window.sotto!.getSettings()).watcherInFlightLimit]
-      })
-      expect(before).toMatchObject({ status: 'ok', state: { inFlightLimit: DEFAULT_SETTINGS.watcherInFlightLimit } })
-      // The running Watcher reads the new limit, not only the saved settings file.
-      expect(changed).toMatchObject({ status: 'ok', state: { inFlightLimit: 1 } })
-      expect(after).toMatchObject({ status: 'ok', state: { inFlightLimit: 1 } })
-      expect(saved).toBe(1)
+      const [room, settings] = await launched.page.evaluate(async () => [await window.sotto!.watcher!.get(), await window.sotto!.getSettings()] as const)
+      expect(room).toMatchObject({ status: 'ok' })
+      expect(room.status === 'ok' && 'inFlightLimit' in room.state).toBe(false)
+      expect('watcherInFlightLimit' in settings).toBe(false)
+      expect(await launched.page.evaluate(() => 'setLimit' in window.sotto!.watcher!)).toBe(false)
     } finally { if (launched) await closeSotto(launched); await profile.dispose() }
   })
 })

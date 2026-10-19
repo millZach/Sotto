@@ -291,25 +291,10 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ babysitPullRequests: false })
     })
 
-  it('saves watcher capacity through the allow-list and reads back the saved value', async () => {
+  it('refuses the removed Threads in flight limit, which is no longer on the allow-list (#1183)', async () => {
     const { ipc, settings } = createIpcHarness()
-    const root = await mkdtemp(join(tmpdir(), 'sotto-watcher-setting-'))
-    try {
-      const path = join(root, 'settings.json')
-      const repository = new SettingsRepository(path)
-      settings.update.mockImplementation(patch => repository.update(patch))
-      settings.get.mockImplementation(() => repository.get())
-      await expect(ipc.invoke(SETTINGS_UPDATE, { watcherInFlightLimit: 7 })).resolves.toMatchObject({ watcherInFlightLimit: 7 })
-      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherInFlightLimit: 7 })
-      await expect(ipc.invokeArgs(SETTINGS_GET, [])).resolves.toMatchObject({ watcherInFlightLimit: 7 })
-      await expect(new SettingsRepository(path).get()).resolves.toMatchObject({ watcherInFlightLimit: 7 })
-      for (const watcherInFlightLimit of [0, 9, 2.5, '4']) {
-        await expect(ipc.invoke(SETTINGS_UPDATE, { watcherInFlightLimit })).rejects.toThrow('Invalid IPC payload')
-      }
-      expect(settings.update).toHaveBeenCalledTimes(1)
-    } finally {
-      await rm(root, { recursive: true, force: true })
-    }
+    await expect(ipc.invoke(SETTINGS_UPDATE, { watcherInFlightLimit: 7 })).rejects.toThrow('Invalid IPC payload')
+    expect(settings.update).not.toHaveBeenCalled()
   })
 
   it('saves worker roles through the allow-list, reads them back, and refuses a row it cannot read (#1041)', async () => {
