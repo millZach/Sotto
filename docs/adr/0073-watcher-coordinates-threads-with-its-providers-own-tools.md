@@ -101,7 +101,7 @@ How the handover is offered (October 15, 2026, #1026). The change is made from W
 
 ## October 11, 2026: local tool and room boundary
 
-Ticket 5 adds the optional host-v1 `watcher-control` and `watcher-reads` paths. A headless host offers them independently of its release track, while stable desktops use neither. Both listeners require the paired desktop's SSH-written client record; phone and general socket pairings cannot claim machine origin, even with Can answer. The local tool bearer remains local. Request attribution binds the authenticated desktop to the master's creation identity, root user-message reference and ceiling; operations retain the exact master-minted target, retry, digest and receipt identities. The owning host imports these into the established Watcher service rather than duplicating adapter enforcement. Its own new-thread default and the master's default both apply. No policy is written and no request is answered.
+Ticket 5 adds the optional host-v1 `watcher-control` and `watcher-reads` paths. A headless host offers them independently of its release track, while stable desktops use neither. Both listeners require the paired desktop's SSH-written client record; phone and general socket pairings cannot claim machine origin, even with Can answer. The local tool bearer remains local. Request attribution binds the authenticated desktop to the master's creation identity, root user-message reference and ceiling; operations retain the exact master-minted target, retry, digest and receipt identities. The owning host imports these into the established Watcher service rather than duplicating adapter enforcement. The master's default applies, held to Ask for approval where the host does not let that desktop answer (amended October 19, 2026, below). No policy is written and no request is answered.
 
 The master persists and reserves capacity before sending. The host never creates master requests or extra global slots. A lost acknowledgement holds uncertainty until the owning receipt proves what happened; reconnection and host restart do not replay mutations. Host native or phone input fences ownership before the next machine writer. Scoped text-free projection pushes carry receipts, participation and sourced evidence, bounded at a thousand records of each kind, with separate exact operation reads. Thread reads use the owning store's positional cursor and epoch; no detail revision becomes a message position or event cursor. Older hosts keep ordinary summaries and refuse automation before the wire. No phone filter is introduced; Watcher's phone surface remains ticket 8 after its prototype.
 
@@ -304,3 +304,16 @@ most every 250 ms. Each Watcher read looks at every thread first, so it reads th
 watched starts from its facts as they are, so what it had before is not told as news; after a restart, what changed is
 still told. Quiet in `list_threads` therefore applies only to watched threads: an unwatched thread has no observed
 history of its progress, so a silent one lists as Working. Watched threads' news, Quiet included, is unchanged.
+
+## October 19, 2026: a paired host holds Watcher to the desktop's default
+
+Watcher could not send to a Full access thread on forge although the user's new-thread default was Full access, and
+`list_projects` said Full access was allowed there. The owning host held Watcher to the narrower of the master's
+default and its own, as ticket 5 decided, but since [ADR-0074](0074-a-computers-new-thread-defaults-apply-on-every-host.md)
+Settings saves the default on the desktop only, so a host's own default is one the user never set and stays "Ask for
+approval". Zach's call: the desktop's default is the one that applies, on every host. A host now holds a request a
+paired desktop sent to that desktop's default and no wider, and to Ask for approval unless its own policy lets that
+desktop answer there, the same hold-back New thread uses (ADR-0074 decision 3, ADR-0004). The desktop reads the same
+limit from what the host says it may answer, so `list_projects`, `start_thread` and a send agree with the host before
+anything crosses the wire. A host's own default still applies to threads the host or a phone opens itself. No policy
+is written and nothing is answered.

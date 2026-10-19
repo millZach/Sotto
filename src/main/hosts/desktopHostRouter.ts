@@ -145,7 +145,9 @@ export class DesktopHostRouter {
         muse: host.service.supportsWatcherMuse === true,
         connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
         // Read only when asked: the shell read copies the host's whole cached shell, and Watcher lists hosts on every pass (#1023).
-        get permissionCeiling() { return host.service.shell().configuration.newThreadRuntimeMode ?? 'approval-required' } })),
+        // The host's own stored default is not the user's: Settings keeps that on this computer (ADR-0074). What the host
+        // limits is whether this computer may answer there, and so give a thread a mode that acts without asking.
+        get permissionCeiling() { return (host.service.shell() as HostClientShell).clientCapabilities?.mayAnswer === true ? 'full-access' as const : 'approval-required' as const } })),
       snapshot: id => {
         allowed(); const entry = this.hosts.get(id)?.connection
         if (!entry || entry.kind !== 'remote') return undefined
