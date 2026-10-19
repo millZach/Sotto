@@ -1,5 +1,6 @@
 // Launch the unpacked Owl app with an isolated profile and check its real preload status.
 // node tools/verify-owl-package.mjs 0.1.37-owl.20261011.1
+// Reads this platform's unpacked app: release/win-unpacked on Windows, release/mac-arm64 on a Mac.
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -22,8 +23,8 @@ try {
   for (const key of Object.keys(environment)) {
     if (key.startsWith('SOTTO_') || ['ELECTRON_RUN_AS_NODE', 'NODE_OPTIONS'].includes(key)) delete environment[key]
   }
-  application = await electron.launch({ executablePath: resolve(root, 'release/win-unpacked/Sotto.exe'),
-    args: [`--user-data-dir=${userData}`], env: environment, timeout: 45_000 })
+  application = await electron.launch({ executablePath: profile.executablePath(resolve(root, 'release', profile.packagedDirName)),
+    args: [`--user-data-dir=${userData}`, ...profile.smokeArgs], env: environment, timeout: 45_000 })
   const identity = await application.evaluate(({ app }) => ({ version: app.getVersion(), name: app.getName(), userData: app.getPath('userData') }))
   const first = await application.firstWindow()
   const page = application.windows().find(candidate => candidate.url().endsWith('/index.html')) ?? first
