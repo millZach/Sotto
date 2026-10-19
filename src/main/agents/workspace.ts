@@ -2631,13 +2631,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     for (const listener of this.listeners) listener(this.workspaceSnapshot())
     if (this.activityListeners.size) {
       this.applyEvents()
-      for (const listener of this.activityListeners) {
-        const snapshot = cloneActivitySnapshot(this.visibleSnapshot(this.state.snapshot))
-        this.historyNotices(snapshot)
-        if (this.failedEventThreads.size) snapshot.error = HISTORY_SAVE_ERROR
-        else if (this.saveError) snapshot.error = this.saveError
-        listener(snapshot)
-      }
+      // One copy for every activity subscriber: the coordinator takes it as its own and changes only what it builds over it,
+      // and usage reads it as it arrives and keeps none of it. It was a copy each, and each copied every thread.
+      const snapshot = cloneActivitySnapshot(this.visibleSnapshot(this.state.snapshot))
+      this.historyNotices(snapshot)
+      if (this.failedEventThreads.size) snapshot.error = HISTORY_SAVE_ERROR
+      else if (this.saveError) snapshot.error = this.saveError
+      for (const listener of this.activityListeners) listener(snapshot)
     }
   }
 

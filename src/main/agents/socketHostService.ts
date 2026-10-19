@@ -586,7 +586,20 @@ export class SocketHostService implements HostService {
   }
   shell(): AgentState {
     if (!this.cached) throw new Error('Connect to the host before reading its state.')
-    const state = structuredClone(this.cached)
+    return this.withRetained(structuredClone(this.cached))
+  }
+  /**
+   * The shell without a copy of the host's push, for a reader that only reads: the router building what it publishes, a
+   * Watcher read, the host-update check. Each push replaces the cached state and nothing writes into it, and what this
+   * lays over it replaces fields rather than editing them. Each of those readers made a whole structured clone of every
+   * remote host's state on every change of any host (October 19, 2026).
+   */
+  view(): AgentState {
+    if (!this.cached) throw new Error('Connect to the host before reading its state.')
+    return this.withRetained({ ...this.cached })
+  }
+  /** The shell as this desktop shows it: the drafts it holds for the host laid over the host's own state. */
+  private withRetained(state: AgentState): AgentState {
     state.notice = this.quietConnectionNotices.get(state.notice) ?? state.notice
     for (const edit of this.retainedDrafts.list(this.retainedHostId())) {
       const draft = edit.saved && edit.hostDraftId ? { ...edit.draft, draftId: edit.hostDraftId } : edit.draft
