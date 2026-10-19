@@ -6,7 +6,7 @@ import { z } from 'zod'
 import type { AgentHostSnapshot, ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles, ThreadForkRequest, WorkerRoleSource } from './host'
-import { subscribeActivitySnapshots } from './activitySnapshots'
+import { asActivityPublication, subscribeActivitySnapshots } from './activitySnapshots'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink } from './usageHistory/sink'
 
@@ -297,7 +297,7 @@ export class SottoThreadHost implements AgentHost {
   }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return subscribeActivitySnapshots(this.inner, snapshot => {
-      if (this.registry.loaded) listener(this.mapSnapshot(snapshot))
+      if (this.registry.loaded) listener(asActivityPublication(this.mapSnapshot(snapshot), snapshot))
     }, options)
   }
 

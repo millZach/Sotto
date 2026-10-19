@@ -21,13 +21,20 @@ export interface ActivityGroup {
 
 export interface ActivityPlacement {
   readonly after: ReadonlyMap<string, readonly ActivityGroup[]>
+  /**
+   * The work of an unshown turn, by the first reply it wrote: a turn whose own message the conversation leaves out, such as
+   * Watcher's news wake-up (`watcherWakeUpsAsShown`). That reply opens a turn of its own in the transcript.
+   */
+  readonly unshown: ReadonlyMap<string, readonly ActivityGroup[]>
+  /** The work of an unshown turn that wrote no reply, by the message that came next. */
+  readonly before: ReadonlyMap<string, readonly ActivityGroup[]>
   /** Precedes the first message: work from before every turn the messages show, when nothing earlier can be loaded. */
   readonly leading: readonly ActivityGroup[]
   /** Follows the last message: records with no anchor Sotto can show. */
   readonly trailing: readonly ActivityGroup[]
 }
 
-const EMPTY: ActivityPlacement = { after: new Map(), leading: [], trailing: [] }
+const EMPTY: ActivityPlacement = { after: new Map(), unshown: new Map(), before: new Map(), leading: [], trailing: [] }
 
 /** The provider's turn lifecycle, as opposed to a status notice such as a retry. */
 export function isTurnRecord(record: AgentActivity): boolean {
@@ -48,6 +55,12 @@ const bySequence = (a: AgentActivity, b: AgentActivity): number => a.sequence - 
  * give it its places once loaded, and otherwise leads the conversation. Either way a turn's work never
  * lands under the answer of a turn that came after it. Main already keeps back the work it can place above
  * the loaded window, so this is the rule for work it could not place.
+ *
+ * Before either rule, a turn whose own message is left out of the conversation, an unshown turn, sits where it happened
+ * when the messages say where: its reply is the message that names the turn (`turnMessageId`), else, for a turn that began
+ * inside the window, the first one written after it began, before the next turn began and before it ended. With a reply,
+ * the work goes with it (`unshown`); without one, it goes before the next turn the transcript starts (`before`). This holds
+ * even when it began before every placed turn, since the records keep only the newest turns' work.
  */
 export function placeActivities(
   messages: readonly AgentMessage[],
@@ -56,10 +69,11 @@ export function placeActivities(
   historyLoading = false,
   earlierAvailable = false,
 ): ActivityPlacement {
-  if (!activities?.length) return EMPTY
   const known = new Set(messages.map(message => message.id))
-  const order = new Map(messages.map((message, index) => [message.id, index]))
+  const named = namingUnshown(messages, known)
   const visible = new Set(rendered.map(message => message.id))
+  if (!activities?.length) return named.size ? { ...EMPTY, unshown: new Map([...named].filter(id => visible.has(id)).map(id => [id, []])) } : EMPTY
+  const order = new Map(messages.map((message, index) => [message.id, index]))
   const sorted = [...activities].sort(bySequence)
 
   const anchors = new Map<AgentActivity, string | null>()
@@ -132,19 +146,116 @@ export function placeActivities(
     ;(reading.find(draft => draft.records.length && !draft.boundary) ?? reading.find(draft => !draft.boundary) ?? reading[0]!).turn = turn
   }
 
+  const places = historyLoading ? new Map<string, { readonly reply?: string; readonly next?: string }>() : unshownPlaces(messages, sorted, anchors)
   const after = new Map<string, ActivityGroup[]>()
+  const unshown = new Map<string, ActivityGroup[]>()
+  const before = new Map<string, ActivityGroup[]>()
   const leading: ActivityGroup[] = []
   const trailing: ActivityGroup[] = []
+  const put = (map: Map<string, ActivityGroup[]>, id: string, group: ActivityGroup): void => { if (visible.has(id)) map.set(id, [...map.get(id) ?? [], group]) }
   // Work that leads the conversation is only in view while nothing sits above the first message.
   const leads = !historyLoading && !earlierAvailable && rendered[0] !== undefined && rendered[0].id === messages[0]?.id
   for (const draft of [...drafts.values()].sort((a, b) => a.first - b.first)) {
     if (!shouldShow(draft)) continue
     const group: ActivityGroup = { key: draft.key, turnId: draft.turnId, anchorMessageId: draft.anchorMessageId, records: draft.records, ...(draft.turn ? { turn: draft.turn } : {}) }
-    if (draft.anchorMessageId !== null) { if (visible.has(draft.anchorMessageId)) after.set(draft.anchorMessageId, [...after.get(draft.anchorMessageId) ?? [], group]) }
+    const place = places.get(draft.turnId)
+    if (draft.anchorMessageId !== null) put(after, draft.anchorMessageId, group)
+    else if (place?.reply !== undefined) put(unshown, place.reply, group)
+    else if (place?.next !== undefined) put(before, place.next, group)
     else if (shownFrom !== undefined && began.get(draft.turnId)! < shownFrom) { if (leads) leading.push(group) }
     else if (!historyLoading) trailing.push(group)
   }
-  return { after, leading, trailing }
+  // A reply opens its unshown turn even when none of the turn's work is shown, or the work is gone from the records.
+  for (const id of [...named, ...[...places.values()].flatMap(place => place.reply ?? [])]) if (visible.has(id) && !unshown.has(id)) unshown.set(id, [])
+  return { after, unshown, before, leading, trailing }
+}
+
+/**
+ * The first reply of each turn whose message the conversation leaves out, told by the turn the reply names (`turnMessageId`).
+ * Replies before the first user message the window holds may name one above the window instead, so they are not read.
+ */
+function namingUnshown(messages: readonly AgentMessage[], known: ReadonlySet<string>): ReadonlySet<string> {
+  const replies = new Set<string>()
+  const seen = new Set<string>()
+  const first = messages.findIndex(item => item.role === 'user')
+  if (first < 0) return replies
+  for (const message of messages.slice(first + 1)) {
+    const turn = message.role === 'user' ? undefined : message.turnMessageId
+    if (turn === undefined || known.has(turn) || seen.has(turn)) continue
+    seen.add(turn)
+    replies.add(message.id)
+  }
+  return replies
+}
+
+/** When a record says it began, or NaN. */
+const startedAt = (record: AgentActivity): number => record.startedAt ? Date.parse(record.startedAt) : Number.NaN
+
+/** How long after a turn ended its reply may still be stamped, for clocks that disagree a little. */
+const REPLY_SLACK_MS = 2_000
+
+/**
+ * Where each unshown turn sits: the reply it wrote, or the message that came after it. A turn is unshown when the
+ * messages give it no place, or when its first record names a message they leave out and its later records follow a
+ * reply it wrote, as Codex and Grok Build anchor them. A reply that names the turn, or that the turn's own records
+ * follow, is its own; failing that, the first message written after the turn began is its reply when it is not a
+ * user's, names no other turn, and came before another turn began and before this one ended. Turns are matched in the
+ * order they began, so each reply has one turn. A turn Sotto cannot date, or one that began before the first message the
+ * window holds, has no place here; nor does a reply before the first user message, which may belong above the window.
+ */
+function unshownPlaces(messages: readonly AgentMessage[], sorted: readonly AgentActivity[],
+  anchors: ReadonlyMap<AgentActivity, string | null>): ReadonlyMap<string, { readonly reply?: string; readonly next?: string }> {
+  const places = new Map<string, { reply?: string; next?: string }>()
+  const index = new Map(messages.map((message, at) => [message.id, at]))
+  const firstUser = messages.findIndex(message => message.role === 'user')
+  interface Turn { readonly ids: Set<string>; start?: number; ended?: number; running: boolean; first?: AgentActivity; followed?: string; placed: boolean }
+  const turns = new Map<string, Turn>()
+  for (const record of sorted) {
+    const turn = turns.get(record.turnId) ?? { ids: new Set([record.turnId]), running: false, placed: false }
+    turns.set(record.turnId, turn)
+    turn.first ??= record
+    const anchor = anchors.get(record)
+    if (anchor !== null && anchor !== undefined) { turn.placed = true; turn.followed ??= anchor }
+    if (record.afterMessageId !== undefined) turn.ids.add(record.afterMessageId)
+    const start = startedAt(record)
+    if (Number.isFinite(start) && (turn.start === undefined || start < turn.start)) turn.start = start
+    const done = record.completedAt ? Date.parse(record.completedAt) : Number.NaN
+    if (Number.isFinite(done) && (turn.ended === undefined || done > turn.ended)) turn.ended = done
+    if (record.status === 'running') turn.running = true
+  }
+  const opensTurn = (message: AgentMessage | undefined): message is AgentMessage =>
+    message !== undefined && message.role !== 'user' && firstUser >= 0 && index.get(message.id)! > firstUser
+  const claimed = new Set<string>()
+  const claim = (turnId: string, reply: AgentMessage): void => { claimed.add(reply.id); places.set(turnId, { reply: reply.id }) }
+  for (const [turnId, turn] of turns) {
+    const own = turn.first?.afterMessageId
+    // Placed, but begun from a message the conversation leaves out: the reply its records follow opens it.
+    if (turn.placed) {
+      const reply = own !== undefined && !index.has(own) && !index.has(turnId) && turn.followed !== undefined ? messages[index.get(turn.followed)!] : undefined
+      if (opensTurn(reply) && !claimed.has(reply.id)) claim(turnId, reply)
+      continue
+    }
+    // A reply that names the turn it answers is the turn's, whatever the clocks say.
+    const named = messages.find(message => message.role !== 'user' && message.turnMessageId !== undefined && turn.ids.has(message.turnMessageId) && !claimed.has(message.id))
+    if (named) claim(turnId, named)
+  }
+  const opened = messages[0] ? Date.parse(messages[0].createdAt) : Number.NaN
+  const dated = [...turns].filter(([turnId, turn]) => !turn.placed && !places.has(turnId) && turn.start !== undefined && turn.start >= opened)
+    .sort(([, a], [, b]) => a.start! - b.start!)
+  for (const [turnId, turn] of dated) {
+    let next = Number.POSITIVE_INFINITY
+    for (const [other, { start }] of turns) if (other !== turnId && start !== undefined && start > turn.start! && start < next) next = start
+    const end = Math.min(next, !turn.running && turn.ended !== undefined ? turn.ended + REPLY_SLACK_MS : Number.POSITIVE_INFINITY)
+    const first = messages.find(message => Date.parse(message.createdAt) >= turn.start!)
+    if (first && first.role !== 'user' && first.turnMessageId === undefined && Date.parse(first.createdAt) < end && !claimed.has(first.id)) claim(turnId, first)
+  }
+  // A turn that wrote nothing goes before the next turn the transcript starts: a user's message or an unshown turn's reply.
+  for (const [turnId, turn] of dated) {
+    if (places.has(turnId)) continue
+    const next = messages.find(message => (message.role === 'user' || claimed.has(message.id)) && Date.parse(message.createdAt) >= turn.start!)
+    if (next) places.set(turnId, { next: next.id })
+  }
+  return places
 }
 
 /** A lone lifecycle record is shown only when it says something the answer does not: the turn stopped or failed. The live row covers a running turn. */
@@ -583,13 +694,19 @@ export interface TranscriptTurn {
   readonly key: string
   readonly user?: AgentMessage
   readonly replies: readonly AgentMessage[]
+  /** The turn's own message is left out of the conversation; its first reply opens it (`ActivityPlacement.unshown`). */
+  readonly unshown?: true
 }
 
-/** Splits rendered messages at each user message. Messages before the first one (a page that starts mid-turn) form their own turn. */
-export function splitTurns(messages: readonly AgentMessage[]): TranscriptTurn[] {
-  const turns: { key: string; user?: AgentMessage; replies: AgentMessage[] }[] = []
+/**
+ * Splits rendered messages at each user message, and at each reply that opens an unshown turn, so that reply never reads
+ * as the answer to the message before it. Messages before the first one (a page that starts mid-turn) form their own turn.
+ */
+export function splitTurns(messages: readonly AgentMessage[], unshown: ReadonlyMap<string, unknown> = new Map()): TranscriptTurn[] {
+  const turns: { key: string; user?: AgentMessage; replies: AgentMessage[]; unshown?: true }[] = []
   for (const message of messages) {
     if (message.role === 'user') turns.push({ key: message.id, user: message, replies: [] })
+    else if (unshown.has(message.id)) turns.push({ key: `unshown:${message.id}`, replies: [message], unshown: true })
     else if (turns.length) turns.at(-1)!.replies.push(message)
     else turns.push({ key: `before:${message.id}`, replies: [message] })
   }
@@ -597,13 +714,28 @@ export function splitTurns(messages: readonly AgentMessage[]): TranscriptTurn[] 
 }
 
 /**
+ * The label of a Watcher reply to news: the work its turn did, folded into the reply's header. A finished turn says
+ * how long it took; one that failed or stopped says so.
+ */
+export function newsWorkLabel(turn: AgentActivity | undefined, threadRunning: boolean, startedAt: string | undefined, moments: readonly (string | undefined)[]): string {
+  const durationMs = workDuration(turn, startedAt, moments)
+  if ((turn?.status ?? 'completed') === 'completed') return durationMs === undefined ? 'After news' : `After news · ${formatDuration(durationMs)}`
+  const headline = workHeadline(turn, threadRunning, startedAt, moments)
+  return `After news · ${headline.charAt(0).toLowerCase()}${headline.slice(1)}`
+}
+
+/**
  * The line a finished turn folds its work under. A lifecycle record's outcome and duration win; without one (Claude
  * and Grok report none), the turn ran from the user's message to the latest moment recorded for it.
  */
 export function workHeadline(turn: AgentActivity | undefined, threadRunning: boolean, startedAt: string | undefined, moments: readonly (string | undefined)[]): string {
+  const durationMs = workDuration(turn, startedAt, moments)
+  return turnHeadline({ ...turn, status: turn?.status ?? 'completed', ...(durationMs === undefined ? {} : { durationMs }) } as AgentActivity, threadRunning)
+}
+
+function workDuration(turn: AgentActivity | undefined, startedAt: string | undefined, moments: readonly (string | undefined)[]): number | undefined {
   const start = startedAt ? Date.parse(startedAt) : Number.NaN
   const end = Math.max(...moments.map(moment => moment ? Date.parse(moment) : Number.NaN).filter(Number.isFinite))
   const spanned = Number.isFinite(start) && Number.isFinite(end) && end > start ? end - start : undefined
-  const durationMs = (turn ? recordDuration(turn) : undefined) ?? spanned
-  return turnHeadline({ ...turn, status: turn?.status ?? 'completed', ...(durationMs === undefined ? {} : { durationMs }) } as AgentActivity, threadRunning)
+  return (turn ? recordDuration(turn) : undefined) ?? spanned
 }

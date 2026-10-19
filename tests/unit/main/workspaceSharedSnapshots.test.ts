@@ -107,3 +107,19 @@ it('merges a catalog a legacy host edited in place afresh each time (#917)', asy
   provider.emit()
   await expect.poll(() => control.shell().host.models.find(model => model.id === 'fake:model')?.ready).toBe(false)
 })
+
+// The shell a broadcast carries shares the coordinator's thread data rather than copying it (ADR-0016, October 19).
+// Its content is the shell's: only where the data lives differs.
+it('broadcasts a shell equal to a copied one, whose thread data is the host snapshot itself', async () => {
+  const provider = new CertifyingProviderHost()
+  provider.state.threads[0]!.requests = [{ id: 'request', kind: 'permission', text: 'Allow?', options: [] }]
+  const { control } = await coordinator(provider)
+  provider.emit()
+  await expect.poll(() => control.shell().host.threads[0]?.requests.length).toBe(1)
+  const copied = control.shell(), broadcast = control.broadcastShell()
+  expect(broadcast).toEqual(copied)
+  const host = control.watcherSnapshot().threads.find(thread => thread.id === broadcast.host.threads[0]!.id)!
+  expect(broadcast.host.threads[0]!.requests).toBe(host.requests)
+  expect(copied.host.threads[0]!.requests).not.toBe(host.requests)
+  expect(broadcast.host.threads[0]).not.toBe(host)
+})
