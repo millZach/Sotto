@@ -850,9 +850,11 @@ If Sotto cannot read its saved keys, it preserves the encrypted file and shows a
 
 - **Sotto quits immediately after launching:** Check that the Mac has Apple silicon (Apple menu → About This Mac). Intel Macs are not supported and the arm64 build cannot run on them.
 
-## Sotto Owl on Windows
+## Sotto Owl
 
-Sotto Owl is Sotto's preview track for Watcher, the Muse and OpenCode providers, Usage, Update all, resuming threads after a restart, delegation between threads, worker roles, continuing a thread on another provider and continuing an agent as its own thread. Close Sotto and install the Owl installer over it to keep your existing data. Owl offers only newer Owl builds; downloads and restarts still ask. Install a stable installer over Owl to return to the stable feed.
+Sotto Owl is Sotto's preview track for Watcher, the Muse and OpenCode providers, Usage, Update all, resuming threads after a restart, delegation between threads, worker roles, continuing a thread on another provider and continuing an agent as its own thread. It comes for Windows and Apple silicon Macs. On Windows, close Sotto and install the Owl installer over it to keep your existing data. Owl offers only newer Owl builds; downloads and restarts still ask. Install a stable installer over Owl to return to the stable feed.
+
+On a Mac, quit Sotto, open the Owl disk image from the Owl release and drag Sotto into Applications, replacing it. Your threads, settings and keys stay. The Mac build is not signed yet, so macOS refuses the first launch, as it does for stable (see [Install in detail](#install-in-detail)): open **System Settings → Privacy & Security** and press **Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/Sotto.app` in Terminal. macOS asks again for the microphone, automation and accessibility, as it does after every unsigned update. The Mac Owl does not update itself yet; download each new Owl from the releases page. To return to stable, drag the stable app over it the same way.
 
 You can tell an Owl build at a glance: the top of the sidebar shows the Sotto mark alone as a larger tile, where Sotto shows the mark beside its name. Behind it and the search field is a faint night in your theme's colours, with a few tiny stars; four of them slowly dim and come back, three in light mode. With **Reduced motion** set to Reduce motion in **Settings → Application**, or reduced motion on in Windows, they stay still. In light mode the stars take the theme's accent. The window's title and the tray icon's tooltip read Sotto Owl, and so does the version in Help and in Settings → Application, for example "Sotto Owl 0.1.37-owl.20261011.1".
 
