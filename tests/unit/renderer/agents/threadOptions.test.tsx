@@ -217,6 +217,18 @@ describe('a pending setting', () => {
     for (const name of ['Thread model', 'Thread reasoning', 'Thread permissions']) expect(screen.getByRole('combobox', { name })).toBeEnabled()
   })
 
+  it('frees the chips once an unconfirmed prompt is set aside, since Sotto never sends it again', () => {
+    const start = fixture(), at = new Date().toISOString()
+    const unconfirmed = { threadId: 'thread', draftId: '00000000-0000-4000-8000-000000000002', status: 'uncertain' as const, createdAt: at, updatedAt: at }
+    const command = vi.fn(() => deferred<AgentState>().promise)
+    const held = { ...start, deliveries: [unconfirmed] }
+    const { rerender } = render(<ThreadOptions thread={held.host.threads[0]!} state={held} command={command} />)
+    for (const name of ['Thread model', 'Thread reasoning', 'Thread permissions']) expect(screen.getByRole('combobox', { name })).toBeDisabled()
+    const setAside = { ...start, deliveries: [{ ...unconfirmed, setAside: true }] }
+    rerender(<ThreadOptions thread={setAside.host.threads[0]!} state={setAside} command={command} />)
+    for (const name of ['Thread model', 'Thread reasoning', 'Thread permissions']) expect(screen.getByRole('combobox', { name })).toBeEnabled()
+  })
+
   it('sends one further save for the last of two presses made during one save', async () => {
     const releases: Array<() => void> = []
     const asked: string[] = []

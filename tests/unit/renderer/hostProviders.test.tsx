@@ -190,3 +190,4 @@ it('says the host stopped answering when it fails to answer twice in a row, and 
     .toHaveTextContent('forge stopped answering while Grok Build was signing in. If its tile still says Not signed in, try again.')
   await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Try again' })).toHaveFocus())
 })
+

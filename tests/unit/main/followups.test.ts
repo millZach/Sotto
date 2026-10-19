@@ -67,6 +67,59 @@ async function fixture() {
 const queued = (text: string, threadId = 'workshop') => ({ type: 'queue-followup' as const, threadId, draftId: randomUUID(), text })
 const complete = (host: Host, id = 'workshop') => host.update(id, { status: 'idle', lastTurn: { id: randomUUID(), status: 'completed' } })
 
+it('resumes hidden Watcher news after a fresh user turn without replaying the old prompt', async () => {
+  const f = await fixture(); const hostId = randomUUID(); const draftId = randomUUID()
+  f.host.state.hostId = hostId; f.host.emit()
+  const target = { hostId, threadId: 'workshop' }
+  f.control.mutateWatcher(record => { record.current = { target, provider: 'claude', projectId: 'project', creationOperationId: randomUUID(), createdAt: new Date().toISOString() } })
+  f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+    guardOperation: () => undefined, preserveUserQueue: () => false, wakeReady: () => true, wakeDueAll: events => events.map(() => true) })
+  f.host.result = { accepted: false, uncertain: true }
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Old unconfirmed prompt' })
+  await f.control.deliverWakeUp('workshop', { source: 'watcher', watcher: target, omitted: 0, events: [{ id: randomUUID(),
+    kind: 'turn-finished', requestId: randomUUID(), target: { hostId, threadId: 'docs' }, generation: 0, observedAt: new Date().toISOString() }] }, { tool: false })
+  expect(f.control.watcherWakeUpQueued()).toBe(true)
+  expect(f.control.get().followups).toEqual([])
+  expect((await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })).error).toBeNull()
+  expect(f.host.attempts).toHaveLength(1)
+  delete f.host.result
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Fresh user turn' })
+  await f.control.command(queued('Fresh queued continuation'))
+  complete(f.host)
+  await expect.poll(() => f.host.attempts.length).toBe(3)
+  expect(f.host.attempts[2]).toMatchObject({ type: 'send', text: 'Fresh queued continuation' })
+  complete(f.host)
+  await expect.poll(() => f.host.attempts.length).toBe(4)
+  expect(f.host.attempts[3]).toMatchObject({ type: 'send', text: expect.stringContaining('Sotto') })
+  await expect.poll(() => f.control.watcherWakeUpQueued()).toBe(false)
+  expect(f.host.attempts.filter(item => 'text' in item && item.text === 'Old unconfirmed prompt')).toHaveLength(1)
+})
+
+it.each([false, true])('resumes held restart news after a new message across restart (mixed news %s)', async mixed => {
+  const f = await fixture(); const draftId = randomUUID(); let control = f.control
+  f.host.result = { accepted: false, uncertain: true }
+  await control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unknown original' })
+  await control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+  await control.deliverWakeUp('workshop', { source: 'restart', since: new Date().toISOString(), resumes: 1 }, { tool: false })
+  if (mixed) await control.deliverWakeUp('workshop', { pullRequest: { number: 1, title: 'Fixture', url: 'https://github.com/fixture/repo/pull/1' },
+    startedBy: 'user', head: null, ended: null, changes: [{ kind: 'checks-passed', count: 1, required: true }] }, { tool: false })
+  const note = control.get().followups![0]!
+  control.dispose(); await control.privacyChanged()
+  control = f.create(); await control.start(); await control.command({ type: 'connect' })
+  control.useRestartResume({ due: () => true, sending: () => undefined, unsent: () => undefined })
+  delete f.host.result
+  await control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'New direct message' })
+  await control.command(queued('New user follow-up'))
+  complete(f.host)
+  await expect.poll(() => f.host.attempts.length).toBe(3)
+  expect(f.host.attempts[2]).toMatchObject({ type: 'send', text: note.text })
+  complete(f.host)
+  await expect.poll(() => f.host.attempts.length).toBe(4)
+  expect(f.host.attempts[3]).toMatchObject({ type: 'send', text: 'New user follow-up' })
+  await expect.poll(() => control.get().followups).toEqual([])
+  expect(f.host.attempts.filter(item => 'text' in item && item.text === 'Unknown original')).toHaveLength(1)
+})
+
 it('keeps dormant Watcher queues whole in stable with history off and omits active machine prose from disk', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-followups-')); roots.push(root)
   const writer = new FollowupStore(root), draftId = randomUUID(), watcherOperationId = randomUUID()
@@ -626,4 +679,194 @@ it('stable retains private corrupt copies whole until Owl owns the history-off c
   expect(await readFile(join(root, name), 'utf8')).toBe(original)
   const owl = new FollowupStore(root, () => false); await owl.load()
   expect((await readFile(join(root, name), 'utf8')).includes('Synthetic dormant private backup')).toBe(false)
+})
+
+
+it.each(['running', 'admitting'] as const)('sends multiple fresh user messages exactly once after recovery while the first is %s, including with Watcher queue guards', async phase => {
+  const f = await fixture(); const old = { type: 'manual-send' as const, threadId: 'workshop', draftId: randomUUID(), text: 'Unconfirmed old prompt' }
+  f.host.result = { accepted: false, uncertain: true }
+  await f.control.command(old)
+  expect((await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId: old.draftId })).error).toBeNull()
+  delete f.host.result
+  f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+    guardOperation: () => undefined, preserveUserQueue: () => false })
+  const messages = ['Fresh first', 'Fresh second', 'Fresh third'].map(text => ({ ...old, draftId: randomUUID(), text }))
+  const gate = deferred<void>()
+  if (phase === 'admitting') f.host.gate = gate.promise
+  const first = f.control.command(messages[0]!)
+  try {
+    if (phase === 'admitting') await expect.poll(() => f.host.attempts.length).toBe(2)
+    else expect((await first).error).toBeNull()
+    for (const command of messages.slice(1)) expect((await f.control.command(command)).error).toBeNull()
+  } finally { gate.resolve(); await first }
+  expect(f.host.attempts.map(item => 'text' in item ? item.text : item.type)).toEqual([old.text, messages[0]!.text])
+  expect(f.control.get().followups).toHaveLength(2)
+  complete(f.host)
+  await expect.poll(() => f.host.attempts.length).toBe(3)
+  complete(f.host)
+  await expect.poll(() => f.host.attempts.length).toBe(4)
+  await expect.poll(() => f.control.get().followups?.length).toBe(0)
+  complete(f.host); await f.control.command({ type: 'refresh' })
+  for (const command of [old, ...messages]) await f.control.command(command)
+  expect(f.host.attempts.map(item => 'text' in item ? item.text : item.type)).toEqual([old.text, ...messages.map(item => item.text)])
+  expect(f.control.get().deliveredDrafts).not.toContainEqual({ threadId: old.threadId, draftId: old.draftId })
+})
+
+
+it('steers a fresh user queue item past a set-aside prompt exactly once', async () => {
+  const f = await fixture(); const draftId = randomUUID(); f.host.result = { accepted: false, uncertain: true }
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unconfirmed old prompt' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+  delete f.host.result; f.host.state.capabilities.steer = true
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Fresh running turn' })
+  await f.control.command(queued('Fresh queued steer'))
+  const itemId = f.control.get().followups![0]!.id
+  const steer = { type: 'steer-followup' as const, threadId: 'workshop', itemId }
+  expect((await f.control.command(steer)).error).toBeNull()
+  await f.control.command(steer)
+  expect(f.host.attempts.map(item => item.type)).toEqual(['send', 'send', 'steer'])
+  expect(f.control.get().followups).toEqual([])
+})
+
+it.each([['manual', false], ['manual', true], ['queue', false], ['queue', true]] as const)('resumes automatic Watcher sends after a confirmed %s message across restart (missing main record %s)', async (kind, missing) => {
+  const f = await fixture(); const draftId = randomUUID(); f.host.result = { accepted: false, uncertain: true }
+  if (!missing) await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unconfirmed user prompt' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+  delete f.host.result
+  await f.control.command({ type: kind === 'manual' ? 'manual-send' : 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'New user message' })
+  await expect.poll(() => f.control.get().deliveries?.find(item => item.draftId === draftId)?.updatesResumed).toBe(true)
+  f.control.dispose(); await f.control.privacyChanged()
+  const control = f.create(); await control.start(); await control.command({ type: 'connect' })
+  complete(f.host)
+  control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+    guardOperation: () => undefined, preserveUserQueue: () => false })
+  const result = await control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic continuation' }, { guard: () => undefined })
+  expect(result.error).toBeNull()
+  expect(f.host.attempts.map(item => 'text' in item ? item.text : item.type)).toEqual([
+    ...(!missing ? ['Unconfirmed user prompt'] : []), 'New user message', 'Automatic continuation',
+  ])
+  expect(control.get().deliveries?.find(item => item.draftId === draftId)).toMatchObject({ status: 'uncertain', setAside: true })
+  const replay = await control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unconfirmed user prompt' })
+  expect(replay.error).toMatch(/unknown result|set aside|replaced/)
+  expect(f.host.attempts).toHaveLength(missing ? 2 : 3)
+})
+
+it('does not resume updates on another thread when a new message is confirmed', async () => {
+  const f = await fixture(); const draftId = randomUUID(); f.host.result = { accepted: false, uncertain: true }
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Old unknown prompt' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+  delete f.host.result
+  await f.control.command({ type: 'manual-send', threadId: 'docs', draftId: randomUUID(), text: 'A different thread' })
+  f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+    guardOperation: () => undefined, preserveUserQueue: () => false })
+  expect((await f.control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic continuation' }, { guard: () => undefined })).error).toMatch(/unknown result/)
+  expect(f.host.attempts).toHaveLength(2)
+  expect(f.control.get().deliveries?.find(item => item.draftId === draftId)?.updatesResumed).not.toBe(true)
+})
+
+it.each([false, true])('keeps recovery updates held after the original late echo until a fresh prompt confirms (restart %s)', async restart => {
+  const f = await fixture(); const draftId = randomUUID(); let control = f.control
+  f.host.result = { accepted: false, uncertain: true }
+  await control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Original unknown prompt' })
+  await control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+  const old = f.host.attempts[0]!
+  if (old.type !== 'send') throw new Error('Expected the original send')
+  f.host.state.threads.find(thread => thread.id === 'workshop')!.messages.push({ id: old.messageId, commandId: old.commandId, role: 'user', text: old.text, createdAt: new Date().toISOString() })
+  complete(f.host)
+  if (restart) { control.dispose(); await control.privacyChanged(); control = f.create(); await control.start(); await control.command({ type: 'connect' }) }
+  delete f.host.result
+  control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+    guardOperation: () => undefined, preserveUserQueue: () => false })
+  expect((await control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic before fresh message' }, { guard: () => undefined })).error).toMatch(/unknown result/)
+  expect(f.host.attempts).toHaveLength(1)
+  expect(control.get().deliveries?.find(item => item.draftId === draftId)).toMatchObject({ status: 'accepted', setAside: true })
+  await control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Fresh user message' })
+  complete(f.host)
+  expect((await control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic after fresh message' }, { guard: () => undefined })).error).toBeNull()
+  expect(f.host.attempts).toHaveLength(3)
+})
+
+it('lets a guarded delegation Stop pass a set-aside prompt without releasing updates', async () => {
+  const f = await fixture(), draftId = randomUUID(), guard = vi.fn()
+  f.host.result = { accepted: false, uncertain: true }
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unconfirmed prompt' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+  delete f.host.result
+  f.host.update('workshop', { status: 'running' })
+  f.control.useDelegation({ userCommand: () => undefined, observe: () => undefined, observedThreadIds: () => [], messageIdFor: () => undefined, guardFor: () => undefined })
+  expect((await f.control.commandFromDelegation({ type: 'interrupt', threadId: 'workshop' }, guard)).error).toBeNull()
+  expect(f.host.attempts.at(-1)).toMatchObject({ type: 'interrupt', threadId: 'workshop' })
+  expect(guard.mock.calls.length).toBeGreaterThanOrEqual(2)
+  expect(f.control.get().deliveries?.find(item => item.draftId === draftId)?.updatesResumed).not.toBe(true)
+})
+
+it('does not let a late confirmation release a newer recovery hold', async () => {
+  const f = await fixture(); f.host.result = { accepted: false, uncertain: true }
+  const original = randomUUID(), earlier = randomUUID(), newer = randomUUID()
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: original, text: 'Original unknown prompt' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId: original })
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: earlier, text: 'Earlier replacement' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId: earlier })
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: newer, text: 'Newer unknown message' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId: newer })
+  const late = f.host.attempts[1]!
+  if (late.type !== 'send') throw new Error('Expected the earlier replacement send')
+  f.host.state.threads.find(thread => thread.id === 'workshop')!.messages.push({ id: late.messageId, commandId: late.commandId, role: 'user', text: late.text, createdAt: new Date().toISOString() })
+  complete(f.host)
+  delete f.host.result
+  f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+    guardOperation: () => undefined, preserveUserQueue: () => false })
+  expect((await f.control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic continuation' }, { guard: () => undefined })).error).toMatch(/unknown result/)
+  expect(f.host.attempts).toHaveLength(3)
+  expect(f.control.get().deliveries?.find(item => item.draftId === original)?.updatesResumed).toBe(true)
+  expect(f.control.get().deliveries?.find(item => item.draftId === newer)?.updatesResumed).not.toBe(true)
+})
+
+it.each([false, true])('keeps updates held when the new user message is not confirmed (uncertain %s)', async uncertain => {
+  const f = await fixture(); const draftId = randomUUID(); f.host.result = { accepted: false, uncertain: true }
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Old unknown prompt' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+  f.host.result = { accepted: false, uncertain }
+  await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Unconfirmed new message' })
+  delete f.host.result
+  f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+    guardOperation: () => undefined, preserveUserQueue: () => false })
+  expect((await f.control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic continuation' }, { guard: () => undefined })).error).toMatch(/unknown result/)
+  expect(f.host.attempts).toHaveLength(2)
+  if (uncertain) {
+    const fresh = f.host.attempts[1]!
+    if (fresh.type !== 'send') throw new Error('Expected the fresh send')
+    f.host.state.threads.find(thread => thread.id === 'workshop')!.messages.push({ id: fresh.messageId, commandId: fresh.commandId, role: 'user', text: fresh.text, createdAt: new Date().toISOString() })
+    complete(f.host)
+    expect((await f.control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Confirmed-later continuation' }, { guard: () => undefined })).error).toBeNull()
+    expect(f.host.attempts).toHaveLength(3)
+  }
+})
+
+it.each([false, true])('keeps automatic Watcher sends blocked after recovery (missing main record %s)', async missing => {
+  const f = await fixture(); const draftId = randomUUID(); f.host.result = { accepted: false, uncertain: true }
+  if (!missing) await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unconfirmed user prompt' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+  delete f.host.result
+  f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+    guardOperation: () => undefined, preserveUserQueue: () => false })
+  const result = await f.control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic continuation' }, { guard: () => undefined })
+  expect(result.error).toMatch(/unknown result/)
+  expect(f.host.attempts).toHaveLength(missing ? 0 : 1)
+})
+
+
+it.each([['wake-up', false], ['wake-up', true], ['Watcher queue', false], ['Watcher queue', true]] as const)('keeps a %s blocked by old set-aside evidence (missing main record %s)', async (kind, missing) => {
+  const f = await fixture(); const draftId = randomUUID(); f.host.result = { accepted: false, uncertain: true }
+  if (!missing) await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Unconfirmed user prompt' })
+  await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })
+  delete f.host.result
+  f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+    guardOperation: () => undefined, preserveUserQueue: () => false })
+  if (kind === 'wake-up') await f.control.deliverWakeUp('workshop', { source: 'restart', since: new Date().toISOString(), resumes: 1 }, { tool: false })
+  else await f.control.commandFromWatcher(queued('Automatic queued continuation'), { operationId: randomUUID(), guard: () => undefined })
+  complete(f.host); await f.control.command({ type: 'refresh' }); await f.control.privacyChanged()
+  expect(f.host.attempts).toHaveLength(missing ? 0 : 1)
+  expect(f.control.get().followups).toHaveLength(1)
+  expect(f.control.get().followups![0]!.status).toBe('queued')
 })

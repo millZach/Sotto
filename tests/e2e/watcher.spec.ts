@@ -17,7 +17,7 @@ import { pageBoundProblems } from './support/designCapture'
 import { onReleaseTrack } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
-import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { holdOwlSky } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
 
@@ -36,6 +36,8 @@ const evidenceRoot = evidenceDirectory('artifacts/watcher-room')
 const permissionEvidence = evidenceDirectory('artifacts/watcher-permission')
 /** The handover after a provider change (ADR-0073, #1026): captures for its note. */
 const handoverEvidence = evidenceDirectory('artifacts/watcher-handover')
+/** Receipt cards, the takeover line and Stop all (#1120): captures for their note. */
+const polishEvidence = evidenceDirectory('artifacts/watcher-room-polish')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const THEMES = [['t3-code', 'sotto'], ['tropic', 'tropic']] as const
@@ -61,7 +63,10 @@ function launchOptions(theme: string, appearance: 'dark' | 'light', motion: 'nor
  * each row marked watched, and Watcher's own changes. `permissionConfirms: false` holds a permission change unconfirmed.
  */
 async function seedRoom(page: Page, options: { readonly current: boolean; readonly history?: boolean; readonly permissionConfirms?: boolean
-  readonly ownChanges?: readonly WatcherOwnChange[]; readonly messages?: readonly AgentMessage[] }): Promise<void> {
+  readonly ownChanges?: readonly WatcherOwnChange[]; readonly messages?: readonly AgentMessage[]
+  /** More of the projection, from the host's ID and the request's: receipts and takeovers. */
+  readonly more?: (hostId: string, requestId: string) => Partial<WatcherRoomState>
+  readonly stopResults?: WatcherStandInSeed['stopResults']; readonly stopDelayMs?: number }): Promise<void> {
   const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
   expect(hostId, 'the window names its host').toBeTruthy()
   const target = (threadId: string) => ({ hostId: hostId!, threadId })
@@ -82,6 +87,13 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
     },
     created: identity,
     ...options.permissionConfirms === false ? { permissionConfirms: false } : {},
+    ...options.stopResults ? { stopResults: options.stopResults } : {},
+    ...options.stopDelayMs ? { stopDelayMs: options.stopDelayMs } : {},
+  }
+  if (options.more) {
+    const more = options.more(hostId!, requestId)
+    seed.state = { ...seed.state, ...more, ...more.requests ? {} : { requests: seed.state.requests },
+      ...more.watchedThreads ? {} : { watchedThreads: seed.state.watchedThreads } }
   }
   await page.evaluate(async ({ key, seed, master, history, extra }) => {
     localStorage.setItem(key, JSON.stringify(seed))
@@ -106,6 +118,74 @@ async function openRoom(page: Page): Promise<void> {
   await expect(page.locator('.watcher-dock')).toBeVisible()
   await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
 }
+
+test('an unconfirmed prompt has a recovery in the actual Watcher room', async () => {
+  await onReleaseTrack('owl', () => withSotto({ ...launchOptions('t3-code', 'dark'), scenario: 'phase3-workspace' }, async launched => {
+    const { page } = launched
+    await seedRoom(page, { current: true, history: false })
+    await openRoom(page)
+    const prompt = page.getByRole('textbox', { name: 'Watcher message', exact: true })
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'uncertain', threadId, text: '' }), CURRENT)
+    await prompt.fill('The prompt whose delivery could not be confirmed.')
+    await prompt.press('Enter')
+    await expect(page.getByLabel('Pending message')).toContainText('Unconfirmed')
+    // The provider cannot recover the original echo: repeated checks cannot settle its delivery.
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'history', threadId, text: '', messages: [], status: 'idle' }), CURRENT)
+    await prompt.fill('hello')
+    await page.reload()
+    await openRoom(page)
+    await expect(prompt).toHaveText('hello')
+    await page.getByRole('button', { name: 'Check again', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Continue with a new message', exact: true })).toBeEnabled()
+    const evidence = evidenceDirectory('artifacts/unconfirmed-send')
+    await mkdir(evidence, { recursive: true })
+    for (const appearance of ['dark', 'light'] as const) {
+      await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance, reducedMotion: 'on' }), appearance)
+      for (const [width, height] of SIZES) {
+        await resizeContentWindow(launched, width, height, [800, 540])
+        await settle(page)
+        expect(await pageBoundProblems(page)).toEqual([])
+        await page.screenshot({ path: join(evidence, `watcher-recovery-${appearance}-${width}x${height}.png`), animations: 'disabled' })
+        const contrast = await roomContrast(page)
+        expect(contrast.filter(item => item.ratio < 4.5)).toEqual([])
+      }
+    }
+    const recovery = page.getByRole('button', { name: 'Continue with a new message', exact: true })
+    await recovery.focus()
+    await page.keyboard.press('Enter')
+    await expect(prompt).toBeFocused()
+    await expect(prompt).toHaveText('hello')
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled()
+    await expect(page.getByLabel('Pending message')).toContainText('Set aside · Unconfirmed')
+    await page.screenshot({ path: join(evidence, 'watcher-set-aside-light-820x560.png'), animations: 'disabled' })
+    await page.reload()
+    await openRoom(page)
+    await expect(prompt).toHaveText('hello')
+    await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeEnabled()
+    await prompt.press('Enter')
+    await expect(prompt).toHaveText('')
+    await expect.poll(() => userMessageTexts(page, CURRENT)).toEqual(['hello'])
+    await expect.poll(() => page.evaluate(async () => (await window.sotto!.agents!.get()).deliveries?.filter(item => item.setAside)
+      .map(item => ({ status: item.status, updatesResumed: item.updatesResumed })))).toEqual([{ status: 'uncertain', updatesResumed: true }])
+    await prompt.fill('A new follow-up after recovery')
+    await expect(page.getByRole('button', { name: 'Queue prompt', exact: true })).toBeEnabled()
+    await prompt.press('Enter')
+    await expect(prompt).toHaveText('')
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'ready', threadId, text: 'The new turn finished.' }), CURRENT)
+    await expect.poll(() => userMessageTexts(page, CURRENT)).toEqual(['hello', 'A new follow-up after recovery'])
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'permission', threadId, requestId: 'recovered-permission', text: 'Allow the next step?', status: 'running' }), CURRENT)
+    const deny = page.getByRole('button', { name: 'Deny', exact: true })
+    await deny.click()
+    await expect(deny).toHaveCount(0)
+    await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'question', threadId, requestId: 'recovered-question', text: 'Which step comes next?' }), CURRENT)
+    const answer = page.getByRole('textbox', { name: 'Your answer', exact: true })
+    await answer.fill('Use the next step')
+    await answer.press('Enter')
+    await expect(answer).toHaveCount(0)
+    expect(await userMessageTexts(page, CURRENT)).toEqual(['hello', 'A new follow-up after recovery'])
+  }))
+})
 
 async function settle(page: Page): Promise<void> {
   await page.mouse.move(0, 0)
@@ -184,7 +264,11 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
       '.watcher-watched__lead > p', '.watcher-watched__label', '.watched-card__title', '.watched-card__meta', '.watched-card__doing', '.watched-card__stop',
       '.watcher-handover__lead > p', '.watcher-handover__ledger', '.watcher-handover__read', '.watcher-handover__text', '.thread-prompt__send[data-wide]',
-      '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose']
+      '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose',
+      '.receipt-card__lead', '.receipt-card__name', '.receipt-link', '.receipt-outcome', '.receipt-card__meta', '.sotto-line p', '.sotto-line time',
+      '.watcher-stop-all__button', '.watcher-stop h2', '.watcher-stop__name', '.watcher-stop__where', '.watcher-stop__state', '.watcher-stop__note', '.watcher-stop__said',
+      '.watcher-stop .tt-button',
+      '.thread-message__status', '.thread-message__delivery > span', '.thread-message__delivery-actions .tt-button']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0).slice(0, 6)
       .flatMap((element, index) => surfaces(element).map(on => ({ name: `${selector} ${index}${element.getAttribute('data-tone') ? ` (${element.getAttribute('data-tone')})` : ''}`, ink: hex(getComputedStyle(element).color), on }))))
   })
@@ -278,13 +362,16 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
-  test.beforeAll(async () => { await mkdir(evidenceRoot, { recursive: true }); await mkdir(permissionEvidence, { recursive: true }); await mkdir(handoverEvidence, { recursive: true }) })
+  test.beforeAll(async () => {
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence]) await mkdir(folder, { recursive: true })
+  })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
     const note = /^(permissions|own-changes|threads-watch|room-watched|list-watch)-/u
     const handover = /^handover-/u
-    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key))], [permissionEvidence, [...recorded].filter(([key]) => note.test(key))],
-      [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))]] as const
+    const polish = /^polish-/u
+    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key))], [permissionEvidence, [...recorded].filter(([key]) => note.test(key))],
+      [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))], [polishEvidence, [...recorded].filter(([key]) => polish.test(key))]] as const
     for (const [folder, entries] of folders) {
       if (entries.length > 0) await writeFile(resolve(folder, 'readings.json'), `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`, 'utf8')
     }
@@ -551,7 +638,8 @@ test.describe("Watcher's room on the built app", () => {
       await press('ArrowRight', 'Watcher')
       await press('ArrowRight', 'Threads')
       await press('ArrowLeft', 'Watcher')
-      // Tab from All threads: the header (its tabs, one stop on the one shown, then More Watcher actions), the needs-you
+      // Tab from All threads: the header (its tabs, one stop on the one shown, then Stop all while threads Watcher started run,
+      // then More Watcher actions), the needs-you
       // line, the conversation, the composer, then the floating switch's row.
       await allThreads(page).focus()
       const order: string[] = []
@@ -561,7 +649,7 @@ test.describe("Watcher's room on the built app", () => {
       }
       recorded.set('tab-order', order)
       const indexOf = (name: string | RegExp): number => order.findIndex(entry => typeof name === 'string' ? entry === name : name.test(entry))
-      expect(order.slice(0, 2)).toEqual(['Conversation', 'More Watcher actions'])
+      expect(order.slice(0, 3)).toEqual(['Conversation', 'Stop all threads Watcher started, 2 threads', 'More Watcher actions'])
       expect(indexOf(/^Open Visual gate flake to answer/)).toBeGreaterThan(indexOf('More Watcher actions'))
       expect(indexOf('Watcher message')).toBeGreaterThan(indexOf(/^Open Streaming WAV stall/))
       expect(indexOf('History')).toBeGreaterThan(indexOf('Watcher message'))
@@ -844,6 +932,133 @@ test.describe("Watcher's room on the built app", () => {
         await expect(show).toHaveAccessibleName('Show the 2 files')
       })
     })
+  })
+
+  test('receipt cards, the takeover line and Stop all, from the keyboard at every size', async () => {
+    // Watcher started Visual gate flake and Footer links and stopped Grok voice previews in its reply; the user then sent
+    // in Weekly note, which Watcher was driving.
+    const more = (hostId: string, requestId: string): Partial<WatcherRoomState> => {
+      const target = (threadId: string) => ({ hostId, threadId })
+      const operation = (threadId: string, action: 'start' | 'stop') => ({ id: randomUUID(), requestId, retryKey: randomUUID(), digest: '0'.repeat(64), action, target: target(threadId),
+        generation: 0, deliveryState: 'accepted' as const, createdAt: at(8), updatedAt: at(8), receiptId: randomUUID(), cardId: randomUUID() })
+      const receipts = [operation('visual-gate', 'start'), operation('footer-links', 'start'), operation('grok-previews', 'stop')]
+      const participant = (threadId: string) => ({ requestId, startedBy: 'watcher' as const, generation: 0, state: 'participating' as const, target: target(threadId), promptCount: 1 })
+      const taken = { ...participant('weekly-note'), generation: 1, state: 'taken-over' as const, takeover: { reason: 'user-send' as const, at: new Date(Date.UTC(2026, 6, 12, 19, 36)).toISOString() } }
+      const participants = [...WATCHED.map(participant), taken]
+      return { receipts, receiptReplies: receipts.map(item => ({ operationId: item.id, messageId: 'watcher-reply' })),
+        requests: [{ id: requestId, watcher: target(CURRENT), rootUserMessageId: 'watcher-ask', state: 'active', createdAt: at(12), closedAt: null, participants }],
+        watchedThreads: participants.map(part => ({ target: part.target, title: part.target.threadId, watched: part.state === 'participating', paused: false,
+          status: 'running' as const, connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [part] })) }
+    }
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, more, stopResults: { 'visual-gate': { status: 'requested', message: 'Stop requested.' } } })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        const pane = watcherPane(page)
+        // One card per action under the reply that took it; a name is a link only on its card.
+        const cards = pane.getByRole('list', { name: 'What Watcher did' }).getByRole('listitem')
+        await expect(cards).toHaveCount(3)
+        await expect(cards.nth(0)).toContainText('Started')
+        await expect(cards.nth(0).getByRole('button', { name: 'Open Visual gate flake beside Watcher' })).toBeVisible()
+        await expect(cards.nth(0)).toContainText('This computer')
+        await expect(cards.nth(2)).toContainText('Stopped')
+        await expect(pane.locator('[data-message-id="watcher-reply"] .thread-message__text').getByRole('button')).toHaveCount(0)
+        const line = pane.locator('.sotto-line')
+        await expect(line.locator('p')).toHaveText('You took over Weekly note. Watcher stopped sending to it.')
+        // Stop all, for the two threads Watcher started that still run, never the one the user took over.
+        const stopAll = page.getByRole('button', { name: 'Stop all threads Watcher started, 2 threads' })
+        await expect(stopAll).toBeVisible()
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await line.scrollIntoViewIfNeeded()
+          expect(await pageBoundProblems(page), `receipts at ${width}x${height}`).toEqual([])
+          await captureInto(polishEvidence, launched, `polish-receipts-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `polish-receipts-${appearance}-${width}x${height}`)
+        }
+        // From the keyboard: Stop all asks first, with Cancel taking focus, and Escape returns to it.
+        await resizeContentWindow(launched, 1280, 800)
+        await stopAll.focus()
+        await page.keyboard.press('Enter')
+        const ask = page.getByRole('dialog', { name: 'Stop the 2 threads Watcher started?' })
+        await expect(ask).toContainText('Each stops its current turn and keeps the work it has done. Threads you started or took over keep running.')
+        await expect(ask.getByRole('button', { name: 'Cancel' })).toBeFocused()
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          expect(await pageBoundProblems(page), `Stop all at ${width}x${height}`).toEqual([])
+          await captureInto(polishEvidence, launched, `polish-stop-ask-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `polish-stop-ask-${appearance}-${width}x${height}`)
+        }
+        await page.keyboard.press('Escape')
+        await expect(ask).toHaveCount(0)
+        await expect(stopAll).toBeFocused()
+        await page.keyboard.press('Enter')
+        await expect(ask.getByRole('button', { name: 'Cancel' })).toBeFocused()
+        await page.keyboard.press('Tab')
+        await expect(ask.getByRole('button', { name: 'Stop 2 threads' })).toBeFocused()
+        await page.keyboard.press('Enter')
+        const done = page.getByRole('dialog', { name: 'Stopped 1 of 2. One is waiting to confirm.' })
+        await expect(done).toContainText('Stopped.')
+        await expect(done).toContainText('Stop requested. Waiting for it to confirm.')
+        await expect(done.getByRole('button', { name: 'Close' })).toBeFocused()
+        await captureInto(polishEvidence, launched, `polish-stop-done-${appearance}-${SIZES[2][0]}x${SIZES[2][1]}.png`)
+        await contrastHolds(page, `polish-stop-done-${appearance}`)
+        await page.keyboard.press('Escape')
+        // Visual gate flake is still running, so Stop all stays, now for it alone.
+        await expect(page.getByRole('button', { name: 'Stop all threads Watcher started, 1 thread' })).toBeFocused()
+      })
+    })
+  })
+
+  test('Stop all, confirmed from the keyboard, answers Escape while its stop is still going and keeps what came of it', async () => {
+    await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedRoom(page, { current: true, stopResults: {}, stopDelayMs: 4_000 })
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      const stopAll = page.getByRole('button', { name: 'Stop all threads Watcher started, 2 threads' })
+      await stopAll.focus()
+      await page.keyboard.press('Enter')
+      const ask = page.getByRole('dialog', { name: 'Stop the 2 threads Watcher started?' })
+      await expect(ask.getByRole('button', { name: 'Cancel' })).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(ask.getByRole('button', { name: 'Stop 2 threads' })).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(ask.getByRole('button', { name: 'Stopping…' })).toBeVisible()
+      // The stop is still going and focus is still in the popover, so Escape reaches it.
+      expect(await page.evaluate(() => document.querySelector('.watcher-stop')?.contains(document.activeElement) === true)).toBe(true)
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Stop all, show its progress' })).toBeFocused()
+      // What came of it waits for the button.
+      const show = page.getByRole('button', { name: 'Stop all, show what it did' })
+      await expect(show).toBeVisible({ timeout: 15_000 })
+      await show.press('Enter')
+      await expect(page.getByRole('dialog', { name: 'Stopped 2 threads.' })).toBeVisible()
+    }))
+  })
+
+  test('the receipt cards hold still with reduced motion', async () => {
+    await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark', 'reduced'), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedRoom(page, { current: true, more: (hostId, requestId) => {
+        const receipt = { id: randomUUID(), requestId, retryKey: randomUUID(), digest: '0'.repeat(64), action: 'start' as const, target: { hostId, threadId: 'footer-links' },
+          generation: 0, deliveryState: 'accepted' as const, createdAt: at(8), updatedAt: at(8), receiptId: randomUUID(), cardId: randomUUID() }
+        return { receipts: [receipt], receiptReplies: [{ operationId: receipt.id, messageId: 'watcher-reply' }] }
+      } })
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      const ring = watcherPane(page).locator('.receipt-outcome > .watcher-row__ring[data-tone="working"]')
+      await expect(ring).toHaveCount(1)
+      expect(await ring.evaluate(element => getComputedStyle(element).animationName)).toBe('none')
+      await captureInto(polishEvidence, launched, 'polish-receipts-dark-1280x800-reduced-motion.png')
+    }))
   })
 
   test('Watch from a pane header and a row, and the Watched view, from the keyboard', async () => {
@@ -1177,13 +1392,20 @@ test.describe("Watcher's room on the built app", () => {
       await writeFile(join(root, 'claude', 'script.json'), JSON.stringify({ reply: 'Claude Watcher here. I have the handover.' }))
       await resizeContentWindow(launched, 1280, 800)
       await openRoom(page)
+      // This journey starts on Codex explicitly; role defaults may choose Claude when both fixtures are ready.
+      await page.getByRole('group', { name: 'Watcher’s model' }).getByRole('combobox', { name: 'Thread model' }).click()
+      const firstPicker = page.getByRole('dialog', { name: 'Choose model' })
+      await firstPicker.getByRole('tab', { name: /Codex/ }).click()
+      await firstPicker.getByRole('option').first().click()
       await page.getByRole('textbox', { name: 'Watcher message' }).click()
       await page.keyboard.type('Check the release notes and tell me what is missing.')
       await page.getByRole('button', { name: 'Start Watcher and send' }).click()
       const pane = watcherPane(page)
+      await expect.poll(async () => (await mainRoom(page)).current?.provider).toBe('codex')
       await expect(pane.locator('[data-role="assistant"]')).toContainText('Watcher here. Release notes is missing the install line.')
       await expect.poll(async () => (await mainRoom(page)).currentOptions?.status).toBe('idle')
       const codex = (await mainRoom(page)).current!
+      expect(codex.provider).toBe('codex')
       expect((await mainRoom(page)).handover ?? null).toBeNull()
 
       // Another provider's model in Watcher's own picker is a new Watcher there.

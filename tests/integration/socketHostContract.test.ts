@@ -14,6 +14,7 @@ import { claudeFixture, claudeFixtureSkips } from '../fixtures/claudeFixture'
 import { codexFixture, codexFixtureSkips } from '../fixtures/codexFixture'
 import { devinFixture, devinFixtureSkips } from '../fixtures/devinFixture'
 import { grokFixture, grokFixtureSkips } from '../fixtures/fakeGrokThreadFixture'
+import { opencodeFixture, opencodeFixtureSkips } from '../fixtures/fakeOpenCodeFixture'
 import { serveStandIn } from '../fixtures/serveStandIn'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
 import { describeHostServiceContract } from './hostServiceContract'
@@ -57,7 +58,8 @@ async function fixture(provider: ProviderId, native: AdapterFixture, session: Ad
     if (!port) throw new Error('The host’s tailnet listener is not served.')
     stand = await serveStandIn(() => port)
   }
-  const client = new SocketHostService({ url: stand?.url ?? url, token: paired.token, expectedHostId: descriptor.hostId })
+  // OpenCode runs only on an Owl host, so its desktop is an Owl one, which holds no provider (ADR-0087, #1107).
+  const client = new SocketHostService({ url: stand?.url ?? url, token: paired.token, expectedHostId: descriptor.hostId, ...(provider === 'opencode' ? { heldProviders: new Set() } : {}) })
   await client.connect()
   const stop = async (): Promise<void> => { await client.close(); await stand?.close(); await call('stop'); await exited }
   return {
@@ -80,6 +82,8 @@ const providers: { provider: ProviderId; create: (session?: AdapterSessionOption
   { provider: 'claude', create: session => claudeFixture(undefined, undefined, undefined, session), skips: claudeFixtureSkips },
   { provider: 'grok', create: session => grokFixture(undefined, undefined, undefined, session), skips: grokFixtureSkips },
   { provider: 'devin', create: session => devinFixture(undefined, undefined, undefined, session), skips: devinFixtureSkips },
+  // Hosts take OpenCode since #1107.
+  { provider: 'opencode', create: session => opencodeFixture(undefined, undefined, session), skips: opencodeFixtureSkips },
 ]
 for (const provider of providers) describeHostServiceContract('Socket child ' + provider.provider, async session => fixture(provider.provider, await provider.create(session), session), provider.skips)
 // The same contract over a desktop's tailnet connection. The transport is what changes, so one provider carries it.

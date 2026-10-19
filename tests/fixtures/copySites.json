@@ -20,9 +20,10 @@
     "cloneActivitySnapshot(": 1
   },
   "src/main/agents/control.ts": {
-    "structuredClone(": 24,
-    "shell()": 36,
-    "watcherRecord()": 2
+    "structuredClone(": 21,
+    "shell()": 39,
+    "watcherRecord()": 2,
+    "clonePlainData(": 3
   },
   "src/main/agents/devin.ts": {
     "structuredClone(": 1,
@@ -37,6 +38,9 @@
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
   },
+  "src/main/agents/heldProviderGate.ts": {
+    "structuredClone(": 2
+  },
   "src/main/agents/hostService.ts": {
     "shell()": 5
   },
@@ -44,7 +48,12 @@
     "shell()": 1
   },
   "src/main/agents/muse.ts": {
-    "structuredClone(": 3,
+    "structuredClone(": 1,
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
+  "src/main/agents/opencode.ts": {
+    "structuredClone(": 1,
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
   },
@@ -87,7 +96,8 @@
   "src/main/agents/watcher.ts": {
     "structuredClone(": 1,
     "shell()": 1,
-    "watcherRecord()": 1
+    "watcherRecord()": 1,
+    "clonePlainData(": 1
   },
   "src/main/agents/watcherRoomDesktop.ts": {
     "structuredClone(": 1
@@ -101,7 +111,7 @@
     "shell()": 1
   },
   "src/main/hosts/desktopHostRouter.ts": {
-    "shell()": 39
+    "shell()": 35
   },
   "src/main/hosts/desktopHosts.ts": {
     "structuredClone(": 1,

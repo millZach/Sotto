@@ -81,11 +81,11 @@ function fakeBridge(state: WatcherRoomState) {
   return { bridge: bridge as unknown as WatcherBridge & typeof bridge, publish: (next: WatcherRoomState) => { for (const listener of listeners) listener(next) } }
 }
 
-function mockApp(navigation: AppNavigation, watcherEnabled = true) {
+function mockApp(navigation: AppNavigation, watcherEnabled = true, museEnabled = false) {
   const navigate = vi.fn()
   vi.mocked(useOptionalApp).mockReturnValue({
     navigation, platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: { watcherEnabled }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
+    update: museEnabled ? { watcherEnabled, owlFeatures: { watcher: watcherEnabled, muse: true } } : { watcherEnabled }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
   } as unknown as AppContextValue)
   return navigate
 }
@@ -201,6 +201,19 @@ describe("Watcher's room", () => {
     expect(promptText(screen.getByRole('textbox', { name: 'Watcher message' }))).toBe('Start the release checks.')
     expect(screen.getByRole('button', { name: 'Start Watcher and send' })).toBeEnabled()
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send' }))
+  })
+
+  it('offers a Muse model for Watcher where Muse is shown, and starts Watcher on Muse with it', async () => {
+    const state = stateWithWatcher()
+    state.host.models = [{ id: 'muse:fixture', provider: 'Muse', providerId: 'muse', name: 'Fixture Muse', ready: true }]
+    mockApp('watcher', true, true)
+    mockAgents(state)
+    const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [], inFlight: 0 }))
+    render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
+    expect(await screen.findByText(/your own Codex, Claude Code, Grok Build or Muse account/)).toBeInTheDocument()
+    setPromptText(await screen.findByRole('textbox', { name: 'Watcher message' }), 'Keep an eye on the footer links.')
+    fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledWith(expect.objectContaining({ provider: 'muse', modelId: 'muse:fixture' })))
   })
 
   it('never offers Devin for Watcher, and says where to connect a provider when none can host it', async () => {
@@ -415,6 +428,24 @@ describe("Watcher's room", () => {
     fireEvent.keyDown(list.getByRole('searchbox', { name: 'Filter threads' }), { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'All threads' })).toBeNull()
     expect(button).toHaveFocus()
+  })
+
+  it('groups an idle thread whose sub-agents are confirmed working under Working, and one whose agents are unknown under Idle', async () => {
+    // The Overview reads the same active-work rule as Watcher's quiet news and list_threads (#1157, Bug Bot finding 6 on #1163).
+    const groups = async (working: number, unknown: number) => {
+      const state = stateWithWatcher()
+      state.host.threads.find(thread => thread.id === 'grok-previews')!.subagentSummary = { total: 3, working, unknown, completed: 3 - working - unknown, failed: 0, interrupted: 0 }
+      renderRoom(state, roomState())
+      await paneReady()
+      fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
+      const list = within(screen.getByRole('dialog', { name: 'All threads' }))
+      const seen = { headings: list.getAllByRole('heading', { level: 3 }).map(heading => heading.getAttribute('aria-label')),
+        group: list.getByRole('button', { name: 'Open Grok voice previews beside Watcher' }).closest('li')!.getAttribute('data-group') }
+      cleanup()
+      return seen
+    }
+    expect(await groups(2, 0)).toEqual({ headings: ['Needs you, 2 threads', 'Working, 3 threads', 'Idle, 4 threads'], group: 'working' })
+    expect(await groups(0, 3)).toEqual({ headings: ['Needs you, 2 threads', 'Working, 2 threads', 'Idle, 5 threads'], group: 'idle' })
   })
 
   it('shows a settled thread the filter matches without unfolding Settled, and folds it again once the filter is cleared', async () => {

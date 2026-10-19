@@ -1,0 +1,305 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Muse's shell sandbox needs a one-time elevated setup on Windows that does not run on
+  Zach's laptop, so every shell command in a Sotto Muse thread fails ("windows elevated sandbox
+  setup has not run"). `muse serve --disable-sandbox` turns the sandbox off for the life of that
+  host process; approval mode (Ask / Auto / Full access) is separate and unchanged. Sotto spawns
+  plain `muse serve` today (museServeArguments in src/main/agents/muse.ts) and offers no switch.
+  Decisions already made by Zach (2026-10-18): one global Muse setting, sandbox ON by default,
+  flipping it applies on reconnect. Open question for this prototype: what does the switch look
+  like on the Muse provider tile, and how does it say "reconnect to apply"?
+
+  Three variants on ?variant=a|b|c, switchable with the floating bar (Left/Right arrows too,
+  unless focus is in a field or on a button):
+   a  Switch row. A labelled switch under the tile's state, one sentence of consequence, and -
+      only once the setting and the running hosts disagree - a "Reconnect Muse to apply" line
+      with a Reconnect button (which is Disconnect + Connect in the real code).
+   b  Segmented choice. "Shell sandbox: On | Off" as two explicit options, with a running-state
+      line ("Threads running now: sandboxed") that is separate from the saved choice, and a
+      plainer warning block while Off is chosen.
+   c  Advanced checkbox. The tile stays as it is today; an "Advanced" disclosure holds one
+      checkbox, "Run Muse's shell commands without the sandbox", with the reconnect note.
+
+  Every variant starts with the sandbox ON and Muse connected, matching the chosen default.
+  The state strip under the page shows the prototype's whole state after every press: the saved
+  setting, the posture of the hosts already running, and whether a reconnect is owed. Pressing
+  Reconnect in a variant pretends the hosts restarted: running posture catches up with the
+  setting. Pretending is all in memory; nothing is stored and nothing is spawned.
+
+  Bar extras: Light flips the palette (?theme=light). URL switches for captures: variant=a|b|c,
+  theme=light, off=1 (start with the setting already off and applied).
+
+  Palette: the same token block shape as opencode-sign-in-prototype.html (SOTTO_DARK/LIGHT
+  theme colours through the --tt-* roles), trimmed to what this page uses. Tile structure and
+  words follow HostProviders.tsx ("Connected", account - version detail, Disconnect). Version
+  string and account line are SAMPLE.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto - Muse without its shell sandbox, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265); --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092); --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-error: oklch(0.702184 0.189226 22.228); --tt-success: oklch(0.79 0.13 165);
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85); --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-hairline: oklch(0.86 0.012 80); --tt-field-border: oklch(0.8 0.016 80);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--tt-canvas); color: var(--tt-text); font-family: var(--tt-font-ui); font-size: 14px; line-height: 1.45; }
+.page { max-width: 980px; margin: 0 auto; padding: 28px 24px 140px; }
+.crumb { color: var(--tt-text-muted); font-size: 12px; margin: 0 0 4px; }
+h1 { font-size: 20px; font-weight: 650; margin: 0 0 4px; }
+.sub { color: var(--tt-text-2); margin: 0 0 20px; }
+.host { background: var(--tt-surface); border: 1px solid var(--tt-hairline); border-radius: 12px; padding: 16px; }
+.host h2 { font-size: 15px; margin: 0 0 2px; }
+.host .hsub { color: var(--tt-text-muted); margin: 0 0 14px; font-size: 13px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; list-style: none; margin: 0; padding: 0; }
+.tile { background: var(--tt-surface-elevated); border: 1px solid var(--tt-hairline); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 4px; }
+.tile__top { display: flex; align-items: center; gap: 8px; }
+.tile__top h3 { font-size: 14px; margin: 0; font-weight: 650; }
+.mark { width: 16px; height: 16px; border-radius: 4px; background: var(--tt-surface-sunken); border: 1px solid var(--tt-hairline); }
+.state { margin: 2px 0 0; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tt-success); display: inline-block; }
+.dot.off { background: var(--tt-text-muted); }
+.detail { color: var(--tt-text-muted); margin: 0; font-size: 13px; }
+.actions { margin-top: auto; padding-top: 10px; display: flex; gap: 8px; }
+button { font: inherit; cursor: pointer; }
+.btn { background: var(--tt-surface-sunken); color: var(--tt-text); border: 1px solid var(--tt-field-border); border-radius: 8px; padding: 5px 12px; }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--tt-text-2); }
+.btn-primary { background: var(--tt-accent); border-color: transparent; color: oklch(0.16 0.02 200); font-weight: 650; }
+.btn:focus-visible, .switch:focus-visible, .seg button:focus-visible, summary:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+.rule { border: 0; border-top: 1px solid var(--tt-hairline); margin: 12px 0 4px; width: 100%; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.row label, .row .lbl { font-weight: 600; }
+.help { color: var(--tt-text-muted); font-size: 13px; margin: 4px 0 0; }
+.note { display: flex; align-items: center; gap: 10px; margin-top: 10px; background: var(--tt-surface-sunken); border: 1px solid var(--tt-hairline); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.note p { margin: 0; flex: 1; }
+.warn { margin-top: 10px; border: 1px solid color-mix(in srgb, var(--tt-error) 55%, transparent); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.warn p { margin: 0; }
+/* Switch (variant a) */
+.switch { position: relative; width: 40px; height: 22px; flex: none; border-radius: 999px; border: 1px solid var(--tt-field-border); background: var(--tt-surface-sunken); padding: 0; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--tt-text-2); transition: left .15s ease, background .15s ease; }
+.switch[aria-checked="true"] { background: color-mix(in srgb, var(--tt-accent) 35%, var(--tt-surface-sunken)); }
+.switch[aria-checked="true"]::after { left: 20px; background: var(--tt-accent-text); }
+@media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }
+/* Segmented (variant b) */
+.seg { display: inline-flex; border: 1px solid var(--tt-field-border); border-radius: 8px; overflow: hidden; }
+.seg button { background: transparent; border: 0; color: var(--tt-text-2); padding: 5px 14px; }
+.seg button[aria-pressed="true"] { background: var(--tt-surface-sunken); color: var(--tt-text); font-weight: 650; }
+.running { margin-top: 8px; font-size: 13px; color: var(--tt-text-2); }
+.running b { color: var(--tt-text); }
+/* Advanced (variant c) */
+details.adv { margin-top: 10px; }
+details.adv summary { cursor: pointer; color: var(--tt-text-2); font-weight: 600; }
+.check { display: flex; gap: 9px; align-items: flex-start; margin-top: 10px; }
+.check input { margin-top: 3px; width: 15px; height: 15px; accent-color: var(--tt-accent); }
+.check .help { margin-top: 2px; }
+/* Prototype state strip + switcher bar (not part of any design) */
+.strip { margin-top: 18px; border: 1px dashed var(--tt-field-border); border-radius: 10px; padding: 10px 14px; color: var(--tt-text-2); font-size: 13px; }
+.strip code { color: var(--tt-text); }
+.bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px; display: flex; align-items: center; gap: 10px; background: var(--tt-surface-elevated); border: 1px solid var(--tt-field-border); border-radius: 999px; padding: 6px 10px; box-shadow: 0 10px 30px rgb(0 0 0 / 35%); z-index: 10; }
+.bar button { background: transparent; border: 0; color: var(--tt-text); padding: 4px 8px; border-radius: 999px; }
+.bar .vlabel { font-weight: 650; white-space: nowrap; }
+.bar .sep { width: 1px; height: 18px; background: var(--tt-hairline); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="crumb">Settings</p>
+  <h1>Providers</h1>
+  <p class="sub">The agent clients Sotto can run threads on, per computer.</p>
+  <section class="host" aria-label="This computer">
+    <h2>This computer</h2>
+    <p class="hsub">Connected · 3 providers</p>
+    <ul class="tiles">
+      <li class="tile">
+        <div class="tile__top"><span class="mark" aria-hidden="true"></span><h3>Claude Code</h3></div>
+        <p class="state"><span class="dot" aria-hidden="true"></span>Connected</p>
+        <p class="detail">SAMPLE account · 2.0.0</p>
+        <div class="actions"><button class="btn btn-ghost" type="button">Disconnect</button></div>
+      </li>
+      <li class="tile">
+        <div class="tile__top"><span class="mark" aria-hidden="true"></span><h3>Codex</h3></div>
+        <p class="state"><span class="dot" aria-hidden="true"></span>Connected</p>
+        <p class="detail">SAMPLE account · 0.155.1</p>
+        <div class="actions"><button class="btn btn-ghost" type="button">Disconnect</button></div>
+      </li>
+      <li class="tile" id="museTile">
+        <div class="tile__top"><span class="mark" aria-hidden="true"></span><h3>Muse</h3></div>
+        <p class="state"><span class="dot" aria-hidden="true"></span>Connected</p>
+        <p class="detail">SAMPLE account · 1.4.8</p>
+        <div id="variantSlot"></div>
+        <div class="actions"><button class="btn btn-ghost" type="button">Disconnect</button></div>
+      </li>
+    </ul>
+  </section>
+  <div class="strip" id="strip" role="status"></div>
+</div>
+
+<template id="tpl-a">
+  <hr class="rule">
+  <div class="row">
+    <span class="lbl" id="a-lbl">Shell sandbox</span>
+    <button class="switch" id="a-switch" type="button" role="switch" aria-labelledby="a-lbl" aria-checked="true"></button>
+  </div>
+  <p class="help" id="a-help"></p>
+  <div class="note" id="a-note" hidden>
+    <p>Reconnect Muse to apply. Threads running now keep their current setting until they restart.</p>
+    <button class="btn btn-primary" id="a-reconnect" type="button">Reconnect</button>
+  </div>
+</template>
+
+<template id="tpl-b">
+  <hr class="rule">
+  <div class="row">
+    <span class="lbl">Shell sandbox</span>
+    <span class="seg" role="group" aria-label="Shell sandbox">
+      <button type="button" id="b-on" aria-pressed="true">On</button>
+      <button type="button" id="b-off" aria-pressed="false">Off</button>
+    </span>
+  </div>
+  <p class="running" id="b-running"></p>
+  <div class="warn" id="b-warn" hidden>
+    <p>Off means Muse's shell commands run as you, with nothing between them and this computer. Approval prompts still ask in Ask mode. Turn this off only where Muse's sandbox cannot run.</p>
+  </div>
+  <div class="note" id="b-note" hidden>
+    <p>Reconnect Muse to apply to new threads.</p>
+    <button class="btn btn-primary" id="b-reconnect" type="button">Reconnect</button>
+  </div>
+</template>
+
+<template id="tpl-c">
+  <details class="adv">
+    <summary>Advanced</summary>
+    <label class="check">
+      <input type="checkbox" id="c-check">
+      <span>
+        <span class="lbl" style="font-weight:600">Run Muse's shell commands without the sandbox</span>
+        <span class="help" style="display:block">For computers where Muse's sandbox cannot be set up. Commands then run with your own access. Ask mode still asks before a command runs. Applies when Muse next connects.</span>
+      </span>
+    </label>
+    <div class="note" id="c-note" hidden>
+      <p id="c-note-text"></p>
+      <button class="btn" id="c-reconnect" type="button">Reconnect now</button>
+    </div>
+  </details>
+</template>
+
+<div class="bar" aria-label="Prototype variant switcher">
+  <button type="button" id="prev" aria-label="Previous variant">&#8592;</button>
+  <span class="vlabel" id="vlabel"></span>
+  <button type="button" id="next" aria-label="Next variant">&#8594;</button>
+  <span class="sep" aria-hidden="true"></span>
+  <button type="button" id="themeBtn">Light</button>
+</div>
+
+<script>
+'use strict';
+var NAMES = { a: 'A - Switch row', b: 'B - Segmented + running state', c: 'C - Advanced checkbox' };
+var ORDER = ['a', 'b', 'c'];
+var params = new URLSearchParams(location.search);
+var variant = ORDER.indexOf(params.get('variant') || 'a') >= 0 ? (params.get('variant') || 'a') : 'a';
+if (params.get('theme') === 'light') document.documentElement.dataset.theme = 'light';
+// The whole state of the prototype. `setting` is the saved switch; `running` is the posture of
+// the muse serve hosts already up. They differ exactly while a reconnect is owed.
+var state = { setting: params.get('off') === '1' ? 'off' : 'on', running: 'on' };
+if (params.get('off') === '1') state.running = 'off';
+
+function strip() {
+  var owed = state.setting !== state.running;
+  document.getElementById('strip').innerHTML =
+    'Prototype state - saved setting: <code>sandbox ' + state.setting + '</code> · running hosts: <code>' +
+    (state.running === 'on' ? 'sandboxed' : 'unsandboxed (--disable-sandbox)') + '</code> · reconnect owed: <code>' +
+    (owed ? 'yes' : 'no') + '</code>';
+}
+function render() {
+  document.getElementById('vlabel').textContent = NAMES[variant];
+  var slot = document.getElementById('variantSlot');
+  slot.innerHTML = '';
+  slot.appendChild(document.getElementById('tpl-' + variant).content.cloneNode(true));
+  if (variant === 'a') wireA();
+  if (variant === 'b') wireB();
+  if (variant === 'c') wireC();
+  strip();
+}
+function reconnect() { state.running = state.setting; render(); }
+
+function wireA() {
+  var sw = document.getElementById('a-switch'), help = document.getElementById('a-help'), note = document.getElementById('a-note');
+  sw.setAttribute('aria-checked', state.setting === 'on' ? 'true' : 'false');
+  help.textContent = state.setting === 'on'
+    ? "Muse's shell commands run inside its sandbox."
+    : "Muse's shell commands run as you. Only turn this off where the sandbox cannot be set up.";
+  note.hidden = state.setting === state.running;
+  sw.addEventListener('click', function () { state.setting = state.setting === 'on' ? 'off' : 'on'; render(); });
+  document.getElementById('a-reconnect').addEventListener('click', reconnect);
+}
+function wireB() {
+  var on = document.getElementById('b-on'), off = document.getElementById('b-off');
+  on.setAttribute('aria-pressed', state.setting === 'on' ? 'true' : 'false');
+  off.setAttribute('aria-pressed', state.setting === 'off' ? 'true' : 'false');
+  document.getElementById('b-running').innerHTML = 'Threads running now: <b>' +
+    (state.running === 'on' ? 'sandboxed' : 'unsandboxed') + '</b>' +
+    (state.setting !== state.running ? ' - the saved choice above is not live yet.' : '');
+  document.getElementById('b-warn').hidden = state.setting !== 'off';
+  document.getElementById('b-note').hidden = state.setting === state.running;
+  on.addEventListener('click', function () { state.setting = 'on'; render(); });
+  off.addEventListener('click', function () { state.setting = 'off'; render(); });
+  document.getElementById('b-reconnect').addEventListener('click', reconnect);
+}
+function wireC() {
+  var check = document.getElementById('c-check'), note = document.getElementById('c-note');
+  check.checked = state.setting === 'off';
+  note.hidden = state.setting === state.running;
+  document.getElementById('c-note-text').textContent = state.setting !== state.running
+    ? 'Saved. It takes effect when Muse next connects; running threads are unchanged.' : '';
+  check.addEventListener('change', function () { state.setting = check.checked ? 'off' : 'on'; render(); });
+  document.getElementById('c-reconnect').addEventListener('click', reconnect);
+}
+
+function setVariant(v) {
+  variant = v;
+  var url = new URL(location.href); url.searchParams.set('variant', v);
+  history.replaceState(null, '', url);
+  render();
+}
+document.getElementById('prev').addEventListener('click', function () { setVariant(ORDER[(ORDER.indexOf(variant) + ORDER.length - 1) % ORDER.length]); });
+document.getElementById('next').addEventListener('click', function () { setVariant(ORDER[(ORDER.indexOf(variant) + 1) % ORDER.length]); });
+document.getElementById('themeBtn').addEventListener('click', function () {
+  var light = document.documentElement.dataset.theme === 'light';
+  if (light) delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = 'light';
+  var url = new URL(location.href);
+  if (light) url.searchParams.delete('theme'); else url.searchParams.set('theme', 'light');
+  history.replaceState(null, '', url);
+});
+document.addEventListener('keydown', function (e) {
+  var t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON' || t.tagName === 'SUMMARY' || t.isContentEditable)) return;
+  if (e.key === 'ArrowLeft') document.getElementById('prev').click();
+  if (e.key === 'ArrowRight') document.getElementById('next').click();
+});
+render();
+</script>
+</body>
+</html>

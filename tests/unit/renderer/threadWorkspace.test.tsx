@@ -55,6 +55,81 @@ describe('composer Enter intent', () => {
 })
 
 describe('Threads manual composer', () => {
+  it('lets the user set an unconfirmed prompt aside after checking so a newer message is not trapped', async () => {
+    const state = manualState()
+    const threadId = state.activeThreadId!
+    const draftId = crypto.randomUUID()
+    state.deliveries = [{ threadId, draftId, status: 'uncertain', createdAt: SETTLED_AT, updatedAt: SETTLED_AT }]
+    state.threadDrafts = [{ threadId, draftId: crypto.randomUUID(), text: 'My next message', attachments: [], requestId: null, updatedAt: SETTLED_AT }]
+    const { live, prompt } = mount(state)
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    expect(live.command).toHaveBeenLastCalledWith({ type: 'refresh' })
+    expect(screen.getByRole('button', { name: 'Continue with a new message' })).toBeEnabled()
+    expect(promptText(prompt())).toBe('My next message')
+    expect(live.manualSends()).toBe(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with a new message' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled())
+    expect(live.command).toHaveBeenCalledWith({ type: 'set-aside-send', threadId, draftId })
+    expect(live.state.deliveredDrafts).toEqual([])
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Set aside · Unconfirmed')
+    expect(promptText(prompt())).toBe('My next message')
+    expect(live.manualSends()).toBe(0)
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    await waitFor(() => expect(live.manualSends()).toBe(1))
+    expect(live.command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'manual-send', threadId, text: 'My next message' }))
+  })
+
+  it.each(['null', 'throw', 'refused'] as const)('keeps a %s set-aside result held and preserves newer typing', async outcome => {
+    const state = manualState()
+    const threadId = state.activeThreadId!
+    const draftId = crypto.randomUUID()
+    state.deliveries = [{ threadId, draftId, status: 'uncertain', createdAt: SETTLED_AT, updatedAt: SETTLED_AT }]
+    const { live, prompt } = mount(state)
+    const command = live.command.getMockImplementation()!
+    live.command.mockImplementation(async request => {
+      if (request.type !== 'set-aside-send') return command(request)
+      if (outcome === 'throw') throw new Error('Lost reply')
+      return outcome === 'null' ? null : { ...live.state, error: 'Recovery could not be saved. Nothing was sent.' }
+    })
+    setPromptText(prompt(), 'Keep this newer draft')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with a new message' }))
+    await waitFor(() => expect(screen.getByLabelText('Pending message').querySelector('[role="alert"]')).not.toBeNull())
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    expect(promptText(prompt())).toBe('Keep this newer draft')
+    expect(live.manualSends()).toBe(0)
+  })
+
+  it('releases a locally unconfirmed send only when main publishes its exact set-aside record', async () => {
+    const { live, prompt } = mount(manualState())
+    setPromptText(prompt(), 'Old prompt')
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    await waitFor(() => expect(live.manualSends()).toBe(1))
+    act(() => live.deliver(live.state.activeThreadId!, 'uncertain'))
+    await screen.findByRole('button', { name: 'Continue with a new message' })
+    setPromptText(prompt(), 'Newer prompt')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with a new message' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled())
+    expect(promptText(prompt())).toBe('Newer prompt')
+    expect(live.manualSends()).toBe(1)
+  })
+
+  it('recovers a lost IPC send reply even when main has no delivery record for it', async () => {
+    const { live, prompt } = mount(manualState())
+    const command = live.command.getMockImplementation()!
+    live.command.mockImplementation(async request => request.type === 'manual-send' ? null : command(request))
+    setPromptText(prompt(), 'Possibly never reached main')
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    await screen.findByRole('button', { name: 'Continue with a new message' })
+    expect(live.state.deliveries).toEqual([])
+    setPromptText(prompt(), 'Preserve my next draft')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with a new message' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled())
+    expect(promptText(prompt())).toBe('Preserve my next draft')
+    expect(live.state.deliveredDrafts).toEqual([])
+    expect(live.manualSends()).toBe(1)
+  })
+
   it.each([
     ['row', false], ['receipt', false], ['row', true], ['receipt', true],
     ['wrong-thread', false], ['wrong-draft', false], ['refused', false], ['unconfirmed', false],
@@ -423,7 +498,7 @@ describe('Threads project folders', () => {
     expect(within(screen.getByRole('region', { name: 'Settled' })).getByRole('button', { name: 'Restore Streaming WAV stall' })).toBeVisible()
   })
 
-  it('adds a project from a folder, or opens the project that already has it', async () => {
+  it('adds a project from a folder, or opens the project that already has it, and opens a new thread there', async () => {
     const choose = vi.fn(async () => 'D:\\Work\\new-app')
     ;(window as { sotto?: unknown }).sotto = { agents: { chooseProjectDirectory: choose } }
     const { live } = mount(threadsStateFixture())
@@ -435,6 +510,9 @@ describe('Threads project folders', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add project' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Browse with File Explorer' }))
     await waitFor(() => expect(live.command).toHaveBeenCalledWith({ type: 'select-project', projectId: 'workshop' }))
+    // Either way a new thread opens in the project, as its own pen would open one.
+    await waitFor(() => expect(live.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread', projectId: 'workshop', title: 'New thread' })))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'New thread' })).toBeVisible())
   })
 
   it('starts a new thread in a chosen project at once, with no dialog to fill in', async () => {

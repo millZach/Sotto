@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, providerIdSchema, type AgentThread } from './agents'
 import { WATCHER_OUTCOMES, watcherOutcomeSchema } from './watcher'
+import { workerKindSchema } from './workerRoles'
 
 /**
  * Delegation between threads (ADR-0081): an ordinary thread hands work to a thread it starts, through the scoped
@@ -20,8 +21,11 @@ export const DELEGATION_LEVELS_MAX = 2
 export const DELEGATION_BRIEF_MAX = 32_000
 export const DELEGATION_TITLE_MAX = 120
 
-/** The kind of work a delegation is for; once worker roles land (#1041), Sotto fills in the model from it (decision 9). */
-export const delegationWorkSchema = z.enum(['building', 'ui', 'code-review', 'research', 'computer-use'])
+/**
+ * The kind of work a delegation is for: one of the worker roles (#1041), from which Sotto fills in what the call leaves
+ * out while that Owl feature is on (decision 9).
+ */
+export const delegationWorkSchema = workerKindSchema
 export type DelegationWork = z.infer<typeof delegationWorkSchema>
 export const DELEGATION_WORK_TITLES: Record<DelegationWork, string> = {
   building: 'Building', ui: 'UI work', 'code-review': 'Code review', research: 'Research', 'computer-use': 'Computer use',
@@ -191,10 +195,21 @@ export const delegationsReadSchema = z.object({ threadId: id,
 }).strict()
 export type DelegationsRead = z.infer<typeof delegationsReadSchema>
 export const delegationsChangedSchema = z.object({ threadIds: z.array(id).max(10_000) }).strict()
+/**
+ * The newest brief a delegated thread was sent, in full, as Tools › Agents shows it when its row is opened (October 17,
+ * 2026): the user message the delegation record names in that thread, and nothing else of it, never a reply. Read only
+ * when a row is opened; null when Sotto no longer holds it.
+ */
+export const DELEGATION_BRIEF_READ = 'sotto:delegations:brief'
+export const delegationBriefRequestSchema = z.object({ threadId: id }).strict()
+export type DelegationBriefRequest = z.infer<typeof delegationBriefRequestSchema>
+export const delegationBriefSchema = z.object({ threadId: id, text: z.string().max(DELEGATION_BRIEF_MAX) }).strict().nullable()
+export type DelegationBrief = z.infer<typeof delegationBriefSchema>
 export type DelegationsChanged = z.infer<typeof delegationsChangedSchema>
 /** What the main window's preload offers while delegation is on. */
 export interface DelegationsBridge {
   read(request: DelegationsRequest): Promise<DelegationsRead>
+  brief(request: DelegationBriefRequest): Promise<DelegationBrief>
   onChanged(listener: (change: DelegationsChanged) => void): () => void
 }
 

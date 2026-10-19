@@ -3,7 +3,8 @@ import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentBridge, type AgentState } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, PROVIDER_LABELS, providerIdSchema, type AgentBridge, type AgentState, type ProviderId } from '../../../src/shared/agents'
+import { HELD_PROVIDER_ENTRIES } from '../../../src/shared/heldProviders'
 import { useAgentConnection, useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ProvidersSettings } from '../../../src/renderer/src/agents/ProvidersSettings'
 import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
@@ -11,6 +12,9 @@ import { AgentSetupFields } from '../../../src/renderer/src/agents/AgentAccountS
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { AppProvider } from '../../../src/renderer/src/state/AppContext'
 import { createBridge, createController } from '../../fixtures/renderer/appHarness'
+
+/** The providers an Owl feature holds; a run with no Owl answers shows none of them. */
+const HELD: ReadonlySet<ProviderId> = new Set(HELD_PROVIDER_ENTRIES.map(entry => entry.provider))
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn() }))
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
@@ -32,6 +36,83 @@ function provide(state = fixture()) {
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe('independent provider settings', () => {
+  it('shows and acts on this computer’s clients while another host is selected for new work', async () => {
+    const LOCAL = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222'
+    const base = fixture()
+    const here = base.host.providers!.map(provider => provider.id === 'codex' ? { ...provider, version: '0.130.0' } : provider)
+    // The selected host is forge, whose Codex is signed out. Its status is what the top level carries.
+    const forge = base.host.providers!.map(provider => provider.id === 'codex'
+      ? { ...provider, version: '0.120.0', connection: 'error' as const, problem: 'signed-out' as const, error: 'Could not connect Codex. Sign in to Codex on forge, then connect it again.' } : provider)
+    const state: AgentState = { ...base, hostId: FORGE,
+      configuration: { ...base.configuration, enabledProviders: ['grok'], checkClientUpdates: false },
+      connections: [{ hostId: LOCAL, name: 'This computer', kind: 'local', connected: true }, { hostId: FORGE, name: 'forge', kind: 'remote', connected: true }],
+      host: { ...base.host, providers: forge, clientHosts: [
+        { hostId: LOCAL, connected: true, models: base.host.models, capabilities: caps, providers: here, enabledProviders: ['codex', 'claude', 'grok'], checkClientUpdates: true },
+        { hostId: FORGE, connected: true, models: [], capabilities: caps, providers: forge },
+      ] } }
+    const { command } = provide(state)
+    render(<ProvidersSettings />)
+    // This computer's switches, version and status, never forge's.
+    expect(screen.getByRole('switch', { name: 'Enable Codex' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByText('0.130.0')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(within(screen.getByRole('button', { name: 'Codex' })).getByText('Connected')).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Check for client updates' })).toHaveAttribute('aria-checked', 'true')
+    // Every press names this computer, so none reaches forge.
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect Codex' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'disconnect', provider: 'codex', hostId: LOCAL }))
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'check-client-updates', hostId: LOCAL }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Check for client updates' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { checkClientUpdates: false }, hostId: LOCAL }))
+  })
+  it('tags this computer’s agent setting on the Models tab, never the selected host’s', () => {
+    const LOCAL = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222'
+    const base = fixture()
+    // Forge's agent setting would start threads on Claude Code; this computer's starts them on Codex.
+    const state: AgentState = { ...base, hostId: FORGE, configuration: { ...base.configuration, defaultModelId: 'claude:same-native-model' },
+      connections: [{ hostId: LOCAL, name: 'This computer', kind: 'local', connected: true }, { hostId: FORGE, name: 'forge', kind: 'remote', connected: true }],
+      host: { ...base.host, clientHosts: [
+        { hostId: LOCAL, connected: true, models: base.host.models, capabilities: caps, providers: base.host.providers, enabledProviders: ['codex', 'claude'], agentModelId: 'codex:same-native-model' },
+        { hostId: FORGE, connected: true, models: [], capabilities: caps, providers: base.host.providers },
+      ] } }
+    provide(state)
+    render(<ProvidersSettings />)
+    const models = (provider: string) => {
+      fireEvent.click(screen.getByRole('button', { name: provider }))
+      fireEvent.click(screen.getByRole('tab', { name: 'Models' }))
+      return screen.getByRole('list', { name: `${provider} available models` })
+    }
+    expect(models('Codex')).toHaveTextContent('Agent setting')
+    expect(models('Claude Code')).not.toHaveTextContent('Agent setting')
+  })
+  it('says this computer’s host is off, and offers nothing that would reach the selected host, when it is turned off', () => {
+    const FORGE = '22222222-2222-4222-8222-222222222222'
+    const base = fixture()
+    const { command } = provide({ ...base, hostId: FORGE, connections: [{ hostId: FORGE, name: 'forge', kind: 'remote', connected: true }],
+      host: { ...base.host, clientHosts: [{ hostId: FORGE, connected: true, models: [], capabilities: caps, providers: base.host.providers }] } })
+    render(<ProvidersSettings />)
+    expect(screen.getByRole('status')).toHaveTextContent('This computer’s local host is off')
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.queryByRole('switch')).toBeNull()
+    expect(command).not.toHaveBeenCalled()
+  })
+  it('asks a provider that needs attention again when Check again is pressed, after someone signs in', async () => {
+    const state = fixture()
+    state.host.providers = state.host.providers!.map(provider => provider.id === 'codex'
+      ? { ...provider, connection: 'error' as const, problem: 'signed-out' as const, error: 'Could not connect Codex. Sign in to Codex on this machine, then connect it again.' } : provider)
+    const { command } = provide(state)
+    render(<ProvidersSettings />)
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'check-client-updates' }))
+    expect(command).toHaveBeenNthCalledWith(1, { type: 'refresh', provider: 'codex' })
+    // A connected provider is left alone: Check again then only reads versions.
+    command.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'check-client-updates' }))
+    expect(command).toHaveBeenCalledTimes(1)
+  })
   it('shows three enabled connections and disconnects only the selected provider', async () => {
     const { state, command } = provide()
     render(<ProvidersSettings />)
@@ -47,9 +128,10 @@ describe('independent provider settings', () => {
     state.configuration.defaultModelId = 'grok:same-native-model'
     const { command } = provide(state)
     render(<ProvidersSettings />)
-    // Muse is an Owl feature: with no Owl answers it is not offered at all (ADR-0079).
+    // Muse and OpenCode are Owl features: with no Owl answers neither is offered at all (ADR-0079, ADR-0087).
     expect(screen.queryByRole('button', { name: 'Muse' })).toBeNull()
-    for (const provider of providerIdSchema.options.filter(id => id !== 'muse')) {
+    expect(screen.queryByRole('button', { name: 'OpenCode' })).toBeNull()
+    for (const provider of providerIdSchema.options.filter(id => !HELD.has(id))) {
       fireEvent.click(screen.getByRole('button', { name: PROVIDER_LABELS[provider] }))
       expect(screen.queryByRole('combobox', { name: /default thread model/i })).toBeNull()
     }
@@ -73,7 +155,7 @@ describe('independent provider settings', () => {
   it("marks each provider and the selected detail with that provider's mark", () => {
     provide()
     const { container } = render(<ProvidersSettings />)
-    for (const provider of providerIdSchema.options.filter(id => id !== 'muse')) {
+    for (const provider of providerIdSchema.options.filter(id => !HELD.has(id))) {
       // Every provider Sotto ships draws its own mark; the initial is the fallback for one it has none for.
       const drawn = screen.getByRole('button', { name: PROVIDER_LABELS[provider] }).querySelector(`svg.provider-mark[data-provider="${provider}"]`)
       expect(drawn, `${provider} needs its own mark rather than its initial`).not.toBeNull()

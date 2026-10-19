@@ -103,7 +103,7 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     await expect(panel.getByRole('button', { name: 'Disconnect Muse' })).toBeVisible()
     await panel.getByRole('button', { name: 'Check again', exact: true }).focus()
     await page.keyboard.press('Enter')
-    await expect(panel.locator('.provider-client')).toContainText('1.1.1')
+    await expect(panel.locator('.provider-client').filter({ hasText: 'Installed client' })).toContainText('1.1.1')
     await expect(panel.getByRole('button', { name: 'Check again', exact: true })).toBeInViewport()
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'settings-connected-1280-dark.png') })
     const deferUpdates = page.getByRole('button', { name: 'Not now', exact: true })
@@ -288,6 +288,101 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     expect(pageErrors).toEqual([])
     await writeFile(join(evidence, 'contrast.json'), JSON.stringify(contrasts, null, 2))
     await writeFile(join(evidence, 'journey.json'), JSON.stringify({ threadId, nativeId, originalTurn, stableStartedMuseProcesses, pageErrors }, null, 2))
+  } finally {
+    if (launched) await closeSotto(launched)
+    for (const [name, value] of Object.entries(previousEnvironment)) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value
+    }
+    await removeOwnedE2EProfile(profile)
+  }
+})
+
+test('turns Muse’s shell sandbox off for this computer from the keyboard and applies it on Reconnect', async () => {
+  test.setTimeout(180_000)
+  const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-muse-sandbox-' })).directory
+  const root = join(profile, 'muse-fixture')
+  await mkdir(root, { recursive: true })
+  await mkdir(evidence, { recursive: true })
+  const previousEnvironment = {
+    SOTTO_E2E_MUSE_ROOT: process.env.SOTTO_E2E_MUSE_ROOT,
+    SOTTO_E2E_MUSE_EXECUTABLE: process.env.SOTTO_E2E_MUSE_EXECUTABLE,
+    SOTTO_OWL_FEATURES: process.env.SOTTO_OWL_FEATURES,
+  }
+  process.env.SOTTO_E2E_MUSE_ROOT = root
+  process.env.SOTTO_E2E_MUSE_EXECUTABLE = process.execPath
+  process.env.SOTTO_OWL_FEATURES = 'muse=1'
+  // The fake host records the arguments each `muse serve` it stands in for was started with.
+  const hosts = async (): Promise<string[][]> => (await readFile(join(root, 'argv.jsonl'), 'utf8').catch(() => '')).split('\n').filter(Boolean).map(line => JSON.parse(line) as string[])
+  const contrasts: { surface: string; width: number; appearance: string; ratio: number }[] = []
+  const pageErrors: string[] = []
+  let launched: LaunchedSotto | undefined
+  try {
+    launched = await launchSotto('success', profile)
+    const { page } = launched
+    page.on('pageerror', error => pageErrors.push(error.message))
+    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' }))
+    // No client update card over the row: this journey is about the switch, not updates.
+    await page.evaluate(() => window.sotto!.agents!.command({ type: 'configure', patch: { checkClientUpdates: false } }))
+    await page.reload()
+    const panel = await providerPanel(page)
+    await page.getByRole('button', { name: 'Muse', exact: true }).focus()
+    await page.keyboard.press('Enter')
+    await activate(page, panel.getByRole('button', { name: 'Connect Muse' }))
+    await expect(panel.getByRole('button', { name: 'Disconnect Muse' })).toBeVisible()
+    expect((await hosts()).every(args => !args.includes('--disable-sandbox'))).toBe(true)
+
+    const sandbox = panel.getByRole('switch', { name: 'Shell sandbox' })
+    await expect(sandbox).toHaveAttribute('aria-checked', 'true')
+    await sandbox.focus()
+    await page.keyboard.press('Space')
+    await expect(sandbox).toHaveAttribute('aria-checked', 'false')
+    const owed = panel.getByText('Muse is still running with its sandbox on.', { exact: false })
+    await expect(owed).toBeVisible()
+    // Saved, not live: the switch is in this computer's configuration, and nothing Muse is running changed.
+    expect((await hosts()).every(args => !args.includes('--disable-sandbox'))).toBe(true)
+    expect(await page.evaluate(async () => (await window.sotto!.agents!.get()).configuration.museDisableSandbox)).toBe(true)
+    const reconnect = panel.getByRole('button', { name: 'Reconnect Muse to apply the shell sandbox setting' })
+    for (const [width, height] of sizes) {
+      await resizeWindow(launched, width, height)
+      for (const appearance of ['dark', 'light'] as const) {
+        await page.evaluate(appearance => window.sotto!.updateSettings({ appearance, reducedMotion: 'on' }), appearance)
+        await expect(reconnect).toBeVisible()
+        expect(await panel.evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false)
+        const ratio = await textContrast(owed)
+        expect(ratio).toBeGreaterThanOrEqual(4.5)
+        contrasts.push({ surface: 'Shell sandbox reconnect line', width, appearance, ratio })
+        await page.screenshot({ animations: 'disabled', path: join(evidence, `sandbox-owed-${width}-${appearance}.png`) })
+      }
+    }
+    await resizeWindow(launched, 1280, 800)
+    await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
+    // Tab order follows the row as it reads: Reconnect, then the switch.
+    await reconnect.focus()
+    await page.keyboard.press('Tab')
+    await expect(sandbox).toBeFocused()
+    await activate(page, reconnect)
+    await expect(panel.getByRole('button', { name: 'Disconnect Muse' })).toBeVisible()
+    await expect(owed).toHaveCount(0)
+    await expect(reconnect).toHaveCount(0)
+    // Reconnect left the row with focus on it, so focus is on the switch beside it rather than lost.
+    await expect(sandbox).toBeFocused()
+    await expect.poll(async () => (await hosts()).at(-1)).toContain('--disable-sandbox')
+    // This computer's Muse reports the posture it is running with, on this computer's own entry when hosts are joined.
+    expect(await page.evaluate(async () => {
+      const state = await window.sotto!.agents!.get()
+      const local = state.connections?.find(host => host.kind === 'local')?.hostId
+      const providers = state.host.clientHosts?.find(host => host.hostId === local)?.providers ?? state.host.providers
+      return providers?.find(provider => provider.id === 'muse')?.sandboxDisabled
+    })).toBe(true)
+    await page.screenshot({ animations: 'disabled', path: join(evidence, 'sandbox-off-applied-1280-dark.png') })
+
+    // Turning it back on owes a reconnect the other way.
+    await sandbox.focus()
+    await page.keyboard.press('Space')
+    await expect(sandbox).toHaveAttribute('aria-checked', 'true')
+    await expect(panel.getByText('Muse is still running with its sandbox off.', { exact: false })).toBeVisible()
+    expect(pageErrors).toEqual([])
+    await writeFile(join(evidence, 'sandbox-contrast.json'), JSON.stringify(contrasts, null, 2))
   } finally {
     if (launched) await closeSotto(launched)
     for (const [name, value] of Object.entries(previousEnvironment)) {

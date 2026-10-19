@@ -5,7 +5,7 @@ import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVID
 import { catalogEntry, chosenModelId, resolveModel } from '../../../shared/modelCatalog'
 import type { AgentConnection } from './AgentContext'
 import { moveListboxFocus } from './listboxKeys'
-import { ModelPicker } from './ModelPicker'
+import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
 import { EffortPicker, effortLabel } from './EffortPicker'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { providerKey } from './threadFacts'
@@ -13,6 +13,7 @@ import { pendingSettingsStore, permissionPatch, settingValues, settingValuesFor,
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../watcher/watcherRoom'
 import { watcherProviderOf, type WatcherProvider } from '../watcher/watcherProviders'
+import { useSaveOrchestrating } from '../watcher/orchestratingRole'
 import './threadChips.css'
 
 export const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
@@ -56,7 +57,7 @@ export function effortChoices(model: AgentModel | undefined, reasoning: string):
  * each carries what Sotto will still ask about under it, so a mode named for what the provider stops
  * asking cannot be read as Sotto stopping too.
  */
-function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRuntimeMode | undefined, providerMode: string | undefined): ChoiceOption[] {
+export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRuntimeMode | undefined, providerMode: string | undefined): ChoiceOption[] {
   const own = model?.providerModes ?? []
   if (own.length > 0) {
     // Unchosen reads as the first mode, which is what the thread starts on, so only an unoffered one leads.
@@ -184,18 +185,34 @@ export function unconfirmedSettingText(provider: string, wanted: string, error: 
  * the line that says what is still in force (`describedBy`), so the words are the ones on screen, said once. A `foot`
  * is a line under the list that holds in every choice; it sits outside the listbox, so it is read, never chosen.
  */
-export function ChoiceChip({ label, placeholder, value, options, disabled, pending, describedBy, onChange, foot, fixedReason }: {
+export function ChoiceChip({ label, placeholder, value, options, disabled, pending, describedBy, onChange, foot, fixedReason, flip = false }: {
   readonly label: string; readonly placeholder: string; readonly value: string; readonly options: readonly ChoiceOption[]
   readonly disabled: boolean; readonly pending: boolean; readonly describedBy?: string | undefined; readonly onChange: (id: string) => void
   readonly foot?: string | undefined
   /** Why the chip cannot be pressed now, on its tooltip while it is disabled. */
   readonly fixedReason?: string | undefined
+  /**
+   * Opens below the chip when there is no room above it inside the area that scrolls it, as on a Settings page where the
+   * chip can sit near the top. The composer's chips never need it: they sit at the bottom of their pane.
+   */
+  readonly flip?: boolean
 }): ReactNode {
   const [open, setOpen] = useState(false)
+  const [below, setBelow] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const listId = useId()
+  useLayoutEffect(() => {
+    if (!open || !flip) { setBelow(false); return }
+    const menu = panel.current ?? list.current, chip = trigger.current
+    if (!menu || !chip) return
+    let top = 0
+    for (let parent = chip.parentElement; parent; parent = parent.parentElement) {
+      if (/(auto|scroll)/u.test(getComputedStyle(parent).overflowY)) { top = parent.getBoundingClientRect().top; break }
+    }
+    setBelow(chip.getBoundingClientRect().top - menu.offsetHeight - 6 < top + 8)
+  }, [open, flip])
   useEffect(() => {
     if (!open) return
     const dismiss = (event: PointerEvent): void => {
@@ -209,7 +226,7 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
   }, [open])
   const current = options.find(option => option.id === value && !option.disabled)
   const choose = (id: string): void => { onChange(id); setOpen(false); trigger.current?.focus() }
-  const listbox = <div ref={list} id={listId} role="listbox" aria-label={label} className={foot ? 'thread-chip-menu__options' : 'thread-chip-menu__list'} onKeyDown={event => moveListboxFocus(event, list.current)}>
+  const listbox = <div ref={list} id={listId} role="listbox" aria-label={label} className={foot ? 'thread-chip-menu__options' : 'thread-chip-menu__list'} data-below={!foot && below ? 'true' : undefined} onKeyDown={event => moveListboxFocus(event, list.current)}>
     {options.map(option => <button type="button" role="option" key={option.id} aria-selected={option.id === value} disabled={option.disabled} onClick={() => choose(option.id)}>
       <span>{option.label}{option.description ? <small>{option.description}</small> : null}</span>{option.id === value && <Check size={14} aria-hidden="true" />}</button>)}
   </div>
@@ -225,13 +242,30 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
       {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
       <span>{current?.label ?? (value ? capitalise(value) : placeholder)}</span><ChevronDown size={12} aria-hidden="true" />
     </button>
-    {!open ? null : foot ? <div ref={panel} className="thread-chip-menu__list thread-chip-menu__list--foot">{listbox}<p className="thread-chip-menu__foot">{foot}</p></div> : listbox}
+    {!open ? null : foot ? <div ref={panel} className="thread-chip-menu__list thread-chip-menu__list--foot" data-below={below ? 'true' : undefined}>{listbox}<p className="thread-chip-menu__foot">{foot}</p></div> : listbox}
   </div>
 }
 
-/** Whether a prompt on this thread is on its way to the provider, which a settings change would have to wait behind. */
+/**
+ * Continuing this started thread on another provider (ADR-0089): the models a new thread may start on, the providers that
+ * cannot take one now, why the thread itself cannot be continued now if it cannot, and what picking one does.
+ */
+export interface ThreadContinueOffer {
+  readonly models: readonly AgentModel[]
+  readonly unavailable: readonly UnavailablePickerProvider[]
+  readonly refusal: string | null
+  readonly onContinue: (modelId: string) => void
+}
+
+const providerNameOf = (thread: AgentThread): string | undefined => thread.providerId ? PROVIDER_LABELS[thread.providerId] : undefined
+
+/**
+ * Whether a prompt on this thread is on its way to the provider, which a settings change would have to wait behind. One
+ * the user set aside is not: Sotto never sends it again, whatever became of it (#1156).
+ */
 const sending = (state: AgentState, threadId: string): boolean =>
-  state.deliveries?.some(delivery => delivery.threadId === threadId && (delivery.status === 'queued' || delivery.status === 'submitting' || delivery.status === 'uncertain')) === true
+  state.deliveries?.some(delivery => delivery.threadId === threadId && !delivery.setAside
+    && (delivery.status === 'queued' || delivery.status === 'submitting' || delivery.status === 'uncertain')) === true
 
 /** Why Watcher's permissions are fixed now, as a thread's are while it works: main refuses a change until then. */
 export function watcherPermissionFixedReason(state: AgentState, thread: AgentThread): string | undefined {
@@ -250,7 +284,7 @@ export function watcherPermissionFixedReason(state: AgentState, thread: AgentThr
  * they never move the row; otherwise under the chips. Focus stays on the chip a choice was made from. New thread
  * and New terminal show the same three controls laid out in full.
  */
-export function ThreadOptions({ thread, state, command, turnNote = true, getDraftText, onDraftText, noticeSlot, watcher = false }: {
+export function ThreadOptions({ thread, state, command, turnNote = true, getDraftText, onDraftText, noticeSlot, watcher = false, continueOffer }: {
   readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command']
   /** Explain options locked by a running turn; off where the composer already says it cannot send. */
   readonly turnNote?: boolean
@@ -264,6 +298,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
    * thread setting, and it keeps its provider, offering only that provider's models.
    */
   readonly watcher?: boolean
+  /** Another provider's models, under "Continue in a new thread on", for a started thread that may continue elsewhere. */
+  readonly continueOffer?: ThreadContinueOffer | undefined
 }): ReactNode {
   const settings = usePendingSettings(thread.id)
   const bar = useRef<HTMLDivElement>(null)
@@ -274,11 +310,21 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   // Watcher keeps its provider; another provider's model is a new Watcher, which main makes and which offers the last
   // one's handover (ADR-0073). Only where the room can open one.
   const room = useWatcherRoom()
+  // Watcher's model and effort are the Orchestrating role (#1041): a press here saves it for the next Watcher too.
+  const saveOrchestrating = useSaveOrchestrating()
+  const orchestrating = watcher ? saveOrchestrating : null
   const open = watcher ? room?.open ?? null : null
   const settle = room?.settle
   const others = open === null ? [] : state.host.models.filter(model => model.ready && canCreateWith(state, model)
     && watcherProviderOf(model) !== null && watcherProviderOf(model) !== thread.providerId)
-  const models = others.length > 0 ? [...own, ...others] : own
+  // A started thread keeps its provider; another provider's model is a new thread that continues this one (ADR-0089).
+  const continuing = !watcher && locked && continueOffer !== undefined ? continueOffer : undefined
+  const continuations = continuing?.refusal === null ? continuing.models : []
+  const continueUnavailable: readonly UnavailablePickerProvider[] = continuing === undefined ? []
+    : continuing.refusal === null ? continuing.unavailable
+      : [...new Map([...continuing.models.map(model => [model.provider, model.providerId] as const), ...continuing.unavailable.map(item => [item.name, item.providerId] as const)])]
+        .map(([name, providerId]) => ({ name, providerId, reason: continuing.refusal! }))
+  const models = others.length > 0 ? [...own, ...others] : continuations.length > 0 ? [...own, ...continuations] : own
   const [replacing, setReplacing] = useState<{ readonly provider: WatcherProvider; readonly refusal: string | null } | null>(null)
   const replace = async (provider: WatcherProvider, modelId: string): Promise<void> => {
     if (open === null || settle === undefined) return
@@ -320,9 +366,25 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     pendingSettingsStore.press(thread.id, kind, value, patch, command, drawn, showing)
   }
   const capabilities = capabilitiesForThread(state.host, thread)
+  const continueOn = continuing === undefined ? undefined : { providers: new Set([...continuations.map(model => model.provider), ...continueUnavailable.map(item => item.name)]),
+    heading: (name: string) => `Continue in a new thread on ${name}`,
+    note: 'Picking one starts a new thread there with a handover of this one. This thread stays as it is.' }
+  // Continuing needs the thread at rest, not its own provider: a thread whose provider went away can still continue elsewhere.
+  const continueFixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || sending(state, thread.id)
+  const pickerFixed = continuations.length > 0 ? continueFixed : fixed
+  // Where the thread's own model cannot change in place, its chip lists that model and the providers it may continue on.
+  const continueOnly = (current: readonly AgentModel[]): AgentModel[] => [...current.filter(model => model.id === catalogEntry(current, thread.modelId)?.id), ...continuations]
   if (locked && !capabilities.configureThread) {
-    return watcher ? <WatcherPermissionChip model={resolveModel(models, thread.modelId)} provider={thread.providerId ? PROVIDER_LABELS[thread.providerId] : 'The provider'}
-      inForce={thread.runtimeMode} noticeSlot={noticeSlot} disabled={fixed} fixedReason={watcherPermissionFixedReason(state, thread)} /> : null
+    if (watcher) return <WatcherPermissionChip model={resolveModel(models, thread.modelId)} provider={thread.providerId ? PROVIDER_LABELS[thread.providerId] : 'The provider'}
+      inForce={thread.runtimeMode} noticeSlot={noticeSlot} disabled={fixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
+    if (continuing === undefined) return null
+    return <div className="thread-options-bar" data-provider-locked>
+      <div className="thread-options thread-options--chips">
+        <ModelPicker models={continueOnly(own)} modelId={thread.modelId} disabled={continueFixed} unavailable={continueUnavailable} continueOn={continueOn}
+          note={providerNameOf(thread) ? `This thread stays with ${providerNameOf(thread)}.` : undefined}
+          onChange={pressed => { if (continuations.some(model => model.id === pressed)) continuing.onContinue(pressed) }} />
+      </div>
+    </div>
   }
   const modelDisabled = locked && capabilities.configureThreadModel === false
   // The model shown is the one pressed; effort and permissions are read for it, as they will be once it lands.
@@ -380,14 +442,24 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   </>
   return <div ref={bar} className="thread-options-bar" data-provider-locked={locked}>
     <div className="thread-options thread-options--chips">
-      <ModelPicker models={models} modelId={modelId} disabled={fixed || modelDisabled || replacing !== null && replacing.refusal === null} note={note} onChange={pressed => {
+      <ModelPicker models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
+        disabled={pickerFixed || modelDisabled && continuations.length === 0 || replacing !== null && replacing.refusal === null} note={note}
+        unavailable={continueUnavailable} continueOn={continueOn} onChange={pressed => {
+        if (continuing && continuations.some(model => model.id === pressed)) { continuing.onContinue(pressed); return }
         const picked = others.find(model => model.id === pressed)
         const provider = picked === undefined ? null : watcherProviderOf(picked)
-        if (picked !== undefined && provider !== null) { void replace(provider, picked.id); return }
+        if (picked !== undefined && provider !== null) {
+          orchestrating?.(picked.id, picked.defaultReasoningEffort ?? null, state.host.models)
+          void replace(provider, picked.id); return
+        }
         const id = chosenModelId(models, pressed, modelId, thread.modelId); press('model', id, { modelId: id })
+        orchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, state.host.models)
       }} />
       {efforts.length > 0 && <EffortPicker key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
-        disabled={fixed || modelDisabled} onChange={reasoningEffort => press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)}
+        disabled={fixed || modelDisabled} onChange={reasoningEffort => {
+          press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
+          orchestrating?.(modelId, reasoningEffort, state.host.models)
+        }}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
       {watcher

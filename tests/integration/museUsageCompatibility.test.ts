@@ -144,7 +144,7 @@ describe('Muse beside four-provider Usage', () => {
     codex.subscribeUsage = subscribeCodex; codex.visitUsage = visitCodex; codex.readProviderQuota = codexQuota
     muse.subscribeUsage = subscribeMuse; muse.visitUsage = visitMuse; muse.readProviderQuota = museQuota
     const host = new ConfiguredProviderHost({ provider: () => 'codex', hosts: {
-      codex, muse, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
+      codex, muse, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), opencode: new FakeProviderHost() } })
     cleanup.push(async () => host.disconnect())
     const records: UsageTokenObservation[] = []
     const off = host.subscribeUsage!(record => records.push(record))

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { agentRuntimeModeSchema, handoverCountsSchema, providerIdSchema } from './agents'
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
 import { hostFactsSchema, hostOsSchema } from './hostFacts'
+import { workerKindSchema } from './workerRoles'
 export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
 
 export const WATCHER_PROMPT_BYTES_MAX = 32 * 1_024
@@ -22,7 +23,7 @@ const shortText = z.string().max(2_000)
 const cursor = z.string().min(1).max(2_048)
 const utf8 = (max: number) => z.string().max(max).refine(value => new TextEncoder().encode(value).byteLength <= max, 'Text exceeds the byte limit.')
 const prompt = utf8(WATCHER_PROMPT_BYTES_MAX).refine(value => value.trim().length > 0, 'A prompt is required.')
-export const watcherProviderSchema = z.enum(['codex', 'claude', 'grok'])
+export const watcherProviderSchema = z.enum(['codex', 'claude', 'grok', 'muse'])
 export const watcherThreadTargetSchema = z.object({ hostId: z.uuid(), threadId: id }).strict()
 export const watcherPhoneOriginSchema = z.object({ kind: z.literal('phone'), hostId: z.uuid(), clientId: id }).strict()
 export const watcherProjectTargetSchema = z.object({ hostId: z.uuid(), projectId: entityId }).strict()
@@ -163,9 +164,13 @@ export const watcherToolSchemas = {
       nextPosition: counter.nullable(), truncated: z.boolean(), earlierAvailable: z.boolean(), observedAt: time })),
   },
   start_thread: {
-    input: z.object({ ...mutation, project: watcherProjectTargetSchema, modelId: entityId, reasoningEffort: z.string().min(1).max(64).optional(),
+    // A start names its worker role, its model, or both (#1041). Main fills the rest from the role before admission, and
+    // never sends `role` to a paired host: an older one refuses keys it does not know.
+    input: z.object({ ...mutation, project: watcherProjectTargetSchema, role: workerKindSchema.optional(), modelId: entityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
       permission: permission.optional(), workingCopy, baseRefChoiceId: id.optional(), title: z.string().min(1).max(WATCHER_TITLE_MAX), firstPrompt: prompt }).strict(),
-    output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id }),
+    output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id,
+      // What the start's worker role gave it and what the request named in its place. In memory only: a retry after a restart has none.
+      role: z.object({ id: workerKindSchema, named: z.array(z.enum(['model', 'effort', 'permission'])).max(3), note: shortText.min(1) }).strict().optional() }),
   },
   send_to_thread: {
     input: z.object({ ...mutation, target: watcherThreadTargetSchema, text: prompt, delivery: deliveryMode,
@@ -238,7 +243,9 @@ export const watcherRequestSchema = z.object({ id: z.uuid(), watcher: watcherThr
   pairedPermissionCeiling: agentRuntimeModeSchema.optional(),
   remoteOrigin: z.object({ clientId: id, master: watcherIdentitySchema, creationOperationId: z.uuid(), ceiling: agentRuntimeModeSchema }).strict().optional(),
   state: z.enum(['active', 'stopped', 'closed']), createdAt: time, closedAt: time.nullable(),
-  userFollowups: z.array(z.object({ draftId: z.uuid(), messageId: id.optional(), displayPrompt: watcherDisplayPromptSchema.optional() }).strict()).max(1_000).optional(),
+  // `afterTakeover`: queued after a user takeover fenced this request. Its first delivery starts a fresh request instead.
+  userFollowups: z.array(z.object({ draftId: z.uuid(), messageId: id.optional(), displayPrompt: watcherDisplayPromptSchema.optional(),
+    afterTakeover: z.literal(true).optional() }).strict()).max(1_000).optional(),
   participants: z.array(watcherParticipantSchema).max(1_000) }).strict()
 export const watcherPromptTurnSchema = z.object({ id: z.uuid(), watcher: watcherThreadTargetSchema, createdAt: time,
   rootUserMessageId: id.optional(), nativeTurnId: id.optional(), previousNativeTurnId: id.optional() }).strict()
@@ -261,6 +268,10 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   promptTurns: z.array(watcherPromptTurnSchema).max(10_000).optional(),
   lastRuntimeMode: agentRuntimeModeSchema.optional(), watches: z.array(watcherStandingWatchSchema).optional(),
   watchFences: z.array(z.object({ id: z.uuid(), target: watcherThreadTargetSchema.optional(), remoteOrigin: watcherWatchOriginSchema.optional() }).strict()).optional(),
+  // This host's latest takeover or renewed assignment: the last local user request already present at that boundary.
+  // Private to this record, never a paired-host grant. Request insertion order, not wall-clock time, fences old work.
+  localTakeovers: z.array(z.object({ target: watcherThreadTargetSchema, at: time, lastRequestId: z.uuid().nullable(),
+    userDrafts: z.array(z.object({ draftId: z.uuid(), digest: z.string().regex(/^[a-f0-9]{64}$/u), messageId: id.optional() }).strict()).optional() }).strict()).optional(),
   remoteMasters: z.array(z.object({ clientId: id, masterHostId: z.uuid(), creationOperationId: z.uuid(), createdAt: time }).strict()).max(1_000).optional(),
   creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
@@ -279,6 +290,8 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   if (!unique(record.requests.map(request => request.id)) || !unique(record.operations.map(operation => operation.id))
     || !unique((record.promptTurns ?? []).map(turn => turn.id))
     || !unique((record.watches ?? []).map(watch => key(watch.target))) || !unique((record.watches ?? []).map(watch => watch.id))
+    || !unique((record.localTakeovers ?? []).map(takeover => key(takeover.target)))
+    || (record.localTakeovers ?? []).some(takeover => !unique((takeover.userDrafts ?? []).map(draft => draft.draftId)))
     || !unique((record.remoteMasters ?? []).map(master => JSON.stringify([master.clientId, master.masterHostId])))
     || !unique(record.requests.map(request => JSON.stringify([key(request.watcher), request.rootUserMessageId])))
     || !unique(record.operations.map(operation => `${operation.requestId}:${operation.retryKey}`))

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { defaultNewThreadModelId, providerTakesSottoTools, type AgentCommand, type AgentModel, type AgentState } from '../../shared/agents'
+import { defaultNewThreadModelId, type AgentCommand, type AgentModel, type AgentState, type ProviderId } from '../../shared/agents'
 import { hostEntityKey } from '../../shared/clientIdentity'
 import type { HostSetupChoice } from '../../shared/hosts'
 import { resolveModel } from '../../shared/modelCatalog'
@@ -10,6 +10,15 @@ import type { HostSetupThreads } from './hostSetup'
 
 /** The project every host setup thread goes in, at a folder of Sotto's own (ADR-0035). */
 export const HOST_SETUP_PROJECT_TITLE = 'Host setup'
+/**
+ * The providers a host setup may run on, named here rather than read from which providers take Sotto's tools: a setup
+ * thread waits minutes on one check and starts in the mode that asks before everything (ADR-0035), so each provider is
+ * checked for it on its own. Not Muse: its client gives up on a call after 5 minutes, and a check can wait that long for
+ * a Tailscale approval (ADR-0079). Not Devin: how long its client waits on one call has not been checked, and in the
+ * asking mode it would ask before every check as well. Not OpenCode yet: it takes Sotto's tools (ADR-0087), but running a
+ * host setup on it has not been checked (#1107). A model from an older unlabelled local host keeps its setup.
+ */
+const HOST_SETUP_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok'])
 /** What the setup needs of the coordinator: its shell, its commands and its broadcasts. */
 export interface HostSetupCoordinator {
   shell(): AgentState
@@ -28,11 +37,8 @@ export function coordinatorSetupThreads(options: { coordinator: HostSetupCoordin
   const state = (): AgentState => latest ??= coordinator.shell()
   const sameFolder = (left: string, right: string): boolean => process.platform === 'win32' ? resolve(left).toLowerCase() === resolve(right).toLowerCase() : resolve(left) === resolve(right)
   const project = (providerId: string | undefined) => state().host.projects.find(item => sameFolder(item.path, folder) && (!item.providerId || !providerId || item.providerId === providerId))
-  /**
-   * A model the tool can reach: ready, and not Devin, whose client ignores the tool servers Sotto offers. Not Muse either:
-   * its client gives up on a call after 5 minutes, and a check can wait that long for a Tailscale approval (ADR-0079).
-   */
-  const usable = (model: AgentModel): boolean => model.ready && providerTakesSottoTools(model.providerId) && model.providerId !== 'muse'
+  /** A model that can set a host up: ready, and on a provider checked running a host setup (`HOST_SETUP_PROVIDERS`). */
+  const usable = (model: AgentModel): boolean => model.ready && (model.providerId === undefined || HOST_SETUP_PROVIDERS.has(model.providerId))
   return {
     choice(): HostSetupChoice {
       if (!options.localHostRunning) return { unavailable: 'An agent sets a host up from a thread on this computer, which needs the local host. Turn on Run the local host above and restart Sotto.', models: [] }

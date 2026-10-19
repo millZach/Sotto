@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -344,6 +344,94 @@ describe('Add project', () => {
     await user.click(screen.getByRole('button', { name: 'Use this folder' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Connect Codex before creating a project.')
     expect(screen.getByRole('button', { name: 'Use this folder' })).toBeEnabled()
+  })
+
+  describe('then opens the mode\'s New action in the project', () => {
+    /** The window's state, replaced by each command's reply as the agent context does, and what `onAdded` saw listed. */
+    function Live({ initial, reply, shown = next => next, onAdded, push }: {
+      readonly initial: AgentState
+      readonly reply: (request: AgentCommand, state: AgentState) => AgentState
+      /** What the window takes from a reply; a host that drops as it answers leaves the window without the project. */
+      readonly shown?: (reply: AgentState) => AgentState
+      readonly onAdded: (projectId: string, listed: boolean) => void
+      /** Hands the test a way to push a later state, as a broadcast would. */
+      readonly push?: { current: ((state: AgentState) => void) | null }
+    }) {
+      const [state, setState] = React.useState(initial)
+      if (push) push.current = setState
+      const command = async (request: AgentCommand): Promise<AgentState | null> => {
+        const next = reply(request, state)
+        setState(shown(next))
+        return next
+      }
+      const addProject = useAddProject(state, command, { onAdded: projectId => onAdded(projectId, state.host.projects.some(project => project.id === projectId)) })
+      return <><button type="button" onClick={() => void addProject.add()}>Add project</button>{addProject.dialog}</>
+    }
+    const withVoiceLab = (request: AgentCommand, state: AgentState): AgentState => request.type !== 'create-project' ? state
+      : { ...state, host: { ...state.host, projects: [...state.host.projects, { id: 'voice-lab', hostId: FORGE, title: 'voice-lab', path: '/home/zach/code/voice-lab' }] } }
+
+    it('in a new project, once the window lists it', async () => {
+      stubBridge()
+      const onAdded = vi.fn()
+      const user = userEvent.setup()
+      render(<Live initial={twoHosts()} reply={withVoiceLab} onAdded={onAdded} />)
+      await user.click(screen.getByRole('button', { name: 'Add project' }))
+      await user.click(screen.getByRole('button', { name: /forge/ }))
+      await user.click(await screen.findByRole('button', { name: 'code' }))
+      await screen.findByRole('button', { name: /forge-ml/ })
+      await user.click(screen.getByRole('button', { name: 'New folder' }))
+      await user.type(screen.getByRole('textbox', { name: 'New folder name' }), 'voice-lab{Enter}')
+      await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+      await waitFor(() => expect(onAdded).toHaveBeenCalledWith('voice-lab', true))
+      expect(onAdded).toHaveBeenCalledTimes(1)
+    })
+
+    it('in the project a folder already is', async () => {
+      stubBridge()
+      const onAdded = vi.fn()
+      const user = userEvent.setup()
+      render(<Live initial={twoHosts()} reply={(_request, state) => state} onAdded={onAdded} />)
+      await user.click(screen.getByRole('button', { name: 'Add project' }))
+      await user.click(screen.getByRole('button', { name: /forge/ }))
+      await user.click(await screen.findByRole('button', { name: 'code' }))
+      await user.click(await screen.findByRole('button', { name: /forge-ml/ }))
+      await user.click(await screen.findByRole('button', { name: 'Open project' }))
+      await waitFor(() => expect(onAdded).toHaveBeenCalledWith('forge-ml', true))
+      expect(onAdded).toHaveBeenCalledTimes(1)
+    })
+
+    it('not at all when the window loses the project before it lists it, even once it comes back', async () => {
+      stubBridge()
+      const onAdded = vi.fn()
+      const push: { current: ((state: AgentState) => void) | null } = { current: null }
+      const dropped = (reply: AgentState): AgentState => ({ ...reply, host: { ...reply.host, projects: [] } })
+      const user = userEvent.setup()
+      render(<Live initial={twoHosts()} reply={withVoiceLab} shown={dropped} onAdded={onAdded} push={push} />)
+      await user.click(screen.getByRole('button', { name: 'Add project' }))
+      await user.click(screen.getByRole('button', { name: /forge/ }))
+      await user.click(await screen.findByRole('button', { name: 'code' }))
+      await screen.findByRole('button', { name: /forge-ml/ })
+      await user.click(screen.getByRole('button', { name: 'New folder' }))
+      await user.type(screen.getByRole('textbox', { name: 'New folder name' }), 'voice-lab{Enter}')
+      await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Use this folder' })).toBeNull())
+      act(() => { push.current!(withVoiceLab({ type: 'create-project', title: 'voice-lab', path: '/home/zach/code/voice-lab' }, twoHosts())) })
+      expect(onAdded).not.toHaveBeenCalled()
+    })
+
+    it('not at all when the host refuses the project', async () => {
+      stubBridge()
+      const onAdded = vi.fn()
+      const user = userEvent.setup()
+      render(<Live initial={twoHosts()} reply={(_request, state) => ({ ...state, error: 'Connect Codex before creating a project.' })} onAdded={onAdded} />)
+      await user.click(screen.getByRole('button', { name: 'Add project' }))
+      await user.click(screen.getByRole('button', { name: /forge/ }))
+      await user.click(await screen.findByRole('button', { name: 'code' }))
+      await screen.findByRole('button', { name: /^sotto/ })
+      await user.click(screen.getByRole('button', { name: 'Use this folder' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Connect Codex before creating a project.')
+      expect(onAdded).not.toHaveBeenCalled()
+    })
   })
 })
 

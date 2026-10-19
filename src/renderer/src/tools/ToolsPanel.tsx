@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, GitPullRequest, Globe, Maximize2, Minimize2, PanelRight, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
 import { hostForThread, PROVIDER_LABELS, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { BrowserBridge } from '../../../shared/browser'
@@ -7,6 +7,12 @@ import type { GitChangesBridge } from '../../../shared/gitChanges'
 import type { TerminalBridge } from '../../../shared/terminal'
 import type { SubagentsBridge } from '../../../shared/subagents'
 import { AgentsSurface } from './AgentsSurface'
+import type { DelegatedRosterSource } from './DelegatedThreads'
+import { delegatedBelow, openDelegatedThread } from './delegatedRoster'
+import { delegatedThreadsBelow } from '../../../shared/delegation'
+import { useDelegationsEnabled } from '../agents/delegations'
+import type { AgentContinueOptions } from './AgentContinue'
+import { useThreadStarts } from '../agents/ThreadStart'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
 import { offersBabysitting } from '../agents/babysitting'
 import { resolveModel } from '../../../shared/modelCatalog'
@@ -118,20 +124,29 @@ export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly 
     else store.clearToggleFocus()
   }, [chrome.open, store])
   const pinned = chrome.pinnedThreadId
+  const delegation = useDelegationsEnabled()
   const selectedThreadId = paneThreadId ?? agentState?.activeThreadId
-  const workingAgents = (agentState?.host.threads.find(thread => thread.id === selectedThreadId)?.subagentSummary?.working ?? 0) > 0
+  // The threads this pane's thread delegated (ADR-0081; Owl only) count as its agents: working, or waiting on you.
+  const below = delegation && agentState && selectedThreadId ? delegatedBelow(agentState.host.threads, selectedThreadId) : { needs: 0, working: 0 }
+  const workingAgents = (agentState?.host.threads.find(thread => thread.id === selectedThreadId)?.subagentSummary?.working ?? 0) > 0 || below.working > 0
   const browserTasks = useBrowserTasks(store.browser)
   // This pane's own thread, never the pin: a pin shows in another pane's Tools, not by lighting every pane's dot (#331).
   const browserWaiting = browserTasks.some(task => task.threadId === selectedThreadId && task.pendingAction !== null)
-  const pinnedElsewhere = chrome.open && chrome.surface !== 'agents' && pinned !== null && paneThreadId !== null && paneThreadId !== pinned
+  // While Tools is pinned to a roster's thread and this pane shows that thread or one it delegated, a delegated thread
+  // waiting on you there still marks this toggle: answering one, Tools stays on the roster where others may wait. The
+  // pin lights nothing else here (#331).
+  const rosterOwner = delegation && agentState && pinned !== null && selectedThreadId && selectedThreadId !== pinned
+    && delegatedThreadsBelow(agentState.host.threads, pinned).includes(selectedThreadId) ? pinned : undefined
+  const delegatedWaiting = (rosterOwner !== undefined && agentState ? delegatedBelow(agentState.host.threads, rosterOwner) : below).needs > 0
+  const pinnedElsewhere = chrome.open && (chrome.surface !== 'agents' || delegation) && pinned !== null && paneThreadId !== null && paneThreadId !== pinned
   const pinnedTitle = pinnedElsewhere ? agentState?.host.threads.find(thread => thread.id === pinned)?.title ?? 'another thread' : null
   // Icon only in the pane header; the word stays for a screen reader, and as the title when nothing else explains it.
   return <button ref={button} type="button" className="pane-action tt-focusable tools-toggle" aria-pressed={chrome.open} aria-controls={TOOLS_PANEL_ID}
-    data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={[pinnedTitle === null ? null : `Showing ${pinnedTitle}, pinned`, workingAgents ? 'Agents are working' : null, browserWaiting ? 'A browser request is waiting for your answer' : null].filter(Boolean).join('. ') || undefined}
+    data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={[pinnedTitle === null ? null : `Showing ${pinnedTitle}, pinned`, delegatedWaiting ? 'A delegated thread needs you' : null, workingAgents ? 'Agents are working' : null, browserWaiting ? 'A browser request is waiting for your answer' : null].filter(Boolean).join('. ') || undefined}
     title={pinnedTitle === null ? 'Tools' : `Tools are pinned to ${pinnedTitle}`}
     onClick={() => store.toggle()}>
     {pinnedElsewhere ? <Pin size={16} aria-hidden="true" /> : <PanelRight size={16} aria-hidden="true" />}<span className="tt-visually-hidden">Tools</span>
-    {workingAgents || browserWaiting ? <span className="tools-toggle__agents-dot" aria-hidden="true" /> : null}
+    {workingAgents || browserWaiting || delegatedWaiting ? <span className="tools-toggle__agents-dot" data-needs={delegatedWaiting || undefined} aria-hidden="true" /> : null}
   </button>
 }
 
@@ -179,7 +194,9 @@ const RAIL_STEP: Record<string, number> = { ArrowDown: 1, ArrowRight: 1, ArrowUp
  * dot, since its own line of chrome already says what is live there; a screen reader still hears the words. Only
  * implemented surfaces are listed.
  */
-function ToolsRailTabs({ value, live, onChange }: { readonly value: ToolSurfaceId; readonly live: Partial<Record<ToolSurfaceId, string>>; readonly onChange: (surface: ToolSurfaceId) => void }): ReactNode {
+function ToolsRailTabs({ value, live, attention, onChange }: { readonly value: ToolSurfaceId; readonly live: Partial<Record<ToolSurfaceId, string>>
+  /** Surfaces whose live news needs the user: their dot takes the attention colour and stays on the open surface too. */
+  readonly attention: Partial<Record<ToolSurfaceId, boolean>>; readonly onChange: (surface: ToolSurfaceId) => void }): ReactNode {
   return <div className="tools-rail__tabs" role="tablist" aria-label="Tools" aria-orientation="vertical">
     {TOOL_SURFACES.map((surface, index) => <button key={surface.id} id={`tools-tab-${surface.id}`} type="button" role="tab" className="tools-rail__tab tt-focusable"
       aria-selected={value === surface.id} aria-controls={`tools-surface-${surface.id}`} tabIndex={value === surface.id ? 0 : -1}
@@ -196,13 +213,15 @@ function ToolsRailTabs({ value, live, onChange }: { readonly value: ToolSurfaceI
       }}>
       {React.createElement(SURFACE_ICONS[surface.id], { size: 18, 'aria-hidden': true, className: 'tools-rail__icon' })}
       <span className="tools-rail__word">{surface.label}</span>
-      {live[surface.id] && value !== surface.id ? <span className="tools-rail__live" aria-hidden="true" /> : null}
+      {live[surface.id] && (value !== surface.id || attention[surface.id]) ? <span className="tools-rail__live" data-needs={attention[surface.id] || undefined} aria-hidden="true" /> : null}
     </button>)}
   </div>
 }
 
 /** What is live on each surface of one thread, in the words a screen reader hears for its dot. */
-function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined, agentsThread: AgentThread | undefined, changed: { readonly count: number; readonly truncated: boolean } | null, changesOpen: boolean, cloudStore: CloudIphoneStore): Partial<Record<ToolSurfaceId, string>> {
+function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined, agentsThread: AgentThread | undefined, changed: { readonly count: number; readonly truncated: boolean } | null, changesOpen: boolean, cloudStore: CloudIphoneStore,
+  /** The delegated threads below the Agents thread (ADR-0081; Owl only). */
+  delegated?: { readonly needs: number; readonly working: number }): Partial<Record<ToolSurfaceId, string>> {
   const tasks = useBrowserTasks(store.browser)
   const cloudSession = useCloudSession(thread?.id ?? null, cloudStore)
   const live: Partial<Record<ToolSurfaceId, string>> = {}
@@ -221,7 +240,8 @@ function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined
     else if (changed !== null && changed.count > 0) live.changes = `${changed.count}${changed.truncated ? '+' : ''} changed ${changed.count === 1 && !changed.truncated ? 'file' : 'files'}`
   }
   const working = agentsThread?.subagentSummary?.working ?? 0
-  if (working > 0) live.agents = `${working} ${working === 1 ? 'agent is' : 'agents are'} working`
+  if (delegated?.needs) live.agents = delegated.needs === 1 ? 'A delegated thread needs you' : `${delegated.needs} delegated threads need you`
+  else if (working + (delegated?.working ?? 0) > 0) live.agents = delegated?.working ? `${working + delegated.working} working` : `${working} ${working === 1 ? 'agent is' : 'agents are'} working`
   return live
 }
 
@@ -250,12 +270,27 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const subagentsBridge = subagents ?? (window.sotto as { subagents?: SubagentsBridge } | undefined)?.subagents
   // showBrowserPreviews keeps its settings key (ADR-0020); in the player it decides whether a new page opens the player on its own.
   const autoShowBrowser = useOptionalAgents()?.showBrowserPreviews !== false
-  const target = toolsTarget(chrome, focusedThreadId)
+  // While delegation is on (ADR-0081), Agents follows the pin like every other surface, so a delegated thread opened
+  // from the roster leaves Tools on the thread that delegated it.
+  const delegationOn = useDelegationsEnabled()
+  const target = toolsTarget(chrome, focusedThreadId, delegationOn)
   const thread = target === null ? undefined : state.host.threads.find(item => item.id === target)
   // A thread on a paired host reads its Files and Changes on that host (ADR-0025, October 5 amendment), through bridges
   // that leave out what needs the thread on this computer: reveal, the turn checkpoints and the watch.
   const hostFiles = useMemo(() => bridge && hostThreadFiles(bridge), [bridge])
   const hostChanges = useMemo(() => changesBridge && hostThreadChanges(changesBridge), [changesBridge])
+  // Continue as a thread on a finished agent (#1028; Owl only): the agents Codex and Claude Code threads report.
+  const startsOn = useThreadStarts()
+  const continueModels = thread ? hostForThread(state.host, thread).models : undefined
+  const sourceRepository = thread?.worktree?.git?.isRepository === true, sourceBranch = thread?.worktree?.git?.branch ?? null
+  const continuation = useMemo<AgentContinueOptions | undefined>(() => {
+    if (!startsOn || !thread || !continueModels || !command || (thread.providerId !== 'codex' && thread.providerId !== 'claude') || thread.kind === 'watcher' || thread.kind === 'watcher-history') return undefined
+    return { threadId: thread.id, threadTitle: thread.title, provider: thread.providerId, projectId: thread.projectId, remote: thread.remoteHost === true,
+      where: thread.remoteHost ? thread.hostLabel ?? 'The host' : 'This computer', models: continueModels, sourceModelId: thread.modelId, command,
+      ...(sourceRepository ? { sourceBranch: { currentBranch: sourceBranch } } : {}),
+      workingCopyOptions: thread.remoteHost ? undefined : window.sotto?.agents?.workingCopyOptions }
+  // The thread is read by the fields the form shows, so a publish that changes none of them keeps the form as it is.
+  }, [startsOn, thread?.id, thread?.title, thread?.providerId, thread?.projectId, thread?.remoteHost, thread?.hostLabel, thread?.modelId, thread?.kind, continueModels, command, sourceRepository, sourceBranch])
   const filesFor = thread?.remoteHost ? hostFiles : bridge
   const changesFor = thread?.remoteHost ? hostChanges : changesBridge
   const workingCopyTarget = chrome.pinnedThreadId ?? focusedThreadId
@@ -354,7 +389,18 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   useProactiveChanges(state, focusedThreadId, store)
 
   const changedFiles = workingCopyChanges?.list.status === 'ready' ? { count: workingCopyChanges.list.files.length, truncated: workingCopyChanges.list.truncated } : null
-  const live = useLiveSurfaces(store, workingCopyThread, selectedThread, changedFiles, open && chrome.surface === 'changes', cloudStore)
+  const agentsThread = delegationOn ? workingCopyThread : selectedThread
+  const threads = state.host.threads
+  const delegated = useMemo(() => delegationOn && agentsThread ? delegatedBelow(threads, agentsThread.id) : undefined, [delegationOn, agentsThread, threads])
+  const live = useLiveSurfaces(store, workingCopyThread, agentsThread, changedFiles, open && chrome.surface === 'changes', cloudStore, delegated)
+  const attention = useMemo(() => ({ agents: (delegated?.needs ?? 0) > 0 }), [delegated])
+  // The roster's delegated threads open in the pane and keep Tools here, pinned to this roster's thread.
+  const rosterThreadId = thread?.id
+  const openFromRoster = useCallback((threadId: string): void => {
+    if (command && rosterThreadId !== undefined) openDelegatedThread(command, threadId, rosterThreadId, store)
+  }, [command, rosterThreadId, store])
+  const delegation = useMemo<DelegatedRosterSource | undefined>(() => delegationOn && command ? { state, shownThreadId: focusedThreadId, open: openFromRoster } : undefined,
+    [delegationOn, command, state, focusedThreadId, openFromRoster])
   // Whether Browser here shows the focused thread's own page and that thread has a task the player could show:
   // the "Float the browser over the thread" control's own condition, computed once for the surface below.
   const browserTasks = useBrowserTasks(store.browser)
@@ -368,7 +414,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const preferred = chrome.resized || measured === null ? chrome.width : Math.min(TOOLS_PANEL_MAX_WIDTH, Math.max(TOOLS_PANEL_MIN_WIDTH, measured * .56))
   const overlay = chrome.expanded || (measured !== null && measured - preferred < TOOLS_PANEL_MIN_PANE_WIDTH)
   const width = chrome.expanded && measured !== null ? measured : overlay && measured !== null ? Math.max(Math.min(preferred, measured - OVERLAY_GUTTER), Math.min(TOOLS_PANEL_MIN_WIDTH, measured)) : preferred
-  const pinned = chrome.surface !== 'agents' && chrome.pinnedThreadId !== null
+  const pinned = (chrome.surface !== 'agents' || delegationOn) && chrome.pinnedThreadId !== null
   const workspace = threadFiles?.workspace ?? threadChanges?.workspace ?? null
   const surfaceLabel = SURFACE_NAMES[chrome.surface] ?? TOOL_SURFACES.find(surface => surface.id === chrome.surface)!.label
   // The name this computer saved a paired host under, for the footer's "on forge".
@@ -422,8 +468,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
 
   let body: ReactNode
   if (target === null) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{NO_THREAD[chrome.surface]}</strong></div></>
-  else if (!thread) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{chrome.surface === 'agents' ? 'The selected thread is no longer listed.' : 'The pinned thread is no longer listed.'}</strong>
-    {chrome.surface !== 'agents' ? <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button> : null}</div></>
+  else if (!thread) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{!pinned ? 'The selected thread is no longer listed.' : 'The pinned thread is no longer listed.'}</strong>
+    {pinned ? <button type="button" className="files-link tt-focusable" onClick={() => { document.getElementById(`tools-tab-${chrome.surface}`)?.focus(); store.unpin() }}>Unpin</button> : null}</div></>
   // The pull request is read and acted on by the thread's own host, so it works for a thread on a paired host too.
   // Babysit pull request is offered where the thread's host babysits (ADR-0061 decision 11), naming the agent as the transcript does.
   else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus}
@@ -433,7 +479,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (thread.remoteHost && (chrome.surface === 'terminal' || chrome.surface === 'browser' || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{surfaceLabel} is on the host machine.</strong><p>Use this tool on the host. Replies and permission answers remain available here.</p></div></>
   // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge}
-    rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} />
+    rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} continuation={continuation} delegation={delegation} />
   else if (chrome.surface === 'iphone') body = <IPhoneSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} onFloat={canFloat ? floatBrowser : undefined} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} />
@@ -451,9 +497,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
         aria-valuemin={TOOLS_PANEL_MIN_WIDTH} aria-valuemax={TOOLS_PANEL_MAX_WIDTH} aria-valuenow={Math.round(width)}
         onPointerDown={startResize} onKeyDown={resizeKey} />
       <div className="tools-rail">
-        <ToolsRailTabs value={chrome.surface} live={live} onChange={surface => store.setSurface(surface)} />
+        <ToolsRailTabs value={chrome.surface} live={live} attention={attention} onChange={surface => store.setSurface(surface)} />
         <div className="tools-rail__foot">
-          {thread && chrome.surface !== 'agents' ? <button type="button" className="files-icon tt-focusable" aria-pressed={pinned} aria-label={pinned ? `Unpin from ${thread.title}` : `Pin to ${thread.title}`} title={pinned ? `Unpin from ${thread.title}` : 'Pin to this thread'} onClick={() => pinned ? store.unpin() : store.pin(thread.id)}>{pinned ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />}</button> : null}
+          {thread && (chrome.surface !== 'agents' || delegationOn) ? <button type="button" className="files-icon tt-focusable" aria-pressed={pinned} aria-label={pinned ? `Unpin from ${thread.title}` : `Pin to ${thread.title}`} title={pinned ? `Unpin from ${thread.title}` : 'Pin to this thread'} onClick={() => pinned ? store.unpin() : store.pin(thread.id)}>{pinned ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />}</button> : null}
           <button type="button" className="files-icon tt-focusable" aria-label={chrome.expanded ? 'Restore tools panel' : 'Expand tools panel'} title={chrome.expanded ? 'Restore' : 'Expand to fill the workspace'} aria-pressed={chrome.expanded} onClick={() => store.setExpanded(!chrome.expanded)}>{chrome.expanded ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}</button>
           <button type="button" className="files-icon tt-focusable" aria-label="Close tools panel" title="Close" onClick={close}><X size={16} aria-hidden="true" /></button>
         </div>

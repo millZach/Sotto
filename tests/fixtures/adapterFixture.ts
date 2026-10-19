@@ -7,10 +7,14 @@ export interface RecordedRpc { id?: string | number; method?: string; params?: R
 /** Short reaper settings so a test can watch a session be stopped instead of waiting out a real hour. */
 export interface AdapterSessionOptions { reaperSweepMs?: number; sessionIdleMs?: number }
 
-/** Features absent from a fixture, known before its factory acquires any resources. */
+/**
+ * Features absent from a fixture, known before its factory acquires any resources. `sendAnswerRunning`: a host's
+ * answer to a send does not yet read the thread running, which follows in the next publish, so the host service
+ * contract waits for it there and nowhere else (`tests/integration/hostServiceContract.ts`).
+ */
 export type AdapterContractSkips = Readonly<Partial<Record<'uncertain' | 'restart' | 'lazy' | 'sendStages'
   | 'activitySnapshots' | 'refreshThread' | 'threadEvents' | 'backgroundWork' | 'liveSettings'
-  | 'settingsConfirmation' | 'clientUpdate', string>>>
+  | 'settingsConfirmation' | 'clientUpdate' | 'sendAnswerRunning', string>>>
 
 export interface AdapterFixture {
   host: AgentHost; projectId: string; modelId: string; root: string

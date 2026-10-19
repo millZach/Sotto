@@ -1,4 +1,99 @@
-import type { Page } from '@playwright/test'
+import { test, type Page } from '@playwright/test'
+
+/**
+ * PowerShell's prompt, `PS <folder>> `. ConPTY may wrap the folder, and it often draws the trailing space as a cursor
+ * move rather than a space until something is typed after it, so only the `>` is required.
+ */
+export const POWERSHELL_PROMPT = /PS [\s\S]*>/u
+
+/**
+ * How long a fresh shell may take to print its first prompt. A cold `pwsh` start on a loaded runner has taken longer
+ * than Playwright's default five seconds (#1051). The wait ends as soon as the prompt appears, so a deadline that is
+ * never reached costs nothing.
+ */
+export const SHELL_START_TIMEOUT = 60_000
+
+/** What a prompt wait reads: the terminal's whole output and its status, as the terminal bridges report them. */
+export interface ShellReading { output: string; status: string }
+
+/** Statuses after which the shell will never print a prompt (both bridges' enums). */
+const ENDED = new Set(['exited', 'interrupted', 'unavailable'])
+/** Sotto's own first line in a Terminal-mode terminal, and terminal escape sequences: neither is the shell's output. */
+const SOTTO_BANNER = /^\s*Opened by Sotto at [^\r\n]*(?:\r?\n|$)/u
+// eslint-disable-next-line no-control-regex -- matching terminal escape sequences is the point
+const ESCAPES = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/gu
+
+/**
+ * Wait until a fresh shell has printed its first prompt, before anything is typed or written into it.
+ *
+ * A running PTY and a mounted xterm do not mean the shell reads commands. Keys typed while PowerShell is still starting
+ * wait in the console and run late, so a journey's next five-second check ran out before the command did (#1051).
+ * `read` returns the terminal, or undefined before it is listed; a failed read counts as not yet. `after` names text the
+ * shell prints before the prompt that counts, such as a provider's exit line; only a prompt after its last occurrence
+ * matches. On other platforms the shell's prompt is the user's own, so any text the shell printed stands for it.
+ *
+ * Each wait adds its own deadline to the test's timeout, so prompt waits never spend the time the rest of the journey
+ * was given, and a slow start fails with this wait's message rather than Playwright's generic test timeout. A shell
+ * that ends after the wait saw it start fails at once. An ended status seen first is waited out, since a reopened
+ * terminal reports its old state until it starts again.
+ */
+export async function waitForShellPrompt(read: () => Promise<ShellReading | undefined>, options: { after?: string } = {}): Promise<void> {
+  const info = test.info()
+  if (info.timeout > 0) info.setTimeout(info.timeout + SHELL_START_TIMEOUT)
+  const deadline = Date.now() + SHELL_START_TIMEOUT
+  let started = false, last: ShellReading | undefined, failure: unknown
+  for (;;) {
+    try { last = await read(); failure = undefined } catch (error) { failure = error }
+    if (last) {
+      const ended = ENDED.has(last.status)
+      if (ended && started) throw new Error(`The shell ended (${last.status}) before it printed its first prompt. Output: ${JSON.stringify(last.output.slice(-400))}`)
+      if (!ended) started = true
+      if (started && shellPrinted(last.output, options.after)) return
+    }
+    if (Date.now() >= deadline) {
+      const seen = last ? `Its terminal is ${last.status}. Output: ${JSON.stringify(last.output.slice(-400))}` : `Its terminal was never listed${failure ? ` (${String(failure)})` : ''}.`
+      throw new Error(`The shell printed no prompt within ${SHELL_START_TIMEOUT / 1000} s. ${seen}`)
+    }
+    await new Promise(resolve => setTimeout(resolve, 250))
+  }
+}
+
+function shellPrinted(output: string, after: string | undefined): boolean {
+  let text = output
+  if (after !== undefined) {
+    const at = text.lastIndexOf(after)
+    if (at < 0) return false
+    text = text.slice(at + after.length)
+  }
+  if (process.platform === 'win32') return POWERSHELL_PROMPT.test(text)
+  return /\S/u.test(text.replace(ESCAPES, '').replace(SOTTO_BANNER, ''))
+}
+
+/** A thread's one terminal in Tools or its drawer, in whatever state it is, or undefined while there is not exactly one. */
+export async function threadTerminal(page: Page, threadId = 'workshop', place: 'tools' | 'drawer' = 'tools'): Promise<ShellReading | undefined> {
+  return page.evaluate(async ({ threadId, place }) => {
+    const terminal = window.sotto!.terminal!
+    const listing = await terminal.list({ threadId, place })
+    if (!listing.ok || listing.value.sessions.length !== 1) return undefined
+    const snapshot = await terminal.read({ threadId, workspaceId: listing.value.workspace.workspaceId, sessionId: listing.value.sessions[0]!.id })
+    return snapshot.ok ? { output: snapshot.value.output, status: snapshot.value.session.status } : undefined
+  }, { threadId, place })
+}
+
+/** A Terminal-mode terminal by ID, or the first one listed, in whatever state it is. */
+export async function workspaceTerminal(page: Page, id?: string): Promise<ShellReading | undefined> {
+  return page.evaluate(async id => {
+    const terminals = window.sotto!.terminals!
+    let target = id
+    if (target === undefined) {
+      const list = await terminals.list()
+      target = list.ok ? list.value.terminals[0]?.id : undefined
+    }
+    if (target === undefined) return undefined
+    const result = await terminals.read({ id: target })
+    return result.ok ? { output: result.value.output, status: result.value.terminal.status } : undefined
+  }, id)
+}
 
 /** Exercise xterm's DOM fallback without disabling the 2D canvas used to resolve theme colors. */
 export async function forceDomTerminalRenderer(page: Page): Promise<void> {

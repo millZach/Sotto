@@ -3,7 +3,7 @@ import type { AgentHostSnapshot } from '../../shared/agents'
 import {
   usageLocalClearRequestSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageQuotaReadSchema,
   usageTokenObservationSchema, usagePromptSubmissionSchema, usagePromptIdentitySchema,
-  isUsageProviderId,
+  isUsageProviderId, usageProviderIdSchema,
   type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery,
   type UsagePromptSubmission, type UsageQuotaRead, type UsageTokenObservation,
   type UsagePromptIdentity, type UsageProviderId,
@@ -14,7 +14,7 @@ import { unavailableProviderQuota } from './providerQuota'
 import { UsageStore, USAGE_PENDING_RECONCILIATION_BATCH_MAX } from './usageStore'
 import { UsageHistoryImporter, type UsageHistoryStore } from './usageHistory/importer'
 
-const PROVIDERS: readonly UsageProviderId[] = ['codex', 'claude', 'grok', 'devin']
+const PROVIDERS: readonly UsageProviderId[] = usageProviderIdSchema.options
 const BUFFER_MAX = 4_096
 const FLUSH_MS = 1_000
 const RETRY_MS = 5_000
