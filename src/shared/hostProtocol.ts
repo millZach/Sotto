@@ -14,7 +14,7 @@ import { subagentAssignmentsRequestSchema, subagentPageRequestSchema } from './s
 import { PASTED_CODE_MAX } from './hostProviders'
 import { opencodeHostCallSchema } from './opencodeSignIn'
 import type { HeldProviders } from './heldProviders'
-import type { AgentActivity } from './agentActivity'
+import { agentActivitySchema, type AgentActivity } from './agentActivity'
 import { phoneTerminalAnswerSchema, phoneTerminalListSchema, type PhoneTerminal } from './phoneTerminals'
 import { providerIdSchema, type ProviderClientUpdate, type ProviderId } from './agents'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema } from './usageDashboard'
@@ -189,14 +189,18 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * commands no OpenCode thread there.
  * `opencode-sign-in`: the host signs its own Sotto OpenCode in to model sources, and out of them, for the desktop that asks
  * (`opencode-sign-in`, #1107, ADR-0037). Only a headless host whose OpenCode runs offers it, and only to a desktop.
+ * `activity-bodies`: a desktop that accepts it is sent every activity record in a detail, a detail delta and a `detail`
+ * answer with each body over 2,048 UTF-8 bytes cut, its whole size named in the record's `cut`, and answers
+ * `activity-body` with one whole record (ADR-0025, October 18 amendment). A client that accepts `activity-summaries` too
+ * is sent summaries. Only a desktop is offered it, and the desktop's own phone listener never offers it.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in'] as const
+export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'host-update', 'opencode-sign-in']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'host-update', 'opencode-sign-in', 'activity-bodies']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
@@ -374,6 +378,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('subagent-assignments'), request: subagentAssignmentsRequestSchema }).strict(),
   /** The host's machine facts and running thread count, read on request and never pushed (#1031). */
   z.object({ ...base, op: z.literal('host-facts') }).strict(),
+  /** One activity record whole, for a desktop that was sent it with a cut body; read when its row opens (`activity-bodies`). */
+  z.object({ ...base, op: z.literal('activity-body'), threadId: id, activityId: id }).strict(),
   /** The words of a started thread's handover, read only when the user asks to read them (#1028). */
   z.object({ ...base, op: z.literal('start-handover'), threadId: id }).strict(),
   /** One step of a host update, run by the host on itself for a desktop that may answer (ADR-0088). */
@@ -470,6 +476,8 @@ const aboutShape = {
 export const hostPhoneAccessSchema = z.object({ status: z.enum(HOST_PHONE_ACCESS_STATUSES), phones: z.number().int().nonnegative().max(1000) })
 export const hostHelloSchema = z.object({ ...eventPageShape, hostId: z.uuid(), clientId: id, shell: protocolAgentStateSchema, capabilities: z.object({ mayAnswer: z.boolean() }), sottoVersion, features: featureList,
   ...aboutShape, phoneAccess: hostPhoneAccessSchema.optional().catch(undefined) })
+/** One activity record whole as a host answers `activity-body`, or null when the thread no longer has it. */
+export const hostActivityBodySchema = agentActivitySchema.nullable()
 /** A started thread's handover as a host answers `start-handover`: its words, or null when it has none (#1028). */
 export const hostStartHandoverSchema = z.object({ handover: z.object({ text: z.string() }).strict().nullable() }).strict()
 export const hostHealthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), sottoVersion, features: featureList, ...aboutShape })
