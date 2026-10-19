@@ -1,4 +1,5 @@
 import { startHandoverPrefix } from '../../shared/threadStarts'
+import type { AgentActivity } from '../../shared/agentActivity'
 import { userInfo } from 'node:os'
 import type { WatcherHostControl, WatcherHostRead, WatcherHostProjection, WatcherRoomThreadInput } from '../../shared/watcherHost'
 import type { WatcherIdentity } from '../../shared/watcher'
@@ -114,6 +115,11 @@ export interface HostService {
   threadProvider?(threadId: string): ProviderId | undefined
   /** One project's provider as the host holds it now, read without copying any state (#1107). Undefined for an unknown project. */
   projectProvider?(projectId: string): ProviderId | undefined
+  /**
+   * One activity record of a thread whole, read without copying the thread's history, for `activity-body`. Never edited by
+   * the caller. Without it, the host reads the record from the thread's detail.
+   */
+  threadActivity?(threadId: string, activityId: string): AgentActivity | null
   /** The whole published state, history included. */
   state(): AgentState
   /** The published state without any thread's history: what every client needs on every frame. */
@@ -191,6 +197,7 @@ export interface LocalHostControl {
   threadKind?(threadId: string): AgentThread['kind']
   threadProvider?(threadId: string): ProviderId | undefined
   projectProvider?(projectId: string): ProviderId | undefined
+  threadActivity?(threadId: string, activityId: string): AgentActivity | null
   threadDetail(threadId: string): AgentThreadDetail | null
   subscribe(listener: (state: AgentState) => void): () => void
   /** Runs one client's command and answers with the shell, without copying any history. */
@@ -314,6 +321,9 @@ export class LocalHostService implements HostService {
   threadProvider(threadId: string): ProviderId | undefined { return this.control.threadProvider?.(threadId) }
   projectProvider(projectId: string): ProviderId | undefined { return this.control.projectProvider?.(projectId) }
   threadDetail(threadId: string): AgentThreadDetail | null { return this.control.threadDetail(threadId) }
+  threadActivity(threadId: string, activityId: string): AgentActivity | null {
+    return this.control.threadActivity ? this.control.threadActivity(threadId, activityId) : this.control.threadDetail(threadId)?.activities?.find(record => record.id === activityId) ?? null
+  }
   async checkRequestAnswer(target: HostAnswerTarget, client: ClientIdentity): Promise<void> {
     if (!this.control.checkRequestAnswer) throw new RequestAnswerCheckRefusal('unsupported')
     await this.control.checkRequestAnswer(target, client)

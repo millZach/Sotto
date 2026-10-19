@@ -1,3 +1,4 @@
+import type { AgentActivity } from '../../shared/agentActivity'
 import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
 import { catalogWithoutHeld, heldProviderOfCommand, heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from '../agents/heldProviderGate'
 import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
@@ -49,6 +50,8 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   /** Whether this host babysits pull requests: only then does the window offer Babysit pull request on its threads (ADR-0061). */
   offersBabysitting?(): boolean
   observe?(threadIds: string[]): Promise<unknown>
+  /** One activity record whole, by the host's own thread ID, for a row whose body the host sent cut; absent on this computer. */
+  activityBody?(threadId: string, activityId: string): Promise<AgentActivity | null>
   subscribeDetail?(listener: (detail: AgentThreadDetailUpdate) => void): () => void
   available?: () => boolean
   /** What a question page's token opens on this computer's own host (ADR-0085). */
@@ -753,6 +756,16 @@ export class DesktopHostRouter {
     if (connection.service.supportsThreadStarts !== true || !connection.service.startHandover) throw new Error(THREAD_STARTS_UNSUPPORTED)
     if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again to read the handover. Nothing was sent.')
     return connection.service.startHandover(id!)
+  }
+  /**
+   * One record of a remote thread whole, read on its host when its row opens (ADR-0025, October 18 amendment). This
+   * computer's own threads never carry a cut body, so a thread here answers null.
+   */
+  async activityBody(request: { readonly threadId: string; readonly activityId: string }): Promise<AgentActivity | null> {
+    const { connection, id } = this.target(request.threadId)
+    if (!connection.activityBody) return null
+    if (connection.available?.() === false) throw new Error('This host is disconnected. Nothing is lost. The rest shows when it reconnects.')
+    return connection.activityBody(id!, request.activityId)
   }
   /** The folder browser names its host directly: it has no thread yet to carry a client-scoped key. */
   async hostFolders(request: HostFoldersClientRequest): Promise<HostFoldersResult> {

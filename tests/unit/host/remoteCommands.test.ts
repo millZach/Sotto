@@ -112,7 +112,9 @@ describe('remote command allow-list', () => {
       // A started thread's handover, read only on a listener that offers thread-starts, and only when the user asks (#1028).
       'start-handover',
       // A host update the host runs on itself: a recorded desktop whose remote-answer policy lets it answer (ADR-0088).
-      'host-update']
+      'host-update',
+      // One activity record whole, a read for a desktop that accepted activity-bodies (ADR-0025, October 18 amendment).
+      'activity-body']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })
