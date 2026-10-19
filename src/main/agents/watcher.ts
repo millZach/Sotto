@@ -1122,12 +1122,17 @@ export class WatcherService implements WatcherControlHooks {
     const record = this.record()
     let request = record.requests.find(item => item.rootUserMessageId === command.messageId
       || _draftId && item.userFollowups?.some(followup => followup.draftId === _draftId))
-    // An instruction the user queued after a takeover fenced its request, with no takeover since, is their fresh word.
-    // On its first delivery it starts its own request, ordered after that takeover as a Send to an idle Watcher would
-    // be, even if the old one has closed. A later takeover, Stop or Stop all clears the mark, and a request the user
-    // stopped keeps it, so those still hold; a retry keeps the request its first delivery made.
-    const fresh = request !== undefined && request.state !== 'stopped' && request.rootUserMessageId !== command.messageId
-      && request.userFollowups?.some(item => item.draftId === _draftId && item.afterTakeover && item.messageId === undefined)
+    // Every Send of the user's reaches Watcher under an active request (#1184). An instruction queued as a continuation
+    // keeps its request only while that request is still active when it is delivered: one the user stopped, or one that
+    // closed, while it waited is over, and the instruction starts its own request, as a Send to an idle Watcher would.
+    // Its request takes the old one's place among takeovers, since the instruction is no newer than it was: a takeover
+    // that fenced the old request fences it too. One the user queued after a takeover fenced its request, with no
+    // takeover since, is their fresh word instead, ordered after that takeover. A retry keeps the request its first
+    // delivery made.
+    const queued = request?.userFollowups?.find(item => item.draftId === _draftId && item.messageId === undefined)
+    const fresh = request !== undefined && request.rootUserMessageId !== command.messageId && queued !== undefined
+      && (queued.afterTakeover === true || request.state !== 'active')
+    const inPlace = fresh && queued?.afterTakeover !== true
     // Decided before anything is recorded, so a refused handover leaves no request behind.
     const continuing = request !== undefined && !fresh && request.rootUserMessageId !== command.messageId
     const handover = continuing ? undefined : this.handoverFor(command.threadId, command.commandId, _draftId)
@@ -1140,7 +1145,8 @@ export class WatcherService implements WatcherControlHooks {
       this.options.control.mutateWatcher(next => {
         const old = from ? next.requests.find(item => item.id === from) : undefined
         if (old) old.userFollowups = old.userFollowups!.filter(item => item.draftId !== _draftId)
-        next.requests.push(created)
+        if (old && inPlace) next.requests.splice(next.requests.indexOf(old), 0, created)
+        else next.requests.push(created)
       })
     }
     // The user's text goes as typed. The request rides beside it, through the provider's own context channel.
@@ -1183,6 +1189,19 @@ export class WatcherService implements WatcherControlHooks {
   dispatchAborted(command: AgentHostCommand): void {
     this.pendingPromptTurns.delete(command.commandId)
     if (this.handoverOffer?.sendingCommandId === command.commandId) delete this.handoverOffer.sendingCommandId
+    // A message that definitely never reached the provider was not delivered: its continuation keeps no message, so its
+    // next try is a first delivery again and takes an active request if its own has ended since (#1184). A request it
+    // started, which nothing has acted under, goes with it, so the next try starts one rooted in a message that exists.
+    const messageId = 'messageId' in command ? command.messageId : undefined
+    // One a takeover has since taken as its boundary stays: dropping it would fence every request after it.
+    const unsent = (request: Readonly<WatcherRequest>, record: Readonly<WatcherRecord>): boolean => request.rootUserMessageId === messageId
+      && !request.participants.length && !record.operations.some(operation => operation.requestId === request.id)
+      && !record.localTakeovers?.some(takeover => takeover.lastRequestId === request.id)
+    const view = this.view()
+    if (messageId && view.requests.some(request => unsent(request, view) || request.userFollowups?.some(item => item.messageId === messageId))) this.options.control.mutateWatcher(record => {
+      record.requests = record.requests.filter(request => !unsent(request, record))
+      for (const request of record.requests) for (const item of request.userFollowups ?? []) if (item.messageId === messageId) { delete item.messageId; delete item.displayPrompt }
+    })
   }
   observe(snapshot: AgentHostSnapshot, knownUserMessages: ReadonlySet<string>): void {
     // This pass runs on every update and walks every thread, so it reads the record without copying it. A copy per thread
