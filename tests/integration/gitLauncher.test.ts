@@ -143,11 +143,39 @@ describe('the launcher without its worker', () => {
     await new Promise<void>(started => child.stdout.on('data', () => started()))
     await made.close()
     const stopped = await result
-    expect(stopped.errors[0]?.message).toContain('stopped reporting')
+    expect(stopped.errors[0]?.message).toContain('because its process launcher closed')
     expect(stopped.code).toBeNull()
     resetMainThreadLaunches()
     expect(await ended(made.launch(...node('process.stdout.write("after")'), { cwd: process.cwd(), env: process.env }))).toMatchObject({ stdout: 'after' })
     expect(mainThreadLaunches.count).toBe(1)
+  })
+})
+
+describe('a launch the worker started, when the worker goes', () => {
+  const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch { return false } }
+  async function sleeper(made: GitLauncher): Promise<{ child: LaunchedProcess; result: Promise<Ended>; pid: number }> {
+    const child = made.launch(...node('process.stdout.write(String(process.pid)); setTimeout(() => {}, 30_000)'), { cwd: process.cwd(), env: process.env })
+    const result = ended(child)
+    const pid = await new Promise<number>(started => child.stdout.on('data', chunk => started(Number(String(chunk)))))
+    expect(alive(pid)).toBe(true)
+    return { child, result, pid }
+  }
+
+  it('is stopped before it reports closing when the launcher closes', async () => {
+    const made = launcher(worker.path)
+    const { result, pid } = await sleeper(made)
+    await made.close()
+    expect((await result).errors[0]?.message).toContain('Sotto stopped')
+    await vi.waitFor(() => expect(alive(pid)).toBe(false))
+  })
+
+  it('is stopped from this thread before it reports closing when the worker dies', async () => {
+    const made = launcher(worker.path)
+    const { result, pid } = await sleeper(made)
+    // The worker ends on its own, as a crash would, rather than through close().
+    await (made as unknown as { worker: { terminate(): Promise<number> } }).worker.terminate()
+    expect((await result).errors[0]?.message).toContain('Sotto stopped')
+    await vi.waitFor(() => expect(alive(pid)).toBe(false))
   })
 })
 

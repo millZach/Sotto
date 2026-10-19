@@ -45,6 +45,16 @@ export interface LaunchedProcess {
 /** The worker file the build puts beside this module's bundle (`electron.vite.config.ts`, `scripts/build-host.mjs`). */
 const BUILT_WORKER = join(__dirname, 'gitLauncherWorker.js')
 
+/**
+ * Stops a process the worker started, and what it started, from this thread: the worker's own loop is gone or going,
+ * so it can no longer. Windows stops the tree as the callers' own stop does; elsewhere a detached launch leads its group.
+ */
+function stopFromHere(pid: number, detached: boolean): Promise<void> {
+  if (process.platform === 'win32') return new Promise(done => { execFile('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }, () => done()) })
+  try { process.kill(detached ? -pid : pid, 'SIGKILL') } catch { /* It has already gone. */ }
+  return Promise.resolve()
+}
+
 /** Both output streams are piped, so neither is null. */
 function inThread(command: string, args: readonly string[], options: LaunchOptions): ChildProcess & LaunchedProcess {
   const child = spawn(command, [...args], {
@@ -151,6 +161,8 @@ export class GitLauncher {
   private worker: Worker | null | undefined
   private readonly running = new Map<number, { readonly process: OffThreadProcess; readonly command: string; readonly args: readonly string[]; readonly options: LaunchOptions }>()
   private next = 1
+  /** While closing: what to call when the worker reports a launch exited, so it is collected before the worker goes. */
+  private readonly exited = new Map<number, () => void>()
   /** `workerPath` null launches in this thread, always. */
   constructor(private readonly workerPath: string | null) {}
 
@@ -170,11 +182,24 @@ export class GitLauncher {
     return launched
   }
 
-  /** Stops the worker; a launch still running reports that it stopped. For tests and shutdown. */
+  /**
+   * Stops the worker. A launch still running is stopped first and reports that it stopped; the worker is then given a
+   * moment to see each exit, so its loop collects them rather than leaving them defunct. For tests and shutdown.
+   */
   async close(): Promise<void> {
     const worker = this.worker
     this.worker = null
-    if (worker) { this.abandon(false); await worker.terminate() }
+    if (!worker) return
+    const running = [...this.running.values()]
+    const exits = running.map(({ process }) => new Promise<void>(done => this.exited.set(process.id, done)))
+    // One the worker has not started yet is stopped as it starts: the worker takes a kill for a launch it has queued.
+    for (const { process } of running) if (!process.started) process.kill('SIGKILL')
+    await this.abandon(false)
+    let waited: NodeJS.Timeout | undefined
+    await Promise.race([Promise.all(exits), new Promise<void>(done => { waited = setTimeout(done, 2_000) })])
+    clearTimeout(waited)
+    this.exited.clear()
+    await worker.terminate()
   }
 
   /** `runToExit` on this launcher. */
@@ -195,29 +220,38 @@ export class GitLauncher {
     let worker: Worker
     try { worker = new Worker(this.workerPath, { stdout: false, stderr: false }) } catch { return this.worker = null }
     worker.unref()
-    worker.on('message', (event: LauncherEvent) => this.running.get(event.id)?.process.receive(event))
+    worker.on('message', (event: LauncherEvent) => {
+      if (event.type === 'close') this.exited.get(event.id)?.()
+      this.running.get(event.id)?.process.receive(event)
+    })
     const failed = (): void => {
       if (this.worker !== worker) return
       this.worker = null
-      this.abandon(true)
+      void this.abandon(true)
     }
     worker.on('error', failed)
     worker.on('exit', failed)
     return this.worker = worker
   }
 
-  /** The worker is gone: a launch it never started starts here when `relaunch` allows; any other reports that it stopped. */
-  private abandon(relaunch: boolean): void {
+  /**
+   * The worker is gone or going: a launch it never started starts here when `relaunch` allows. Any other is stopped, if
+   * the worker had started it, and then reports that it stopped, so a caller never sees a close while its Git still runs.
+   */
+  private abandon(relaunch: boolean): Promise<void> {
     const running = [...this.running.values()]
     this.running.clear()
+    const stopping: Promise<void>[] = []
     for (const { process, command, args, options } of running) {
       if (relaunch && !process.started) {
         try { process.adopt(inThread(command, args, options)); continue } catch (error) {
           process.emit('error', error instanceof Error ? error : new Error(String(error)))
         }
-      } else process.emit('error', new Error(`${command} stopped reporting because Sotto's process launcher closed. Nothing it changed was undone; check the folder, then try again.`))
-      process.close(null, null)
+      } else process.emit('error', new Error(`Sotto stopped ${command} because its process launcher closed. Nothing it changed was undone; check the folder, then try again.`))
+      const pid = process.started ? process.pid : undefined
+      stopping.push((pid === undefined ? Promise.resolve() : stopFromHere(pid, options.detached ?? false)).then(() => process.close(null, null)))
     }
+    return Promise.all(stopping).then(() => undefined)
   }
 }
 
