@@ -1,8 +1,8 @@
-import { execFile, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { lstat, mkdir, opendir, readdir, readFile, readlink, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
+import { launchProcess, runToExit } from './gitLauncher'
 import { QUIET_GIT_ENV } from './gitStatus'
 import { nativeEnvironment } from './subscriptionCodex'
 
@@ -30,8 +30,9 @@ export async function parallelCheckout(cwd: string): Promise<string[]> {
 /** The executable and deadline seam lets a real launcher/checkout tree exercise timeout recovery. */
 export function runWorktreeGitProcess(cwd: string, args: string[], options: { executable?: string; prefix?: string[]; timeout?: number; env?: Readonly<Record<string, string>> } = {}): Promise<string> {
   return new Promise((accept, reject) => {
-    const child = spawn(options.executable ?? 'git', [...(options.prefix ?? QUOTE_PATHS), ...args], {
-      cwd, windowsHide: true, shell: false, detached: process.platform !== 'win32',
+    // Launched off main's thread, where a Windows launch would hold the window (`gitLauncher.ts`).
+    const child = launchProcess(options.executable ?? 'git', [...(options.prefix ?? QUOTE_PATHS), ...args], {
+      cwd, detached: process.platform !== 'win32',
       // No optional locks: a status read here never takes the index lock from a commit running beside it.
       env: { ...nativeEnvironment(), LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', ...options.env },
     })
@@ -43,7 +44,7 @@ export function runWorktreeGitProcess(cwd: string, args: string[], options: { ex
     const stop = (): void => {
       if (!child.pid) return
       stopping = process.platform === 'win32'
-        ? new Promise<void>((done, fail) => { execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, error => error ? fail(error) : done()) })
+        ? runToExit('taskkill', ['/pid', String(child.pid), '/T', '/F'])
         : new Promise<void>((done, fail) => {
           // kill only sends the signal: a killed grandchild can still be finishing a write, and stays in the group
           // until its new parent reaps it. Wait until the whole group is gone; one that outlives the wait keeps the folder.
@@ -70,8 +71,8 @@ export function runWorktreeGitProcess(cwd: string, args: string[], options: { ex
       if (bytes <= 2_000_000) target.push(chunk)
       else if (!processError) { processError = new Error('Git returned too much output. Nothing was removed.'); clearTimeout(timer); stop() }
     }
-    child.stdout.on('data', (chunk: Buffer) => collect(output, chunk))
-    child.stderr.on('data', (chunk: Buffer) => collect(errors, chunk))
+    child.stdout.on('data', chunk => collect(output, typeof chunk === 'string' ? Buffer.from(chunk) : chunk))
+    child.stderr.on('data', chunk => collect(errors, typeof chunk === 'string' ? Buffer.from(chunk) : chunk))
     child.on('error', error => { processError = error })
     const timer = setTimeout(() => { timedOut = true; stop() }, options.timeout ?? (isWorktreeAdd(args) ? 300_000 : 30_000))
     // close follows exit and closed pipes; the tree termination command must finish before cleanup can start.

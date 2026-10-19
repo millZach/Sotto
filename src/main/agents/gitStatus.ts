@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process'
 import { open } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import type { GitPullRequestSummary, GitStatus } from '../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { GIT_CHANGED_FILES_MAX, type GitChangedFile, type GitChangedFiles } from '../../shared/gitChangedFiles'
+import { launchProcess } from './gitLauncher'
 import { baseRepository, GitHubHosts, GitHubRateLimit, GitHubRateLimited, isOwnHead, readGitHubRemotes, sameRepository, type GitHubAsk, type GitHubRepository } from './github'
 import { HEAD_GATHER_MS, PullRequestHeads } from './githubPullRequestHeads'
 
@@ -50,8 +50,8 @@ function spawnCommand(cwd: string, command: string, args: readonly string[], opt
   // user's own transport and configuration (GIT_SSH_COMMAND, GIT_CONFIG_GLOBAL, proxies) stay, so a fetch
   // reaches the remote the way the user's own Git does.
   for (const key of REDIRECTING_GIT_VARIABLES) delete env[key]
-  const child = spawn(command, [...args], { cwd, windowsHide: true, shell: false, env, stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] })
-  if (options.stdin !== undefined && child.stdin) { child.stdin.on('error', () => undefined); child.stdin.end(options.stdin) }
+  // Launched off main's thread, where a Windows launch would hold the window (`gitLauncher.ts`).
+  const child = launchProcess(command, args, { cwd, env, ...options.stdin !== undefined ? { stdin: options.stdin } : {} })
   let stdout = '', stderr = '', timedOut = false, settled = false
   const partial = { stdout: '', stderr: '' }
   const feed = (stream: 'stdout' | 'stderr', chunk: string): void => {
@@ -62,10 +62,9 @@ function spawnCommand(cwd: string, command: string, args: readonly string[], opt
     partial[stream] = lines.pop() ?? ''
     for (const line of lines) options.onLine(line, stream)
   }
-  // Both are piped above, whatever stdin is.
-  const out = child.stdout!, err = child.stderr!
-  out.setEncoding('utf8').on('data', (chunk: string) => feed('stdout', chunk))
-  err.setEncoding('utf8').on('data', (chunk: string) => feed('stderr', chunk))
+  const out = child.stdout, err = child.stderr
+  out.setEncoding('utf8').on('data', chunk => feed('stdout', String(chunk)))
+  err.setEncoding('utf8').on('data', chunk => feed('stderr', String(chunk)))
   const finish = (error: Error | null): void => {
     if (settled) return
     settled = true; clearTimeout(timer)
