@@ -2,11 +2,11 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { compareClientVersions } from './clientVersions'
-import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
+import { withCliPath } from './cliLookup'
+import { acceptOpenCode, opencodeCandidates, resetOpenCodeLookup, type OpenCodeLookupOptions } from './opencodeLookup'
 
 /**
  * OpenCode's floor: the oldest client Sotto connects (ADR-0042, ADR-0087). 2.0.31 is the client this adapter's routes,
@@ -55,10 +55,57 @@ export function opencodeEnvironment(environment: NodeJS.ProcessEnv, folders: Ope
 /** A fresh secret for one server, never written down or logged. */
 export function opencodePassword(): string { return randomBytes(32).toString('base64url') }
 
-/** Where OpenCode is: `~/.opencode/bin` first, where OpenCode 2's install script puts it, then the shared lookup (ADR-0036). */
-export async function findOpenCodeExecutable(environment: NodeJS.ProcessEnv = process.env, lookup: Omit<CliLookupOptions, 'environment'> = {}): Promise<string | undefined> {
-  return findCli({ name: 'opencode', first: [join(lookup.home ?? homedir(), '.opencode', 'bin')] }, { ...lookup, environment })
+/**
+ * The OpenCode a connect last chose and started, which presence and the update check ask about too while it is still
+ * there, so an update is checked for the client in use and not an OpenCode 1 found ahead of it. Kept for the home and
+ * platform it was found for.
+ */
+let chosenOpenCode: { readonly executable: string; readonly home: string | undefined; readonly platform: NodeJS.Platform | undefined } | undefined
+/** Writes down the OpenCode connect started, or forgets it when connect found none to start. */
+export function rememberOpenCodeChoice(executable: string | undefined, lookup: OpenCodeLookupOptions = {}): void {
+  chosenOpenCode = executable ? { executable, home: lookup.home, platform: lookup.platform } : undefined
 }
+/**
+ * Where OpenCode is (`opencodeLookup`): the OpenCode connect last chose while it is still there, or else the first the
+ * lookup finds, whatever its version. Presence and the update check ask this; connect asks `chooseOpenCode`.
+ */
+export async function findOpenCodeExecutable(environment: NodeJS.ProcessEnv = process.env, lookup: OpenCodeLookupOptions = {}): Promise<string | undefined> {
+  const chosen = chosenOpenCode
+  if (chosen && chosen.home === lookup.home && chosen.platform === lookup.platform
+    && await acceptOpenCode(chosen.executable, lookup.platform, lookup.arch)) return chosen.executable
+  for await (const executable of opencodeCandidates(environment, lookup)) return executable
+  return undefined
+}
+/** How long the first OpenCode found has to say its version, and all the others together after it. */
+export const OPENCODE_VERSION_TIMEOUT_MS = 10_000
+/** At most this many OpenCodes are asked their version on one connect. */
+const VERSIONS_READ = 8
+export interface OpenCodeChoice { readonly executable: string; readonly said: string | undefined }
+/**
+ * The OpenCode connect uses: the first the lookup finds that reports an OpenCode 2 Sotto drives, so an OpenCode 1 met
+ * first (WinGet's, Chocolatey's, nixpkgs') does not hide an OpenCode 2 installed elsewhere. The others are asked only
+ * when the first is refused, and only while `abandoned` says the connect still wants an answer: at most eight, sharing
+ * one version read's time between them. When none will do, the first and what it said, which connect refuses in its words.
+ */
+export async function chooseOpenCode(read: (executable: string, timeoutMs: number) => Promise<string | undefined>, environment: NodeJS.ProcessEnv = process.env,
+  lookup: OpenCodeLookupOptions = {}, abandoned: () => boolean = () => false): Promise<OpenCodeChoice | undefined> {
+  let first: OpenCodeChoice | undefined
+  let asked = 0
+  let deadline: number | undefined
+  for await (const executable of opencodeCandidates(environment, lookup)) {
+    if (abandoned()) break
+    const timeoutMs = deadline === undefined ? OPENCODE_VERSION_TIMEOUT_MS : deadline - Date.now()
+    if (timeoutMs <= 0) break
+    const said = await read(executable, timeoutMs).catch(() => undefined)
+    if (!opencodeVersionRefusal(said ?? '')) return { executable, said }
+    first ??= { executable, said }
+    deadline ??= Date.now() + OPENCODE_VERSION_TIMEOUT_MS
+    if (++asked >= VERSIONS_READ) break
+  }
+  return first
+}
+/** Forgets which OpenCode connect chose and the last reading of Windows' PATH, so a test starts clean. */
+export function resetOpenCodeChoice(): void { chosenOpenCode = undefined; resetOpenCodeLookup() }
 
 /** A version line as each OpenCode prints it: `opencode v2.0.31` from 2, the bare `1.19.3` from 1. */
 export function parseOpenCodeVersion(text: string): { version: string; generation: number } | undefined {
@@ -78,7 +125,7 @@ export function opencodeVersionRefusal(version: string): OpenCodeUnsupported | u
 }
 
 /** Ask the client its version without starting a server. Its output is read for the version line and nothing else. */
-export function readOpenCodeVersion(executable: string, args: readonly string[], env: NodeJS.ProcessEnv, timeoutMs = 10_000): Promise<string | undefined> {
+export function readOpenCodeVersion(executable: string, args: readonly string[], env: NodeJS.ProcessEnv, timeoutMs = OPENCODE_VERSION_TIMEOUT_MS): Promise<string | undefined> {
   return new Promise(resolve => {
     let output = ''
     let settled = false
