@@ -7,7 +7,7 @@ import { DETAIL_QUERY, FINGERPRINT_PER_QUERY, REMARK_WORDS_PER_QUERY, fingerprin
 import type { PullRequestObservation } from './watcherEvidence'
 import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
 import { runGitStatusCommand, type RunGitCommand } from './gitStatus'
-import { FAILED_READ_LIMIT, couldNotRunNotice, findNews, printable, publishedBabysitting, stillCurrent, toldAtStart,
+import { FAILED_READ_LIMIT, couldNotRunNotice, findNews, gateOf, printable, publishedBabysitting, stillCurrent, toldAtStart,
   type BabysitEnding, type BabysitNews, type BabysitRecord, type BabysitTold, type BabysitUnreadable } from './babysitNews'
 
 /**
@@ -462,7 +462,9 @@ export class Babysitter {
     const checksRead = checks ? detail?.checks != null : true
     const refusedChecks = !checks ? last?.refusedChecks ?? 0 : checksRead ? 0 : (last?.refusedChecks ?? 0) + 1
     const backOff = !checksRead && refusedChecks >= REFUSED_CHECKS_BEFORE_BACK_OFF
-    const observation = this.options.observed ? pullRequestObservation(fingerprint, detail, new Date(now).toISOString(), last?.observation, checks) : undefined
+    // Watcher hears when the checks the base branch requires pass, as this thread would (#1190), from the same gate.
+    const required = detail?.checks && detail.head === fingerprint.head && fingerprint.head !== null ? { requiredPassed: gateOf(detail.checks, detail.requiredChecks ?? []).passed } : {}
+    const observation = this.options.observed ? { ...pullRequestObservation(fingerprint, detail, new Date(now).toISOString(), last?.observation, checks), ...required } : undefined
     if (observation) this.options.observed?.(observation)
     this.lastReads.set(group.key, {
       ...(observation ? { observation } : {}),

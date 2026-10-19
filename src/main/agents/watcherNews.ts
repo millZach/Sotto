@@ -1,11 +1,11 @@
-import { isVisualMessage, type AgentMessage, type AgentThread } from '../../shared/agents'
+import type { AgentMessage, AgentThread } from '../../shared/agents'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_NEWS_BYTES_MAX, WATCHER_NEWS_REPLY_CHARS, WATCHER_NEWS_TARGETS_MAX, type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
-import { observationDigest, targetKey } from './watcherEvidence'
+import { observationDigest, targetKey, type WatcherAttentionKind } from './watcherEvidence'
 
 export function eventSlot(event: WatcherEvent): string {
   return JSON.stringify([event.requestId, targetKey(event.target), event.kind === 'turn-failed' ? 'turn-finished' : event.kind,
-    event.kind === 'needs-user' ? event.requestCardId : event.kind === 'delivery-changed' ? event.operationId : event.turnId ?? null])
+    event.kind === 'needs-user' ? [event.delegatedThreadId ?? null, event.requestCardId] : event.kind === 'delivery-changed' ? event.operationId : event.turnId ?? null])
 }
 export function foldWatcherEvents(earlier: readonly WatcherEvent[], later: readonly WatcherEvent[]): WatcherEvent[] {
   const events = new Map(earlier.map(event => [eventSlot(event), event]))
@@ -83,33 +83,31 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail): 
 }
 
 /**
- * The start of a finished turn's reply, for its news (#1190): the thread's newest worker message after the message that
- * began its newest turn, while that turn is the one the news is of and nothing runs. Labelled as the worker's words, and
- * cut at WATCHER_NEWS_REPLY_CHARS characters; read_operation or read_thread has the rest.
+ * The start of a finished turn's reply, for its news (#1190): `reply`, the newest turn's own reply (watcherNewestTurnReply),
+ * while that turn is the one the news is of and nothing runs. Labelled as the worker's words, and cut at
+ * WATCHER_NEWS_REPLY_CHARS characters; read_operation or read_thread has the rest.
  */
-export function watcherReplyStart(thread: AgentThread, turnId: string | undefined): string | undefined {
-  if (thread.status === 'running' || !thread.lastTurn || thread.lastTurn.id !== turnId) return undefined
-  const messages = thread.messages
-  const reply = messages.findLastIndex(message => message.role === 'assistant' && !isVisualMessage(message) && message.text.trim() !== '')
-  if (reply < 0 || messages.findLastIndex(message => message.role === 'user') > reply) return undefined
-  const characters = [...messages[reply]!.text.trim()]
+export function watcherReplyStart(thread: Pick<AgentThread, 'status' | 'lastTurn'>, turnId: string | undefined, reply: Pick<AgentMessage, 'text'> | undefined): string | undefined {
+  if (thread.status === 'running' || !thread.lastTurn || thread.lastTurn.id !== turnId || !reply?.text.trim()) return undefined
+  const characters = [...reply.text.trim()]
   const cut = characters.length > WATCHER_NEWS_REPLY_CHARS
   return `Its reply ${cut ? 'begins' : 'is'}, in the worker's words: ${JSON.stringify(characters.slice(0, WATCHER_NEWS_REPLY_CHARS).join(''))}${cut ? ' (cut; read_operation or read_thread has the rest)' : ''}.`
 }
-const ATTENTION_WORDS: Record<string, string> = {
-  'checks-failed': 'checks failed on its newest commit', 'checks-passed': 'all checks passed on its newest commit', merged: 'merged', closed: 'closed without merging',
+const ATTENTION_WORDS: Record<Exclude<WatcherAttentionKind, 'remarks'>, string> = {
+  'checks-failed': 'checks failed on its newest commit', 'checks-passed': 'all checks passed on its newest commit',
+  'required-passed': 'its required checks passed on its newest commit', merged: 'merged', closed: 'closed without merging',
   approved: 'approved', 'changes-requested': 'a review asks for changes', conflicting: 'conflicts with its base branch',
 }
 /**
  * What a thread's pull requests now say that needs Watcher, in Sotto's words (#1190): checks, merged or closed, the review
  * decision, a conflict, and comments or reviews that moved. Numbers come from the thread's links; never a comment's words.
  */
-export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlySet<string>>, thread: Pick<AgentThread, 'pullRequests' | 'worktree'>): string | undefined {
+export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlySet<WatcherAttentionKind>>, thread: Pick<AgentThread, 'pullRequests' | 'worktree'>): string | undefined {
   const links = [...thread.pullRequests ?? [], ...thread.worktree?.git?.pullRequest ? [thread.worktree.git.pullRequest] : []]
   const parts: string[] = []
   for (const [pr, facts] of attention) {
     const number = links.find(link => pullRequestKey(link.url) === pr)?.number
-    const said = [...facts].flatMap(fact => ATTENTION_WORDS[fact] ?? [])
+    const said = [...facts].flatMap(fact => fact === 'remarks' ? [] : [ATTENTION_WORDS[fact]])
     if (facts.has('remarks')) said.push('its comments or reviews changed; read them on GitHub')
     if (said.length) parts.push(`Pull request ${number ? `#${number}` : pr}: ${said.join('; ')}.`)
   }

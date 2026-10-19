@@ -9,6 +9,7 @@ import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, type WatcherWakeOptio
 import { WatcherEvidenceStore, observationDigest } from '../../../src/main/agents/watcherEvidence'
 import { foldWatcherNews, watcherNewsText, watcherPullRequestWords, watcherReplyStart, watcherWakeUpsAsShown, WATCHER_WAKE_UP_PROMPT } from '../../../src/main/agents/watcherNews'
 import { RESUME_NOTE } from '../../../src/shared/restartResume'
+import { watcherNewestTurnReply } from '../../../src/main/agents/watcherOutcomes'
 import { queuedWakeUpText, wakeUpText, watcherWakeUpNote } from '../../../src/main/agents/wakeUp'
 import type { BabysitNews } from '../../../src/main/agents/babysitNews'
 import { centerTarget, centerTime, watcherRecordFixture } from '../../fixtures/watcher'
@@ -1632,19 +1633,140 @@ it('tells a delegated thread’s question as news of the watched thread that del
   expect(f.wakes.dueAll(card)).toEqual([false])
 })
 
-it('carries the start of a finished turn’s reply, in the worker’s words, cut at five hundred characters', () => {
+it('carries the start of the newest turn’s own reply, in the worker’s words, cut at five hundred characters', () => {
   const thread: AgentThread = { id: 'worker', providerId: 'codex', projectId: 'project', modelId: 'model', title: 'Worker', status: 'idle',
-    lastTurn: { id: 'turn-1', status: 'completed' }, requests: [], messages: [
+    lastTurn: { id: 'turn-1', status: 'completed', messageId: 'brief' }, requests: [], messages: [
       { id: 'brief', role: 'user', text: 'Do the thing', createdAt: centerTime },
       { id: 'reply', role: 'assistant', text: 'é'.repeat(WATCHER_NEWS_REPLY_CHARS + 20), createdAt: centerTime }] }
-  const long = watcherReplyStart(thread, 'turn-1')!
+  const long = watcherReplyStart(thread, 'turn-1', watcherNewestTurnReply(thread))!
   expect(long).toContain(`Its reply begins, in the worker's words: "${'é'.repeat(WATCHER_NEWS_REPLY_CHARS)}"`)
   expect(long).toContain('(cut; read_operation or read_thread has the rest)')
   thread.messages[1]!.text = 'Done. PR #12 is open.'
-  expect(watcherReplyStart(thread, 'turn-1')).toBe('Its reply is, in the worker\'s words: "Done. PR #12 is open.".')
-  expect(watcherReplyStart(thread, 'turn-0')).toBeUndefined()
-  expect(watcherReplyStart({ ...thread, status: 'running' }, 'turn-1')).toBeUndefined()
-  expect(watcherReplyStart({ ...thread, messages: [...thread.messages, { id: 'next', role: 'user', text: 'More', createdAt: centerTime }] }, 'turn-1')).toBeUndefined()
+  expect(watcherReplyStart(thread, 'turn-1', watcherNewestTurnReply(thread))).toBe('Its reply is, in the worker\'s words: "Done. PR #12 is open.".')
+  expect(watcherReplyStart(thread, 'turn-0', watcherNewestTurnReply(thread))).toBeUndefined()
+  expect(watcherReplyStart({ ...thread, status: 'running' }, 'turn-1', watcherNewestTurnReply(thread))).toBeUndefined()
+  // A steer's turn that failed before it replied carries no reply: the one above it is the turn before's.
+  const steered: AgentThread = { ...thread, status: 'error', lastTurn: { id: 'turn-2', status: 'failed', messageId: 'steer' }, messages: [
+    { id: 'brief', role: 'user', text: 'Do the thing', createdAt: centerTime },
+    { id: 'steer', role: 'user', text: 'Also this', createdAt: centerTime },
+    { id: 'reply', role: 'assistant', text: 'Done with the thing.', createdAt: centerTime, turnMessageId: 'brief' }] }
+  expect(watcherNewestTurnReply(steered)).toBeUndefined()
+})
+
+it('tells a finish again under the older request when the newer one it was made under stops before it goes', async () => {
+  const f = fixture(), first = f.record.requests[0]!, id = randomUUID()
+  const second: WatcherRecord['requests'][number] = { ...structuredClone(first), id, rootUserMessageId: 'root-2', participants: first.participants.map(item => ({ ...item, requestId: id })) }
+  f.record.requests.push(second)
+  finish(f.thread); f.wakes.observe()
+  expect(f.wakes.news().find(event => event.kind === 'turn-finished')?.requestId).toBe(id)
+  second.state = 'stopped'; f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'turn-finished').map(event => event.requestId)).toEqual([first.id])
+})
+
+it('does not tell a finish again after a restart because a newer request names its thread', async () => {
+  const f = fixture()
+  finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  expect(turnKinds(f.delivered)).toEqual(['turn-finished'])
+  const first = f.record.requests[0]!, id = randomUUID()
+  f.record.requests.push({ ...structuredClone(first), id, rootUserMessageId: 'root-2', participants: first.participants.map(item => ({ ...item, requestId: id })) })
+  const { recovered, delivered } = restarted(f)
+  recovered.start(); recovered.observe(); await recovered.drained()
+  expect(turnKinds(delivered)).toEqual([])
+})
+
+it('keeps a busy finish owed its work-settled news when its thread moves to a standing watch', async () => {
+  const f = fixture()
+  f.thread.monitoring = [monitor(1)]; finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  f.record.watches = [{ id: randomUUID(), target: centerTarget, createdAt: centerTime, generation: 0 }]; f.wakes.observe()
+  f.thread.monitoring = []; f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  expect(turnKinds(f.delivered)).toContain('work-settled')
+})
+
+it('tells a ripe busy finish even after a wake-up before it missed', async () => {
+  const f = fixture()
+  f.thread.requests.push(question()); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(1)
+  f.thread.requests = []
+  f.wakes.settled(f.delivered[0]!.events, 'failed'); await f.wakes.drained()
+  f.thread.monitoring = [monitor(1)]; finish(f.thread); f.wakes.observe()
+  for (let minute = 1; minute < 20; minute++) {
+    await f.advance(60_000)
+    f.thread.messages.push({ id: `progress-${minute}`, role: 'assistant', text: 'still watching', createdAt: new Date(f.now()).toISOString() }); f.wakes.observe()
+  }
+  await f.advance(60_000 + WATCHER_BATCH_MS)
+  expect(f.delivered.at(-1)!.events.map(event => event.kind)).toContain('turn-finished')
+})
+
+it('does not wake Watcher for checks that failed and went back to running before the news went', async () => {
+  const f = fixture()
+  f.checks('failed'); await f.advance(500); f.checks('pending'); await f.advance(WATCHER_BATCH_MS * 3)
+  expect(f.delivered).toEqual([])
+})
+
+it('tells a delegated thread’s cards whatever the watched thread above it is doing, each its own', async () => {
+  const f = fixture()
+  f.thread.clientConnected = false
+  const child = (id: string, delegatedBy: string): AgentThread => {
+    const thread: AgentThread = { ...structuredClone(f.thread), id, title: id, delegatedBy, clientConnected: true, status: 'running', requests: [] }
+    f.snapshot.threads.push(thread)
+    return thread
+  }
+  // Two delegated threads on their own app servers can each have a card of the same ID, and one delegated in turn.
+  const a = child('a', f.thread.id), b = child('b', f.thread.id), c = child('c', 'b')
+  for (const thread of [a, b, c]) thread.requests.push(question('rpc:1'))
+  f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  const cards = f.delivered.flatMap(news => news.events)
+  expect(cards.map(event => [event.kind, event.target.threadId, event.delegatedThreadId]).sort()).toEqual([
+    ['needs-user', 'worker', 'a'], ['needs-user', 'worker', 'b'], ['needs-user', 'worker', 'c']])
+})
+
+it('drops a delegated thread’s waiting news once the thread that delegated it is watched', async () => {
+  const f = fixture(), parent = secondWorker(f, 'parent')
+  // Only the delegated thread is watched at first: its finish waits in the batch.
+  f.record.requests[0]!.participants = f.record.requests[0]!.participants.filter(item => item.target.threadId !== 'parent')
+  f.thread.delegatedBy = parent.id
+  finish(f.thread); f.wakes.observe()
+  expect(f.wakes.news().map(event => event.kind)).toContain('turn-finished')
+  f.record.requests[0]!.participants.push({ target: { ...centerTarget, threadId: parent.id }, requestId: f.record.requests[0]!.id, startedBy: 'watcher', generation: 0, state: 'participating', promptCount: 1 })
+  f.wakes.observe(); await f.advance(WATCHER_BATCH_MS * 3)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.target.threadId === f.thread.id)).toEqual([])
+})
+
+it('leaves a busy finish waiting when other ordinary news goes', async () => {
+  const f = fixture(), second = secondWorker(f)
+  f.thread.monitoring = [monitor(1)]; finish(f.thread); f.wakes.observe()
+  second.status = 'idle'; second.lastTurn = { id: 'turn-1', status: 'completed' }; f.wakes.observe(); await f.advance(WATCHER_BATCH_MS * 3)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'turn-finished').map(event => event.target.threadId)).toEqual(['worker-2'])
+  expect(f.wakes.news().some(event => event.kind === 'turn-finished' && event.target.threadId === 'worker')).toBe(true)
+})
+
+it('sends ordinary news at its minute cap while a late Git-backed finish waits for its own read', async () => {
+  const f = fixture(true, undefined, realBatch), second = secondWorker(f)
+  gitFixture(f)
+  second.status = 'idle'; second.lastTurn = { id: 'turn-1', status: 'completed' }; f.wakes.observe()
+  for (const state of ['failed', 'passed', 'failed'] as const) { await f.advance(15_000); f.checks(state) }
+  await f.advance(14_000)
+  finish(f.thread); f.wakes.observe()
+  await f.advance(WATCHER_ORDINARY_BATCH_MAX_MS - 59_000)
+  expect(f.delivered).toHaveLength(1)
+  expect(f.delivered[0]!.events.some(event => event.kind === 'turn-finished' && event.target.threadId === 'worker-2')).toBe(true)
+  expect(f.delivered[0]!.events.some(event => event.kind === 'turn-finished' && event.target.threadId === 'worker')).toBe(false)
+})
+
+it('ignores a late pull request read that is older than the one Sotto holds', () => {
+  const store = new WatcherEvidenceStore(), url = prUrl
+  store.pullRequest(centerTarget, { url, head: 'h2', observedAt: '2026-10-19T10:00:02.000Z', availability: 'available', conflicting: false })
+  store.pullRequest(centerTarget, { url, head: 'h1', observedAt: '2026-10-19T10:00:01.000Z', availability: 'available', conflicting: true })
+  expect([...store.attentionByPullRequest(centerTarget).values()].flatMap(kinds => [...kinds])).not.toContain('conflicting')
+})
+
+it('wakes Watcher when the checks the base branch requires pass, before every check has', async () => {
+  const f = fixture()
+  f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
+  f.wakes.pullRequest({ url: prUrl, head: 'h1', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'pending', checkCount: 5, requiredPassed: true })
+  await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(1)
+  expect(watcherPullRequestWords(f.wakes.evidence.attentionByPullRequest(centerTarget), f.thread)).toBe('Pull request #9: its required checks passed on its newest commit.')
 })
 
 it('says a busy finish once beside its work-settled news, and lets Sotto’s detail give way before any event', () => {

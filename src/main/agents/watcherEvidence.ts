@@ -18,12 +18,20 @@ export interface PullRequestObservation {
   changesRequested?: boolean
   /** Babysitting's text-free fingerprint of the comment, review and review-thread counts and newest edits (ADR-0061). */
   remarks?: string
+  /** Whether every check the base branch requires passed on `head`, as babysitting reads it (ADR-0061). */
+  requiredPassed?: boolean
 }
 /**
  * What a pull request says that needs Watcher (#1190), beyond the evidence it keeps: a conflict, a review asking for
- * changes, and how many times its comments or reviews moved since Sotto first read them. In memory only, like evidence.
+ * changes, its required checks passing on a head, and how many times its comments or reviews moved since Sotto first read
+ * them. In memory only, like evidence; `observedAt` keeps a late read from undoing a newer one.
  */
-interface PullRequestAttention { conflicting?: boolean; changesRequested?: boolean; remarks?: string; remarksMoved: number }
+interface PullRequestAttention { conflicting?: boolean; changesRequested?: boolean; remarks?: string; remarksMoved: number; requiredPassedHead?: string; observedAt: string }
+/** One thing a pull request says that needs Watcher, and the key that tells it from what Watcher was told before. */
+export type WatcherAttentionKind = 'checks-failed' | 'checks-passed' | 'required-passed' | 'merged' | 'closed' | 'approved' | 'changes-requested' | 'conflicting' | 'remarks'
+export interface WatcherAttentionFact { readonly pr: string; readonly kind: WatcherAttentionKind; readonly key: string }
+/** The kinds evidence does not hold, which an evidence event compares beside its facts. */
+const BESIDE_EVIDENCE: ReadonlySet<WatcherAttentionKind> = new Set(['required-passed', 'changes-requested', 'conflicting', 'remarks'])
 export interface CheckpointObservation {
   threadId: string; checkpointId: string; observedAt: string; turnId?: string; changedFiles?: number
   availability: 'available' | 'unavailable' | 'unsupported'; reason?: 'capture-unavailable' | 'shared-checkout' | 'unsupported'
@@ -81,39 +89,47 @@ export class WatcherEvidenceStore {
       .map(item => { const { id, observedAt, ...said } = item; void id; void observedAt; return JSON.stringify(said) }).sort())
   }
   /**
-   * The pull request facts that need Watcher (#1190): checks failed or passed on a head, merged or closed, approved or
-   * asked for changes, a conflict, and each move of its comments or reviews. A fact here that was not there before wakes
-   * Watcher; a pending check, a new head, a check count or auto-merge alone does not, and rides with what does.
+   * The pull request facts that need Watcher (#1190): checks failed or passed on a head, its required checks passed on a
+   * head, merged or closed, approved or asked for changes, a conflict, and each move of its comments or reviews. A fact here
+   * that was not there before wakes Watcher; a pending check, a new head, a check count or auto-merge alone does not, and
+   * rides with what does.
    */
-  attention(target: WatcherThreadTarget): Set<string> {
-    const facts = new Set<string>()
+  attentionFacts(target: WatcherThreadTarget): WatcherAttentionFact[] {
+    const facts: WatcherAttentionFact[] = []
+    const add = (pr: string, kind: WatcherAttentionKind, detail = '') => facts.push({ pr, kind, key: JSON.stringify([pr, kind, detail]) })
+    const passed = new Set<string>()
     for (const item of this.entries.get(targetKey(target))?.values() ?? []) {
       if (item.source !== 'github' || !item.url || item.availability !== 'available') continue
       const pr = pullRequestKey(item.url) ?? item.url
-      if (item.checksState === 'failed' || item.checksState === 'passed') facts.add(`${pr}|checks-${item.checksState}|${item.headId ?? ''}`)
-      if (item.pullRequestState === 'merged' || item.pullRequestState === 'closed') facts.add(`${pr}|${item.pullRequestState}`)
-      if (item.githubReviewApproved === true) facts.add(`${pr}|approved`)
+      if (item.checksState === 'failed' || item.checksState === 'passed') add(pr, `checks-${item.checksState}`, item.headId ?? '')
+      if (item.checksState === 'passed') passed.add(JSON.stringify([pr, item.headId ?? '']))
+      if (item.pullRequestState === 'merged' || item.pullRequestState === 'closed') add(pr, item.pullRequestState)
+      if (item.githubReviewApproved === true) add(pr, 'approved')
     }
     for (const [pr, said] of this.attending.get(targetKey(target)) ?? []) {
-      if (said.conflicting) facts.add(`${pr}|conflicting`)
-      if (said.changesRequested) facts.add(`${pr}|changes-requested`)
-      if (said.remarksMoved) facts.add(`${pr}|remarks|${said.remarksMoved}`)
+      // Every check passing already says the required ones did.
+      if (said.requiredPassedHead !== undefined && !passed.has(JSON.stringify([pr, said.requiredPassedHead]))) add(pr, 'required-passed', said.requiredPassedHead)
+      if (said.conflicting) add(pr, 'conflicting')
+      if (said.changesRequested) add(pr, 'changes-requested')
+      if (said.remarksMoved) add(pr, 'remarks', String(said.remarksMoved))
     }
     return facts
   }
+  /** Whether Sotto holds any read of this thread's pull requests: without one, what they say is unknown, not nothing. */
+  readsPullRequests(target: WatcherThreadTarget): boolean {
+    for (const item of this.entries.get(targetKey(target))?.values() ?? []) if (item.source === 'github') return true
+    return false
+  }
+  attention(target: WatcherThreadTarget): Set<string> { return new Set(this.attentionFacts(target).map(fact => fact.key)) }
   /** Each linked pull request's attention facts, by pull request, for the words a wake-up carries. */
-  attentionByPullRequest(target: WatcherThreadTarget): Map<string, Set<string>> {
-    const byPr = new Map<string, Set<string>>()
-    for (const fact of this.attention(target)) {
-      const [pr, said] = fact.split('|')
-      if (!byPr.has(pr!)) byPr.set(pr!, new Set())
-      byPr.get(pr!)!.add(said!)
-    }
+  attentionByPullRequest(target: WatcherThreadTarget): Map<string, Set<WatcherAttentionKind>> {
+    const byPr = new Map<string, Set<WatcherAttentionKind>>()
+    for (const fact of this.attentionFacts(target)) byPr.set(fact.pr, (byPr.get(fact.pr) ?? new Set()).add(fact.kind))
     return byPr
   }
-  /** The conflict, review and remark facts only, which evidence does not hold, so a change to them is a change too. */
+  /** The facts evidence does not hold, so a change to them is a change too. */
   attentionIdentity(target: WatcherThreadTarget): string[] {
-    return [...this.attention(target)].filter(fact => /\|(?:conflicting|changes-requested|remarks)/u.test(fact)).sort()
+    return this.attentionFacts(target).filter(fact => BESIDE_EVIDENCE.has(fact.kind)).map(fact => fact.key).sort()
   }
   removeMissing(targets: ReadonlySet<string>): void {
     for (const key of this.entries.keys()) if (!targets.has(key)) this.entries.delete(key)
@@ -161,20 +177,26 @@ export class WatcherEvidenceStore {
     const attended = read.availability === 'available' && this.attend(target, read)
     return this.observePullRequest(target, read, 'pr:') || attended
   }
-  /** Keeps what a read says of a conflict, a review asking for changes and its remarks. Whether any of that changed. */
+  /**
+   * Keeps what a read says of a conflict, a review asking for changes, its required checks and its remarks. Whether any of
+   * that changed. A read older than the one kept says nothing new, as evidence ignores a late answer for an earlier head.
+   */
   private attend(target: WatcherThreadTarget, read: PullRequestObservation): boolean {
-    if (read.conflicting === undefined && read.changesRequested === undefined && read.remarks === undefined) return false
+    if (read.conflicting === undefined && read.changesRequested === undefined && read.remarks === undefined && read.requiredPassed === undefined) return false
     const key = targetKey(target), pr = pullRequestKey(read.url) ?? read.url
     const byPr = this.attending.get(key) ?? new Map<string, PullRequestAttention>()
-    const before = byPr.get(pr) ?? { remarksMoved: 0 }, after = { ...before }
+    const before = byPr.get(pr) ?? { remarksMoved: 0, observedAt: read.observedAt }, after = { ...before, observedAt: read.observedAt }
+    if (Date.parse(read.observedAt) < Date.parse(before.observedAt)) return false
     if (read.conflicting !== undefined) after.conflicting = read.conflicting
     if (read.changesRequested !== undefined) after.changesRequested = read.changesRequested
+    if (read.requiredPassed !== undefined) { if (read.requiredPassed && read.head) after.requiredPassedHead = read.head; else delete after.requiredPassedHead }
     // The first read of its remarks is where they stand, not news; each move after it is.
     if (read.remarks !== undefined) { if (before.remarks !== undefined && before.remarks !== read.remarks) after.remarksMoved++; after.remarks = read.remarks }
     byPr.set(pr, after)
     while (byPr.size > 50) byPr.delete(byPr.keys().next().value!)
     this.attending.set(key, byPr)
     return after.conflicting !== before.conflicting || after.changesRequested !== before.changesRequested || after.remarksMoved !== before.remarksMoved
+      || after.requiredPassedHead !== before.requiredPassedHead
   }
   /** Paired observations share fact replacement rules, but shell link summaries cannot erase owning-host facts. */
   paired(fact: WatcherEvidence): boolean {

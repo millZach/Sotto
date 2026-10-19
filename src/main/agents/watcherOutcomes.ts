@@ -111,6 +111,18 @@ function turnOfReply(turns: readonly Turn[], position: number, message: AgentMes
   return turn
 }
 
+/**
+ * The reply the thread's newest turn gave, for its news (#1190): its last worker message that belongs to that turn by the
+ * rule outcomes use, so a steer shown above an earlier turn's reply never takes it. Undefined when the newest turn cannot
+ * be placed or wrote nothing.
+ */
+export function watcherNewestTurnReply(thread: AgentThread): AgentMessage | undefined {
+  const messages = thread.messages.filter(message => !isVisualMessage(message))
+  const turns = turnsOf(thread, messages), newest = turns.at(-1)
+  if (!newest) return undefined
+  return messages.findLast((message, position) => message.role === 'assistant' && message.text.trim() !== '' && turnOfReply(turns, position, message) === newest)
+}
+
 /** The newest turn's Sotto anchor, for naming the delegation a turn's news answers. */
 export function watcherLatestTurnMessageId(thread: AgentThread): string | undefined {
   const messages = thread.messages.filter(message => !isVisualMessage(message))

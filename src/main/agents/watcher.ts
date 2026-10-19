@@ -32,7 +32,7 @@ import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from '
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { watcherOwnChanges } from './watcherOwnChanges'
 import { watcherReceiptReplies } from './watcherReceiptReplies'
-import { WATCHER_FINAL_OUTCOMES, watcherLatestTurnMessageId, watcherTurnOutcome } from './watcherOutcomes'
+import { WATCHER_FINAL_OUTCOMES, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherTurnOutcome } from './watcherOutcomes'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts } from '../../shared/watcherHost'
 
 const now = () => new Date().toISOString()
@@ -266,7 +266,7 @@ export class WatcherService implements WatcherControlHooks {
       if (!thread) return undefined
       if (event.kind === 'evidence-changed') return watcherPullRequestWords(this.wakes.evidence.attentionByPullRequest(event.target), thread)
       if (event.kind !== 'turn-finished' && event.kind !== 'turn-failed' && event.kind !== 'work-settled') return undefined
-      return watcherReplyStart(thread, event.turnId)
+      return watcherReplyStart(thread, event.turnId, watcherNewestTurnReply(thread))
     }
   }
   private transaction<T>(work: () => Promise<T>): Promise<T> {
