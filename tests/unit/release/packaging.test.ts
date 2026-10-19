@@ -159,6 +159,8 @@ describe('release contract', () => {
       verifier.indexOf('const smoke = await verifyNormalPackagedLaunch'),
     )
     expect(verifier).not.toContain('.matchAll(')
+    expect(verifier).toContain("...(profile.key === 'win32' ? [join(resources, 'native', 'win32.cs')] : []),")
+    expect(verifier).toContain("join(resources, 'native', 'sotto-key-listener')")
   })
 
   it('refuses retired voice assets in the package', () => {

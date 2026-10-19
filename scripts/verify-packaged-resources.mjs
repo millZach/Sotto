@@ -244,10 +244,11 @@ export async function verifyPackagedResources(input, options = {}) {
     asarPath,
     join(resources, 'README.md'),
     join(resources, 'THIRD_PARTY_NOTICES.md'),
-    // The menu-bar template icons are macOS-only extraResources.
+    // The menu-bar template icons are macOS-only; the key listener ships per platform (none on Linux).
     ...(profile.key === 'darwin'
-      ? [join(resources, 'tray', 'sottoTemplate.png'), join(resources, 'tray', 'sottoTemplate@2x.png')]
+      ? [join(resources, 'tray', 'sottoTemplate.png'), join(resources, 'tray', 'sottoTemplate@2x.png'), join(resources, 'native', 'sotto-key-listener')]
       : []),
+    ...(profile.key === 'win32' ? [join(resources, 'native', 'win32.cs')] : []),
     ...(profile.key === 'linux' ? [
       join(resources, 'omarchy', 'bindings.lua'),
       join(resources, 'omarchy', 'sotto.json.tpl'),
@@ -258,6 +259,10 @@ export async function verifyPackagedResources(input, options = {}) {
     ] : []),
   ]) {
     if (!existsSync(required)) fail(`missing ${relative(target, required)}`)
+  }
+  if (profile.key === 'darwin') {
+    const keyListener = join(resources, 'native', 'sotto-key-listener')
+    if (((await stat(keyListener)).mode & 0o111) === 0) fail(`${relative(target, keyListener)} is not executable`)
   }
 
   const entries = listAsarEntries(asarPath)

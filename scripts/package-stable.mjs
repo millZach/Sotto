@@ -51,6 +51,7 @@ export async function packageStable(platform, args = [], root = resolve(import.m
   await withStableManifestGuard(async () => {
     run(npm, ['run', 'assets:verify'])
     run(npm, ['run', 'build'])
+    if (platform === 'mac') run(resolve(root, 'scripts/build-key-listener.mjs'))
     run(resolve(root, 'scripts/write-build-provenance.mjs'))
     recheck()
     const targets = { win: [Platform.WINDOWS, Arch.x64], mac: [Platform.MAC, Arch.arm64], linux: [Platform.LINUX, Arch.x64] }
