@@ -264,6 +264,19 @@ describe('setting aside unconfirmed sends', () => {
     }
   })
 
+  it('lets setup the user asks for in Watcher\'s room pass a prompt set aside, while Watcher\'s own sends still wait', async () => {
+    const f = await fixture(), draftId = randomUUID()
+    f.host.withheld = 'uncertain'
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'Original unknown prompt' })
+    expect((await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })).error).toBeNull()
+    f.host.withheld = null
+    f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+      guardOperation: () => undefined, preserveUserQueue: () => false })
+    // Watcher's room carries a Watcher origin for its guard, but its model and permission changes are the user's.
+    expect((await f.control.commandForWatcherRoom({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'high' })).error).toBeNull()
+    expect((await f.control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic before a fresh message' }, { guard: () => undefined })).error).toMatch(/unknown result/)
+  })
+
   it('lets a change the user makes pass a prompt set aside, while automatic work still waits for a fresh one', async () => {
     const f = await fixture(), draftId = randomUUID()
     f.host.withheld = 'uncertain'
