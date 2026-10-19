@@ -67,6 +67,13 @@ export type QuestionPageOpening = { readonly kind: 'file'; readonly file: string
 const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['create-thread', 'create-project', 'continue-agent', 'fork-thread'])
 /** The commands that may name the machine they act on, which the router reads and never sends on. */
 const HOST_NAMED_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['connect', 'disconnect', 'refresh', 'check-client-updates', 'update-client', 'queue-client-updates'])
+/**
+ * A read the window made on its own, when it regained focus or a pane opened, not anything the user pressed. A host that
+ * cannot answer one is already shown as disconnected or reconnecting, so it answers with the shell rather than a failure.
+ */
+const windowRead = (command: AgentCommand): boolean => command.type === 'refresh-thread-worktree' && command.background === true
+/** The connection to a host closed under a request; the host itself refused nothing. */
+const droppedConnection = (error: unknown): boolean => error instanceof HostConnectionError && error.code === 'disconnected'
 
 /** A state without its client updates, which belong to the machine that runs those clients. */
 function withoutClientUpdates(state: AgentState): AgentState {
@@ -820,8 +827,14 @@ export class DesktopHostRouter {
         if (connection.available?.() === false) return
         const ids = rawIds.filter(id => (parseHostEntityKey(id)?.hostId ?? this.selectedHostId) === connection.hostId).map(id => parseHostEntityKey(id)?.id ?? id)
         const visibleIds = ids.filter(id => this.watcherAvailable(connection, id))
-        if (connection.observe) await connection.observe(visibleIds)
-        else await connection.service.command({ type: 'observe-threads', threadIds: visibleIds }, client)
+        try {
+          if (connection.observe) await connection.observe(visibleIds)
+          else await connection.service.command({ type: 'observe-threads', threadIds: visibleIds }, client)
+        } catch (error) {
+          // A connection that drops while the open panes are read is no one's action to report: the host reads the
+          // same panes again when it reconnects, and its threads read Reconnecting until then.
+          if (!droppedConnection(error)) throw error
+        }
       }))
       return this.shell()
     }
@@ -848,7 +861,10 @@ export class DesktopHostRouter {
       this.emit(); return this.shell()
     }
     if (connection.kind === 'remote' && command.type === 'set-aside-send') return { ...this.shell(), error: 'Continue with a new message on the desktop that owns this thread. Nothing was changed.' }
-    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again before sending. No command was sent.')
+    if (connection.available?.() === false) {
+      if (windowRead(command)) return this.shell()
+      throw new Error(`${connection.name} is disconnected. Nothing was sent. Try again once it reconnects.`)
+    }
     if (connection.kind === 'remote' && ['open-thread-folder', 'open-folder'].includes(command.type)) throw new Error('This folder is on the host machine. Open it there.')
     if (command.type === 'preview-reclaim-thread-worktree') {
       try {
@@ -901,6 +917,7 @@ export class DesktopHostRouter {
           ? { answer: { hostId: connection.hostId, decisionId, target: answerTarget } } : {}) }
       }
     } catch (error) {
+      if (windowRead(command) && droppedConnection(error)) return this.shell()
       // The host refused this action before dispatch. Return its account through the same state error
       // as a coordinator refusal, so a permission chip does not mistake it for a lost provider answer.
       // A dropped connection is still uncertain and must keep the renderer's recovery path.

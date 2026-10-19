@@ -24,6 +24,14 @@ export interface AgentConnection {
 const DETAIL_CACHE_LIMIT = 16
 /** At most one cache write per this long; the shell arrives as often as a provider streams. */
 const SHELL_CACHE_INTERVAL_MS = 2_000
+/** Said when main gave no reason in words: a code, a schema failure or nothing at all. */
+const COMMAND_UNCONFIRMED = 'The action could not be confirmed. Your draft is retained; check the connection before retrying.'
+
+/** Main's own sentence for a command that failed, such as which host is disconnected, or the unconfirmed sentence. */
+export function commandFailure(error: unknown): string {
+  const said = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:[A-Za-z]*Error: )?/u, '').trim() : ''
+  return /^[^\s[{].*\s.*[.!?]$/su.test(said) ? said : COMMAND_UNCONFIRMED
+}
 
 export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnection {
   const watcherEnabled = useWatcherEnabled()
@@ -203,8 +211,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
           if (request.type !== 'preview-reclaim-thread-worktree' && version === session.observed) { commitPendingShell({ urgent: true }); receiveState(next, { urgent: true }) }
         }
         return visibleWatcherState(next, watcherEnabledRef.current)
-      } catch {
-        if (session.current) setFailure({ session, error: 'The action could not be confirmed. Your draft is retained; check the connection before retrying.' })
+      } catch (error) {
+        if (session.current) setFailure({ session, error: commandFailure(error) })
         return null
       }
     }

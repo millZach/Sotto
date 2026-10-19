@@ -530,6 +530,31 @@ describe('desktop host routing', () => {
     router.remove(REMOTE)
     await expect(router.threadDetail(hostEntityKey(REMOTE, 'thread'))).rejects.toThrow('Connect a host')
   })
+  it('keeps a dropped host out of the window\'s own reads, and names it when the user\'s action cannot reach it', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const dropped = () => new HostConnectionError('The host connection closed. Connect again to refresh.', 'disconnected')
+    let available = true
+    remote.observe.mockImplementation(async () => { throw dropped() })
+    router.add(local.connection); router.add({ ...remote.connection, available: () => available })
+    // The panes being read when the connection drops are read again on reconnect; the other host's still are now.
+    await expect(router.command({ type: 'observe-threads', threadIds: [hostEntityKey(LOCAL, 'thread'), hostEntityKey(REMOTE, 'thread')] }, desktopWindowClient())).resolves.toMatchObject({ error: null })
+    expect(local.observe).toHaveBeenCalledWith(['thread'])
+    remote.observe.mockImplementationOnce(async () => { throw new HostConnectionError('Forge refused this.', 'forbidden') })
+    await expect(router.command({ type: 'observe-threads', threadIds: [hostEntityKey(REMOTE, 'thread')] }, desktopWindowClient())).rejects.toThrow('Forge refused this.')
+    // A branch re-read the window made when it regained focus, lost in flight or never sent, is no failure.
+    remote.command.mockImplementationOnce(async () => { throw dropped() })
+    const background = { type: 'refresh-thread-worktree', threadId: hostEntityKey(REMOTE, 'thread'), background: true } as const
+    await expect(router.command(background, desktopWindowClient())).resolves.toMatchObject({ error: null })
+    available = false
+    remote.command.mockClear()
+    await expect(router.command(background, desktopWindowClient())).resolves.toMatchObject({ error: null })
+    expect(remote.command).not.toHaveBeenCalled()
+    // What the user pressed is refused in words that name the host.
+    await expect(router.command({ type: 'refresh-thread-worktree', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient()))
+      .rejects.toThrow('Forge is disconnected. Nothing was sent. Try again once it reconnects.')
+    await expect(router.command({ type: 'rename-thread', threadId: hostEntityKey(REMOTE, 'thread'), title: 'Renamed' }, desktopWindowClient()))
+      .rejects.toThrow('Forge is disconnected.')
+  })
 })
 
 it('reads each owning host catalog and capabilities when model IDs collide', () => {
