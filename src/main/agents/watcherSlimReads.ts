@@ -44,7 +44,18 @@ function summariesByKey(evidence: readonly WatcherEvidence[]): Map<string, Watch
   }))
 }
 export function watcherPullRequestSummaries(evidence: readonly WatcherEvidence[]): WatcherPullRequestSummary[] {
-  return [...summariesByKey(evidence).values()]
+  const urls = new Map<string, string>()
+  for (const item of evidence) if (item.source === 'github' && item.url && !urls.has(prKey(item.url))) urls.set(prKey(item.url), item.url)
+  return addressShared([...summariesByKey(evidence)].map(([key, summary]) => ({ url: urls.get(key) ?? key, summary })))
+}
+/**
+ * Pull requests of one thread that share a number, as `api#42` and `ui#42` can, keep their addresses as well, so Watcher
+ * can tell which one a summary is of.
+ */
+function addressShared(items: readonly { url: string; summary: WatcherPullRequestSummary }[]): WatcherPullRequestSummary[] {
+  const counts = new Map<number, number>()
+  for (const { summary } of items) if (summary.number !== undefined) counts.set(summary.number, (counts.get(summary.number) ?? 0) + 1)
+  return items.map(({ url, summary }) => summary.number !== undefined && counts.get(summary.number)! > 1 && summary.url === undefined ? { ...summary, url } : summary)
 }
 
 type Rows = Extract<WatcherToolOutput<'list_threads'>, { status: 'ok' }>['rows']
@@ -55,8 +66,8 @@ type FullRow = Extract<Rows[number], { evidence: unknown }>
  */
 export function watcherSlimRow(row: FullRow, watched: boolean) {
   const said = summariesByKey(row.evidence)
-  const open = row.pullRequests.filter(pr => pr.state === 'open').slice(0, 50)
-    .map(pr => ({ ...said.get(prKey(pr.url)) ?? { stale: true as const }, number: pr.number, state: said.get(prKey(pr.url))?.state ?? pr.state }))
+  const open = addressShared(row.pullRequests.filter(pr => pr.state === 'open').slice(0, 50)
+    .map(pr => ({ url: pr.url, summary: { ...said.get(prKey(pr.url)) ?? { stale: true as const }, number: pr.number, state: said.get(prKey(pr.url))?.state ?? pr.state } })))
   return { target: row.target, title: row.title, projectId: row.projectId, status: row.status, group: row.group, waitsOn: row.waitsOn,
     watched, ...row.standingWatch ? { standingWatchId: row.standingWatch.id } : {}, connected: row.connected,
     ...row.protected ? { protected: true as const } : {}, pullRequests: open }

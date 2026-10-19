@@ -8,7 +8,7 @@ October 19, 2026. Everything a `sotto_threads` tool returns stays in Watcher's c
 - `read_thread` gives one summary per pull request in place of every evidence fact. `evidence: "full"` gives every fact.
 - `list_projects` leaves out the model lists unless `includeModels: true`, and takes `projectId` and `query` (title or folder) filters.
 
-A pull request's summary is its number, state and checks, `approved` and `autoMerge` only when on, and `stale` only when a fact is not fresh. The tools still build their full results, as a paired host answers them. The desktop takes what Watcher asked for from them as the last step, and never sends a paired host the new keys, so a host on any version answers as before.
+A pull request's summary is its number, its address too when another of the thread's pull requests has the same number, its state and checks, `approved` and `autoMerge` only when on, and `stale` only when a fact is not fresh. The tools still build their full results, as a paired host answers them. The desktop takes what Watcher asked for from them as the last step, and never sends a paired host the new keys, so a host on any version answers as before.
 
 ## Measured
 

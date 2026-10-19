@@ -104,3 +104,15 @@ it('measures what the slim reads save on a roster the size of the October 19 ses
   expect(sizes.listProjects[1]! * 50).toBeLessThan(sizes.listProjects[0]!)
   if (process.env.SOTTO_PERF_REPORT === '1') console.info(JSON.stringify(sizes))
 })
+
+it('keeps the address of pull requests that share a number, so Watcher can tell them apart', () => {
+  const api = 'https://github.com/synthetic/api/pull/42', ui = 'https://github.com/synthetic/ui/pull/42'
+  const facts = (url: string, checks: 'passed' | 'failed') => prFacts('a', 42, checks).map(fact => ({ ...fact, url }))
+  expect(watcherPullRequestSummaries([...facts(api, 'failed'), ...facts(ui, 'passed'), ...prFacts('a', 7)])).toEqual([
+    { number: 42, url: api, state: 'open', checks: 'failed' }, { number: 42, url: ui, state: 'open', checks: 'passed' }, { number: 7, state: 'open', checks: 'passed' }])
+  const full = roster(1, 0), row = full.rows[0] as Extract<FullRows[number], { evidence: unknown }>
+  row.pullRequests = [{ number: 42, url: api, title: 'API', state: 'open', draft: false }, { number: 42, url: ui, title: 'UI', state: 'open', draft: false }]
+  row.evidence = [...facts(api, 'failed'), ...facts(ui, 'passed')]
+  const slim = watcherSlimRead('list_threads', {}, full, () => true) as typeof full
+  expect(slim.rows[0]).toMatchObject({ pullRequests: [{ number: 42, url: api, checks: 'failed' }, { number: 42, url: ui, checks: 'passed' }] })
+})
