@@ -190,6 +190,8 @@ describe('sub-agent history durability', () => {
     const erasing = committed(() => store.privacyChanged(false))
     expect(erasing.length).toBeGreaterThan(0)
     expect(erasing.every(setting => setting === FULL)).toBe(true)
+    // Putting the roster on the disk is a commit that waits for it, not a checkpoint a reader can hold back.
+    expect(committed(() => store.flushToDisk())).toEqual([FULL])
     // While history is off, the attached file holds only erased identities, and it keeps SQLite's default.
     expect(synchronous(connection(store), 'privacy')).toBe(FULL)
   })

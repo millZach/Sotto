@@ -3,6 +3,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import { SubagentStore } from '../../../src/main/agents/subagentStore'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
@@ -53,6 +54,22 @@ it('migrates legacy activity without putting output back in workspace JSON and r
   await f.close(host)
   const reopened = await f.open()
   expect(reopened.workspaceSnapshot().threads[0]!.activities).toEqual(f.provider.state.threads[0]!.activities)
+})
+
+it('puts the sub-agent roster on the disk before it saves legacy activity without its task words', async () => {
+  const f = await fixture(() => true, true)
+  const flushed = vi.spyOn(SubagentStore.prototype, 'flushToDisk'), synced = vi.spyOn(ThreadStore.prototype, 'syncActivities')
+  await f.open()
+  expect(flushed).toHaveBeenCalled()
+  expect(synced).toHaveBeenCalled()
+  expect(flushed.mock.invocationCallOrder[0]).toBeLessThan(synced.mock.invocationCallOrder[0]!)
+})
+
+it('keeps legacy activity in workspace.json when the roster cannot reach the disk', async () => {
+  const f = await fixture(() => true, true)
+  vi.spyOn(SubagentStore.prototype, 'flushToDisk').mockImplementation(() => { throw new Error('Synthetic roster flush failure') })
+  await f.open().catch(() => undefined)
+  expect(await readFile(join(f.directory, 'workspace.json'), 'utf8')).toContain('Retained tool output')
 })
 
 it('persists changed activity independently while repeated frames avoid organization writes', async () => {

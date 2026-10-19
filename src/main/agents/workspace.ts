@@ -1821,9 +1821,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             thread.messages = []
             messageGeneration = this.threadStore.readMessageEpoch(thread.id)
           }
-          // Retain legacy child tasks before the activity migration removes their payload.
+          // Retain legacy child tasks before the activity migration removes their payload. The commit below saves the
+          // records without their task words, so the roster's copy of the words reaches the disk first; if it cannot,
+          // this fails as a failed migration does, and workspace.json keeps the records.
           this.trackSubagents(thread, false)
-          this.rosterFlushPending = true
+          if (!this.subagentUnavailable) this.subagentStore.flushToDisk()
           // The flush after this drops the records from workspace.json, so they wait for the disk here first.
           this.threadStore.flushed(() => this.threadStore.syncActivities(thread.id, retainedActivities(thread.activities!), thread.historyEpoch))
         }
@@ -1863,6 +1865,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // Every thread's records in one transaction: a save with several busy threads pays one disk flush, not one each.
     this.threadStore.syncActivitiesMany(this.state.snapshot.threads.filter(thread => this.visible(thread) && thread.activities !== undefined)
       .map(thread => ({ threadId: thread.id, activities: retainedActivities(thread.activities!), epoch: thread.historyEpoch })))
+  }
+  /**
+   * Before a save that strips moved task words from records, puts the roster, their only other copy, on the disk. It
+   * throws when it cannot, so the caller saves nothing and the records keep their words.
+   */
+  private rosterToDisk(): void {
+    if (!this.subagentWordsPending && !this.rosterFlushPending) return
+    if (!this.subagentUnavailable) this.subagentStore.flushToDisk()
+    this.rosterFlushPending = false
   }
   /** Once the records a start read whole are saved back without their words, later starts need not read them (#918). */
   private noteSubagentWordsMoved(): void {
@@ -2503,7 +2514,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     for (const timer of this.worktreeRefreshes.values()) clearTimeout(timer)
     this.worktreeRefreshes.clear()
     if (this.gitStatusTimer) { clearInterval(this.gitStatusTimer); this.gitStatusTimer = undefined }
-    try { if (this.ready) { this.writeEvents(true); this.saveActivities() } }
+    // A roster that cannot reach the disk leaves the records unstripped, as the flush does.
+    try { if (this.ready) { this.writeEvents(true); this.rosterToDisk(); this.saveActivities() } }
     catch { this.saveError = 'Thread activity could not be saved. Restore local storage and restart Sotto.' }
     finally { this.threadStore.close(); this.subagentStore.close() }
     if (this.subagentTimer) clearTimeout(this.subagentTimer)
@@ -2956,10 +2968,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             // Task words moved into the roster from records this save strips (#918), or from workspace.json's legacy
             // activity, are the roster's only copy once the strip or the JSON write lands, so the roster reaches the disk
             // first; a power cut between them would otherwise lose the words.
-            if (this.subagentWordsPending || this.rosterFlushPending) {
-              if (!this.subagentUnavailable) this.subagentStore.flushToDisk()
-              this.rosterFlushPending = false
-            }
+            this.rosterToDisk()
             this.saveActivities(); this.noteSubagentWordsMoved()
             // The coordinator holds the lists it was last handed, so a release is published for it to let them go too.
             if (this.releaseIdleActivities()) this.publishSoon()
@@ -3087,6 +3096,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             this.activityStoreUnavailable = false
           }
           if (wanted) {
+            this.rosterToDisk()
             this.saveActivities()
             this.threadStore.becomeDurable()
             this.seedWakeUps()
