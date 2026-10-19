@@ -3778,8 +3778,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.inner.disconnect(provider)
     if (!this.ready) return
     const snapshot = this.state.snapshot
-    snapshot.providers?.filter(item => !provider || item.id === provider).forEach(item => { item.connection = 'disconnected' })
-    // The catalog is shared with the layers either side and never edited in place.
+    // The provider rows and the catalog are shared with the layers either side and never edited in place.
+    if (snapshot.providers) snapshot.providers = snapshot.providers.map(item => !provider || item.id === provider ? { ...item, connection: 'disconnected' as const } : item)
     snapshot.models = snapshot.models.map(model => model.ready && (!provider || model.providerId === provider) ? { ...model, ready: false } : model)
     snapshot.connected = snapshot.providers?.some(item => item.connection === 'connected') ?? false
     for (const thread of snapshot.threads.filter(thread => this.visible(thread))) if (!provider || thread.providerId === provider) {
