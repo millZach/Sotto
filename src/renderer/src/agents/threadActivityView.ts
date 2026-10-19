@@ -525,12 +525,18 @@ export function changeDiffIsCut(record: AgentActivity, index: number): boolean {
 /** Every file a turn changed, first touched first, so a finished turn can say what it left behind. */
 export function turnChanges(groups: readonly ActivityGroup[]): readonly TurnChange[] {
   const files = new Map<string, { path: string; verb: string; diffs: string[]; sources?: (TurnDiffSource | undefined)[] }>()
+  const seenByPath = new Map<string, Set<string>>()
   const records = groups.flatMap(group => [...group.records]).sort(bySequence)
   for (const record of records) {
     if (record.kind !== 'file-change') continue
     for (const [index, change] of activityChanges(record).entries()) {
       const file = files.get(change.path) ?? { path: change.path, verb: changeVerb(change.kind), diffs: [] }
-      if (change.diff && !file.diffs.includes(change.diff)) {
+      const seenDiffs = seenByPath.get(change.path) ?? new Set<string>()
+      seenByPath.set(change.path, seenDiffs)
+      // A cut diff is only its start, so two edits that open alike are told apart by how long each was whole.
+      const seen = change.diff && changeDiffIsCut(record, index) ? `${change.diff}\u0000${cutDiffBytes(record, index)}` : change.diff
+      if (change.diff && seen && !seenDiffs.has(seen)) {
+        seenDiffs.add(seen)
         file.diffs.push(change.diff)
         if (changeDiffIsCut(record, index)) {
           file.sources ??= file.diffs.slice(0, -1).map(() => undefined)
@@ -541,6 +547,11 @@ export function turnChanges(groups: readonly ActivityGroup[]): readonly TurnChan
     }
   }
   return [...files.values()]
+}
+
+/** How long a cut diff was whole: its own size when the host cut it, else the size of the tool input it is drawn from. */
+function cutDiffBytes(record: AgentActivity, index: number): number | undefined {
+  return record.cut?.diffs?.find(item => item.index === index)?.bytes ?? record.cut?.text
 }
 
 /** The header of a settled group: how the turn ended and, when recorded, how long it took. */

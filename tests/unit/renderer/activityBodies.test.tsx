@@ -221,4 +221,33 @@ describe('cut activity bodies on a remote thread (ADR-0025, October 18 amendment
     const kept = ['a', 'b', 'c', 'd', 'e'].filter(id => cache.get(ActivityBodyCache.key('remote:thread', { ...sentTest, id }))?.status === 'loaded')
     expect(kept).toEqual(['c', 'd', 'e'])
   })
+  it('lists two edits of a file whose cut diffs open alike, and one edit reported twice once', () => {
+    const second = cutActivityBodies({ ...wholeEdit, id: 'edit-2', sequence: 3, changes: [{ path: 'src/main/hosts/hostRouter.ts', kind: 'edit', diff: lines(260, '+ const') }] })
+    const again = { ...sentEdit, id: 'edit-3', sequence: 4 }
+    const [file] = turnChanges([group([sentEdit, second, again])])
+    expect(file!.diffs).toHaveLength(2)
+    expect(file!.sources?.map(source => source?.record.id)).toEqual(['edit', 'edit-2'])
+  })
+
+  it('does not ask for a record whose only cut body is input the row leaves out', async () => {
+    const user = userEvent.setup()
+    const input = JSON.stringify({ file_path: 'src/main/hosts/hostRouter.ts', old_string: lines(80, 'old'), new_string: lines(80, 'new') })
+    const sent = cutActivityBodies({ ...wholeEdit, id: 'claude-edit', text: input, changes: [{ path: 'src/main/hosts/hostRouter.ts', kind: 'edit', diff: '- old\n+ new' }] })
+    expect(sent.cut?.text).toBeDefined()
+    rows([sent])
+    await user.click(screen.getByRole('button', { name: /Edited src\/main\/hosts\/hostRouter.ts/u }))
+    expect(screen.getByText(/\+ new/u)).toBeInTheDocument()
+    expect(screen.queryByText(/from forge/u)).toBeNull()
+    expect(fetchBody).not.toHaveBeenCalled()
+  })
+
+  it('keeps the cache bounded when reads fail', async () => {
+    const fetch = vi.fn(async ({ activityId }: { activityId: string }) => activityId.startsWith('gone') ? null : ({ ...wholeTest, id: activityId }))
+    const cache = new ActivityBodyCache(() => fetch, { entries: 3, bytes: Number.MAX_SAFE_INTEGER })
+    const ids = ['gone-a', 'gone-b', 'gone-c', 'gone-d', 'e', 'f']
+    for (const id of ids) { cache.request('remote:thread', { ...sentTest, id }); await Promise.resolve(); await Promise.resolve() }
+    const held = ids.filter(id => cache.get(ActivityBodyCache.key('remote:thread', { ...sentTest, id })) !== undefined)
+    expect(held.length).toBeLessThanOrEqual(3)
+    expect(held.slice(-2)).toEqual(['e', 'f'])
+  })
 })

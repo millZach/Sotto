@@ -84,8 +84,9 @@ export class ActivityBodyCache {
   private evict(): void {
     for (const [key, entry] of this.entries) {
       if (this.entries.size <= this.limits.entries && this.bytes <= this.limits.bytes) break
-      // The newest answer stays even alone over the budget: its row is the one open.
-      if (entry.status !== 'loaded' || key === [...this.entries.keys()].at(-1)) continue
+      // The newest answer stays even alone over the budget: its row is the one open. An ask on its way stays too; a failed
+      // one goes like an answer, so failures cannot hold the cache over its bound. A row still open asks again by itself.
+      if (entry.status === 'loading' || key === [...this.entries.keys()].at(-1)) continue
       this.drop(key, entry, false)
     }
     this.notify()

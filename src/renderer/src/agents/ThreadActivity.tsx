@@ -186,7 +186,11 @@ function PlanSteps({ record }: { readonly record: AgentActivity }): ReactNode {
 function ActivityDetails({ record: sent, provider, connected }: { readonly record: AgentActivity; readonly provider: string; readonly connected: boolean }): ReactNode {
   // A remote row whose host kept its long bodies back reads the record whole now that it is open (ADR-0025, October 18
   // amendment), and draws the part it was sent until then. Every other row draws exactly as it always has.
-  const body = useActivityBody(sent, true)
+  // Only a body the row draws is worth the link: cut input that a command or an edit leaves out is not asked for.
+  const sentParsed = activityInput(sent) !== null
+  const textShown = sent.cut?.text !== undefined && !(sentParsed && (sent.kind === 'command' || sent.kind === 'file-change'))
+  const needed = sent.cut !== undefined && (sent.cut.output !== undefined || textShown || activityChanges(sent).some((_, index) => changeDiffIsCut(sent, index)))
+  const body = useActivityBody(sent, needed)
   const record = body.record, cut = body.state === 'whole' ? undefined : sent.cut
   const notes = [timingNote(record, provider), record.truncated ? 'Some details were not kept.' : ''].filter(Boolean)
   // Native tool input arrives as JSON: it reads formatted, and is left out where the command or diff already shows it.
@@ -194,7 +198,7 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   const text = parsed ? inputDetail(record) : record.text
   const json = parsed && record.kind !== 'command'
   // Cut input matters only where the row shows it: a command shows its description and an edit its diff instead.
-  const cutText = cut?.text !== undefined && !(parsed && (record.kind === 'command' || record.kind === 'file-change'))
+  const cutText = cut !== undefined && textShown
   return <div className="thread-activity__details">
     {record.steps?.length ? <PlanSteps record={record} /> : null}
     {record.command ? <MessageContent text={fenced(record.command, 'command')} /> : null}
