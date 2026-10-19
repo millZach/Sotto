@@ -352,8 +352,8 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   }
   visuals.sort((a, b) => a.at - b.at)
   const replyGroups = everything.flatMap(message => placement.after.get(message.id) ?? [])
-  // Shared from the placement when the turn's work is all before its reply, as it nearly always is.
-  const groups = !replyGroups.length && shownOpening ? shownOpening : [...shownOpening ?? [], ...replyGroups]
+  // Shared across updates, so the reply that carries a news turn's work keeps its memo while other turns change.
+  const groups = useShared(!replyGroups.length && shownOpening ? shownOpening : [...shownOpening ?? [], ...replyGroups])
   // A compaction is where the conversation lost its history, so it stays in view instead of folding with the work.
   const boundaries = groups.filter(group => compactionOf(group))
   const continued = continuedIn?.length ? <ContinuedInNotes links={continuedIn} /> : null

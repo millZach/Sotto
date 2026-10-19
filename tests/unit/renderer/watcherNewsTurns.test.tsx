@@ -87,6 +87,25 @@ describe('Watcher’s replies to news', () => {
     expect(inOrder(['CI went green', 'Failed after 3.0s', 'Merge the host-update'])).toBe(true)
   })
 
+  it('says in the header when the news turn failed, and keeps its error in view', () => {
+    const failed = activities.map(item => item.id === 'turn-news-1' ? { ...item, status: 'failed' as const, error: 'Watcher’s provider stopped answering.' } : item)
+    show(failed)
+    const reply = document.querySelector<HTMLElement>('[data-message-id="news-reply-1"]')!
+    expect(reply).toHaveAttribute('data-turn-outcome', 'failed')
+    expect(reply.querySelector('header button')).toHaveTextContent('After news · failed after 6.1s')
+    expect(reply).toHaveTextContent('Watcher’s provider stopped answering.')
+  })
+
+  it('lists the live news turn’s work above the reply it is writing', () => {
+    const live = activities.map(item => item.turnId === 'news-2' ? { ...item, status: 'running' as const, completedAt: undefined } : item)
+      .filter(item => item.turnId !== 'news-3' && item.turnId !== 'you-2')
+    const shown = messages.slice(0, 4)
+    render(<MessageList messages={shown} provider="Claude Code" running placement={placeActivities(shown, shown, live)} speaker="watcher"
+      context={{ ...finished, liveTurn: 'news-2', running: true }} />)
+    expect(document.querySelector('[data-message-id="news-reply-2"] header button')).toBeNull()
+    expect(inOrder(['got your permission', 'Read thread', 'CI went green'])).toBe(true)
+  })
+
   it('shows nothing for a finished news turn with no reply and no lifecycle record', () => {
     const bare = [...activities.filter(item => item.turnId !== 'news-3'), ...work('news-3', '58:10.000', '58:13.000', ['tool'], 30).filter(item => item.kind !== 'turn')]
     show(bare)

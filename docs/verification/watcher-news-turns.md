@@ -16,7 +16,8 @@ one row per turn. The news reply joined the user's turn above it, which then fol
 ## Zach's own Watcher thread
 
 The placement was run, outside the app, over the IDs and times of Zach's Watcher thread in `threads.sqlite`. No text was
-read beyond telling the wake-up line apart. It was run twice as the thread grew, before and after the review fixes:
+read beyond telling the wake-up line apart. It was run three times as the thread grew, after the first change and after
+each review's fixes:
 
 | Thread | Placement | Rows after the last reply | News turns with their own reply |
 | --- | --- | --- | --- |
@@ -24,6 +25,8 @@ read beyond telling the wake-up line apart. It was run twice as the thread grew,
 | | After | 0 | 44 |
 | 226 messages, 77 news wake-ups | Before | 43 | 0 |
 | | After | 0 | 77 |
+| 326 messages, 119 news wake-ups | Before | 65 | 0 |
+| | After | 1, the turn Watcher was running | 114, and 4 that wrote nothing sit before the next turn |
 
 Some news turns had lost their work to trimming. They still open their own turn from the reply that names them
 (`turnMessageId`), so none folds the user's answer away.

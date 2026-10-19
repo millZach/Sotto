@@ -195,49 +195,59 @@ const startedAt = (record: AgentActivity): number => record.startedAt ? Date.par
 const REPLY_SLACK_MS = 2_000
 
 /**
- * Where each turn with no place in the messages sits: the reply it wrote, or the message that came after it. A reply
- * that names the turn is its own; failing that, the first message written after the turn began is its reply when it is
- * not a user's, names no other turn, and came before the next turn began and before this one ended. Turns are matched in
- * the order they began, so each reply has one turn. A turn Sotto cannot date, or one that began before the first message
- * the window holds, has no place here.
+ * Where each unshown turn sits: the reply it wrote, or the message that came after it. A turn is unshown when the
+ * messages give it no place, or when its first record names a message they leave out and its later records follow a
+ * reply it wrote, as Codex and Grok Build anchor them. A reply that names the turn, or that the turn's own records
+ * follow, is its own; failing that, the first message written after the turn began is its reply when it is not a
+ * user's, names no other turn, and came before another turn began and before this one ended. Turns are matched in the
+ * order they began, so each reply has one turn. A turn Sotto cannot date, or one that began before the first message the
+ * window holds, has no place here; nor does a reply before the first user message, which may belong above the window.
  */
 function unshownPlaces(messages: readonly AgentMessage[], sorted: readonly AgentActivity[],
   anchors: ReadonlyMap<AgentActivity, string | null>): ReadonlyMap<string, { readonly reply?: string; readonly next?: string }> {
   const places = new Map<string, { reply?: string; next?: string }>()
-  interface Turn { readonly ids: Set<string>; start?: number; ended?: number; running: boolean }
+  const index = new Map(messages.map((message, at) => [message.id, at]))
+  const firstUser = messages.findIndex(message => message.role === 'user')
+  interface Turn { readonly ids: Set<string>; start?: number; ended?: number; running: boolean; first?: AgentActivity; followed?: string; placed: boolean }
   const turns = new Map<string, Turn>()
-  const starts: number[] = []
   for (const record of sorted) {
-    const start = startedAt(record)
-    if (Number.isFinite(start)) starts.push(start)
-    if (anchors.get(record) !== null) continue
-    const turn = turns.get(record.turnId) ?? { ids: new Set([record.turnId]), running: false }
+    const turn = turns.get(record.turnId) ?? { ids: new Set([record.turnId]), running: false, placed: false }
     turns.set(record.turnId, turn)
+    turn.first ??= record
+    const anchor = anchors.get(record)
+    if (anchor !== null && anchor !== undefined) { turn.placed = true; turn.followed ??= anchor }
     if (record.afterMessageId !== undefined) turn.ids.add(record.afterMessageId)
+    const start = startedAt(record)
     if (Number.isFinite(start) && (turn.start === undefined || start < turn.start)) turn.start = start
     const done = record.completedAt ? Date.parse(record.completedAt) : Number.NaN
     if (Number.isFinite(done) && (turn.ended === undefined || done > turn.ended)) turn.ended = done
     if (record.status === 'running') turn.running = true
   }
-  if (!turns.size) return places
+  const opensTurn = (message: AgentMessage | undefined): message is AgentMessage =>
+    message !== undefined && message.role !== 'user' && firstUser >= 0 && index.get(message.id)! > firstUser
   const claimed = new Set<string>()
-  // A reply that names the turn it answers is the turn's, whatever the clocks say.
+  const claim = (turnId: string, reply: AgentMessage): void => { claimed.add(reply.id); places.set(turnId, { reply: reply.id }) }
   for (const [turnId, turn] of turns) {
-    const reply = messages.find(message => message.role !== 'user' && message.turnMessageId !== undefined && turn.ids.has(message.turnMessageId) && !claimed.has(message.id))
-    if (reply) { claimed.add(reply.id); places.set(turnId, { reply: reply.id }) }
+    const own = turn.first?.afterMessageId
+    // Placed, but begun from a message the conversation leaves out: the reply its records follow opens it.
+    if (turn.placed) {
+      const reply = own !== undefined && !index.has(own) && !index.has(turnId) && turn.followed !== undefined ? messages[index.get(turn.followed)!] : undefined
+      if (opensTurn(reply) && !claimed.has(reply.id)) claim(turnId, reply)
+      continue
+    }
+    // A reply that names the turn it answers is the turn's, whatever the clocks say.
+    const named = messages.find(message => message.role !== 'user' && message.turnMessageId !== undefined && turn.ids.has(message.turnMessageId) && !claimed.has(message.id))
+    if (named) claim(turnId, named)
   }
   const opened = messages[0] ? Date.parse(messages[0].createdAt) : Number.NaN
-  const dated = [...turns].filter(([turnId, turn]) => !places.has(turnId) && turn.start !== undefined && turn.start >= opened)
+  const dated = [...turns].filter(([turnId, turn]) => !turn.placed && !places.has(turnId) && turn.start !== undefined && turn.start >= opened)
     .sort(([, a], [, b]) => a.start! - b.start!)
-  starts.sort((a, b) => a - b)
   for (const [turnId, turn] of dated) {
-    const next = starts.find(value => value > turn.start!) ?? Number.POSITIVE_INFINITY
+    let next = Number.POSITIVE_INFINITY
+    for (const [other, { start }] of turns) if (other !== turnId && start !== undefined && start > turn.start! && start < next) next = start
     const end = Math.min(next, !turn.running && turn.ended !== undefined ? turn.ended + REPLY_SLACK_MS : Number.POSITIVE_INFINITY)
     const first = messages.find(message => Date.parse(message.createdAt) >= turn.start!)
-    if (first && first.role !== 'user' && first.turnMessageId === undefined && Date.parse(first.createdAt) < end && !claimed.has(first.id)) {
-      claimed.add(first.id)
-      places.set(turnId, { reply: first.id })
-    }
+    if (first && first.role !== 'user' && first.turnMessageId === undefined && Date.parse(first.createdAt) < end && !claimed.has(first.id)) claim(turnId, first)
   }
   // A turn that wrote nothing goes before the next turn the transcript starts: a user's message or an unshown turn's reply.
   for (const [turnId, turn] of dated) {

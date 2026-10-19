@@ -238,6 +238,48 @@ describe('placing the work of an unshown turn', () => {
     expect(placement.before.get('you-2')!.map(group => group.turnId)).toEqual(['news-2'])
   })
 
+  it('claims the reply when the turn’s own records began later than the turn, as real ones do', () => {
+    // Each record starts when it starts; only another turn's start closes the window for the reply.
+    const staggered = activities.map(item => item.turnId === 'news-1' && item.kind !== 'turn' ? { ...item, startedAt: clock(`56:5${5 + item.sequence % 3}.000`) } : item)
+    expect(placeActivities(messages, messages, staggered).unshown.get('news-reply-1')!.map(group => group.turnId)).toEqual(['news-1'])
+  })
+
+  it('opens a turn at the reply its own records follow, when it began from a message the conversation leaves out', () => {
+    // Codex and Grok Build anchor a turn's later records to the last message, which is the news reply being written.
+    const anchored: AgentActivity[] = [
+      ...activities.filter(item => item.turnId !== 'news-1'),
+      { id: 'turn-codex', turnId: 'codex-turn', afterMessageId: 'hidden-wake-up', sequence: 10, kind: 'turn', status: 'completed', title: 'Turn', startedAt: clock('56:54.086'), completedAt: clock('57:00.000') },
+      { id: 'codex-tool', turnId: 'codex-turn', afterMessageId: 'news-reply-1', sequence: 11, kind: 'tool', status: 'completed', title: 'read_thread' },
+    ]
+    const placement = placeActivities(messages, messages, anchored)
+    expect(placement.unshown.get('news-reply-1')).toEqual([])
+    expect(placement.after.get('news-reply-1')!.map(group => group.turnId)).toEqual(['codex-turn'])
+    expect(splitTurns(messages, placement.unshown).map(turn => turn.key)).toEqual(['you-1', 'unshown:news-reply-1', 'you-2'])
+  })
+
+  it('claims by time only for a turn that began inside the window, and never a reply that names another turn', () => {
+    const window = [said('answer-0', 'assistant', '56:30.000'), ...messages]
+    const before = [...activities, ...work('older', '56:20.000', '56:25.000', ['tool'], 50)]
+    expect(placeActivities(window, window, before).unshown.has('answer-0')).toBe(false)
+    const answered = [messages[0]!, said('answer-1', 'assistant', '56:50.463', 'you-1'), ...messages.slice(2)]
+    const overlapping = [...activities.filter(item => item.turnId !== 'you-1'), ...work('stray', '56:45.000', '56:52.000', ['tool'], 50)]
+    expect(placeActivities(answered, answered, overlapping).unshown.has('answer-1')).toBe(false)
+  })
+
+  it('gives a reply to one turn when two began at the same moment', () => {
+    const twins = [...activities, ...work('news-1b', '56:54.086', '57:00.000', ['tool'], 50)]
+    const placement = placeActivities(messages, messages, twins)
+    expect(placement.unshown.get('news-reply-1')!.map(group => group.turnId)).toEqual(['news-1'])
+    // The other wrote nothing it can claim, so it goes before the next turn the transcript starts: that reply.
+    expect(placement.before.get('news-reply-1')!.map(group => group.turnId)).toEqual(['news-1b'])
+  })
+
+  it('claims nothing by time while the history is loading', () => {
+    const placement = placeActivities(messages, messages, activities, true)
+    expect(placement.unshown.size).toBe(0)
+    expect(placement.trailing).toEqual([])
+  })
+
   it('shows nothing for a reply above the rendered page', () => {
     expect(placeActivities(messages, messages.slice(3), activities).unshown.size).toBe(0)
   })
