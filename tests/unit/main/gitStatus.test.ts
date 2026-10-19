@@ -197,6 +197,28 @@ describe('Git status the way T3 reads it', () => {
     expect(await after).toMatchObject({ branch: 'main' })
     expect(await older).toMatchObject({ branch: 'feature' })
   })
+  it('lets a finished read answer a caller only when it began after the moment the caller names, and no Git action has run since', async () => {
+    const f = await fixture({ remote: false })
+    const statusReads = () => f.calls.filter(call => call[0] === 'git' && call.includes('status')).length
+    const round = performance.now()
+    const first = await f.reader.read(f.repo, { remote: false, startedAfter: round })
+    // A thread of the same round, after the first read has finished: the read began after the round, so it answers.
+    expect(await f.reader.read(f.repo, { remote: false, startedAfter: round })).toBe(first)
+    expect(statusReads()).toBe(1)
+    // A later round reads again: the finished read began before it.
+    git(f.repo, 'switch', '-q', '-c', 'feature')
+    const later = performance.now()
+    expect(await f.reader.read(f.repo, { remote: false, startedAfter: later })).toMatchObject({ branch: 'feature' })
+    expect(statusReads()).toBe(2)
+    // A Git action after the read: the same round reads again rather than take a read from before it.
+    git(f.repo, 'switch', '-q', 'main')
+    f.reader.invalidate(f.repo)
+    expect(await f.reader.read(f.repo, { remote: false, startedAfter: later })).toMatchObject({ branch: 'main' })
+    expect(statusReads()).toBe(3)
+    // Without a moment named, a finished read answers nobody, as before.
+    await f.reader.read(f.repo, { remote: false })
+    expect(statusReads()).toBe(4)
+  })
 })
 
 describe('the remote half of a read, on its own', () => {
