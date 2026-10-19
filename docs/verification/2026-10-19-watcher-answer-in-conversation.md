@@ -40,7 +40,9 @@ A review on Muse read the commit without running anything (its shell was unavail
 - A thread the window does not hold, such as one on a host still joining, draws nothing rather than a line without **Open**.
 - The guide no longer says receipt cards are the only names that open a thread in Watcher's conversation.
 
-`watcherAsks.test.tsx` (15 tests) and `watcherAskPlacements.test.ts` (9 tests) cover these; both end-to-end journeys were run again on the rebuilt app.
+One of those fixes, forgetting an earlier answer for a reused request ID, ran on every change to the card's answer state. The store lets an answer go as soon as its request leaves the thread, which can come a moment before the card does, so the line sometimes said only that the thread no longer waits. The seeded Watcher journey caught it once and passed on the next run of the same code. The card now forgets only when it first sees a request with nothing on its way; a unit test that clears the answer while the card is still drawn fails without the change.
+
+`watcherAsks.test.tsx` (16 tests), `watcherAskPlacements.test.ts` (9 tests) and `watcherTools.test.ts` cover these. On the rebuilt app, both journeys against main's own Watcher and the seeded journey pass together, and the captures above are from that run; the contrast readings are unchanged.
 
 ## Not checked
 
