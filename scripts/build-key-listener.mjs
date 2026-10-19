@@ -1,4 +1,4 @@
-// Builds the macOS key listener helper (ADR-0092); a no-op off macOS. Not part of `npm run build`.
+// Builds the macOS key listener helper (ADR-0094); a no-op off macOS. Not part of `npm run build`.
 import { spawnSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'

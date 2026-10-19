@@ -161,6 +161,10 @@ describe('release contract', () => {
     expect(verifier).not.toContain('.matchAll(')
     expect(verifier).toContain("...(profile.key === 'win32' ? [join(resources, 'native', 'win32.cs')] : []),")
     expect(verifier).toContain("join(resources, 'native', 'sotto-key-listener')")
+    // Every Mac packaging path builds the key listener helper before electron-builder copies it (ADR-0094).
+    expect(read('scripts/package-stable.mjs')).toContain("if (platform === 'mac') run(resolve(root, 'scripts/build-key-listener.mjs'))")
+    expect(read('scripts/package-owl.mjs')).toContain("if (mac) run(resolve(root, 'scripts/build-key-listener.mjs'))")
+    expect(read('package.json')).toContain('node scripts/build-key-listener.mjs &&')
   })
 
   it('refuses retired voice assets in the package', () => {
