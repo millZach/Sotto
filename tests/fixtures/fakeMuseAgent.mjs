@@ -65,9 +65,11 @@ function holding(sessionId, held) {
 const held = new Set()
 const cursor = session => `cursor-${session.items.length}-${session.items.reduce((sum, item) => sum + item.revision, 0)}`
 const REVIEWERS = { ':ask-me': 'human', ':read-only': 'human', ':auto-review': 'autoReview', ':unrestricted': 'none' }
-const view = session => ({
+// `reopenedAsDefault` describes a resumed or read session by the catalog's default model, as Muse 1.4.10 does, though
+// the session runs the model it was started on or last set to, as its start reply and session/modelChanged say.
+const view = (session, reopened = false) => ({
   sessionId: session.sessionId, path: `fixture:///${session.sessionId}`, status: session.activeTurnId ? 'running' : 'idle', ephemeral,
-  modelId: session.modelId, providerId: 'meta', workspaceRoot: session.cwd, cwd: session.cwd, approvalMode: { mode: session.mode, source: 'wire' },
+  modelId: reopened && read('script.json', {}).reopenedAsDefault ? MODELS.find(model => model.isDefault)?.modelId ?? session.modelId : session.modelId, providerId: 'meta', workspaceRoot: session.cwd, cwd: session.cwd, approvalMode: { mode: session.mode, source: 'wire' },
   activeTurnId: session.activeTurnId ?? null, turnCount: session.turns ?? 0, createdAt: session.createdAt, updatedAt: session.createdAt,
   ...(session.profileId && experimental && !read('script.json', {}).permissionStateHidden ? { permissionState: { profileId: session.profileId, reviewerAttached: false,
     reviewerAuthority: read('script.json', {}).reviewerAuthority ?? REVIEWERS[session.profileId] ?? 'autoReview' } } : {}),
@@ -268,7 +270,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     held.add(session.sessionId); holding(session.sessionId, true)
     const pendingRequests = [...(session.pendingApprovals ?? []).map(item => ({ kind: 'approval', approvalId: item.approvalId })),
       ...(session.pendingInputs ?? []).map(item => ({ kind: 'userInput', userInputId: item.userInputId }))]
-    const snapshot = globalThis.structuredClone({ session: view(session), history: { mode: 'inline', items: p.excludeItems ? null : session.items, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests, viewCursor: cursor(session) })
+    const snapshot = globalThis.structuredClone({ session: view(session, true), history: { mode: 'inline', items: p.excludeItems ? null : session.items, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests, viewCursor: cursor(session) })
     if (script.resumeReplyRace) {
       writeFileSync(path('script.json'), JSON.stringify({ ...script, resumeReplyRace: undefined }))
       const item = session.items.findLast(candidate => candidate.kind === 'agentMessage' && candidate.status === 'inProgress')
@@ -291,7 +293,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   } else if (frame.method === 'session/read') {
     const session = sessions[p.sessionId] ?? (ephemeral ? undefined : current().sessions[p.sessionId])
     if (!session) { fail('sessionNotFound', 'Unknown session'); return }
-    result({ session: view(session), history: { mode: 'inline', items: p.excludeItems === false ? session.items : null, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests: [], viewCursor: cursor(session) })
+    result({ session: view(session, true), history: { mode: 'inline', items: p.excludeItems === false ? session.items : null, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests: [], viewCursor: cursor(session) })
   } else if (frame.method === 'session/list') result({ sessions: Object.values(ephemeral ? sessions : current().sessions).map(view) })
   else if (frame.method === 'session/setModel') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }

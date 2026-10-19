@@ -39,6 +39,31 @@ it('starts every host without the sandbox only when the setting says so, capture
   } finally { await f.cleanup() }
 })
 
+it('keeps a thread on its own model when Muse describes it reopened by its default, and holds no send back for it', async () => {
+  // Muse 1.4.10 runs a session on the model it started on or was last set to, but describes a resumed session by its
+  // catalog's default model. The fixture does the same.
+  const f = await museFixture()
+  const model = (modelId: string, isDefault: boolean) => ({ modelId, providerId: 'meta', displayLabel: modelId, isDefault, cost: null, contextWindow: null, profileId: null })
+  try {
+    await f.script({ models: [model('fixture-base', true), model('fixture-full', false)], reopenedAsDefault: true })
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: 'fixture-full', title: 'Muse thread' })
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'Before reconnecting' })
+    await f.action(id, { type: 'complete', text: 'First reply' })
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    // Reconnecting reopens the session, which Muse now describes as on its default.
+    await f.host.connect()
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'After reconnecting' })
+    expect((await thread(f, id)).modelId).toBe('fixture-full')
+    expect((await thread(f, id)).status).not.toBe('error')
+    // Sotto set the thread's model again rather than taking the description's word for it.
+    const sets = (await f.driver.requests()).filter(record => record.method === 'session/setModel').map(record => (record.params as { model: { modelId: string } }).model.modelId)
+    expect(sets.at(-1)).toBe('fixture-full')
+  } finally { await f.cleanup() }
+})
+
 const open = async () => {
   const f = await museFixture()
   await f.host.connect()

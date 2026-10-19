@@ -864,7 +864,8 @@ export class MuseMspHost implements AgentHost {
       const fold = this.fold(id)
       fold.viewCursor = resumed.viewCursor
       for (const item of items) this.foldItem(id, item)
-      this.confirmSession(id, alias, resumed.session)
+      // A refusal leaves the thread on the model Muse described, which its chip shows; nothing is held back for it.
+      if (this.confirmSession(id, alias, resumed.session, true)) await this.applyModel(id, alias, entry, alias.modelId).catch(() => undefined)
       if (entry.turnRevision === turnRevision) this.reconcileLiveSession(id, resumed.session)
       this.settleEndedTurn(id, resumed.session)
       await this.persist()
@@ -886,8 +887,14 @@ export class MuseMspHost implements AgentHost {
     return work
   }
   /** What a session Muse reported settles: its model, its mode, and whether the wanted settings are its own. */
-  private confirmSession(id: string, alias: Alias, session: MuseSession): void {
-    if (session.modelId) alias.nativeModelId = session.modelId
+  /**
+   * Muse runs a session on the model it started on or was last set to, and says so in its start reply and with
+   * session/modelChanged, but 1.4.10 describes a resumed or read session by its catalog's default model. So a reopened
+   * session's description never sets the thread's model; it returns whether it differs, so the model is set again.
+   */
+  private confirmSession(id: string, alias: Alias, session: MuseSession, reopened = false): boolean {
+    const differs = reopened && Boolean(session.modelId) && session.modelId !== alias.modelId
+    if (session.modelId && (!reopened || !alias.nativeModelId)) alias.nativeModelId = session.modelId
     const reported = runtimeModeOf(session.approvalMode?.mode)
     if (alias.pendingRuntimeMode && reported === alias.pendingRuntimeMode) { alias.runtimeMode = alias.pendingRuntimeMode; delete alias.pendingRuntimeMode }
     else if (!alias.pendingRuntimeMode && session.approvalMode) alias.runtimeMode = reported
@@ -895,6 +902,19 @@ export class MuseMspHost implements AgentHost {
     const thread = this.thread(id)
     if (alias.nativeModelId) thread.modelId = alias.nativeModelId
     thread.runtimeMode = alias.runtimeMode ?? 'approval-required'
+    if (thread.status !== 'running') thread.status = alias.settingsConfirmed ? 'idle' : 'error'
+    return differs
+  }
+  /**
+   * Sets the session's model and counts it as Muse's once Muse accepts it, never from a session's description (see
+   * `confirmSession`). Muse also says so with session/modelChanged.
+   */
+  private async applyModel(id: string, alias: Alias, entry: ThreadProcess, modelId: string): Promise<void> {
+    await entry.rpc.request('session/setModel', { commandId: museCommandId(), sessionId: alias.museSessionId, model: { modelId } })
+    alias.nativeModelId = modelId
+    alias.settingsConfirmed = alias.nativeModelId === alias.modelId && !alias.pendingRuntimeMode
+    const thread = this.thread(id)
+    thread.modelId = modelId
     if (thread.status !== 'running') thread.status = alias.settingsConfirmed ? 'idle' : 'error'
   }
   /**
@@ -1341,11 +1361,7 @@ export class MuseMspHost implements AgentHost {
           this.confirmSession(command.threadId, alias, started.session)
           await this.persist(); this.emit()
           if (alias.nativeModelId !== alias.modelId) {
-            await entry.rpc.request('session/setModel', { commandId: museCommandId(), sessionId: alias.museSessionId, model: { modelId: alias.modelId } })
-            const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', { commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: true }))
-            if (entry.watcher) await this.proveReviewer(command.threadId, entry, resumed.session)
-            this.confirmSession(command.threadId, alias, resumed.session)
-            if (alias.nativeModelId !== alias.modelId) throw new MuseUnreadable('Muse did not confirm the requested model.')
+            await this.applyModel(command.threadId, alias, entry, alias.modelId)
             await this.persist()
           }
           if (alias.runtimeMode && runtimeModeOf(started.session.approvalMode?.mode) !== alias.runtimeMode) {
@@ -1419,12 +1435,8 @@ export class MuseMspHost implements AgentHost {
             if (modelId !== alias.modelId) {
               watcherGuard?.()
               alias.settingsConfirmed = false; await this.persist()
-              await entry.rpc.request('session/setModel', { commandId: museCommandId(), sessionId: alias.museSessionId, model: { modelId } })
-              const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', { commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: true }))
-              if (entry.watcher) await this.proveReviewer(command.threadId, entry, resumed.session)
-              if (resumed.session.modelId !== modelId) throw new MuseUnreadable('Muse did not confirm the requested model.')
-              alias.modelId = modelId; alias.nativeModelId = modelId
-              thread.modelId = modelId
+              alias.modelId = modelId
+              await this.applyModel(command.threadId, alias, entry, modelId)
             }
             alias.reasoningEffort = reasoningEffort
             if (reasoningEffort) thread.reasoningEffort = reasoningEffort; else delete thread.reasoningEffort
@@ -1439,7 +1451,6 @@ export class MuseMspHost implements AgentHost {
           await this.open(command.threadId); this.assertGeneration(generation)
           if (!alias.museSessionId) throw new MuseUncertain('Muse has not confirmed this thread’s session.')
           if (alias.pendingRuntimeMode) throw new Error('Muse has not confirmed this thread’s permission mode. Reconnect to check before sending.')
-          if (!alias.settingsConfirmed) throw new Error('Muse has not confirmed this thread’s model settings. Reconnect to check before sending.')
           const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments)
           // A loaded session streams live on this connection, so what the log holds is current; only a
           // session this send had to open needed the read its resume just did. `readForSend` still consumed
@@ -1471,13 +1482,15 @@ export class MuseMspHost implements AgentHost {
             })
           }
           this.assertGeneration(generation)
-          if (alias.pendingRuntimeMode || !alias.settingsConfirmed) throw new Error('Muse is applying new thread settings. Send again once they are confirmed.')
+          if (alias.pendingRuntimeMode) throw new Error('Muse is applying new thread settings. Send again once they are confirmed.')
           const origin: Origin = {
             messageId: command.messageId, commandId: command.commandId, nativeCommandId: museCommandId(),
             digest: digest(command.text), createdAt: new Date().toISOString(), confirmed: false,
             attachments: attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })),
           }
           const entry = await this.threadProcess(command.threadId)
+          // A model Muse has not confirmed is asked for again before a new turn; a refusal sends on the model Muse has.
+          if (command.type === 'send' && alias.nativeModelId !== alias.modelId) await this.applyModel(command.threadId, alias, entry, alias.modelId).catch(() => undefined)
           this.assertGeneration(generation)
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)
@@ -1624,7 +1637,7 @@ export class MuseMspHost implements AgentHost {
     if (!items) throw new MuseUnreadable('Muse did not serve this thread’s history.')
     for (const item of items) this.foldItem(id, item)
     this.fold(id).viewCursor = resumed.viewCursor
-    this.confirmSession(id, alias, resumed.session)
+    if (this.confirmSession(id, alias, resumed.session, true)) await this.applyModel(id, alias, entry, alias.modelId).catch(() => undefined)
     if (entry.turnRevision === turnRevision) this.reconcileLiveSession(id, resumed.session)
     this.settleEndedTurn(id, resumed.session)
     const releaseRead = this.holdPendingRead(id)
