@@ -42,8 +42,8 @@ export interface CliSpec {
   readonly name: string
   /** The provider's own install folders, tried before PATH. */
   readonly first?: readonly string[]
-  /** The provider's own install folders, tried after everything else. */
-  readonly last?: readonly string[]
+  /** The provider's own install folders, tried after everything else, or a reader for them, asked only when it is reached. */
+  readonly last?: readonly string[] | (() => Promise<readonly string[]>)
   /** Further files to try in each folder besides `<folder>/<file>`, such as an npm package's native binary. */
   readonly within?: (directory: string, file: string) => readonly string[]
   /**
@@ -51,6 +51,11 @@ export interface CliSpec {
    * executed, started by the path it was found at.
    */
   readonly accept?: (candidate: string) => Promise<string | undefined>
+  /**
+   * Further clients an accepted candidate leads to, handed over after it and only if the caller asks for more, each
+   * found in the same folder as it: OpenCode's other builds of one package.
+   */
+  readonly more?: (executable: string) => AsyncIterable<string>
 }
 
 /** Manager binaries a shim resolves to. Started by that path they run the manager, not the tool. */
@@ -77,7 +82,7 @@ async function list(directory: string): Promise<string[]> {
   catch { return [] }
 }
 /** Version folders newest first: `v24.1.0` before `v22.9.0`, `26.8.1` before `24.21.0`. */
-function newestFirst(names: readonly string[]): string[] {
+export function newestFirst(names: readonly string[]): string[] {
   const parts = (name: string): number[] => (name.match(/\d+/gu) ?? []).map(Number)
   return [...names].sort((a, b) => {
     const [x, y] = [parts(a), parts(b)]
@@ -251,6 +256,16 @@ const clientPaths = new Map<string, ClientPath>()
 
 /** Finds one client the way the order above says, or undefined when it is not installed anywhere Sotto looks. */
 export async function findCli(spec: CliSpec, options: CliLookupOptions = {}): Promise<string | undefined> {
+  for await (const executable of findClis(spec, options)) return executable
+  return undefined
+}
+
+/**
+ * Every client the lookup finds, in the order above, each one as soon as it is found: a caller that stops early never
+ * searches the places after it. Each is remembered for `withCliPath` before it is handed over. One file can come more
+ * than once, by two paths that lead to it.
+ */
+export async function* findClis(spec: CliSpec, options: CliLookupOptions = {}): AsyncGenerator<string, void, undefined> {
   const environment = options.environment ?? process.env
   const platform = options.platform ?? process.platform
   const windows = platform === 'win32'
@@ -263,19 +278,6 @@ export async function findCli(spec: CliSpec, options: CliLookupOptions = {}): Pr
   const login = (): Promise<string | undefined> => windows ? Promise.resolve(undefined) : (options.loginShellPath ?? (() => loginShellPath(environment)))()
   const accept = spec.accept ?? ((candidate: string) => executableFile(candidate, platform))
   const tried = new Set<string>()
-  /** The client and the folder it was found in, which for a followed link is not the client's own folder. */
-  const attempt = async (folders: readonly string[]): Promise<{ executable: string; folder: string } | undefined> => {
-    for (const folder of folders) {
-      const key = windows ? folder.toLowerCase() : folder
-      if (tried.has(key) || shimFolders.some(shims => same(shims, folder))) continue
-      tried.add(key)
-      for (const candidate of [join(folder, file), ...(spec.within?.(folder, file) ?? [])]) {
-        const executable = await accept(candidate)
-        if (executable) return { executable, folder }
-      }
-    }
-    return undefined
-  }
   const stages: (() => Promise<readonly string[]>)[] = [
     async () => spec.first ?? [],
     async () => inherited,
@@ -283,15 +285,26 @@ export async function findCli(spec: CliSpec, options: CliLookupOptions = {}): Pr
     async () => [join(home, '.local', 'bin')],
     async () => managerFolders(spec.name, environment, home, windows),
     async () => npmFolders(environment, home, windows),
-    async () => spec.last ?? [],
+    async () => typeof spec.last === 'function' ? spec.last() : spec.last ?? [],
   ]
   for (const stage of stages) {
-    const found = await attempt(await stage())
-    if (!found) continue
-    await rememberClientPath(found.executable, found.folder, spec.name, { environment, platform, home, loginShellPath: login }, inherited)
-    return found.executable
+    for (const folder of await stage()) {
+      const key = windows ? folder.toLowerCase() : folder
+      if (tried.has(key) || shimFolders.some(shims => same(shims, folder))) continue
+      tried.add(key)
+      for (const candidate of [join(folder, file), ...(spec.within?.(folder, file) ?? [])]) {
+        const executable = await accept(candidate)
+        if (!executable) continue
+        // The folder it was found in, which for a followed link is not the client's own folder.
+        await rememberClientPath(executable, folder, spec.name, { environment, platform, home, loginShellPath: login }, inherited)
+        yield executable
+        for await (const next of spec.more?.(executable) ?? []) {
+          await rememberClientPath(next, folder, spec.name, { environment, platform, home, loginShellPath: login }, inherited)
+          yield next
+        }
+      }
+    }
   }
-  return undefined
 }
 
 /**

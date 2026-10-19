@@ -50,6 +50,8 @@ export type RunLike = (executable: string, args: readonly string[], asNode?: boo
 const MANAGED_ELSEWHERE = [`${sep}.bun${sep}`, `${sep}pnpm${sep}`, `${sep}.pnpm${sep}`, `${sep}.volta${sep}`, `${sep}.mise${sep}`, `${sep}mise${sep}installs${sep}`, `${sep}.asdf${sep}`, 'homebrew', 'linuxbrew']
 /** The managers above that are not Homebrew, whose own Node may hold an npm global root of its own. */
 const OTHER_PACKAGE_MANAGERS = MANAGED_ELSEWHERE.filter(marker => marker !== 'homebrew' && marker !== 'linuxbrew')
+/** yarn classic's global packages (`%LOCALAPPDATA%\Yarn\Data\global`, `~/.config/yarn/global`), which the OpenCode lookup searches. */
+const YARN_GLOBAL = [`${sep}yarn${sep}data${sep}global${sep}`, `${sep}yarn${sep}global${sep}`, `${sep}.yarn${sep}`]
 
 /** The client's own home, when its own installer owns the binary there: `~/.local/bin/claude.exe`. */
 function ownHome(provider: ProviderId, environment: NodeJS.ProcessEnv): readonly string[] {
@@ -283,9 +285,12 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
   }
   if (provider === 'opencode') {
     const real = await realpath(executable).catch(() => executable)
-    // bun, pnpm, Volta and asdf lay a global package out the way npm does, so they are asked before npm: `npm install -g`
+    // bun, pnpm, yarn, Volta and asdf lay a global package out the way npm does, so they are asked before npm: `npm install -g`
     // over their copy would install a second one and leave theirs as it was (ADR-0042).
-    if ([executable, real].some(path => OTHER_PACKAGE_MANAGERS.some(marker => path.toLowerCase().includes(marker)))) return { channel: 'unknown' }
+    if ([executable, real].some(path => [...OTHER_PACKAGE_MANAGERS, ...YARN_GLOBAL].some(marker => path.toLowerCase().includes(marker)))) return { channel: 'unknown' }
+    // bun and pnpm can live anywhere their own variable says, which the OpenCode lookup searches too.
+    const managerHomes = ['BUN_INSTALL', 'PNPM_HOME'].map(name => environment[name]).filter((value): value is string => Boolean(value) && isAbsolute(value!))
+    if ([executable, real].some(path => managerHomes.some(directory => within(path, directory)))) return { channel: 'unknown' }
     // npm's copy is npm's even under Homebrew's Node (`/opt/homebrew/lib/node_modules/@opencode/cli`), so npm is asked
     // before Homebrew (mise was asked above). Only the program's own prefix counts, so an npm package elsewhere on the
     // machine never claims a copy Homebrew, the install script or a system package put there.
