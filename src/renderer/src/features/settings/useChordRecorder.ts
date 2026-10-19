@@ -79,6 +79,7 @@ export function useChordRecorder(platform: SottoPlatform, listener: boolean): Ch
         })
         listen('keyup', (event) => {
           swallow(event)
+          if (event.key === 'Fn' || NEVER_IN_CHORD.has(event.code)) return
           if (keys.length > 0) finish(canonicalChord(keys, platform))
         })
         // Capturing on window also hears every element's blur; only the window losing focus cancels.

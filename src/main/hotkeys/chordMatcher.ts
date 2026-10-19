@@ -20,9 +20,13 @@ export interface ChordMatcherOptions {
   readonly canStart: () => boolean
 }
 
-/** A hold may start unless dictation is already under way; a finished session (success, error, cancelled) does not block it. */
-export function holdCanStart(status: WidgetSnapshot['status']): boolean {
-  return status !== 'requesting-permission' && status !== 'listening' && status !== 'processing'
+/**
+ * A hold may start unless dictation is already under way; a finished session (success, error, cancelled) does not
+ * block it, except an error that kept its recording for Try again, which a stray hold would otherwise throw away.
+ */
+export function holdCanStart(state: { readonly status: WidgetSnapshot['status']; readonly kept?: boolean | undefined }): boolean {
+  if (state.status === 'error' && state.kept === true) return false
+  return state.status !== 'requesting-permission' && state.status !== 'listening' && state.status !== 'processing'
 }
 
 export interface ChordMatcher {

@@ -353,6 +353,17 @@ describe('DictationShortcuts', () => {
     expect(onReplaceDictationShortcuts).not.toHaveBeenCalled()
   })
 
+  it('ignores a lock key going up mid-chord instead of saving the modifiers alone', async () => {
+    const { onReplaceHotkey, user } = setup()
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' }))
+    press('ControlLeft', 'AltLeft', 'CapsLock')
+    release('CapsLock')
+    press('KeyJ')
+    release('KeyJ')
+    await waitFor(() => expect(onReplaceHotkey).toHaveBeenCalledWith('CommandOrControl+Alt+J'))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it.each(['Fn', 'CapsLock', 'NumLock'])('ignores %s in the page recorder instead of refusing the chord', async (code) => {
     const { onReplaceHotkey, user } = setup()
     await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' }))

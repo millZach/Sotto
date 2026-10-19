@@ -275,27 +275,73 @@ describe('dictation shortcut router record', () => {
     expect(h.listener.record).toHaveBeenLastCalledWith(false)
   })
 
-  it('refuses a recording within 750 ms of the last one ending, and more than 10 in 60 s', async () => {
+  it('caps recordings that reach record mode at 10 a minute, then lets the page record instead', async () => {
     vi.useFakeTimers()
     const h = createHarness()
     h.router.apply({ press: ['Control+Shift+Space'], hold: [] }, 'strict')
-    void h.router.record()
-    h.router.cancelRecord()
-    vi.advanceTimersByTime(749)
-    await expect(h.router.record()).resolves.toEqual({ kind: 'cancelled' })
-    expect(h.listener.record.mock.calls.filter(([on]) => on)).toHaveLength(1)
-    for (let started = 1; started < 10; started += 1) {
-      vi.advanceTimersByTime(750)
+    for (let started = 0; started < 10; started += 1) {
       void h.router.record()
       h.router.cancelRecord()
+      vi.advanceTimersByTime(100)
     }
     expect(h.listener.record.mock.calls.filter(([on]) => on)).toHaveLength(10)
-    vi.advanceTimersByTime(750)
-    await expect(h.router.record()).resolves.toEqual({ kind: 'cancelled' })
+    await expect(h.router.record()).resolves.toEqual({ kind: 'unavailable' })
     expect(h.listener.record.mock.calls.filter(([on]) => on)).toHaveLength(10)
     vi.advanceTimersByTime(60_000)
     void h.router.record()
     expect(h.listener.record.mock.calls.filter(([on]) => on)).toHaveLength(11)
+  })
+
+  it('starts the next recording at once when the user switches rows, without a cooldown', async () => {
+    const h = createHarness()
+    h.router.apply({ press: ['Control+Shift+Space'], hold: [] }, 'strict')
+    const first = h.router.record()
+    h.router.cancelRecord()
+    await expect(first).resolves.toEqual({ kind: 'cancelled' })
+    const second = h.router.record()
+    h.key('down', 'Alt')
+    h.key('down', 'K')
+    h.key('up', 'K')
+    await expect(second).resolves.toEqual({ kind: 'recorded', chord: 'Alt+K' })
+  })
+
+  it('does not count a recording that never reached record mode against the cap', async () => {
+    const h = createHarness({ ready: false })
+    h.router.apply({ press: ['Control+Shift+Space'], hold: [] }, 'strict')
+    for (let tried = 0; tried < 12; tried += 1) {
+      const recorded = h.router.record()
+      h.setPermission('denied')
+      h.handlers().onPermission('denied')
+      await expect(recorded).resolves.toEqual({ kind: 'unavailable' })
+    }
+    h.setPermission('granted')
+    const recorded = h.router.record()
+    h.handlers().onPermission('granted')
+    h.key('down', 'Alt')
+    h.key('down', 'K')
+    h.key('up', 'K')
+    await expect(recorded).resolves.toEqual({ kind: 'recorded', chord: 'Alt+K' })
+  })
+
+  it('cancels a recording that becomes ready after the window lost the focus', async () => {
+    const h = createHarness({ ready: false })
+    h.router.apply({ press: ['Control+Shift+Space'], hold: [] }, 'strict')
+    const recorded = h.router.record()
+    h.setFocused(false)
+    h.setPermission('granted')
+    h.handlers().onPermission('granted')
+    await expect(recorded).resolves.toEqual({ kind: 'cancelled' })
+    expect(h.pushHeld).not.toHaveBeenCalled()
+    expect(h.listener.record).toHaveBeenLastCalledWith(false)
+  })
+
+  it('ends a recording when the screen locks or the computer sleeps', async () => {
+    const h = createHarness()
+    h.router.apply({ press: ['Control+Shift+Space'], hold: [] }, 'strict')
+    const recorded = h.router.record()
+    h.router.interrupt()
+    await expect(recorded).resolves.toEqual({ kind: 'cancelled' })
+    expect(h.listener.record).toHaveBeenLastCalledWith(false)
   })
 
   it('is unavailable without Input Monitoring, at once or when the helper reports it', async () => {

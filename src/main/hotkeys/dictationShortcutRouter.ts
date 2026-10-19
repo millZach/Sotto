@@ -75,8 +75,8 @@ const RECORD_LIMIT_MS = 30_000
 const RECORD_READY_MS = 3_000
 // The preload's held-keys schema accepts at most 8 tokens.
 const MAX_HELD_PUSHED = 8
-// Back-to-back recordings are capped, so a renderer cannot keep record mode on by asking again and again.
-const RECORD_COOLDOWN_MS = 750
+// Recordings that reach record mode are capped, so a renderer cannot keep it on by asking again and again;
+// past the cap the page records instead, which sees only Sotto's own window.
 const RECORD_WINDOW_MS = 60_000
 const RECORDS_PER_WINDOW = 10
 
@@ -105,7 +105,6 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
   let suspended = false
   let suspendTimer: ReturnType<typeof setTimeout> | undefined
   let recording: Recording | null = null
-  let recordEndedAt = -Infinity
   let recordStarts: number[] = []
   let disposed = false
 
@@ -202,7 +201,6 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
     const active = recording
     if (active === null) return
     recording = null
-    recordEndedAt = Date.now()
     clearTimeout(active.timer)
     listener.record(false)
     suspend(false)
@@ -211,10 +209,15 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
 
   function armRecording(): void {
     const active = recording!
+    if (!deps.isFocused()) {
+      finishRecord({ kind: 'cancelled' })
+      return
+    }
     if (listener.permission() === 'denied') {
       finishRecord({ kind: 'unavailable' })
       return
     }
+    recordStarts.push(Date.now())
     active.ready = true
     clearTimeout(active.timer)
     active.timer = setTimeout(() => finishRecord({ kind: 'cancelled' }), RECORD_LIMIT_MS)
@@ -330,10 +333,9 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
       if (disposed) return Promise.resolve({ kind: 'unavailable' })
       const now = Date.now()
       recordStarts = recordStarts.filter((at) => now - at < RECORD_WINDOW_MS)
-      const refused = !deps.isFocused() || now - recordEndedAt < RECORD_COOLDOWN_MS || recordStarts.length >= RECORDS_PER_WINDOW
       finishRecord({ kind: 'cancelled' })
-      if (refused) return Promise.resolve({ kind: 'cancelled' })
-      recordStarts.push(now)
+      if (!deps.isFocused()) return Promise.resolve({ kind: 'cancelled' })
+      if (recordStarts.length >= RECORDS_PER_WINDOW) return Promise.resolve({ kind: 'unavailable' })
       return new Promise<KeyRecordResult>((resolve) => {
         recording = {
           held: [],
@@ -354,8 +356,9 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
 
     permission,
 
-    // The old matcher's reset cancels a hold this router started.
+    // A lock or a sleep ends a recording too, and the old matcher's reset cancels a hold this router started.
     interrupt() {
+      finishRecord({ kind: 'cancelled' })
       matcher.reset()
     },
 

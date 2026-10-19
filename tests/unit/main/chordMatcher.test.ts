@@ -71,7 +71,12 @@ describe('createChordMatcher', () => {
     ['idle', true], ['success', true], ['error', true], ['cancelled', true],
     ['requesting-permission', false], ['listening', false], ['processing', false],
   ] as const)('lets a hold start from %s: %s', (status, allowed) => {
-    expect(holdCanStart(status)).toBe(allowed)
+    expect(holdCanStart({ status })).toBe(allowed)
+  })
+
+  it('leaves an error that kept its recording alone, so Try again still has it', () => {
+    expect(holdCanStart({ status: 'error', kept: true })).toBe(false)
+    expect(holdCanStart({ status: 'error', kept: false })).toBe(true)
   })
 
   it('keeps a skipped hold inert until all its tokens are up', () => {

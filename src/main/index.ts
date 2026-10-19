@@ -1255,10 +1255,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     logOperational,
   )
   // The widget's latest status: a hold shortcut starts dictation only when no session is under way.
-  let widgetStatus: WidgetSnapshot['status'] = 'idle'
+  let widgetState: { status: WidgetSnapshot['status']; kept: boolean } = { status: 'idle', kept: false }
+  // Sotto's own page must hold the keyboard: a site in the in-app browser or the cloud iPhone sits in the same
+  // window, and record mode must never hear what is typed there.
   const mainWindowFocused = (): boolean => {
     const focused = BrowserWindow.getFocusedWindow()
     return focused !== null && focused.webContents === windows.getMainWebContents() && focused.isVisible()
+      && focused.webContents.isFocused()
   }
   // Extra and hold shortcuts are an Owl feature, and Linux binds shortcuts in the compositor.
   const dictationShortcuts = platform !== 'linux' && owlFeatures['dictation-hold-shortcuts']
@@ -1275,7 +1278,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           log: event => logOperational(event as DictationShortcutEvent),
           ...handlers,
         }),
-        canStart: () => holdCanStart(widgetStatus),
+        canStart: () => holdCanStart(widgetState),
         isFocused: mainWindowFocused,
         dispatch: dispatchDictation,
         showWidget,
@@ -1413,7 +1416,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       trayController.update(state)
     },
     syncEscape: (state) => {
-      widgetStatus = state.status
+      widgetState = { status: state.status, kept: 'kept' in state && state.kept === true }
       syncEscapeForWidgetSnapshot(hotkeys, state)
     },
     showWidgetWhenIdle: () => showWidgetWhenIdle,
