@@ -518,7 +518,7 @@ export class WatcherWakeUp {
     if (!this.started || this.closed) return
     this.withPassReads(() => {
       const wait = this.observedAt + WATCHER_OBSERVE_MS - this.now(), edges = this.observedEdges
-      if (wait <= 0 || !edges || edges.record !== this.record() || edges.threads !== this.threadEdges(this.snapshot())) { this.observePass(); return }
+      if (wait <= 0 || !edges || edges.record !== this.record() || edges.threads !== this.threadEdges(this.snapshot())) { this.observe(); return }
       this.owedAfter = after
       this.cancelObserve ??= this.schedule(() => { this.cancelObserve = undefined; this.observe(); after() }, wait)
     })

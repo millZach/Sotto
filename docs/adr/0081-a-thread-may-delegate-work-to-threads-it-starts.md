@@ -42,7 +42,7 @@ ADR-0073 gives start and send authority to Watcher alone, rooted in a Watcher re
 - Nothing here answers a question or permission, changes a policy record or widens a thread's permissions. The standing exceptions stay ADR-0029's browser alone.
 - The delegated thread is a full thread, so it costs what a thread costs: a provider session, a pane's worth of history and a slot in the starts limit.
 - A delegating thread may ask for work the user did not mean. Main can enforce identity, ceilings and budgets; it cannot prove a brief faithfully reflects what the user asked. The user's own message, the delegated thread and its outcome remain visible.
-- Needs a prototype before it is built: delegated threads under the thread that started them, and the room's limit counting them.
+- Needs a prototype before it is built: delegated threads under the thread that started them, and the room's limit counting them. Amended October 17, 2026: the first build listed them under the thread that started them in the sidebar, and an orchestrating thread that starts many crowded it. Zach chose variant B of the delegated threads roster prototype: delegated threads live in the delegating thread's Tools › Agents, mixed with its provider's own agents by start time, newest first, and each opens there as a thread. The sidebar has no row for one, and a search finds none, except one whose delegating thread is gone, which stays listed so it is never out of reach. When a delegated thread below a thread waits on the user, the delegating thread's row says Needs your approval or Needs your answer as its own request would. Opening one from the roster pins Tools to the thread whose roster it was, so the next is a press away.
 
 ## Proof, when built
 

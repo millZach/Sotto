@@ -755,6 +755,11 @@ import XCTest
         XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Watcher's page opens with its state")
         return tab
     }
+    /// Where every drag on Watcher's page runs: down its leading margin, clear of bubbles, cards and rows. Not the trailing
+    /// margin, where iOS draws the page's scroll indicator: a touch that lands on the indicator while it shows takes hold
+    /// of it and scrubs the page. On CI's Pro Max, every third drag up Watched met the indicator on its way down the track
+    /// and threw the page back to its top, so Stop watching never came within reach in forty drags.
+    private let watcherDragX: CGFloat = 8
     /// Puts the keyboard away the way Watcher's conversation lets it go, as a thread's does: a drag that starts in the
     /// conversation and carries on down into the keyboard, which follows it off the screen. A swipe that ends above the
     /// keyboard leaves it up, which is how the journey's first swipe failed on CI.
@@ -763,7 +768,7 @@ import XCTest
         guard keyboard.exists else { return }
         let window = app.windows.firstMatch
         let origin = window.coordinate(withNormalizedOffset: .zero)
-        let x = window.frame.width - 8
+        let x = watcherDragX
         for _ in 0..<3 where keyboard.exists {
             let band = watcherBand
             let from = origin.withOffset(CGVector(dx: x, dy: (band.top + band.bottom) / 2 - window.frame.minY))
@@ -835,8 +840,8 @@ import XCTest
         return (top, bottom)
     }
     /// Scrolls Watcher's conversation until `target` sits whole in `watcherBand`, or for one taller than the band, until
-    /// its top does. Each drag runs down the page's trailing margin, clear of cards and rows, and moves the page no
-    /// farther than the target needs, so it settles rather than passing back and forth.
+    /// its top does. Each drag runs down the page's leading margin (`watcherDragX`), clear of cards, rows and the scroll
+    /// indicator, and moves the page no farther than the target needs, so it settles rather than passing back and forth.
     private func revealInWatcher(_ target: XCUIElement) {
         let window = app.windows.firstMatch
         let origin = window.coordinate(withNormalizedOffset: .zero)
@@ -874,7 +879,7 @@ import XCTest
             }
             let distance = min(220, (band.bottom - band.top) * 0.45, max(needed + 16, 40))
             let direction: CGFloat = down ? 1 : -1
-            let x = window.frame.width - 8
+            let x = watcherDragX
             let middle = (band.top + band.bottom) / 2 - window.frame.minY
             let start = origin.withOffset(CGVector(dx: x, dy: middle - direction * distance / 2))
             let end = origin.withOffset(CGVector(dx: x, dy: middle + direction * distance / 2))
@@ -916,10 +921,19 @@ import XCTest
         XCTAssertTrue(text("How is the release notes thread doing?").waitForExistence(timeout: 5), "The message joins the conversation")
         let answer = text("On it.")
         XCTAssertTrue(answer.waitForExistence(timeout: 10), "Watcher's answer arrives under it")
-        // The page already had a row for the release notes thread; Watcher's answer carries one more.
+        // The page already had a row for the release notes thread; Watcher's answer carries one more. Counting rows reads
+        // the whole of Watcher's long page, not just a first match. On CI's SE the first count took over four seconds and
+        // XCTest asked twice more, so a five-second wait ran out within one look and failed with the answer's row on screen
+        // in its recording. A deadline that is never reached costs nothing.
         let rows = app.buttons.matching(identifier: "watcher-receipt-\(laptop)/notes845")
-        let added = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 2"), object: rows)
-        XCTAssertEqual(XCTWaiter.wait(for: [added], timeout: 5), .completed, "With what it did")
+        var counted = 0
+        let twoRows = NSPredicate { _, _ in
+            counted = rows.count
+            return counted == 2
+        }
+        let added = XCTNSPredicateExpectation(predicate: twoRows, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [added], timeout: 30), .completed,
+                       "With what it did (\(counted) rows for the release notes thread)")
         // The answer's end is on screen between the header and the box, not left under the card still waiting below.
         // The band is read before the wait and again after it, and the wait reads only the answer. On CI's SE each query
         // can take a second or two: reading the header, tab bar and box inside a ten-second wait left time for one
@@ -928,11 +942,14 @@ import XCTest
             frame.maxY > band.top && frame.maxY <= band.bottom + 1
         }
         let band = watcherBand
-        var seen = ""
+        var seen = "no look found the answer's frame"
         var matches = 0
         let shown = NSPredicate { _, _ in
             guard answer.exists else { seen = "the answer is missing"; matches = 0; return false }
             let frame = answer.frame
+            // A look that lost the answer between its two reads gets no frame; keep the last frame a look did read, which
+            // is what a failure needs to say. Writing the empty one over it once hid an answer left under the box.
+            guard !frame.isEmpty else { matches = 0; return false }
             seen = "answer \(frame), between \(band.top) and \(band.bottom)"
             matches = inBand(frame, band) ? matches + 1 : 0
             return matches >= 2
@@ -988,8 +1005,9 @@ import XCTest
     private func pullWatcherToRefresh(_ band: (top: CGFloat, bottom: CGFloat)) {
         let window = app.windows.firstMatch
         let origin = window.coordinate(withNormalizedOffset: .zero)
-        // Down the trailing margin, clear of bubbles and cards, from under the header to near the screen's foot.
-        let x = window.frame.width - 8
+        // Down the leading margin, clear of bubbles, cards and the scroll indicator, which sits at the top of the trailing
+        // margin at the conversation's start, from under the header to near the screen's foot.
+        let x = watcherDragX
         let from = origin.withOffset(CGVector(dx: x, dy: band.top + 8 - window.frame.minY))
         let to = origin.withOffset(CGVector(dx: x, dy: window.frame.height - 40))
         from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.6)
