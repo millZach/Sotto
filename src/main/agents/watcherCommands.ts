@@ -35,6 +35,8 @@ export interface WatcherControlHooks {
   /** Watcher's hidden wake-up left its queue with this outcome, holding these events (hiddenWakeUp.ts). */
   wakeUpSettled?(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void
   pullRequestObserved?(read: PullRequestObservation): void
+  /** What a wake-up's note adds after Watcher's conversation was compacted, until Watcher reads its state back (#1189). */
+  stateNote?(): string | undefined
   restoreCheckpoint?(read: CheckpointObservation): void
   checkpointObserved?(read: CheckpointObservation): void
 }

@@ -132,6 +132,23 @@ const boundedRead = <S extends z.ZodType>(schema: S) => schema.refine(value => n
  * not be read, `not-connected` for one that is not connected now. Never guessed.
  */
 export const WATCHER_MACHINES_MAX = 100
+
+/**
+ * Watcher's state (#1189): what it must not lose when its conversation is compacted. Watcher keeps the user's pending
+ * decisions, the standing rules the user gave and the issues it filed, with keep_state; Sotto adds the watched threads
+ * and what each waits on from its own records. read_state gives the whole of it back.
+ */
+export const WATCHER_KEPT_ITEMS_MAX = 20
+export const WATCHER_KEPT_ITEM_MAX = 300
+/** Watcher's conversation is compacted once it passes this many tokens, when it next rests (#1189, Zach's pick). */
+export const WATCHER_COMPACT_AT_TOKENS = 400_000
+const keptItems = z.array(z.string().trim().min(1).max(WATCHER_KEPT_ITEM_MAX)).max(WATCHER_KEPT_ITEMS_MAX)
+export const watcherKeptStateSchema = z.object({ decisions: keptItems, rules: keptItems, issues: keptItems, updatedAt: time.nullable() }).strict()
+export type WatcherKeptState = z.infer<typeof watcherKeptStateSchema>
+/** A watched thread as Watcher's state gives it: who it is and, in Sotto's words, what it waits on. */
+export const watcherStateThreadSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
+  waitsOn: z.string().min(1).max(200) }).strict()
+export type WatcherStateThread = z.infer<typeof watcherStateThreadSchema>
 // Strict here, as every Watcher result is: the host's own report was already read leniently, so nothing extra remains.
 const machineFacts = hostFactsSchema.extend({ os: hostOsSchema.strict() }).strict()
 const machine = z.object({ hostId: id, name: z.string().min(1).max(200), thisComputer: z.boolean(), connected: z.boolean(),
@@ -191,6 +208,16 @@ export const watcherToolSchemas = {
       workers: z.array(z.object({ provider: providerIdSchema, modelId: entityId, reasoningEfforts: z.array(z.string().max(64)).max(20),
         defaultPermission: permission.nullable(), permissionComparable: z.boolean() }).strict()).max(100),
       controlAvailable: z.boolean(), readsAvailable: z.boolean(), readOnlyProfileAvailable: z.boolean(), freshness }).strict()).max(100), ...page }),
+  },
+  keep_state: {
+    // Each list given replaces the one kept; a list left out stays as it is.
+    input: z.object({ decisions: keptItems.optional(), rules: keptItems.optional(), issues: keptItems.optional() }).strict(),
+    output: result({ kept: watcherKeptStateSchema }),
+  },
+  read_state: {
+    input: z.object({}).strict(),
+    output: result({ watching: z.array(watcherStateThreadSchema).max(100), kept: watcherKeptStateSchema,
+      contextTokens: counter.nullable(), compactAtTokens: counter }),
   },
   list_machines: {
     input: z.object({}).strict(),

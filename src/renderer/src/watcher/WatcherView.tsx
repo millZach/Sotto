@@ -36,6 +36,7 @@ import { WatcherGlance } from './WatcherGlance'
 import { watcherProviderOf } from './watcherProviders'
 import { WatcherHandoverOffer, WatcherSendGateContext, watcherSendGate } from './WatcherHandover'
 import { overviewCount, statusWord, threadPress, TONES, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
+import { WatcherContextTile } from './WatcherContextTile'
 import { WatcherOwl } from './WatcherOwl'
 import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
@@ -142,12 +143,14 @@ interface HeaderParts {
 /**
  * Watcher's header: the Sotto Owl tile in the window's corner, as on every other Owl page, then Watcher's name and
  * All threads, which opens the Overview over the room; once Watcher runs, Conversation and Watched, and at its end More
- * Watcher actions. The night sky spreads behind the corner. The row is the window's drag strip.
+ * Watcher actions. Once Watcher runs the tile is also a button for Watcher's context and state (#1189). The night sky
+ * spreads behind the corner. The row is the window's drag strip.
  */
 function WatcherHeader({ room, limit, count, tab, tabIds, listOpen, listButton, onToggleList, stopAll }: HeaderParts): ReactNode {
   const started = room?.state?.current != null
   return <header className="thread-workspace__head watcher-head">
-    <span className="watcher-head__tile" role="img" aria-label={releaseTrackName('owl')}><SottoMark className="thread-nav__tile" /></span>
+    {started && room !== null ? <WatcherContextTile room={room} />
+      : <span className="watcher-head__tile" role="img" aria-label={releaseTrackName('owl')}><SottoMark className="thread-nav__tile" /></span>}
     <div className="thread-workspace__title">
       <h1>Watcher</h1>
       <button ref={listButton} type="button" className="watcher-head__list tt-focusable" aria-haspopup="dialog" aria-expanded={listOpen}

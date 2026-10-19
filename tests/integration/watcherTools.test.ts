@@ -1536,3 +1536,63 @@ it('keeps durably waiting pull request news through Watcher recovery and same-fa
   expect(f.control.watcherRecord().wakeEventIds).toEqual(ids)
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
 })
+
+// #1189: Watcher's state, kept through compaction, and compacting its conversation when it grows.
+it('keeps the decisions, rules and issues Watcher gives, list by list, and reads them back with what each watched thread waits on', async () => {
+  const f = await fixture()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  expect(await f.call('keep_state', { decisions: ['Merge #1186 once CI is green?'], rules: ['Full test suites run in CI, not on the laptop.'] }))
+    .toMatchObject({ status: 'ok', kept: { decisions: ['Merge #1186 once CI is green?'], rules: ['Full test suites run in CI, not on the laptop.'], issues: [] } })
+  // A list left out stays as it was.
+  await f.call('keep_state', { issues: ['#1189 Watcher: auto-compact its conversation'] })
+  const read = await f.call('read_state', {})
+  expect(read).toMatchObject({ status: 'ok', compactAtTokens: 400_000, kept: { decisions: ['Merge #1186 once CI is green?'],
+    rules: ['Full test suites run in CI, not on the laptop.'], issues: ['#1189 Watcher: auto-compact its conversation'] } })
+  if (read.status !== 'ok' || !('watching' in read)) throw new Error('read refused')
+  expect(read.watching).toContainEqual(expect.objectContaining({ target: started.target, waitsOn: expect.any(String) }))
+  expect(f.service.state().state?.kept.rules).toEqual(['Full test suites run in CI, not on the laptop.'])
+  // With Keep local history on, the kept words are saved beside the control record.
+  expect(await readFile(join(f.root, 'watcher-state.json'), 'utf8')).toContain('Full test suites run in CI')
+})
+
+it('saves none of Watcher’s kept words with Keep local history off', async () => {
+  const f = await fixture(false)
+  await f.call('keep_state', { rules: ['synthetic_private_rule_51c2'] })
+  expect(await f.call('read_state', {})).toMatchObject({ kept: { rules: ['synthetic_private_rule_51c2'] } })
+  const saved = await readFile(join(f.root, 'watcher-state.json'), 'utf8').catch(() => '')
+  expect(saved).not.toContain('synthetic_private_rule_51c2')
+})
+
+it('compacts Watcher once its conversation passes 400K tokens while it rests, and tells it to read its state after', async () => {
+  const f = await fixture()
+  const real = f.control.watcherSnapshot.bind(f.control)
+  let watcher: Partial<AgentThread> = { status: 'idle', requests: [], usage: { contextUsed: 399_000, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } }
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, capabilities: { ...snapshot.capabilities, compact: true },
+      ...snapshot.providers ? { providers: snapshot.providers.map(provider => ({ ...provider, capabilities: { ...provider.capabilities, compact: true } })) } : {},
+      threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, ...watcher } : thread) }
+  })
+  vi.spyOn(f.control, 'hasPendingThreadWork').mockReturnValue(false)
+  vi.spyOn(f.control, 'watcherWakeUpQueued').mockReturnValue(false)
+  const command = vi.spyOn(f.control, 'command').mockResolvedValue(f.control.shell())
+  const nudge = () => f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await nudge()
+  expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'compact-thread' }))
+  expect(f.service.state().context).toMatchObject({ tokens: 399_000, compactAt: 400_000, canCompact: true, compacting: false })
+  // Past the point, but Watcher's turn is running: it waits for Watcher to rest.
+  watcher = { ...watcher, status: 'running', usage: { ...watcher.usage!, contextUsed: 412_000, contextUpdatedAt: '2026-10-19T10:01:00.000Z' } }
+  await nudge()
+  expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'compact-thread' }))
+  watcher = { ...watcher, status: 'idle' }
+  await nudge(); await nudge()
+  expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toEqual([[{ type: 'compact-thread', threadId: f.id }]])
+  expect(f.service.stateNote()).toBeUndefined()
+  // The compaction finished: the next turn's note says to read the state back, until Watcher does.
+  watcher = { ...watcher, compaction: { commandId: 'synthetic-compaction', status: 'completed' }, usage: { ...watcher.usage!, contextUsed: 31_000, contextUpdatedAt: '2026-10-19T10:02:00.000Z' } }
+  await nudge()
+  expect(f.service.stateNote()).toContain('call read_state')
+  await f.call('read_state', {})
+  expect(f.service.stateNote()).toBeUndefined()
+})

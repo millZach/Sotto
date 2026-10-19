@@ -8,7 +8,7 @@ import { capRuntimeMode, roleStartNote, startFromRole, type HeldPermission, type
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
-import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
+import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX } from '../../shared/watcher'
 import type { HostMachineReport } from '../../shared/hostFacts'
@@ -20,7 +20,9 @@ import type { AgentHostCommand } from './host'
 import type { AgentControl } from './control'
 import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherProgressFingerprint } from './watcherWakeUp'
-import { watcherRequestNote } from './watcherRequestNote'
+import { WATCHER_COMPACTED_NOTE, watcherRequestNote } from './watcherRequestNote'
+import { WatcherStateStore, watcherWaitsOn } from './watcherState'
+import { compactionPending } from '../../shared/compaction'
 import { watcherDisplayPrompt } from './watcherMessageDisplay'
 import { followupDigest } from './followups'
 import type { Handover } from './handover'
@@ -118,6 +120,12 @@ export class WatcherService implements WatcherControlHooks {
   private readonly listeners = new Set<(state: WatcherRoomState) => void>()
   private readonly active = new Map<string, Promise<unknown>>()
   private invocations = 0
+  /** What Watcher keeps through compaction (#1189), and whether a compaction since it last read it owes it a note. */
+  private readonly kept: WatcherStateStore
+  private stateOwed = false
+  private seenCompaction: string | null | undefined
+  private compactTried: string | undefined
+  private compactingNow = false
   private changing = false
   private readonly dispatchRefusals = new Map<string, Refusal>()
   private readonly nativeHeads = new Map<string, string | null>()
@@ -175,9 +183,45 @@ export class WatcherService implements WatcherControlHooks {
       deliver: news => options.control.deliverWakeUp(news.watcher.threadId, news, { tool: false }),
       prune: () => options.control.pruneWatcherWakeUps(), remember: ids => options.control.updateWatcher(record => { record.wakeEventIds = [...new Set([...record.wakeEventIds ?? [], ...ids])].slice(-1_000) }),
       changed: () => this.publish(), failed: () => { this.recoveryNotice = 'Watcher news could not be saved. Reconnect or refresh its threads to retry. Nothing was approved.' } })
-    const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => { this.endFinishedPauses(); this.closeAnsweredRequests(); this.publish() })
+    this.kept = new WatcherStateStore(options.directory, options.historyEnabled)
+    const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => { this.endFinishedPauses(); this.closeAnsweredRequests(); this.compactWhenDue(); this.publish() })
     this.unsubscribe = () => { unhook(); unsubscribe() }
   }
+  /**
+   * Compacts Watcher's conversation once it passes WATCHER_COMPACT_AT_TOKENS (#1189), when Watcher rests: no turn, no card,
+   * no compaction, nothing queued for it. Every Watcher call rereads its whole conversation, so its cost grows with it.
+   * One try per context reading, so a compaction that fails is tried again only after Watcher's next turn. A compaction that
+   * finished, this one or the user's, owes Watcher its state: the note of its next turn says to read it.
+   */
+  private compactWhenDue(): void {
+    if (this.closed) return
+    const current = this.view().current
+    const snapshot = current ? this.options.control.watcherSnapshot() : undefined
+    const thread = current && snapshot?.threads.find(item => item.id === current.target.threadId)
+    if (!thread || !snapshot) return
+    const done = thread.compaction?.status === 'completed' ? thread.compaction.commandId : null
+    // The first look only learns where things stand: a compaction before this start is not news to this Watcher.
+    if (this.seenCompaction !== undefined && done !== null && done !== this.seenCompaction) this.stateOwed = true
+    this.seenCompaction = done ?? this.seenCompaction ?? null
+    const tokens = this.contextTokens(thread)
+    if (tokens === null || tokens < WATCHER_COMPACT_AT_TOKENS || this.compactingNow || !this.canCompact(snapshot, thread)) return
+    if (thread.status === 'running' || thread.requests.length || compactionPending(thread.compaction) || thread.nativeSessionStarted === false
+      || this.options.control.watcherWakeUpQueued() || this.options.control.hasPendingThreadWork(thread.id)) return
+    const reading = thread.usage?.contextUpdatedAt ?? String(tokens)
+    if (reading === this.compactTried) return
+    this.compactTried = reading; this.compactingNow = true
+    void this.options.control.command({ type: 'compact-thread', threadId: thread.id }).catch(() => undefined).finally(() => { this.compactingNow = false })
+  }
+  /** Watcher's context in tokens as its provider last reported it for its current model, or null. */
+  private contextTokens(thread: AgentThread): number | null {
+    const usage = thread.usage
+    return usage?.contextUsed !== undefined && (usage.modelId === undefined || usage.modelId === thread.modelId) ? usage.contextUsed : null
+  }
+  private canCompact(snapshot: AgentHostSnapshot, thread: AgentThread): boolean {
+    return capabilitiesForThread(snapshot, thread).compact === true && thread.manualCompactionSupported !== false
+  }
+  /** The line a Watcher turn's note carries after a compaction, until Watcher reads its state back (#1189). */
+  stateNote(): string | undefined { return this.stateOwed ? WATCHER_COMPACTED_NOTE : undefined }
   private record(): WatcherRecord { return this.options.control.watcherRecord() }
   /** The record for reading only. It is replaced on every change, never edited, so no copy is needed to look at it. */
   private view(): Readonly<WatcherRecord> { return this.options.control.watcherRecordView() }
@@ -418,7 +462,7 @@ export class WatcherService implements WatcherControlHooks {
     // One host list for the whole read: each list reads every paired host, so asking per operation grew with them (#1023).
     let hosts: ReturnType<WatcherRemoteHosts['hosts']> | undefined
     const reportsOutcomes = (hostId: string) => (hosts ??= this.remote?.hosts() ?? []).find(host => host.hostId === hostId)?.outcomes === true
-    return { current: record.current, currentOptions: current ? { modelId: current.modelId, reasoningEffort: current.reasoningEffort ?? null,
+    const room: WatcherRoomState = { current: record.current, currentOptions: current ? { modelId: current.modelId, reasoningEffort: current.reasoningEffort ?? null,
       runtimeMode: current.runtimeMode ?? 'approval-required', status: current.status, connected: this.connected(current) } : null,
       runtimeMode: record.lastRuntimeMode ?? current?.runtimeMode ?? 'approval-required', standingWatches: watches,
       ownChanges: current ? watcherOwnChanges(current) : [], history: record.history, requests: record.requests,
@@ -450,6 +494,16 @@ export class WatcherService implements WatcherControlHooks {
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(),
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
       receiptReplies: watcherReceiptReplies(record, current) }
+    // Watcher's conversation against its compaction point, and what it keeps through compaction (#1189).
+    const snapshot = this.options.control.watcherSnapshot()
+    room.context = current ? { tokens: this.contextTokens(current), compactAt: WATCHER_COMPACT_AT_TOKENS, canCompact: this.canCompact(snapshot, current),
+      compacting: compactionPending(current.compaction) } : null
+    room.state = { watching: this.watching(room.watchedThreads), kept: this.kept.read() }
+    return room
+  }
+  /** The watched threads and what each waits on, in Sotto's words, for Watcher's state (#1189). */
+  private watching(threads: WatcherRoomState['watchedThreads']) {
+    return threads.filter(thread => thread.watched !== false).slice(0, 100).map(thread => ({ target: thread.target, title: thread.title, waitsOn: watcherWaitsOn(thread) }))
   }
   private roomObservation(observation: WatcherObservation) { const { landing: _landing, ...result } = observation; void _landing; return result }
   get(): WatcherRoomResult { return { status: 'ok', state: this.state() } }
@@ -1029,7 +1083,8 @@ export class WatcherService implements WatcherControlHooks {
       })
     }
     // The user's text goes as typed. The request rides beside it, through the provider's own context channel.
-    const note = watcherRequestNote(request.id, this.hostId())
+    // After a compaction the note also tells Watcher to read its state back first (#1189).
+    const note = watcherRequestNote(request.id, this.hostId(), this.stateOwed)
     // Codex and Claude Code are sent the words alone, and their display proof says so: a proven message is never
     // searched for an older footer, even one the user typed. Grok Build's request line is taken off by its exact
     // provenance instead (watcherRequestNote.ts), since a skill prompt can change what its adapter sends.
@@ -1366,6 +1421,14 @@ export class WatcherService implements WatcherControlHooks {
         return result.status === 'refused' ? result : { status: 'ok', target: (parsed.data as WatcherToolInput<'unwatch_thread'>).target, watched: false }
       }
       if (name === 'list_machines') return await this.listMachines()
+      if (name === 'keep_state') return { status: 'ok', kept: await this.kept.keep(parsed.data as WatcherToolInput<'keep_state'>, now()) }
+      if (name === 'read_state') {
+        await this.kept.loaded
+        this.stateOwed = false
+        const current = this.view().current, thread = current && this.options.control.watcherSnapshot().threads.find(item => item.id === current.target.threadId)
+        return { status: 'ok', watching: this.watching(this.state().watchedThreads), kept: this.kept.read(),
+          contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: WATCHER_COMPACT_AT_TOKENS }
+      }
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }
       const hostId = input.hostId ?? input.target?.hostId ?? input.project?.hostId
       const requestId = 'requestId' in parsed.data ? parsed.data.requestId : undefined
