@@ -86,6 +86,12 @@ describe('Watcher’s replies to news', () => {
     expect(failed).toHaveTextContent('Failed after 3.0s')
     expect(inOrder(['CI went green', 'Failed after 3.0s', 'Merge the host-update'])).toBe(true)
   })
+
+  it('shows nothing for a finished news turn with no reply and no lifecycle record', () => {
+    const bare = [...activities.filter(item => item.turnId !== 'news-3'), ...work('news-3', '58:10.000', '58:13.000', ['tool'], 30).filter(item => item.kind !== 'turn')]
+    show(bare)
+    expect(document.querySelector('[data-turn-id="news-3"]')).toBeNull()
+  })
 })
 
 describe('an unshown turn in another thread', () => {

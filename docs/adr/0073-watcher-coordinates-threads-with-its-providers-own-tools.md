@@ -314,10 +314,12 @@ the user's own answer under its "Worked for" line. Zach: "These should not be be
 these are triggering far too much."
 
 The renderer now places a turn whose own message is not shown (an unshown turn) where it happened. Its reply is the
-message that names the turn (`turnMessageId`), else the first written after the turn began and before the next began. That
-reply opens a turn of its own, so it never answers the user's message above it. A turn that wrote no reply goes before the
-next turn the transcript starts, and only one nothing came after, such as a running one, trails. This holds in every
-thread; outside Watcher such a turn keeps the usual "Worked for" line above its reply.
+message that names the turn (`turnMessageId`). Failing that, for a turn that began inside the loaded window, it is the
+first message written after the turn began, before the next turn began and before this one ended. That reply opens a turn
+of its own, so it never answers the user's message above it, even when none of the turn's work is left in the records. A
+turn that wrote no reply goes before the next turn the transcript starts, and only one nothing came after, such as a
+running one, trails. This holds when the turn is older than every placed turn, since the records keep only the newest
+turns' work, and in every thread; outside Watcher such a turn keeps the usual "Worked for" line above its reply.
 
 In Watcher's conversation an unshown turn is a news turn, and Zach picked variant b of
 `docs/prototypes/watcher-news-turns-prototype.html`: the work has no line of its own. The first reply's header says **After news · 7.1s** (or how the turn failed or stopped) and opens the work, and every

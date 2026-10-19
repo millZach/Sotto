@@ -56,11 +56,11 @@ const bySequence = (a: AgentActivity, b: AgentActivity): number => a.sequence - 
  * lands under the answer of a turn that came after it. Main already keeps back the work it can place above
  * the loaded window, so this is the rule for work it could not place.
  *
- * A newer turn with no place is an unshown turn: its own message is left out of the conversation, so its work sits
- * where it happened, not after everything. Its reply is the message that names the turn (`turnMessageId`), else the
- * first one written after the turn began and before the next turn did. With a reply, the work goes with it
- * (`unshown`); without one, it goes before whatever message came next (`before`). Only a turn nothing came after, such
- * as one still running, trails the conversation.
+ * Before either rule, a turn whose own message is left out of the conversation, an unshown turn, sits where it happened
+ * when the messages say where: its reply is the message that names the turn (`turnMessageId`), else, for a turn that began
+ * inside the window, the first one written after it began, before the next turn began and before it ended. With a reply,
+ * the work goes with it (`unshown`); without one, it goes before the next turn the transcript starts (`before`). This holds
+ * even when it began before every placed turn, since the records keep only the newest turns' work.
  */
 export function placeActivities(
   messages: readonly AgentMessage[],
@@ -146,7 +146,7 @@ export function placeActivities(
     ;(reading.find(draft => draft.records.length && !draft.boundary) ?? reading.find(draft => !draft.boundary) ?? reading[0]!).turn = turn
   }
 
-  const places = unshownPlaces(messages, sorted, anchors, turn => shownFrom !== undefined && began.get(turn)! < shownFrom)
+  const places = historyLoading ? new Map<string, { readonly reply?: string; readonly next?: string }>() : unshownPlaces(messages, sorted, anchors)
   const after = new Map<string, ActivityGroup[]>()
   const unshown = new Map<string, ActivityGroup[]>()
   const before = new Map<string, ActivityGroup[]>()
@@ -160,14 +160,13 @@ export function placeActivities(
     const group: ActivityGroup = { key: draft.key, turnId: draft.turnId, anchorMessageId: draft.anchorMessageId, records: draft.records, ...(draft.turn ? { turn: draft.turn } : {}) }
     const place = places.get(draft.turnId)
     if (draft.anchorMessageId !== null) put(after, draft.anchorMessageId, group)
-    else if (shownFrom !== undefined && began.get(draft.turnId)! < shownFrom) { if (leads) leading.push(group) }
-    else if (historyLoading) continue
     else if (place?.reply !== undefined) put(unshown, place.reply, group)
     else if (place?.next !== undefined) put(before, place.next, group)
-    else trailing.push(group)
+    else if (shownFrom !== undefined && began.get(draft.turnId)! < shownFrom) { if (leads) leading.push(group) }
+    else if (!historyLoading) trailing.push(group)
   }
-  // A reply that names an unshown turn opens it even once that turn's work is gone from the records.
-  for (const id of named) if (visible.has(id) && !unshown.has(id)) unshown.set(id, [])
+  // A reply opens its unshown turn even when none of the turn's work is shown, or the work is gone from the records.
+  for (const id of [...named, ...[...places.values()].flatMap(place => place.reply ?? [])]) if (visible.has(id) && !unshown.has(id)) unshown.set(id, [])
   return { after, unshown, before, leading, trailing }
 }
 
@@ -192,42 +191,58 @@ function namingUnshown(messages: readonly AgentMessage[], known: ReadonlySet<str
 /** When a record says it began, or NaN. */
 const startedAt = (record: AgentActivity): number => record.startedAt ? Date.parse(record.startedAt) : Number.NaN
 
+/** How long after a turn ended its reply may still be stamped, for clocks that disagree a little. */
+const REPLY_SLACK_MS = 2_000
+
 /**
- * Where each newer turn with no place in the messages sits: the reply it wrote, or the message that came after it.
- * A turn Sotto cannot date has neither and trails, as it always did.
+ * Where each turn with no place in the messages sits: the reply it wrote, or the message that came after it. A reply
+ * that names the turn is its own; failing that, the first message written after the turn began is its reply when it is
+ * not a user's, names no other turn, and came before the next turn began and before this one ended. Turns are matched in
+ * the order they began, so each reply has one turn. A turn Sotto cannot date, or one that began before the first message
+ * the window holds, has no place here.
  */
-function unshownPlaces(messages: readonly AgentMessage[], sorted: readonly AgentActivity[], anchors: ReadonlyMap<AgentActivity, string | null>,
-  earlier: (turnId: string) => boolean): ReadonlyMap<string, { readonly reply?: string; readonly next?: string }> {
+function unshownPlaces(messages: readonly AgentMessage[], sorted: readonly AgentActivity[],
+  anchors: ReadonlyMap<AgentActivity, string | null>): ReadonlyMap<string, { readonly reply?: string; readonly next?: string }> {
   const places = new Map<string, { reply?: string; next?: string }>()
-  const starts = new Map<string, number>()
-  const named = new Map<string, Set<string>>()
+  interface Turn { readonly ids: Set<string>; start?: number; ended?: number; running: boolean }
+  const turns = new Map<string, Turn>()
+  const starts: number[] = []
   for (const record of sorted) {
-    const start = startedAt(record), held = starts.get(record.turnId)
-    if (Number.isFinite(start) && (held === undefined || start < held)) starts.set(record.turnId, start)
-    if (anchors.get(record) !== null || earlier(record.turnId)) continue
-    const ids = named.get(record.turnId) ?? new Set([record.turnId])
-    if (record.afterMessageId !== undefined) ids.add(record.afterMessageId)
-    named.set(record.turnId, ids)
+    const start = startedAt(record)
+    if (Number.isFinite(start)) starts.push(start)
+    if (anchors.get(record) !== null) continue
+    const turn = turns.get(record.turnId) ?? { ids: new Set([record.turnId]), running: false }
+    turns.set(record.turnId, turn)
+    if (record.afterMessageId !== undefined) turn.ids.add(record.afterMessageId)
+    if (Number.isFinite(start) && (turn.start === undefined || start < turn.start)) turn.start = start
+    const done = record.completedAt ? Date.parse(record.completedAt) : Number.NaN
+    if (Number.isFinite(done) && (turn.ended === undefined || done > turn.ended)) turn.ended = done
+    if (record.status === 'running') turn.running = true
   }
-  if (!named.size) return places
+  if (!turns.size) return places
   const claimed = new Set<string>()
-  const ordered = [...starts.values()].sort((a, b) => a - b)
-  for (const [turnId, ids] of named) {
-    // A reply that names the turn it answers is the turn's, whatever the clocks say.
-    let reply = messages.find(message => message.role !== 'user' && message.turnMessageId !== undefined && ids.has(message.turnMessageId))
-    const start = starts.get(turnId)
-    if (!reply && start !== undefined) {
-      const end = ordered.find(value => value > start) ?? Number.POSITIVE_INFINITY
-      const first = messages.find(message => Date.parse(message.createdAt) >= start)
-      if (first && first.role !== 'user' && first.turnMessageId === undefined && Date.parse(first.createdAt) < end && !claimed.has(first.id)) reply = first
-    }
+  // A reply that names the turn it answers is the turn's, whatever the clocks say.
+  for (const [turnId, turn] of turns) {
+    const reply = messages.find(message => message.role !== 'user' && message.turnMessageId !== undefined && turn.ids.has(message.turnMessageId) && !claimed.has(message.id))
     if (reply) { claimed.add(reply.id); places.set(turnId, { reply: reply.id }) }
   }
+  const opened = messages[0] ? Date.parse(messages[0].createdAt) : Number.NaN
+  const dated = [...turns].filter(([turnId, turn]) => !places.has(turnId) && turn.start !== undefined && turn.start >= opened)
+    .sort(([, a], [, b]) => a.start! - b.start!)
+  starts.sort((a, b) => a - b)
+  for (const [turnId, turn] of dated) {
+    const next = starts.find(value => value > turn.start!) ?? Number.POSITIVE_INFINITY
+    const end = Math.min(next, !turn.running && turn.ended !== undefined ? turn.ended + REPLY_SLACK_MS : Number.POSITIVE_INFINITY)
+    const first = messages.find(message => Date.parse(message.createdAt) >= turn.start!)
+    if (first && first.role !== 'user' && first.turnMessageId === undefined && Date.parse(first.createdAt) < end && !claimed.has(first.id)) {
+      claimed.add(first.id)
+      places.set(turnId, { reply: first.id })
+    }
+  }
   // A turn that wrote nothing goes before the next turn the transcript starts: a user's message or an unshown turn's reply.
-  for (const turnId of named.keys()) {
-    const start = starts.get(turnId)
-    if (places.has(turnId) || start === undefined) continue
-    const next = messages.find(message => (message.role === 'user' || claimed.has(message.id)) && Date.parse(message.createdAt) >= start)
+  for (const [turnId, turn] of dated) {
+    if (places.has(turnId)) continue
+    const next = messages.find(message => (message.role === 'user' || claimed.has(message.id)) && Date.parse(message.createdAt) >= turn.start!)
     if (next) places.set(turnId, { next: next.id })
   }
   return places

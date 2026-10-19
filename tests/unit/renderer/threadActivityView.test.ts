@@ -213,6 +213,31 @@ describe('placing the work of an unshown turn', () => {
     expect(placeActivities(window, window, []).unshown.has('cut')).toBe(false)
   })
 
+  it('places a news turn by its reply even when the turn before it lost its work to trimming', () => {
+    // The records keep only the newest turns' work, so the news turn is the oldest one left; it is still not above the messages.
+    const trimmed = activities.filter(item => item.turnId !== 'you-1')
+    const placement = placeActivities(messages, messages, trimmed)
+    expect(placement.leading).toEqual([])
+    expect(placement.unshown.get('news-reply-1')!.map(group => group.turnId)).toEqual(['news-1'])
+    expect(placement.before.get('you-2')!.map(group => group.turnId)).toEqual(['news-2'])
+  })
+
+  it('opens a turn at a reply it claims by time even when none of the turn’s work is shown', () => {
+    // A Codex or Grok news turn trimmed to its finished lifecycle: nothing of it is drawn, but its reply is still its own.
+    const lone = activities.filter(item => item.turnId !== 'news-1' || item.kind === 'turn')
+    const placement = placeActivities(messages, messages, lone)
+    expect(placement.unshown.get('news-reply-1')).toEqual([])
+    expect(splitTurns(messages, placement.unshown).map(turn => turn.key)).toEqual(['you-1', 'unshown:news-reply-1', 'you-2'])
+  })
+
+  it('never lets a turn that ended before a reply was written claim it', () => {
+    // news-2 ended at 57:36.613 and wrote nothing; the reply after it came from a turn Sotto has no times for.
+    const late = [...messages.slice(0, 3), said('late-reply', 'assistant', '58:20.000'), ...messages.slice(3)]
+    const placement = placeActivities(late, late, activities)
+    expect(placement.unshown.has('late-reply')).toBe(false)
+    expect(placement.before.get('you-2')!.map(group => group.turnId)).toEqual(['news-2'])
+  })
+
   it('shows nothing for a reply above the rendered page', () => {
     expect(placeActivities(messages, messages.slice(3), activities).unshown.size).toBe(0)
   })

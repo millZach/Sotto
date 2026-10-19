@@ -15,16 +15,18 @@ one row per turn. The news reply joined the user's turn above it, which then fol
 
 ## Zach's own Watcher thread
 
-The placement was run, outside the app, over the IDs and times of Zach's Watcher thread in `threads.sqlite` (135
-messages, 44 of them news wake-ups; no text was read beyond telling the wake-up line apart):
+The placement was run, outside the app, over the IDs and times of Zach's Watcher thread in `threads.sqlite`. No text was
+read beyond telling the wake-up line apart. It was run twice as the thread grew, before and after the review fixes:
 
-| | Rows after the last reply | News turns with their reply |
-| --- | --- | --- |
-| Before | 25 | 0 |
-| After | 0 | 44 |
+| Thread | Placement | Rows after the last reply | News turns with their own reply |
+| --- | --- | --- | --- |
+| 135 messages, 44 news wake-ups | Before | 25 | 0 |
+| | After | 0 | 44 |
+| 226 messages, 77 news wake-ups | Before | 43 | 0 |
+| | After | 0 | 77 |
 
-25 news turns still had their work in the records, matched by the reply that names the turn (`turnMessageId`). The other
-19 had lost it to trimming and still open their own turn from that name, so none folds the user's answer away.
+Some news turns had lost their work to trimming. They still open their own turn from the reply that names them
+(`turnMessageId`), so none folds the user's answer away.
 
 ## In the built app
 
@@ -43,9 +45,16 @@ window, replies without their wake-ups and work that names them, and checks the 
 ![Open, light](../../artifacts/watcher-news-turns/news-open-light-1280x800.png)
 
 `tests/unit/renderer/watcherNewsTurns.test.tsx` and the "placing the work of an unshown turn" cases in
-`tests/unit/renderer/threadActivityView.test.ts` fail on the parent commit and pass here. They cover a failed news turn
-with no reply, which keeps its line in place, and other threads, where such a turn keeps the usual "Worked for" line
-above its reply.
+`tests/unit/renderer/threadActivityView.test.ts` fail on the parent commit and pass here. They also cover these cases:
+
+- A failed news turn with no reply keeps its line in place.
+- A news turn with no reply and no lifecycle record shows nothing.
+- A news turn older than every placed turn is still placed by its reply.
+- A reply claimed by time opens its turn when none of the work is shown.
+- A turn that ended before a reply was written never claims that reply.
+- In other threads, such a turn keeps the usual "Worked for" line above its reply.
+
+A two-axis review on Muse found the four cases between the first and the last. Their fixes are a commit of their own.
 
 ## Not covered
 
@@ -53,3 +62,7 @@ The e2e harness's Watcher is not a Watcher-kind thread, so main does not hide wa
 already-hidden form, and main's hiding is covered by `tests/unit/main/watcherWakeUp.test.ts`. A live Claude Watcher
 receiving real news was not run, because it would act on real threads. Codex and Grok Build replies carry no
 `turnMessageId`, so their news turns are placed by time alone and need their work in the records.
+
+A news reply at the very top of the loaded window, before any user message, is not read as opening a turn, since its
+message may only be above the window. Until Show earlier messages brings in the message before it, it has no After news
+header.

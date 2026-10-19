@@ -961,7 +961,7 @@ test.describe("Watcher's room on the built app", () => {
       ...work('watcher-ask', [29, 1], [33, 0], ['Thinking', 'list_projects', 'start_thread', 'start_thread']),
       ...work('news-1', [35, 0], [35, 7.1], ['Thinking', 'read_thread', 'read_operation']),
       ...work('news-2', [36, 23], [36, 30.4], ['read_operation', 'Thinking']),
-      ...work('news-quiet', [37, 10], [37, 13], ['list_threads']),
+      ...work('news-silent', [37, 10], [37, 13], ['list_threads']),
       ...work('watcher-ask-2', [38, 1], [38, 28], ['Thinking', 'send_thread']),
       ...work('news-3', [39, 40], [39, 45.5], ['read_operation']),
     ]
@@ -982,7 +982,7 @@ test.describe("Watcher's room on the built app", () => {
         expect(order.map(text => words.indexOf(text)).every((index, n, all) => index >= 0 && (n === 0 || index > all[n - 1]!)), words).toBe(true)
         expect(await transcript.locator('.thread-activity').count(), 'no stacked rows of news work').toBe(0)
         // The news turn that wrote nothing shows nothing; your turns keep their Worked for lines.
-        await expect(transcript.locator('[data-turn-id="news-quiet"]')).toHaveCount(0)
+        await expect(transcript.locator('[data-turn-id="news-silent"]')).toHaveCount(0)
         await expect(transcript.getByRole('button', { name: /^Worked for/u })).toHaveCount(2)
         // The work opens from the keyboard under the reply's header, and Escape folds it back.
         const reply = pane.locator('[data-message-id="watcher-news-reply-1"]')
