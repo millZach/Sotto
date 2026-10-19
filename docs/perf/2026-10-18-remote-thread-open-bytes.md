@@ -56,3 +56,28 @@ listener no longer pushes a shell whose state matches the last one it pushed to 
 to bring (`docs/host-protocol.md` under Pushes). A repeated shell now costs nothing on the link instead of about 35 KB
 compressed or 130 KB before compression; `tests/integration/socketShellRepeats.test.ts` checks that a repeat is not
 sent and that a change, an event or an answer that carried a shell is.
+
+## Cut bodies
+
+Compression left the largest detail at about a megabyte, still almost three seconds on this link, and nearly all of it
+activity `output`, `text` and change diffs that a desktop shows only when a row opens. A desktop that accepts
+`activity-bodies` is now sent each of those bodies over 2,048 UTF-8 bytes cut, and reads a record whole when its row
+opens ([ADR-0025, October 18 amendment](../adr/0025-headless-host-and-client-identity.md#october-18-amendment-a-desktop-is-sent-long-activity-bodies-cut-and-reads-a-record-whole-when-its-row-opens),
+`docs/host-protocol.md` under Cut bodies).
+
+On the copy of the forge host's data, the 3.66 MB thread came to 825 KB with every body cut to 2 KB, with 288 of its
+653 rows holding a cut body; compression then takes that about four times further. A row's body is one `activity-body`
+request on the connection the desktop already holds: one round trip of about 105 ms and the body itself, 0.2 to 1
+second on this link for the long ones.
+
+The benchmark's synthetic thread has fewer long bodies than the forge thread, since most of its outputs are under 2 KB
+and go whole, so it gains less:
+
+| Frame | Uncompressed | Compressed (level 6) | At 370 KB/s, uncompressed | Compressed |
+| --- | ---: | ---: | ---: | ---: |
+| `detail` of the 1,040-record thread, whole | 3,609,598 bytes | 1,103,460 bytes | 9.76 s | 2.98 s |
+| The same, cut (411 records cut) | 2,047,200 bytes | 598,166 bytes | 5.53 s | 1.62 s |
+
+The uncompressed cut frame is asserted to the byte. Cutting the whole thread, with every record new to the host, took
+about 7 ms; the host cuts a record once and reuses it while the record is unchanged, so a delta costs only the records
+it carries.
