@@ -655,6 +655,22 @@ it('sends to a full-access thread on a paired host when this computer\'s new-thr
   expect(remote.host.service.state().host.threads).toHaveLength(threads)
 })
 
+it('refuses a model without an asking mode on a host where this computer may not answer, rather than fit it to one that skips asking', async () => {
+  const f = await master()
+  await f.control.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: 'full-access' } })
+  const shell = f.socket.shell.bind(f.socket)
+  vi.spyOn(f.socket, 'shell').mockImplementation(() => {
+    const state = shell()
+    return { ...state, host: { ...state.host, models: state.host.models.map(model => model.id === f.model.id ? { ...model, runtimeModes: ['auto', 'full-access'] as const } : model) } }
+  })
+  const projects = await f.call('list_projects', { hostId: f.pairing.hostId })
+  if (projects.status !== 'ok') throw new Error('list-refused')
+  expect(projects.projects[0]?.workers.find(item => item.modelId === f.model.id)).toMatchObject({ defaultPermission: null, permissionComparable: false })
+  const writes = vi.spyOn(f.socket, 'watcherControl')
+  expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE', message: expect.stringContaining('does not let this computer answer') })
+  expect(writes).not.toHaveBeenCalled()
+})
+
 it('keeps remote Stop all ownership while desktop room IPC is held and flushes before its own answer', async () => {
   const f = await master(), sent = vi.fn<(state: WatcherRoomState) => boolean>(() => true)
   const timers: (() => void)[] = []
