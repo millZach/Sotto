@@ -277,6 +277,15 @@ describe('setting aside unconfirmed sends', () => {
     expect((await f.control.commandFromWatcher({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Automatic before a fresh message' }, { guard: () => undefined })).error).toMatch(/unknown result/)
   })
 
+  it('takes only setup through Watcher\'s room, whatever a caller passes, so nothing else rides its exemption', async () => {
+    const f = await fixture()
+    f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+      guardOperation: () => undefined, preserveUserQueue: () => false })
+    const send = { type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Not setup' } as unknown as Parameters<typeof f.control.commandForWatcherRoom>[0]
+    expect(() => f.control.commandForWatcherRoom(send)).toThrow('only sets up Watcher')
+    expect(f.host.attempts.filter(command => command.type === 'send')).toHaveLength(0)
+  })
+
   it('lets a change the user makes pass a prompt set aside, while automatic work still waits for a fresh one', async () => {
     const f = await fixture(), draftId = randomUUID()
     f.host.withheld = 'uncertain'
