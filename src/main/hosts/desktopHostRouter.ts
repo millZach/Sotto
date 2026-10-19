@@ -34,7 +34,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsHostFacts' | 'hostFacts' | 'supportsThreadStarts' | 'startHandover' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsHostFacts' | 'hostFacts' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -49,7 +49,9 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   offersClientUpdates?(): boolean
   /** Whether this host babysits pull requests: only then does the window offer Babysit pull request on its threads (ADR-0061). */
   offersBabysitting?(): boolean
-  observe?(threadIds: string[]): Promise<unknown>
+  /** `shown`: false while the desktop's window is behind another app, so the host does not count these threads as shown
+   * (ADR-0092). Absent, they are shown. */
+  observe?(threadIds: string[], shown?: boolean): Promise<unknown>
   /** One activity record whole, by the host's own thread ID, for a row whose body the host sent cut; absent on this computer. */
   activityBody?(threadId: string, activityId: string): Promise<AgentActivity | null>
   subscribeDetail?(listener: (detail: AgentThreadDetailUpdate) => void): () => void
@@ -69,6 +71,17 @@ const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['create-t
 const HOST_NAMED_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['connect', 'disconnect', 'refresh', 'check-client-updates', 'update-client', 'queue-client-updates'])
 
 /** A state without its client updates, which belong to the machine that runs those clients. */
+/**
+ * What Dismiss all says when a host kept its failed threads as they were: one that predates the seen record, or one that
+ * is out of reach or did not answer. Its threads still say Needs attention; nothing else was touched.
+ */
+function dismissLeft(left: readonly { readonly name: string; readonly older: boolean }[]): string {
+  const [first] = left
+  if (left.length === 1 && first) return first.older
+    ? `${first.name} runs an older Sotto, so its threads still say Needs attention. Nothing was changed there. Update it in Settings > Hosts, then press Dismiss all again.`
+    : `${first.name} did not answer, so its threads still say Needs attention. Nothing was changed there. Connect to it again, then press Dismiss all again.`
+  return `${left.map(item => item.name).join(', ')} kept their threads as they were, so those still say Needs attention. Nothing was changed there. Update or connect to each host in Settings > Hosts, then press Dismiss all again.`
+}
 function withoutClientUpdates(state: AgentState): AgentState {
   const { clientUpdates: _updates, clientUpdateRun: _run, clientUpdatesDismissedAt: _dismissed, ...rest } = state
   void _updates; void _run; void _dismissed
@@ -197,6 +210,13 @@ export class DesktopHostRouter {
    */
   private readonly windowRevisions = new Map<string, { run: number; offset: number; last: number }>()
   private selectedHostId: string | undefined
+  /**
+   * Whether this computer's window has the focus. Its panes show their threads only while it does (ADR-0046), on a
+   * remote host as on this one: each remote host is told with the threads it observes for the window (ADR-0092).
+   */
+  private windowFocused = true
+  /** The threads the window last observed on each host, by the host's own IDs, to send again when the focus moves. */
+  private readonly observedOn = new Map<string, string[]>()
   private selectedThreadId: string | null | undefined
   private selectedProjectId: string | null = null
   private notice: RouterNotice | undefined
@@ -413,11 +433,26 @@ export class DesktopHostRouter {
     this.hosts.get(hostId)?.off.forEach(off => off())
     this.hosts.delete(hostId)
     this.dormantProviderIds.delete(hostId)
+    this.observedOn.delete(hostId)
     this.watcherChanged(hostId)
     this.reconnecting.delete(hostId)
     if (this.selectedHostId === hostId) this.selectedHostId = this.hosts.keys().next().value
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
     this.emit()
+  }
+  /**
+   * Main reports the window's focus as it moves. Each remote host that keeps what is shown hears it with the threads the
+   * window observes there, so a thread in a pane behind another app neither reads its finish nor sees its failure; this
+   * computer's own host hears it from main directly.
+   */
+  setWindowFocused(focused: boolean): void {
+    if (focused === this.windowFocused) return
+    this.windowFocused = focused
+    for (const { connection } of this.hosts.values()) {
+      if (connection.kind !== 'remote' || connection.available?.() === false || connection.service.supportsFailureSeen !== true || !connection.observe) continue
+      const ids = this.observedOn.get(connection.hostId) ?? []
+      void (focused ? connection.observe(ids) : connection.observe(ids, false)).catch(() => undefined)
+    }
   }
   select(hostId: string): void {
     if (!this.hosts.has(hostId)) throw new Error('Connect this host before selecting it.')
@@ -811,17 +846,34 @@ export class DesktopHostRouter {
     const priorNotice = this.notice
     this.notice = undefined
     const type = input && typeof input === 'object' && 'type' in input ? input.type : undefined
-    if (type === 'observe-threads') {
+    // Showing threads and Dismiss all both name threads on every host: each host hears only its own (ADR-0046, ADR-0092).
+    if (type === 'observe-threads' || type === 'dismiss-failures') {
       const parsed = agentCommandSchema.parse(mapHostReferences(input, id => parseHostEntityKey(id)?.id ?? id))
-      if (parsed.type !== 'observe-threads') throw new Error('The viewed threads could not be read.')
-      const rawIds = (input as { threadIds: string[] }).threadIds
+      if (parsed.type !== type) throw new Error(type === 'observe-threads' ? 'The viewed threads could not be read.' : 'The threads to dismiss could not be read.')
+      // Dismiss all names each thread with the failure its row showed; showing names threads alone.
+      const raw = type === 'observe-threads' ? (input as { threadIds: string[] }).threadIds.map(threadId => ({ threadId, failure: '' }))
+        : (input as { failures: { threadId: string; failure: string }[] }).failures
+      const left: { name: string; older: boolean }[] = []
       await Promise.all([...this.hosts.values()].map(async ({ connection }) => {
+        const mine = raw.filter(item => (parseHostEntityKey(item.threadId)?.hostId ?? this.selectedHostId) === connection.hostId)
+          .map(item => ({ ...item, threadId: parseHostEntityKey(item.threadId)?.id ?? item.threadId }))
+          .filter(item => this.watcherAvailable(connection, item.threadId))
+        const visibleIds = mine.map(item => item.threadId)
+        if (type === 'dismiss-failures') {
+          if (!mine.length) return
+          if (connection.available?.() === false || connection.kind === 'remote' && connection.service.supportsFailureSeen !== true) {
+            left.push({ name: connection.name, older: connection.available?.() !== false }); return
+          }
+          const answer = await connection.service.command({ type: 'dismiss-failures', failures: mine }, client).catch(() => null)
+          if (answer === null || answer.error) left.push({ name: connection.name, older: false })
+          return
+        }
         if (connection.available?.() === false) return
-        const ids = rawIds.filter(id => (parseHostEntityKey(id)?.hostId ?? this.selectedHostId) === connection.hostId).map(id => parseHostEntityKey(id)?.id ?? id)
-        const visibleIds = ids.filter(id => this.watcherAvailable(connection, id))
-        if (connection.observe) await connection.observe(visibleIds)
+        this.observedOn.set(connection.hostId, visibleIds)
+        if (connection.observe) await (connection.kind === 'remote' && !this.windowFocused ? connection.observe(visibleIds, false) : connection.observe(visibleIds))
         else await connection.service.command({ type: 'observe-threads', threadIds: visibleIds }, client)
       }))
+      if (left.length) this.notice = { message: dismissLeft(left) }
       return this.shell()
     }
     const { connection, command, hostNamed } = this.route(input)

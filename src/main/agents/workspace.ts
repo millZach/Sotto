@@ -15,7 +15,7 @@ import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { sameSnapshot } from './sameSnapshot'
 import { cloneActivitySnapshot, immutableActivities, immutableModels, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { readdir, unlink } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, THREAD_CONTINUED_IN_MAX, WAKE_UP_MESSAGE_IDS_MAX, type ThreadContinuedFrom, type ThreadContinuedIn, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentMessage, type AgentThread, type AgentThreadStart, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
@@ -93,6 +93,19 @@ function historyTextChunks(text: string): string[] {
 
 /** Milliseconds a burst of tool activity is left to settle before the worktree is read again. */
 const WORKTREE_REFRESH_DELAY_MS = 1_500
+/** One spelling of a folder for the re-read rounds: resolved, and without case on Windows. */
+function folderKey(folder: string): string {
+  const path = resolve(folder)
+  return process.platform === 'win32' ? path.toLowerCase() : path
+}
+/**
+ * One round of trailing re-reads (`scheduleWorktreeRefresh`): when its timer fired, and the inspection of each shared
+ * folder in it, by folder, with the count of Git actions when it began.
+ */
+interface RefreshRound {
+  readonly firedAt: number
+  readonly inspections: Map<string, { readonly changes: number; readonly reads: Promise<(metadata: AgentWorktree) => AgentWorktree> }>
+}
 /** How often the Git status timer looks at whether a remote read is due. */
 /** Two spellings of one folder: trailing separators, slashes and case are not a difference on the platforms Sotto ships on. */
 const sameFolder = (left: string, right: string): boolean => left.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase() === right.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase()
@@ -699,8 +712,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly preparations = new Map<string, Promise<void>>()
   private readonly worktrees: ThreadWorktrees
   private checkpointHooks: { privacyChanged?(): Promise<void>; beforeTurn(threadId: string): Promise<void>; isBlocked(threadId: string): boolean | Promise<boolean> } | undefined
-  /** One pending worktree re-read per thread, so a busy turn asks for a single read rather than one per record. */
-  private readonly worktreeRefreshes = new Map<string, ReturnType<typeof setTimeout>>()
+  /**
+   * One pending worktree re-read per folder, by `refreshKey`, with the threads waiting on it: a busy turn asks for a
+   * single read rather than one per record, and threads working in one folder (ADR-0014) share it.
+   */
+  private readonly worktreeRefreshes = new Map<string, { readonly timer: ReturnType<typeof setTimeout>; readonly threads: Set<string> }>()
+  /** How many Git actions have changed a folder (`invalidateGitStatus`); an inspection begun before the last is not shared. */
+  private gitChanges = 0
   /** Reads a folder's Git status the way T3 does; without one, records carry no status. */
   private gitStatus: GitStatusSource | undefined
   private gitStatusOptions: { foreground: () => boolean; pollIntervalMs: () => number; autoPull: () => boolean } = { foreground: () => true, pollIntervalMs: () => 0, autoPull: () => false }
@@ -1212,6 +1230,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * go stale, and every other repository keeps its own (#820). A thread with no folder to name stales every repository.
    */
   private invalidateGitStatus(threadId: string): void {
+    this.gitChanges++
     const folder = this.statusFolder(threadId)
     if (folder === undefined) this.gitStatus?.invalidate()
     else this.gitStatus?.invalidate(folder)
@@ -1262,13 +1281,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * may follow ran outside the lane. `afterRemote` is a read taking what a fetch brought, which pulls a clean
    * default branch only behind its upstream when Automatically pull is on.
    */
-  private async readGitStatus(threadId: string, afterRemote: boolean): Promise<void> {
+  private async readGitStatus(threadId: string, afterRemote: boolean, options: { readonly startedAfter?: number } = {}): Promise<void> {
     if (!this.gitStatus || this.stopping) return
     const folder = this.statusFolder(threadId)
     if (folder === undefined) return
     let status: GitStatus
     // The read after a fetch is its own, so it never joins a read of the same folder begun before the fetch landed.
-    try { status = await this.gitStatus.read(folder, { remote: false, ...afterRemote ? { fresh: true } : {} }) } catch { return }
+    // A trailing re-read takes any read of the folder begun since its timer fired (`refreshWorktreeRecord`).
+    const share = afterRemote ? { fresh: true } : options.startedAfter !== undefined ? { startedAfter: options.startedAfter } : {}
+    try { status = await this.gitStatus.read(folder, { remote: false, ...share }) } catch { return }
     if (afterRemote && this.mayAutoPull(status)) status = await this.autoPull(threadId, folder) ?? status
     const current = this.state.snapshot.threads.find(item => item.id === threadId)
     if (!current?.worktree || current.worktree.status !== 'ready' || this.stopping) return
@@ -2533,7 +2554,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.stopDelivery()
     clearTimeout(this.publishTimer); clearTimeout(this.writeTimer); clearTimeout(this.historyRetryTimer)
     this.historyRetryTimer = undefined
-    for (const timer of this.worktreeRefreshes.values()) clearTimeout(timer)
+    for (const { timer } of this.worktreeRefreshes.values()) clearTimeout(timer)
     this.worktreeRefreshes.clear()
     if (this.gitStatusTimer) { clearInterval(this.gitStatusTimer); this.gitStatusTimer = undefined }
     // A roster that cannot reach the disk leaves the records unstripped, as the flush does.
@@ -2902,23 +2923,58 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         || thread.lastTurn?.id !== old?.lastTurn?.id || thread.lastTurn?.status !== old?.lastTurn?.status
     })) this.applyEvents()
   }
-  /** Queues one trailing re-read of this thread's worktree; a burst of records still reads the folder once. */
+  /**
+   * Queues one trailing re-read of this thread's worktree; a burst of records still reads the folder once. A thread
+   * whose folder already has a re-read queued joins it, so threads working in one folder at once read it once a round
+   * rather than once each: every record the round answers settled before its timer fired, and so before its read began.
+   */
   private scheduleWorktreeRefresh(threadId: string): void {
     const thread = this.state.snapshot.threads.find(thread => thread.id === threadId)
-    if (!thread || thread.nativeSessionStarted === false || thread.worktree && thread.worktree.status !== 'ready' || this.worktreeRefreshes.has(threadId)) return
-    const timer = setTimeout(() => { this.worktreeRefreshes.delete(threadId); void this.refreshWorktreeRecord(threadId) }, this.worktreeRefreshDelayMs)
+    if (!thread || thread.nativeSessionStarted === false || thread.worktree && thread.worktree.status !== 'ready') return
+    if ([...this.worktreeRefreshes.values()].some(pending => pending.threads.has(threadId))) return
+    const key = this.refreshKey(threadId)
+    const queued = this.worktreeRefreshes.get(key)
+    if (queued) { queued.threads.add(threadId); return }
+    const threads = new Set([threadId])
+    const timer = setTimeout(() => {
+      this.worktreeRefreshes.delete(key)
+      const round: RefreshRound = { firedAt: performance.now(), inspections: new Map() }
+      for (const id of threads) void this.refreshWorktreeRecord(id, round)
+    }, this.worktreeRefreshDelayMs)
     timer.unref?.()
-    this.worktreeRefreshes.set(threadId, timer)
+    this.worktreeRefreshes.set(key, { timer, threads })
   }
-  /** Reads the folder on the thread's own lane and publishes only a record that actually changed.
-   * A folder problem found here is left for the next send to report: a background read refuses nothing. */
-  private refreshWorktreeRecord(threadId: string): Promise<void> {
+  /** The folder a thread's re-read reads, as one key for every thread in it; a thread with none yet has a key of its own. */
+  private refreshKey(threadId: string): string {
+    const folder = this.statusFolder(threadId)
+    if (folder === undefined) return `thread\0${threadId}`
+    return `folder\0${folderKey(folder)}`
+  }
+  /**
+   * Reads the folder on the thread's own lane and publishes only a record that actually changed. A folder problem
+   * found here is left for the next send to report: a background read refuses nothing. The threads of one round in
+   * one folder share its reads, each begun after the round's timer fired: the inspection of a shared folder the first
+   * of them started, unless a Git action has run since it began, and the status read (`GitStatusSource.read`'s
+   * `startedAfter`), unless a Git action has run in its repository since.
+   */
+  private refreshWorktreeRecord(threadId: string, round: RefreshRound): Promise<void> {
     return this.onLane(threadId, async () => {
       try { await this.discoverWorkingCopy(threadId) } catch { return }
-      if (!await this.reinspect(threadId)) return
+      if (!await this.reinspect(threadId, round)) return
       // Finished work may have committed, so the counts are read again; the remote waits for the timer or a refresh.
-      await this.readGitStatus(threadId, false)
+      await this.readGitStatus(threadId, false, { startedAfter: round.firedAt })
     })
+  }
+  /** `inspect` of a ready record, sharing the round's inspection of its folder when it is a shared folder. */
+  private inspectInRound(worktree: AgentWorktree, round: RefreshRound | undefined): Promise<AgentWorktree> {
+    if (!round || worktree.mode !== 'shared' || !worktree.path) return this.worktrees.inspect(worktree)
+    const key = folderKey(worktree.path)
+    let shared = round.inspections.get(key)
+    if (!shared || shared.changes !== this.gitChanges) {
+      shared = { changes: this.gitChanges, reads: this.worktrees.inspectSharedFolder(worktree.path) }
+      round.inspections.set(key, shared)
+    }
+    return shared.reads.then(record => record(worktree))
   }
   /**
    * A send that checked its folder from the files on disk owes the folder Git's own inspection, made once the
@@ -2938,11 +2994,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * is left as it is, and the next send to the thread asks Git before its prompt instead of reading the folder's
    * files. False when there was nothing to inspect or Git would not confirm it.
    */
-  private async reinspect(threadId: string): Promise<boolean> {
+  private async reinspect(threadId: string, round?: RefreshRound): Promise<boolean> {
     const worktree = this.state.snapshot.threads.find(thread => thread.id === threadId)?.worktree
     if (!worktree || worktree.status !== 'ready' || this.stopping) return false
     let inspected: AgentWorktree
-    try { inspected = await this.worktrees.inspect(worktree) }
+    try { inspected = await this.inspectInRound(worktree, round) }
     catch { this.fullCheckDue.add(threadId); return false }
     this.fullCheckDue.delete(threadId)
     const current = this.state.snapshot.threads.find(thread => thread.id === threadId)
