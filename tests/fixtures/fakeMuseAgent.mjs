@@ -18,6 +18,10 @@ import { join } from 'node:path'
 // `permissionProfiles: false`; a session started with one reports its reviewer in `permissionState`, or the one
 // script.json's `reviewerAuthority` names, to a connection that asked for the experimental API and unless script.json
 // says `permissionStateHidden`. `session/read` serves a stored session without attaching it.
+// `session/setModel` is refused, with Muse's error shape, when script.json's `rejectSetModel` is true or lists the model,
+// and never answered when `holdSetModel` is true. The `model-changed` action moves a session to another model on Muse's
+// side and says so, as Muse does with session/modelChanged. Each turn the session opens records the model it ran on in
+// the stored session's `turnModels`.
 const root = process.argv[2]
 const ephemeral = process.argv.includes('--no-session-log')
 // The serve arguments Sotto started this host with, one line per process, beside the frame logs.
@@ -108,7 +112,7 @@ let clock = 0
 const stamp = () => new Date(Date.UTC(2026, 9, 12, 12, 0, clock++)).toISOString()
 function openTurn(session, commandId, text, steered = false, displayText = undefined) {
   const turnId = session.activeTurnId ?? `turn-${randomUUID()}`
-  if (!session.activeTurnId) { session.activeTurnId = turnId; session.turns = (session.turns ?? 0) + 1; notify('turn/started', { sessionId: session.sessionId, turnId, ...(commandId ? { commandId } : {}), viewCursor: cursor(session) }) }
+  if (!session.activeTurnId) { session.activeTurnId = turnId; session.turns = (session.turns ?? 0) + 1; session.turnModels = [...(session.turnModels ?? []), session.modelId]; notify('turn/started', { sessionId: session.sessionId, turnId, ...(commandId ? { commandId } : {}), viewCursor: cursor(session) }) }
   // script.json may have Muse keep no display text (`dropDisplayText`), or cut the message to `truncateUserText` characters.
   const script = read('script.json', {})
   if (script.dropDisplayText) displayText = undefined
@@ -171,6 +175,10 @@ function check() {
     if (!session.activeTurnId) openTurn(session, undefined, 'A turn that calls a tool')
     requestApproval(session, action)
   } else if (action.type === 'mcp-call') void callTool(session, action)
+  else if (action.type === 'model-changed') {
+    session.modelId = action.modelId; save()
+    notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
+  }
 }
 /** One tool call as Muse's model makes it, on the session's server whose name is the plain name and the thread's suffix. */
 async function callTool(session, action) {
@@ -297,6 +305,8 @@ createInterface({ input: process.stdin }).on('line', line => {
   } else if (frame.method === 'session/list') result({ sessions: Object.values(ephemeral ? sessions : current().sessions).map(view) })
   else if (frame.method === 'session/setModel') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
+    if (script.holdSetModel) return
+    if (script.rejectSetModel === true || script.rejectSetModel?.includes?.(p.model.modelId)) { fail('commandRejected', 'Refused by the fixture', 'model_unavailable'); return }
     const previousModelId = session.modelId; session.modelId = p.model.modelId; save()
     notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
     result({ modelId: session.modelId, previousModelId })

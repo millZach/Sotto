@@ -487,7 +487,8 @@ export class MuseMspHost implements AgentHost {
     const alias = this.aliases[id]; if (!alias) throw new Error('The Muse thread does not exist.')
     if (!this.threads.has(id)) this.threads.set(id, {
       id, projectId: alias.projectId, workingDirectory: alias.cwd, title: alias.title,
-      modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '',
+      // The model Muse last accepted; until Muse has named one, the thread's own, which its status marks unconfirmed.
+      modelId: alias.nativeModelId ?? alias.modelId,
       runtimeMode: alias.runtimeMode ?? 'approval-required',
       ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}),
       status: alias.museSessionId && alias.settingsConfirmed ? 'idle' : 'error',
@@ -864,8 +865,13 @@ export class MuseMspHost implements AgentHost {
       const fold = this.fold(id)
       fold.viewCursor = resumed.viewCursor
       for (const item of items) this.foldItem(id, item)
-      // A refusal leaves the thread on the model Muse described, which its chip shows; nothing is held back for it.
-      if (this.confirmSession(id, alias, resumed.session, true)) await this.applyModel(id, alias, entry, alias.modelId).catch(() => undefined)
+      // A refusal keeps the thread on the model Muse last accepted, which its chip shows; nothing is held back for it.
+      // A running turn is left alone: the next send asks again.
+      if (this.confirmSession(id, alias, resumed.session, true) && resumed.session.status !== 'running') {
+        await this.applyModel(id, alias, entry, alias.modelId).catch(() => undefined)
+        if (this.processes.get(id) !== entry) return
+        this.assertGeneration(generation)
+      }
       if (entry.turnRevision === turnRevision) this.reconcileLiveSession(id, resumed.session)
       this.settleEndedTurn(id, resumed.session)
       await this.persist()
@@ -886,24 +892,22 @@ export class MuseMspHost implements AgentHost {
     this.loading.set(id, work)
     return work
   }
-  /** What a session Muse reported settles: its model, its mode, and whether the wanted settings are its own. */
   /**
-   * Muse runs a session on the model it started on or was last set to, and says so in its start reply and with
-   * session/modelChanged, but 1.4.10 describes a resumed or read session by its catalog's default model. So a reopened
-   * session's description never sets the thread's model; it returns whether it differs, so the model is set again.
+   * What a session Muse reported settles: its model, its mode, and whether the wanted settings are its own. Muse runs a
+   * session on the model it started on or was last set to, and says so in its start reply and with session/modelChanged,
+   * but 1.4.10 describes a resumed or read session by its catalog's default model. So a reopened session's description
+   * never sets the thread's model; it returns whether to set the model again, because the description names another
+   * model or Muse has not accepted the thread's own.
    */
   private confirmSession(id: string, alias: Alias, session: MuseSession, reopened = false): boolean {
-    const differs = reopened && Boolean(session.modelId) && session.modelId !== alias.modelId
-    if (session.modelId && (!reopened || !alias.nativeModelId)) alias.nativeModelId = session.modelId
+    const reapply = reopened && (alias.nativeModelId !== alias.modelId || Boolean(session.modelId && session.modelId !== alias.modelId))
+    if (session.modelId && !reopened) alias.nativeModelId = session.modelId
     const reported = runtimeModeOf(session.approvalMode?.mode)
     if (alias.pendingRuntimeMode && reported === alias.pendingRuntimeMode) { alias.runtimeMode = alias.pendingRuntimeMode; delete alias.pendingRuntimeMode }
     else if (!alias.pendingRuntimeMode && session.approvalMode) alias.runtimeMode = reported
-    alias.settingsConfirmed = alias.nativeModelId === alias.modelId && !alias.pendingRuntimeMode
-    const thread = this.thread(id)
-    if (alias.nativeModelId) thread.modelId = alias.nativeModelId
-    thread.runtimeMode = alias.runtimeMode ?? 'approval-required'
-    if (thread.status !== 'running') thread.status = alias.settingsConfirmed ? 'idle' : 'error'
-    return differs
+    this.thread(id).runtimeMode = alias.runtimeMode ?? 'approval-required'
+    this.settleSettings(id, alias)
+    return reapply
   }
   /**
    * Sets the session's model and counts it as Muse's once Muse accepts it, never from a session's description (see
@@ -912,9 +916,16 @@ export class MuseMspHost implements AgentHost {
   private async applyModel(id: string, alias: Alias, entry: ThreadProcess, modelId: string): Promise<void> {
     await entry.rpc.request('session/setModel', { commandId: museCommandId(), sessionId: alias.museSessionId, model: { modelId } })
     alias.nativeModelId = modelId
+    this.settleSettings(id, alias)
+  }
+  /**
+   * Whether the thread runs on the settings the user chose, as far as Muse has confirmed them. The model chip shows the
+   * model Muse last accepted, and a thread that is not running reads as an error until its settings are Muse's own.
+   */
+  private settleSettings(id: string, alias: Alias): void {
     alias.settingsConfirmed = alias.nativeModelId === alias.modelId && !alias.pendingRuntimeMode
     const thread = this.thread(id)
-    thread.modelId = modelId
+    if (alias.nativeModelId) thread.modelId = alias.nativeModelId
     if (thread.status !== 'running') thread.status = alias.settingsConfirmed ? 'idle' : 'error'
   }
   /**
@@ -1434,14 +1445,24 @@ export class MuseMspHost implements AgentHost {
             }
             if (modelId !== alias.modelId) {
               watcherGuard?.()
+              const previousModelId = alias.modelId
               alias.settingsConfirmed = false; await this.persist()
               alias.modelId = modelId
-              await this.applyModel(command.threadId, alias, entry, modelId)
+              try { await this.applyModel(command.threadId, alias, entry, modelId) } catch (error) {
+                // Only an answer that may have reached Muse keeps the new model wanted, for the next send to ask for
+                // again. A refusal leaves the thread on the model Muse last accepted.
+                if (error instanceof MuseUncertain) throw error
+                alias.modelId = previousModelId
+                this.settleSettings(command.threadId, alias)
+                await this.persist(); this.emit()
+                if (!(error instanceof MuseRejected)) throw error
+                const name = (candidate: string) => this.state.models.find(model => model.id === candidate)?.name ?? candidate
+                throw new Error(`Muse rejected ${name(modelId)}. This thread stays on ${name(alias.nativeModelId ?? previousModelId)}.`, { cause: error })
+              }
             }
             alias.reasoningEffort = reasoningEffort
             if (reasoningEffort) thread.reasoningEffort = reasoningEffort; else delete thread.reasoningEffort
-            alias.settingsConfirmed = alias.nativeModelId === alias.modelId && !alias.pendingRuntimeMode
-            thread.status = alias.settingsConfirmed ? 'idle' : 'error'
+            this.settleSettings(command.threadId, alias)
             await this.persist()
             settled = alias.settingsConfirmed
           } else settled = alias.settingsConfirmed && !alias.pendingRuntimeMode
@@ -1637,7 +1658,12 @@ export class MuseMspHost implements AgentHost {
     if (!items) throw new MuseUnreadable('Muse did not serve this thread’s history.')
     for (const item of items) this.foldItem(id, item)
     this.fold(id).viewCursor = resumed.viewCursor
-    if (this.confirmSession(id, alias, resumed.session, true)) await this.applyModel(id, alias, entry, alias.modelId).catch(() => undefined)
+    // A running turn is left alone: the next send asks for the thread's model again.
+    const running = resumed.session.status === 'running' || this.activeTurns.has(id) || this.activePrompts.has(id)
+    if (this.confirmSession(id, alias, resumed.session, true) && !running) {
+      await this.applyModel(id, alias, entry, alias.modelId).catch(() => undefined)
+      if (generation !== this.generation || this.processes.get(id) !== entry) return
+    }
     if (entry.turnRevision === turnRevision) this.reconcileLiveSession(id, resumed.session)
     this.settleEndedTurn(id, resumed.session)
     const releaseRead = this.holdPendingRead(id)

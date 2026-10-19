@@ -106,10 +106,13 @@ was refused until it was confirmed, which it never was. The owner's Watcher and 
 `muse-wonder-full-1.0` were stuck that way while Muse was running them on that model.
 
 A Muse thread's model is now the one Muse started it on or accepted from `session/setModel`, and `session/modelChanged`
-still changes it. A reopened session's description never does: where it names another model, Sotto sets the thread's
-model again and counts it as Muse's once Muse accepts. Creation and a model change are confirmed the same way, by
-Muse's acceptance, not by reading the session back. A model Muse has not confirmed never holds a send or a steer back
-(Zach's call, October 18, 2026: nothing blocks sending another message or changing the model). Before a new turn Sotto
-asks for the thread's model again, and if Muse refuses, the turn runs on the model Muse has, which the thread's model
-chip shows. A permission mode Muse has not confirmed still holds a send back, since a turn under a wider mode than the
-user chose could act without asking.
+still changes it. A reopened session's description never does: where it names another model, or Muse has not accepted
+the thread's own, Sotto sets the thread's model again and counts it as Muse's once Muse accepts, unless a turn is
+running, when the next send asks instead. Creation and a model change are confirmed the same way, by Muse's acceptance,
+not by reading the session back. A model change Muse refuses changes nothing: the user is told, the thread stays on the
+model Muse last accepted, and nothing asks for the refused model again. One whose answer was lost stays wanted, since
+Muse may have taken it. A model Muse has not confirmed never holds a send or a steer back (Zach's call, October 18,
+2026: nothing blocks sending another message or changing the model). Before a new turn Sotto asks for the thread's
+model again, and if Muse refuses, the turn runs on the model Muse has, which the thread's model chip shows. A
+permission mode Muse has not confirmed still holds a send back, since a turn under a wider mode than the user chose
+could act without asking.

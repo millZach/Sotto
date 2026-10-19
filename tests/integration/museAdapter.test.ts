@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { describeAdapterContract } from './adapterContract'
 import { museFixture, museFixtureSkips } from '../fixtures/museFixture'
+import type { RecordedRpc } from '../fixtures/adapterFixture'
 
 describeAdapterContract('Muse MSP', session => museFixture(undefined, undefined, session), museFixtureSkips)
 
@@ -39,28 +40,110 @@ it('starts every host without the sandbox only when the setting says so, capture
   } finally { await f.cleanup() }
 })
 
+const museModel = (modelId: string, isDefault: boolean) => ({ modelId, providerId: 'meta', displayLabel: modelId, isDefault, cost: null, contextWindow: null, profileId: null })
+const twoModels = [museModel('fixture-base', true), museModel('fixture-full', false)]
+type MuseFixture = Awaited<ReturnType<typeof museFixture>>
+const setModelTo = (record: RecordedRpc) => record.method === 'session/setModel' ? (record.params as { model: { modelId: string } }).model.modelId : undefined
+/** The model each turn of the thread's session ran on, as the fake Muse recorded it. */
+const turnModels = async (f: MuseFixture, id: string): Promise<string[]> => {
+  const saved = JSON.parse(await readFile(join(f.root, 'native-sessions.json'), 'utf8')) as { sessions: Record<string, { turnModels?: string[] }> }
+  return saved.sessions[await f.realId(id)]?.turnModels ?? []
+}
+const twoModelThread = async (f: MuseFixture, modelId: string, script: Record<string, unknown> = {}) => {
+  await f.script({ models: twoModels, ...script })
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+  const id = randomUUID()
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId, title: 'Muse thread' })
+  return id
+}
+
 it('keeps a thread on its own model when Muse describes it reopened by its default, and holds no send back for it', async () => {
   // Muse 1.4.10 runs a session on the model it started on or was last set to, but describes a resumed session by its
   // catalog's default model. The fixture does the same.
   const f = await museFixture()
-  const model = (modelId: string, isDefault: boolean) => ({ modelId, providerId: 'meta', displayLabel: modelId, isDefault, cost: null, contextWindow: null, profileId: null })
   try {
-    await f.script({ models: [model('fixture-base', true), model('fixture-full', false)], reopenedAsDefault: true })
-    await f.host.connect()
-    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
-    const id = randomUUID()
-    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: 'fixture-full', title: 'Muse thread' })
+    const id = await twoModelThread(f, 'fixture-full', { reopenedAsDefault: true })
     await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'Before reconnecting' })
     await f.action(id, { type: 'complete', text: 'First reply' })
     await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
     // Reconnecting reopens the session, which Muse now describes as on its default.
     await f.host.connect()
-    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'After reconnecting' })
+    await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'After reconnecting' })).resolves.toEqual({ accepted: true })
+    await f.action(id, { type: 'complete', text: 'Second reply' })
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
     expect((await thread(f, id)).modelId).toBe('fixture-full')
-    expect((await thread(f, id)).status).not.toBe('error')
-    // Sotto set the thread's model again rather than taking the description's word for it.
-    const sets = (await f.driver.requests()).filter(record => record.method === 'session/setModel').map(record => (record.params as { model: { modelId: string } }).model.modelId)
-    expect(sets.at(-1)).toBe('fixture-full')
+    // Sotto set the thread's model again after reopening it, before the turn, rather than taking the description's word.
+    const log = await f.driver.requests()
+    const reopened = log.findLastIndex(record => record.method === 'session/resume')
+    const set = log.findLastIndex(record => setModelTo(record) === 'fixture-full')
+    expect(reopened).toBeGreaterThanOrEqual(0)
+    expect(set).toBeGreaterThan(reopened)
+    expect(set).toBeLessThan(log.findLastIndex(record => record.method === 'turn/start'))
+    expect(await turnModels(f, id)).toEqual(['fixture-full', 'fixture-full'])
+  } finally { await f.cleanup() }
+})
+
+it('keeps a thread on its last model when Muse refuses a model change, and never asks for the refused one again', async () => {
+  const f = await museFixture()
+  try {
+    const id = await twoModelThread(f, 'fixture-base')
+    await f.script({ models: twoModels, rejectSetModel: ['fixture-full'] })
+    const refusal = await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: 'fixture-full' })
+      .then(() => undefined, (error: unknown) => error)
+    expect((await thread(f, id)).modelId).toBe('fixture-base')
+    expect((await thread(f, id)).status).toBe('idle')
+    const asked = (await f.driver.requests()).filter(record => setModelTo(record)).length
+    await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'After the refusal' })).resolves.toEqual({ accepted: true })
+    await f.driver.completeTurn(id, 'On the same model')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    // The send did not ask for the refused model again, ran on the one Muse had, and nothing saved the refused one.
+    expect((await f.driver.requests()).filter(record => setModelTo(record))).toHaveLength(asked)
+    expect(await turnModels(f, id)).toEqual(['fixture-base'])
+    expect((await thread(f, id)).modelId).toBe('fixture-base')
+    const saved = JSON.parse(await readFile(join(f.root, 'muse-threads.json'), 'utf8')) as Record<string, { modelId: string, settingsConfirmed: boolean }>
+    expect(saved[id]).toMatchObject({ modelId: 'fixture-base', settingsConfirmed: true })
+    expect(String(refusal)).toContain('Muse rejected fixture-full. This thread stays on fixture-base.')
+  } finally { await f.cleanup() }
+})
+
+it('keeps a model change Muse may have taken wanted, and asks for it again before the next turn', async () => {
+  const f = await museFixture(undefined, 500)
+  try {
+    const id = await twoModelThread(f, 'fixture-base')
+    await f.script({ models: twoModels, holdSetModel: true })
+    await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: 'fixture-full' }))
+      .resolves.toEqual({ accepted: false, uncertain: true })
+    // The chip shows the model Muse last accepted until Muse answers.
+    expect((await thread(f, id)).modelId).toBe('fixture-base')
+    await f.script({ models: twoModels })
+    await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'After the lost answer' })).resolves.toEqual({ accepted: true })
+    await f.driver.completeTurn(id, 'On the new model')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    expect((await thread(f, id)).modelId).toBe('fixture-full')
+    expect(await turnModels(f, id)).toEqual(['fixture-full'])
+  } finally { await f.cleanup() }
+})
+
+it('sends and steers on the model Muse has when it refuses the thread’s own, and shows that model', async () => {
+  const f = await museFixture()
+  try {
+    const id = await twoModelThread(f, 'fixture-full')
+    // Muse moves the session to another model on its side and will not go back.
+    await f.script({ models: twoModels, rejectSetModel: true })
+    await f.action(id, { type: 'model-changed', modelId: 'fixture-base' })
+    await expect.poll(async () => (await thread(f, id)).modelId).toBe('fixture-base')
+    await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'On whatever Muse has' })).resolves.toEqual({ accepted: true })
+    // Sotto asked for the thread's own model before the turn; Muse refused, and the turn went ahead on Muse's.
+    const log = await f.driver.requests()
+    expect(log.findLastIndex(record => setModelTo(record) === 'fixture-full')).toBeGreaterThanOrEqual(0)
+    expect(log.findLastIndex(record => setModelTo(record) === 'fixture-full')).toBeLessThan(log.findLastIndex(record => record.method === 'turn/start'))
+    await expect(f.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'And this too' })).resolves.toEqual({ accepted: true })
+    await f.driver.completeTurn(id, 'Done on the base model')
+    await expect.poll(async () => (await thread(f, id)).lastTurn?.status).toBe('completed')
+    expect(await turnModels(f, id)).toEqual(['fixture-base'])
+    expect((await thread(f, id)).modelId).toBe('fixture-base')
+    expect((await thread(f, id)).status).not.toBe('running')
   } finally { await f.cleanup() }
 })
 
