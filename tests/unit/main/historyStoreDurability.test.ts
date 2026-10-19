@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SubagentStore } from '../../../src/main/agents/subagentStore'
-import { ThreadStore } from '../../../src/main/agents/threadStore'
+import { ThreadStore, type StoredVisual } from '../../../src/main/agents/threadStore'
 import { UsageStore } from '../../../src/main/agents/usageStore'
 import type { AgentMessage } from '../../../src/shared/agents'
 import type { UsageTokenObservation } from '../../../src/shared/usageDashboard'
@@ -109,6 +109,32 @@ describe('thread history durability', () => {
     const rewinding = committed(() => store.replaceThreadMessages('thread', [message('m1', 'Kept')]))
     expect(rewinding.length).toBeGreaterThan(0)
     expect(rewinding.every(setting => setting === FULL)).toBe(true)
+    expect(synchronous(connection(store))).toBe(NORMAL)
+  })
+
+  it('waits for the disk for any reset, as a rewind writes one, in one thread or a window of several', async () => {
+    const store = await threads()
+    store.append('thread', { kind: 'message-added', at, message: message('m1', 'Kept') })
+    store.append('thread', { kind: 'message-added', at, message: message('m2', 'Rewound') })
+    // A rewind the provider confirmed resets the thread's messages through the ordinary append, not replaceThreadMessages.
+    expect(committed(() => store.appendMany('thread', [{ kind: 'messages-reset', at }, { kind: 'message-added', at, message: message('m1', 'Kept') }]))).toEqual([FULL])
+    expect(committed(() => store.appendBatches(new Map([
+      ['thread', [{ kind: 'message-added', at, message: message('m3', 'Streamed') }]],
+      ['other', [{ kind: 'messages-reset', at }]],
+    ])))).toEqual([FULL])
+    // A window with no reset in it saves without waiting.
+    expect(committed(() => store.appendBatches(new Map([['thread', [{ kind: 'message-added', at, message: message('m4', 'Streamed') }]]])))).toEqual([NORMAL])
+    expect(synchronous(connection(store))).toBe(NORMAL)
+  })
+
+  it('waits for the disk when a rewind takes out its turns\' visuals', async () => {
+    const store = await threads()
+    const drawn = (id: string, anchorUserMessageId: string): StoredVisual => ({
+      visual: { id, title: 'Synthetic visual', kind: 'diagram', source: 'flowchart LR\n  A --> B', steps: [{ text: 'A goes to B', highlight: ['A->B'] }] },
+      createdAt: at, anchorMessageId: null, anchorUserMessageId,
+    })
+    store.addVisual('thread', drawn('v1', 'u1'))
+    expect(committed(() => store.deleteVisualsForTurns('thread', ['u1']))).toEqual([FULL])
     expect(synchronous(connection(store))).toBe(NORMAL)
   })
 

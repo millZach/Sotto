@@ -609,7 +609,11 @@ export class ThreadStore {
   }
 
   /** The same for a run of events, so a publish costs one transaction. Returns the last sequence written. */
+  /** A reset waits for the disk: whatever it took out, a rewind's turns among them, a power cut must not bring back. */
   appendMany(threadId: string, events: readonly ThreadEvent[]): number {
+    return resets(events) ? flushedCommits(this.requireOpen(), () => this.appendManyNow(threadId, events)) : this.appendManyNow(threadId, events)
+  }
+  private appendManyNow(threadId: string, events: readonly ThreadEvent[]): number {
     const db = this.requireOpen()
     if (events.length === 0) return this.latestSeq()
     db.exec('BEGIN IMMEDIATE')
@@ -629,7 +633,11 @@ export class ThreadStore {
    * appendMany gave one batch: a thread whose batch fails rolls back alone and is named in `failed`,
    * while the others commit. A failure of the commit itself throws, with nothing written.
    */
+  /** A window that carries a reset commits waiting for the disk, as `appendMany` does. */
   appendBatches(batches: ReadonlyMap<string, readonly ThreadEvent[]>): { failed: Set<string> } {
+    return [...batches.values()].some(resets) ? flushedCommits(this.requireOpen(), () => this.appendBatchesNow(batches)) : this.appendBatchesNow(batches)
+  }
+  private appendBatchesNow(batches: ReadonlyMap<string, readonly ThreadEvent[]>): { failed: Set<string> } {
     const db = this.requireOpen()
     const due = [...batches].filter(([, events]) => events.length > 0)
     const failed = new Set<string>()
@@ -939,15 +947,18 @@ export class ThreadStore {
   /**
    * This thread's history is now exactly these messages: a rewind the provider confirmed, or the
    * one-time move of a thread out of `workspace.json`. One transaction, so a failure leaves the
-   * thread as it was. It waits for the disk, so a power cut cannot bring back turns a rewind took out.
+   * thread as it was. Its reset waits for the disk (`appendMany`), so a power cut cannot bring back what it replaced.
    */
   replaceThreadMessages(threadId: string, messages: readonly AgentMessage[], historyEpoch?: string): void {
     const at = new Date().toISOString()
-    flushedCommits(this.requireOpen(), () => this.appendMany(threadId, [
+    this.appendMany(threadId, [
       { kind: 'messages-reset', at, ...(historyEpoch === undefined ? {} : { historyEpoch }) },
       ...messages.map(message => ({ kind: 'message-added' as const, at: message.createdAt || at, message })),
-    ]))
+    ])
   }
+
+  /** Runs `work` with its commits waiting for the disk (`flushedCommits`), for a caller outside the store. */
+  flushed<T>(work: () => T): T { return flushedCommits(this.requireOpen(), work) }
 
   /** Rebuilds every projection from the log; the log is the record, the projection only reads faster. */
   rebuild(): void { rebuildProjection(this.requireOpen()) }
@@ -1074,6 +1085,9 @@ function readMeta(db: DatabaseSync, key: string): string | undefined {
 function writeMeta(db: DatabaseSync, key: string, value: string): void {
   db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value)
 }
+
+/** Whether a batch resets a thread's messages, which takes out what came before. */
+function resets(events: readonly ThreadEvent[]): boolean { return events.some(event => event.kind === 'messages-reset') }
 
 /** The memory store's pattern: each pending migration in its own transaction, checked inside it. */
 export function prepareThreadDatabase(db: DatabaseSync): void {

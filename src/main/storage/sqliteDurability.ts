@@ -17,5 +17,12 @@ export const SAVE_SYNCHRONOUS = 'NORMAL'
  */
 export function flushedCommits<T>(db: DatabaseSync, work: () => T): T {
   db.exec('PRAGMA synchronous=FULL')
-  try { return work() } finally { db.exec(`PRAGMA synchronous=${SAVE_SYNCHRONOUS}`) }
+  let result: T
+  try { result = work() } catch (error) {
+    // The work's own failure is the one to report, not a failure to put the setting back.
+    try { db.exec(`PRAGMA synchronous=${SAVE_SYNCHRONOUS}`) } catch { /* Reported by the work's error below. */ }
+    throw error
+  }
+  db.exec(`PRAGMA synchronous=${SAVE_SYNCHRONOUS}`)
+  return result
 }

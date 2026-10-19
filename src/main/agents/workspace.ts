@@ -1821,7 +1821,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           }
           // Retain legacy child tasks before the activity migration removes their payload.
           this.trackSubagents(thread, false)
-          this.threadStore.syncActivities(thread.id, retainedActivities(thread.activities), thread.historyEpoch)
+          // The flush after this drops the records from workspace.json, so they wait for the disk here first.
+          this.threadStore.flushed(() => this.threadStore.syncActivities(thread.id, retainedActivities(thread.activities!), thread.historyEpoch))
         }
         if (this.threadStore.hasActivities(thread.id)) {
           const activityEpoch = this.threadStore.readActivityEpoch(thread.id)
