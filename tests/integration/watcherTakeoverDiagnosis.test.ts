@@ -4,6 +4,7 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createAgentRuntime } from '../../src/main/agents/runtime'
+import { WatcherWakeUp } from '../../src/main/agents/watcherWakeUp'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { watcherToolSchemas, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
 import { codexFixture } from '../fixtures/codexFixture'
@@ -23,17 +24,17 @@ async function fixture() {
   const credentials = await testCredentials(join(directory, 'vault'), { mode: 'unavailable' })
   const settings = { ...DEFAULT_SETTINGS, threadTitles: false }
   let watcherEnabled = true
-  const createRuntime = async () => {
-    const created = await createAgentRuntime({ directory, credentials, watcherEnabled, settings: () => settings,
-      writingSettings: async () => settings, historyEnabled: () => true, openExternal: async () => undefined, reasoner: {},
-      providers: { codex: native.adapter, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
-    // These cases are about which user request may send, not Watcher's news. Two seconds after a worker's turn ends,
-    // news would start a hidden wake-up turn on Watcher's thread, and a user request sent behind it waits in the queue
-    // instead of starting a request. A slow runner reaches those two seconds between steps, so news is held back:
-    // every pass goes through one of these two, and a pass is what finds news.
-    if (created.watcher) for (const pass of ['observe', 'observeSoon'] as const) vi.spyOn(created.watcher.wakes, pass).mockImplementation(() => undefined)
-    return created
+  // These cases are about which user request may send, not Watcher's news. Two seconds after a worker's turn ends,
+  // news would start a hidden wake-up turn on Watcher's thread, and a user request sent behind it waits in the queue
+  // instead of starting a request. A slow runner reaches those two seconds between steps, so news is held back for
+  // every Watcher, including the one a restart makes before its first pass: every pass goes through one of these two.
+  for (const pass of ['observe', 'observeSoon'] as const) {
+    const held = vi.spyOn(WatcherWakeUp.prototype, pass).mockImplementation(() => undefined)
+    cleanups.push(async () => { held.mockRestore() })
   }
+  const createRuntime = () => createAgentRuntime({ directory, credentials, watcherEnabled, settings: () => settings,
+    writingSettings: async () => settings, historyEnabled: () => true, openExternal: async () => undefined, reasoner: {},
+    providers: { codex: native.adapter, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost() } })
   let runtime = await createRuntime()
   cleanups.push(() => runtime.close())
   let control = runtime.agentControl, watcher = runtime.watcher!, tools = runtime.watcherTools!
