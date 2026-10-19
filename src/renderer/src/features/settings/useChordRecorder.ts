@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { canonicalChord, chordFromKeyboardEvent } from '../../../../shared/dictationShortcuts'
+import { canonicalChord, chordFromKeyboardEvent, keyTokenFromCode } from '../../../../shared/dictationShortcuts'
 import type { SottoPlatform } from '../../../../shared/platform'
 
+
+const NEVER_IN_CHORD: ReadonlySet<string> = new Set(['Fn', 'FnLock', 'CapsLock', 'NumLock', 'ScrollLock'])
 export interface ChordRecorder {
   /** The keys down right now while recording; empty before the first press. */
   readonly held: readonly string[]
   readonly recording: boolean
-  /** Resolves with the canonical chord, or null when the recording was cancelled. */
-  record(): Promise<string | null>
+  /** Resolves with the canonical chord, null when the recording was cancelled, or `unsupported-key` when a key no shortcut can use was pressed. */
+  record(): Promise<string | null | 'unsupported-key'>
   cancel(): void
 }
 
@@ -25,15 +27,15 @@ export function useChordRecorder(platform: SottoPlatform, listener: boolean): Ch
   const cancel = useCallback(() => cancelRef.current?.(), [])
   useEffect(() => cancel, [cancel])
 
-  const record = useCallback((): Promise<string | null> => {
+  const record = useCallback((): Promise<string | null | 'unsupported-key'> => {
     cancelRef.current?.()
     const bridge = window.sotto
     setHeld([])
     setRecording(true)
-    return new Promise<string | null>((resolve) => {
+    return new Promise<string | null | 'unsupported-key'>((resolve) => {
       const teardown: (() => void)[] = []
       let finished = false
-      const finish = (chord: string | null): void => {
+      const finish = (chord: string | null | 'unsupported-key'): void => {
         if (finished) return
         finished = true
         cancelRef.current = null
@@ -68,6 +70,10 @@ export function useChordRecorder(platform: SottoPlatform, listener: boolean): Ch
           swallow(event)
           if (event.repeat) return
           if ((event.code === 'Escape' && keys.length === 0) || cancelKey(event, keys.length)) return finish(null)
+          // Fn and the lock keys are never part of a chord here (Fn reaches only main); holding Fn for F5 must still work.
+          if (event.key === 'Fn' || NEVER_IN_CHORD.has(event.code)) return
+          // Refuse rather than drop it, so the modifiers held with it are never saved alone.
+          if (keyTokenFromCode(event.code, event.key, platform) === null) return finish('unsupported-key')
           keys = chordFromKeyboardEvent(event, keys, platform)
           setHeld(keys)
         })
@@ -105,6 +111,7 @@ export function useChordRecorder(platform: SottoPlatform, listener: boolean): Ch
         if (finished) return
         if (result.kind === 'recorded') finish(result.chord)
         else if (result.kind === 'cancelled') finish(null)
+        else if (result.kind === 'unsupported-key') finish('unsupported-key')
         else {
           cancelRef.current = () => finish(null)
           recordInWindow()

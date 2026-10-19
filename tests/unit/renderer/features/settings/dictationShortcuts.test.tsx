@@ -35,7 +35,7 @@ function setup(options: Options = {}) {
   owl.on = options.owl ?? false
   const bridge = { suspendDictationShortcuts: vi.fn(async () => ({ ok: true as const })), ...options.bridge }
   ;(window as { sotto?: unknown }).sotto = bridge
-  const onReplaceHotkey = vi.fn(async () => options.hotkeyResult ?? { ok: true as const })
+  const onReplaceHotkey = vi.fn(async (): Promise<Awaited<ReturnType<SottoBridge['replaceHotkey']>>> => options.hotkeyResult ?? { ok: true })
   const onReplaceDictationShortcuts = vi.fn(async () => options.shortcutsResult ?? { ok: true as const })
   const settings = {
     hotkey: options.hotkey ?? (platform === 'darwin' ? 'Control+Shift+Space' : 'CommandOrControl+Shift+Space'),
@@ -353,6 +353,15 @@ describe('DictationShortcuts', () => {
     expect(onReplaceDictationShortcuts).not.toHaveBeenCalled()
   })
 
+  it.each(['Fn', 'CapsLock', 'NumLock'])('ignores %s in the page recorder instead of refusing the chord', async (code) => {
+    const { onReplaceHotkey, user } = setup()
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' }))
+    press(code, 'ControlLeft', 'AltLeft', 'F5')
+    release('F5')
+    await waitFor(() => expect(onReplaceHotkey).toHaveBeenCalledWith('CommandOrControl+Alt+F5'))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('keeps a newer recording that started without a pointerdown', async () => {
     const { onReplaceDictationShortcuts } = setup({ owl: true, hold: ['CommandOrControl+Super'] })
     fireEvent.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Win' }))
@@ -407,5 +416,48 @@ describe('DictationShortcuts', () => {
     press('ShiftLeft')
     release('ShiftLeft')
     expect(await screen.findByRole('alert')).toHaveTextContent('Shift on its own is part of too many shortcuts. Use two modifiers together.')
+  })
+
+  const unsupported = 'That key can’t be part of a shortcut. Try a letter, a number, an F key, Space or an arrow key.'
+
+  it.each(['Minus', 'Comma', 'Period', 'Slash', 'BracketLeft', 'Backquote', 'Numpad1'].flatMap((code) => [[code, false], [code, true]] as const))(
+    'refuses Ctrl+Shift+%s in the window recorder (Owl %s) and saves nothing', async (code, owlOn) => {
+      const { onReplaceHotkey, onReplaceDictationShortcuts, user } = setup({ owl: owlOn })
+      await user.click(within(row('Press to start and stop')).getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' }))
+      press('ControlLeft', 'ShiftLeft', code)
+      release(code)
+      expect(await screen.findByRole('alert')).toHaveTextContent(unsupported)
+      expect(screen.queryByRole('button', { name: 'Cancel recording' })).not.toBeInTheDocument()
+      expect(onReplaceHotkey).not.toHaveBeenCalled()
+      expect(onReplaceDictationShortcuts).not.toHaveBeenCalled()
+    })
+
+  it('shows the unsupported-key refusal when main reports one', async () => {
+    const { onReplaceDictationShortcuts, user } = setup({
+      platform: 'darwin',
+      owl: true,
+      hold: ['Fn'],
+      bridge: { recordDictationKeys: vi.fn(async () => ({ kind: 'unsupported-key' as const })) },
+    })
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Fn' }))
+    expect(await within(row('Hold to dictate')).findByRole('alert')).toHaveTextContent(unsupported)
+    expect(onReplaceDictationShortcuts).not.toHaveBeenCalled()
+  })
+
+  it('keeps an older save’s slow conflict from overwriting a newer save’s answer', async () => {
+    const { onReplaceHotkey, user } = setup()
+    const slow = deferred<Awaited<ReturnType<SottoBridge['replaceHotkey']>>>()
+    onReplaceHotkey.mockImplementationOnce(() => slow.promise)
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' }))
+    press('ControlLeft', 'AltLeft', 'KeyM')
+    release('KeyM')
+    await waitFor(() => expect(onReplaceHotkey).toHaveBeenCalledWith('CommandOrControl+Alt+M'))
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' }))
+    press('ControlLeft', 'AltLeft', 'KeyN')
+    release('KeyN')
+    expect(await screen.findByRole('status')).toHaveTextContent('Shortcut saved.')
+    await act(async () => slow.resolve({ ok: false, reason: 'conflict' }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Shortcut saved.')
   })
 })

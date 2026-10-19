@@ -157,6 +157,8 @@ export function validateChord(
   const tokens = normalTokens(chord, platform)
   const keys = chordInline(chord, platform)
   const row = set[target.role]
+  const needsKey = 'Your main start-and-stop shortcut needs a key besides Fn and modifiers, so it works everywhere.'
+  if (tokens.size === 0) return refuse('needs-key', needsKey)
   if (tokens.has('escape')) return refuse('escape', 'Esc cancels a recording, so it can’t start one. Pick other keys.')
   if (target.index === null && row.length >= MAX_SHORTCUTS_PER_ROLE) {
     return refuse('too-many', `Each row holds up to ${MAX_SHORTCUTS_PER_ROLE} shortcuts.`)
@@ -164,10 +166,14 @@ export function validateChord(
   const mainSlot = target.role === 'press' && (target.index ?? row.length) === 0
   if (chordNeedsListener(chord, target.role) && (mainSlot || !options.listener)) {
     const owl = options.listener ? ' Add this one with + Add instead.' : ''
-    return refuse('needs-key', `Your main start-and-stop shortcut needs a key besides Fn and modifiers, so it works everywhere.${owl}`)
+    return refuse('needs-key', `${needsKey}${owl}`)
   }
-  const plain = [...tokens].every((token) => !isModifierWord(token) && !/^f(?:[1-9]|1[0-9]|2[0-4])$/u.test(token))
-  if (tokens.size > 0 && plain) {
+  // Shift alone still types (capitals), so only F keys may go without another modifier.
+  const plainKeys = [...tokens].filter((token) => !isModifierWord(token))
+  const plain = plainKeys.length > 0
+    && plainKeys.every((token) => !/^f(?:[1-9]|1[0-9]|2[0-4])$/u.test(token))
+    && [...tokens].every((token) => !isModifierWord(token) || token === 'shift')
+  if (plain) {
     return refuse('plain-key', `${keys} on its own would start dictation while you type. Add a modifier such as ${darwin ? '⌃ Control' : 'Ctrl'}.`)
   }
   const reserved = reservedChords[platform].find(([reservedChord]) => sameTokens(tokens, normalTokens(reservedChord, platform)))

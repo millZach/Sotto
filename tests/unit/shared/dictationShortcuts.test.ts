@@ -264,3 +264,20 @@ describe('validateChord', () => {
     expect(sameChord('Control+Shift+Space', 'Control+Alt+Space', 'darwin')).toBe(false)
   })
 })
+
+describe('validateChord, bug bot round', () => {
+  it.each([
+    ['darwin', darwinSet, '⇧ Shift + A on its own would start dictation while you type. Add a modifier such as ⌃ Control.'],
+    ['win32', win32Set, 'Shift + A on its own would start dictation while you type. Add a modifier such as Ctrl.'],
+  ] as const)('refuses Shift with a plain key as plain-key on %s and allows Shift+F5', (platform, set, message) => {
+    expect(validateChord('Shift+A', adding('press'), set, platform, owl)).toEqual({ ok: false, code: 'plain-key', message })
+    expect(validateChord('Shift+A', adding('hold'), set, platform, owl)).toEqual({ ok: false, code: 'plain-key', message })
+    expect(validateChord('Shift+F5', adding('press'), set, platform, owl)).toEqual({ ok: true })
+  })
+
+  it('refuses an empty chord as needs-key', () => {
+    const needsKey = { ok: false, code: 'needs-key', message: 'Your main start-and-stop shortcut needs a key besides Fn and modifiers, so it works everywhere.' }
+    expect(validateChord('', adding('hold'), darwinSet, 'darwin', owl)).toEqual(needsKey)
+    expect(validateChord(' + ', { role: 'press', index: 1 }, { press: ['F9', ''], hold: [] }, 'win32', owl)).toEqual(needsKey)
+  })
+})

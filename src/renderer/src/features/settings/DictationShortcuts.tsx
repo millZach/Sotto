@@ -37,6 +37,7 @@ interface Slot { readonly role: ShortcutRole; readonly index: number | null }
 interface RowMessage { readonly role: ShortcutRole; readonly text: string; readonly alert: boolean }
 
 const UNAVAILABLE = { ok: false, reason: 'unavailable' } as const
+const UNSUPPORTED_KEY = 'That key can’t be part of a shortcut. Try a letter, a number, an F key, Space or an arrow key.'
 
 const rowCopy: Readonly<Record<ShortcutRole, { label: string; one: (keys: string) => string; several: string; none: string }>> = {
   hold: {
@@ -68,6 +69,7 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
   const [focusKeys, setFocusKeys] = useState<readonly string[] | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const generationRef = useRef(0)
+  const saveRef = useRef(0)
   const id = useId()
   const inline = (chord: string): string => chordInline(chord, platform)
   const all = [...set.press, ...set.hold]
@@ -99,10 +101,13 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
   const show = (role: ShortcutRole, text: string, alert: boolean): void => setMessage({ role, text, alert })
 
   const save = async (next: DictationShortcutSet, role: ShortcutRole, chord: string, previous: string): Promise<boolean> => {
+    const mine = ++saveRef.current
     const result: HotkeyChangeResult | DictationShortcutsResult = await Promise.resolve(owl
       ? onReplaceDictationShortcuts?.({ press: next.press, hold: next.hold }) ?? UNAVAILABLE
       : onReplaceHotkey(next.press[0] ?? settings.hotkey)
     ).catch(() => UNAVAILABLE)
+    // A newer save answers for the row; this slower, older answer must not overwrite it.
+    if (mine !== saveRef.current) return result.ok
     if (result.ok) show(role, 'Shortcut saved.', false)
     else if (result.reason === 'conflict') {
       const refused = 'chord' in result && result.chord !== undefined ? result.chord : chord
@@ -139,7 +144,8 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
     const chord = await recorder.record()
     if (generation !== generationRef.current) return
     setTarget(null)
-    const saved = chord !== null && await commit(slot, chord)
+    if (chord === 'unsupported-key') show(slot.role, UNSUPPORTED_KEY, true)
+    const saved = chord !== null && chord !== 'unsupported-key' && await commit(slot, chord)
     const self = `${slot.role}-${slot.index ?? 'add'}`
     setFocusKeys(slot.index === null && saved ? [`${slot.role}-${set[slot.role].length}`, self, `${slot.role}-0`] : [self, `${slot.role}-0`])
   }
