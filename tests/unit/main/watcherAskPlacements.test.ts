@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { watcherAskPlacements } from '../../../src/main/agents/watcherAskPlacements'
 import { WATCHER_WAKE_UP_PROMPT, watcherNewsText } from '../../../src/main/agents/watcherNews'
 import type { AgentMessage } from '../../../src/shared/agents'
@@ -49,6 +49,17 @@ describe('where a waiting request’s card shows in Watcher’s conversation', (
     expect(watcherAskPlacements({ messages: [...messages, reply('r2')], status: 'running' }).map(item => item.messageId)).toEqual(['r2'])
     // A turn that ended without a reply keeps its card in view, under the last message shown before it.
     expect(watcherAskPlacements({ messages, status: 'idle' }).map(item => item.messageId)).toEqual(['r1'])
+  })
+
+  it('reads an unchanged history once, one with no asks included, on however many publishes', () => {
+    for (const messages of [[user('u1'), reply('r1')], [user('u1'), reply('r1'), wakeUp('w1', [ask('card-1')]), reply('r2')]]) {
+      const watcher = { messages, status: 'idle' as const }
+      const first = watcherAskPlacements(watcher)
+      const scans = vi.spyOn(messages, 'some')
+      expect(watcherAskPlacements(watcher)).toBe(first)
+      expect(watcherAskPlacements(watcher)).toBe(first)
+      expect(scans).not.toHaveBeenCalled()
+    }
   })
 
   it('reads a history again only when it changed', () => {

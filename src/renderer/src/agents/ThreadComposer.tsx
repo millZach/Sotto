@@ -12,6 +12,8 @@ import { composerFilesBridge, FilePicker, fileOptionId, useFilePicker } from './
 import { insertSkill, sameSkillReferences, skillLimitReached, skillSigils } from './composerSkills'
 import { ProviderMark } from './ProviderMark'
 import { requestMode } from './requests/requestAnswers'
+import { answeredChoices, OWN_WORDS } from './requests/answeredChoices'
+import { useWatcherEnabled } from '../state/watcherFeature'
 import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComments, type ReviewComment, type ReviewCommentStore } from './reviewComments'
 import { ScreenshotInput } from './ScreenshotInput'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
@@ -148,6 +150,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly watcher?: boolean
 }): ReactNode {
   const threadId = row.thread.id
+  // An answer written here is kept for Watcher's line about its request, never its words, and only where Watcher is on.
+  const watcherOn = useWatcherEnabled()
   const { draft, save, saveError, answerState, hasContent } = useComposerControls(store, threadId)
   const comments = useReviewComments(reviewComments, threadId)
   const submissions = useSubmissions(store)
@@ -273,7 +277,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         store.setAnswerState(threadId, { sending: false, error: `${error}${restored ? ' It is back in the composer.' : ' Your newer draft is in the composer.'}` })
       }
       void command({ type: 'answer', threadId, requestId: question.requestId, answer: answer.text })
-        .then(result => { if (result === null) failed('Sotto could not confirm this answer.'); else if (result.error !== null) failed(result.error); else store.setAnswerState(threadId, { sending: false, error: null }) },
+        .then(result => {
+          if (result === null) failed('Sotto could not confirm this answer.')
+          else if (result.error !== null) failed(result.error)
+          else {
+            store.setAnswerState(threadId, { sending: false, error: null })
+            if (watcherOn) answeredChoices.note(threadId, question.requestId, OWN_WORDS, true)
+          }
+        },
           () => failed('Sotto could not confirm this answer.'))
       return
     }

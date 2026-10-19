@@ -322,11 +322,13 @@ reply, and the user had to open the thread to answer. Zach picked variant B of t
   The toggle's accessible name names the thread, since several cards can wait at once.
 - **Once answered, one line.** When the request leaves the thread, answered here, in the thread's pane or on the phone, or
   withdrawn by its provider, the card gives way to one line with **Open**. When this window sent the answer, the line says
-  what was chosen in the card's own words, "You answered Fix login on staging: Use the staging key.", whichever card it
-  was sent from, this one or the thread's own pane, or that the user
-  answered in their own words, never repeating them. Otherwise it says only what Sotto knows: "Fix login on staging no
-  longer waits on you." The chosen words are kept in the window's memory alone; no answer record is saved, and a request
-  that waits again under an ID its provider used before is forgotten there, so an earlier choice is never told of it.
+  what was chosen in the card's own words, "You answered Fix login on staging: Use the staging key.", whether it was
+  sent from this card, the thread's own card or its composer, or that the user answered in their own words, never
+  repeating them. Only an answer seen leaving this window counts, never a delivery state restored after a reload.
+  Otherwise the line says only what Sotto knows: "Fix login on staging no longer waits on you." The chosen words are
+  kept in the window's memory alone, and only where Watcher is on; no answer record is saved. The window follows each
+  answered request's life as it reads its threads, whether or not Watcher is on screen, so a request that waits again
+  under an ID its provider used before is forgotten there, and an earlier choice is never told of it.
 - **The needs-you line goes to the card.** A name whose request has its card in the loaded conversation scrolls to that
   card and focuses it, at once when motion is reduced. Otherwise it opens the thread beside Watcher at its request, as
   before.

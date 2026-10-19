@@ -131,16 +131,11 @@ function WatcherAskCard({ row, request, facts, answering, press }: {
   const owner = threadRequestOwner(row, state)
   const ownerKey = requestAnswerOwnerKey(thread.id, request, owner)
   const entry = useSyncExternalStore(requestAnswerStore.subscribe, () => requestAnswerStore.get(ownerKey, request.id))
-  // What was chosen is kept while the request is still here to name it, so the line that replaces the card can say it.
-  // A request first seen here with nothing on its way is a new one, even under an ID a provider used before: nothing
-  // earlier speaks for it. Only the first sight counts, since the answer's state is cleared once the request is gone
-  // from the thread, which can come a moment before this card is.
-  const seen = useRef<string | null>(null)
+  // What is being chosen is kept while the request is still here to name it, so the line that replaces the card can say
+  // it once main takes the answer. Only a send seen leaving this window counts: a delivery state restored after a
+  // reload says nothing of who answered. Whether main took it is noted by whichever card sent it, when main replies.
   useEffect(() => {
-    const first = seen.current !== JSON.stringify([thread.id, request.id])
-    seen.current = JSON.stringify([thread.id, request.id])
-    if (entry.phase === 'sending' || entry.phase === 'sent') answeredChoices.note(thread.id, request.id, chosenWords(request, entry), entry.phase === 'sent')
-    else if (first && entry.phase !== 'unconfirmed') answeredChoices.forget(thread.id, request.id)
+    if (entry.phase === 'sending') answeredChoices.note(thread.id, request.id, chosenWords(request, entry), false)
   }, [entry, request, thread.id])
   const kind = KIND_WORD[request.kind]
   const computer = facts.computer ?? (thread.remoteHost ? thread.hostLabel ?? 'Paired computer' : 'This computer')

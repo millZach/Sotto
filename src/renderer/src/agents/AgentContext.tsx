@@ -10,6 +10,7 @@ import { createStateSharing } from './stateSharing'
 import { ThreadDraftStore } from './threadDraftStore'
 import { approximateDetailBytes } from './detailCacheSize'
 import { requestAnswerStore } from './requests/requestAnswers'
+import { answeredChoices } from './requests/answeredChoices'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { visibleWatcherState, watcherThreadVisible } from './watcherVisibility'
 
@@ -88,8 +89,12 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   const receiveState = useCallback((next: AgentState, options: { urgent?: boolean } = {}): void => {
     if (next.stale !== true) {
       const owners = new Set(next.host.threads.map(thread => thread.id))
-      for (const owner of session.requestOwners) if (!owners.has(owner)) requestAnswerStore.prune(owner, [])
-      for (const thread of next.host.threads) requestAnswerStore.prune(thread.id, thread.requests)
+      for (const owner of session.requestOwners) if (!owners.has(owner)) { requestAnswerStore.prune(owner, []); answeredChoices.observe(owner, []) }
+      for (const thread of next.host.threads) {
+        requestAnswerStore.prune(thread.id, thread.requests)
+        // What this window answered follows each request's life, for Watcher's lines; only answered threads are read.
+        if (answeredChoices.has(thread.id)) answeredChoices.observe(thread.id, thread.requests)
+      }
       session.requestOwners = owners
     }
     arrived.current = performance.now()

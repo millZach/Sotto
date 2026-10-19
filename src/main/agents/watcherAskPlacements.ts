@@ -37,10 +37,14 @@ const placedFor = new WeakMap<readonly AgentMessage[], { readonly turns: Turns['
  */
 export function watcherAskPlacements(watcher: Watcher | undefined, record?: Turns): WatcherAskPlacement[] {
   const messages = watcher?.messages
-  if (!messages?.some(message => message.watcherAsks?.length)) return []
+  if (!messages) return []
   const running = watcher?.status === 'running'
   const kept = placedFor.get(messages)
   if (kept && kept.turns === record?.promptTurns && kept.running === running) return kept.placed
+  if (!messages.some(message => message.watcherAsks?.length)) {
+    placedFor.set(messages, { turns: record?.promptTurns, running, placed: [] })
+    return placedFor.get(messages)!.placed
+  }
   const current = record?.current?.target
   const turnStarts = new Set<string>()
   for (const turn of record?.promptTurns ?? []) {

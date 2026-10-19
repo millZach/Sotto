@@ -229,7 +229,10 @@ describe('a watched thread’s request in Watcher’s conversation', () => {
 
   it('never tells an earlier answer of a request a provider asks again under the same ID', async () => {
     const id = `ask-${sequence}`
+    // Answered here before, then gone from the thread, as the window reads it whether or not Watcher is on screen.
     answeredChoices.note('footer-links', id, 'Mock the auth call', true)
+    answeredChoices.observe('footer-links', [])
+    answeredChoices.observe('footer-links', [question(id)])
     const view = renderRoom(roomState([place(id)]), agentState([question(id)]))
     await askCard('Question from Footer links')
     view.update(agentState())

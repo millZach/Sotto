@@ -50,38 +50,62 @@ export function answerWords(request: AgentRequest, answer: RequestAnswer): strin
 }
 
 const ANSWERED_KEPT = 200
+interface Answered { readonly words: string | null; readonly sent: boolean; readonly gone: boolean }
 /**
  * What this window sent for each request it answered, by thread and request, in the card's own words, and whether
- * main took the answer, from whichever card sent it: the thread's own pane or Watcher's conversation. Held in memory for
- * this window's life alone; nothing is saved. A request answered anywhere else, or before a restart, is not here, and
- * Watcher's line for it then says only that it no longer waits. A request seen waiting again under the same ID, which a
- * provider may reuse, is forgotten, so an earlier request's choice is never told of a later one.
+ * main took the answer, from whichever place sent it: Watcher's conversation, the thread's own card, or its composer.
+ * Only Sotto Owl with Watcher on notes anything, and it is held in memory for this window's life alone; nothing is
+ * saved. A request answered anywhere else, or before a restart, is not here, and Watcher's line for it then says only
+ * that it no longer waits. The window tells it each thread's requests as they arrive (`observe`), whether or not
+ * Watcher is on screen: once an answered request has left its thread, one waiting again under the same ID, which a
+ * provider may reuse, is a new request, and the earlier choice is forgotten rather than told of it.
  */
 class AnsweredChoices {
-  private readonly entries = new Map<string, { readonly words: string | null; readonly sent: boolean }>()
+  private readonly threads = new Map<string, Map<string, Answered>>()
+  private size = 0
   private readonly listeners = new Set<() => void>()
-  private static key(threadId: string, requestId: string): string { return JSON.stringify([threadId, requestId]) }
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   note(threadId: string, requestId: string, words: string | null, sent: boolean): void {
-    const key = AnsweredChoices.key(threadId, requestId)
-    const before = this.entries.get(key)
-    const next = { words: words ?? before?.words ?? null, sent: sent || before?.sent === true }
-    if (before !== undefined && before.words === next.words && before.sent === next.sent) return
-    this.entries.delete(key)
-    this.entries.set(key, next)
-    while (this.entries.size > ANSWERED_KEPT) this.entries.delete(this.entries.keys().next().value!)
+    const thread = this.threads.get(threadId) ?? new Map<string, Answered>()
+    const before = thread.get(requestId)
+    const next: Answered = { words: words ?? before?.words ?? null, sent: sent || before?.sent === true, gone: false }
+    if (before !== undefined && before.words === next.words && before.sent === next.sent && !before.gone) return
+    if (before === undefined) this.size++
+    thread.set(requestId, next)
+    this.threads.set(threadId, thread)
+    while (this.size > ANSWERED_KEPT) this.dropOldest()
     this.changed()
   }
-  /** Forgets a request that waits again: whatever was sent for an earlier one under its ID no longer speaks for it. */
-  forget(threadId: string, requestId: string): void {
-    if (this.entries.delete(AnsweredChoices.key(threadId, requestId))) this.changed()
+  /** Whether anything is kept for this thread, so the window tells only those threads' requests. */
+  has(threadId: string): boolean { return this.threads.has(threadId) }
+  /**
+   * A thread's requests as they now stand. One that has left is marked so; one that waits again after it left is a new
+   * request under a reused ID, and what was sent for the earlier one is forgotten.
+   */
+  observe(threadId: string, live: readonly { readonly id: string }[]): void {
+    const thread = this.threads.get(threadId)
+    if (!thread) return
+    let changed = false
+    for (const [requestId, answered] of thread) {
+      const waiting = live.some(request => request.id === requestId)
+      if (!waiting && !answered.gone) thread.set(requestId, { ...answered, gone: true })
+      else if (waiting && answered.gone) { thread.delete(requestId); this.size--; changed = true }
+    }
+    if (thread.size === 0) this.threads.delete(threadId)
+    if (changed) this.changed()
   }
   /** The words of an answer main took from this window; null when this window did not send one. */
   sent(threadId: string, requestId: string): string | null | undefined {
-    const entry = this.entries.get(AnsweredChoices.key(threadId, requestId))
-    return entry?.sent ? entry.words : undefined
+    const answered = this.threads.get(threadId)?.get(requestId)
+    return answered?.sent ? answered.words : undefined
   }
-  clear(): void { this.entries.clear() }
+  clear(): void { this.threads.clear(); this.size = 0 }
+  private dropOldest(): void {
+    const [threadId, thread] = this.threads.entries().next().value!
+    thread.delete(thread.keys().next().value!)
+    this.size--
+    if (thread.size === 0) this.threads.delete(threadId)
+  }
   private changed(): void { for (const listener of [...this.listeners]) listener() }
 }
 export const answeredChoices = new AnsweredChoices()

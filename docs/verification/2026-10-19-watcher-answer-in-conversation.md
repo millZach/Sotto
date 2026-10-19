@@ -44,6 +44,18 @@ One of those fixes, forgetting an earlier answer for a reused request ID, ran on
 
 `watcherAsks.test.tsx` (16 tests), `watcherAskPlacements.test.ts` (9 tests) and `watcherTools.test.ts` cover these. On the rebuilt app, both journeys against main's own Watcher and the seeded journey pass together, and the captures above are from that run; the contrast readings are unchanged.
 
+## Second review
+
+After `main` was merged in, a review on GPT-6.1-Sol read the whole branch, ran typecheck, lint and three test files, and found five problems. One commit fixes them:
+
+- Placement read the whole history before asking its cache, and never kept a history with no asks; it now asks first and keeps both (`watcherAskPlacements.test.ts`, which counts the reads).
+- The thread's own card kept what it answered even in builds with Watcher off; it now keeps nothing there (`answeredChoicesGate.test.tsx`).
+- An answer written in the composer to a plain question left the line saying only that the thread no longer waits; it now says the user answered in their own words, without them.
+- A reused request ID was forgotten only when Watcher's card was on screen. The window's state intake now follows each answered request's life whatever is on screen, which also replaces the card's own forgetting and the race the first review's fix brought (`answeredChoices.test.ts`).
+- A `sent` state restored after a reload counted as this window's answer; a card now counts only a send it sees leave.
+
+It found nothing wrong in the placement of cards under news-turn replies or in the merge's conflict resolutions.
+
 ## Not checked
 
 - An installed Owl build against a live Watcher on a provider account, and a thread on the real forge. The journeys above run main's real Watcher, wake-up, workspace record, socket and router with stand-in providers; nothing here installs the branch over the running Sotto.

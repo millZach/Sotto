@@ -15,6 +15,7 @@ import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, requestAnswerStore } from './requests/requestAnswers'
 import { threadRequestBlocked, threadRequestOwner } from './requests/threadRequests'
 import { answeredChoices, answerWords } from './requests/answeredChoices'
+import { useWatcherEnabled } from '../state/watcherFeature'
 import { ThreadComposer } from './ThreadComposer'
 import { usePendingSettings } from './pendingSettings'
 import { hasDraftContent, submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
@@ -85,6 +86,8 @@ function useComposerLift(slot: HTMLElement | null, compose: React.RefObject<HTML
 function ThreadRequests({ row, state, command, onAnswer, kind }: {
   readonly row: ThreadRow; readonly state: AgentState; readonly command: Command; readonly onAnswer: () => void; readonly kind: 'question' | 'permission'
 }): ReactNode {
+  // What this window answered is kept for Watcher's lines alone, so only where Watcher is on (ADR-0072).
+  const watcherOn = useWatcherEnabled()
   const thread = row.thread
   const requests = thread.requests.filter(request => request.kind === kind)
   if (isThreadClosed(thread) || requests.length === 0) return null
@@ -96,7 +99,7 @@ function ThreadRequests({ row, state, command, onAnswer, kind }: {
       onWriteAnswer={onAnswer}
       onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => {
         // What main took is kept for this window, so Watcher's line for this request can say what was chosen.
-        if (result !== null && result.error === null) answeredChoices.note(thread.id, request.id, answerWords(request, answer), true)
+        if (watcherOn && result !== null && result.error === null) answeredChoices.note(thread.id, request.id, answerWords(request, answer), true)
         return result === null ? null : { error: result.error }
       })}
       onCheck={() => command({ type: 'observe-threads', threadIds: [thread.id] }).then(result => result !== null && result.error === null)} />
