@@ -872,7 +872,7 @@ export class MuseMspHost implements AgentHost {
       const turnRevision = entry.turnRevision
       const tools = await this.sessionTools(id, entry)
       this.assertGeneration(generation)
-      const changesBeforeResume = this.modelChanges.get(id) ?? 0
+      const beforeResume = this.modelRevisions(id)
       const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', {
         commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false, ...tools.params,
       }))
@@ -889,7 +889,7 @@ export class MuseMspHost implements AgentHost {
       // A turn can start while the resume is answered, so the live turn counts as well as the session's description.
       const running = resumed.session.status === 'running' || this.activeTurns.has(id) || this.activePrompts.has(id)
       if (this.confirmSession(id, alias, resumed.session, true) && !running) {
-        await this.reapplyModel(id, alias, entry, resumed.session, changesBeforeResume)
+        await this.reapplyModel(id, alias, entry, resumed.session, beforeResume)
         if (this.processes.get(id) !== entry) return
         this.assertGeneration(generation)
       }
@@ -930,6 +930,10 @@ export class MuseMspHost implements AgentHost {
     this.settleSettings(id, alias)
     return reapply
   }
+  /** How many model changes Muse has announced for the thread, and how many times its wanted model was chosen. */
+  private modelRevisions(id: string): { readonly changes: number; readonly wants: number } {
+    return { changes: this.modelChanges.get(id) ?? 0, wants: this.modelWants.get(id) ?? 0 }
+  }
   /** Makes `modelId` the model the thread wants, and counts the choice (see `modelWants`). */
   private want(id: string, alias: Alias, modelId: string): void {
     alias.modelId = modelId
@@ -948,15 +952,17 @@ export class MuseMspHost implements AgentHost {
     this.settleSettings(id, alias)
   }
   /**
-   * Sets a reopened session's model again (see `confirmSession`). When Muse refuses, what it described is the best word
-   * on the model it runs, so the chip shows that and the thread's own stays unconfirmed, for the next send to ask again.
-   * The description is as old as the resume that carried it: a model change Muse announced since `changesBeforeResume`
-   * is newer, and it stands.
+   * Sets a reopened session's model again (see `confirmSession`). When Muse refuses, the model Muse last accepted is
+   * still the best word on the one it runs, since Muse 1.4.10 describes a reopened session by its default; the
+   * description stands in only when Sotto has none. The thread's own stays unconfirmed, for the next send to ask again.
+   * The description is as old as the resume that carried it, so a model Muse announced, or the user chose, after
+   * `beforeResume` is newer, and it stands.
    */
-  private async reapplyModel(id: string, alias: Alias, entry: ThreadProcess, session: MuseSession, changesBeforeResume: number): Promise<void> {
+  private async reapplyModel(id: string, alias: Alias, entry: ThreadProcess, session: MuseSession, beforeResume: { readonly changes: number; readonly wants: number }): Promise<void> {
     try { await this.applyModel(id, alias, entry, alias.modelId) } catch (error) {
-      if (!(error instanceof MuseRejected) || (this.modelChanges.get(id) ?? 0) !== changesBeforeResume) return
-      if (session.modelId && session.modelId !== alias.modelId) alias.nativeModelId = session.modelId; else delete alias.nativeModelId
+      const now = this.modelRevisions(id)
+      if (!(error instanceof MuseRejected) || now.changes !== beforeResume.changes || now.wants !== beforeResume.wants) return
+      if (!alias.nativeModelId && session.modelId && session.modelId !== alias.modelId) alias.nativeModelId = session.modelId
       this.settleSettings(id, alias)
     }
   }
@@ -1709,7 +1715,7 @@ export class MuseMspHost implements AgentHost {
     const entry = this.processes.get(id), alias = this.aliases[id]
     if (!entry || (expected && entry !== expected) || !alias?.museSessionId || (!expected && !this.loaded.has(id))) return
     const turnRevision = entry.turnRevision
-    const changesBeforeResume = this.modelChanges.get(id) ?? 0
+    const beforeResume = this.modelRevisions(id)
     const resumed = sessionResumeSchema.parse(await entry.rpc.request('session/resume', {
       commandId: museCommandId(), sessionId: alias.museSessionId, excludeItems: false,
     }))
@@ -1722,7 +1728,7 @@ export class MuseMspHost implements AgentHost {
     // A running turn is left alone: the next send asks for the thread's model again.
     const running = resumed.session.status === 'running' || this.activeTurns.has(id) || this.activePrompts.has(id)
     if (this.confirmSession(id, alias, resumed.session, true) && !running) {
-      await this.reapplyModel(id, alias, entry, resumed.session, changesBeforeResume)
+      await this.reapplyModel(id, alias, entry, resumed.session, beforeResume)
       if (generation !== this.generation || this.processes.get(id) !== entry) return
     }
     if (entry.turnRevision === turnRevision) this.reconcileLiveSession(id, resumed.session)

@@ -120,8 +120,9 @@ could act without asking.
 Bug Bot's review added three details. When Muse moves a session to another model on its own, with
 `session/modelChanged`, that model becomes the thread's, so no later send sets the one before it back; when Muse moves
 it while answering Sotto's own `session/setModel`, the newest model Muse named wins. When Muse refuses to set a reopened
-thread's model again, what it described is the best word there is on the model it runs, so the chip shows that and the
-thread's own stays unconfirmed for the next send to ask again. A model Muse has not confirmed leaves the thread idle,
+thread's model again, the model Muse last accepted stays the chip's, since Muse 1.4.10 describes a reopened session by
+its default; the description stands in only when Sotto never recorded one, and the
+thread's own, where it differs, stays unconfirmed for the next send to ask again. A model Muse has not confirmed leaves the thread idle,
 not in error, so a queued follow-up runs as it would on any thread; only a permission mode Muse has not confirmed reads
 as an error.
 
@@ -131,7 +132,7 @@ A model change saves the model it wants before it asks Muse, so one whose answer
 reconnect, and a refusal goes back only to the model the thread had before anything was awaited, never over one Muse
 named since. A reopened session's description counts as older than any model change Muse announced after the resume
 was asked for, and a reopen leaves the model alone while a turn runs, including one that started while the resume was
-answered; when the thread's own model is one Muse already accepted, nothing is asked again.
+answered. Once Muse accepts the thread's own model on a reopen, the next send asks for nothing.
 
 Muse can accept a model change without announcing it, and a resync can ask for a model again outside the order the
 user's changes keep. So an accepted change makes its model the one Muse runs unless Muse named another since, and the

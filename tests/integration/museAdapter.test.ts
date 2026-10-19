@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { describeAdapterContract } from './adapterContract'
@@ -201,13 +201,16 @@ it('keeps a newer model choice when Muse accepts a resync\u2019s older re-apply 
     await f.driver.completeTurn(id, 'First reply')
     await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
     // A gap makes the thread read again; Muse describes it by its default, so Sotto sets fixture-full again, and Muse
-    // holds that answer while the user picks fixture-base.
-    await f.script({ models: twoModels, reopenedAsDefault: true, silentSetModel: true, delaySetModel: { modelId: 'fixture-full', ms: 1_500 } })
+    // holds that answer until the user has picked fixture-base.
+    await f.script({ models: twoModels, reopenedAsDefault: true, silentSetModel: true, parkSetModel: 'fixture-full' })
     await f.action(id, { type: 'gap' })
     await expect.poll(async () => (await f.driver.requests()).some(record => setModelTo(record) === 'fixture-full')).toBe(true)
     await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: 'fixture-base' })
-    // Muse answers the older re-apply after the user's choice; the thread still wants fixture-base.
-    await new Promise(resolve => setTimeout(resolve, 2_000))
+    expect((await thread(f, id)).modelId).toBe('fixture-base')
+    // Muse answers the older re-apply only now, after the user's choice. It runs fixture-full again, which the chip
+    // shows, and the thread still wants fixture-base.
+    await f.action(id, { type: 'release-set-model' })
+    await expect.poll(async () => (await thread(f, id)).modelId).toBe('fixture-full')
     const saved = JSON.parse(await readFile(join(f.root, 'muse-threads.json'), 'utf8')) as Record<string, { modelId: string }>
     expect(saved[id]?.modelId).toBe('fixture-base')
     await f.script({ models: twoModels, reopenedAsDefault: true })
@@ -218,25 +221,33 @@ it('keeps a newer model choice when Muse accepts a resync\u2019s older re-apply 
   } finally { await f.cleanup() }
 })
 
-it('takes the model Muse has when it refuses a wanted model at a send, and asks for it no more', async () => {
-  const f = await museFixture(undefined, 500)
+// Muse 1.4.10 describes a reopened session by its default, so a refused default is the case a reopen cannot settle alone.
+it.each([
+  { refused: 'fixture-full', runs: 'fixture-base', reopenedAsDefault: false },
+  { refused: 'fixture-base', runs: 'fixture-full', reopenedAsDefault: true },
+])('takes the model Muse has when it refuses a wanted $refused at a send, and asks for it no more', async ({ refused, runs, reopenedAsDefault }) => {
+  const first = await museFixture()
+  const id = await twoModelThread(first, runs, { reopenedAsDefault })
+  // A refused change whose rollback was never saved, as a failed save or an exit leaves it: still wanted, not Muse's.
+  first.host.disconnect(); await first.host.closed()
+  const file = join(first.root, 'muse-threads.json'), record = JSON.parse(await readFile(file, 'utf8')) as Record<string, Record<string, unknown>>
+  record[id] = { ...record[id], modelId: refused, nativeModelId: runs, settingsConfirmed: false }
+  await writeFile(file, JSON.stringify(record))
+  const f = await museFixture(first.root)
   try {
-    const id = await twoModelThread(f, 'fixture-base')
-    // A change whose answer is lost stays wanted, as one a failed save or an exit left wanted does.
-    await f.script({ models: twoModels, holdSetModel: true })
-    await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: 'fixture-full' })
-    await f.script({ models: twoModels, rejectSetModel: ['fixture-full'] })
+    await f.script({ models: twoModels, reopenedAsDefault, rejectSetModel: [refused] })
+    await f.host.connect()
     await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'Muse refuses the wanted model' })).resolves.toEqual({ accepted: true })
     await f.driver.completeTurn(id, 'On the model Muse has')
     await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
-    const asked = (await f.driver.requests()).filter(record => setModelTo(record) === 'fixture-full').length
+    const asked = (await f.driver.requests()).filter(record => setModelTo(record) === refused).length
     await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'And again' })
     await f.driver.completeTurn(id, 'Still on it')
     await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
-    expect((await f.driver.requests()).filter(record => setModelTo(record) === 'fixture-full')).toHaveLength(asked)
-    expect((await thread(f, id)).modelId).toBe('fixture-base')
+    expect((await f.driver.requests()).filter(record => setModelTo(record) === refused)).toHaveLength(asked)
+    expect((await thread(f, id)).modelId).toBe(runs)
     const saved = JSON.parse(await readFile(join(f.root, 'muse-threads.json'), 'utf8')) as Record<string, { modelId: string }>
-    expect(saved[id]?.modelId).toBe('fixture-base')
+    expect(saved[id]?.modelId).toBe(runs)
   } finally { await f.cleanup() }
 })
 
@@ -255,9 +266,9 @@ it('sets no model on a reopened thread whose turn started while the resume was a
   } finally { await f.cleanup() }
 })
 
-it('sends and steers a reopened thread whose model Muse refuses to set again, showing the model Muse describes', async () => {
+it('sends and steers a reopened thread whose model Muse refuses to set again, showing the model it last accepted', async () => {
   // Muse 1.4.10 describes a reopened session by its catalog's default. Here it also refuses to set the thread's own
-  // model, so what it described is the best word on the model it runs.
+  // model again, so the model it last accepted stays the best word on the one it runs.
   const f = await museFixture()
   try {
     const id = await twoModelThread(f, 'fixture-full', { reopenedAsDefault: true })
@@ -268,22 +279,22 @@ it('sends and steers a reopened thread whose model Muse refuses to set again, sh
     await f.script({ models: twoModels, reopenedAsDefault: true, rejectSetModel: true })
     await f.host.connect()
     await f.host.refreshThread!(id)
-    expect((await thread(f, id)).modelId).toBe('fixture-base')
+    expect((await thread(f, id)).modelId).toBe('fixture-full')
     expect((await thread(f, id)).status).toBe('idle')
     await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'After reconnecting' })).resolves.toEqual({ accepted: true })
     await expect(f.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'And this too' })).resolves.toEqual({ accepted: true })
-    // Sotto asked for the thread's own model after reopening it and again before the turn; Muse refused both, and the
-    // turn went ahead.
+    // Sotto asked for the thread's own model after reopening it, before the turn; Muse refused, and the turn went ahead
+    // on the model Muse last accepted, which is the thread's own.
     const log = await f.driver.requests()
     const sets = log.flatMap((record, at) => setModelTo(record) === 'fixture-full' ? [at] : [])
-    expect(sets.length).toBeGreaterThanOrEqual(2)
+    expect(sets.length).toBeGreaterThanOrEqual(1)
     expect(sets[0]).toBeGreaterThan(log.findIndex(record => record.method === 'session/resume'))
     expect(sets.at(-1)).toBeLessThan(log.findLastIndex(record => record.method === 'turn/start'))
     await f.driver.completeTurn(id, 'Done on the base model')
     await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
-    // The turn ran. Which model it ran on is Muse's to say; the chip shows the one Muse described, the best word there is.
+    // The turn ran, and the chip shows the model Muse last accepted rather than the default it described.
     expect(await turnModels(f, id)).toHaveLength(2)
-    expect((await thread(f, id)).modelId).toBe('fixture-base')
+    expect((await thread(f, id)).modelId).toBe('fixture-full')
   } finally { await f.cleanup() }
 })
 
@@ -310,7 +321,7 @@ it('runs a queued follow-up on a reopened thread whose model Muse refuses to set
     await f.driver.completeTurn(id, 'Third reply')
     await expect.poll(() => ownThread()?.status).toBe('idle')
     expect((await f.driver.requests()).filter(record => record.method === 'turn/start')).toHaveLength(3)
-    expect(ownThread()?.modelId).toBe('fixture-base')
+    expect(ownThread()?.modelId).toBe('fixture-full')
   } finally { await stack.dispose(); await f.cleanup() }
 })
 

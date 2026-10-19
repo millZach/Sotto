@@ -18,7 +18,8 @@ import { join } from 'node:path'
 // `permissionProfiles: false`; a session started with one reports its reviewer in `permissionState`, or the one
 // script.json's `reviewerAuthority` names, to a connection that asked for the experimental API and unless script.json
 // says `permissionStateHidden`. `session/read` serves a stored session without attaching it.
-// `delaySetModel: { modelId, ms }` answers one session/setModel for that model only after `ms`, saying nothing, and
+// `parkSetModel` holds one session/setModel for the model it names until a `release-set-model` action answers it,
+// saying nothing.
 // `silentSetModel` accepts a model change without session/modelChanged, as an answer can arrive without one.
 // `moveDuringApprovalMode` and `moveDuringResume` each move the session to the model they name once, saying so with
 // session/modelChanged before answering session/setApprovalMode or session/resume: a resume's description is then older
@@ -141,7 +142,7 @@ function completeReply(session, text) {
   addItem(session, { ...base, status: 'completed', revision: 2, text })
   endTurn(session)
 }
-let seenAction, pendingListReply
+let seenAction, pendingListReply, parkedSetModel
 function check() {
   if (ephemeral) return
   const action = read('control.json', undefined)
@@ -155,6 +156,7 @@ function check() {
   else if (action.type === 'reply-start') addItem(session, { itemId: `item-${randomUUID()}`, kind: 'agentMessage', status: 'inProgress', revision: 1,
     turnId: session.activeTurnId ?? null, recordedAt: stamp(), text: action.text })
   else if (action.type === 'exit') process.exit(0)
+  else if (action.type === 'release-set-model') { const answer = parkedSetModel; parkedSetModel = undefined; answer?.() }
   else if (action.type === 'malformed') notify('item/delta', { sessionId: session.sessionId, itemId: 1 })
   else if (action.type === 'gap') {
     if (action.text) addItem(session, { itemId: `item-${randomUUID()}`, kind: 'agentMessage', status: 'completed', revision: 1,
@@ -318,12 +320,12 @@ createInterface({ input: process.stdin }).on('line', line => {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
     if (script.holdSetModel) return
     if (script.rejectSetModel === true || script.rejectSetModel?.includes?.(p.model.modelId)) { fail('commandRejected', 'Refused by the fixture', 'model_unavailable'); return }
-    if (script.delaySetModel?.modelId === p.model.modelId) {
-      writeFileSync(path('script.json'), JSON.stringify({ ...script, delaySetModel: undefined }))
-      setTimeout(() => {
+    if (script.parkSetModel === p.model.modelId) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, parkSetModel: undefined }))
+      parkedSetModel = () => {
         const previous = session.modelId; session.modelId = p.model.modelId; save()
         result({ modelId: p.model.modelId, previousModelId: previous })
-      }, script.delaySetModel.ms)
+      }
       return
     }
     const previousModelId = session.modelId; session.modelId = p.model.modelId; save()
