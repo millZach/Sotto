@@ -63,7 +63,8 @@ describe('Muse in provider settings', () => {
     expect(screen.getByText(/Muse uses its own release feed; the other clients use the npm registry/)).toBeVisible()
     const support = screen.getByText('Threads with Muse').closest('details')!
     fireEvent.click(within(support).getByText('Threads with Muse'))
-    expect(within(support).getByText(/Sotto's browser tools, Watcher and skills are unavailable/)).toBeInTheDocument()
+    expect(within(support).getByText(/Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools\. Watcher runs on Muse 1\.4\.7 or newer\. Skills are unavailable\./)).toBeInTheDocument()
+    expect(within(support).queryByText(/browser tools, Watcher and skills are unavailable/)).toBeNull()
     expect(within(support).getByText(/Muse does not write thread titles, branch names, commit messages or pull request drafts/)).toBeInTheDocument()
     const models = screen.getByRole('tab', { name: 'Models' })
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Configuration' }), { key: 'ArrowRight' })
