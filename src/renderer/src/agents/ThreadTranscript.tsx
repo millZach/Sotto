@@ -14,6 +14,8 @@ import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
 import { ActivityGroupView, CompactionLine, foldOnEscape, LiveActivity, TurnChangedFiles } from './ThreadActivity'
+import { ActivityBodyContext, type ActivityBodyHost } from './activityBodies'
+import { threadHostName } from './HostBadge'
 import { isDrawableVisual, VisualCard } from './VisualCard'
 import { MOST_LIFTED, questionsIn } from './liftedQuestions'
 import { isWakeUpFollowup, isWakeUpMessage, wakeUpMarkdown } from './babysitting'
@@ -763,6 +765,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   }, [])
   const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
     [liveTurn, thread.status, row.connected, row.provider, onDisclosure, onSeek])
+  // A remote thread's rows read a body its host kept back from that host, by the name the window shows (ADR-0025, October
+  // 18 amendment). This computer's threads have no such body, and their rows are given nothing.
+  const bodyHostName = thread.remoteHost === true ? threadHostName(state, thread) : undefined
+  const bodyHostConnected = thread.remoteHost === true && (state.connections?.find(item => item.hostId === thread.hostId)?.connected ?? thread.clientConnected !== false)
+  const bodyHost = useMemo<ActivityBodyHost | null>(() => bodyHostName === undefined ? null : { threadId: thread.id, hostName: bodyHostName, connected: bodyHostConnected },
+    [thread.id, bodyHostName, bodyHostConnected])
   const showsActivity = placement.trailing.length > 0 || liveTurn !== null
   const lastGroup = placement.trailing.at(-1) ?? (lastMessageId === undefined ? undefined : placement.after.get(lastMessageId)?.at(-1))
 
@@ -808,10 +816,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {hidden === 0 && !thread.earlierAvailable ? <ContinuedFromNote thread={thread} state={state} command={command} /> : null}
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
-        {thread.messages.length || showsActivity ? <ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><DelegationCardProvider world={cardWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
+        {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><DelegationCardProvider world={cardWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
           <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegationCards.size ? delegationCards : undefined} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} />
-        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationCardProvider></ForkContext.Provider></ThreadStartContext.Provider>
+        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationCardProvider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.compaction?.status === 'running' ? 'Compacting the context.' : thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}

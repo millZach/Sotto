@@ -413,6 +413,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly activityHistoryPending = new Set<string>()
   /** The assistant message a stream has opened per thread, so its deltas are recorded as appends. */
   private readonly streaming = new Map<string, string>()
+  /** The CLI each thread's /compact was written to, until that CLI's result for it or its exit. */
+  private readonly compacting = new Map<string, Runtime>()
   private cursorTimer: ReturnType<typeof setTimeout> | undefined
   /** The transcript cursor each thread's saved record last carried, so a write can hold an advanced one back. */
   private readonly savedCursors = new Map<string, NonNullable<Alias['transcriptCursor']>>()
@@ -931,7 +933,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         alias.compactStartedAt = new Date().toISOString()
         alias.compactInputIds = [...(alias.compactInputIds ?? []), inputId]
         try { await this.persist() } catch (error) { delete alias.compaction; throw error }
-        thread.compaction = alias.compaction; thread.status = 'running'; this.emit()
+        thread.compaction = alias.compaction; thread.status = 'running'; this.compacting.set(id, runtime); this.emit()
         try { await runtime.protocol.write({ type: 'user', uuid: inputId, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content: '/compact' } }) }
         catch {
           alias.compaction = { commandId: command.commandId, status: 'uncertain', error: 'Native compaction is unconfirmed. Reconnect to observe its result; it will not be retried.' }
@@ -1379,6 +1381,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         this.thinkingEnded(id)
         this.runtimes.delete(id); this.selfTurns.delete(id); this.queries.delete(id); this.interrupting.delete(id); this.toolsRunning.delete(id); this.reaper.forget(id); this.messageLog.dropEmpty(id); this.messageLog.release(id); this.streaming.delete(id); this.flushCursors(); thread.requests = []
         delete thread.providerSessionOpen
+        this.compacting.delete(id)
         if (saved?.compaction?.status === 'running') {
           saved.compaction = { ...saved.compaction, status: 'uncertain', error: 'Native compaction was interrupted when Claude Code stopped. Its result is read from the native session; it will not be retried.' }
           thread.compaction = saved.compaction; this.trackClosure(this.persist().catch(() => undefined))
@@ -1690,6 +1693,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       }
     }
     if (frame.type === 'result') {
+      this.compacting.delete(id)
       if (compactionPending(alias.compaction)) {
         alias.compaction = { commandId: alias.compaction!.commandId, status: frame.is_error === true ? 'failed' : 'uncertain',
           error: frame.is_error === true ? 'Claude native compaction failed.' : 'Claude finished without confirming a compaction boundary. The operation will not be retried.' }
@@ -1886,10 +1890,16 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // Persisted history may replay older compactions. Only evidence after this
     // durable request can reconcile an operation whose live acknowledgement was lost.
     if (compactionPending(alias.compaction) && (!fromLog || timestamp >= Date.parse(alias.compactStartedAt ?? ''))) {
+      // A CLI that took the /compact still answers it with a result, and that result ends the thread's work: it names
+      // the compaction as the turn the thread rests on. Going idle at the boundary showed a thread with no finished turn
+      // until then, so a follow-up queued during the compaction paused instead of going (and right after a restart,
+      // when Sotto has read no turn of the thread, always). A /compact whose write went unconfirmed but arrived late is
+      // answered the same way. Only a compaction no CLI will answer settles here, and so does a failed one, as it did.
+      const answering = this.compacting.has(id) && this.compacting.get(id) === this.runtimes.get(id)
       alias.compaction = { commandId: alias.compaction!.commandId, status: frame.compact_result === 'failed' ? 'failed' : 'completed',
         ...(frame.compact_result === 'failed' ? { error: typeof frame.compact_error === 'string' ? frame.compact_error : 'Claude native compaction failed.' } : {}) }
       thread.compaction = alias.compaction
-      thread.status = frame.compact_result === 'failed' ? 'error' : 'idle'
+      if (!answering || frame.compact_result === 'failed') thread.status = frame.compact_result === 'failed' ? 'error' : 'idle'
       void this.persist().catch(() => { this.state.error = 'The native compaction result could not be saved.'; this.emit() })
     }
     if (frame.subtype === 'compact_boundary' && (!fromLog || Number.isFinite(timestamp) && timestamp > Date.parse(thread.usage?.contextUpdatedAt ?? '1970-01-01'))) {
