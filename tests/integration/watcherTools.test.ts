@@ -171,17 +171,19 @@ it('refuses pending requests for all delivery modes, refuses wider permissions a
   expect(f.workspace.adapters.codex.commands.some(item => item.type === 'answer')).toBe(false)
 })
 
-it('fences a queued machine prompt before a direct user send and preserves user input', async () => {
+it('fences a queued machine prompt before a direct user send, preserves user input and keeps the thread watched', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'synthetic_machine_queued' })).toMatchObject({ status: 'ok' })
   await f.control.commandShell({ type: 'manual-send', threadId: first.target.threadId, draftId: randomUUID(), text: 'synthetic_direct_user' })
   await f.finish(first.target.threadId)
-  expect(f.service.state().watchedThreads[0]!.participation[0]).toMatchObject({ state: 'taken-over', takeover: { reason: 'user-send' } })
+  expect(f.service.state().watchedThreads[0]).toMatchObject({ watched: true, participation: [{ state: 'participating' }] })
+  // The user's prompt goes from the queue once Watcher's turn ends; Watcher sends again once the user's own turn has ended.
   await f.finish(f.id)
+  await vi.waitFor(async () => { await f.finish(first.target.threadId); expect(f.service.state().watchedThreads[0]!.paused).toBe(false) })
   await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic new request' })
   const nextRequest = f.service.state().requests.at(-1)!.id
-  expect(await f.call('send_to_thread', { requestId: nextRequest, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'synthetic_after_takeover' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+  expect(await f.call('send_to_thread', { requestId: nextRequest, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'synthetic_after_user' })).toMatchObject({ status: 'ok' })
   expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text === 'synthetic_machine_queued')).toBe(false)
   expect(f.control.shell().followups?.some(item => item.text === 'synthetic_direct_user') || f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text === 'synthetic_direct_user')).toBe(true)
 })
@@ -200,7 +202,7 @@ it('rechecks takeover after the read before send without dispatching the machine
   const user = f.control.commandShell({ type: 'manual-send', threadId: first.target.threadId, draftId: randomUUID(), text: 'synthetic_racing_user' })
   release.resolve(); await machine; await user; spy.mockRestore()
   expect(f.workspace.adapters.codex.commands.some(item => item.type === 'send' && item.text === 'synthetic_racing_machine')).toBe(false)
-  expect(f.service.state().watchedThreads[0]!.participation[0]!.state).toBe('taken-over')
+  expect(f.service.state().watchedThreads[0]).toMatchObject({ watched: true, participation: [{ state: 'participating' }] })
 })
 
 it('writes no Watcher drafts, machine queues or worker message words with history off', async () => {
@@ -309,7 +311,7 @@ it('refuses a Stop all preview when its eligible ownership changes without stopp
   expect(f.workspace.adapters.codex.commands.filter(item => item.type === 'interrupt')).toHaveLength(0)
 })
 
-it('refuses Stop all after a previewed worker is taken over without changing its saved record', async () => {
+it('refuses Stop all after the user sends to a previewed worker without changing its saved record', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   const preview = f.service.prepareStopAll()
@@ -445,7 +447,7 @@ it('retains an uncertain existing delivery through takeover while admitting an u
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'now', text: 'Synthetic unknown delivery' }))
     .toMatchObject({ status: 'ok', receipt: { deliveryState: 'uncertain' } })
   await f.control.commandShell({ type: 'queue-followup', threadId: first.target.threadId, draftId: randomUUID(), text: 'Synthetic takeover continuation' })
-  expect(f.service.state().watchedThreads[0]!.participation[0]!.state).toBe('taken-over')
+  expect(f.service.state().watchedThreads[0]).toMatchObject({ watched: true, paused: true, participation: [{ state: 'participating' }] })
   expect(f.service.state().inFlight).toBe(0)
   expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
   await original(written!)
@@ -480,11 +482,9 @@ it('detects a Sotto user instruction sent while the Watcher service was dormant'
   cleanups.push(async () => { recovered.close() })
   await recovered.recover()
   expect(recovered.state().recoveryNotice).toBeNull()
-  expect(recovered.state().watchedThreads[0]!.participation[0]).toMatchObject({ state: 'taken-over', takeover: { reason: 'native-user-send' } })
-  await f.finish(f.id)
-  await f.control.commandShell({ type: 'manual-send', threadId: f.id, draftId: randomUUID(), text: 'Synthetic later root request' })
-  expect(await recovered.invoke(f.id, 'send_to_thread', { requestId: recovered.state().requests.at(-1)!.id, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic rejected resumption' }))
-    .toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+  // The instruction fences what Watcher had prepared, and the thread stays watched.
+  expect(f.control.watcherRecord().watches![0]!.generation).toBeGreaterThan(0)
+  expect(recovered.state().watchedThreads[0]).toMatchObject({ watched: true, participation: [{ state: 'participating' }] })
 })
 
 it('refuses reads and new instructions during provider replacement before changing identity', async () => {
@@ -510,12 +510,16 @@ it('refuses reads and new instructions during provider replacement before changi
 it('fences remove-followup and branch controls as user reconfiguration', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const generation = (threadId: string) => f.control.watcherRecord().watches!.find(watch => watch.target.threadId === threadId)!.generation
+  const before = generation(first.target.threadId)
   f.service.userCommand({ type: 'remove-followup', threadId: first.target.threadId, itemId: randomUUID() }, first.target.threadId, false)
-  expect(f.service.state().watchedThreads[0]!.participation[0]).toMatchObject({ state: 'taken-over', takeover: { reason: 'user-reconfigure' } })
+  expect(generation(first.target.threadId)).toBeGreaterThan(before)
+  expect(f.service.state().watchedThreads[0]).toMatchObject({ watched: true, participation: [{ state: 'participating' }] })
   const other = await f.call('start_thread', f.start())
   if (other.status !== 'ok' || !('target' in other)) throw new Error('start refused')
+  const otherBefore = generation(other.target.threadId)
   f.service.userCommand({ type: 'git-switch-branch', threadId: other.target.threadId, ref: 'synthetic-branch' }, other.target.threadId, false)
-  expect(f.service.state().watchedThreads.find(item => item.target.threadId === other.target.threadId)!.participation[0]!.state).toBe('taken-over')
+  expect(generation(other.target.threadId)).toBeGreaterThan(otherBefore)
 })
 
 it('keeps preexisting user queues intact when machine Stop interrupts their thread', async () => {

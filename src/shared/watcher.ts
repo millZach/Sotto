@@ -261,6 +261,9 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   promptTurns: z.array(watcherPromptTurnSchema).max(10_000).optional(),
   lastRuntimeMode: agentRuntimeModeSchema.optional(), watches: z.array(watcherStandingWatchSchema).optional(),
   watchFences: z.array(z.object({ id: z.uuid(), target: watcherThreadTargetSchema.optional(), remoteOrigin: watcherWatchOriginSchema.optional() }).strict()).optional(),
+  // The threads the user stopped watching and has not handed back. Watcher's own watch_thread needs a newer user message
+  // to Watcher than `watcherHead`, the newest one when the user stopped it; Watch hands one back at once.
+  userUnwatches: z.array(z.object({ target: watcherThreadTargetSchema, watcherHead: id.nullable(), at: time }).strict()).max(10_000).optional(),
   remoteMasters: z.array(z.object({ clientId: id, masterHostId: z.uuid(), creationOperationId: z.uuid(), createdAt: time }).strict()).max(1_000).optional(),
   creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
