@@ -179,6 +179,19 @@ describe('a pending setting', () => {
     expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeDisabled()
   })
 
+  it('marks an effort the provider never answered, keeps it pickable, and says what may still run (#1192)', async () => {
+    render(<LiveThread start={fixture()}
+      answer={async (_request, current) => ({ ...current, error: PROVIDER_RESULT_UNCONFIRMED, unconfirmedSettings: [{ threadId: 'thread', reasoningEffort: 'max' }] })} />)
+    const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
+    fireEvent.click(chip)
+    await act(async () => { fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: '5' }) })
+    await waitFor(() => expect(chip).toHaveAttribute('data-pending', 'true'))
+    // The chip shows the choice, marked as a pending permission is, and its description says a turn can still run on
+    // the effort before it.
+    expect(chip).toHaveAccessibleDescription(/until it does, a turn can still run on high/i)
+    expect(chip).toBeEnabled()
+  })
+
   it('keeps a choice the provider never answered on the chip, says what comes next, and offers nothing to press', async () => {
     const lost = 'Claude Code did not confirm the settings change, so Sotto stopped this thread\'s session, and "npm test" stopped with it. The session starts again with the new settings the next time you use the thread.'
     let commit!: (next: AgentState) => void

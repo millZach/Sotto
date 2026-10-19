@@ -4045,10 +4045,15 @@ export class AgentControl {
       // A newer choice of the same settings replaces an earlier change whose result is unknown: no snapshot can show the
       // earlier one now, and its chip would wait on it for good.
       // A model change sets the effort too, to the one chosen or the new model's default, so it covers an earlier effort.
+      // An earlier entry loses only what the newer choice covers; what is left is still reconciled against what the
+      // thread shows, and an entry with nothing left goes.
       const chosen = command
       const covers = (key: string): boolean => chosen[key as keyof typeof chosen] !== undefined || (key === 'reasoningEffort' && chosen.modelId !== undefined)
-      this.outbox = this.outbox.filter(item => item.id === chosen.commandId || item.threadId !== chosen.threadId || !holdsNothingBack(item)
-        || !Object.keys(item.options!).filter(key => item.options![key as keyof typeof item.options] !== undefined).every(covers))
+      this.outbox = this.outbox.flatMap(item => {
+        if (item.id === chosen.commandId || item.threadId !== chosen.threadId || !holdsNothingBack(item)) return [item]
+        const options = Object.fromEntries(Object.entries(item.options!).filter(([key, value]) => value !== undefined && !covers(key)))
+        return Object.keys(options).length ? [{ ...item, options }] : []
+      })
     }
     if ((command.type === 'configure-thread' || prompt) && result.accepted) {
       // A settings change the provider confirmed comes back with the snapshot it produced, which is the

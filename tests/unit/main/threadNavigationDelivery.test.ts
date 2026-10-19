@@ -636,6 +636,16 @@ describe('a settings change whose result is unknown (#1192)', () => {
     expect(f.control.shell().unconfirmedSettings ?? []).toEqual([])
   })
 
+  it('keeps the part of an unknown change a newer choice does not cover, for the thread to confirm', async () => {
+    const f = await fixture()
+    f.host.withheld = 'uncertain'
+    await f.control.command({ type: 'configure-thread', threadId: 'workshop', modelId: 'claude:test', reasoningEffort: 'high' })
+    f.host.withheld = null
+    // A newer effort replaces the unknown one; the unknown model stays to be confirmed, and the thread shows it.
+    expect((await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'low' })).error).toBeNull()
+    expect(f.control.shell().unconfirmedSettings ?? []).toEqual([])
+  })
+
   it('still holds the thread when it set a permission mode', async () => {
     const f = await fixture()
     f.host.withheld = 'uncertain'

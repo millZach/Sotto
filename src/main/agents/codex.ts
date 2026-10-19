@@ -121,6 +121,14 @@ const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().o
 class SessionUnavailable extends Error {
   constructor(cause: unknown) { super('Codex could not start this thread’s session. Nothing was sent. Try again, or reconnect Codex.', { cause }) }
 }
+/**
+ * Whether the thread's unconfirmed settings change holds it back: only one that sets a permission mode other than the
+ * confirmed one does. One that set only a model or an effort holds nothing back (#1192): the turn starts with the
+ * settings Codex confirmed, which the chips show, and the thread's history stays readable.
+ */
+function settingsHold(alias: Alias): boolean {
+  return alias.pendingSettings !== undefined && alias.pendingSettings.runtimeMode !== (alias.runtimeMode ?? 'auto-accept-edits')
+}
 class SettingsUnconfirmed extends Error {
   constructor() { super('Codex did not confirm this thread’s settings. Choose the thread settings again before sending.') }
 }
@@ -1006,7 +1014,7 @@ export class CodexAppServerHost implements AgentHost {
     this.histories.add(id)
     this.flushLogMessages(id); this.reconcileMessages(id)
     const read = this.ensureThread(id)
-    if (!this.aliases[id]!.pendingSettings) { delete read.historyStatus; delete read.historyError }
+    if (!settingsHold(this.aliases[id]!)) { delete read.historyStatus; delete read.historyError }
   }
   /**
    * The newest-turn check (#324): the read before a send, without reading the whole transcript. It asks Codex for
@@ -1348,7 +1356,9 @@ export class CodexAppServerHost implements AgentHost {
       if (response.thread) this.applyThread(id, response.thread)
       this.live.add(id); this.log.pin(id)
       const thread = this.ensureThread(id)
-      thread.historyStatus = 'error'; thread.historyError = error.message
+      // Only a permission change keeps the thread's history marked: a model or effort change holds nothing back, its
+      // queued follow-ups included.
+      if (settingsHold(alias)) { thread.historyStatus = 'error'; thread.historyError = error.message }
       await this.persist(); this.emit()
       return
     }
@@ -1581,11 +1591,8 @@ export class CodexAppServerHost implements AgentHost {
         // The coordinator's read before this send stands for the send's own (#765).
         const readForSend = this.readsBeforeSend.take(id, command)
         if (alias.pendingRollback && command.type !== 'interrupt') throw new Error('Reconcile the pending Codex rewind before changing this thread.')
-        // An unconfirmed change holds a send back only when it changes the permission mode. One that set only a model or an
-        // effort holds nothing back: the turn starts with the settings Codex confirmed, which the chips show (#1192).
-        const settingsHold = alias.pendingSettings !== undefined && alias.pendingSettings.runtimeMode !== (alias.runtimeMode ?? 'auto-accept-edits')
         if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer' && command.type !== 'configure-thread'
-          && (settingsHold || (command.type !== 'send' && command.type !== 'steer'))) throw new SettingsUnconfirmed()
+          && (settingsHold(alias) || (command.type !== 'send' && command.type !== 'steer'))) throw new SettingsUnconfirmed()
         if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
         // Lazy sessions: an action on a thread that was never opened, or whose session the reaper stopped,
         // resumes it here before the command proceeds.
