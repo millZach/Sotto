@@ -269,6 +269,7 @@ export async function verifyPackagedResources(input, options = {}) {
   for (const required of [
     'out/main/index.js',
     'out/main/terminalAgentHook.js',
+    'out/main/gitLauncherWorker.js',
     'out/main/external-dependencies.json',
     'out/preload/index.js',
     'out/preload/visual.js',

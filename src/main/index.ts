@@ -791,14 +791,6 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
   // A Playwright journey runs a babysitting pass when it asks, rather than waiting on the two-minute timer; development only.
   if (e2eConfiguration !== null && !app.isPackaged && localRuntime.babysitter) installBabysitPassE2E(localRuntime.babysitter)
-  // The window's panes show their threads only while it has the focus (ADR-0046).
-  const windowFocusChanged = (): void => {
-    const focused = BrowserWindow.getFocusedWindow()
-    hostService.setWindowFocused(focused !== null && focused.webContents === windows.getMainWebContents())
-  }
-  app.on('browser-window-focus', windowFocusChanged)
-  app.on('browser-window-blur', windowFocusChanged)
-  windowFocusChanged()
   const quitHandles: HostQuitHandles = { localRuntime }
   registerHostQuitDrain(app, quitHandles, () => console.error('[Sotto] host-shutdown-failed'), () => logOperational('phone-access-close-failed'), platform, powerMonitor)
   let browserService: BrowserService | undefined
@@ -812,6 +804,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
   })
   quitHandles.hostRouter = hostRouter
+  // The window's panes show their threads only while it has the focus (ADR-0046), on this computer's host and on every
+  // remote host that keeps what is shown (ADR-0092).
+  const windowFocusChanged = (): void => {
+    const focused = BrowserWindow.getFocusedWindow()
+    const shown = focused !== null && focused.webContents === windows.getMainWebContents()
+    hostService.setWindowFocused(shown)
+    hostRouter.setWindowFocused(shown)
+  }
+  app.on('browser-window-focus', windowFocusChanged)
+  app.on('browser-window-blur', windowFocusChanged)
+  windowFocusChanged()
   localRuntime.watcher?.useRemoteHosts(hostRouter.watcherHosts())
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,

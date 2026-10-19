@@ -101,6 +101,9 @@ export interface HostService {
   hostFacts?(): Promise<HostMachineReport>
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
+  /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
+   * threads say Needs attention until their next turn. */
+  readonly supportsFailureSeen?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
   startHandover?(threadId: string): Promise<{ readonly text: string } | null>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
@@ -241,6 +244,8 @@ export class LocalHostService implements HostService {
   readonly supportsDraftRevisions = true
   readonly supportsBabysitting: boolean
   private readonly observations = new Map<string, string[]>()
+  /** Of each client's observed threads, the ones it shows, where it said that is fewer (`shownThreadIds`). */
+  private readonly shownBy = new Map<string, string[]>()
   /**
    * Whether this computer's own window has the focus. Its panes show their threads only while it does (ADR-0046): a
    * thread that finishes behind another app, minimised or hidden to the tray is finished unread. A host with no window
@@ -269,6 +274,8 @@ export class LocalHostService implements HostService {
 
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
+  /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
+  readonly supportsFailureSeen = true
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
     if (!this.options.threadStarts) throw new Error('Continuing an agent as a thread is unavailable on this host.')
     const built = this.options.threadStarts.startHandover(threadId)
@@ -373,6 +380,8 @@ export class LocalHostService implements HostService {
     if (command.type !== 'observe-threads') return answerDecisionId ? this.control.commandShell(command, client, answerDecisionId) : this.control.commandShell(command, client)
     if (command.threadIds.length) this.observations.set(client.clientId, command.threadIds)
     else this.observations.delete(client.clientId)
+    if (command.threadIds.length && command.shownThreadIds !== undefined) this.shownBy.set(client.clientId, command.shownThreadIds)
+    else this.shownBy.delete(client.clientId)
     // What every client observes is what the host loads and streams, focused or not; only showing waits on the focus.
     const state = await this.control.commandShell({ type: 'observe-threads', threadIds: [...new Set([...this.observations.values()].flat())] }, client)
     return this.control.showThreads?.(this.shownThreads()) ? this.control.shell() : state
@@ -383,8 +392,12 @@ export class LocalHostService implements HostService {
     this.windowFocused = focused
     this.control.showThreads?.(this.shownThreads())
   }
-  /** The threads some client shows: every client's observed threads, the window's only while it has the focus. */
+  /**
+   * The threads some client shows: every client's observed threads, the window's only while it has the focus, and a
+   * client that said which of its threads it shows (the socket server, for paired desktops behind another app) only those.
+   */
   private shownThreads(): string[] {
-    return [...new Set([...this.observations].flatMap(([clientId, ids]) => clientId === DESKTOP_WINDOW_CLIENT_ID && !this.windowFocused ? [] : ids))]
+    return [...new Set([...this.observations].flatMap(([clientId, ids]) => clientId === DESKTOP_WINDOW_CLIENT_ID && !this.windowFocused ? []
+      : this.shownBy.get(clientId) ?? ids))]
   }
 }

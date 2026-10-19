@@ -142,6 +142,21 @@ describe('the roster of delegated threads', () => {
     expect(delegatedBelow(state.host.threads, PARENT)).toEqual({ needs: 1, working: 1 })
   })
 
+  it('stops saying Needs attention once the failure of a delegated thread is seen, as its sidebar row does (ADR-0092)', () => {
+    const state = delegatingState()
+    const failed = state.host.threads.find(thread => thread.id === SCOUT)!
+    failed.status = 'error'; failed.failureSeen = true
+    const made = new Map(Object.entries(views()).map(([id, list]) => [id, { made: list, received: [] }]))
+    const scout = delegatedRoster(PARENT, state.host.threads, made, state.host).flat().find(row => row.thread.id === SCOUT)!
+    expect(scout.status).not.toBe('needs')
+    expect(delegatedStatusWord(scout)).not.toBe('Needs attention')
+    expect(rosterCounts([scout], { total: 0, working: 0, unknown: 0 }).detail).not.toContain('needs you')
+    expect(delegatedBelow(state.host.threads, PARENT).needs).toBe(0)
+    // A request on it still needs the user, seen or not.
+    failed.requests = [{ id: 'scout-permission', kind: 'permission', text: 'Run the build?', options: [] }]
+    expect(delegatedBelow(state.host.threads, PARENT).needs).toBe(1)
+  })
+
   it('reads a delegated thread on another host from the snapshot, since its delegation is kept there', () => {
     const state = delegatingState()
     const merge = state.host.threads.find(thread => thread.id === MERGE)!
