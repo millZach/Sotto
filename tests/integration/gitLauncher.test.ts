@@ -176,20 +176,23 @@ describe('a launch the worker started, when the worker goes', () => {
   })
 
   it('is never started a second time when the worker fails right after starting it', async () => {
-    // A worker that starts the launch, says so, and fails at once: Node can deliver the failure before that message.
+    // A worker that starts the launch, waits until it has written its mark, says it started, and fails at once: Node can
+    // deliver the failure before that message.
     const root = await folder(), failing = join(root, 'failing.cjs'), marks = join(root, 'starts.txt')
     await writeFile(failing, [
       "const { parentPort } = require('node:worker_threads')",
       "const { spawn } = require('node:child_process')",
       "parentPort.on('message', request => {",
       "  if (request.type !== 'launch') return",
-      "  const child = spawn(request.command, request.args, { stdio: 'ignore', windowsHide: true })",
-      "  parentPort.postMessage({ type: 'spawned', id: request.id, pid: child.pid })",
-      "  throw new Error('Synthetic worker failure after starting a launch')",
+      "  const child = spawn(request.command, request.args, { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })",
+      "  child.stdout.once('data', () => {",
+      "    parentPort.postMessage({ type: 'spawned', id: request.id, pid: child.pid })",
+      "    throw new Error('Synthetic worker failure after starting a launch')",
+      '  })',
       '})',
     ].join('\n'))
     const made = launcher(failing)
-    const child = made.launch(...node(`require('node:fs').appendFileSync(${JSON.stringify(marks)}, 'x'); setTimeout(() => {}, 30_000)`), { cwd: process.cwd(), env: process.env })
+    const child = made.launch(...node(`require('node:fs').appendFileSync(${JSON.stringify(marks)}, 'x'); process.stdout.write('ready'); setTimeout(() => {}, 30_000)`), { cwd: process.cwd(), env: process.env })
     const result = ended(child)
     expect((await result).errors.some(error => error.message.includes('Sotto stopped'))).toBe(true)
     // Long enough for a second start, had there been one, to have written its mark.
