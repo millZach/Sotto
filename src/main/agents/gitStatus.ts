@@ -178,7 +178,7 @@ const backoff = (base: number, failures: number): number => Math.min(base * 2 **
  * A shared read: the `invalidate` count it began under, the `performance.now()` moment it began, the repository it
  * found once it has, and its answer.
  */
-interface ReadRecord { readonly start: number; readonly startedAt: number; readonly place: { common?: string | null }; readonly task: Promise<GitStatus> }
+interface ReadRecord { readonly epoch: number; readonly startedAt: number; readonly place: { common?: string | null }; readonly task: Promise<GitStatus> }
 interface FetchRecord { failures: number; nextAt: number; fetchedAt: number | null; inFlight?: { readonly epoch: number; readonly done: Promise<void> } }
 /**
  * A branch's pull request answer: the `invalidate` count it was asked under, the branch's tip when it was asked, and the
@@ -217,6 +217,8 @@ export class GitStatusReader implements GitStatusSource {
   private readonly reads = new Map<string, ReadRecord>()
   /** The last read of each folder that finished, by the same key, for a caller whose `startedAfter` it began after. */
   private readonly finished = new Map<string, ReadRecord>()
+  /** When a fetch of each repository last landed, by common Git directory, on `performance.now()`'s clock. */
+  private readonly fetchLanded = new Map<string, number>()
   private readonly remoteReads = new Map<string, Promise<boolean>>()
   private readonly known = new Map<string, KnownFolder>()
   /** The processes and remote halves running in each folder, by `folderKey`, so a removal can wait for them. */
@@ -423,26 +425,40 @@ export class GitStatusReader implements GitStatusSource {
    * `invalidate` of its repository is not shared after it, and a fresh read is never shared.
    */
   read(cwd: string, options: { readonly remote: boolean; readonly fresh?: boolean; readonly startedAfter?: number }): Promise<GitStatus> {
-    if (options.fresh) return this.readNow(cwd, options)
     const key = `${cwd}\0${options.remote}`
-    const standing = (record: ReadRecord | undefined): record is ReadRecord => record !== undefined && this.epochOf(record.place.common, cwd) <= record.start
+    if (options.fresh) return this.recorded(key, cwd, options, () => undefined).task
+    const standing = (record: ReadRecord | undefined): record is ReadRecord => record !== undefined && this.epochOf(record.place.common, cwd) <= record.epoch
     const pending = this.reads.get(key)
     if (standing(pending)) return pending.task
     const done = this.finished.get(key)
-    if (options.startedAfter !== undefined && standing(done) && done.startedAt >= options.startedAfter) return done.task
-    const place: { common?: string | null } = {}
-    const start = this.counter, startedAt = performance.now()
-    // Settled before its caller hears the answer, so a read asked after it is never handed this one as still running.
-    const task: Promise<GitStatus> = this.readNow(cwd, options, place).then(status => {
-      if (this.reads.get(key) === record) { this.finished.set(key, record); this.reads.delete(key) }
-      return status
-    }, (error: unknown) => {
-      if (this.reads.get(key) === record) this.reads.delete(key)
-      throw error
-    })
-    const record: ReadRecord = { start, startedAt, place, task }
+    if (options.startedAfter !== undefined && standing(done) && done.startedAt >= options.startedAfter && !this.fetchedSince(done)) return done.task
+    const record = this.recorded(key, cwd, options, () => { if (this.reads.get(key) === record) this.reads.delete(key) })
     this.reads.set(key, record)
-    return task
+    return record.task
+  }
+
+  /**
+   * A read of `cwd` that becomes the folder's last finished read when it finishes, unless one begun after it already
+   * has: a fresh read too, so a shared one never hands back a status older than the folder's newest. `settled` runs
+   * before its caller hears the answer, so a read asked after it is never handed this one as still running.
+   */
+  private recorded(key: string, cwd: string, options: { readonly remote: boolean }, settled: () => void): ReadRecord {
+    const place: { common?: string | null } = {}
+    const epoch = this.counter, startedAt = performance.now()
+    const task: Promise<GitStatus> = this.readNow(cwd, options, place).then(status => {
+      const last = this.finished.get(key)
+      if (!last || last.startedAt <= startedAt) this.finished.set(key, record)
+      settled()
+      return status
+    }, (error: unknown) => { settled(); throw error })
+    const record: ReadRecord = { epoch, startedAt, place, task }
+    return record
+  }
+
+  /** Whether a fetch of the read's repository landed after the read began, so the read predates what it brought. */
+  private fetchedSince(record: ReadRecord): boolean {
+    const common = record.place.common
+    return common !== undefined && common !== null && (this.fetchLanded.get(common) ?? -Infinity) > record.startedAt
   }
 
   /**
@@ -565,7 +581,7 @@ export class GitStatusReader implements GitStatusSource {
       this.fetchHeadFlag = false
       return fetch()
     })
-      .then(() => { record.failures = 0; record.fetchedAt = this.now(); if (this.epochOf(common) <= epoch) record.nextAt = this.now() + FETCH_FRESH_MS },
+      .then(() => { record.failures = 0; record.fetchedAt = this.now(); this.fetchLanded.set(common, performance.now()); if (this.epochOf(common) <= epoch) record.nextAt = this.now() + FETCH_FRESH_MS },
         () => { record.failures++; if (this.epochOf(common) <= epoch) record.nextAt = this.now() + backoff(FETCH_BACKOFF_MS, record.failures) })
       .finally(() => { if (record.inFlight?.done === done) delete record.inFlight })
     record.inFlight = { epoch, done }

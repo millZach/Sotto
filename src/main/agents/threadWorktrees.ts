@@ -42,7 +42,8 @@ export function runWorktreeGitProcess(cwd: string, args: string[], options: { ex
     const output: Buffer[] = [], errors: Buffer[] = []
     let bytes = 0
     const stop = (): void => {
-      if (!child.pid) return
+      // A launch on the worker has its pid once it has started; a deadline that came first stops it then.
+      if (!child.pid) { child.once('spawn', stop); return }
       stopping = process.platform === 'win32'
         ? runToExit('taskkill', ['/pid', String(child.pid), '/T', '/F'])
         : new Promise<void>((done, fail) => {
@@ -974,6 +975,11 @@ export class ThreadWorktrees {
       if (error instanceof Error && /not a git repository|Git is unavailable/u.test(error.message)) return metadata => ({ ...metadata, branch: undefined, dirty: false, status: 'ready', error: undefined })
       throw error
     }
+    return this.sharedFolderRecord(path, repositoryRoot)
+  }
+
+  /** The branch and uncommitted changes of a shared folder in `repositoryRoot`, as the record inspection makes of one. */
+  private async sharedFolderRecord(path: string, repositoryRoot: string): Promise<(metadata: AgentWorktree) => AgentWorktree> {
     const branch = (await this.git(path, ['branch', '--show-current'])).trim() || undefined
     const dirty = (await this.git(path, ['status', '--porcelain', '--untracked-files=normal'])).length > 0
     return metadata => ({ ...metadata, repositoryRoot, branch, dirty, status: 'ready', error: undefined })
@@ -1036,9 +1042,7 @@ export class ThreadWorktrees {
     if (metadata.mode === 'shared') {
       const repositoryRoot = observed?.root
       if (repositoryRoot === undefined) return { worktree: (await this.inspectSharedFolder(metadata.path))(metadata) }
-      const path = await existingWorkingDirectory(metadata.path)
-      const branch = (await this.git(path, ['branch', '--show-current'])).trim() || undefined
-      return { worktree: { ...metadata, repositoryRoot, branch, dirty: (await this.git(path, ['status', '--porcelain', '--untracked-files=normal'])).length > 0, status: 'ready', error: undefined } }
+      return { worktree: (await this.sharedFolderRecord(await existingWorkingDirectory(metadata.path), repositoryRoot))(metadata) }
     }
     const path = await existingWorkingDirectory(metadata.path)
     // Inspection never creates a replacement for a deleted checkout.

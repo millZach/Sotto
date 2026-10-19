@@ -93,6 +93,11 @@ function historyTextChunks(text: string): string[] {
 
 /** Milliseconds a burst of tool activity is left to settle before the worktree is read again. */
 const WORKTREE_REFRESH_DELAY_MS = 1_500
+/** One spelling of a folder for the re-read rounds: resolved, and without case on Windows. */
+function folderKey(folder: string): string {
+  const path = resolve(folder)
+  return process.platform === 'win32' ? path.toLowerCase() : path
+}
 /**
  * One round of trailing re-reads (`scheduleWorktreeRefresh`): when its timer fired, and the inspection of each shared
  * folder in it, by folder, with the count of Git actions when it began.
@@ -2897,8 +2902,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private refreshKey(threadId: string): string {
     const folder = this.statusFolder(threadId)
     if (folder === undefined) return `thread\0${threadId}`
-    const path = resolve(folder)
-    return `folder\0${process.platform === 'win32' ? path.toLowerCase() : path}`
+    return `folder\0${folderKey(folder)}`
   }
   /**
    * Reads the folder on the thread's own lane and publishes only a record that actually changed. A folder problem
@@ -2918,7 +2922,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** `inspect` of a ready record, sharing the round's inspection of its folder when it is a shared folder. */
   private inspectInRound(worktree: AgentWorktree, round: RefreshRound | undefined): Promise<AgentWorktree> {
     if (!round || worktree.mode !== 'shared' || !worktree.path) return this.worktrees.inspect(worktree)
-    const key = process.platform === 'win32' ? resolve(worktree.path).toLowerCase() : resolve(worktree.path)
+    const key = folderKey(worktree.path)
     let shared = round.inspections.get(key)
     if (!shared || shared.changes !== this.gitChanges) {
       shared = { changes: this.gitChanges, reads: this.worktrees.inspectSharedFolder(worktree.path) }

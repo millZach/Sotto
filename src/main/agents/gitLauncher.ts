@@ -35,6 +35,8 @@ export interface LaunchedProcess {
   readonly pid?: number | undefined
   readonly stdout: LaunchedOutput
   readonly stderr: LaunchedOutput
+  /** Once it has started and has a pid; never for one that could not start. */
+  once(event: 'spawn', listener: () => void): this
   on(event: 'error', listener: (error: Error) => void): this
   on(event: 'close', listener: (code: number | null, signal: NodeJS.Signals | null) => void): this
   kill(signal?: NodeJS.Signals): boolean
@@ -61,7 +63,7 @@ function errorFrom(error: LaunchError): Error {
 /** One of a launched process's output streams, fed by the worker's messages in the order they were printed. */
 class Output extends EventEmitter implements LaunchedOutput {
   private decoder: StringDecoder | undefined
-  private destroyed = false
+  destroyed = false
   constructor(private readonly onDestroy: () => void) { super() }
   setEncoding(encoding: BufferEncoding): this { this.decoder = new StringDecoder(encoding); return this }
   destroy(): void {
@@ -91,6 +93,8 @@ class OffThreadProcess extends EventEmitter implements LaunchedProcess {
   /** Set once it has closed, or been handed to an in-thread child. */
   private settled = false
   private adopted: ChildProcess | undefined
+  /** A kill asked for before it was handed to an in-thread child, which that child then gets. */
+  private killedWith: NodeJS.Signals | 'default' | undefined
   constructor(readonly id: number, private readonly send: (request: LauncherRequest) => void) {
     super()
     this.stdout = new Output(() => this.adopted ? this.adopted.stdout?.destroy() : this.send({ type: 'destroy', id, stream: 'stdout' }))
@@ -99,13 +103,14 @@ class OffThreadProcess extends EventEmitter implements LaunchedProcess {
   kill(signal?: NodeJS.Signals): boolean {
     if (this.adopted) return this.adopted.kill(signal)
     if (this.settled) return false
+    this.killedWith ??= signal ?? 'default'
     this.send({ type: 'kill', id: this.id, ...(signal ? { signal } : {}) })
     return true
   }
   receive(event: LauncherEvent): void {
     if (this.settled) return
     switch (event.type) {
-      case 'spawned': this.started = true; this.pid = event.pid; return
+      case 'spawned': this.started = true; this.pid = event.pid; if (event.pid !== undefined) this.emit('spawn'); return
       case 'stdout': this.stdout.push(event.chunk); return
       case 'stderr': this.stderr.push(event.chunk); return
       case 'error': this.emit('error', errorFrom(event.error)); return
@@ -118,7 +123,10 @@ class OffThreadProcess extends EventEmitter implements LaunchedProcess {
     this.stdout.end(); this.stderr.end()
     this.emit('close', code, signal)
   }
-  /** The worker went before it started this one: it is started here instead, and reports as that child does. */
+  /**
+   * The worker went before it started this one: it is started here instead, and reports as that child does. A kill or
+   * a closed output asked for before is passed on to it.
+   */
   adopt(child: ChildProcess): void {
     this.settled = true
     this.adopted = child
@@ -127,6 +135,10 @@ class OffThreadProcess extends EventEmitter implements LaunchedProcess {
     child.stderr?.on('data', (chunk: Buffer) => this.stderr.push(chunk))
     child.on('error', error => this.emit('error', error))
     child.on('close', (code, signal) => { this.stdout.end(); this.stderr.end(); this.emit('close', code, signal) })
+    if (this.stdout.destroyed) child.stdout?.destroy()
+    if (this.stderr.destroyed) child.stderr?.destroy()
+    if (this.killedWith !== undefined) child.kill(this.killedWith === 'default' ? undefined : this.killedWith)
+    if (child.pid !== undefined) queueMicrotask(() => this.emit('spawn'))
   }
 }
 
@@ -203,7 +215,7 @@ export class GitLauncher {
         try { process.adopt(inThread(command, args, options)); continue } catch (error) {
           process.emit('error', error instanceof Error ? error : new Error(String(error)))
         }
-      } else process.emit('error', new Error(`${command} stopped reporting: Sotto's process launcher closed. Nothing it changed was undone.`))
+      } else process.emit('error', new Error(`${command} stopped reporting because Sotto's process launcher closed. Nothing it changed was undone; check the folder, then try again.`))
       process.close(null, null)
     }
   }

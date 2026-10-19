@@ -219,6 +219,23 @@ describe('Git status the way T3 reads it', () => {
     await f.reader.read(f.repo, { remote: false })
     expect(statusReads()).toBe(4)
   })
+  it('never lets a round take a read older than the folder\'s newest, or one begun before a fetch landed', async () => {
+    const f = await fixture()
+    const statusReads = () => f.calls.filter(call => call[0] === 'git' && call.includes('status')).length
+    const round = performance.now()
+    await f.reader.read(f.repo, { remote: false, startedAfter: round })
+    // A fresh read after it, as a thread's read after its remote half makes, is the one a round takes from then on.
+    const fresh = await f.reader.read(f.repo, { remote: false, fresh: true })
+    expect(await f.reader.read(f.repo, { remote: false, startedAfter: round })).toBe(fresh)
+    expect(statusReads()).toBe(2)
+    // The remote moves and a fetch brings it: a read begun before the fetch landed is not taken.
+    await writeFile(join(f.other, 'other.txt'), 'remote\n'); commit(f.other, 'Remote commit'); git(f.other, 'push', '-q')
+    await f.reader.read(f.repo, { remote: true })
+    expect(f.fetches()).toBe(1)
+    const reads = statusReads()
+    expect(await f.reader.read(f.repo, { remote: false, startedAfter: round })).toMatchObject({ behind: 1 })
+    expect(statusReads()).toBe(reads + 1)
+  })
 })
 
 describe('the remote half of a read, on its own', () => {

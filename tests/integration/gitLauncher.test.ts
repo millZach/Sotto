@@ -125,6 +125,16 @@ describe('the launcher without its worker', () => {
     expect(mainThreadLaunches.count).toBe(1)
   })
 
+  it('passes a kill and closed output asked for before the worker failed on to the launch it starts here', async () => {
+    const broken = join(await folder(), 'broken.cjs')
+    await writeFile(broken, 'throw new Error("This worker does not start.")')
+    const [command, args] = node('setTimeout(() => process.stdout.write("ran to the end"), 1000)')
+    const child = launcher(broken).launch(command, args, { cwd: process.cwd(), env: process.env })
+    const result = ended(child)
+    child.kill()
+    expect(await result).toMatchObject({ stdout: '', signal: 'SIGTERM' })
+  })
+
   it('says a running launch stopped reporting when the worker closes, and launches in this thread after', async () => {
     const made = launcher(worker.path)
     const [command, args] = node('process.stdout.write("started"); setTimeout(() => {}, 2000)')
@@ -180,6 +190,17 @@ describe('Git through the worker', () => {
     await expect(runWorktreeGitProcess('.', ['status'], { executable: process.execPath, prefix: ['-e', 'process.stdout.write("x".repeat(2_100_000)); setInterval(() => {}, 1000)', '--'] }))
       .rejects.toMatchObject({ message: 'Git returned too much output. Nothing was removed.' })
     await expect(runWorktreeGitProcess('.', [], { executable: 'sotto-no-such-git-executable' })).rejects.toMatchObject({ timedOut: false, message: expect.stringContaining('Git is unavailable') })
+  })
+
+  it('stops a Git whose deadline came before the worker had started it', async () => {
+    // A worker that takes its time to start: the launch waits for it, and the deadline passes first.
+    const slow = join(await folder(), 'slow.cjs')
+    await writeFile(slow, `setTimeout(() => require(${JSON.stringify(worker.path)}), 1_000)`)
+    await useGitLauncher(slow)
+    try {
+      const outcome = runWorktreeGitProcess('.', ['status'], { executable: process.execPath, prefix: ['-e', 'setInterval(() => {}, 1000)', '--'], timeout: 50 })
+      await expect(outcome).rejects.toMatchObject({ timedOut: true, message: 'Git took too long.' })
+    } finally { await useGitLauncher(worker.path) }
   })
 
   it('stops a timed-out Git and the process it started before answering', async () => {
