@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { Duplex } from 'node:stream'
+import { constants as zlibConstants, deflateRawSync } from 'node:zlib'
 import { describe, expect, it, vi } from 'vitest'
-import { SocketFrames } from '../../../src/host/socketFrames'
+import { DEFLATE_MIN_BYTES, DEFLATE_OFFER, DEFLATE_RESPONSE, DEFLATE_SYNC_MAX_BYTES, deflateAccepted, deflateOffered, SocketFrames } from '../../../src/host/socketFrames'
 import { HOST_MAX_FRAME_BYTES } from '../../../src/shared/hostProtocol'
 function harness(client = false) {
   const writes: Buffer[] = [], messages: string[] = []
@@ -314,5 +315,174 @@ describe('bounded WebSocket framing', () => {
     stream.destroy()
     expect(messages).toEqual([])
     expect(closed).toHaveBeenCalledTimes(1)
+  })
+})
+
+/** One frame as a peer would write it, with RSV1 when `compressed`; masked as a client's is unless `unmasked`. */
+function frameOf(payload: Buffer, { opcode = 1, final = true, compressed = false, unmasked = false } = {}): Buffer {
+  const extended = payload.length < 126 ? 0 : payload.length <= 65535 ? 2 : 8
+  const header = Buffer.alloc(2 + extended)
+  header[0] = (final ? 128 : 0) | (compressed ? 64 : 0) | opcode
+  header[1] = (unmasked ? 0 : 128) | (extended === 0 ? payload.length : extended === 2 ? 126 : 127)
+  if (extended === 2) header.writeUInt16BE(payload.length, 2)
+  if (extended === 8) header.writeBigUInt64BE(BigInt(payload.length), 2)
+  if (unmasked) return Buffer.concat([header, payload])
+  const mask = Buffer.from([1, 2, 3, 4]), encoded = Buffer.from(payload)
+  for (let i = 0; i < encoded.length; i++) encoded[i] = encoded[i]! ^ mask[i % 4]!
+  return Buffer.concat([header, mask, encoded])
+}
+/** A message compressed the way RFC 7692 has it sent: sync-flushed raw deflate without its four-byte tail. */
+const deflated = (text: string | Buffer): Buffer => {
+  const out = deflateRawSync(typeof text === 'string' ? Buffer.from(text) : text, { finishFlush: zlibConstants.Z_SYNC_FLUSH })
+  return out.subarray(0, out.length - 4)
+}
+function deflating(client = false, deflate = true) {
+  const writes: Buffer[] = [], messages: string[] = []
+  const stream = new Duplex({ read() {}, write(chunk, _encoding, callback) { writes.push(Buffer.from(chunk)); callback() } })
+  const frames = new SocketFrames(stream, client, text => messages.push(text), { deflate })
+  return { frames, stream, writes, messages }
+}
+/** Text that compresses the way thread history does: the same few words and keys over and over. */
+const history = (bytes: number): string => {
+  const words = ['thread', 'detail', 'output', 'activity', 'socket', 'host', 'src/main/agents', '"status":"completed"', '\n']
+  let value = '', seed = 7
+  while (value.length < bytes) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; value += words[seed % words.length] + ' ' }
+  return value.slice(0, bytes)
+}
+
+describe('permessage-deflate', () => {
+  it.each([[2 * 1024, 'at once'], [DEFLATE_SYNC_MAX_BYTES + 1, 'off the loop'], [4 * 1024 * 1024, 'off the loop']])('round-trips a %i-byte message compressed %s in both directions', async size => {
+    const client = deflating(true), server = deflating(false), text = history(size)
+    server.frames.sendText(text); await server.frames.drained()
+    expect(server.writes).toHaveLength(1)
+    expect(server.writes[0]![0]! & 0x40).toBe(0x40)
+    expect(server.writes[0]!.length).toBeLessThan(size / 2)
+    client.frames.feed(server.writes[0]!)
+    expect(client.messages).toEqual([text])
+    client.frames.sendText(text); await client.frames.drained()
+    expect(client.writes[0]![0]! & 0x40).toBe(0x40)
+    server.frames.feed(client.writes[0]!)
+    expect(server.messages).toEqual([text])
+    expect(client.stream.destroyed || server.stream.destroyed).toBe(false)
+    client.frames.close(); server.frames.close()
+  })
+
+  it('sends a message under the threshold uncompressed, which a deflate peer reads as it is', () => {
+    const client = deflating(true), server = deflating(false), text = history(DEFLATE_MIN_BYTES - 1)
+    server.frames.sendText(text)
+    expect(server.writes[0]![0]).toBe(129)
+    client.frames.feed(server.writes[0]!)
+    expect(client.messages).toEqual([text])
+    client.frames.close(); server.frames.close()
+  })
+
+  it('keeps send order while a large message is still compressing, and counts it as backlog until it is written', async () => {
+    const client = deflating(true), server = deflating(false), large = history(2 * 1024 * 1024), medium = history(4 * 1024)
+    server.frames.sendText(large)
+    server.frames.sendText(medium)
+    server.frames.sendText('small')
+    expect(server.writes).toEqual([])
+    expect(server.frames.backlogged).toBe(true)
+    await server.frames.drained()
+    expect(server.frames.backlogged).toBe(false)
+    expect(server.writes).toHaveLength(3)
+    client.frames.feed(Buffer.concat(server.writes))
+    expect(client.messages).toEqual([large, medium, 'small'])
+    client.frames.close(); server.frames.close()
+  })
+
+  it('answers a ping at once while a message is compressing, and never compresses a control frame', async () => {
+    const server = deflating(false)
+    server.frames.sendText(history(1024 * 1024))
+    server.frames.feed(frameOf(Buffer.from('ping'), { opcode: 9 }))
+    expect(server.writes).toHaveLength(1)
+    expect(server.writes[0]![0]).toBe(138)
+    await server.frames.drained()
+    expect(server.writes[1]![0]).toBe(0xc1)
+    server.frames.close()
+  })
+
+  it('reads a compressed message fragmented across frames, RSV1 on the first only', () => {
+    const server = deflating(false), text = history(200_000), packed = deflated(text), cut = Math.floor(packed.length / 3)
+    server.frames.feed(frameOf(packed.subarray(0, cut), { final: false, compressed: true }))
+    server.frames.feed(frameOf(Buffer.from('ping'), { opcode: 9 }))
+    server.frames.feed(frameOf(packed.subarray(cut, 2 * cut), { opcode: 0, final: false }))
+    server.frames.feed(frameOf(packed.subarray(2 * cut), { opcode: 0 }))
+    expect(server.messages).toEqual([text])
+    expect(server.stream.destroyed).toBe(false)
+    server.frames.close()
+  })
+
+  const rsv2 = (): Buffer => { const frame = frameOf(Buffer.from('{}')); frame[0] = frame[0]! | 32; return frame }
+  it.each([
+    ['a compressed frame on a connection that did not negotiate', false, frameOf(deflated('{"hello":true}'), { compressed: true })],
+    ['RSV1 on a continuation frame', true, Buffer.concat([frameOf(Buffer.from('{"a":'), { final: false }), frameOf(deflated('1}'), { opcode: 0, compressed: true })])],
+    ['RSV1 on a ping', true, frameOf(Buffer.from('ping'), { opcode: 9, compressed: true })],
+    ['RSV2', true, rsv2()],
+    ['a compressed payload that is not deflate', true, frameOf(Buffer.from([0xff, 0xff, 0xff, 0xff, 0xff]), { compressed: true })],
+  ])('closes the connection on %s', (_name, deflate, bytes) => {
+    const server = deflating(false, deflate)
+    server.frames.feed(bytes)
+    expect(server.stream.destroyed).toBe(true)
+    expect(server.messages).toEqual([])
+    expect(server.writes).toEqual([])
+  })
+
+  it('never writes RSV1 to a peer that did not negotiate, however large the message', () => {
+    const plain = deflating(false, false)
+    plain.frames.sendText(history(1024 * 1024))
+    expect(plain.writes[0]![0]).toBe(129)
+    plain.frames.close()
+  })
+
+  it('closes on a message that inflates past the frame cap, without delivering any of it', () => {
+    const client = deflating(true), bomb = deflated(Buffer.alloc(HOST_MAX_FRAME_BYTES + 1, 97))
+    expect(bomb.length).toBeLessThan(64 * 1024)
+    client.frames.feed(frameOf(bomb, { compressed: true, unmasked: true }))
+    expect(client.stream.destroyed).toBe(true)
+    expect(client.messages).toEqual([])
+    const exact = deflating(true), whole = 'a'.repeat(HOST_MAX_FRAME_BYTES)
+    exact.frames.feed(frameOf(deflated(whole), { compressed: true, unmasked: true }))
+    expect(exact.messages).toEqual([whole])
+    expect(exact.stream.destroyed).toBe(false)
+    exact.frames.close()
+  })
+
+  it('applies the unread-output cap to the size of messages still compressing', () => {
+    const server = deflating(false), whole = history(HOST_MAX_FRAME_BYTES)
+    expect(server.frames.sendText(whole)).toBe(true)
+    expect(server.frames.sendText(whole)).toBe(true)
+    expect(server.frames.sendText(history(2 * 1024))).toBe(false)
+    expect(server.stream.destroyed).toBe(true)
+  })
+
+  it('writes nothing compressed after close and releases a wait on the queue', async () => {
+    const server = deflating(false)
+    server.frames.sendText(history(1024 * 1024))
+    const waiting = server.frames.drained()
+    server.frames.close()
+    await waiting
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(server.writes).toEqual([])
+  })
+
+  it('negotiates only what both sides can keep to', () => {
+    expect(deflateOffered(DEFLATE_OFFER)).toBe(true)
+    expect(deflateOffered('permessage-deflate')).toBe(true)
+    expect(deflateOffered('permessage-deflate; client_max_window_bits')).toBe(true)
+    expect(deflateOffered(['x-webkit-deflate-frame', 'permessage-deflate; client_max_window_bits=10'])).toBe(true)
+    expect(deflateOffered('permessage-deflate; server_max_window_bits=10, permessage-deflate')).toBe(true)
+    expect(deflateOffered('permessage-deflate; server_max_window_bits=10')).toBe(false)
+    expect(deflateOffered('permessage-deflate; client_no_context_takeover; client_no_context_takeover')).toBe(false)
+    expect(deflateOffered('permessage-deflate; unknown')).toBe(false)
+    expect(deflateOffered(undefined)).toBe(false)
+    expect(deflateOffered('')).toBe(false)
+    expect(deflateAccepted(DEFLATE_RESPONSE)).toBe(true)
+    expect(deflateAccepted('permessage-deflate; server_no_context_takeover')).toBe(true)
+    expect(deflateAccepted(undefined)).toBe(false)
+    expect(deflateAccepted('permessage-deflate')).toBe('invalid')
+    expect(deflateAccepted('permessage-deflate; server_no_context_takeover; client_max_window_bits=10')).toBe('invalid')
+    expect(deflateAccepted('x-other')).toBe('invalid')
+    expect(deflateAccepted(DEFLATE_RESPONSE + ', ' + DEFLATE_RESPONSE)).toBe('invalid')
   })
 })

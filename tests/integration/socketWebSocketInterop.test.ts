@@ -44,9 +44,13 @@ it('says hello, runs a command and receives a pushed event over Node’s own Web
   })
   await new Promise<void>((resolve, reject) => { socket.addEventListener('open', () => resolve()); socket.addEventListener('error', () => reject(new Error('The socket did not open.'))) })
 
+  // Node's WebSocket offers permessage-deflate, and this listener counts every client as a desktop, so the hello's
+  // shell, well over the kilobyte below which nothing is compressed, arrives compressed by the host's own deflate.
+  expect(socket.extensions).toContain('permessage-deflate')
   socket.send(JSON.stringify({ v: 1, id: 'hello-1', session, op: 'hello' }))
   const hello = await next(message => message.id === 'hello-1')
   expect(hello).toMatchObject({ v: 1, ok: true, result: { hostId: host.service.shell().hostId, clientId: paired.clientId, capabilities: { mayAnswer: false } } })
+  expect(Buffer.byteLength(JSON.stringify(hello))).toBeGreaterThan(1024)
 
   const commandId = randomUUID()
   socket.send(JSON.stringify({ v: 1, id: commandId, session, op: 'command', command: { type: 'configure', patch: { enabled: false } } }))

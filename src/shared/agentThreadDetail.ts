@@ -15,7 +15,8 @@ export function isAgentThreadDetailDelta(update: AgentThreadDetailUpdate): updat
 /**
  * What "this activity record changed" means on the detail stream: its identity, its state, and the size
  * of every field that can grow. A same-length replacement of a field's text is not distinguished — the
- * same trade the revision itself makes, and the reason this is cheap enough to run on every frame.
+ * same trade the revision itself makes, and the reason this is cheap enough to run on every frame. A record with a cut
+ * body adds the whole sizes its `cut` names; a record without one has the signature it always had.
  */
 export function agentActivitySignature(record: AgentActivity): string {
   return [record.turnId, record.sequence, record.afterMessageId ?? '', record.parentId ?? '', record.kind, record.status,
@@ -25,6 +26,8 @@ export function agentActivitySignature(record: AgentActivity): string {
     (record.changes ?? []).map(change => `${change.path.length}:${change.kind.length}:${size(change.diff)}`).join('~'),
     (record.steps ?? []).map(step => `${step.text.length}:${step.status}`).join('~'),
     (record.agents ?? []).map(agent => `${agent.id}:${agent.status}:${size(agent.message)}`).join('~'),
+    // A cut body's kept part can stay the same length as its whole grows, so its whole size is part of what changed.
+    ...record.cut ? [`${record.cut.output ?? ''}:${record.cut.text ?? ''}:${(record.cut.diffs ?? []).map(item => `${item.index}=${item.bytes}`).join(',')}`] : [],
   ].join('|')
 }
 function size(value: string | undefined): number { return value === undefined ? -1 : value.length }

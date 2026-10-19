@@ -1,4 +1,4 @@
-import React, { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Element, ElementContent, Root } from 'hast'
 import { Check, Copy, FileText, Image as ImageIcon } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
@@ -110,28 +110,51 @@ function highlight(code: string, language: string | undefined, highlighter: High
   } catch { return code }
 }
 
-const CodeBlock = memo(function CodeBlock({ code, language }: { code: string; language: string | undefined }) {
+/**
+ * A code block that shows only part of its body, the rest still on the thread's host (ADR-0025, October 18 amendment):
+ * which end it keeps, the line that marks where the rest goes, and what its bar says meanwhile. Copy waits for the rest.
+ */
+export interface CodeBlockCut { readonly keep: 'start' | 'end'; readonly line: string; readonly status: ReactNode }
+
+export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false }: {
+  code: string; language: string | undefined
+  readonly cut?: CodeBlockCut | undefined
+  /** Opens scrolled to its end, and keeps the same lines in view as the code above them grows, as command output does. */
+  readonly anchorEnd?: boolean | undefined
+}) {
   const [feedback, showFeedback] = useTransientFlag()
   const [highlighter, setHighlighter] = useState(highlighterNow)
+  const scroll = useRef<HTMLPreElement>(null)
+  /** How far the reader is from the end, kept so the whole body lands with the same lines in view. */
+  const fromEnd = useRef(0)
   useEffect(() => {
     if (highlighter !== null || !language || code.length > MAX_HIGHLIGHTED_CODE_LENGTH) return
     let live = true
     void loadHighlighter().then(loaded => { if (live) setHighlighter(loaded) }, () => undefined)
     return () => { live = false }
   }, [highlighter, language, code])
+  useLayoutEffect(() => {
+    const pre = scroll.current
+    if (anchorEnd && pre) pre.scrollTop = Math.max(0, pre.scrollHeight - pre.clientHeight - fromEnd.current)
+  }, [anchorEnd, code, cut?.keep])
   const highlighted = useMemo(() => highlight(code, language, highlighter), [code, language, highlighter])
   const label = language ? language.slice(0, 24) : 'Code'
-  const copy = (): void => { void writeClipboard(code).then(() => showFeedback('Copied'), () => showFeedback('Copy failed')) }
-  return <div className="rich-code" data-language={language}>
+  const copy = (): void => { if (!cut) void writeClipboard(code).then(() => showFeedback('Copied'), () => showFeedback('Copy failed')) }
+  const marker = cut ? <span className="activity-body__cut">{cut.line}</span> : null
+  return <div className="rich-code" data-language={language} data-cut={cut?.keep}>
     <div className="rich-code__bar">
       <span className="rich-code__language">{label}</span>
-      <span className="rich-code__status" role="status" aria-live="polite">{feedback}</span>
-      <button type="button" className="rich-code__copy tt-focusable" data-copied={feedback === 'Copied' || undefined}
-        aria-label={`Copy ${language ? `${label} ` : ''}code`} title="Copy code" onClick={copy}>
+      <span className="rich-code__status" role="status" aria-live="polite">{feedback || cut?.status}</span>
+      <button type="button" className="rich-code__copy tt-focusable" data-copied={feedback === 'Copied' || undefined} aria-disabled={cut ? true : undefined}
+        aria-label={cut ? `Copy ${language ? `${label} ` : ''}code, once the rest arrives` : `Copy ${language ? `${label} ` : ''}code`}
+        title={cut ? 'Copy works once the rest arrives' : 'Copy code'} onClick={copy}>
         {feedback === 'Copied' ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
       </button>
     </div>
-    <pre className="rich-code__scroll" tabIndex={0} aria-label={`${label} code block`}><code className={language ? `hljs language-${language}` : 'hljs'}>{highlighted}</code></pre>
+    <pre ref={scroll} className="rich-code__scroll" tabIndex={0} aria-label={`${label} code block`}
+      onScroll={anchorEnd ? event => { const pre = event.currentTarget; fromEnd.current = pre.scrollHeight - pre.clientHeight - pre.scrollTop } : undefined}>
+      <code className={language ? `hljs language-${language}` : 'hljs'}>{cut?.keep === 'end' ? <>{marker}{'\n'}</> : null}{highlighted}{cut?.keep === 'start' ? <>{'\n'}{marker}</> : null}</code>
+    </pre>
   </div>
 })
 
