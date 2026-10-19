@@ -690,3 +690,7 @@ artifacts/watcher-answer/*
 !artifacts/watcher-answer/answer-card-light-820x560.png
 !artifacts/watcher-answer/answer-line-light-1600x1000.png
 !artifacts/watcher-answer/readings.json
+artifacts/watcher-news-turns/*
+!artifacts/watcher-news-turns/news-folded-dark-1280x800.png
+!artifacts/watcher-news-turns/news-open-dark-820x560.png
+!artifacts/watcher-news-turns/news-open-light-1280x800.png

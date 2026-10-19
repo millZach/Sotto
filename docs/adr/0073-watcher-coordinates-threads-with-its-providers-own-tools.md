@@ -353,3 +353,24 @@ once. A request two wake-ups named, because it changed between them, has its car
 paired host is found and answered through its own row, as its pane does, and a card that cannot be answered now says why
 in the pane's own words, such as "Reconnect Codex to answer." A thread the window does not hold at all, such as one on a
 host still joining, draws nothing there; the needs-you line still names it.
+
+## October 19, 2026: Watcher's replies to news in place
+
+Hiding the news wake-up (October 15) left each news turn's work naming a message the conversation does not have. The
+transcript could not place it, so it put every news turn's work after the last message: a stack of "Worked for 4.4s ·
+Used 1 tool" rows below Watcher's newest reply. The news reply itself joined the user's turn above it, which then folded
+the user's own answer under its "Worked for" line. Zach: "These should not be below the answers from the model. Also
+these are triggering far too much."
+
+The renderer now places a turn whose own message is not shown (an unshown turn) where it happened. Its reply is the
+message that names the turn (`turnMessageId`). Failing that, for a turn that began inside the loaded window, it is the
+first message written after the turn began, before the next turn began and before this one ended. That reply opens a turn
+of its own, so it never answers the user's message above it, even when none of the turn's work is left in the records. A
+turn that wrote no reply goes before the next turn the transcript starts, and only one nothing came after, such as a
+running one, trails. This holds when the turn is older than every placed turn, since the records keep only the newest
+turns' work, and in every thread; outside Watcher such a turn keeps the usual "Worked for" line above its reply.
+
+In Watcher's conversation an unshown turn is a news turn, and Zach picked variant b of
+`docs/prototypes/watcher-news-turns-prototype.html`: the work has no line of its own. The first reply's header says **After news · 7.1s** (or how the turn failed or stopped) and opens the work, and every
+reply stays in view. A finished news turn that wrote no reply shows nothing; one that failed or stopped keeps its line. How
+often Watcher hears news is unchanged.

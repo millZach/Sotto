@@ -34,6 +34,7 @@ export default tseslint.config(
       'artifacts/watcher-room/**',
       'artifacts/watcher-room-polish/**',
       'artifacts/watcher-answer/**',
+      'artifacts/watcher-news-turns/**',
       'artifacts/watcher-permission/**',
       'artifacts/terminal-truths/**',
       'artifacts/voice-control-removal/merged-setup/**',

@@ -40,10 +40,12 @@ export async function buildHost(outDir = resolve(root, process.env.SOTTO_HOST_OU
       },
     }],
     build: {
-      ssr: resolve(root, 'src/host/index.ts'), target: 'node24', outDir, emptyOutDir: true, minify: false,
+      // The host launches Git off its own thread too, from the worker file beside its index.js (`gitLauncher.ts`).
+      ssr: true, target: 'node24', outDir, emptyOutDir: true, minify: false,
       rollupOptions: {
+        input: { index: resolve(root, 'src/host/index.ts'), gitLauncherWorker: resolve(root, 'src/main/agents/gitLauncherWorker.ts') },
         external: id => isBuiltin(id) || id === 'zod' || id === 'node-pty',
-        output: { format: 'cjs', entryFileNames: 'index.js' },
+        output: { format: 'cjs', entryFileNames: '[name].js' },
       },
     },
   })
