@@ -509,10 +509,11 @@ export async function startSocketServer(options: SocketServerOptions) {
     const full = '{"v":1,"event":"shell","state":' + stateText + ',"eventPage":' + JSON.stringify(eventPage) + '}'
     if (fits(full)) {
       // A shell whose state is byte for byte the last one this client was pushed, with no events to bring, would only
-      // cost the link its bytes again. It is not written, and the cursor stays where the client was last told it is; the
-      // catalog it would have carried is the one that shell carried.
+      // cost the link its bytes again. It is not written; the cursor still moves past what the page left out for this
+      // client, so those events are not read again on every publish. The catalog it would have carried is the one that
+      // shell carried.
       const digest = createHash('sha1').update(stateText).digest('base64')
-      if (digest === peer.shellSent && eventPage.events.length === 0 && !eventPage.hasMore) { recordCatalog(peer, wire) }
+      if (digest === peer.shellSent && eventPage.events.length === 0 && !eventPage.hasMore) { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
       else { peer.frames.sendText(full); peer.shellSent = digest; peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire) }
     } else {
       peer.shellSent = null

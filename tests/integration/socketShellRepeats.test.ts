@@ -28,11 +28,13 @@ async function controlledHost() {
   let publish: (state: AgentState) => void = () => undefined
   const extra: StoredThreadEvent[] = []
   const counters = { reads: 0 }
+  /** Where each read of the event log started. */
+  const cursors: number[] = []
   const real = fixture.host.service
   const service: HostService = {
     shell: () => { counters.reads++; return real.shell() }, state: () => real.state(), threadDetail: id => real.threadDetail(id),
     command: (command, identity) => real.command(command, identity),
-    events: (afterSeq, threadId, limit) => [...real.events(afterSeq, threadId, limit), ...extra.filter(row => row.seq > afterSeq && (!threadId || row.threadId === threadId))].slice(0, limit),
+    events: (afterSeq, threadId, limit) => { if (!threadId) cursors.push(afterSeq); return [...real.events(afterSeq, threadId, limit), ...extra.filter(row => row.seq > afterSeq && (!threadId || row.threadId === threadId))].slice(0, limit) },
     subscribe: listener => { publish = listener; return () => undefined },
   }
   const listener = await startSocketServer({ service, pairing: fixture.host.pairing })
@@ -47,7 +49,7 @@ async function controlledHost() {
     publish(real.shell())
     await expect.poll(() => counters.reads).toBeGreaterThan(before)
   }
-  return { peer, shells, published, extra, real }
+  return { peer, shells, published, extra, real, cursors }
 }
 
 describe('a shell the client already has', () => {
@@ -85,6 +87,21 @@ describe('a shell the client already has', () => {
     await published()
     await expect.poll(() => shells().length).toBe(3)
     expect(shells()[2]!.eventPage.events.map(row => row.seq)).toEqual([seq + 1])
+  })
+
+  it('is not pushed for events the client is not shown, and its cursor moves past them', async () => {
+    const { peer, shells, published, extra, real, cursors } = await controlledHost()
+    // This client does not accept message aliases, so an alias is left out of every page it is sent.
+    await peer.call('hello', { op: 'hello', afterSeq: 0 })
+    await published()
+    await expect.poll(() => shells().length).toBe(1)
+    const threadId = real.shell().host.threads[0]!.id, seq = shells()[0]!.eventPage.latestSeq + 1
+    extra.push({ seq, threadId, event: { kind: 'message-aliased', at: '2026-10-18T00:00:00.000Z', messageId: 'a', canonicalId: 'b' } })
+    await published()
+    await published()
+    expect(shells()).toHaveLength(1)
+    // The second publish read the log from after the alias, not from before it again.
+    expect(cursors.at(-1)).toBe(seq)
   })
 
   it('is pushed again after an answer that carried a shell', async () => {
