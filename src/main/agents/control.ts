@@ -1422,6 +1422,7 @@ export class AgentControl {
       () => maintainProviderRecovery(this.dependencies.directory),
       () => this.dependencies.host.privacyChanged?.(),
       () => this.followupStore.privacyChanged(),
+      () => this.watcherHooks?.privacyChanged?.(),
       () => this.persist(),
     ]
     const results = await Promise.allSettled(cleanup.map(operation => Promise.resolve().then(operation)))

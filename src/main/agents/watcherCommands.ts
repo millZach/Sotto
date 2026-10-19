@@ -37,6 +37,8 @@ export interface WatcherControlHooks {
   pullRequestObserved?(read: PullRequestObservation): void
   /** What a wake-up's note adds after Watcher's conversation was compacted, until Watcher reads its state back (#1189). */
   stateNote?(): string | undefined
+  /** Keep local history changed: Watcher's kept words follow it at once (#1189). */
+  privacyChanged?(): Promise<void>
   restoreCheckpoint?(read: CheckpointObservation): void
   checkpointObserved?(read: CheckpointObservation): void
 }

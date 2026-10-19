@@ -11,10 +11,11 @@ export function watcherRequestNote(requestId: string, hostId: string, compacted 
   return `Sotto Watcher request: ${requestId}. Local host: ${hostId}. Use this requestId for sotto_threads changes made for this message.${compacted ? ` ${WATCHER_COMPACTED_NOTE}` : ''}`
 }
 /**
- * What a Watcher turn's note adds after its conversation was compacted, until Watcher reads its state back (#1189). Fixed
+ * What a Watcher turn's note adds after its conversation was compacted, or in a new Watcher conversation, until Watcher
+ * reads its state back (#1189). Fixed
  * words, so a Grok Build or Muse line that carries it is taken off as exactly as one that does not.
  */
-export const WATCHER_COMPACTED_NOTE = 'Your conversation was compacted. Before anything else, call read_state for the threads you watch and what each waits on, and the decisions, rules and issues you kept.'
+export const WATCHER_COMPACTED_NOTE = 'This conversation is new or was compacted. Before anything else, call read_state for the threads you watch and what each waits on, and the decisions, rules and issues you kept.'
 
 /**
  * The note as one bracketed line after the user's words, for Grok Build alone: its prompt has no other model-visible

@@ -40,7 +40,7 @@ export const watcherToolFixtures: Record<WatcherToolName, { input: unknown; outp
     controlAvailable: false, readsAvailable: true, readOnlyProfileAvailable: false, freshness: 'fresh' }], ...page } },
   keep_state: { input: { rules: ['Full test suites run in CI, not on the laptop.'] }, output: { status: 'ok',
     kept: { decisions: [], rules: ['Full test suites run in CI, not on the laptop.'], issues: [], updatedAt: centerTime } } },
-  read_state: { input: {}, output: { status: 'ok', watching: [{ target: centerTarget, title: 'Worker', waitsOn: 'Its turn to finish.' }],
+  read_state: { input: {}, output: { status: 'ok', watching: [{ target: centerTarget, title: 'Worker', waitsOn: 'Its turn to finish.' }], nextCursor: null,
     kept: { decisions: [], rules: [], issues: [], updatedAt: null }, contextTokens: 120_000, compactAtTokens: 400_000 } },
   list_machines: { input: {}, output: { status: 'ok', machines: [
     { hostId: centerHostId, name: 'This computer', thisComputer: true, connected: true, factsState: 'reported', runningThreads: 1, inFlight: 1, inFlightLimit: 4,

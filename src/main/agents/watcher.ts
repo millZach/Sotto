@@ -123,7 +123,10 @@ export class WatcherService implements WatcherControlHooks {
   /** What Watcher keeps through compaction (#1189), and whether a compaction since it last read it owes it a note. */
   private readonly kept: WatcherStateStore
   private stateOwed = false
-  private seenCompaction: string | null | undefined
+  private seenCompaction: string | null = null
+  /** The Watcher thread the last look was at, and its context then. */
+  private seenFor: string | undefined
+  private lastTokens: number | undefined
   private compactTried: string | undefined
   private compactingNow = false
   private changing = false
@@ -199,11 +202,16 @@ export class WatcherService implements WatcherControlHooks {
     const snapshot = current ? this.options.control.watcherSnapshot() : undefined
     const thread = current && snapshot?.threads.find(item => item.id === current.target.threadId)
     if (!thread || !snapshot) return
-    const done = thread.compaction?.status === 'completed' ? thread.compaction.commandId : null
-    // The first look only learns where things stand: a compaction before this start is not news to this Watcher.
-    if (this.seenCompaction !== undefined && done !== null && done !== this.seenCompaction) this.stateOwed = true
-    this.seenCompaction = done ?? this.seenCompaction ?? null
-    const tokens = this.contextTokens(thread)
+    const done = thread.compaction?.status === 'completed' ? thread.compaction.commandId : null, tokens = this.contextTokens(thread)
+    if (this.seenFor !== thread.id) {
+      // A new Watcher conversation starts from its state, and so does one that may have compacted before this start
+      // without reading it since: reading it again costs one small call.
+      if (this.seenFor !== undefined || done !== null) this.stateOwed = true
+      this.seenFor = thread.id; this.seenCompaction = done; this.lastTokens = undefined
+    } else if (done !== null && done !== this.seenCompaction) { this.stateOwed = true; this.seenCompaction = done }
+    // A sharp drop in context is a compaction too: Muse reports no compaction of its own, and a provider may compact by itself.
+    if (tokens !== null && this.lastTokens !== undefined && this.lastTokens >= 50_000 && tokens < this.lastTokens / 2) this.stateOwed = true
+    if (tokens !== null) this.lastTokens = tokens
     if (tokens === null || tokens < WATCHER_COMPACT_AT_TOKENS || this.compactingNow || !this.canCompact(snapshot, thread)) return
     if (thread.status === 'running' || thread.requests.length || compactionPending(thread.compaction) || thread.nativeSessionStarted === false
       || this.options.control.watcherWakeUpQueued() || this.options.control.hasPendingThreadWork(thread.id)) return
@@ -222,6 +230,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** The line a Watcher turn's note carries after a compaction, until Watcher reads its state back (#1189). */
   stateNote(): string | undefined { return this.stateOwed ? WATCHER_COMPACTED_NOTE : undefined }
+  privacyChanged(): Promise<void> { return this.kept.privacyChanged() }
   private record(): WatcherRecord { return this.options.control.watcherRecord() }
   /** The record for reading only. It is replaced on every change, never edited, so no copy is needed to look at it. */
   private view(): Readonly<WatcherRecord> { return this.options.control.watcherRecordView() }
@@ -503,7 +512,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** The watched threads and what each waits on, in Sotto's words, for Watcher's state (#1189). */
   private watching(threads: WatcherRoomState['watchedThreads']) {
-    return threads.filter(thread => thread.watched !== false).slice(0, 100).map(thread => ({ target: thread.target, title: thread.title, waitsOn: watcherWaitsOn(thread) }))
+    return threads.filter(thread => thread.watched !== false).map(thread => ({ target: thread.target, title: thread.title, waitsOn: watcherWaitsOn(thread) }))
   }
   private roomObservation(observation: WatcherObservation) { const { landing: _landing, ...result } = observation; void _landing; return result }
   get(): WatcherRoomResult { return { status: 'ok', state: this.state() } }
@@ -1426,7 +1435,8 @@ export class WatcherService implements WatcherControlHooks {
         await this.kept.loaded
         this.stateOwed = false
         const current = this.view().current, thread = current && this.options.control.watcherSnapshot().threads.find(item => item.id === current.target.threadId)
-        return { status: 'ok', watching: this.watching(this.state().watchedThreads), kept: this.kept.read(),
+        const input = parsed.data as WatcherToolInput<'read_state'>, page = this.page('state', this.watching(this.state().watchedThreads), input.cursor, 100)
+        return { status: 'ok', watching: page.rows, nextCursor: page.nextCursor, kept: this.kept.read(),
           contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: WATCHER_COMPACT_AT_TOKENS }
       }
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }

@@ -215,8 +215,9 @@ export const watcherToolSchemas = {
     output: result({ kept: watcherKeptStateSchema }),
   },
   read_state: {
-    input: z.object({}).strict(),
-    output: result({ watching: z.array(watcherStateThreadSchema).max(100), kept: watcherKeptStateSchema,
+    // A hundred watched threads to a page; nextCursor reads the rest.
+    input: z.object({ cursor: cursor.optional() }).strict(),
+    output: result({ watching: z.array(watcherStateThreadSchema).max(100), nextCursor: cursor.nullable(), kept: watcherKeptStateSchema,
       contextTokens: counter.nullable(), compactAtTokens: counter }),
   },
   list_machines: {

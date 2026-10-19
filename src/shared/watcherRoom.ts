@@ -63,7 +63,7 @@ export const watcherRoomStateSchema = z.object({
   context: z.object({ tokens: z.number().int().nonnegative().nullable(), compactAt: z.number().int().positive(),
     canCompact: z.boolean(), compacting: z.boolean() }).strict().nullable().optional(),
   /** Watcher's state, kept through compaction (#1189): what each watched thread waits on, and what Watcher kept. */
-  state: z.object({ watching: z.array(watcherStateThreadSchema).max(100), kept: watcherKeptStateSchema }).strict().optional(),
+  state: z.object({ watching: z.array(watcherStateThreadSchema), kept: watcherKeptStateSchema }).strict().optional(),
 }).strict()
 export const watcherOpenRequestSchema = z.object({ provider: watcherProviderSchema,
   modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).optional() }).strict()

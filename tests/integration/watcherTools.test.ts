@@ -1596,3 +1596,19 @@ it('compacts Watcher once its conversation passes 400K tokens while it rests, an
   await f.call('read_state', {})
   expect(f.service.stateNote()).toBeUndefined()
 })
+
+it('tells Watcher to read its state after its context drops by more than half, as when Muse compacts', async () => {
+  const f = await fixture()
+  const real = f.control.watcherSnapshot.bind(f.control)
+  let tokens = 300_000
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, usage: { contextUsed: tokens, contextUpdatedAt: `2026-10-19T10:00:0${tokens > 200_000 ? 0 : 1}.000Z`,
+      rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } } : thread) }
+  })
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.stateNote()).toBeUndefined()
+  tokens = 40_000
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.stateNote()).toContain('call read_state')
+})
