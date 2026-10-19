@@ -46,6 +46,16 @@ export const agentActivitySchema = z.object({
   /** An interrupted turn a steer ended: the provider cut the step it was on so the steer could run next (ADR-0075). */
   steered: z.boolean().optional(),
   truncated: z.boolean().optional(),
+  /**
+   * Bodies the host sent cut, whose whole is still on the host (ADR-0025, October 18 amendment): each one's whole size in
+   * UTF-8 bytes, a diff's by the index of its change. Only a desktop that accepts `activity-bodies` is sent it, and only on
+   * a record from a remote host; it reads the whole record with `activity-body` when the row opens. Not `truncated`,
+   * which says details were not kept anywhere.
+   */
+  cut: z.object({
+    output: count.optional(), text: count.optional(),
+    diffs: z.array(z.object({ index: count.max(199), bytes: count })).max(200).optional(),
+  }).optional(),
 })
 export type AgentActivity = z.infer<typeof agentActivitySchema>
 export type ObservedAgent = NonNullable<AgentActivity['agents']>[number]

@@ -1,3 +1,4 @@
+import { activityBodySize } from '../../shared/activityBodies'
 import { capabilitiesForThread, isThreadProviderConnected, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { isThreadArchived, isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { WATCHER_QUIET_MS, isWatcherWorkActive, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
@@ -28,10 +29,13 @@ const TURN_ENDS: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', '
 export const WAKE_UP_TRIES = 3
 
 interface Progress { fingerprint: string; connected: boolean; connectedAt: number; progressAt: number; quiet: boolean; links?: Set<string>; cancel?: () => void }
-/** Opaque progress only: no plan, message, tool input or output text crosses the host projection. */
+/**
+ * Opaque progress only: no plan, message, tool input or output text crosses the host projection. A remote thread's cut
+ * bodies count at their whole size, so output growing on its host is progress (ADR-0025, October 18 amendment).
+ */
 export function watcherProgressFingerprint(thread: AgentThread): string {
   return observationDigest([thread.status, thread.lastTurn, thread.messages.map(message => [message.id, message.text.length]),
-    thread.activities?.map(activity => [activity.id, activity.status, activity.startedAt, activity.completedAt, activity.text?.length, activity.output?.length, activity.steps?.map(step => [step.status, step.text.length]), activity.agents?.map(agent => [agent.id, agent.status, agent.progress, agent.message?.length]) ]), thread.subagentSummary, thread.backgroundWork?.map(work => [work.id, work.type]), thread.monitoring?.map(work => work.id), thread.requests.map(card => [card.id, card.kind])])
+    thread.activities?.map(activity => [activity.id, activity.status, activity.startedAt, activity.completedAt, activityBodySize(activity, 'text'), activityBodySize(activity, 'output'), ...activity.cut?.diffs ? [activity.cut.diffs] : [], activity.steps?.map(step => [step.status, step.text.length]), activity.agents?.map(agent => [agent.id, agent.status, agent.progress, agent.message?.length]) ]), thread.subagentSummary, thread.backgroundWork?.map(work => [work.id, work.type]), thread.monitoring?.map(work => work.id), thread.requests.map(card => [card.id, card.kind])])
 }
 /**
  * Whether a receipt for one of Watcher's own sends is news to it: the send failed, was refused or may not have gone. An

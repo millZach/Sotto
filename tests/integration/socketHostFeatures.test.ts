@@ -111,11 +111,11 @@ describe('host facts over the socket (#1031)', () => {
 describe('host version and features', () => {
   it('advertises the Sotto version and features in health, the listener file and the hello reply', async () => {
     const health = await (await fetch(fixture.url + '/v1/health')).json() as Record<string, unknown>
-    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode'] })
+    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies'] })
     const listener = JSON.parse(await readFile(join(fixture.root, 'host-listener.json'), 'utf8')) as Record<string, unknown>
-    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode'] })
+    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies'] })
     const { client } = await pair()
-    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode'], capabilities: { mayAnswer: false } })
+    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies'], capabilities: { mayAnswer: false } })
   })
 
   it('takes the user’s Babysit pull request from a paired client, and refuses one the thread does not know in words (ADR-0061)', async () => {
@@ -277,11 +277,12 @@ describe('model catalog revisions (#699)', () => {
       expect(answered).toMatchObject({ ok: true }); expect(answered.result!.host).toMatchObject({ modelsRevision: first })
       expect(answered.result!.host).not.toHaveProperty('models')
 
-      // A client that did not accept the feature is sent exactly what v1 sends: the whole catalog, every time.
-      const olderPush = await nextShell(older, publish)
-      expect(olderPush.models).toEqual(models); expect(olderPush).not.toHaveProperty('modelsRevision')
+      // A client that did not accept the feature is sent exactly what v1 sends: the whole catalog, every time. Its answer
+      // comes first: a push of the shell it was already pushed is not sent again, and one after an answer is.
       const olderAnswer = await older.call('select', { op: 'command', command: { type: 'select-project', projectId: 'project' } }) as Frame
       expect(olderAnswer.result!.host!.models).toEqual(models); expect(olderAnswer.result!.host).not.toHaveProperty('modelsRevision')
+      const olderPush = await nextShell(older, publish)
+      expect(olderPush.models).toEqual(models); expect(olderPush).not.toHaveProperty('modelsRevision')
 
       // A changed catalog goes whole once, under a new revision, then is named again.
       models = syntheticModelCatalog(6)

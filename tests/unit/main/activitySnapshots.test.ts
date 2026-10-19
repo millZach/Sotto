@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { ActivitySubscribers, immutableActivities, isImmutableActivities, cloneActivitySnapshot } from '../../../src/main/agents/activitySnapshots'
+import { ActivitySubscribers, asActivityPublication, immutableActivities, isActivityPublication, isImmutableActivities, cloneActivitySnapshot } from '../../../src/main/agents/activitySnapshots'
 import { cloneHostSnapshot } from '../../../src/main/agents/cloneHostSnapshot'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot } from '../../../src/shared/agents'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
@@ -74,7 +74,7 @@ describe('owned activity snapshots', () => {
 })
 
 describe('the activity subscribers of an adapter', () => {
-  it('builds each form a subscriber asked for once, and hands every subscriber its own copy (#322)', () => {
+  it('builds and copies each form a subscriber asked for once, and hands every subscriber of a form that copy (#322)', () => {
     const subscribers = new ActivitySubscribers()
     const received: Array<[string, AgentHostSnapshot]> = []
     subscribers.add(value => received.push(['events', value]), { historyFromEvents: true })
@@ -84,10 +84,24 @@ describe('the activity subscribers of an adapter', () => {
     subscribers.publish(historyFromEvents => { built.push(historyFromEvents); return snapshot(records()) })
     expect(built).toEqual([true, false])
     expect(received.map(([name]) => name)).toEqual(['events', 'also events', 'snapshots'])
-    expect(received[0]![1]).not.toBe(received[1]![1])
+    expect(received[0]![1]).toBe(received[1]![1])
+    expect(received[2]![1]).not.toBe(received[0]![1])
+    expect(received.every(([, value]) => isActivityPublication(value))).toBe(true)
     off(); built.length = 0
     subscribers.publish(historyFromEvents => { built.push(historyFromEvents); return snapshot(records()) })
     expect(built).toEqual([true])
     expect(subscribers.size).toBe(2)
+  })
+
+  it('hands a detached view out as it is, and a snapshot built over a publication stays one', () => {
+    const subscribers = new ActivitySubscribers()
+    const received: AgentHostSnapshot[] = []
+    subscribers.add(value => received.push(value))
+    const view = snapshot(records())
+    subscribers.publish(() => view, true)
+    expect(received[0]).toBe(view)
+    expect(isActivityPublication(view)).toBe(true)
+    expect(isActivityPublication(asActivityPublication({ ...view }, view))).toBe(true)
+    expect(isActivityPublication(asActivityPublication({ ...view }, snapshot(records())))).toBe(false)
   })
 })

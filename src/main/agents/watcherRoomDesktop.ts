@@ -1,5 +1,6 @@
 import type { WatcherBridge, WatcherRoomState } from '../../shared/watcherRoom'
 import type { WatcherService } from './watcher'
+import { clonePlainData } from './cloneHostSnapshot'
 import { coalesceAgentStatePublishes, type PublishScheduler } from './control'
 
 type RoomService = Pick<WatcherService, 'subscribe' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'
@@ -38,7 +39,8 @@ export function createWatcherRoomDesktop(options: {
     return { bridge, dispose: () => unsubscribe?.() }
   }
   const publisher = coalesceAgentStatePublishes<WatcherRoomState>(state => { options.send(state) }, options.schedule ? { schedule: options.schedule } : {})
-  const unsubscribe = watcher.subscribe(state => publisher.publish(structuredClone(state)))
+  // The room state is plain schema data, so it is copied as such: containers copied and strings kept, not serialized again.
+  const unsubscribe = watcher.subscribe(state => publisher.publish(clonePlainData(state)))
   const reply = async <Result>(operation: () => Promise<Result>): Promise<Result> => {
     try { return await operation() }
     finally { publisher.flush() }

@@ -1,29 +1,24 @@
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentHostSnapshot, AgentModel } from '../../shared/agents'
 import type { ActivitySubscriptionOptions, AgentHost } from './host'
-import { cloneHostSnapshot } from './cloneHostSnapshot'
+import { cloneHostSnapshot, copyUnshared } from './cloneHostSnapshot'
 
 /** Only objects copied and recursively frozen here may cross the internal activity subscription
  * without another copy. Object.isFrozen alone says nothing about a caller's nested objects. */
 const owned = new WeakSet<object>()
 
-function copy(value: unknown, copies: WeakMap<object, object>, immutable: boolean): unknown {
-  if (value === null || typeof value !== 'object' || owned.has(value)) return value
-  const previous = copies.get(value)
-  if (previous) return previous
-  const result = Array.isArray(value) ? value.slice() : { ...value }
-  copies.set(value, result)
-  const fields = result as Record<string, unknown>
-  for (const key of Object.keys(fields)) fields[key] = copy(fields[key], copies, immutable)
-  if (immutable) { Object.freeze(result); owned.add(result) }
-  return result
+const isOwned = (value: object): boolean => owned.has(value)
+const own = (value: object): void => { Object.freeze(value); owned.add(value) }
+
+function copy(value: unknown, immutable: boolean): unknown {
+  return copyUnshared(value, isOwned, immutable ? own : undefined)
 }
 
 /** Take ownership without freezing or retaining mutable aliases into the caller's data. The adapter
  * installs the result as its activity array and replaces records/arrays on the next change. The
  * existing AgentActivity shape is retained for readers; writes to this internal view are forbidden. */
 export function immutableActivities(activities: readonly AgentActivity[]): AgentActivity[] {
-  return copy(activities, new WeakMap(), true) as AgentActivity[]
+  return copy(activities, true) as AgentActivity[]
 }
 
 export function isImmutableActivities(activities: readonly AgentActivity[] | undefined): boolean {
@@ -36,7 +31,7 @@ export function isImmutableActivity(activity: AgentActivity): boolean { return o
 /** A model catalog owned and frozen the same way. Every layer between an adapter and the window then shares one copy
  * until the catalog itself changes, where each used to copy all of it, 608 models on the owner's machine (#917). */
 export function immutableModels(models: readonly AgentModel[]): AgentModel[] {
-  return copy(models, new WeakMap(), true) as AgentModel[]
+  return copy(models, true) as AgentModel[]
 }
 
 export function isImmutableModels(models: readonly AgentModel[] | undefined): boolean {
@@ -58,7 +53,7 @@ export function cloneActivitySnapshot(snapshot: AgentHostSnapshot): AgentHostSna
   // Whole-history legacy hosts have nothing to share. Keep their established clone path
   // instead of checking ownership on every nested object in every retained record.
   if (!isImmutableModels(snapshot.models) && !snapshot.threads.some(thread => isImmutableActivities(thread.activities))) return cloneHostSnapshot(snapshot)
-  return copy(snapshot, new WeakMap(), false) as AgentHostSnapshot
+  return copy(snapshot, false) as AgentHostSnapshot
 }
 
 /** Legacy hosts can mutate their published arrays, so their updates still take the full copy path. */
@@ -67,8 +62,27 @@ export function subscribeActivitySnapshots(host: AgentHost, listener: (snapshot:
 }
 
 /**
- * An adapter's activity subscribers and what each asked for. A publication builds each form of the
- * snapshot once, whichever subscribers want it, and hands every subscriber its own copy.
+ * Snapshots an activity subscription handed out as a publication: copied once for all its subscribers, so none of its
+ * containers is the publisher's own, and read by each without being written into (ADR-0016, October 19 amendment).
+ * A subscriber may keep one as it is rather than copy it again, as long as it changes only containers it made itself.
+ * Like the certificate on activity trees, this mark is held in a weak set and never serialized.
+ */
+const publications = new WeakSet<AgentHostSnapshot>()
+
+/** Whether this snapshot is a publication: one its subscribers share and may keep without a copy. */
+export function isActivityPublication(snapshot: AgentHostSnapshot): boolean { return publications.has(snapshot) }
+
+/** A snapshot a subscriber built over a publication's data, such as new thread records naming Sotto's IDs, is one too. */
+export function asActivityPublication(snapshot: AgentHostSnapshot, from: AgentHostSnapshot): AgentHostSnapshot {
+  if (publications.has(from)) publications.add(snapshot)
+  return snapshot
+}
+
+/**
+ * An adapter's activity subscribers and what each asked for. A publication builds each form of the snapshot once,
+ * whichever subscribers want it, copies it once, and hands that one copy to every subscriber of the form. Every
+ * subscriber only reads it: one that changed it would change it for the others, so a subscriber changes only containers
+ * it made itself. It was a copy per subscriber, and every one copied every thread (October 19, 2026).
  */
 export class ActivitySubscribers {
   private readonly listeners = new Map<(snapshot: AgentHostSnapshot) => void, boolean>()
@@ -79,12 +93,19 @@ export class ActivitySubscribers {
     this.listeners.set(listener, options?.historyFromEvents === true)
     return () => this.listeners.delete(listener)
   }
-  publish(view: (historyFromEvents: boolean) => AgentHostSnapshot): void {
+  /**
+   * `detached`: the view is already a snapshot of its own, its containers built for this publication over data that is
+   * only ever replaced, never edited, so it goes out without a copy. The provider switch's aggregate is one.
+   */
+  publish(view: (historyFromEvents: boolean) => AgentHostSnapshot, detached = false): void {
     const views = new Map<boolean, AgentHostSnapshot>()
     for (const [listener, historyFromEvents] of this.listeners) {
       let snapshot = views.get(historyFromEvents)
-      if (!snapshot) { snapshot = view(historyFromEvents); views.set(historyFromEvents, snapshot) }
-      listener(cloneActivitySnapshot(snapshot))
+      if (!snapshot) {
+        snapshot = detached ? view(historyFromEvents) : cloneActivitySnapshot(view(historyFromEvents))
+        publications.add(snapshot); views.set(historyFromEvents, snapshot)
+      }
+      listener(snapshot)
     }
   }
 }

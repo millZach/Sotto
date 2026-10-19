@@ -33,6 +33,7 @@ import type { CodexAppServerHost } from '../../src/main/agents/codex'
 import { storedFollowups } from '../fixtures/followupQueue'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
+import type { AgentState } from '../../src/shared/agents'
 
 const remote = useSocketHostFixture()
 const cleanups: (() => Promise<void>)[] = []
@@ -151,18 +152,21 @@ it('lists This computer and each paired machine with its facts, running threads 
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start-refused')
   // The owning host's reply can arrive before the desktop's copy of the thread shows its first turn. A reconcile in
   // that gap reads a created thread with no turn and no message yet: the start is still in flight, not finished.
-  const shell = f.socket.shell.bind(f.socket)
-  const behind = vi.spyOn(f.socket, 'shell').mockImplementation(() => {
-    const state = shell()
+  // The router reads the host's state through its view, and some readers through its shell, so both stand in for it.
+  const behindOf = (read: () => AgentState) => (): AgentState => {
+    const state = read()
     return { ...state, host: { ...state.host, threads: state.host.threads.map(thread => {
       if (thread.id !== started.target.threadId) return thread
       const created = { ...thread }; delete created.lastTurn
       return { ...created, status: 'idle' as const, messages: [], ...thread.summary ? { summary: { ...thread.summary, messageCount: 0 } } : {} }
     }) } }
-  })
+  }
+  // Read the originals before spying: a spy is installed before its implementation's arguments are evaluated.
+  const shell = behindOf(f.socket.shell.bind(f.socket)), view = behindOf(f.socket.view.bind(f.socket))
+  const behind = [vi.spyOn(f.socket, 'shell').mockImplementation(shell), vi.spyOn(f.socket, 'view').mockImplementation(view)]
   await (f.watcher as unknown as { reconcileRemote(hostId: string): Promise<void> }).reconcileRemote(f.pairing.hostId)
   expect((await machines())[1]).toMatchObject({ inFlight: 1 })
-  behind.mockRestore()
+  for (const spy of behind) spy.mockRestore()
   await expect.poll(async () => (await machines())[1]).toMatchObject({ runningThreads: 1, inFlight: 1 })
   expect((await machines())[0]).toMatchObject({ inFlight: 0 })
   // An older host does not list host-facts: it reads unknown, and nothing is asked of it.
@@ -658,11 +662,14 @@ it('sends to a full-access thread on a paired host when this computer\'s new-thr
 it('refuses a model without an asking mode on a host where this computer may not answer, rather than fit it to one that skips asking', async () => {
   const f = await master()
   await f.control.commandShell({ type: 'configure', patch: { newThreadRuntimeMode: 'full-access' } })
-  const shell = f.socket.shell.bind(f.socket)
-  vi.spyOn(f.socket, 'shell').mockImplementation(() => {
-    const state = shell()
-    return { ...state, host: { ...state.host, models: state.host.models.map(model => model.id === f.model.id ? { ...model, runtimeModes: ['auto', 'full-access'] as const } : model) } }
-  })
+  // The router reads the host through `view` where it can and `shell` elsewhere; both see the same catalog.
+  for (const read of ['shell', 'view'] as const) {
+    const original = f.socket[read].bind(f.socket)
+    vi.spyOn(f.socket, read).mockImplementation(() => {
+      const state = original()
+      return { ...state, host: { ...state.host, models: state.host.models.map(model => model.id === f.model.id ? { ...model, runtimeModes: ['auto', 'full-access'] as const } : model) } }
+    })
+  }
   const projects = await f.call('list_projects', { hostId: f.pairing.hostId })
   if (projects.status !== 'ok') throw new Error('list-refused')
   expect(projects.projects[0]?.workers.find(item => item.modelId === f.model.id)).toMatchObject({ defaultPermission: null, permissionComparable: false })
@@ -849,14 +856,18 @@ it('attributes returning paired evidence to its host, queues news after user wor
   const f = await master(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start-refused')
   let checks: 'failed' | 'passed' = 'failed'
-  const shell = f.socket.shell.bind(f.socket)
-  // The synthetic evidence belongs to a PR the owning roster still links.
-  vi.spyOn(f.socket, 'shell').mockImplementation(() => {
-    const state = shell()
+  // The synthetic evidence belongs to a PR the owning roster still links. The router reads the host's state through its
+  // view, and some readers through its shell, so both carry the link.
+  const linkedOf = (read: () => AgentState) => (): AgentState => {
+    const state = read()
     return { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id !== first.target.threadId ? thread
       : { ...thread, pullRequests: [{ url: 'https://github.com/synthetic/project/pull/5', number: 5, title: 'Synthetic PR',
         state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }] }) } }
-  })
+  }
+  // Read the originals before spying: a spy is installed before its implementation's arguments are evaluated.
+  const linkedShell = linkedOf(f.socket.shell.bind(f.socket)), linkedView = linkedOf(f.socket.view.bind(f.socket))
+  vi.spyOn(f.socket, 'shell').mockImplementation(linkedShell)
+  vi.spyOn(f.socket, 'view').mockImplementation(linkedView)
   const original = f.socket.watcherRead.bind(f.socket)
   vi.spyOn(f.socket, 'watcherRead').mockImplementation(async packet => {
     const result = await original(packet)

@@ -25,6 +25,7 @@ const patterns: Record<string, RegExp> = {
   'cloneHostSnapshot(': /\bcloneHostSnapshot\(/g,
   'clonePlainData(': /\bclonePlainData\(/g,
   'cloneActivitySnapshot(': /\bcloneActivitySnapshot\(/g,
+  'copyUnshared(': /\bcopyUnshared\(/g,
   'JSON round trip': /JSON\.parse\(\s*JSON\.stringify\(/g,
 }
 
