@@ -116,3 +116,11 @@ Muse may have taken it. A model Muse has not confirmed never holds a send or a s
 model again, and if Muse refuses, the turn runs on the model Muse has, which the thread's model chip shows. A
 permission mode Muse has not confirmed still holds a send back, since a turn under a wider mode than the user chose
 could act without asking.
+
+Bug Bot's review added three details. When Muse moves a session to another model on its own, with
+`session/modelChanged`, that model becomes the thread's, so no later send sets the one before it back; when Muse moves
+it while answering Sotto's own `session/setModel`, the newest model Muse named wins. When Muse refuses to set a reopened
+thread's model again, what it described is the best word there is on the model it runs, so the chip shows that and the
+thread's own stays unconfirmed for the next send to ask again. A model Muse has not confirmed leaves the thread idle,
+not in error, so a queued follow-up runs as it would on any thread; only a permission mode Muse has not confirmed reads
+as an error.

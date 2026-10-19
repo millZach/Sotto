@@ -6,6 +6,7 @@ import { expect, it } from 'vitest'
 import { describeAdapterContract } from './adapterContract'
 import { museFixture, museFixtureSkips } from '../fixtures/museFixture'
 import type { RecordedRpc } from '../fixtures/adapterFixture'
+import { agentControlFixture } from '../fixtures/agentControlFixture'
 
 describeAdapterContract('Muse MSP', session => museFixture(undefined, undefined, session), museFixtureSkips)
 
@@ -125,26 +126,99 @@ it('keeps a model change Muse may have taken wanted, and asks for it again befor
   } finally { await f.cleanup() }
 })
 
-it('sends and steers on the model Muse has when it refuses the thread’s own, and shows that model', async () => {
+it('takes a model Muse moved the thread to as the thread’s own, so the next send does not set the old one back', async () => {
   const f = await museFixture()
   try {
     const id = await twoModelThread(f, 'fixture-full')
-    // Muse moves the session to another model on its side and will not go back.
-    await f.script({ models: twoModels, rejectSetModel: true })
     await f.action(id, { type: 'model-changed', modelId: 'fixture-base' })
     await expect.poll(async () => (await thread(f, id)).modelId).toBe('fixture-base')
-    await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'On whatever Muse has' })).resolves.toEqual({ accepted: true })
-    // Sotto asked for the thread's own model before the turn; Muse refused, and the turn went ahead on Muse's.
-    const log = await f.driver.requests()
-    expect(log.findLastIndex(record => setModelTo(record) === 'fixture-full')).toBeGreaterThanOrEqual(0)
-    expect(log.findLastIndex(record => setModelTo(record) === 'fixture-full')).toBeLessThan(log.findLastIndex(record => record.method === 'turn/start'))
-    await expect(f.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'And this too' })).resolves.toEqual({ accepted: true })
+    expect((await thread(f, id)).status).toBe('idle')
+    await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'On the model Muse moved to' })).resolves.toEqual({ accepted: true })
     await f.driver.completeTurn(id, 'Done on the base model')
-    await expect.poll(async () => (await thread(f, id)).lastTurn?.status).toBe('completed')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    expect((await f.driver.requests()).filter(record => setModelTo(record))).toHaveLength(0)
     expect(await turnModels(f, id)).toEqual(['fixture-base'])
     expect((await thread(f, id)).modelId).toBe('fixture-base')
-    expect((await thread(f, id)).status).not.toBe('running')
+    const saved = JSON.parse(await readFile(join(f.root, 'muse-threads.json'), 'utf8')) as Record<string, { modelId: string, nativeModelId: string }>
+    expect(saved[id]).toMatchObject({ modelId: 'fixture-base', nativeModelId: 'fixture-base' })
   } finally { await f.cleanup() }
+})
+
+it('lets the newest model Muse names win when it moves the thread while answering a model change', async () => {
+  const f = await museFixture()
+  try {
+    const id = await twoModelThread(f, 'fixture-base')
+    // Muse takes the change to fixture-full, then moves the session back to fixture-base before it answers.
+    await f.script({ models: twoModels, moveAfterSetModel: 'fixture-base' })
+    await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: 'fixture-full' })
+    expect((await thread(f, id)).modelId).toBe('fixture-base')
+    expect((await thread(f, id)).status).toBe('idle')
+    await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'On the newest model' })).resolves.toEqual({ accepted: true })
+    await f.driver.completeTurn(id, 'Done on the base model')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    // The one model change was all Sotto asked for: nothing set fixture-full again.
+    expect((await f.driver.requests()).filter(record => setModelTo(record))).toHaveLength(1)
+    expect(await turnModels(f, id)).toEqual(['fixture-base'])
+  } finally { await f.cleanup() }
+})
+
+it('sends and steers a reopened thread whose model Muse refuses to set again, showing the model Muse describes', async () => {
+  // Muse 1.4.10 describes a reopened session by its catalog's default. Here it also refuses to set the thread's own
+  // model, so what it described is the best word on the model it runs.
+  const f = await museFixture()
+  try {
+    const id = await twoModelThread(f, 'fixture-full', { reopenedAsDefault: true })
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'Before reconnecting' })
+    await f.driver.completeTurn(id, 'First reply')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    expect((await f.driver.requests()).filter(record => setModelTo(record))).toHaveLength(0)
+    await f.script({ models: twoModels, reopenedAsDefault: true, rejectSetModel: true })
+    await f.host.connect()
+    await f.host.refreshThread!(id)
+    expect((await thread(f, id)).modelId).toBe('fixture-base')
+    expect((await thread(f, id)).status).toBe('idle')
+    await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'After reconnecting' })).resolves.toEqual({ accepted: true })
+    await expect(f.host.execute({ type: 'steer', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'And this too' })).resolves.toEqual({ accepted: true })
+    // Sotto asked for the thread's own model after reopening it and again before the turn; Muse refused both, and the
+    // turn went ahead.
+    const log = await f.driver.requests()
+    const sets = log.flatMap((record, at) => setModelTo(record) === 'fixture-full' ? [at] : [])
+    expect(sets.length).toBeGreaterThanOrEqual(2)
+    expect(sets[0]).toBeGreaterThan(log.findIndex(record => record.method === 'session/resume'))
+    expect(sets.at(-1)).toBeLessThan(log.findLastIndex(record => record.method === 'turn/start'))
+    await f.driver.completeTurn(id, 'Done on the base model')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    // The turn ran. Which model it ran on is Muse's to say; the chip shows the one Muse described, the best word there is.
+    expect(await turnModels(f, id)).toHaveLength(2)
+    expect((await thread(f, id)).modelId).toBe('fixture-base')
+  } finally { await f.cleanup() }
+})
+
+it('runs a queued follow-up on a reopened thread whose model Muse refuses to set again', async () => {
+  const f = await museFixture()
+  const stack = await agentControlFixture({ host: f.host, credentialOptions: { mode: 'unavailable' }, reasoner: {} })
+  const { control } = stack
+  const ownThread = () => control.get().host.threads.find(candidate => candidate.id === id)
+  let id = ''
+  try {
+    id = await twoModelThread(f, 'fixture-full', { reopenedAsDefault: true })
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'Before reconnecting' })
+    await f.driver.completeTurn(id, 'First reply')
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    await f.script({ models: twoModels, reopenedAsDefault: true, rejectSetModel: true })
+    await control.start(); await control.command({ type: 'connect' })
+    expect((await control.command({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'After reconnecting' })).error).toBeNull()
+    await expect.poll(() => ownThread()?.lastTurn?.status).toBe('running')
+    const queued = { type: 'queue-followup' as const, threadId: id, draftId: randomUUID(), text: 'The queued follow-up' }
+    expect((await control.command(queued)).error).toBeNull()
+    await f.driver.completeTurn(id, 'Second reply')
+    await expect.poll(() => control.get().followups?.length).toBe(0)
+    await expect.poll(() => ownThread()?.lastTurn?.status).toBe('running')
+    await f.driver.completeTurn(id, 'Third reply')
+    await expect.poll(() => ownThread()?.status).toBe('idle')
+    expect((await f.driver.requests()).filter(record => record.method === 'turn/start')).toHaveLength(3)
+    expect(ownThread()?.modelId).toBe('fixture-base')
+  } finally { await stack.dispose(); await f.cleanup() }
 })
 
 const open = async () => {

@@ -52,6 +52,14 @@ const MSP_MODE: Readonly<Record<MuseRuntimeMode, string>> = { 'approval-required
 function runtimeModeOf(mspMode: string | undefined): MuseRuntimeMode {
   return mspMode === 'allowAll' ? 'full-access' : mspMode === 'onRequest' ? 'auto' : 'approval-required'
 }
+/**
+ * The status of a thread with no turn running, as far as its settings go. Only a permission mode Muse has not
+ * confirmed holds a send back, so only that reads as an error; a model Muse has not confirmed never blocks a send or a
+ * queued follow-up (ADR-0079).
+ */
+function settledStatus(alias: { readonly pendingRuntimeMode?: MuseRuntimeMode | undefined }): 'idle' | 'error' {
+  return alias.pendingRuntimeMode ? 'error' : 'idle'
+}
 function museRuntimeMode(mode: AgentRuntimeMode): MuseRuntimeMode {
   const parsed = museRuntimeModeSchema.safeParse(mode)
   if (!parsed.success) throw new Error('That permission mode is not supported by this provider.')
@@ -418,6 +426,11 @@ export class MuseMspHost implements AgentHost {
   private requestRevision = 0
   private readonly deliveries = new Map<string, { threadId: string; resolve(): void; reject(error: Error): void }>()
   private readonly activePrompts = new Set<string>()
+  /**
+   * How many times Muse has said each thread's session changed model. Muse's own word is newer than an answer to a
+   * session/setModel that was waiting when it came, so that answer leaves the model alone.
+   */
+  private readonly modelChanges = new Map<string, number>()
   /** The turn each thread is running, by MSP turn ID, with the Sotto ID of the message that opened it. */
   private readonly activeTurns = new Map<string, { turnId: string; messageId?: string }>()
   private readonly folds = new Map<string, Fold>()
@@ -491,7 +504,7 @@ export class MuseMspHost implements AgentHost {
       modelId: alias.nativeModelId ?? alias.modelId,
       runtimeMode: alias.runtimeMode ?? 'approval-required',
       ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}),
-      status: alias.museSessionId && alias.settingsConfirmed ? 'idle' : 'error',
+      status: alias.museSessionId ? settledStatus(alias) : 'error',
       messages: [], requests: [], manualCompactionSupported: true,
     })
     return this.threads.get(id)!
@@ -865,10 +878,9 @@ export class MuseMspHost implements AgentHost {
       const fold = this.fold(id)
       fold.viewCursor = resumed.viewCursor
       for (const item of items) this.foldItem(id, item)
-      // A refusal keeps the thread on the model Muse last accepted, which its chip shows; nothing is held back for it.
-      // A running turn is left alone: the next send asks again.
+      // Nothing is held back while the model is set again, and a running turn is left alone: the next send asks again.
       if (this.confirmSession(id, alias, resumed.session, true) && resumed.session.status !== 'running') {
-        await this.applyModel(id, alias, entry, alias.modelId).catch(() => undefined)
+        await this.reapplyModel(id, alias, entry, resumed.session)
         if (this.processes.get(id) !== entry) return
         this.assertGeneration(generation)
       }
@@ -914,19 +926,33 @@ export class MuseMspHost implements AgentHost {
    * `confirmSession`). Muse also says so with session/modelChanged.
    */
   private async applyModel(id: string, alias: Alias, entry: ThreadProcess, modelId: string): Promise<void> {
+    const changes = this.modelChanges.get(id) ?? 0
     await entry.rpc.request('session/setModel', { commandId: museCommandId(), sessionId: alias.museSessionId, model: { modelId } })
-    alias.nativeModelId = modelId
+    if ((this.modelChanges.get(id) ?? 0) === changes) alias.nativeModelId = modelId
     this.settleSettings(id, alias)
   }
   /**
-   * Whether the thread runs on the settings the user chose, as far as Muse has confirmed them. The model chip shows the
-   * model Muse last accepted, and a thread that is not running reads as an error until its settings are Muse's own.
+   * Sets a reopened session's model again (see `confirmSession`). When Muse refuses, what it described is the best word
+   * on the model it runs, so the chip shows that and the thread's own stays unconfirmed, for the next send to ask again.
+   */
+  private async reapplyModel(id: string, alias: Alias, entry: ThreadProcess, session: MuseSession): Promise<void> {
+    const changes = this.modelChanges.get(id) ?? 0
+    try { await this.applyModel(id, alias, entry, alias.modelId) } catch (error) {
+      if (!(error instanceof MuseRejected) || (this.modelChanges.get(id) ?? 0) !== changes) return
+      if (session.modelId && session.modelId !== alias.modelId) alias.nativeModelId = session.modelId; else delete alias.nativeModelId
+      this.settleSettings(id, alias)
+    }
+  }
+  /**
+   * Whether the thread runs on the settings the user chose, as far as Muse has confirmed them, and what its chip and
+   * status show. The chip shows the model Muse last accepted. A model Muse has not confirmed leaves the thread idle,
+   * since nothing waits for it (ADR-0079); only a permission mode Muse has not confirmed reads as an error.
    */
   private settleSettings(id: string, alias: Alias): void {
     alias.settingsConfirmed = alias.nativeModelId === alias.modelId && !alias.pendingRuntimeMode
     const thread = this.thread(id)
     if (alias.nativeModelId) thread.modelId = alias.nativeModelId
-    if (thread.status !== 'running') thread.status = alias.settingsConfirmed ? 'idle' : 'error'
+    if (thread.status !== 'running') thread.status = settledStatus(alias)
   }
   /**
    * A turn whose host ended before it finished may never record its end. If the resumed session is idle and
@@ -1244,8 +1270,11 @@ export class MuseMspHost implements AgentHost {
           const parsed = modelChangedSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
           const alias = this.aliases[owner]; if (!alias) return
+          // The model Muse moved the session to is the thread's model now, so no send sets the one before it back.
+          this.modelChanges.set(owner, (this.modelChanges.get(owner) ?? 0) + 1)
+          alias.modelId = parsed.modelId
           alias.nativeModelId = parsed.modelId
-          alias.settingsConfirmed = alias.nativeModelId === alias.modelId && !alias.pendingRuntimeMode
+          alias.settingsConfirmed = !alias.pendingRuntimeMode
           this.thread(owner).modelId = parsed.modelId
           void this.persist().catch(() => undefined)
           this.emit()
@@ -1391,7 +1420,7 @@ export class MuseMspHost implements AgentHost {
           throw error
         }
         this.loaded.add(command.threadId); this.log.pin(command.threadId); this.reaper.touch(command.threadId)
-        const thread = this.thread(command.threadId); thread.modelId = alias.modelId; thread.status = alias.settingsConfirmed ? 'idle' : 'error'
+        const thread = this.thread(command.threadId); thread.modelId = alias.modelId; thread.status = settledStatus(alias)
         releaseCreate()
       } else {
         const alias = this.aliases[command.threadId]
@@ -1434,8 +1463,7 @@ export class MuseMspHost implements AgentHost {
                 thread.runtimeMode = mode
               } catch (error) {
                 if (error instanceof MuseRejected) {
-                  delete alias.pendingRuntimeMode; alias.settingsConfirmed = alias.nativeModelId === alias.modelId
-                  thread.status = alias.settingsConfirmed ? 'idle' : 'error'; await this.persist(); this.emit()
+                  delete alias.pendingRuntimeMode; this.settleSettings(command.threadId, alias); await this.persist(); this.emit()
                   throw new Error(error.reason === 'approval_mode_ceiling'
                     ? 'Muse on this machine does not allow that permission mode. Nothing changed. Change Muse’s own approval settings and reconnect to use it.'
                     : 'Muse rejected that permission mode. Nothing changed.', { cause: error })
@@ -1448,11 +1476,12 @@ export class MuseMspHost implements AgentHost {
               const previousModelId = alias.modelId
               alias.settingsConfirmed = false; await this.persist()
               alias.modelId = modelId
+              const changes = this.modelChanges.get(command.threadId) ?? 0
               try { await this.applyModel(command.threadId, alias, entry, modelId) } catch (error) {
                 // Only an answer that may have reached Muse keeps the new model wanted, for the next send to ask for
-                // again. A refusal leaves the thread on the model Muse last accepted.
+                // again. A refusal leaves the thread on the model Muse last accepted, or the one Muse moved it to since.
                 if (error instanceof MuseUncertain) throw error
-                alias.modelId = previousModelId
+                if ((this.modelChanges.get(command.threadId) ?? 0) === changes) alias.modelId = previousModelId
                 this.settleSettings(command.threadId, alias)
                 await this.persist(); this.emit()
                 if (!(error instanceof MuseRejected)) throw error
@@ -1511,7 +1540,11 @@ export class MuseMspHost implements AgentHost {
           }
           const entry = await this.threadProcess(command.threadId)
           // A model Muse has not confirmed is asked for again before a new turn; a refusal sends on the model Muse has.
-          if (command.type === 'send' && alias.nativeModelId !== alias.modelId) await this.applyModel(command.threadId, alias, entry, alias.modelId).catch(() => undefined)
+          // What the prompt carries must suit the model the turn will run on.
+          if (command.type === 'send' && alias.nativeModelId !== alias.modelId) {
+            await this.applyModel(command.threadId, alias, entry, alias.modelId).catch(() => undefined)
+            if (alias.nativeModelId && alias.nativeModelId !== alias.modelId) validatePromptAttachments(this.state, alias.nativeModelId, command.attachments)
+          }
           this.assertGeneration(generation)
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)
@@ -1661,7 +1694,7 @@ export class MuseMspHost implements AgentHost {
     // A running turn is left alone: the next send asks for the thread's model again.
     const running = resumed.session.status === 'running' || this.activeTurns.has(id) || this.activePrompts.has(id)
     if (this.confirmSession(id, alias, resumed.session, true) && !running) {
-      await this.applyModel(id, alias, entry, alias.modelId).catch(() => undefined)
+      await this.reapplyModel(id, alias, entry, resumed.session)
       if (generation !== this.generation || this.processes.get(id) !== entry) return
     }
     if (entry.turnRevision === turnRevision) this.reconcileLiveSession(id, resumed.session)
@@ -1701,7 +1734,7 @@ export class MuseMspHost implements AgentHost {
       this.activeTurns.set(id, { turnId: session.activeTurnId, ...(messageId ? { messageId } : {}) })
       thread.status = 'running'; thread.lastTurn = { id: messageId ?? session.activeTurnId, status: 'running' }
       this.markTurn(id, 'running', messageId ?? session.activeTurnId)
-    } else if (!this.activePrompts.has(id)) thread.status = this.aliases[id]?.settingsConfirmed ? 'idle' : 'error'
+    } else if (!this.activePrompts.has(id)) thread.status = this.aliases[id] ? settledStatus(this.aliases[id]) : 'error'
   }
   /** MSP cannot disable all tools independently of native policy, so side writing stays unavailable (ADR-0079). */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {

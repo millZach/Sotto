@@ -20,7 +20,8 @@ import { join } from 'node:path'
 // says `permissionStateHidden`. `session/read` serves a stored session without attaching it.
 // `session/setModel` is refused, with Muse's error shape, when script.json's `rejectSetModel` is true or lists the model,
 // and never answered when `holdSetModel` is true. The `model-changed` action moves a session to another model on Muse's
-// side and says so, as Muse does with session/modelChanged. Each turn the session opens records the model it ran on in
+// side and says so, as Muse does with session/modelChanged; `moveAfterSetModel` does the same once, to the model it
+// names, after accepting a session/setModel and before answering it. Each turn the session opens records the model it ran on in
 // the stored session's `turnModels`.
 const root = process.argv[2]
 const ephemeral = process.argv.includes('--no-session-log')
@@ -309,7 +310,12 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (script.rejectSetModel === true || script.rejectSetModel?.includes?.(p.model.modelId)) { fail('commandRejected', 'Refused by the fixture', 'model_unavailable'); return }
     const previousModelId = session.modelId; session.modelId = p.model.modelId; save()
     notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
-    result({ modelId: session.modelId, previousModelId })
+    if (script.moveAfterSetModel) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, moveAfterSetModel: undefined }))
+      session.modelId = script.moveAfterSetModel; save()
+      notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
+    }
+    result({ modelId: p.model.modelId, previousModelId })
   } else if (frame.method === 'session/setApprovalMode') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
     if (script.ceiling && ['allowAll', 'onRequest'].includes(p.mode)) { fail('commandRejected', 'Refused by the fixture ceiling', 'approval_mode_ceiling'); return }
