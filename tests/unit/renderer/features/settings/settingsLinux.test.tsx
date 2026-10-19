@@ -97,10 +97,10 @@ describe('Settings on Linux', () => {
     expect(screen.queryByRole('button', { name: 'Set up all three' })).not.toBeInTheDocument()
   })
 
-  it.each(['win32', 'darwin'] as const)('keeps the %s global shortcut field and offers no setup steps', async (platform) => {
+  it.each(['win32', 'darwin'] as const)('keeps the %s dictation shortcut recorder and offers no setup steps', async (platform) => {
     render(<SettingsView {...baseProps({ platform })} />)
 
-    expect(screen.getByLabelText('Global shortcut')).toBeVisible()
+    expect(screen.getByRole('group', { name: 'Press to start and stop' })).toBeVisible()
     expect(screen.queryByRole('button', { name: /setup steps/u })).not.toBeInTheDocument()
     expect(screen.queryByText('Compositor bindings')).not.toBeInTheDocument()
   })

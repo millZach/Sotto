@@ -435,6 +435,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           updateStatus={app.update}
           onUpdateSettings={app.actions.updateSettings}
           onReplaceHotkey={app.actions.replaceHotkey}
+          onReplaceDictationShortcuts={app.actions.replaceDictationShortcuts}
           onSetStartup={app.actions.setStartup}
           onResetSettings={app.actions.resetSettings}
           onClearHistory={app.actions.clearHistory}

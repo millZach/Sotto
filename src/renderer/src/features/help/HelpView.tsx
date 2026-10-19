@@ -48,7 +48,7 @@ export function HelpView({ shortcut, platform, version, releaseTrack = 'stable' 
       : <p>Press <ShortcutKey accelerator={shortcut} platform={platform} /> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing.</p> },
     linux
       ? { title: 'Global shortcut', body: <p>{copy.settingsGlobalShortcutDescription}</p> }
-      : { title: 'Shortcut conflicts', body: <p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. Choose a different combination in Settings. It saves when you leave the shortcut field.</p> },
+      : { title: 'Shortcut conflicts', body: <p>If another application owns a shortcut, Sotto keeps your previous working shortcut active. In Settings › Dictation, press the shortcut, then hold the keys you want instead and let go.</p> },
     { title: 'Transcription', body: <p>Parakeet v3, by NVIDIA, transcribes your speech on this computer. It downloads once, 670 MB, and understands 25 European languages. Settings → Transcription shows whether it is ready.</p> },
   ]
   const privacy: Topic[] = [
