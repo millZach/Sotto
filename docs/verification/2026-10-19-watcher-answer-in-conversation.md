@@ -29,6 +29,19 @@ On Windows, in this thread's worktree, against Sotto Owl built from the branch. 
 - `tests/integration/watcherTools.test.ts`: a wake-up records the request its news names and the room places its card, without Watcher answering it.
 - Unchanged and passing: the copy-site list and the streaming copy budget, the theme-token check, and the existing Watcher, wake-up and paired-host suites that touch this code (`remote-question-receipt.spec.ts`, `remote-activity-body.spec.ts`).
 
+## After review
+
+A review on Muse read the commit without running anything (its shell was unavailable) and found three standards and six spec problems. Two follow-up commits fix them, each with a test: placement in main, then the window.
+
+- A card stayed under the message before the wake-up when the user wrote into Watcher's running wake-up turn. Placement now bounds turns as receipt cards do, and waits while the turn runs with no reply instead of showing early and moving, which lost focus and an open fold (`watcherAskPlacements.test.ts`).
+- Placement was read again on every publish; it is now kept until Watcher's history, its turns or whether it runs change. In the window, the cards' answering moved to a context of its own and the placements keep their identity until they change, so the conversation around them is not redrawn on every update.
+- An answer given in the thread's own pane left the line saying only that the thread no longer waits; both cards now keep what was chosen. A request asked again under an ID its provider used before no longer inherits an earlier choice.
+- **Show what it said** says when it shows the row's shortened excerpt, and its accessible name names the thread.
+- A thread the window does not hold, such as one on a host still joining, draws nothing rather than a line without **Open**.
+- The guide no longer says receipt cards are the only names that open a thread in Watcher's conversation.
+
+`watcherAsks.test.tsx` (15 tests) and `watcherAskPlacements.test.ts` (9 tests) cover these; both end-to-end journeys were run again on the rebuilt app.
+
 ## Not checked
 
 - An installed Owl build against a live Watcher on a provider account, and a thread on the real forge. The journeys above run main's real Watcher, wake-up, workspace record, socket and router with stand-in providers; nothing here installs the branch over the running Sotto.

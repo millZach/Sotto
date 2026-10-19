@@ -318,12 +318,15 @@ outside the repository, on October 19, 2026. It is the desktop's version of the 
   picked.
 - **Questions and permissions both.**
 - **The thread's last reply is folded** under **Show what it said**, so the user can answer without opening the thread.
-  Escape folds it again.
+  Escape folds it again. When the window holds only the row's excerpt of a long reply, the fold says it was shortened.
+  The toggle's accessible name names the thread, since several cards can wait at once.
 - **Once answered, one line.** When the request leaves the thread, answered here, in the thread's pane or on the phone, or
   withdrawn by its provider, the card gives way to one line with **Open**. When this window sent the answer, the line says
-  what was chosen in the card's own words, "You answered Fix login on staging: Use the staging key.", or that the user
+  what was chosen in the card's own words, "You answered Fix login on staging: Use the staging key.", whichever card it
+  was sent from, this one or the thread's own pane, or that the user
   answered in their own words, never repeating them. Otherwise it says only what Sotto knows: "Fix login on staging no
-  longer waits on you." The chosen words are kept in the window's memory alone; no answer record is saved.
+  longer waits on you." The chosen words are kept in the window's memory alone; no answer record is saved, and a request
+  that waits again under an ID its provider used before is forgotten there, so an earlier choice is never told of it.
 - **The needs-you line goes to the card.** A name whose request has its card in the loaded conversation scrolls to that
   card and focuses it, at once when motion is reduced. Otherwise it opens the thread beside Watcher at its request, as
   before.
@@ -339,9 +342,14 @@ thread, request and kind), and the workspace records them with the wake-up: in t
 (migration 8, `watcher_asks`) and on the thread's record in `workspace.json` (`wakeUpAsks`, the newest 200), as the
 wake-up's own ID is kept, so they survive the history being read again and a restart with Keep local history on or off.
 No adapter hears them. The workspace marks the wake-up message with them (`watcherAsks`), and the room's projection
-places each (`asks`) under the last shown reply of the turn that wake-up began, or the message before it while Watcher
-has not replied, since a wake-up holding only news is shown nowhere. The card itself is drawn from the thread's live
+places each (`asks`) under the reply of the turn that wake-up began, since a wake-up holding only news is shown nowhere.
+Turns are bounded as receipt cards bound them: a wake-up, or a message the record ties to a turn, begins one, and a
+message the user wrote into the running turn does not, so a reply that came after it is still that turn's. While the
+turn still runs with no reply, the card waits for it rather than showing somewhere it would leave, losing the user's
+place, when the reply comes. A turn that ended with none puts the card under the wake-up when it is shown, else under
+the message before it. Placement is read again only when Watcher's history, its turns or whether it runs changed. The card itself is drawn from the thread's live
 request alone: nothing keeps a copy of a request to draw a card from, so a request answered anywhere leaves every card at
 once. A request two wake-ups named, because it changed between them, has its card only under the newer. A thread on a
 paired host is found and answered through its own row, as its pane does, and a card that cannot be answered now says why
-in the pane's own words, such as "Reconnect Codex to answer."
+in the pane's own words, such as "Reconnect Codex to answer." A thread the window does not hold at all, such as one on a
+host still joining, draws nothing there; the needs-you line still names it.

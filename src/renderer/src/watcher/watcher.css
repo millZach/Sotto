@@ -394,6 +394,7 @@
 .watcher-ask__said-body { margin: 6px 0 0; padding: 2px 0 2px 14px; border-left: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13.5px; }
 .watcher-ask__said-body > :first-child { margin-top: 0; }
 .watcher-ask__said-body > :last-child { margin-bottom: 0; }
+.watcher-ask__said-cut { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 12.5px; }
 .watcher-ask > .agent-request { margin-top: 2px; }
 .watcher-ask-receipt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
 .watcher-ask-receipt__words { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }

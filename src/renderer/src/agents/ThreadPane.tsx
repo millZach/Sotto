@@ -14,6 +14,7 @@ import { CloudIphoneRequest } from './requests/CloudIphoneRequest'
 import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, requestAnswerStore } from './requests/requestAnswers'
 import { threadRequestBlocked, threadRequestOwner } from './requests/threadRequests'
+import { answeredChoices, answerWords } from './requests/answeredChoices'
 import { ThreadComposer } from './ThreadComposer'
 import { usePendingSettings } from './pendingSettings'
 import { hasDraftContent, submissionStatus, useSubmissions, type ThreadDraftStore } from './threadDraftStore'
@@ -93,7 +94,11 @@ function ThreadRequests({ row, state, command, onAnswer, kind }: {
       messageLinks={kind === 'question' ? messageLinks(thread.messages) : []}
       draftOwner={threadRequestOwner(row, state)}
       onWriteAnswer={onAnswer}
-      onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => result === null ? null : { error: result.error })}
+      onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => {
+        // What main took is kept for this window, so Watcher's line for this request can say what was chosen.
+        if (result !== null && result.error === null) answeredChoices.note(thread.id, request.id, answerWords(request, answer), true)
+        return result === null ? null : { error: result.error }
+      })}
       onCheck={() => command({ type: 'observe-threads', threadIds: [thread.id] }).then(result => result !== null && result.error === null)} />
   })}</div>
 }

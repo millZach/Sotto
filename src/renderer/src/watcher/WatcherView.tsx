@@ -38,7 +38,7 @@ import { WatcherHandoverOffer, WatcherSendGateContext, watcherSendGate } from '.
 import { overviewCount, statusWord, threadPress, TONES, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
 import { WatcherOwl } from './WatcherOwl'
 import { WatcherOwnChangesContext } from './WatcherOwnChange'
-import { placeAsks, type WatcherAskAnswering } from './WatcherAsks'
+import { placeAsks, useStablePlacements, WatcherAskAnsweringContext, type WatcherAskAnswering } from './WatcherAsks'
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
 import { unlistedStatus, WatcherWatchedView, watchedCount } from './WatcherWatched'
@@ -322,18 +322,20 @@ function WatcherPane({ state, row, header, watched, error, focused, now, describ
   const lines = useMemo(() => placeTakeovers(messages, takeovers), [messages, takeovers])
   // Each request a wake-up said waited on the user has its thread's own card under the reply that told of it, where
   // main's record places it, and only under the newest wake-up that named it (Zach's pick on October 19, 2026).
-  const placements = room?.state?.asks
+  // The placements keep their identity until they change, so the conversation context does not change with every update;
+  // the cards' answering, which does, goes in a context of its own that only the cards read.
+  const placements = useStablePlacements(room?.state?.asks)
   const asks = useMemo(() => placeAsks(placements), [placements])
-  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, answering: answering ?? undefined }),
-    [byMessage, lines, describe, press, asks, answering])
+  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks }),
+    [byMessage, lines, describe, press, asks])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
   // system browser.
   return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
-    <WatcherConversationContext.Provider value={conversation}>
+    <WatcherConversationContext.Provider value={conversation}><WatcherAskAnsweringContext.Provider value={answering}>
       <ThreadPane row={row} state={state} command={agents.command} store={agents.threadDrafts} focused={focused} promptId={WATCHER_PROMPT_ID}
         error={error} now={now} watcherHeader={header} watcherBody={watched}
         notice={offered && room !== null && offer !== null ? <WatcherHandoverOffer key={offer.source.threadId} room={room} offer={offer} composerId={WATCHER_PROMPT_ID} /> : undefined} />
-    </WatcherConversationContext.Provider>
+    </WatcherAskAnsweringContext.Provider></WatcherConversationContext.Provider>
   </WatcherSendGateContext.Provider></WatcherOwnChangesContext.Provider></BrowserPageRouteContext.Provider>
 }
 
@@ -541,18 +543,20 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     },
   }, [state, command, rowFor, openThread, watcherId, besideId])
   // The threads whose waiting request has its card in the conversation now, which the needs-you line goes to instead.
-  const placements = room?.state?.asks
+  const placements = useStablePlacements(room?.state?.asks)
+  const placed = useMemo(() => placeAsks(placements), [placements])
   const shownMessages = watcherRow?.thread.messages
+  const shownIds = useMemo(() => new Set(shownMessages?.map(message => message.id) ?? []), [shownMessages])
   const inline = useMemo<ReadonlySet<string>>(() => {
-    if (placements === undefined || shownMessages === undefined || view.tab !== 'conversation') return new Set()
-    const ids = new Set(shownMessages.map(message => message.id))
+    if (placed.size === 0 || view.tab !== 'conversation') return new Set()
+    const ids = shownIds
     const found = new Set<string>()
-    for (const list of placeAsks(placements).values()) for (const ask of list) {
+    for (const list of placed.values()) for (const ask of list) {
       const row = ids.has(ask.messageId) ? rowFor(ask.target) : undefined
       if (row !== undefined && row.thread.requests.some(request => request.id === ask.requestCardId)) found.add(row.thread.id)
     }
     return found
-  }, [placements, shownMessages, view.tab, rowFor])
+  }, [placed, shownIds, view.tab, rowFor])
   const jumpToAsk = useCallback((threadId: string, requestId: string | undefined): boolean => focusInlineAsk(threadId, requestId), [])
 
   const error = state?.error ?? agents.error ?? null

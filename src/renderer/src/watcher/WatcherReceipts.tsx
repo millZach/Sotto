@@ -6,7 +6,7 @@ import { isShownReply, type WatcherTakeover } from '../../../shared/watcherRoom'
 import { SottoMark } from '../components/SottoMark'
 import { ProviderMark } from '../agents/ProviderMark'
 import { clockLabel } from '../agents/threadFacts'
-import { WatcherAsks, type WatcherAskAnswering, type WatcherAskPlacement } from './WatcherAsks'
+import { WatcherAsks, type WatcherAskPlacement } from './WatcherAsks'
 
 /** A thread as a receipt card or a takeover line names it: what the window knows of it now. */
 export interface ConversationThread {
@@ -34,10 +34,11 @@ export interface ConversationThread {
 export interface WatcherConversation {
   readonly receipts: ReadonlyMap<string, readonly WatcherOperation[]>
   readonly takeovers: ReadonlyMap<string, readonly WatcherTakeover[]>
-  /** The requests each message's wake-up said waited on the user, answered on their cards here (answering in Watcher's conversation). */
+  /**
+   * The requests each message's wake-up said waited on the user, answered on their cards here (answering in Watcher's
+   * conversation). What the cards answer with comes from `WatcherAskAnsweringContext`, which changes with every update.
+   */
   readonly asks?: ReadonlyMap<string, readonly WatcherAskPlacement[]> | undefined
-  /** What those cards answer with; absent, they are not drawn. */
-  readonly answering?: WatcherAskAnswering | undefined
   readonly describe: (target: WatcherThreadTarget) => ConversationThread
   /** A press on a thread's name: beside Watcher, or with Shift in the Threads room, as everywhere in the room. */
   readonly press: (threadId: string) => Pick<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'onKeyDown'>
@@ -155,11 +156,11 @@ export function WatcherAfterMessage({ message }: { readonly message: AgentMessag
   if (conversation === null) return null
   const operations = conversation.receipts.get(message.id)
   const lines = conversation.takeovers.get(message.id)
-  const asks = conversation.answering === undefined ? undefined : conversation.asks?.get(message.id)
+  const asks = conversation.asks?.get(message.id)
   if (operations === undefined && lines === undefined && asks === undefined) return null
   return <>
     {operations?.length ? <WatcherReceipts operations={operations} conversation={conversation} /> : null}
-    {asks?.length && conversation.answering ? <WatcherAsks asks={asks} describe={conversation.describe} answering={conversation.answering} press={conversation.press} /> : null}
+    {asks?.length ? <WatcherAsks asks={asks} describe={conversation.describe} press={conversation.press} /> : null}
     {lines?.map(line => <TakeoverLine key={`${line.target.hostId}:${line.target.threadId}:${line.at}`} line={line} conversation={conversation} />)}
   </>
 }

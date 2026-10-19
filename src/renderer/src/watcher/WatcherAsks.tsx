@@ -1,6 +1,6 @@
-import React, { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import React, { createContext, useContext, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp, Laptop, Server } from 'lucide-react'
-import type { AgentRequest, AgentState } from '../../../shared/agents'
+import { AGENT_THREAD_EXCERPT_MAX, type AgentRequest, type AgentState } from '../../../shared/agents'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
 import { watcherAskKey } from '../../../shared/watcherAsks'
@@ -11,7 +11,8 @@ import { ProviderMark } from '../agents/ProviderMark'
 import type { ThreadRow } from '../agents/threadFacts'
 import { AgentRequestCard } from '../agents/requests/AgentRequestCard'
 import { messageLinks } from '../agents/requests/messageLinks'
-import { EMPTY_SELECTION, requestAnswerOwnerKey, requestAnswerStore, requestMode, textOnly, type RequestAnswer, type RequestEntry } from '../agents/requests/requestAnswers'
+import { answeredChoices, answerWords, chosenWords, OWN_WORDS } from '../agents/requests/answeredChoices'
+import { requestAnswerOwnerKey, requestAnswerStore } from '../agents/requests/requestAnswers'
 import { threadRequestBlocked, threadRequestOwner } from '../agents/requests/threadRequests'
 import type { ConversationThread } from './WatcherReceipts'
 
@@ -33,6 +34,20 @@ export interface WatcherAskAnswering {
   readonly check: (threadId: string) => Promise<boolean>
 }
 
+/** What the cards answer with, from Watcher's room; it changes with every update, so only the cards read it. */
+export const WatcherAskAnsweringContext = createContext<WatcherAskAnswering | null>(null)
+
+/**
+ * Main's placements as the room last received them, the same array until one of them changes: the room is projected
+ * again on every update, and an unchanged list should not redraw the conversation around it.
+ */
+export function useStablePlacements(placements: readonly WatcherAskPlacement[] | undefined): readonly WatcherAskPlacement[] | undefined {
+  const kept = useRef<{ readonly key: string; readonly placements: readonly WatcherAskPlacement[] | undefined }>({ key: 'null', placements: undefined })
+  const key = JSON.stringify(placements ?? null)
+  if (kept.current.key !== key) kept.current = { key, placements }
+  return kept.current.placements
+}
+
 /**
  * Each message's asks, oldest first, from main's placements. A request two wake-ups named, because it changed in
  * between, is placed only under the newer: an earlier reference shows nothing, so one request has one card.
@@ -48,84 +63,6 @@ export function placeAsks(placements: readonly WatcherAskPlacement[] | undefined
   }
   return placed
 }
-
-/** The words a receipt uses for an answer written in the user's own words, which Sotto never repeats. */
-export const OWN_WORDS = 'in your own words'
-const plainLabel = (label: string): string => label.replace(/\s*\(recommended\)\s*$/iu, '')
-
-/**
- * What the user chose on a request's card, in the card's own words: the permission choice, or the option labels, or
- * that they wrote their own answer. Never their text. Null when the card offered nothing it could name, such as a plain
- * question answered in the composer.
- */
-export function chosenWords(request: AgentRequest, entry: Pick<RequestEntry, 'choice' | 'selections'>): string | null {
-  const mode = requestMode(request)
-  if (mode === 'permission') {
-    if (entry.choice === null) return null
-    const choices = request.permissionChoices
-    if (choices) return choices.find(choice => choice.id === entry.choice)?.label ?? null
-    return entry.choice === 'allow' ? 'Allow' : entry.choice === 'deny' ? 'Deny' : null
-  }
-  if (mode === 'legacy-options') {
-    const picked = entry.selections[request.id]?.optionIds[0] ?? entry.choice
-    const option = request.options.find(item => item.id === picked)
-    return option === undefined ? null : plainLabel(option.label)
-  }
-  if (mode !== 'structured') return null
-  const labels: string[] = []
-  let own = false
-  for (const question of request.questions ?? []) {
-    const selection = entry.selections[question.id]
-    if (selection === undefined) continue
-    for (const id of selection.optionIds) {
-      const option = question.options.find(item => item.id === id)
-      if (option !== undefined) labels.push(plainLabel(option.label))
-    }
-    if ((selection.other || textOnly(question)) && selection.text.trim() !== '') own = true
-  }
-  if (labels.length === 0) return own ? OWN_WORDS : null
-  return own ? `${labels.join(', ')}, and ${OWN_WORDS}` : labels.join(', ')
-}
-
-/** The same words for an answer as it is sent: what the card's choice or selections were, read back from the answer itself. */
-export function answerWords(request: AgentRequest, answer: RequestAnswer): string | null {
-  const mode = requestMode(request)
-  if (mode === 'permission') return chosenWords(request, { choice: answer.permissionChoice ?? (answer.approved === true ? 'allow' : answer.approved === false ? 'deny' : null), selections: {} })
-  if (mode === 'legacy-options') return chosenWords(request, { choice: answer.answer, selections: {} })
-  const selections = Object.fromEntries(Object.entries(answer.questionAnswers ?? {}).map(([id, given]) =>
-    [id, { ...EMPTY_SELECTION, optionIds: given.optionIds, other: (given.text ?? '').trim() !== '', text: given.text ?? '' }]))
-  return chosenWords(request, { choice: null, selections })
-}
-
-const ANSWERED_KEPT = 200
-/**
- * What this window sent for each request it answered, by thread and request, in the card's own words, and whether
- * main took the answer. Held in memory for this window's life alone; nothing is saved. A request answered anywhere
- * else, or before a restart, is not here, and its receipt then says only that it no longer waits.
- */
-class AnsweredChoices {
-  private readonly entries = new Map<string, { readonly words: string | null; readonly sent: boolean }>()
-  private readonly listeners = new Set<() => void>()
-  private static key(threadId: string, requestId: string): string { return JSON.stringify([threadId, requestId]) }
-  subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
-  note(threadId: string, requestId: string, words: string | null, sent: boolean): void {
-    const key = AnsweredChoices.key(threadId, requestId)
-    const before = this.entries.get(key)
-    const next = { words: words ?? before?.words ?? null, sent: sent || before?.sent === true }
-    if (before !== undefined && before.words === next.words && before.sent === next.sent) return
-    this.entries.delete(key)
-    this.entries.set(key, next)
-    while (this.entries.size > ANSWERED_KEPT) this.entries.delete(this.entries.keys().next().value!)
-    for (const listener of [...this.listeners]) listener()
-  }
-  /** The words of an answer main took from this window; null when this window did not send one. */
-  sent(threadId: string, requestId: string): string | null | undefined {
-    const entry = this.entries.get(AnsweredChoices.key(threadId, requestId))
-    return entry?.sent ? entry.words : undefined
-  }
-  clear(): void { this.entries.clear() }
-}
-export const answeredChoices = new AnsweredChoices()
 
 /**
  * The receipt's words: what the user chose, when this window sent it; otherwise only that the thread no longer waits. A
@@ -147,12 +84,13 @@ const KIND_WORD = { question: 'question', permission: 'permission' } as const
  * place. Drawn from the thread's live requests alone, so an answer given anywhere (here, in the thread, on the phone)
  * takes the card away in every place at once.
  */
-export function WatcherAsks({ asks, describe, answering, press }: {
+export function WatcherAsks({ asks, describe, press }: {
   readonly asks: readonly WatcherAskPlacement[]
   readonly describe: (target: WatcherThreadTarget) => ConversationThread
-  readonly answering: WatcherAskAnswering
   readonly press: (threadId: string) => Pick<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'onKeyDown'>
 }): ReactNode {
+  const answering = useContext(WatcherAskAnsweringContext)
+  if (answering === null) return null
   return <div className="watcher-asks">
     {asks.map(ask => <WatcherAskEntry key={`${ask.wakeUpMessageId}:${watcherAskKey(ask)}`} ask={ask} facts={describe(ask.target)} answering={answering} press={press} />)}
   </div>
@@ -168,12 +106,13 @@ function WatcherAskEntry({ ask, facts, answering, press }: {
   // Read whatever happens below, so the line follows an answer whose reply came after its request had already left.
   const sent = useSyncExternalStore(answeredChoices.subscribe, () => row === undefined ? undefined : answeredChoices.sent(row.thread.id, ask.requestCardId))
   if (row !== undefined && request !== undefined) return <WatcherAskCard row={row} request={request} facts={facts} answering={answering} press={press} />
+  // A thread the window does not hold right now, such as one on a host still joining, has nothing to show or open: the
+  // needs-you line still names it while it waits.
+  if (row === undefined) return null
   return <p className="watcher-ask-receipt" data-ask-request={ask.requestCardId}>
-    <span className="watcher-ask-receipt__words">{row === undefined
-      ? `Sotto cannot see ${title} right now, so it cannot say whether it still waits on you.`
-      : receiptWords(title, sent)}</span>
-    {row === undefined ? null : <button type="button" className="watcher-ask__open tt-focusable" aria-label={`Open ${title} beside Watcher`} title={`Open ${title} beside Watcher`}
-      {...press(row.thread.id)}>Open</button>}
+    <span className="watcher-ask-receipt__words">{receiptWords(title, sent)}</span>
+    <button type="button" className="watcher-ask__open tt-focusable" aria-label={`Open ${title} beside Watcher`} title={`Open ${title} beside Watcher`}
+      {...press(row.thread.id)}>Open</button>
   </p>
 }
 
@@ -193,8 +132,11 @@ function WatcherAskCard({ row, request, facts, answering, press }: {
   const ownerKey = requestAnswerOwnerKey(thread.id, request, owner)
   const entry = useSyncExternalStore(requestAnswerStore.subscribe, () => requestAnswerStore.get(ownerKey, request.id))
   // What was chosen is kept while the request is still here to name it, so the line that replaces the card can say it.
+  // A request waiting here with nothing sent is a new one, even under an ID a provider used before: nothing earlier
+  // speaks for it.
   useEffect(() => {
     if (entry.phase === 'sending' || entry.phase === 'sent') answeredChoices.note(thread.id, request.id, chosenWords(request, entry), entry.phase === 'sent')
+    else answeredChoices.forget(thread.id, request.id)
   }, [entry, request, thread.id])
   const kind = KIND_WORD[request.kind]
   const computer = facts.computer ?? (thread.remoteHost ? thread.hostLabel ?? 'Paired computer' : 'This computer')
@@ -230,24 +172,27 @@ function WatcherAskCard({ row, request, facts, answering, press }: {
 
 /**
  * The thread's last reply before it asked, folded: what the pane holds of its history when it holds it, else the
- * excerpt its row keeps. Escape folds it again and puts focus back on its toggle. Nothing when there is no reply.
+ * excerpt its row keeps, which says so when it was cut short. Escape folds it again and puts focus back on its toggle,
+ * whose name says whose reply it unfolds, since several cards may wait at once. Nothing when there is no reply.
  */
 function WhatItSaid({ row }: { readonly row: ThreadRow }): ReactNode {
   const [open, setOpen] = useState(false)
   const toggle = useRef<HTMLButtonElement>(null)
   const bodyId = useId()
   const thread = row.thread
-  const text = thread.messages.findLast(message => message.role === 'assistant' && message.text.trim() !== '' && message.visual === undefined)?.text
-    ?? thread.summary?.lastAssistant?.text
+  const held = thread.messages.findLast(message => message.role === 'assistant' && message.text.trim() !== '' && message.visual === undefined)?.text
+  const text = held ?? thread.summary?.lastAssistant?.text
   if (text === undefined || text.trim() === '') return null
+  const shortened = held === undefined && text.length >= AGENT_THREAD_EXCERPT_MAX
   return <div className="watcher-ask__said" onKeyDown={event => {
     if (!open || event.key !== 'Escape' || event.nativeEvent.isComposing) return
     event.preventDefault(); event.stopPropagation(); setOpen(false); toggle.current?.focus()
   }}>
     <button ref={toggle} type="button" className="watcher-ask__toggle tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
-      onClick={() => setOpen(value => !value)}>
+      aria-label={`${open ? 'Hide' : 'Show'} what it said, ${thread.title}`} onClick={() => setOpen(value => !value)}>
       {open ? 'Hide what it said' : 'Show what it said'}{open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
     </button>
-    {open ? <div id={bodyId} className="watcher-ask__said-body" role="group" aria-label={`What ${thread.title} said last`}><MessageContent text={text} /></div> : null}
+    {open ? <div id={bodyId} className="watcher-ask__said-body" role="group" aria-label={`What ${thread.title} said last`}><MessageContent text={text} />
+      {shortened ? <p className="watcher-ask__said-cut">Shortened here. Open the thread for the rest.</p> : null}</div> : null}
   </div>
 }

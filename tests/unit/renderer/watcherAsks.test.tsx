@@ -17,7 +17,8 @@ import { WatcherRoomProvider } from '../../../src/renderer/src/watcher/watcherRo
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
 import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
 import { WatcherAfterMessage } from '../../../src/renderer/src/watcher/WatcherReceipts'
-import { answeredChoices, answerWords, chosenWords, OWN_WORDS, placeAsks, receiptWords, type WatcherAskPlacement } from '../../../src/renderer/src/watcher/WatcherAsks'
+import { placeAsks, receiptWords, type WatcherAskPlacement } from '../../../src/renderer/src/watcher/WatcherAsks'
+import { answeredChoices, answerWords, chosenWords, OWN_WORDS } from '../../../src/renderer/src/agents/requests/answeredChoices'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { threadsStateFixture } from '../../fixtures/agentState'
@@ -75,10 +76,13 @@ function roomState(asks: WatcherAskPlacement[]): WatcherRoomState {
 const place = (requestCardId: string, messageId = 'watcher-2', patch: Partial<WatcherAskPlacement> = {}): WatcherAskPlacement =>
   ({ target: target('footer-links'), requestCardId, kind: 'question', messageId, wakeUpMessageId: `wake-${messageId}`, ...patch })
 
-function fakeBridge(state: WatcherRoomState): WatcherBridge {
+function fakeBridge(state: WatcherRoomState): { bridge: WatcherBridge; publish: (next: WatcherRoomState) => void } {
   const ok = (next: WatcherRoomState): WatcherRoomResult => ({ status: 'ok', state: next })
-  return { get: vi.fn(async () => ok(state)), open: vi.fn(async () => ok(state)), setLimit: vi.fn(async () => ok(state)),
-    prepareStopAll: vi.fn(), stopAll: vi.fn(), onChanged: vi.fn(() => () => undefined) } as unknown as WatcherBridge
+  let current = state
+  const listeners = new Set<(next: WatcherRoomState) => void>()
+  const bridge = { get: vi.fn(async () => ok(current)), open: vi.fn(async () => ok(current)), setLimit: vi.fn(async () => ok(current)),
+    prepareStopAll: vi.fn(), stopAll: vi.fn(), onChanged: vi.fn((listener: (next: WatcherRoomState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }) } as unknown as WatcherBridge
+  return { bridge, publish: next => { current = next; for (const listener of listeners) listener(next) } }
 }
 
 function renderRoom(room: WatcherRoomState, state: AgentState) {
@@ -91,10 +95,10 @@ function renderRoom(room: WatcherRoomState, state: AgentState) {
     vi.mocked(useOptionalAgents).mockReturnValue(connection)
   }
   use(state)
-  const bridge = fakeBridge(room)
+  const { bridge, publish } = fakeBridge(room)
   const tree = () => <WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>
   const view = render(tree())
-  return { ...view, command, update: (next: AgentState) => { use(next); view.rerender(tree()) } }
+  return { ...view, command, publish, update: (next: AgentState) => { use(next); view.rerender(tree()) } }
 }
 const paneReady = () => screen.findByRole('tab', { name: /^Watched, / })
 const askCard = (name: RegExp | string) => screen.findByRole('region', { name })
@@ -120,12 +124,13 @@ describe('a watched thread’s request in Watcher’s conversation', () => {
     expect(within(card).getByRole('radio', { name: /Use the staging key/ })).toBeInTheDocument()
     // The thread's last reply is folded until asked for, and Escape folds it again onto its toggle.
     expect(within(card).queryByText(/Staging rejects the old key/)).toBeNull()
-    const toggle = within(card).getByRole('button', { name: 'Show what it said' })
+    // Its name says whose reply it unfolds, since several cards may wait at once.
+    const toggle = within(card).getByRole('button', { name: 'Show what it said, Footer links' })
     fireEvent.click(toggle)
     expect(await within(card).findByText(/Staging rejects the old key/)).toBeInTheDocument()
     fireEvent.keyDown(within(card).getByRole('group', { name: 'What Footer links said last' }), { key: 'Escape' })
     expect(within(card).queryByText(/Staging rejects the old key/)).toBeNull()
-    expect(within(card).getByRole('button', { name: 'Show what it said' })).toHaveFocus()
+    expect(within(card).getByRole('button', { name: 'Show what it said, Footer links' })).toHaveFocus()
   })
 
   it('answers the watched thread’s request with the user’s own answer, never Watcher’s, and the line after names the choice', async () => {
@@ -189,6 +194,51 @@ describe('a watched thread’s request in Watcher’s conversation', () => {
     expect(screen.getAllByRole('region', { name: 'Question from Footer links' })).toHaveLength(1)
     const reply = document.querySelector('[data-message-id="watcher-2"]')!
     expect(reply.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('names the choice after an answer given in the thread’s own pane, with Watcher’s card not on screen', async () => {
+    const id = `ask-${sequence}`
+    roomView.set({ besideId: 'footer-links', share: 0.5, tab: 'conversation' })
+    const view = renderRoom(roomState([]), agentState([question(id)]))
+    await paneReady()
+    const beside = await waitFor(() => { const pane = document.getElementById('watcher-beside-pane'); if (!pane) throw new Error('No beside pane yet.'); return pane })
+    fireEvent.click(await within(beside).findByRole('radio', { name: /Use the staging key/ }))
+    fireEvent.click(within(beside).getByRole('button', { name: 'Send answer' }))
+    await waitFor(() => expect(view.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'answer', threadId: 'footer-links', requestId: id })))
+    // Watcher then tells of it, after the thread no longer waits.
+    view.update(agentState())
+    view.publish(roomState([place(id)]))
+    expect(await screen.findByText('You answered Footer links: Use the staging key.')).toBeInTheDocument()
+  })
+
+  it('never tells an earlier answer of a request a provider asks again under the same ID', async () => {
+    const id = `ask-${sequence}`
+    answeredChoices.note('footer-links', id, 'Mock the auth call', true)
+    const view = renderRoom(roomState([place(id)]), agentState([question(id)]))
+    await askCard('Question from Footer links')
+    view.update(agentState())
+    expect(await screen.findByText('Footer links no longer waits on you.')).toBeInTheDocument()
+    expect(screen.queryByText(/Mock the auth call/)).toBeNull()
+  })
+
+  it('draws nothing for a thread the window does not hold, such as one on a host still joining', async () => {
+    const id = `ask-${sequence}`
+    renderRoom(roomState([place(id, 'watcher-2', { target: target('far', REMOTE) })]), agentState())
+    await paneReady()
+    await waitFor(() => expect(document.querySelector('[data-message-id="watcher-2"]')).not.toBeNull())
+    expect(document.querySelector('.watcher-asks')?.textContent ?? '').toBe('')
+  })
+
+  it('says when the reply it unfolds was shortened, read from the row’s excerpt', async () => {
+    const id = `ask-${sequence}`
+    const state = agentState([question(id)])
+    const footer = state.host.threads.find(thread => thread.id === 'footer-links')!
+    footer.messages = []
+    footer.summary = { messageCount: 4, activityCount: 0, lastAssistant: { id: 'footer-9', text: 'Long. '.repeat(400).slice(0, 2_000), createdAt: at } }
+    renderRoom(roomState([place(id)]), state)
+    const card = await askCard('Question from Footer links')
+    fireEvent.click(within(card).getByRole('button', { name: 'Show what it said, Footer links' }))
+    expect(await within(card).findByText('Shortened here. Open the thread for the rest.')).toBeInTheDocument()
   })
 
   it('draws nothing outside Watcher’s own pane', () => {
