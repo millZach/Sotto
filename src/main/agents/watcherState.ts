@@ -30,7 +30,11 @@ export class WatcherStateStore {
   }
   /** The saved file and everything the store may leave beside it: recovery copies of a damaged file and temporary writes. */
   private async removeSaved(): Promise<void> {
-    const names = await readdir(this.directory).catch(() => [] as string[])
+    // Only a folder that is not there holds nothing; any other failure is the privacy cleanup's to report and retry.
+    const names = await readdir(this.directory).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [] as string[]
+      throw error
+    })
     await Promise.all(names.filter(name => name === FILE || name.startsWith(`${FILE}.`)).map(name => unlink(join(this.directory, name)).catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     })))

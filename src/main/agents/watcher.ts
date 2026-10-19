@@ -204,9 +204,9 @@ export class WatcherService implements WatcherControlHooks {
     if (!thread || !snapshot) return
     const done = thread.compaction?.status === 'completed' ? thread.compaction.commandId : null, tokens = this.contextTokens(thread)
     if (this.seenFor !== thread.id) {
-      // A new Watcher conversation starts from its state, and so does one that may have compacted before this start
-      // without reading it since: reading it again costs one small call.
-      if (this.seenFor !== undefined || done !== null) this.stateOwed = true
+      // A new Watcher conversation starts from its state, and so does every start of Sotto, since a compaction may have
+      // come before it that Watcher has not read its state since, and the reminder is not saved: one small call.
+      this.stateOwed = true
       this.seenFor = thread.id; this.seenCompaction = done; this.lastTokens = undefined
     } else if (done !== null && done !== this.seenCompaction) { this.stateOwed = true; this.seenCompaction = done }
     // A sharp drop in context is a compaction too: Muse reports no compaction of its own, and a provider may compact by itself.
@@ -966,6 +966,9 @@ export class WatcherService implements WatcherControlHooks {
   }
   userCommand(command: AgentCommand, threadId: string | undefined, answersQuestion: boolean): void {
     if (!threadId || answersQuestion) return
+    // Compact context for Watcher's own conversation, the user's or Sotto's, owes it its state whatever the provider
+    // reports of it afterwards: Muse reports no compaction of its own (#1189).
+    if (command.type === 'compact-thread' && threadId === this.record().current?.target.threadId) this.stateOwed = true
     if (threadId === this.record().current?.target.threadId && this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before sending an instruction.', true)
     if (threadId === this.record().current?.target.threadId && command.type === 'queue-followup' && command.draftId) {
       const latest = this.record().requests.findLast(item => item.watcher.threadId === threadId && !item.standingWatchId)

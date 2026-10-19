@@ -42,6 +42,8 @@ async function fixture(history = true) {
   const opened = await service.open({ provider: 'codex', modelId: model.id })
   expect(opened).toMatchObject({ status: 'ok' })
   const id = service.state().current!.target.threadId
+  // A new Watcher is asked to read its state first (#1189); these tests start from one that has.
+  await tools.call(id, 'read_state', {})
   const user = await f.control.commandShell({ type: 'manual-send', threadId: id, draftId: randomUUID(), text: 'Synthetic Watcher user request' })
   expect(user.error).toBeNull()
   const requestId = service.state().requests.at(-1)!.id
@@ -1610,5 +1612,12 @@ it('tells Watcher to read its state after its context drops by more than half, a
   expect(f.service.stateNote()).toBeUndefined()
   tokens = 40_000
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.stateNote()).toContain('call read_state')
+})
+
+it('asks Watcher to read its state after any Compact context for its conversation, whatever the provider reports', async () => {
+  const f = await fixture()
+  expect(f.service.stateNote()).toBeUndefined()
+  f.service.userCommand({ type: 'compact-thread', threadId: f.id }, f.id, false)
   expect(f.service.stateNote()).toContain('call read_state')
 })
