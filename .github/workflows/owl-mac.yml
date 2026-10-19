@@ -95,7 +95,7 @@ jobs:
           SCRIPT
 
       - name: Attest the disk image and zip
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: ${{ steps.files.outputs.attest }}
 
