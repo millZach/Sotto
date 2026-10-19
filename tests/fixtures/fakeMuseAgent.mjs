@@ -18,6 +18,9 @@ import { join } from 'node:path'
 // `permissionProfiles: false`; a session started with one reports its reviewer in `permissionState`, or the one
 // script.json's `reviewerAuthority` names, to a connection that asked for the experimental API and unless script.json
 // says `permissionStateHidden`. `session/read` serves a stored session without attaching it.
+// `moveDuringApprovalMode` and `moveDuringResume` each move the session to the model they name once, saying so with
+// session/modelChanged before answering session/setApprovalMode or session/resume: a resume's description is then older
+// than Muse's own word.
 // `session/setModel` is refused, with Muse's error shape, when script.json's `rejectSetModel` is true or lists the model,
 // and never answered when `holdSetModel` is true. The `model-changed` action moves a session to another model on Muse's
 // side and says so, as Muse does with session/modelChanged; `moveAfterSetModel` does the same once, to the model it
@@ -280,6 +283,11 @@ createInterface({ input: process.stdin }).on('line', line => {
     const pendingRequests = [...(session.pendingApprovals ?? []).map(item => ({ kind: 'approval', approvalId: item.approvalId })),
       ...(session.pendingInputs ?? []).map(item => ({ kind: 'userInput', userInputId: item.userInputId }))]
     const snapshot = globalThis.structuredClone({ session: view(session, true), history: { mode: 'inline', items: p.excludeItems ? null : session.items, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests, viewCursor: cursor(session) })
+    if (script.moveDuringResume) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, moveDuringResume: undefined }))
+      session.modelId = script.moveDuringResume; save()
+      notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
+    }
     if (script.resumeReplyRace) {
       writeFileSync(path('script.json'), JSON.stringify({ ...script, resumeReplyRace: undefined }))
       const item = session.items.findLast(candidate => candidate.kind === 'agentMessage' && candidate.status === 'inProgress')
@@ -321,6 +329,11 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (script.ceiling && ['allowAll', 'onRequest'].includes(p.mode)) { fail('commandRejected', 'Refused by the fixture ceiling', 'approval_mode_ceiling'); return }
     const previousMode = session.mode; session.mode = p.mode; save()
     notify('session/approvalModeChanged', { sessionId: session.sessionId, mode: p.mode, source: 'wire' })
+    if (script.moveDuringApprovalMode) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, moveDuringApprovalMode: undefined }))
+      session.modelId = script.moveDuringApprovalMode; save()
+      notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
+    }
     result({ mode: p.mode, effectiveMode: p.mode, previousMode })
   } else if (frame.method === 'turn/start' || frame.method === 'turn/steer') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }

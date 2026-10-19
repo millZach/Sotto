@@ -124,3 +124,11 @@ thread's model again, what it described is the best word there is on the model i
 thread's own stays unconfirmed for the next send to ask again. A model Muse has not confirmed leaves the thread idle,
 not in error, so a queued follow-up runs as it would on any thread; only a permission mode Muse has not confirmed reads
 as an error.
+
+A second review settled the order of things when Muse moves a session while Sotto waits on it. A change sets a model
+only when it names one, so a permission or effort change keeps whatever model Muse has moved the thread to meanwhile.
+A model change saves the model it wants before it asks Muse, so one whose answer is lost is still wanted after a
+reconnect, and a refusal goes back only to the model the thread had before anything was awaited, never over one Muse
+named since. A reopened session's description counts as older than any model change Muse announced after the resume
+was asked for, and a reopen leaves the model alone while a turn runs, including one that started while the resume was
+answered.
