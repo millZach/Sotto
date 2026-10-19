@@ -614,6 +614,28 @@ describe('a settings change whose result is unknown (#1192)', () => {
     expect(f.control.shell().unconfirmedSettings ?? []).toEqual([])
   })
 
+  it('counts as no pending work for a change the user asks for next, and lets a later unknown prompt be set aside', async () => {
+    const f = await fixture()
+    f.host.withheld = 'uncertain'
+    await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'high' })
+    // Watcher's room asks this before a change; an unknown effort change is not work a new change must wait for.
+    expect(f.control.hasPendingThreadWork('workshop')).toBe(false)
+    const draftId = randomUUID()
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId, text: 'An unknown prompt behind it' })
+    f.host.withheld = null
+    expect((await f.control.command({ type: 'set-aside-send', threadId: 'workshop', draftId })).error).toBeNull()
+  })
+
+  it('lets a newer model change replace an unknown one, the effort it set with it', async () => {
+    const f = await fixture()
+    f.host.withheld = 'uncertain'
+    await f.control.command({ type: 'configure-thread', threadId: 'workshop', modelId: 'claude:test', reasoningEffort: 'high' })
+    f.host.withheld = null
+    expect(f.control.shell().unconfirmedSettings?.length).toBe(1)
+    expect((await f.control.command({ type: 'configure-thread', threadId: 'workshop', modelId: 'claude:test' })).error).toBeNull()
+    expect(f.control.shell().unconfirmedSettings ?? []).toEqual([])
+  })
+
   it('still holds the thread when it set a permission mode', async () => {
     const f = await fixture()
     f.host.withheld = 'uncertain'

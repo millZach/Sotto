@@ -164,6 +164,21 @@ describe('a pending setting', () => {
     expect(chip).toHaveFocus()
   })
 
+  it('leaves the chips open while only a model or an effort has no result, and fixes them for a permission (#1192)', () => {
+    const state = fixture()
+    state.unconfirmedSettings = [{ threadId: 'thread', reasoningEffort: 'low' }]
+    mount(state)
+    // Another choice replaces the one with no result, so neither chip waits on it.
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: 'Thread model' })).toBeEnabled()
+    cleanup()
+    const held = fixture()
+    held.unconfirmedSettings = [{ threadId: 'thread', runtimeMode: 'full-access' }]
+    mount(held)
+    expect(screen.getByRole('combobox', { name: 'Thread reasoning' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toBeDisabled()
+  })
+
   it('keeps a choice the provider never answered on the chip, says what comes next, and offers nothing to press', async () => {
     const lost = 'Claude Code did not confirm the settings change, so Sotto stopped this thread\'s session, and "npm test" stopped with it. The session starts again with the new settings the next time you use the thread.'
     let commit!: (next: AgentState) => void

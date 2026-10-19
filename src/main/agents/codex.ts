@@ -1581,7 +1581,11 @@ export class CodexAppServerHost implements AgentHost {
         // The coordinator's read before this send stands for the send's own (#765).
         const readForSend = this.readsBeforeSend.take(id, command)
         if (alias.pendingRollback && command.type !== 'interrupt') throw new Error('Reconcile the pending Codex rewind before changing this thread.')
-        if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer' && command.type !== 'configure-thread') throw new SettingsUnconfirmed()
+        // An unconfirmed change holds a send back only when it changes the permission mode. One that set only a model or an
+        // effort holds nothing back: the turn starts with the settings Codex confirmed, which the chips show (#1192).
+        const settingsHold = alias.pendingSettings !== undefined && alias.pendingSettings.runtimeMode !== (alias.runtimeMode ?? 'auto-accept-edits')
+        if (alias.pendingSettings && command.type !== 'interrupt' && command.type !== 'answer' && command.type !== 'configure-thread'
+          && (settingsHold || (command.type !== 'send' && command.type !== 'steer'))) throw new SettingsUnconfirmed()
         if (compactionPending(alias.compaction) && command.type !== 'interrupt' && command.type !== 'answer') throw new Error('Native compaction is still running or unconfirmed. Wait for its result; it will not be sent twice.')
         // Lazy sessions: an action on a thread that was never opened, or whose session the reaper stopped,
         // resumes it here before the command proceeds.

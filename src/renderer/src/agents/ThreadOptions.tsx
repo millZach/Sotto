@@ -340,11 +340,12 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   /**
    * The chips are fixed by what a provider actually refuses: a turn under way, an unanswered request, an archived
    * thread, a provider that is gone, and a prompt still on its way, which a change would run behind once its turn has
-   * started. Also while main keeps a change with no result, since it takes no other action on the thread until it
-   * knows. They do not read the coordinator's busy mark, which covers the very save a press starts and outlives its
+   * started. Also while main keeps a permission change with no result, since it takes no other action on the thread
+   * until it knows; a model or effort change with no result holds nothing back, so another choice can replace it
+   * (#1192), and its chip keeps its mark until the provider reports it. They do not read the coordinator's busy mark, which covers the very save a press starts and outlives its
    * reply: a save in flight fixes nothing, and main's thread lane runs the saves and any prompt in order.
    */
-  const fixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || sending(state, thread.id) || unconfirmed.size > 0
+  const fixed = Boolean(thread.archivedAt) || thread.status === 'running' || thread.requests.length > 0 || sending(state, thread.id) || unconfirmed.has('permissions')
     || (locked && !isThreadProviderConnected(state.host, thread))
   const unconfirmedKey = [...unconfirmed].join(',')
   useLayoutEffect(() => { pendingSettingsStore.observe(thread.id, drawn, unconfirmed) }, [thread.id, drawn.model, drawn.effort, drawn.permissions, unconfirmedKey])
