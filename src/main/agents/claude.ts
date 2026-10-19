@@ -1886,10 +1886,15 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // Persisted history may replay older compactions. Only evidence after this
     // durable request can reconcile an operation whose live acknowledgement was lost.
     if (compactionPending(alias.compaction) && (!fromLog || timestamp >= Date.parse(alias.compactStartedAt ?? ''))) {
+      // A CLI that took the /compact still answers it with a result, and that result ends the thread's work: it names
+      // the compaction as the turn the thread rests on. Going idle at the boundary showed a thread with no finished turn
+      // until then, so a follow-up queued during the compaction paused instead of going (and right after a restart,
+      // when Sotto has read no turn of the thread, always). Only a compaction no CLI will answer settles here.
+      const answering = alias.compaction!.status === 'running' && this.runtimes.has(id)
       alias.compaction = { commandId: alias.compaction!.commandId, status: frame.compact_result === 'failed' ? 'failed' : 'completed',
         ...(frame.compact_result === 'failed' ? { error: typeof frame.compact_error === 'string' ? frame.compact_error : 'Claude native compaction failed.' } : {}) }
       thread.compaction = alias.compaction
-      thread.status = frame.compact_result === 'failed' ? 'error' : 'idle'
+      if (!answering) thread.status = frame.compact_result === 'failed' ? 'error' : 'idle'
       void this.persist().catch(() => { this.state.error = 'The native compaction result could not be saved.'; this.emit() })
     }
     if (frame.subtype === 'compact_boundary' && (!fromLog || Number.isFinite(timestamp) && timestamp > Date.parse(thread.usage?.contextUpdatedAt ?? '1970-01-01'))) {

@@ -66,14 +66,19 @@ it('Claude uses an advertised native slash command, requires a boundary, exclude
   // The transcript says a compaction happened and what it reclaimed, in the sizes the boundary itself reported.
   expect((await f.host.snapshot()).threads[0]?.activities?.filter(record => record.kind === 'compaction'))
     .toEqual([expect.objectContaining({ title: 'Context compacted', status: 'completed', context: { before: 120000, after: 30000 } })])
-  expect((await f.host.snapshot()).threads[0]?.status).toBe('idle')
+  // The CLI has not answered the /compact yet, so the thread is still at work until its result.
+  expect((await f.host.snapshot()).threads[0]?.status).toBe('running')
   const summary = { type: 'user', uuid: randomUUID(), isSynthetic: true, message: { role: 'user', content: 'Generated native compaction summary.' } }
   await f.action('thread', { type: 'raw', frame: summary, persist: true })
   await f.driver.typeInProvider('thread', '<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args></command-args>')
   await f.adapter.pollSessionLogs()
   expect((await f.host.snapshot()).threads[0]?.messages.filter(message => message.role === 'user')).toEqual([])
-  await f.action('thread', { type: 'complete', text: '' })
+  expect((await f.host.snapshot()).threads[0]?.status).toBe('running')
+  // Claude Code 2.1.303's result for a /compact names the prompt and ends the work as a finished turn.
+  const compact = (await f.driver.requests()).filter(row => row.method === 'user').at(-1)!.params!.frame as { uuid: string }
+  await f.action('thread', { type: 'raw', frame: { type: 'result', subtype: 'success', is_error: false, num_turns: 0, result: '', user_message_uuid: compact.uuid, user_message_uuids: [compact.uuid] } })
   await expect.poll(async () => (await f.host.snapshot()).threads[0]?.status).toBe('idle')
+  expect((await f.host.snapshot()).threads[0]?.lastTurn).toEqual({ id: compact.uuid, status: 'completed' })
   await f.host.execute({ type: 'compact-thread', commandId: 'fail', threadId: 'thread' })
   // As with the first compaction, the native answer comes after the child has the command: a real Claude
   // cannot report on a /compact it has not received, and scripting it sooner races the adapter's write.
