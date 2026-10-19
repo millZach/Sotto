@@ -175,6 +175,29 @@ describe('a launch the worker started, when the worker goes', () => {
     await vi.waitFor(() => expect(alive(pid)).toBe(false))
   })
 
+  it('is never started a second time when the worker fails right after starting it', async () => {
+    // A worker that starts the launch, says so, and fails at once: Node can deliver the failure before that message.
+    const root = await folder(), failing = join(root, 'failing.cjs'), marks = join(root, 'starts.txt')
+    await writeFile(failing, [
+      "const { parentPort } = require('node:worker_threads')",
+      "const { spawn } = require('node:child_process')",
+      "parentPort.on('message', request => {",
+      "  if (request.type !== 'launch') return",
+      "  const child = spawn(request.command, request.args, { stdio: 'ignore', windowsHide: true })",
+      "  parentPort.postMessage({ type: 'spawned', id: request.id, pid: child.pid })",
+      "  throw new Error('Synthetic worker failure after starting a launch')",
+      '})',
+    ].join('\n'))
+    const made = launcher(failing)
+    const child = made.launch(...node(`require('node:fs').appendFileSync(${JSON.stringify(marks)}, 'x'); setTimeout(() => {}, 30_000)`), { cwd: process.cwd(), env: process.env })
+    const result = ended(child)
+    expect((await result).errors.some(error => error.message.includes('Sotto stopped'))).toBe(true)
+    // Long enough for a second start, had there been one, to have written its mark.
+    await new Promise(resolve => setTimeout(resolve, 1_500))
+    expect(await readFile(marks, 'utf8').catch(() => '')).toBe('x')
+    await vi.waitFor(() => expect(alive(child.pid!)).toBe(false))
+  })
+
   it('is stopped from this thread before it reports closing when the worker dies', async () => {
     const made = launcher(worker.path)
     const { result, pid } = await sleeper(made)

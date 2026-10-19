@@ -161,6 +161,8 @@ export class GitLauncher {
   private worker: Worker | null | undefined
   private readonly running = new Map<number, { readonly process: OffThreadProcess; readonly command: string; readonly args: readonly string[]; readonly options: LaunchOptions }>()
   private next = 1
+  /** The worker `close` is stopping, which settles its own launches, so its exit settles nothing more. */
+  private closing: Worker | undefined
   /** While closing: what to call when the worker reports a launch exited, so it is collected before the worker goes. */
   private readonly exited = new Map<number, () => void>()
   /** `workerPath` null launches in this thread, always. */
@@ -190,6 +192,7 @@ export class GitLauncher {
     const worker = this.worker
     this.worker = null
     if (!worker) return
+    this.closing = worker
     const running = [...this.running.values()]
     const exits = running.map(({ process }) => new Promise<void>(done => this.exited.set(process.id, done)))
     // One the worker has not started yet is stopped as it starts: the worker takes a kill for a launch it has queued.
@@ -224,13 +227,14 @@ export class GitLauncher {
       if (event.type === 'close') this.exited.get(event.id)?.()
       this.running.get(event.id)?.process.receive(event)
     })
-    const failed = (): void => {
-      if (this.worker !== worker) return
-      this.worker = null
-      void this.abandon(true)
-    }
-    worker.on('error', failed)
-    worker.on('exit', failed)
+    // An error only stops new launches going to this worker. What it had running is settled at exit: Node delivers the
+    // worker's queued messages before 'exit' but not necessarily before 'error', so a launch it already started could
+    // otherwise still look unstarted here and be started again in this thread.
+    worker.on('error', () => { if (this.worker === worker) this.worker = null })
+    worker.on('exit', () => {
+      if (this.worker === worker) this.worker = null
+      if (this.closing !== worker) void this.abandon(true)
+    })
     return this.worker = worker
   }
 

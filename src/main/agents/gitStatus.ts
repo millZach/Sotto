@@ -428,10 +428,14 @@ export class GitStatusReader implements GitStatusSource {
     const key = `${cwd}\0${options.remote}`
     if (options.fresh) return this.recorded(key, cwd, options, () => undefined).task
     const standing = (record: ReadRecord | undefined): record is ReadRecord => record !== undefined && this.epochOf(record.place.common, cwd) <= record.epoch
-    const pending = this.reads.get(key)
-    if (standing(pending)) return pending.task
-    const done = this.finished.get(key)
-    if (options.startedAfter !== undefined && standing(done) && done.startedAt >= options.startedAfter && !this.fetchedSince(done)) return done.task
+    // A read is handed on only while it is as new as the caller needs: begun after the round that asks, if one does,
+    // and after the last fetch of its repository landed. A running read is held to that as a finished one is.
+    const current = (record: ReadRecord | undefined): record is ReadRecord => standing(record) && !this.fetchedSince(record)
+      && (options.startedAfter === undefined || record.startedAt >= options.startedAfter)
+    const pending = this.reads.get(key), done = this.finished.get(key)
+    // A running read older than one already finished, such as a fresh read, would hand back an older status.
+    if (current(pending) && !(done !== undefined && done.startedAt > pending.startedAt)) return pending.task
+    if (options.startedAfter !== undefined && current(done)) return done.task
     const record = this.recorded(key, cwd, options, () => { if (this.reads.get(key) === record) this.reads.delete(key) })
     this.reads.set(key, record)
     return record.task

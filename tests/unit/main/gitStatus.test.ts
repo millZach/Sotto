@@ -219,6 +219,18 @@ describe('Git status the way T3 reads it', () => {
     await f.reader.read(f.repo, { remote: false })
     expect(statusReads()).toBe(4)
   })
+  it('holds a running read to what a round needs, as it holds a finished one', async () => {
+    const f = await fixture({ remote: false })
+    const statusReads = () => f.calls.filter(call => call[0] === 'git' && call.includes('status')).length
+    const early = f.reader.read(f.repo, { remote: false })
+    await new Promise(resolve => setTimeout(resolve, 1))
+    // A round that fires after the early read began is not handed it while it still runs.
+    const round = performance.now()
+    const later = f.reader.read(f.repo, { remote: false, startedAfter: round })
+    expect(later).not.toBe(early)
+    await Promise.all([early, later])
+    expect(statusReads()).toBe(2)
+  })
   it('never lets a round take a read older than the folder\'s newest, or one begun before a fetch landed', async () => {
     const f = await fixture()
     const statusReads = () => f.calls.filter(call => call[0] === 'git' && call.includes('status')).length
