@@ -81,11 +81,23 @@ describe('the sidebar\'s Needs attention line', () => {
     // Each with the failure its row showed, so one that comes later is not marked seen with it.
     expect(sent).toEqual([{ type: 'dismiss-failures', failures: expect.arrayContaining([{ threadId: 'wav-stall', failure: 'f1' }, { threadId: 'grok-previews', failure: 'f2' }]) }])
     expect(sent[0]!.type === 'dismiss-failures' && sent[0]!.failures).toHaveLength(2)
-    // The line goes once the host says so, and the search field keeps the focus the button had.
-    expect(search).toHaveFocus()
+    // The host accepted it; the line goes with its next state, and only then does the search field take the focus.
+    expect(search).not.toHaveFocus()
     act(() => { live.publish(edit(edit(live.state, 'wav-stall', seen), 'grok-previews', seen)) })
     expect(document.querySelector('.thread-nav__attention')).toBeNull()
+    expect(search).toHaveFocus()
     expect(screen.getByRole('button', { name: 'Streaming WAV stall' }).querySelector('.thread-nav__status')).toHaveTextContent('Done')
+  })
+
+  it('keeps the focus on Dismiss all when a host keeps its threads as they were', async () => {
+    const live = mount(threadsStateFixture())
+    const dismiss = screen.getByRole('button', { name: 'Dismiss Needs attention on 1 thread' })
+    dismiss.focus()
+    live.command.mockImplementationOnce(async () => ({ ...live.state, error: 'Forge runs an older Sotto, so its threads still say Needs attention.' }))
+    await act(async () => { fireEvent.click(dismiss) })
+    expect(document.querySelector('.thread-nav__attention')).toHaveTextContent('1 needs attention')
+    expect(dismiss).toHaveFocus()
+    expect(dismiss).not.toHaveAttribute('aria-disabled')
   })
 
   it('says one thread in the singular, and is absent while nothing has failed unseen', () => {

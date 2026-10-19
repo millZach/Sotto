@@ -242,23 +242,37 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
  * "3 need attention" with Dismiss all beside it, under the search, while any thread's failed turn has not been seen
  * (ADR-0092, prototype variant A). It counts failed turns alone: a thread waiting on a permission or a question is the
  * user's to answer and is never counted or dismissed. One press marks every counted thread seen, on every host that holds
- * one; the search field just above takes the focus, since the line goes once the hosts say so.
+ * one. Once the hosts accept it and the line goes, the search field just above takes the focus; when a host keeps its
+ * threads as they were, the line stays and so does the focus, on Dismiss all, beside the refusal that says why. While a
+ * press is on its way the button keeps the focus and ignores another press, rather than going disabled and dropping it.
  */
 function NeedsAttentionLine({ failures, command }: { readonly failures: ReturnType<typeof unseenFailures>; readonly command: Command }): ReactNode {
   const line = useRef<HTMLDivElement>(null)
+  /** The search field that takes the focus once an accepted Dismiss all has taken the line away. */
+  const handOff = useRef<HTMLInputElement | null>(null)
   const [dismissing, setDismissing] = useState(false)
-  if (!failures.length) return null
   const count = failures.length
+  useLayoutEffect(() => {
+    // The line went: the field takes the focus. It changed instead, as when another failure came: the press is over.
+    if (count === 0) handOff.current?.focus()
+    handOff.current = null
+  }, [count])
+  if (!count) return null
   const dismiss = (): void => {
-    line.current?.closest('.thread-nav')?.querySelector<HTMLInputElement>('.threads-search input')?.focus()
+    if (dismissing) return
+    const search = line.current?.closest('.thread-nav')?.querySelector<HTMLInputElement>('.threads-search input') ?? null
     setDismissing(true)
-    void command({ type: 'dismiss-failures', failures: failures.slice(0, AGENT_DISMISS_FAILURES_MAX) }).finally(() => setDismissing(false))
+    void command({ type: 'dismiss-failures', failures: failures.slice(0, AGENT_DISMISS_FAILURES_MAX) }).then(result => {
+      if (result === null || result.error) return
+      if (line.current === null) search?.focus()
+      else handOff.current = search
+    }).finally(() => setDismissing(false))
   }
   return <div ref={line} className="thread-nav__attention">
     <i aria-hidden="true" />
     <span className="thread-nav__attention-count">{count} {count === 1 ? 'needs' : 'need'} attention</span>
     <button type="button" className="thread-nav__attention-dismiss tt-focusable" aria-label={`Dismiss Needs attention on ${plural(count, 'thread')}`}
-      disabled={dismissing} onClick={dismiss}>Dismiss all</button>
+      aria-disabled={dismissing || undefined} onClick={dismiss}>Dismiss all</button>
   </div>
 }
 
