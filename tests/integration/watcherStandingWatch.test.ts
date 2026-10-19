@@ -820,6 +820,29 @@ it('steers the user’s own running turn in a watched thread', async () => {
   expect(f.workspace.adapters.codex.commands.some(command => command.type === 'steer' && command.text === 'Synthetic steer')).toBe(true)
 })
 
+it('never stops the user’s own running turn in a watched thread', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  expect((await f.control.commandShell({ type: 'manual-send', threadId: target.threadId, draftId: randomUUID(), text: 'Synthetic user prompt' })).error).toBeNull()
+  const native = f.native(target.threadId)
+  native.status = 'running'; native.lastTurn = { id: randomUUID(), status: 'running' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const interrupts = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'interrupt').length
+  const before = interrupts()
+  expect(await f.call('stop_thread', { requestId: watch.id, retryKey: randomUUID(), target })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+  expect(interrupts()).toBe(before)
+  // Nor under the user's earlier request, from a Watcher turn that answers something else, such as news.
+  const requestId = await f.request()
+  const master = f.native(f.watcherId())
+  master.messages.push({ id: randomUUID(), role: 'user', text: 'Synthetic Sotto news', createdAt: new Date().toISOString() })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(await f.call('stop_thread', { requestId, retryKey: randomUUID(), target })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+  expect(interrupts()).toBe(before)
+  // Nothing was fenced for the stops that did not go: the thread is still Watcher's to keep going.
+  expect(f.control.watcherRecord().requests.flatMap(request => request.participants).some(participant => participant.automationStopped)).toBe(false)
+})
+
 it('gives back a participation an older build took from a thread that is still watched', async () => {
   const f = await fixture(), target = await f.create(), requestId = await f.request()
   expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'ok' })
@@ -871,6 +894,23 @@ it('keeps a thread the user stopped watching from Watcher until the user hands i
   expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
 })
 
+it('takes the newest user message Watcher’s requests know when its thread is out of view at Stop watching', async () => {
+  const f = await fixture(), target = await f.create(), requestId = await f.request()
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'ok' })
+  const root = f.control.watcherRecord().requests.find(request => request.id === requestId)!.rootUserMessageId
+  // Watcher's provider is between snapshots, so its thread is not listed when the user stops watching.
+  const snapshot = f.control.watcherSnapshot.bind(f.control), watcherId = f.watcherId()
+  const hidden = vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const shown = snapshot()
+    return { ...shown, threads: shown.threads.filter(thread => thread.id !== watcherId) }
+  })
+  expect(await f.service.unwatchThread({ target })).toMatchObject({ status: 'ok' })
+  hidden.mockRestore()
+  expect(f.control.watcherRecord().userUnwatches).toMatchObject([{ target, watcherHead: root }])
+  // The turn answering the message from before Stop watching cannot take the thread back.
+  expect(await f.call('watch_thread', { target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+})
+
 it.each([['a pull request wake-up', 'a standing watch'], ['a pull request wake-up', 'a request alone'], ['a delegated brief', 'a request alone']] as const)(
   'never takes %s Sotto sent for the user in a thread watched by %s', async (message, kind) => {
     const f = await fixture(), requestId = await f.request()
@@ -886,9 +926,10 @@ it.each([['a pull request wake-up', 'a standing watch'], ['a pull request wake-u
         startedBy: 'agent', head: 'head-1', changes: [{ kind: 'checks-failed', checks: [{ name: 'build', status: 'failure', url: null }] }], ended: null }, { tool: false })
       await expect.poll(() => f.native(target.threadId).messages.findLast(item => item.role === 'user')?.text).not.toBe('Synthetic worker turn')
     } else {
-      // A delegation's brief is known by the message ID delegation gave it.
+      // A delegation's brief is known by the message ID delegation gave it, which its hook on the coordinator answers.
       const brief = randomUUID()
-      vi.spyOn(f.control, 'delegationMessage').mockImplementation(messageId => messageId === brief)
+      f.control.useDelegation({ userCommand: () => undefined, observe: () => undefined, observedThreadIds: () => [],
+        messageIdFor: () => undefined, guardFor: () => undefined, ownsMessage: messageId => messageId === brief })
       f.native(target.threadId).messages.push({ id: brief, role: 'user', text: 'Synthetic delegated brief', createdAt: new Date().toISOString() })
     }
     const native = f.native(target.threadId); native.status = 'running'; native.lastTurn = { id: randomUUID(), status: 'running' }
