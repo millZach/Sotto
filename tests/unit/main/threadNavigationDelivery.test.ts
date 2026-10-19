@@ -376,7 +376,8 @@ describe('setting aside unconfirmed sends', () => {
     f.host.withheld = null
     expect((await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'high' })).error).toBeNull()
     f.host.withheld = 'uncertain'
-    await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'low' })
+    // A permission mode whose result is unknown still holds the thread; an effort or model alone does not (#1192).
+    await f.control.command({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'full-access' })
     await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Must wait for settings' })
     expect(f.host.attempts.map(item => item.type)).toEqual(['send', 'configure-thread', 'configure-thread'])
     expect(f.control.get().deliveries).toContainEqual(expect.objectContaining({ draftId, status: 'uncertain', setAside: true }))
@@ -589,6 +590,37 @@ describe('setting aside unconfirmed sends', () => {
     expect(fresh.error).toBeNull()
     expect(f.host.attempts).toHaveLength(2)
     expect(fresh.deliveredDrafts).not.toContainEqual({ threadId: 'workshop', draftId })
+  })
+})
+
+describe('a settings change whose result is unknown (#1192)', () => {
+  it('holds no send and no later change back when it set only the effort', async () => {
+    const f = await fixture()
+    f.host.withheld = 'uncertain'
+    await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'high' })
+    f.host.withheld = null
+    // The chip still says the change is unconfirmed.
+    expect(f.control.shell().unconfirmedSettings).toEqual([{ threadId: 'workshop', reasoningEffort: 'high' }])
+    expect((await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'After an unknown effort change' })).error).toBeNull()
+    expect(f.host.attempts.filter(item => item.type === 'send')).toHaveLength(1)
+  })
+
+  it('lets a newer accepted choice of the same setting replace it, so its chip stops waiting', async () => {
+    const f = await fixture()
+    f.host.withheld = 'uncertain'
+    await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'high' })
+    f.host.withheld = null
+    expect((await f.control.command({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'low' })).error).toBeNull()
+    expect(f.control.shell().unconfirmedSettings ?? []).toEqual([])
+  })
+
+  it('still holds the thread when it set a permission mode', async () => {
+    const f = await fixture()
+    f.host.withheld = 'uncertain'
+    await f.control.command({ type: 'configure-thread', threadId: 'workshop', runtimeMode: 'full-access' })
+    f.host.withheld = null
+    expect((await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Under an unknown permission mode' })).error).toMatch(/unknown result/)
+    expect(f.host.attempts.filter(item => item.type === 'send')).toHaveLength(0)
   })
 })
 

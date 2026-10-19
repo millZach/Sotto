@@ -283,6 +283,19 @@ type BabysitCommand = Extract<AgentCommand, { type: 'babysit-pull-request' | 'st
  */
 const readBeforeSend = (sendMessageId: string | undefined): ThreadReadPurpose => ({ beforeSend: true, ...(sendMessageId ? { sendMessageId } : {}) })
 
+/**
+ * A settings change that sets only a model or an effort holds nothing back while its result is unknown: at worst a turn
+ * runs on the model before, which the thread's chip shows, and the adapter asks for the wanted one again before its next
+ * turn (#1192; Zach's rule that nothing blocks sending another message or changing the model). A change that sets a
+ * permission mode or a provider mode still holds the thread, since a turn under a wider mode than the user chose could
+ * act without asking (ADR-0004).
+ */
+function holdsNothingBack(item: { readonly type: string; readonly options?: Readonly<Record<string, unknown>> | undefined }): boolean {
+  if (item.type !== 'configure-thread' || !item.options) return false
+  const keys = Object.keys(item.options).filter(key => item.options![key] !== undefined)
+  return keys.length > 0 && keys.every(key => key === 'modelId' || key === 'reasoningEffort')
+}
+
 export class AgentControl {
   private readonly followupStore: FollowupStore
   private readonly wakeUpSettlements = new HiddenWakeUpSettlements()
@@ -3877,7 +3890,7 @@ export class AgentControl {
     const mayPassSetAside = prompt !== null || !automatic && (command.type === 'configure-thread' || command.type === 'answer')
     if (command.type !== 'interrupt' && (threadId && automatic && this.hasSetAsideUpdateHold(threadId)
       || this.outbox.some(item => threadId
-        ? item.threadId === threadId && (!mayPassSetAside || this.blocksExplicitPrompt(item, draftId, automatic))
+        ? item.threadId === threadId && !holdsNothingBack(item) && (!mayPassSetAside || this.blocksExplicitPrompt(item, draftId, automatic))
         : item.threadId === undefined && (item.provider ?? this.state.configuration.provider) === provider))) {
       throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
     }
@@ -4027,6 +4040,13 @@ export class AgentControl {
       }).catch(() => { this.state.error = 'Answer delivery was confirmed, but could not be saved. Restore local storage access and refresh.'; this.publish() })
     }
     if (result.uncertain && this.outbox.some(o => o.id === command.commandId)) throw uncertaintyError
+    if (command.type === 'configure-thread' && result.accepted) {
+      // A newer choice of the same settings replaces an earlier change whose result is unknown: no snapshot can show the
+      // earlier one now, and its chip would wait on it for good.
+      const chosen = command
+      this.outbox = this.outbox.filter(item => item.id === chosen.commandId || item.threadId !== chosen.threadId || !holdsNothingBack(item)
+        || !Object.keys(item.options!).every(key => chosen[key as keyof typeof chosen] !== undefined))
+    }
     if ((command.type === 'configure-thread' || prompt) && result.accepted) {
       // A settings change the provider confirmed comes back with the snapshot it produced, which is the
       // reconciliation; the thread is read again only when the adapter has none to give. A send's echo has usually
@@ -4097,6 +4117,7 @@ export class AgentControl {
   }
   /** Recovery permits fresh explicit prompts; a confirmed one releases automatic updates, never the old revision. */
   private blocksExplicitPrompt(item: Saved['outbox'][number], draftId?: string, automatic = false): boolean {
+    if (holdsNothingBack(item)) return false
     return !item.setAside || this.pendingSetAsideDeliveries.has(item.threadId ?? '') || item.draftId === draftId
       || automatic && !item.updatesResumed || (item.type !== 'send' && item.type !== 'steer')
   }
@@ -4228,7 +4249,7 @@ export class AgentControl {
     // An explicit set-aside still fences that revision, including one held in staging.
     if (pickedDraftId && (!staged && this.state.obsoleteDrafts?.some(item => item.threadId === draftThreadId && item.draftId === pickedDraftId)
       || this.state.deliveries?.some(item => item.threadId === draftThreadId && item.draftId === pickedDraftId && item.setAside))) throw new Error('This draft revision was set aside or replaced. Use a new draft revision to send a new message.')
-    const pendingId = retryId ?? this.outbox.find(item => item.threadId === draftThreadId && (phoneOrigin || this.blocksExplicitPrompt(item, pickedDraftId)))?.id
+    const pendingId = retryId ?? this.outbox.find(item => item.threadId === draftThreadId && !holdsNothingBack(item) && (phoneOrigin || this.blocksExplicitPrompt(item, pickedDraftId)))?.id
     if (pendingId) {
       this.canAct()
       this.observe(); this.acceptSnapshot(await this.readThread(draftThreadId ?? undefined))
