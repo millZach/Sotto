@@ -288,6 +288,9 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
     // bun, pnpm, yarn, Volta and asdf lay a global package out the way npm does, so they are asked before npm: `npm install -g`
     // over their copy would install a second one and leave theirs as it was (ADR-0042).
     if ([executable, real].some(path => [...OTHER_PACKAGE_MANAGERS, ...YARN_GLOBAL].some(marker => path.toLowerCase().includes(marker)))) return { channel: 'unknown' }
+    // bun and pnpm can live anywhere their own variable says, which the OpenCode lookup searches too.
+    const managerHomes = ['BUN_INSTALL', 'PNPM_HOME'].map(name => environment[name]).filter((value): value is string => Boolean(value) && isAbsolute(value!))
+    if ([executable, real].some(path => managerHomes.some(directory => within(path, directory)))) return { channel: 'unknown' }
     // npm's copy is npm's even under Homebrew's Node (`/opt/homebrew/lib/node_modules/@opencode/cli`), so npm is asked
     // before Homebrew (mise was asked above). Only the program's own prefix counts, so an npm package elsewhere on the
     // machine never claims a copy Homebrew, the install script or a system package put there.

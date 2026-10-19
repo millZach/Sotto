@@ -4,7 +4,7 @@ import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { findCli, findClis, resetCliLookup } from '../../../src/main/agents/cliLookup'
+import { findCli, findClis, resetCliLookup, withCliPath } from '../../../src/main/agents/cliLookup'
 import { acceptOpenCode, isOpenCodeStandIn, opencodeMorePlaces, opencodeProgramPackages, parseRegistryPath, type OpenCodeLookupOptions } from '../../../src/main/agents/opencodeLookup'
 import { chooseOpenCode, findOpenCodeExecutable, OPENCODE_VERSION_TIMEOUT_MS, rememberOpenCodeChoice, resetOpenCodeChoice } from '../../../src/main/agents/opencodeServer'
 import { detectClientInstall } from '../../../src/main/agents/providerClients'
@@ -158,6 +158,16 @@ describe('finding OpenCode 2 on Windows', () => {
     expect(await channel(found)).toEqual({ channel: 'unknown' })
   })
 
+  it('leaves a copy under bun\'s or pnpm\'s own folder to that tool wherever its variable puts it', async () => {
+    const bun = join(root, 'tools', 'bun-custom')
+    const cli = join(bun, 'install', 'global', 'node_modules', '@opencode', 'cli')
+    const program = await file(join(cli, 'bin', 'opencode.exe'), MZ); await writeFile(join(cli, 'package.json'), '{}')
+    const found = await find('win32', { BUN_INSTALL: bun })
+    expect(found).toBe(program)
+    expect(await detectClientInstall('opencode', found, { MISE_DATA_DIR: join(root, 'no-mise'), BUN_INSTALL: bun })).toEqual({ channel: 'unknown' })
+    expect(await detectClientInstall('opencode', found, { MISE_DATA_DIR: join(root, 'no-mise'), PNPM_HOME: join(root, 'tools') })).toEqual({ channel: 'unknown' })
+  })
+
   it('finds yarn\'s global copy, and leaves it to yarn', async () => {
     const local = join(home, 'AppData', 'Local')
     const cli = join(local, 'Yarn', 'Data', 'global', 'node_modules', '@opencode', 'cli')
@@ -188,6 +198,14 @@ describe('finding OpenCode 2 on Windows', () => {
     const machine = '\r\nHKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\r\n    Path    REG_SZ    C:\\Windows\\system32;relative\\folder\r\n'
     const folders = parseRegistryPath([user, machine], { userprofile: 'C:\\Users\\me', APPDATA: 'C:\\Users\\me\\AppData\\Roaming' })
     expect(folders).toEqual(['C:\\Users\\me\\.opencode\\bin', 'C:\\Users\\me\\AppData\\Roaming\\npm', 'C:\\Quoted Folder', 'C:\\Windows\\system32'])
+  })
+
+  it('expands Windows\' PATH with the variables the registry holds now, which an installer may have set since Sotto started', () => {
+    const user = '\r\nHKEY_CURRENT_USER\\Environment\r\n    PNPM_HOME    REG_EXPAND_SZ    %LOCALAPPDATA%\\pnpm\r\n    TOOLS    REG_SZ    D:\\New Tools\r\n    Path    REG_EXPAND_SZ    %PNPM_HOME%;%TOOLS%\\bin\r\n'
+    const machine = '\r\nHKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\r\n    TOOLS    REG_SZ    C:\\Machine Tools\r\n    Path    REG_EXPAND_SZ    %TOOLS%\\sbin\r\n'
+    // Sotto started before PNPM_HOME was set, and with an older TOOLS: the account's registry value wins over both.
+    const folders = parseRegistryPath([user, machine], { LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local', TOOLS: 'C:\\Old Tools' })
+    expect(folders).toEqual(['C:\\Users\\me\\AppData\\Local\\pnpm', 'D:\\New Tools\\bin', 'D:\\New Tools\\sbin'])
   })
 })
 
@@ -320,6 +338,49 @@ describe('choosing OpenCode 2 over an OpenCode 1 met first', () => {
     const read = async (executable: string) => { asked.push(executable); return executable === baseline ? 'opencode v2.0.32' : undefined }
     expect(await chooseOpenCode(read, env.environment, env.lookup)).toEqual({ executable: baseline, said: 'opencode v2.0.32' })
     expect(asked).toEqual([plain, hoisted, baseline])
+  })
+
+  it('starts a later build with its own folder on PATH, as it does the first', async () => {
+    const cli = join(home, '.bun', 'install', 'global', 'node_modules', '@opencode', 'cli')
+    await file(join(cli, 'bin', 'opencode.exe'), STAND_IN)
+    await file(join(cli, 'node_modules', '@opencode', 'cli-windows-x64', 'bin', 'opencode.exe'), MZ)
+    const baseline = await file(join(cli, 'node_modules', '@opencode', 'cli-windows-x64-baseline', 'bin', 'opencode.exe'), MZ)
+    const env = options('win32')
+    const chosen = await chooseOpenCode(async executable => executable === baseline ? 'opencode v2.0.32' : undefined, env.environment, env.lookup)
+    expect(chosen?.executable).toBe(baseline)
+    expect(withCliPath({ PATH: empty }, baseline).PATH!.split(delimiter)[0]).toBe(dirname(baseline))
+  })
+
+  it('offers the program packages after a program the install script copied, when that copy will not run here', async () => {
+    const cli = join(home, '.bun', 'install', 'global', 'node_modules', '@opencode', 'cli')
+    const copied = await file(join(cli, 'bin', 'opencode.exe'), MZ)
+    const baseline = await file(join(cli, 'node_modules', '@opencode', 'cli-windows-x64-baseline', 'bin', 'opencode.exe'), MZ)
+    const env = options('win32')
+    const asked: string[] = []
+    const read = async (executable: string) => { asked.push(executable); return executable === baseline ? 'opencode v2.0.32' : undefined }
+    expect(await chooseOpenCode(read, env.environment, env.lookup)).toEqual({ executable: baseline, said: 'opencode v2.0.32' })
+    expect(asked).toEqual([copied, baseline])
+    // Presence still takes the copy, and asks nothing further.
+    expect(await findOpenCodeExecutable(env.environment, env.lookup)).toBe(copied)
+  })
+
+  it('keeps asking past any number of refused clients while there is time', async () => {
+    const folders = Array.from({ length: 10 }, (_, index) => join(root, `old-${index}`))
+    await Promise.all(folders.slice(0, 9).map(folder => file(join(folder, 'opencode.exe'), MZ)))
+    const current = await file(join(folders[9]!, 'opencode.exe'), MZ)
+    const env = options('win32', { PATH: folders.join(delimiter) })
+    const chosen = await chooseOpenCode(async executable => executable === current ? 'opencode v2.0.32' : '1.19.1', env.environment, env.lookup)
+    expect(chosen).toEqual({ executable: current, said: 'opencode v2.0.32' })
+  })
+
+  it('answers with the build a remembered client leads to now, when an update left the stand-in in its place', async () => {
+    const cli = join(home, '.bun', 'install', 'global', 'node_modules', '@opencode', 'cli')
+    const copied = await file(join(cli, 'bin', 'opencode.exe'), MZ)
+    const plain = await file(join(cli, 'node_modules', '@opencode', 'cli-windows-x64', 'bin', 'opencode.exe'), MZ)
+    const env = options('win32')
+    rememberOpenCodeChoice(copied, env.lookup)
+    await writeFile(copied, STAND_IN)
+    expect(await findOpenCodeExecutable(env.environment, env.lookup)).toBe(plain)
   })
 
   it('asks only the first when it will do', async () => {

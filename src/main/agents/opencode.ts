@@ -691,7 +691,8 @@ export class OpenCodeHost implements AgentHost {
    */
   private async findClient(generation: number, current?: string): Promise<OpenCodeChoice | undefined> {
     if (this.options.executable) return { executable: this.options.executable, said: await this.readVersion(this.options.executable) }
-    const kept = current && await acceptOpenCode(current) ? { executable: current, said: await this.readVersion(current) } : undefined
+    const still = current ? await acceptOpenCode(current) : undefined
+    const kept = still ? { executable: still, said: await this.readVersion(still) } : undefined
     if (kept && !opencodeVersionRefusal(kept.said ?? '')) return kept
     const chosen = await chooseOpenCode((executable, timeoutMs) => this.readVersion(executable, timeoutMs), this.environment, {}, () => generation !== this.generation)
     return chosen && !opencodeVersionRefusal(chosen.said ?? '') ? chosen : kept ?? chosen

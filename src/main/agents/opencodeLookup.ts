@@ -95,11 +95,15 @@ async function program(file: string, platform: NodeJS.Platform): Promise<string 
   return await isOpenCodeStandIn(executable) ? undefined : executable
 }
 
-/** Windows' own way of naming a variable in a path, expanded from the environment, or undefined when one is unknown. */
-function expandWindows(value: string, environment: NodeJS.ProcessEnv): string | undefined {
+/**
+ * Windows' own way of naming a variable in a path, expanded, or undefined when one is unknown. A variable's value may
+ * name another, as `PNPM_HOME`'s `%LOCALAPPDATA%\pnpm` does, and is expanded once more.
+ */
+function expandWindows(value: string, lookup: (name: string) => string | undefined, depth = 0): string | undefined {
   let unknown = false
   const expanded = value.replace(/%([^%]+)%/gu, (_whole, name: string) => {
-    const found = variable(environment, name)
+    const raw = lookup(name)
+    const found = raw !== undefined && raw.includes('%') && depth < 1 ? expandWindows(raw, lookup, depth + 1) : raw
     if (found === undefined) unknown = true
     return found ?? ''
   })
@@ -154,14 +158,14 @@ async function launcherText(file: string): Promise<string | undefined> {
 }
 
 /**
- * The programs a candidate is or leads to, best first: the program itself, the one its launcher starts, or, for the
- * stand-in, each program package there for this computer, so a build this processor cannot run (the plain one without
- * AVX2, glibc's on musl) is followed by the next.
+ * The programs a candidate is or leads to, best first: the program itself or the one its launcher starts, then, for
+ * `@opencode/cli`'s program or its stand-in, each program package there for this computer, so a build this processor
+ * cannot run (the plain one without AVX2, glibc's on musl) is followed by the next.
  */
 async function* programsOf(candidate: string, platform: NodeJS.Platform, arch: string): AsyncGenerator<string, void, undefined> {
   for (const file of await launched(candidate, platform) ?? [candidate]) {
     const found = await program(file, platform)
-    if (found) { yield found; continue }
+    if (found) yield found
     const cliPackage = cliPackageOf(file) ?? cliPackageOf(await realpath(file).catch(() => file))
     if (!cliPackage) continue
     for (const inside of await programsFor(cliPackage, platform, arch)) {
@@ -245,8 +249,13 @@ export async function* opencodeCandidates(environment: NodeJS.ProcessEnv = proce
   const also = alsoIn(windows)
   const seen = new Set<string>()
   const shared: CliLookupOptions = { environment, home, platform, ...lookup.loginShellPath ? { loginShellPath: lookup.loginShellPath } : {} }
-  /** The rest of what each accepted candidate leads to, handed over after it only if the caller asks for more. */
+  /** The rest of what each accepted candidate leads to, which the shared lookup hands over after it only if asked. */
   const rest = new Map<string, AsyncGenerator<string, void, undefined>>()
+  async function* more(executable: string): AsyncGenerator<string, void, undefined> {
+    const programs = rest.get(executable)
+    rest.delete(executable)
+    if (programs) yield* programs
+  }
   const fresh = async (executable: string): Promise<boolean> => {
     const real = await realpath(executable).catch(() => executable)
     const key = windows ? real.toLowerCase() : real
@@ -266,11 +275,9 @@ export async function* opencodeCandidates(environment: NodeJS.ProcessEnv = proce
       rest.set(first.value, programs)
       return first.value
     },
+    more,
   }, shared)) {
-    const more = rest.get(executable)
-    rest.delete(executable)
     if (await fresh(executable)) yield executable
-    if (more) for await (const next of more) if (await fresh(next)) yield next
   }
 }
 
@@ -278,38 +285,53 @@ const REGISTRY_TIMEOUT_MS = 5_000
 const REGISTRY_MAX_BYTES = 64 * 1024
 /** How long one reading of Windows' PATH answers for: long enough for one connect, short enough that the next sees a new install. */
 const REGISTRY_FRESH_MS = 15_000
-const PATH_KEYS = ['HKCU\\Environment', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment']
+const ENVIRONMENT_KEYS = ['HKCU\\Environment', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment']
 let registryReading: { readonly at: number; readonly folders: Promise<readonly string[]> } | undefined
 
 /**
- * The folders on the account's PATH and the machine's, as the registry holds them now. Sotto's own PATH is the one it
- * was started with, so a client installed since is on these and not on it. Read with `reg.exe` and no shell, five
- * seconds and 64 KiB at most for each, and shared by lookups within fifteen seconds of each other. `reg.exe` writes in
- * the console's code page, so a folder written into PATH with letters outside it is missed; one named through a variable
- * such as `%USERPROFILE%`, the usual way, is expanded from Sotto's own environment and found.
+ * The folders on the account's PATH and the machine's, as the registry holds them now. Sotto's own environment is the
+ * one it was started with, so a client installed since is on these and not on it, and a variable such as `PNPM_HOME`
+ * that the installer set since is in the registry too. Read with `reg.exe` and no shell, five seconds and 64 KiB at
+ * most for each, and shared by lookups within fifteen seconds of each other. `reg.exe` writes in the console's code
+ * page, so a folder written into PATH with letters outside it is missed; one named through a variable such as
+ * `%USERPROFILE%`, the usual way, is expanded and found.
  */
 export function windowsPath(environment: NodeJS.ProcessEnv = process.env, now = Date.now()): Promise<readonly string[]> {
   if (process.platform !== 'win32') return Promise.resolve([])
   if (registryReading && now - registryReading.at < REGISTRY_FRESH_MS) return registryReading.folders
   const root = absolute(variable(environment, 'SystemRoot')) ?? absolute(variable(environment, 'windir'))
-  const folders = root ? Promise.all(PATH_KEYS.map(key => readRegistryPath(join(root, 'System32', 'reg.exe'), key)))
+  const folders = root ? Promise.all(ENVIRONMENT_KEYS.map(key => readRegistryKey(join(root, 'System32', 'reg.exe'), key)))
     .then(values => parseRegistryPath(values.filter((value): value is string => value !== undefined), environment)) : Promise.resolve([])
   registryReading = { at: now, folders }
   return folders
 }
-/** A `reg query` answer's PATH value, `%VAR%` expanded, split into folders. Exported for its test. */
-export function parseRegistryPath(answers: readonly string[], environment: NodeJS.ProcessEnv): string[] {
-  return answers.flatMap(answer => {
-    const value = /^\s*Path\s+REG_(?:EXPAND_)?SZ\s+(.*?)\s*$/imu.exec(answer)?.[1] ?? ''
-    return value.split(';').map(entry => expandWindows(entry.trim().replace(/^"|"$/gu, ''), environment))
-      .filter((entry): entry is string => Boolean(entry) && win32.isAbsolute(entry!) && !/^[\\/]{2}/u.test(entry!))
-  })
+/** The string values of one `reg query` answer, by name in lower case. */
+function registryValues(answer: string): Map<string, string> {
+  const values = new Map<string, string>()
+  for (const line of answer.split(/\r?\n/u)) {
+    const match = /^\s+(\S.*?)\s+REG_(?:EXPAND_)?SZ(?:\s+(.*?))?\s*$/u.exec(line)
+    if (match) values.set(match[1]!.toLowerCase(), match[2] ?? '')
+  }
+  return values
 }
-function readRegistryPath(reg: string, key: string): Promise<string | undefined> {
+/**
+ * The PATH folders in `reg query` answers for the account's environment key and then the machine's, each folder's
+ * `%VAR%` expanded from the registry's variables (the account's over the machine's) before Sotto's own, which is how a
+ * new process would see them. Exported for its test.
+ */
+export function parseRegistryPath(answers: readonly string[], environment: NodeJS.ProcessEnv): string[] {
+  const keys = answers.map(registryValues)
+  const variables = new Map(Object.entries(environment).map(([name, value]) => [name.toLowerCase(), value]))
+  for (const values of [...keys].reverse()) for (const [name, value] of values) if (name !== 'path') variables.set(name, value)
+  const lookup = (name: string): string | undefined => variables.get(name.toLowerCase())
+  return keys.flatMap(values => (values.get('path') ?? '').split(';').map(entry => expandWindows(entry.trim().replace(/^"|"$/gu, ''), lookup))
+    .filter((entry): entry is string => Boolean(entry) && win32.isAbsolute(entry!) && !/^[\\/]{2}/u.test(entry!)))
+}
+function readRegistryKey(reg: string, key: string): Promise<string | undefined> {
   return new Promise(resolve => {
     let child: ReturnType<typeof spawn>
     try {
-      child = spawn(reg, ['query', key, '/v', 'Path'], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, shell: false })
+      child = spawn(reg, ['query', key], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, shell: false })
     } catch { resolve(undefined); return }
     let output = ''
     let settled = false

@@ -71,26 +71,25 @@ export function rememberOpenCodeChoice(executable: string | undefined, lookup: O
  */
 export async function findOpenCodeExecutable(environment: NodeJS.ProcessEnv = process.env, lookup: OpenCodeLookupOptions = {}): Promise<string | undefined> {
   const chosen = chosenOpenCode
-  if (chosen && chosen.home === lookup.home && chosen.platform === lookup.platform
-    && await acceptOpenCode(chosen.executable, lookup.platform, lookup.arch)) return chosen.executable
+  // What the chosen path leads to now, which is another build when an update left the stand-in there.
+  const kept = chosen && chosen.home === lookup.home && chosen.platform === lookup.platform
+    ? await acceptOpenCode(chosen.executable, lookup.platform, lookup.arch) : undefined
+  if (kept) return kept
   for await (const executable of opencodeCandidates(environment, lookup)) return executable
   return undefined
 }
 /** How long the first OpenCode found has to say its version, and all the others together after it. */
 export const OPENCODE_VERSION_TIMEOUT_MS = 10_000
-/** At most this many OpenCodes are asked their version on one connect. */
-const VERSIONS_READ = 8
 export interface OpenCodeChoice { readonly executable: string; readonly said: string | undefined }
 /**
  * The OpenCode connect uses: the first the lookup finds that reports an OpenCode 2 Sotto drives, so an OpenCode 1 met
  * first (WinGet's, Chocolatey's, nixpkgs') does not hide an OpenCode 2 installed elsewhere. The others are asked only
- * when the first is refused, and only while `abandoned` says the connect still wants an answer: at most eight, sharing
- * one version read's time between them. When none will do, the first and what it said, which connect refuses in its words.
+ * when the first is refused, and only while `abandoned` says the connect still wants an answer, sharing one version
+ * read's time between them. When none will do, the first and what it said, which connect refuses in its words.
  */
 export async function chooseOpenCode(read: (executable: string, timeoutMs: number) => Promise<string | undefined>, environment: NodeJS.ProcessEnv = process.env,
   lookup: OpenCodeLookupOptions = {}, abandoned: () => boolean = () => false): Promise<OpenCodeChoice | undefined> {
   let first: OpenCodeChoice | undefined
-  let asked = 0
   let deadline: number | undefined
   for await (const executable of opencodeCandidates(environment, lookup)) {
     if (abandoned()) break
@@ -100,7 +99,6 @@ export async function chooseOpenCode(read: (executable: string, timeoutMs: numbe
     if (!opencodeVersionRefusal(said ?? '')) return { executable, said }
     first ??= { executable, said }
     deadline ??= Date.now() + OPENCODE_VERSION_TIMEOUT_MS
-    if (++asked >= VERSIONS_READ) break
   }
   return first
 }

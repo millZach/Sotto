@@ -51,6 +51,11 @@ export interface CliSpec {
    * executed, started by the path it was found at.
    */
   readonly accept?: (candidate: string) => Promise<string | undefined>
+  /**
+   * Further clients an accepted candidate leads to, handed over after it and only if the caller asks for more, each
+   * found in the same folder as it: OpenCode's other builds of one package.
+   */
+  readonly more?: (executable: string) => AsyncIterable<string>
 }
 
 /** Manager binaries a shim resolves to. Started by that path they run the manager, not the tool. */
@@ -293,6 +298,10 @@ export async function* findClis(spec: CliSpec, options: CliLookupOptions = {}): 
         // The folder it was found in, which for a followed link is not the client's own folder.
         await rememberClientPath(executable, folder, spec.name, { environment, platform, home, loginShellPath: login }, inherited)
         yield executable
+        for await (const next of spec.more?.(executable) ?? []) {
+          await rememberClientPath(next, folder, spec.name, { environment, platform, home, loginShellPath: login }, inherited)
+          yield next
+        }
       }
     }
   }
